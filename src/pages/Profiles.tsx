@@ -532,6 +532,7 @@ function FriendsMergedBlock({ friends }: { friends?: Friend[] }) {
       <button
         className="row-between"
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
         style={{
           width: "100%",
           background: "transparent",
@@ -543,7 +544,11 @@ function FriendsMergedBlock({ friends }: { friends?: Friend[] }) {
         }}
       >
         <span>Amis ({merged.length})</span>
-        <span className="subtitle" aria-hidden>
+        <span
+          className="subtitle"
+          aria-hidden
+          style={{ display: "inline-block", transform: `rotate(${open ? 0 : -90}deg)`, transition: "transform .15s ease" }}
+        >
           ▾
         </span>
       </button>
@@ -560,8 +565,8 @@ function FriendsMergedBlock({ friends }: { friends?: Friend[] }) {
 
               // Win% robuste (winRate direct si dispo, sinon fallback)
               const friendWinPct = (() => {
-                const wr = (f as any)?.stats?.winRate;
-                if (Number.isFinite(wr)) return Math.round(Number(wr));
+                const wr = Number((f as any)?.stats?.winRate);
+                if (Number.isFinite(wr)) return Math.round(wr);
                 const wins = Number((f as any)?.stats?.wins ?? 0);
                 const legs = Number((f as any)?.stats?.legs ?? 0);
                 const games = Number((f as any)?.stats?.games ?? 0);
@@ -590,7 +595,7 @@ function FriendsMergedBlock({ friends }: { friends?: Friend[] }) {
                           gapPx={2}
                           starSize={STAR}
                           stepDeg={10}
-                          avg3d={(f as any)?.stats?.avg3 ?? 0}
+                          avg3d={Number((f as any)?.stats?.avg3 ?? 0)}
                         />
                       </div>
 
@@ -606,7 +611,7 @@ function FriendsMergedBlock({ friends }: { friends?: Friend[] }) {
                       <div style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{f.name || "—"}</div>
                       {f.stats && (
                         <div className="subtitle" style={{ whiteSpace: "nowrap" }}>
-                          Moy/3: {fmt((f as any)?.stats?.avg3 ?? 0)} · Best: {(f as any)?.stats?.bestVisit ?? 0} · Win: {friendWinPct}%
+                          Moy/3: {fmt(Number((f as any)?.stats?.avg3 ?? 0))} · Best: {Number((f as any)?.stats?.bestVisit ?? 0)} · Win: {friendWinPct}%
                         </div>
                       )}
                     </div>
@@ -784,7 +789,7 @@ function LocalProfiles({
                     gapPx={2}
                     starSize={STAR}
                     stepDeg={10}
-                    avg3d={s?.avg3d ?? (s as any)?.avg3 ?? 0}
+                    avg3d={Number((s as any)?.avg3d ?? (s as any)?.avg3 ?? 0)}
                   />
                 </div>
 
@@ -956,13 +961,14 @@ function EditInline({
           style={{ display: "none" }}
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
-        <img
-          src={avatarUrl ?? ""}
-          alt="avatar"
-          style={{ width: "100%", height: "100%", objectFit: "cover", opacity: avatarUrl ? 1 : 0.2 }}
-        />
-        {!avatarUrl && (
-          <span style={{ position: "absolute", color: "#999", fontSize: 12, bottom: 6 }}>Cliquer</span>
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt="avatar"
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        ) : (
+          <span style={{ color: "#999", fontSize: 12 }}>Cliquer</span>
         )}
       </label>
 

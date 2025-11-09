@@ -1,11 +1,13 @@
 // ============================================
 // src/lib/history.ts — Historique "lourd + compressé"
 // API : list(), get(id), upsert(rec), remove(id), clear()
-// + History.{list,get,upsert,remove,clear,readAll}  (readAll = sync via cache)
+// + History.{list,get,upsert,remove,clear,readAll}
+// + History.{getX01, listInProgress, listFinished, listByStatus}
 // - Stockage principal : IndexedDB (objectStore "history")
-// - Compression : LZString (UTF-16) sur le champ payload
-// - Fallback : localStorage si IDB indispo
+// - Compression : LZString (UTF-16) sur le champ payload → stocké en `payloadCompressed`
+// - Fallback : localStorage si IDB indispo (compact, sans payload)
 // - Migration auto depuis l’ancien localStorage KEY = "dc-history-v1"
+// - Trim auto à MAX_ROWS
 // ============================================
 
 /* =========================
@@ -28,12 +30,15 @@ export type SavedMatch = {
   // Résumé léger (pour listes)
   summary?: {
     legs?: number;
-    darts?: number;
+    darts?: number; // total darts (compat)
     avg3ByPlayer?: Record<string, number>;
     co?: number;
   } | null;
   // Payload complet (gros) — compressé en base
   payload?: any;
+
+  // champs libres tolérés (meta, state, etc.)
+  [k: string]: any;
 };
 
 /* =========================
@@ -41,15 +46,13 @@ export type SavedMatch = {
 ========================= */
 const LSK = "dc-history-v1"; // ancien storage (migration + fallback)
 const DB_NAME = "dc-store-v1";
-// ⬇⬇⬇ bump version pour forcer onupgradeneeded et créer l'index manquant
+// ⬇ Bump version pour créer/assurer l’index by_updatedAt
 const DB_VER = 2;
 const STORE = "history";
 const MAX_ROWS = 400;
 
 /* =========================
    Mini LZ-String UTF16
-   (compressToUTF16 / decompressFromUTF16)
-   Source condensée : https://github.com/pieroxy/lz-string
 ========================= */
 /* eslint-disable */
 const LZString = (function () {
@@ -338,16 +341,14 @@ function openDB(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB_NAME, DB_VER);
     req.onupgradeneeded = () => {
       const db = req.result;
-
-      // crée le store si besoin ou récupère-le
+      // créer le store si besoin
       let os: IDBObjectStore;
       if (!db.objectStoreNames.contains(STORE)) {
         os = db.createObjectStore(STORE, { keyPath: "id" });
       } else {
         os = req.transaction!.objectStore(STORE);
       }
-
-      // crée l'index s'il manque (migration v1 -> v2)
+      // créer l’index by_updatedAt si manquant
       try {
         // @ts-ignore
         if (!os.indexNames || !os.indexNames.contains("by_updatedAt")) {
@@ -414,7 +415,7 @@ async function migrateFromLocalStorageOnce() {
 }
 
 /* =========================
-   API asynchrone principale
+   Lectures
 ========================= */
 export async function list(): Promise<SavedMatch[]> {
   await migrateFromLocalStorageOnce();
@@ -523,11 +524,14 @@ export async function get(id: string): Promise<SavedMatch | null> {
   }
 }
 
+/* =========================
+   Écritures
+========================= */
 export async function upsert(rec: SavedMatch): Promise<void> {
   await migrateFromLocalStorageOnce();
   const now = Date.now();
   const safe: any = {
-    id: rec.id,
+    id: rec.id || (crypto.randomUUID?.() ?? String(now)),
     kind: rec.kind || "x01",
     status: rec.status || "finished",
     players: rec.players || [],
@@ -535,7 +539,9 @@ export async function upsert(rec: SavedMatch): Promise<void> {
     createdAt: rec.createdAt ?? now,
     updatedAt: now,
     summary: rec.summary || null,
+    // payload compressé séparé (IDB)
   };
+
   try {
     const payloadStr = rec.payload ? JSON.stringify(rec.payload) : "";
     const payloadCompressed = payloadStr
@@ -543,9 +549,8 @@ export async function upsert(rec: SavedMatch): Promise<void> {
       : "";
 
     await withStore("readwrite", async (st) => {
-      // limiter à MAX_ROWS
+      // Limiter à MAX_ROWS (par ordre décroissant de updatedAt)
       await new Promise<void>((resolve, reject) => {
-        // lecture via index si dispo, sinon store brut
         const doTrim = (keys: string[]) => {
           if (keys.length > MAX_ROWS) {
             const toDelete = keys.slice(MAX_ROWS);
@@ -584,12 +589,12 @@ export async function upsert(rec: SavedMatch): Promise<void> {
                 cur.continue();
               } else {
                 rows.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-                doTrim(rows.map(r => r.id));
+                doTrim(rows.map((r) => r.id));
               }
             };
             req.onerror = () => reject(req.error);
           }
-        } catch (e) {
+        } catch {
           resolve(); // en cas de doute, on ne coupe rien
         }
       });
@@ -611,8 +616,8 @@ export async function upsert(rec: SavedMatch): Promise<void> {
           return [];
         }
       })();
-      const idx = rows.findIndex((r) => r.id === rec.id);
-      const trimmed = { ...safe, payload: null };
+      const idx = rows.findIndex((r) => r.id === safe.id);
+      const trimmed = { ...safe, payload: null }; // compact
       if (idx >= 0) rows.splice(idx, 1);
       rows.unshift(trimmed);
       while (rows.length > 120) rows.pop();
@@ -714,6 +719,24 @@ function readAllSync(): _LightRow[] {
 }
 
 /* =========================
+   Sélecteurs utilitaires
+========================= */
+async function listByStatus(status: "in_progress" | "finished"): Promise<SavedMatch[]> {
+  const rows = await list();
+  return rows.filter((r) => r.status === status);
+}
+async function listInProgress(): Promise<SavedMatch[]> {
+  return listByStatus("in_progress");
+}
+async function listFinished(): Promise<SavedMatch[]> {
+  return listByStatus("finished");
+}
+async function getX01(id: string): Promise<SavedMatch | null> {
+  const r = await get(id);
+  return r && r.kind === "x01" ? r : null;
+}
+
+/* =========================
    Export objet unique History
 ========================= */
 export const History = {
@@ -740,6 +763,12 @@ export const History = {
     await clear();
     _clearCache();
   },
+
+  // sélecteurs utilitaires
+  listByStatus,
+  listInProgress,
+  listFinished,
+  getX01,
 
   // synchrone (legacy UI)
   readAll: readAllSync,

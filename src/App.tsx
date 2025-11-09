@@ -57,7 +57,7 @@ type Tab =
   // ✅ nouvelle route par onglet
   | "avatar";
 
-// Store initial minimal (empêche les crashes pendant le chargement)
+// Store initial minimal
 const initialStore: Store = {
   profiles: [],
   activeProfileId: null,
@@ -175,7 +175,7 @@ export default function App() {
     ensurePersisted().catch(() => {});
   }, []);
 
-  // ✅ Warm-up agrégateur léger au démarrage (une seule fois)
+  // ✅ Warm-up agrégateur léger au démarrage
   React.useEffect(() => {
     try {
       warmAggOnce();
@@ -202,7 +202,6 @@ export default function App() {
 
   /* ----------------------------------------
      Chargement initial depuis IndexedDB
-     (migration automatique depuis localStorage)
   ---------------------------------------- */
   React.useEffect(() => {
     let mounted = true;
@@ -277,7 +276,7 @@ export default function App() {
       createdAt: (m as any)?.createdAt || now,
       updatedAt: now,
       summary,
-      payload: m, // brut (History.upsert pourra compacter si besoin)
+      payload: m,
     };
 
     // 1) mémoire (dédupe sur id)
@@ -349,18 +348,27 @@ export default function App() {
       }
 
       case "statsDetail": {
-        // robuste: accepte un record complet passé par StatsHub,
-        // sinon tente History.get, sinon fallback store.history
-        const rec: any =
-          routeParams?.rec ||
-          (History as any)?.get?.(routeParams?.matchId) ||
-          (store.history || []).find((r: any) => r.id === routeParams?.matchId);
+        // Charge proprement le record demandé
+        const [rec, setRec] = React.useState<any>(() => {
+          if (routeParams?.rec) return routeParams.rec;
+          const fromMem = (store.history || []).find((r: any) => r.id === routeParams?.matchId);
+          return fromMem || null;
+        });
+        const matchId: string | undefined = routeParams?.matchId;
 
-        const toArr = (v: any) => (Array.isArray(v) ? v : []);
-        const N = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
+        React.useEffect(() => {
+          let alive = true;
+          (async () => {
+            if (!matchId) return;
+            try {
+              const byId = await (History as any)?.get?.(matchId);
+              if (alive && byId) setRec(byId);
+            } catch {}
+          })();
+          return () => { alive = false; };
+        }, [matchId]);
 
         if (routeParams?.showEnd && rec) {
-          // Option : afficher directement l’overlay de fin si demandé
           page = (
             <X01End
               go={go}
@@ -375,15 +383,15 @@ export default function App() {
         }
 
         if (rec) {
-          const when = N(rec.updatedAt ?? rec.createdAt ?? Date.now(), Date.now());
+          const when = Number(rec.updatedAt ?? rec.createdAt ?? Date.now());
           const dateStr = new Date(when).toLocaleString();
+          const toArr = (v: any) => (Array.isArray(v) ? v : []);
           const players = toArr(rec.players?.length ? rec.players : rec.payload?.players);
           const names = players.map((p: any) => p?.name ?? "—").join(" · ");
           const winnerName = rec.winnerId
             ? (players.find((p: any) => p?.id === rec.winnerId)?.name ?? "—")
             : null;
 
-          // Placeholder léger tant que la page détaillée finale n’est pas branchée :
           page = (
             <div style={{ padding: 16 }}>
               <button onClick={() => go("stats", { tab: "history" })} style={{ marginBottom: 12 }}>
@@ -402,7 +410,7 @@ export default function App() {
               <button onClick={() => go("stats", { tab: "history" })} style={{ marginBottom: 12 }}>
                 ← Retour
               </button>
-              Aucune donnée
+              {matchId ? "Chargement..." : "Aucune donnée"}
             </div>
           );
         }
@@ -454,26 +462,12 @@ export default function App() {
       }
 
       case "x01_end": {
-        // Reçoit params.rec | params.matchId | params.resumeId
-        // X01End doit afficher l’overlay quand showEnd === true
         page = <X01End go={go} params={routeParams} />;
         break;
       }
 
       // ---------- Autres jeux ----------
       case "cricket": {
-        page = (
-          <LobbyPick
-            title="Lobby — Cricket"
-            profiles={store.profiles ?? []}
-            onStart={(ids) => {
-              const players = store.settings.randomOrder
-                ? ids.slice().sort(() => Math.random() - 0.5)
-                : ids;
-              go("cricket");
-            }}
-          />
-        );
         // Placeholder jeu
         page = <CricketPlay playerIds={[]} onFinish={pushHistory} />;
         break;
@@ -498,7 +492,7 @@ export default function App() {
             </button>
             <AvatarCreator
               size={512}
-              overlaySrc="/assets/medallion.svg" // remplace par ton médaillon étoilé
+              overlaySrc="/assets/medallion.svg"
             />
           </div>
         );

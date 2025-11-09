@@ -50,11 +50,11 @@ export type LegacyLegResult = {
   h100?: Record<string, number>;
   h140?: Record<string, number>;
   h180?: Record<string, number>;
-  // Champs “patch” qu’on a déjà vus dans votre projet:
+  // Champs patch
   coHits?: Record<string, number>;
   coAtt?: Record<string, number>;
   points?: Record<string, number>;
-  // variantes de noms
+  // variantes
   misses?: Record<string, number>;
   busts?: Record<string, number>;
   dbulls?: Record<string, number>;
@@ -90,7 +90,6 @@ function isLegStatsObj(x: any): x is LegStats {
 
 // ---------- Adapteurs NOUVELLES STATS ----------
 function idsFromNew(leg: LegStats): string[] {
-  // parfois leg.players = string[] ou {id,name}[]
   if (Array.isArray(leg.players) && typeof leg.players[0] === "string") {
     return leg.players as unknown as string[];
   }
@@ -102,24 +101,21 @@ function remainingFromNew(leg: LegStats, pid: string) {
   const start = n((leg as any).startScore ?? (leg as any).start ?? 501);
   const scored = n(st.totalScored ?? st.points ?? st.pointsSum);
   const approx = Math.max(0, start - scored);
-  // direct si présent
   return n(st.remaining ?? approx);
 }
 
 function visitsFromNew(leg: LegStats, pid: string) {
   const st: any = leg.perPlayer?.[pid] ?? {};
-  // visits direct sinon darts/3 arrondi sup
   const d = n(st.darts ?? st.dartsThrown);
   return n(st.visits ?? (d ? Math.ceil(d / 3) : 0));
 }
 
 function avg3FromNew(leg: LegStats, pid: string) {
   const st: any = leg.perPlayer?.[pid] ?? {};
-  // sources possibles
   if (typeof st.avg3 === "number") return st.avg3;
   const v = visitsFromNew(leg, pid);
   const scored = n(st.totalScored ?? st.points ?? st.pointsSum);
-  if (v > 0) return scored / v; // dans votre app, avg3 est “par volée”
+  if (v > 0) return scored / v; // avg3 = points/volée dans ton app
   const d = n(st.darts ?? st.dartsThrown);
   return d > 0 ? (scored / d) * 3 : 0;
 }
@@ -142,7 +138,6 @@ function powerBucketsFromNew(leg: LegStats, pid: string) {
 
 function impactsFromNew(leg: LegStats, pid: string) {
   const st: any = leg.perPlayer?.[pid] ?? {};
-  // “rates” sont des compteurs dans vos captures (pas des %)
   const r = st.rates || {};
   const darts = n(st.darts ?? st.dartsThrown);
   const doubles = n(st.doubles ?? r.dblHits ?? 0);
@@ -237,7 +232,7 @@ function rowFromLegacy(res: LegacyLegResult, pid: string, nameOf: (id: string) =
 
   const obRaw =
     res.hitsBySector?.[pid]?.["OB"] ??
-    res.bulls?.[pid] /* si on a seulement bulls total, on split 50/50 pour l’affichage */ ??
+    res.bulls?.[pid] ??
     0;
   const ibRaw = res.hitsBySector?.[pid]?.["IB"] ?? res.dbull?.[pid] ?? res.dbulls?.[pid] ?? 0;
 
@@ -349,7 +344,6 @@ function Inner({
   // --- rows ---
   const rows = React.useMemo(() => {
     if ((result as any)?.legacy) {
-      // Compat: on t’a peut-être passé { legacy: {...} } → lis d’abord legacy
       const r = (result as any).legacy as LegacyLegResult;
       const ids =
         Object.keys(r?.remaining || {}).length > 0
@@ -418,71 +412,63 @@ function Inner({
     return null;
   }, [result, rows]);
 
- // Actions
-const handleSave = () => {
-  try {
-    const rowsLite = rowsForLite().map((r) => ({
-      pid: r.pid,
-      darts: Number(r.darts || 0),
-      avg3: Number(r.avg3 || 0),
-      best: Number(r.best || 0),
-      highestCO: Number(r.highestCO || 0),
-    }));
+  // Actions
+  const handleSave = () => {
+    try {
+      const rowsLite = rowsForLite().map((r) => ({
+        pid: r.pid,
+        darts: Number(r.darts || 0),
+        avg3: Number(r.avg3 || 0),
+        best: Number(r.best || 0),
+        highestCO: Number(r.highestCO || 0),
+      }));
 
-    // si l'API existe on l'utilise, sinon fallback localStorage (aucun crash)
-    if ((StatsLite as any)?.recordLegToLite) {
-      (StatsLite as any).recordLegToLite({ winnerId, rows: rowsLite });
-    } else {
-      fallbackRecordLegToLite({ winnerId, rows: rowsLite });
+      if ((StatsLite as any)?.recordLegToLite) {
+        (StatsLite as any).recordLegToLite({ winnerId, rows: rowsLite });
+      } else {
+        fallbackRecordLegToLite({ winnerId, rows: rowsLite });
+      }
+    } catch (e) {
+      console.warn("[overlay] lite update failed", e);
     }
-  } catch (e) {
-    console.warn("[overlay] lite update failed", e);
+
+    try { onSave?.(result); } catch {}
+    onClose();
+  };
+
+  // petit util pour réutiliser les 'rows' calculées plus haut
+  function rowsForLite() {
+    return rows || [];
   }
 
-  try { onSave?.(result); } catch {}
-  onClose();
-};
+  // ---- Fallback robuste (écrit un cache minimal si le module n'exporte pas encore recordLegToLite) ----
+  function fallbackRecordLegToLite(input: {
+    winnerId: string | null;
+    rows: Array<{ pid: string; darts: number; avg3: number; best: number; highestCO?: number }>;
+  }) {
+    const PFX = "dc:statslite:";
+    for (const r of input.rows) {
+      const key = PFX + r.pid;
+      const cur = safeParse(localStorage.getItem(key)) || {
+        games: 0, wins: 0, darts: 0, bestVisit: 0, bestCheckout: 0, avg3: 0, _sumAvg3: 0,
+      };
+      const games = cur.games + 1;
+      const wins = cur.wins + (input.winnerId === r.pid ? 1 : 0);
+      const darts = cur.darts + (isFinite(r.darts) ? r.darts : 0);
+      const bestVisit = Math.max(cur.bestVisit || 0, isFinite(r.best) ? r.best : 0);
+      const bestCheckout = Math.max(cur.bestCheckout || 0, isFinite(r.highestCO || 0) ? (r.highestCO || 0) : 0);
+      const _sumAvg3 = (cur._sumAvg3 || cur.avg3 * (cur.games || 0)) + (isFinite(r.avg3) ? r.avg3 : 0);
+      const avg3 = games ? _sumAvg3 / games : 0;
 
-// petit util pour réutiliser les 'rows' calculées plus haut
-function rowsForLite() {
-  return rows || [];
-}
-
-// ---- Fallback robuste (écrit un cache minimal si le module n'exporte pas encore recordLegToLite) ----
-function fallbackRecordLegToLite(input: {
-  winnerId: string | null;
-  rows: Array<{ pid: string; darts: number; avg3: number; best: number; highestCO?: number }>;
-}) {
-  const PFX = "dc:statslite:";
-  for (const r of input.rows) {
-    const key = PFX + r.pid;
-    const cur = safeParse(localStorage.getItem(key)) || {
-      games: 0, wins: 0, darts: 0, bestVisit: 0, bestCheckout: 0, avg3: 0, _sumAvg3: 0,
-    };
-    const games = cur.games + 1;
-    const wins = cur.wins + (input.winnerId === r.pid ? 1 : 0);
-    const darts = cur.darts + (isFinite(r.darts) ? r.darts : 0);
-    const bestVisit = Math.max(cur.bestVisit || 0, isFinite(r.best) ? r.best : 0);
-    const bestCheckout = Math.max(cur.bestCheckout || 0, isFinite(r.highestCO || 0) ? (r.highestCO || 0) : 0);
-    const _sumAvg3 = (cur._sumAvg3 || cur.avg3 * (cur.games || 0)) + (isFinite(r.avg3) ? r.avg3 : 0);
-    const avg3 = games ? _sumAvg3 / games : 0;
-
-    localStorage.setItem(key, JSON.stringify({ games, wins, darts, bestVisit, bestCheckout, avg3, _sumAvg3 }));
+      localStorage.setItem(key, JSON.stringify({ games, wins, darts, bestVisit, bestCheckout, avg3, _sumAvg3 }));
+    }
+    try {
+      window.dispatchEvent(new CustomEvent("stats-lite:changed", { detail: { playerId: "*" } }));
+      localStorage.setItem("dc:statslite:version", String(Date.now()));
+    } catch {}
   }
-  try {
-    window.dispatchEvent(new CustomEvent("stats-lite:changed", { detail: { playerId: "*" } }));
-    localStorage.setItem("dc:statslite:version", String(Date.now()));
-  } catch {}
-}
 
-function safeParse(s: string | null) { try { return s ? JSON.parse(s) : null; } catch { return null; } }
-
-
-// petit util pour réutiliser les 'rows' déjà préparées (au-dessus)
-function rowsForLite() {
-  return rows || [];
-}
-
+  function safeParse(s: string | null) { try { return s ? JSON.parse(s) : null; } catch { return null; } }
 
   // --- UI ---
   return (
