@@ -38,10 +38,7 @@ const AUTOSAVE_KEY = "dc-x01-autosave-v1";
 function loadAutosave(): X01Snapshot | null {
   try {
     const s = localStorage.getItem(AUTOSAVE_KEY);
-    if (s) {
-      // console.info("[AUTOSAVE] loaded");
-      return JSON.parse(s) as X01Snapshot;
-    }
+    if (s) return JSON.parse(s) as X01Snapshot;
   } catch {}
   return null;
 }
@@ -54,13 +51,11 @@ function saveAutosave(snap: X01Snapshot | null) {
     if (now - __lastAutosaveTs < 800) return; // throttle 0.8s
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(snap));
     __lastAutosaveTs = now;
-    // console.info("[AUTOSAVE] saved");
   } catch {}
 }
 function clearAutosave() {
   try {
     localStorage.removeItem(AUTOSAVE_KEY);
-    // console.info("[AUTOSAVE] cleared");
   } catch {}
 }
 
@@ -183,7 +178,7 @@ function renderLastVisitChipsFromLog(visitsLog: VisitLite[], pid: string) {
 ----------------------------------------------*/
 type StartParams = {
   playerIds: string[];
-  start: 301 | 501 | 701 | 901;
+  start: 301 | 501 | 701 | 901 | 1001;
   outMode?: Mode;
   inMode?: Mode;
   setsToWin?: number;
@@ -194,7 +189,7 @@ type StartParams = {
 };
 function readStartParams(
   propIds: string[] | undefined,
-  propStart: 301 | 501 | 701 | 901 | undefined,
+  propStart: 301 | 501 | 701 | 901 | 1001 | undefined,
   propOut: Mode | undefined,
   propIn: Mode | undefined,
   propSets?: number,
@@ -214,7 +209,7 @@ function readStartParams(
     (typeof window !== "undefined" && (window as any).__x01StartParams) || {};
   return {
     playerIds: fromParams.playerIds ?? fromGlobal.playerIds ?? fromProps.playerIds ?? [],
-    start: (fromParams.start ?? fromGlobal.start ?? fromProps.start ?? 501) as 301 | 501 | 701 | 901,
+    start: (fromParams.start ?? fromGlobal.start ?? fromProps.start ?? 501) as 301 | 501 | 701 | 901 | 1001,
     outMode: (fromParams.outMode ?? fromGlobal.outMode ?? fromProps.outMode ?? "double") as Mode,
     inMode: (fromParams.inMode ?? fromGlobal.inMode ?? fromProps.inMode ?? "simple") as Mode,
     setsToWin: fromParams.setsToWin ?? fromGlobal.setsToWin ?? fromProps.setsToWin ?? 1,
@@ -339,7 +334,7 @@ async function emitHistoryRecord_X01(args: {
 export default function X01Play(props: {
   profiles?: Profile[];
   playerIds?: string[];
-  start?: 301 | 501 | 701 | 901;
+  start?: 301 | 501 | 701 | 901 | 1001;
   outMode?: Mode;
   inMode?: Mode;
   onFinish: (m: MatchRecord) => void;
@@ -465,7 +460,7 @@ function X01Core({
 }: {
   profiles: Profile[];
   playerIds: string[];
-  start: 301 | 501 | 701 | 901;
+  start: 301 | 501 | 701 | 901 | 1001;
   outMode: Mode;
   inMode: Mode;
   setsToWin: number;
@@ -481,7 +476,7 @@ function X01Core({
     | { start: number; outMode?: Mode; inMode?: Mode; setsToWin?: number; legsPerSet?: number }
     | undefined;
 
-  const startFromResume = (resumeRules?.start ?? start) as 301 | 501 | 701 | 901;
+  const startFromResume = (resumeRules?.start ?? start) as 301 | 501 | 701 | 901 | 1001;
   const playerIdsFromResume =
     (resumeSnapshot?.players?.map((p: any) => p.id) as string[]) ?? playerIds;
   const outMFromResume = (resumeRules?.outMode as Mode | undefined) ?? outMode;
@@ -711,7 +706,7 @@ function X01Core({
     const d: UIDart = { v: n, mult: n === 0 ? 1 : multiplier };
     const next = [...currentThrow, d];
     playDartSfx(d, next);
-    try { (dartHit as any).currentTime = 0; (typeof safePlay === "function" ? safePlay(dartHit) : (dartHit as any).play?.()); } catch {}
+    try { (dartHit as any).currentTime = 0; (typeof (window as any).safePlay === "function" ? (window as any).safePlay(dartHit) : (dartHit as any).play?.()); } catch {}
     (navigator as any).vibrate?.(25);
     setCurrentThrow(next);
     setMultiplier(1);
@@ -721,7 +716,7 @@ function X01Core({
     const d: UIDart = { v: 25, mult: multiplier === 2 ? 2 : 1 };
     const next = [...currentThrow, d];
     playDartSfx(d, next);
-    try { (dartHit as any).currentTime = 0; (typeof safePlay === "function" ? safePlay(dartHit) : (dartHit as any).play?.()); } catch {}
+    try { (dartHit as any).currentTime = 0; (typeof (window as any).safePlay === "function" ? (window as any).safePlay(dartHit) : (dartHit as any).play?.()); } catch {}
     (navigator as any).vibrate?.(25);
     setCurrentThrow(next);
     setMultiplier(1);
@@ -791,7 +786,7 @@ function X01Core({
     setLastBustByPlayer((m) => ({ ...m, [currentPlayer.id]: !!willBust }));
 
     if (willBust) {
-      try { (bustSnd as any).currentTime = 0; (typeof safePlay === "function" ? safePlay(bustSnd) : (bustSnd as any).play?.()); } catch {}
+      try { (bustSnd as any).currentTime = 0; (typeof (window as any).safePlay === "function" ? (window as any).safePlay(bustSnd) : (bustSnd as any).play?.()); } catch {}
       (navigator as any).vibrate?.([120, 60, 140]);
     } else {
       const voice = voiceOn && "speechSynthesis" in window;
@@ -1232,7 +1227,6 @@ function X01Core({
 
   // ======= PERSIST (AUTOSAVE ajouté) =======
   function persistAfterThrow(_dartsJustThrown: UIDart[]) {
-    // (gardé pour compat mais non utilisé après PATCH #2)
     const rec: MatchRecord = makeX01RecordFromEngineCompat({
       engine: buildEngineLike(_dartsJustThrown, null),
       existingId: historyIdRef.current,
@@ -1250,7 +1244,6 @@ function X01Core({
     // @ts-ignore
     History.upsert(rec);
     historyIdRef.current = rec.id;
-    // match fini => ne pas relancer une reprise
     clearAutosave();
   }
 
@@ -1855,7 +1848,6 @@ async function safeSaveMatch({
     if (Object.keys(perPlayer || {}).length)
       await addMatchSummary({ winnerId: w, perPlayer });
     await History.list();
-    // console.info("[HIST:OK]", id);
   } catch (e) {
     console.warn("[HIST:FAIL]", e);
   }

@@ -195,10 +195,10 @@ export default function App() {
   } | null>(null);
 
   // -------- Navigation centralisée (avec params) --------
-  const go = React.useCallback((next: Tab, params?: any) => {
+  function go(next: Tab, params?: any) {
     setRouteParams(params ?? null);
     setTab(next);
-  }, []);
+  }
 
   /* ----------------------------------------
      Chargement initial depuis IndexedDB
@@ -236,21 +236,21 @@ export default function App() {
   /* ----------------------------------------
      Mutateur centralisé
   ---------------------------------------- */
-  const update = React.useCallback((mut: (s: Store) => Store) => {
+  function update(mut: (s: Store) => Store) {
     setStore((s) => {
       const next = mut({ ...s });
       queueMicrotask(() => saveStore(next));
       return next;
     });
-  }, []);
+  }
 
   // Helpers profils
-  const setProfiles = React.useCallback((fn: (p: Profile[]) => Profile[]) => {
+  function setProfiles(fn: (p: Profile[]) => Profile[]) {
     update((s) => ({ ...s, profiles: fn(s.profiles ?? []) }));
-  }, [update]);
+  }
 
   // Fin de partie → normalise, dédupe, persiste, route vers Historique
-  const pushHistory = React.useCallback((m: MatchRecord) => {
+  function pushHistory(m: MatchRecord) {
     const now = Date.now();
     const id =
       (m as any)?.id ||
@@ -292,38 +292,7 @@ export default function App() {
 
     // 3) route
     go("stats", { tab: "history" });
-  }, [go, update]);
-
-  // ======== PARAMS STABLES POUR X01Play (anti-remount) ========
-  const resumeIdMemo = routeParams?.resumeId as string | undefined;
-
-  const startParamsMemo = React.useMemo(() => {
-    const start = x01Config?.start ?? (store.settings.defaultX01 as 301 | 501 | 701 | 1001);
-    const outMode = (x01Config?.doubleOut ?? store.settings.doubleOut) ? "double" : "simple";
-    return {
-      playerIds: x01Config?.playerIds ?? [],
-      start: (start > 901 ? 901 : (start as 301 | 501 | 701 | 901)),
-      outMode,
-      inMode: "simple" as const,
-      setsToWin: 1,
-      legsPerSet: 1,
-      finishPolicy: "firstToZero" as const,
-      resume: null as any,
-    };
-    // join sur playerIds pour stabilité sans recréer l'objet à chaque render
-  }, [
-    (x01Config?.playerIds ?? []).join("-"),
-    x01Config?.start,
-    x01Config?.doubleOut,
-    store.settings.defaultX01,
-    store.settings.doubleOut,
-  ]);
-
-  const x01ParamsMemo = React.useMemo(
-    () => ({ resumeId: resumeIdMemo, startParams: startParamsMemo }),
-    [resumeIdMemo, startParamsMemo]
-  );
-  // =============================================================
+  }
 
   // --------------------------------------------
   // Routes
@@ -379,13 +348,72 @@ export default function App() {
       }
 
       case "statsDetail": {
-        page = (
-          <StatsDetailRoute
-            routeParams={routeParams}
-            store={store}
-            go={go}
-          />
-        );
+        // Charge proprement le record demandé
+        const [rec, setRec] = React.useState<any>(() => {
+          if (routeParams?.rec) return routeParams.rec;
+          const fromMem = (store.history || []).find((r: any) => r.id === routeParams?.matchId);
+          return fromMem || null;
+        });
+        const matchId: string | undefined = routeParams?.matchId;
+
+        React.useEffect(() => {
+          let alive = true;
+          (async () => {
+            if (!matchId) return;
+            try {
+              const byId = await (History as any)?.get?.(matchId);
+              if (alive && byId) setRec(byId);
+            } catch {}
+          })();
+          return () => { alive = false; };
+        }, [matchId]);
+
+        if (routeParams?.showEnd && rec) {
+          page = (
+            <X01End
+              go={go}
+              params={{
+                matchId: rec.id,
+                resumeId: rec.resumeId ?? rec.payload?.resumeId,
+                showEnd: true,
+              }}
+            />
+          );
+          break;
+        }
+
+        if (rec) {
+          const when = Number(rec.updatedAt ?? rec.createdAt ?? Date.now());
+          const dateStr = new Date(when).toLocaleString();
+          const toArr = (v: any) => (Array.isArray(v) ? v : []);
+          const players = toArr(rec.players?.length ? rec.players : rec.payload?.players);
+          const names = players.map((p: any) => p?.name ?? "—").join(" · ");
+          const winnerName = rec.winnerId
+            ? (players.find((p: any) => p?.id === rec.winnerId)?.name ?? "—")
+            : null;
+
+          page = (
+            <div style={{ padding: 16 }}>
+              <button onClick={() => go("stats", { tab: "history" })} style={{ marginBottom: 12 }}>
+                ← Retour
+              </button>
+              <h2 style={{ margin: 0 }}>
+                {(rec.kind || "MATCH").toUpperCase()} — {dateStr}
+              </h2>
+              <div style={{ opacity: 0.85, marginTop: 8 }}>Joueurs : {names || "—"}</div>
+              {winnerName && <div style={{ marginTop: 6 }}>Vainqueur : 🏆 {winnerName}</div>}
+            </div>
+          );
+        } else {
+          page = (
+            <div style={{ padding: 16 }}>
+              <button onClick={() => go("stats", { tab: "history" })} style={{ marginBottom: 12 }}>
+                ← Retour
+              </button>
+              {matchId ? "Chargement..." : "Aucune donnée"}
+            </div>
+          );
+        }
         break;
       }
 
@@ -410,7 +438,7 @@ export default function App() {
       }
 
       case "x01": {
-        if (!x01Config && !resumeIdMemo) {
+        if (!x01Config && !routeParams?.resumeId) {
           page = (
             <div className="container" style={{ padding: 16 }}>
               <button onClick={() => go("x01setup")}>← Retour</button>
@@ -418,18 +446,22 @@ export default function App() {
             </div>
           );
         } else {
+          // ✅ Compat X01Play: mappe doubleOut -> outMode, borne start si 1001
+          const rawStart = x01Config?.start ?? store.settings.defaultX01;
+          const startClamped: 301 | 501 | 701 | 901 =
+            rawStart >= 901 ? 901 : (rawStart as 301 | 501 | 701 | 901);
+          const outMode = (x01Config?.doubleOut ?? store.settings.doubleOut) ? "double" : "simple";
+
           page = (
             <X01Play
               profiles={store.profiles ?? []}
-              playerIds={startParamsMemo.playerIds}
-              start={startParamsMemo.start}
-              outMode={startParamsMemo.outMode}
-              inMode={startParamsMemo.inMode}
-              setsToWin={startParamsMemo.setsToWin}
-              legsPerSet={startParamsMemo.legsPerSet}
-              // ⬇️ objet stable (évite un remount et la perte du snapshot)
-              params={x01ParamsMemo}
-              onFinish={pushHistory}
+              playerIds={x01Config?.playerIds ?? []}
+              start={startClamped}
+              outMode={outMode}
+              inMode="simple"
+              // ⬇️ transporte { resumeId } pour la reprise
+              params={routeParams}
+              onFinish={(m) => pushHistory(m)}
               onExit={() => go("x01setup")}
             />
           );
@@ -491,84 +523,5 @@ export default function App() {
       {/* Bannière de mise à jour PWA */}
       <SWUpdateBanner />
     </>
-  );
-}
-
-/* ===========================================================
-   Composant de route pour StatsDetail (hooks autorisés ici)
-=========================================================== */
-function StatsDetailRoute({
-  routeParams,
-  store,
-  go,
-}: {
-  routeParams: any;
-  store: Store;
-  go: (t: Tab, p?: any) => void;
-}) {
-  const [rec, setRec] = React.useState<any>(() => {
-    if (routeParams?.rec) return routeParams.rec;
-    const fromMem = (store.history || []).find((r: any) => r.id === routeParams?.matchId);
-    return fromMem || null;
-  });
-
-  const matchId: string | undefined = routeParams?.matchId;
-
-  React.useEffect(() => {
-    let alive = true;
-    (async () => {
-      if (!matchId) return;
-      try {
-        const byId = await (History as any)?.get?.(matchId);
-        if (alive && byId) setRec(byId);
-      } catch {}
-    })();
-    return () => { alive = false; };
-  }, [matchId]);
-
-  if (routeParams?.showEnd && rec) {
-    return (
-      <X01End
-        go={go}
-        params={{
-          matchId: rec.id,
-          resumeId: rec.resumeId ?? rec.payload?.resumeId,
-          showEnd: true,
-        }}
-      />
-    );
-  }
-
-  if (rec) {
-    const when = Number(rec.updatedAt ?? rec.createdAt ?? Date.now());
-    const dateStr = new Date(when).toLocaleString();
-    const toArr = (v: any) => (Array.isArray(v) ? v : []);
-    const players = toArr(rec.players?.length ? rec.players : rec.payload?.players);
-    const names = players.map((p: any) => p?.name ?? "—").join(" · ");
-    const winnerName = rec.winnerId
-      ? (players.find((p: any) => p?.id === rec.winnerId)?.name ?? "—")
-      : null;
-
-    return (
-      <div style={{ padding: 16 }}>
-        <button onClick={() => go("stats", { tab: "history" })} style={{ marginBottom: 12 }}>
-          ← Retour
-        </button>
-        <h2 style={{ margin: 0 }}>
-          {(rec.kind || "MATCH").toUpperCase()} — {dateStr}
-        </h2>
-        <div style={{ opacity: 0.85, marginTop: 8 }}>Joueurs : {names || "—"}</div>
-        {winnerName && <div style={{ marginTop: 6 }}>Vainqueur : 🏆 {winnerName}</div>}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ padding: 16 }}>
-      <button onClick={() => go("stats", { tab: "history" })} style={{ marginBottom: 12 }}>
-        ← Retour
-      </button>
-      {matchId ? "Chargement..." : "Aucune donnée"}
-    </div>
   );
 }
