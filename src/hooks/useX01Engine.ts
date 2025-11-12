@@ -2,7 +2,7 @@
 // src/hooks/useX01Engine.ts
 // X01 engine wrapper: playTurn + safe BUST + CONTINUER + stats exclusives
 // + SKIP auto des joueurs terminés (score = 0)
-// + Reprise sûre depuis snapshot (hydrateFromSnapshot)
+// + Reprise sûre depuis snapshot (hydrateFromSnapshot) — priorité RESUME
 // + NEW: Règles de match Sets/Legs (victoire par Sets)
 //   - legs gagnés -> set gagné (reset legs + set++)
 //   - fin du match quand sets gagnés >= setsTarget
@@ -42,6 +42,26 @@ function toPlayersFromIds(
     .map((id) => map.get(id))
     .filter((p): p is Profile => !!p)
     .map((p) => ({ id: p.id, name: p.name || "Player" }));
+}
+
+// Si le snapshot contient ses propres joueurs, on respecte leur ordre + nom
+function toPlayersFromSnapshot(snap: X01Snapshot | any, profiles: Profile[]): Player[] | null {
+  try {
+    const snapPlayers = Array.isArray((snap as any)?.players) ? (snap as any).players : null;
+    if (!snapPlayers) return null;
+    return snapPlayers
+      .map((p: any) => {
+        const id = typeof p?.id === "string" ? p.id : null;
+        if (!id) return null;
+        const prof = profiles.find((x) => x.id === id);
+        // priorité au nom du snapshot, fallback profil
+        const name = (typeof p?.name === "string" && p.name) || prof?.name || "Player";
+        return { id, name } as Player;
+      })
+      .filter(Boolean) as Player[];
+  } catch {
+    return null;
+  }
 }
 
 function uiToGameDarts(throwUI: UIThrow): GameDart[] {
@@ -319,6 +339,26 @@ function ensureActiveIsAlive(state: any) {
 }
 
 /* ===== Hydratation depuis snapshot ===== */
+function readStartFromSnapRules(snap: X01Snapshot | any, fallback: number) {
+  const r = (snap as any)?.rules || {};
+  // accept "startScore" ou "start"
+  return typeof r.startScore === "number" ? r.startScore
+       : typeof r.start === "number" ? r.start
+       : fallback;
+}
+function readDoubleOutFromSnapRules(snap: X01Snapshot | any, fallback: boolean) {
+  const r = (snap as any)?.rules || {};
+  if (typeof r.doubleOut === "boolean") return r.doubleOut;
+  if (typeof r.outMode === "string") return r.outMode !== "simple";
+  return fallback;
+}
+function readDoubleInFromSnapRules(snap: X01Snapshot | any, fallback: boolean) {
+  const r = (snap as any)?.rules || {};
+  if (typeof r.doubleIn === "boolean") return r.doubleIn;
+  if (typeof r.inMode === "string") return r.inMode !== "simple";
+  return fallback;
+}
+
 function hydrateFromSnapshot(
   engine: any,
   snap: X01Snapshot,
@@ -327,21 +367,28 @@ function hydrateFromSnapshot(
 ) {
   let s = engine.initGame(players, rules);
   const ids = players.map((p) => p.id);
-  for (let i = 0; i < ids.length; i++) {
-    const pid = ids[i];
-    const score = snap.scores?.[i];
-    if (typeof score === "number" && s.table?.[pid]) s.table[pid].score = score;
+
+  // scores
+  if (Array.isArray((snap as any).scores)) {
+    for (let i = 0; i < ids.length; i++) {
+      const pid = ids[i];
+      const score = (snap as any).scores[i];
+      if (typeof score === "number" && s.table?.[pid]) s.table[pid].score = score;
+    }
   }
-  if (typeof snap.currentIndex === "number") {
-    s.currentPlayerIndex = Math.max(0, Math.min(ids.length - 1, snap.currentIndex));
+
+  // current index
+  if (typeof (snap as any).currentIndex === "number") {
+    s.currentPlayerIndex = Math.max(0, Math.min(ids.length - 1, (snap as any).currentIndex));
   }
-  if (Array.isArray(snap.dartsThisTurn)) {
-    s.turnIndex = 0;
-  }
+
+  // règles
   if (s.rules) {
-    (s.rules as any).startingScore = snap.rules?.startScore ?? rules.startingScore;
-    (s.rules as any).doubleOut = !!snap.rules?.doubleOut;
+    (s.rules as any).startingScore = readStartFromSnapRules(snap, rules.startingScore);
+    (s.rules as any).doubleOut = readDoubleOutFromSnapRules(snap, !!rules.doubleOut);
+    (s.rules as any).doubleIn  = readDoubleInFromSnapRules(snap, !!rules.doubleIn);
   }
+
   return s;
 }
 
@@ -404,42 +451,85 @@ export function useX01Engine(args: {
   const setsTarget = Math.max(1, Math.floor(setsToWin));
   const legsTarget = Math.max(1, Math.floor(legsPerSet));
 
+  // ⚠️ Si snapshot contient ses joueurs → priorité au snapshot (ordre + nom)
+  const playersFromSnap = React.useMemo(
+    () => (resume ? toPlayersFromSnapshot(resume, profiles) : null),
+    // dépend seulement de l'identité du resume et des profils (noms)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [resume, profiles]
+  );
+
   const players = React.useMemo(
-    () => toPlayersFromIds(profiles || [], playerIds),
-    [profiles, playerIds]
+    () => playersFromSnap ?? toPlayersFromIds(profiles || [], playerIds),
+    [playersFromSnap, profiles, playerIds]
   );
 
   // Le moteur “classique” comprend doubleOut/doubleIn
   const rules: MatchRules = React.useMemo(
     () => ({
       mode: "x01",
-      startingScore: start,
-      doubleOut: outMode !== "simple",   // master -> true (sortie requise)
-      doubleIn: inMode !== "simple",     // master -> true (entrée requise)
+      startingScore: resume ? readStartFromSnapRules(resume, start) : start,
+      doubleOut: resume ? readDoubleOutFromSnapRules(resume, outMode !== "simple") : (outMode !== "simple"),
+      doubleIn: resume ? readDoubleInFromSnapRules(resume, inMode !== "simple") : (inMode !== "simple"),
     }),
-    [start, inMode, outMode]
+    // ⚠️ tant que 'resume' ne change pas, on ne réécrit pas les règles
+    [resume, start, inMode, outMode]
   );
 
   const engine = React.useMemo(() => getEngine("x01"), []);
   const [startedAt] = React.useState<number>(() => Date.now());
 
-  // ====== ÉTAT ======
-  const [state, setState] = React.useState<any>(() => {
+  // ====== INIT KEY (seulement si vraies modifs) ======
+  const initKey = React.useMemo(() => {
+    if (resume) {
+      const r = resume as any;
+      const scores = Array.isArray(r?.scores) ? r.scores.join(",") : "noscores";
+      const pids = Array.isArray(r?.players) ? r.players.map((p: any) => p.id).join(",") : "noplayers";
+      const idx = typeof r?.currentIndex === "number" ? r.currentIndex : 0;
+      const rs = readStartFromSnapRules(resume, start);
+      const dout = readDoubleOutFromSnapRules(resume, outMode !== "simple") ? 1 : 0;
+      const din  = readDoubleInFromSnapRules(resume, inMode !== "simple") ? 1 : 0;
+      return `RESUME|${pids}|${scores}|i${idx}|s${rs}|do${dout}|di${din}|sets${setsTarget}|legs${legsTarget}|official${officialMatch ? 1 : 0}`;
+    }
+    const pids = (players || []).map((p) => p.id).join(",");
+    return `FRESH|${pids}|s${start}|in${inMode}|out${outMode}|sets${setsTarget}|legs${legsTarget}|official${officialMatch ? 1 : 0}`;
+  }, [resume, players, start, inMode, outMode, setsTarget, legsTarget, officialMatch]);
+
+  // ====== ÉTAT — INIT UNIQUEMENT À LA CRÉATION OU SI initKey CHANGE ======
+  const initialState = React.useMemo(() => {
     let s0: any;
-    if (resume && (resume as any)?.rules?.startScore !== undefined) {
-      s0 = hydrateFromSnapshot(engine, resume as X01Snapshot, players, rules);
+    if (resume && (resume as any)?.rules) {
+      const pl = playersFromSnap ?? players; // encore une fois priorité aux joueurs du snap
+      s0 = hydrateFromSnapshot(engine, resume as X01Snapshot, pl, rules);
     } else {
       s0 = engine.initGame(players, rules);
     }
+    if (officialMatch && s0) {
+      s0.currentPlayerIndex = 0; // sera ajusté après si nécessaire
+    }
     return ensureActiveIsAlive(s0);
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initKey]);
+
+  const [state, setState] = React.useState<any>(initialState);
+
+  React.useEffect(() => {
+    // Si l’initKey change (nouveau snapshot ou vraies règles différentes) → reinit
+    setState(initialState);
+  }, [initialState]);
 
   // index du starter de leg (pour officialMatch)
   const [legStarterIndex, setLegStarterIndex] = React.useState<number>(0);
   const legStarterRef = React.useRef<number>(0);
 
   // “Entrée” par joueur (utile si inMode != simple)
-  const [enteredBy, setEnteredBy] = React.useState<Record<string, boolean>>({});
+  const [enteredBy, setEnteredBy] = React.useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {};
+    for (const p of (state.players || []) as Player[]) {
+      init[p.id] = (rules as any)?.doubleIn ? false : true;
+    }
+    return init;
+  });
 
   const [lastBust, setLastBust] = React.useState<null | { reason: string }>(null);
   const [finishedOrder, setFinishedOrder] = React.useState<string[]>([]);
@@ -457,59 +547,48 @@ export function useX01Engine(args: {
   const [setsWon, setSetsWon] = React.useState<Record<string, number>>({});
   const [ruleWinnerId, setRuleWinnerId] = React.useState<string | null>(null);
 
-  // (re)init complet si paramètres changent
+  // (re)init complet si initKey change (pas sur chaque re-render)
   React.useEffect(() => {
-    let s0: any;
-    if (resume && (resume as any)?.rules?.startScore !== undefined) {
-      s0 = hydrateFromSnapshot(engine, resume as X01Snapshot, players, rules);
-    } else {
-      s0 = engine.initGame(players, rules);
-    }
-    if (officialMatch) {
-      s0.currentPlayerIndex = legStarterRef.current;
-    }
-    s0 = ensureActiveIsAlive(s0);
-    setState(s0);
+    // reset overlay/politiques
     setLastBust(null);
     setFinishedOrder([]);
     setPendingFirstWin(null);
     setLiveFinishPolicy(normalizePolicy(finishPolicy));
 
+    // reset sets/legs
     setCurrentSet(1);
     setCurrentLegInSet(1);
+
+    // reset compteurs joueurs
     const initLegs: Record<string, number> = {};
     const initSets: Record<string, number> = {};
     const initEntered: Record<string, boolean> = {};
-    for (const p of players || []) {
+    for (const p of (state.players || []) as Player[]) {
       initLegs[p.id] = 0;
       initSets[p.id] = 0;
-      initEntered[p.id] = inMode === "simple";
+      initEntered[p.id] = (rules as any)?.doubleIn ? false : true;
     }
     setLegsWon(initLegs);
     setSetsWon(initSets);
     setEnteredBy(initEntered);
     setRuleWinnerId(null);
-  }, [
-    players,
-    rules.startingScore,
-    rules.doubleOut,
-    rules.doubleIn,
-    finishPolicy,
-    resume,
-    setsTarget,
-    legsTarget,
-    inMode,
-    outMode,
-    officialMatch,
-  ]);
 
-  // keep entered map in sync when players array changes
+    // officialMatch: fix starter
+    if (officialMatch) {
+      const nb = (state.players?.length as number) || 1;
+      const nextStarter = legStarterRef.current % Math.max(1, nb);
+      setLegStarterIndex(nextStarter);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initKey]);
+
+  // keep entered map in sync when players array changes (sans reset global)
   React.useEffect(() => {
     const ids = (state.players || []).map((p: Player) => p.id);
     if (!ids.length) return;
     setEnteredBy((prev) => {
       const next: Record<string, boolean> = {};
-      ids.forEach((id) => { next[id] = prev[id] ?? (inMode === "simple"); });
+      ids.forEach((id) => { next[id] = prev[id] ?? ((rules as any)?.doubleIn ? false : true); });
       return next;
     });
     setLegsWon((prev) => {
@@ -522,7 +601,8 @@ export function useX01Engine(args: {
       ids.forEach((id) => { next[id] = prev[id] ?? 0; });
       return next;
     });
-  }, [state.players, inMode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.players]);
 
   // ---- helpers manche
   function buildLegResultLocal(s: any): LegResult {
@@ -581,7 +661,7 @@ export function useX01Engine(args: {
     setEnteredBy((prev) => {
       const next: Record<string, boolean> = {};
       for (const p of (state.players || []) as Player[]) {
-        next[p.id] = inMode === "simple" ? true : false;
+        next[p.id] = (rules as any)?.doubleIn ? false : true;
       }
       return next;
     });
@@ -718,7 +798,7 @@ export function useX01Engine(args: {
 
       const rebuiltEntered: Record<string, boolean> = {};
       for (const p of (prev.players || []) as Player[]) {
-        rebuiltEntered[p.id] = inMode === "simple";
+        rebuiltEntered[p.id] = (prev.rules?.doubleIn ? false : true);
       }
 
       for (const h of hist) {

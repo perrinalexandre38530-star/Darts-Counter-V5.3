@@ -1,7 +1,10 @@
 // ============================================
 // src/pages/X01Play.tsx
 // Wrapper (chargement snapshot) + X01Core (moteur & UI)
+// + AUTOSAVE (fallback localStorage si IDB vide/HS)
 // Corrige l’erreur React: "Rendered more hooks than during the previous render"
+// + PATCHS reprise: remount via key + persist après changement de joueur
+// + PATCHS A/B/C : autosave restore unique + listeners stables + throttling
 // ============================================
 
 import React from "react";
@@ -29,6 +32,37 @@ import type {
   FinishPolicy,
   X01Snapshot,
 } from "../lib/types";
+
+/* ==================== AUTOSAVE (backup local si IDB HS) ==================== */
+const AUTOSAVE_KEY = "dc-x01-autosave-v1";
+function loadAutosave(): X01Snapshot | null {
+  try {
+    const s = localStorage.getItem(AUTOSAVE_KEY);
+    if (s) {
+      // console.info("[AUTOSAVE] loaded");
+      return JSON.parse(s) as X01Snapshot;
+    }
+  } catch {}
+  return null;
+}
+// PATCH C — throttling
+let __lastAutosaveTs = 0;
+function saveAutosave(snap: X01Snapshot | null) {
+  try {
+    if (!snap) return;
+    const now = Date.now();
+    if (now - __lastAutosaveTs < 800) return; // throttle 0.8s
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(snap));
+    __lastAutosaveTs = now;
+    // console.info("[AUTOSAVE] saved");
+  } catch {}
+}
+function clearAutosave() {
+  try {
+    localStorage.removeItem(AUTOSAVE_KEY);
+    // console.info("[AUTOSAVE] cleared");
+  } catch {}
+}
 
 /* ===== Styles mini-cards & ranking (placés en haut pour éviter la TDZ) ===== */
 const miniCard: React.CSSProperties = {
@@ -219,7 +253,7 @@ function createAudio(urls: string[]) {
     const a = new Audio();
     const pick = urls.find((u) => {
       const ext = u.split(".").pop() || "";
-      const mime = ext === "mp3" ? "audio/mPEG" : ext === "ogg" ? "audio/ogg" : "";
+      const mime = ext === "mp3" ? "audio/mpeg" : ext === "ogg" ? "audio/ogg" : "";
       return !!a.canPlayType(mime);
     });
     if (pick) a.src = pick;
@@ -359,6 +393,32 @@ export default function X01Play(props: {
     return () => { alive = false; };
   }, [resumeId, merged.resume]);
 
+  // PATCH A — Boot AUTOSAVE: restore une seule fois, pas de spam / pas d'écriture ici
+  const restoredOnceRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!ready) return;
+    if (restoredOnceRef.current) return; // ne restore qu'une fois
+    if (resumeSnapshot) {
+      restoredOnceRef.current = true; // un snapshot est déjà présent (via props/History)
+      return;
+    }
+    const snap = loadAutosave();
+    if (snap) setResumeSnapshot(snap);
+    restoredOnceRef.current = true;
+  }, [ready, resumeSnapshot]);
+
+  // ====== KEY de remount pour reprise propre (PATCH #1)
+  const engineKey = React.useMemo(() => {
+    if (resumeSnapshot) {
+      const idx = (resumeSnapshot as any)?.currentIndex ?? 0;
+      const scores = Array.isArray((resumeSnapshot as any)?.scores)
+        ? (resumeSnapshot as any).scores.join("-")
+        : "noscores";
+      return `resume:${idx}:${scores}`;
+    }
+    return `fresh:${(merged.playerIds || []).join("-")}:${merged.start}`;
+  }, [resumeSnapshot, merged.playerIds, merged.start]);
+
   if (!ready) {
     return (
       <div style={{ padding: 16, maxWidth: CONTENT_MAX, margin: "40px auto", textAlign: "center" }}>
@@ -369,6 +429,7 @@ export default function X01Play(props: {
 
   return (
     <X01Core
+      key={engineKey} // <-- remount propre dès qu’on a un snapshot
       profiles={profiles}
       playerIds={merged.playerIds}
       start={merged.start}
@@ -432,9 +493,19 @@ function X01Core({
   const [lastLegResult, setLastLegResult] = React.useState<any | null>(null);
   const [overlayOpen, setOverlayOpen] = React.useState(false);
   const overlayClosedOnceRef = React.useRef(false);
+
+  // Ouvrir l’overlay une seule fois par leg (clé stable)
+  const lastLegKeyRef = React.useRef<string>("");
   React.useEffect(() => {
-    if (!lastLegResult || overlayClosedOnceRef.current) return;
-    setOverlayOpen(true);
+    if (!lastLegResult) return;
+    const key =
+      String((lastLegResult as any)?.finishedAt ?? "") +
+      "|" +
+      String((lastLegResult as any)?.legNo ?? "");
+    if (key && key !== lastLegKeyRef.current) {
+      lastLegKeyRef.current = key;
+      setOverlayOpen(true); // une seule ouverture pour cette clé
+    }
   }, [lastLegResult]);
 
   // ===== Log volées
@@ -455,8 +526,8 @@ function X01Core({
         p: visit.playerId,
         score: Number(visit.score || 0),
         remainingAfter: Number((visit as any).remainingAfter || 0),
-        isCheckout: visit.isCheckout,
         bust: !!visit.bust,
+        isCheckout: visit.isCheckout,
         segments: segs,
         ts: Date.now(),
       });
@@ -527,7 +598,14 @@ function X01Core({
       // 1) Construire leg + legacy (overlay)
       const { leg, legacy } = StatsBridge.makeLeg(visits as any, playersLite, res.winnerId ?? null);
       setLastLegResult({ ...legacy, winnerId: res.winnerId ?? null, __legStats: leg });
-      setOverlayOpen(true);
+
+      // Garde-fou de ré-entrée (StrictMode)
+      const guardReentryRef = (X01Core as any).__guardRef || ((X01Core as any).__guardRef = { current: false });
+      if (!guardReentryRef.current) {
+        guardReentryRef.current = true;
+        setOverlayOpen(true);
+        queueMicrotask(() => { guardReentryRef.current = false; });
+      }
 
       // 2) Mini-agrégats “lite”
       try {
@@ -604,6 +682,15 @@ function X01Core({
     return map;
   }, [profiles]);
 
+  // Map pour EndOfLegOverlay (hoisté hors JSX)
+  const playersByIdMemo = React.useMemo(() => {
+    const entries = ((state.players || []) as EnginePlayer[]).map((p) => {
+      const prof = profileById[p.id];
+      return [p.id, { id: p.id, name: p.name, avatarDataUrl: (prof as any)?.avatarDataUrl }];
+    });
+    return Object.fromEntries(entries);
+  }, [state.players, profileById]);
+
   // ----- Volée courante
   const [currentThrow, setCurrentThrow] = React.useState<UIDart[]>([]);
   const [multiplier, setMultiplier] = React.useState<1 | 2 | 3>(1);
@@ -624,7 +711,7 @@ function X01Core({
     const d: UIDart = { v: n, mult: n === 0 ? 1 : multiplier };
     const next = [...currentThrow, d];
     playDartSfx(d, next);
-    try { (dartHit as any).currentTime = 0; (dartHit as any).play?.(); } catch {}
+    try { (dartHit as any).currentTime = 0; (typeof safePlay === "function" ? safePlay(dartHit) : (dartHit as any).play?.()); } catch {}
     (navigator as any).vibrate?.(25);
     setCurrentThrow(next);
     setMultiplier(1);
@@ -634,13 +721,13 @@ function X01Core({
     const d: UIDart = { v: 25, mult: multiplier === 2 ? 2 : 1 };
     const next = [...currentThrow, d];
     playDartSfx(d, next);
-    try { (dartHit as any).currentTime = 0; (dartHit as any).play?.(); } catch {}
+    try { (dartHit as any).currentTime = 0; (typeof safePlay === "function" ? safePlay(dartHit) : (dartHit as any).play?.()); } catch {}
     (navigator as any).vibrate?.(25);
     setCurrentThrow(next);
     setMultiplier(1);
   }
 
-  // ----- Validation d’une volée
+  // ----- Validation d’une volée (moteur AVANT persistance + micro-tick)
   function validateThrow() {
     if (!currentThrow.length || !currentPlayer) return;
 
@@ -696,14 +783,15 @@ function X01Core({
       return { ...m, [currentPlayer.id]: add };
     });
 
-    persistAfterThrow(currentThrow);
+    // IMPORTANT : appliquer le lancer AU MOTEUR AVANT la persistance
     submitThrowUI(currentThrow);
 
+    // Effets audio/retour haptique + pastilles UI
     setLastByPlayer((m) => ({ ...m, [currentPlayer.id]: currentThrow }));
     setLastBustByPlayer((m) => ({ ...m, [currentPlayer.id]: !!willBust }));
 
     if (willBust) {
-      try { (bustSnd as any).currentTime = 0; (bustSnd as any).play?.()?.catch(() => {}); } catch {}
+      try { (bustSnd as any).currentTime = 0; (typeof safePlay === "function" ? safePlay(bustSnd) : (bustSnd as any).play?.()); } catch {}
       (navigator as any).vibrate?.([120, 60, 140]);
     } else {
       const voice = voiceOn && "speechSynthesis" in window;
@@ -714,8 +802,25 @@ function X01Core({
       }
     }
 
+    // Vider la volée entrée côté UI
     setCurrentThrow([]);
     setMultiplier(1);
+
+    // PERSISTENCE après changement de joueur (snapshot propre : dartsThisTurn = [])
+    queueMicrotask(() => {
+      try {
+        const rec: MatchRecord = makeX01RecordFromEngineCompat({
+          engine: buildEngineLike([], winner?.id ?? null),
+          existingId: historyIdRef.current,
+        });
+        // @ts-ignore
+        History.upsert(rec);
+        historyIdRef.current = rec.id;
+        saveAutosave((rec as any).payload.state as X01Snapshot);
+      } catch (e) {
+        console.warn("[validateThrow:persist-after] fail:", e);
+      }
+    });
   }
 
   function handleBackspace() { playSound("dart-hit"); setCurrentThrow((t) => t.slice(0, -1)); }
@@ -764,7 +869,7 @@ function X01Core({
     onFinish(rec);
   }, [pendingFinish, onFinish, winner?.id]);
 
-  // ===== Persist NOW avant de quitter
+  // ===== Persist NOW avant de quitter (→ AUTOSAVE intégré)
   function persistNowBeforeExit() {
     try {
       const rec: MatchRecord = makeX01RecordFromEngineCompat({
@@ -775,6 +880,12 @@ function X01Core({
       // @ts-ignore
       History.upsert(rec);
       historyIdRef.current = rec.id;
+      if (!winner?.id) {
+        // BACKUP local si la partie n'est PAS finie
+        saveAutosave((rec as any).payload.state as X01Snapshot);
+      } else {
+        clearAutosave();
+      }
     } catch (e) {
       console.warn("[persistNowBeforeExit] fail:", e);
     }
@@ -787,19 +898,26 @@ function X01Core({
       onExit();
     }
   }
+
+  // PATCH B — écouteurs stables (refs + deps [])
+  const latestPersistFnRef = React.useRef<() => void>(() => {});
+  latestPersistFnRef.current = persistNowBeforeExit;
   React.useEffect(() => {
     const onVis = () => {
-      if (document.visibilityState === "hidden") persistNowBeforeExit();
+      if (document.visibilityState === "hidden") {
+        try { latestPersistFnRef.current(); } catch {}
+      }
     };
-    const onBeforeUnload = () => { persistNowBeforeExit(); };
+    const onBeforeUnload = () => {
+      try { latestPersistFnRef.current(); } catch {}
+    };
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
-      try { persistNowBeforeExit(); } catch {}
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("beforeunload", onBeforeUnload);
     };
-  }, [currentThrow, winner?.id, scoresByPlayer]);
+  }, []); // attaché une seule fois
 
   if (!state.players?.length) {
     return (
@@ -999,7 +1117,7 @@ function X01Core({
     queueMicrotask(() => { overlayClosedOnceRef.current = false; });
   }
 
-  // ===== Fallback overlay si besoin
+  // ===== Fallback overlay si besoin (au cas où pas de legacy)
   React.useEffect(() => {
     if (overlayClosedOnceRef.current) return;
     if (!isOver) return;
@@ -1111,15 +1229,29 @@ function X01Core({
       players: playersArr, scores, currentIndex: idx >= 0 ? idx : 0, dartsThisTurn, winnerId: winnerId ?? null,
     };
   }
-  function persistAfterThrow(dartsJustThrown: UIDart[]) {
-    const rec: MatchRecord = makeX01RecordFromEngineCompat({ engine: buildEngineLike(dartsJustThrown, null), existingId: historyIdRef.current });
+
+  // ======= PERSIST (AUTOSAVE ajouté) =======
+  function persistAfterThrow(_dartsJustThrown: UIDart[]) {
+    // (gardé pour compat mais non utilisé après PATCH #2)
+    const rec: MatchRecord = makeX01RecordFromEngineCompat({
+      engine: buildEngineLike(_dartsJustThrown, null),
+      existingId: historyIdRef.current,
+    });
     // @ts-ignore
-    History.upsert(rec); historyIdRef.current = rec.id;
+    History.upsert(rec);
+    historyIdRef.current = rec.id;
+    saveAutosave((rec as any).payload.state as X01Snapshot);
   }
   function persistOnFinish() {
-    const rec: MatchRecord = makeX01RecordFromEngineCompat({ engine: buildEngineLike([], winner?.id ?? null), existingId: historyIdRef.current });
+    const rec: MatchRecord = makeX01RecordFromEngineCompat({
+      engine: buildEngineLike([], winner?.id ?? null),
+      existingId: historyIdRef.current,
+    });
     // @ts-ignore
-    History.upsert(rec); historyIdRef.current = rec.id;
+    History.upsert(rec);
+    historyIdRef.current = rec.id;
+    // match fini => ne pas relancer une reprise
+    clearAutosave();
   }
 
   /* ===== Mesure du header ===== */
@@ -1240,16 +1372,7 @@ function X01Core({
         <EndOfLegOverlay
           open={overlayOpen}
           result={lastLegResult as any}
-          playersById={React.useMemo(
-            () =>
-              Object.fromEntries(
-                ((state.players || []) as EnginePlayer[]).map((p) => {
-                  const prof = profileById[p.id];
-                  return [p.id, { id: p.id, name: p.name, avatarDataUrl: (prof as any)?.avatarDataUrl }];
-                })
-              ),
-            [state.players, profileById]
-          )}
+          playersById={playersByIdMemo}
           onClose={handleContinueFromRanking}
           onReplay={handleContinueFromRanking}
           onSave={(res) => {
@@ -1400,251 +1523,251 @@ function X01Core({
     );
   }
 
-/** Liste de joueurs — pastilles collées au nom (AVANT le score) */
-function PlayersListOnly(props: {
-  statePlayers: EnginePlayer[];
-  profileById: Record<string, Profile>;
-  dartsCount: Record<string, number>;
-  pointsSum: Record<string, number>;
-  start: number;
-  scoresByPlayer: Record<string, number>;
-  visitsLog: VisitLite[];
-}) {
-  const { statePlayers, profileById, dartsCount, pointsSum, start, scoresByPlayer, visitsLog } = props;
+  /** Liste de joueurs — pastilles collées au nom (AVANT le score) */
+  function PlayersListOnly(props: {
+    statePlayers: EnginePlayer[];
+    profileById: Record<string, Profile>;
+    dartsCount: Record<string, number>;
+    pointsSum: Record<string, number>;
+    start: number;
+    scoresByPlayer: Record<string, number>;
+    visitsLog: VisitLite[];
+  }) {
+    const { statePlayers, profileById, dartsCount, pointsSum, start, scoresByPlayer, visitsLog } = props;
 
-  return (
-    <div
-      style={{
-        background: "linear-gradient(180deg, rgba(15,15,18,.9), rgba(10,10,12,.85))",
-        border: "1px solid rgba(255,255,255,.08)",
-        borderRadius: 18,
-        padding: 10,
-        marginBottom: 10,
-        boxShadow: "0 10px 30px rgba(0,0,0,.35)",
-      }}
-    >
-      <div style={{ marginTop: 0, maxHeight: "100%", overflow: "visible" }}>
-        {statePlayers.map((p) => {
-          const prof = profileById[p.id];
-          const avatarSrc = (prof?.avatarDataUrl as string | null) ?? null;
-          const dCount = dartsCount[p.id] || 0;
-          const pSum = pointsSum[p.id] || 0;
-          const a3d = dCount > 0 ? ((pSum / dCount) * 3).toFixed(2) : "0.00";
-          const score = scoresByPlayer[p.id] ?? start;
-
-          return (
-            <div
-              key={p.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "8px 10px",
-                borderRadius: 12,
-                background: "linear-gradient(180deg, rgba(28,28,32,.65), rgba(18,18,20,.65))",
-                border: "1px solid rgba(255,255,255,.07)",
-                marginBottom: 6,
-              }}
-            >
-              {/* Avatar */}
-              <div
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: "50%",
-                  overflow: "hidden",
-                  background: "rgba(255,255,255,.06)",
-                  flex: "0 0 auto",
-                }}
-              >
-                {avatarSrc ? (
-                  <img src={avatarSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                ) : (
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#999",
-                      fontWeight: 700,
-                      fontSize: 12,
-                    }}
-                  >
-                    ?
-                  </div>
-                )}
-              </div>
-
-              {/* Bloc central : Nom + pastilles de volée + sous-ligne stats */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                {/* Ligne 1 : Nom + pastilles */}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    minWidth: 0,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div style={{ fontWeight: 800, color: "#ffcf57", whiteSpace: "nowrap" }}>{p.name}</div>
-
-                  {/* Pastilles de la dernière volée */}
-                  <div
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      flexWrap: "wrap",
-                      overflow: "hidden",
-                    }}
-                  >
-                    {renderLastVisitChipsFromLog(visitsLog, p.id)}
-                  </div>
-                </div>
-
-                {/* Ligne 2 : petites stats */}
-                <div style={{ fontSize: 11.5, color: "#cfd1d7", marginTop: 2 }}>
-                  Darts: {dCount} • Moy/3D: {a3d}
-                </div>
-              </div>
-
-              {/* Score à droite */}
-              <div
-                style={{
-                  fontWeight: 900,
-                  color: score === 0 ? "#7fe2a9" : "#ffcf57",
-                  marginLeft: 6,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {score}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function EndBanner({
-  winnerName,
-  continueAfterFirst,
-  openOverlay,
-  flushPendingFinish,
-  goldBtn,
-}: {
-  winnerName: string;
-  continueAfterFirst: () => void;
-  openOverlay: () => void;
-  flushPendingFinish: () => void;
-  goldBtn: React.CSSProperties;
-}) {
-  return (
-    <div
-      style={{
-        position: "fixed",
-        left: "50%",
-        transform: "translateX(-50%)",
-        bottom: NAV_HEIGHT + Math.round(KEYPAD_HEIGHT * KEYPAD_SCALE) + 80,
-        zIndex: 47,
-        background: "linear-gradient(180deg, #ffc63a, #ffaf00)",
-        color: "#1a1a1a",
-        fontWeight: 900,
-        textAlign: "center",
-        padding: 12,
-        borderRadius: 12,
-        boxShadow: "0 10px 28px rgba(0,0,0,.35)",
-        display: "flex",
-        gap: 12,
-        alignItems: "center",
-      }}
-    >
-      <span>Victoire : {winnerName}</span>
-      <button onClick={continueAfterFirst} style={goldBtn}>Continuer (laisser finir)</button>
-      <button onClick={openOverlay} style={goldBtn}>Classement</button>
-      <button onClick={flushPendingFinish} style={goldBtn}>Terminer</button>
-    </div>
-  );
-}
-
-/* ===== ContinueModal ===== */
-function ContinueModal({
-  endNow,
-  continueAfterFirst,
-}: {
-  endNow: () => void;
-  continueAfterFirst: () => void;
-}) {
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 99999,
-        background: "rgba(0,0,0,.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-      }}
-    >
+    return (
       <div
         style={{
-          width: "min(440px, 92%)",
-          borderRadius: 16,
-          padding: 16,
-          background:
-            "linear-gradient(180deg, rgba(20,20,24,.96), rgba(14,14,16,.98))",
-          border: "1px solid rgba(255,255,255,.12)",
-          boxShadow: "0 18px 40px rgba(0,0,0,.45)",
-          color: "#eee",
+          background: "linear-gradient(180deg, rgba(15,15,18,.9), rgba(10,10,12,.85))",
+          border: "1px solid rgba(255,255,255,.08)",
+          borderRadius: 18,
+          padding: 10,
+          marginBottom: 10,
+          boxShadow: "0 10px 30px rgba(0,0,0,.35)",
         }}
       >
-        <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>
-          Continuer la manche ?
-        </div>
-        <div style={{ opacity: 0.85, marginBottom: 14 }}>
-          Un joueur a fini. Tu veux laisser les autres terminer leur leg ou
-          arrêter maintenant ?
-        </div>
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <button
-            onClick={continueAfterFirst}
-            style={{
-              borderRadius: 10,
-              padding: "8px 12px",
-              border: "1px solid rgba(120,200,130,.35)",
-              background: "linear-gradient(180deg,#3cc86d,#2aa85a)",
-              color: "#101214",
-              fontWeight: 900,
-              cursor: "pointer",
-            }}
-          >
-            Continuer
-          </button>
-          <button
-            onClick={endNow}
-            style={{
-              borderRadius: 10,
-              padding: "8px 12px",
-              border: "1px solid rgba(255,180,0,.35)",
-              background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
-              color: "#101214",
-              fontWeight: 900,
-              cursor: "pointer",
-            }}
-          >
-            Terminer
-          </button>
+        <div style={{ marginTop: 0, maxHeight: "100%", overflow: "visible" }}>
+          {statePlayers.map((p) => {
+            const prof = profileById[p.id];
+            const avatarSrc = (prof?.avatarDataUrl as string | null) ?? null;
+            const dCount = dartsCount[p.id] || 0;
+            const pSum = pointsSum[p.id] || 0;
+            const a3d = dCount > 0 ? ((pSum / dCount) * 3).toFixed(2) : "0.00";
+            const score = scoresByPlayer[p.id] ?? start;
+
+            return (
+              <div
+                key={p.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "8px 10px",
+                  borderRadius: 12,
+                  background: "linear-gradient(180deg, rgba(28,28,32,.65), rgba(18,18,20,.65))",
+                  border: "1px solid rgba(255,255,255,.07)",
+                  marginBottom: 6,
+                }}
+              >
+                {/* Avatar */}
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: "50%",
+                    overflow: "hidden",
+                    background: "rgba(255,255,255,.06)",
+                    flex: "0 0 auto",
+                  }}
+                >
+                  {avatarSrc ? (
+                    <img src={avatarSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <div
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#999",
+                        fontWeight: 700,
+                        fontSize: 12,
+                      }}
+                    >
+                      ?
+                    </div>
+                  )}
+                </div>
+
+                {/* Bloc central : Nom + pastilles de volée + sous-ligne stats */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* Ligne 1 : Nom + pastilles */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      minWidth: 0,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, color: "#ffcf57", whiteSpace: "nowrap" }}>{p.name}</div>
+
+                    {/* Pastilles de la dernière volée */}
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        flexWrap: "wrap",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {renderLastVisitChipsFromLog(visitsLog, p.id)}
+                    </div>
+                  </div>
+
+                  {/* Ligne 2 : petites stats */}
+                  <div style={{ fontSize: 11.5, color: "#cfd1d7", marginTop: 2 }}>
+                    Darts: {dCount} • Moy/3D: {a3d}
+                  </div>
+                </div>
+
+                {/* Score à droite */}
+                <div
+                  style={{
+                    fontWeight: 900,
+                    color: score === 0 ? "#7fe2a9" : "#ffcf57",
+                    marginLeft: 6,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {score}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
+
+  function EndBanner({
+    winnerName,
+    continueAfterFirst,
+    openOverlay,
+    flushPendingFinish,
+    goldBtn,
+  }: {
+    winnerName: string;
+    continueAfterFirst: () => void;
+    openOverlay: () => void;
+    flushPendingFinish: () => void;
+    goldBtn: React.CSSProperties;
+  }) {
+    return (
+      <div
+        style={{
+          position: "fixed",
+          left: "50%",
+          transform: "translateX(-50%)",
+          bottom: NAV_HEIGHT + Math.round(KEYPAD_HEIGHT * KEYPAD_SCALE) + 80,
+          zIndex: 47,
+          background: "linear-gradient(180deg, #ffc63a, #ffaf00)",
+          color: "#1a1a1a",
+          fontWeight: 900,
+          textAlign: "center",
+          padding: 12,
+          borderRadius: 12,
+          boxShadow: "0 10px 28px rgba(0,0,0,.35)",
+          display: "flex",
+          gap: 12,
+          alignItems: "center",
+        }}
+      >
+        <span>Victoire : {winnerName}</span>
+        <button onClick={continueAfterFirst} style={goldBtn}>Continuer (laisser finir)</button>
+        <button onClick={openOverlay} style={goldBtn}>Classement</button>
+        <button onClick={flushPendingFinish} style={goldBtn}>Terminer</button>
+      </div>
+    );
+  }
+
+  /* ===== ContinueModal ===== */
+  function ContinueModal({
+    endNow,
+    continueAfterFirst,
+  }: {
+    endNow: () => void;
+    continueAfterFirst: () => void;
+  }) {
+    return (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 99999,
+          background: "rgba(0,0,0,.55)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 16,
+        }}
+      >
+        <div
+          style={{
+            width: "min(440px, 92%)",
+            borderRadius: 16,
+            padding: 16,
+            background:
+              "linear-gradient(180deg, rgba(20,20,24,.96), rgba(14,14,16,.98))",
+            border: "1px solid rgba(255,255,255,.12)",
+            boxShadow: "0 18px 40px rgba(0,0,0,.45)",
+            color: "#eee",
+          }}
+        >
+          <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>
+            Continuer la manche ?
+          </div>
+          <div style={{ opacity: 0.85, marginBottom: 14 }}>
+            Un joueur a fini. Tu veux laisser les autres terminer leur leg ou
+            arrêter maintenant ?
+          </div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <button
+              onClick={continueAfterFirst}
+              style={{
+                borderRadius: 10,
+                padding: "8px 12px",
+                border: "1px solid rgba(120,200,130,.35)",
+                background: "linear-gradient(180deg,#3cc86d,#2aa85a)",
+                color: "#101214",
+                fontWeight: 900,
+                cursor: "pointer",
+              }}
+            >
+              Continuer
+            </button>
+            <button
+              onClick={endNow}
+              style={{
+                borderRadius: 10,
+                padding: "8px 12px",
+                border: "1px solid rgba(255,180,0,.35)",
+                background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
+                color: "#101214",
+                fontWeight: 900,
+                cursor: "pointer",
+              }}
+            >
+              Terminer
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
 /* ===== Persist helpers ===== */
 function makeX01RecordFromEngineCompat(args: {
@@ -1732,7 +1855,7 @@ async function safeSaveMatch({
     if (Object.keys(perPlayer || {}).length)
       await addMatchSummary({ winnerId: w, perPlayer });
     await History.list();
-    console.info("[HIST:OK]", id);
+    // console.info("[HIST:OK]", id);
   } catch (e) {
     console.warn("[HIST:FAIL]", e);
   }
