@@ -1,6 +1,7 @@
 // ============================================
 // src/pages/StatsHub.tsx — Stats + Historique (safe)
 // Sélecteur de joueurs AU-DESSUS du dashboard dans un bloc dépliant
+// + Fix avatars : normalisation rec.players / rec.payload.players
 // ============================================
 import React from "react";
 import { History } from "../lib/history";
@@ -47,6 +48,33 @@ const toArr = <T,>(v: any): T[] => (Array.isArray(v) ? (v as T[]) : []);
 const toObj = <T,>(v: any): T => (v && typeof v === "object" ? (v as T) : ({} as T));
 const N = (x: any, d = 0) => (Number.isFinite(Number(x)) ? Number(x) : d);
 const fmtDate = (ts?: number) => new Date(N(ts, Date.now())).toLocaleString();
+
+/** Normalise les joueurs d’un record :
+ * - prend rec.players sinon rec.payload.players
+ * - injecte avatarDataUrl/name depuis le store si manquant
+ * - reflète aussi dans rec.payload.players pour les composants qui le lisent
+ */
+function normalizeRecordPlayers(rec: SavedMatch, storeProfiles: PlayerLite[]): SavedMatch {
+  const pick = (Array.isArray(rec.players) && rec.players!.length
+    ? rec.players!
+    : toArr<PlayerLite>(rec.payload?.players)) as PlayerLite[];
+
+  const withAvatars = pick.map((p) => {
+    const prof = storeProfiles.find((sp) => sp.id === p?.id);
+    return {
+      id: p?.id,
+      name: p?.name ?? prof?.name ?? "",
+      avatarDataUrl: p?.avatarDataUrl ?? prof?.avatarDataUrl ?? null,
+    } as PlayerLite;
+  });
+
+  // retourne un nouvel objet pour ne rien muter
+  return {
+    ...rec,
+    players: withAvatars,
+    payload: { ...(rec.payload ?? {}), players: withAvatars },
+  };
+}
 
 /* ---------- Hooks ---------- */
 function useHistoryAPI(): SavedMatch[] {
@@ -124,22 +152,20 @@ function buildDashboardForPlayer(
 
   for (const r of records) {
     // Matchs où le joueur a participé
-    const inMatch = toArr<PlayerLite>(r.players).some(p => p?.id === pid);
+    const inMatch = toArr<PlayerLite>(r.players).some((p) => p?.id === pid);
     if (!inMatch) continue;
 
     fbMatches++;
 
     const ss: any = r.summary ?? r.payload?.summary ?? {};
     const per: any[] =
-      // formats possibles
       ss.perPlayer ??
       ss.players ??
       r.payload?.summary?.perPlayer ??
       [];
 
-    // Cherche la ligne du joueur
     const pstat =
-      per.find(x => x?.playerId === pid) ??
+      per.find((x) => x?.playerId === pid) ??
       (ss[pid] || ss.players?.[pid] || ss.perPlayer?.[pid]) ??
       {};
 
@@ -162,53 +188,49 @@ function buildDashboardForPlayer(
 
     if (r.winnerId && r.winnerId === pid) fbWins++;
 
-    // Buckets (essaie summary → sinon reconstruit vite depuis payload/legs/perPlayer)
-    const buckets =
-      ss.buckets?.[pid] ??
-      pstat.buckets ??
-      null;
+    // Buckets
+    const buckets = ss.buckets?.[pid] ?? pstat.buckets ?? null;
 
     if (buckets) {
       fbBuckets["0-59"] += N(buckets["0-59"]);
       fbBuckets["60-99"] += N(buckets["60-99"]);
       fbBuckets["100+"] += N(buckets["100+"]);
       fbBuckets["140+"] += N(buckets["140+"]);
-      fbBuckets["180"]  += N(buckets["180"]);
+      fbBuckets["180"] += N(buckets["180"]);
     } else if (Array.isArray(r.payload?.legs)) {
-      // mini reconstruction par visite maximale (approx sûre)
       for (const leg of r.payload.legs as any[]) {
-        const pp = toArr<any>(leg.perPlayer).find(x => x.playerId === pid);
+        const pp = toArr<any>(leg.perPlayer).find((x) => x.playerId === pid);
         const v = N(pp?.bestVisit);
         if (v >= 180) fbBuckets["180"]++;
         else if (v >= 140) fbBuckets["140+"]++;
         else if (v >= 100) fbBuckets["100+"]++;
-        else if (v >= 60)  fbBuckets["60-99"]++;
-        else if (v > 0)    fbBuckets["0-59"]++;
+        else if (v >= 60) fbBuckets["60-99"]++;
+        else if (v > 0) fbBuckets["0-59"]++;
       }
     }
   }
 
-  // Evolution triée
   byDate.sort((a, b) => a.t - b.t);
   for (const it of byDate.slice(-20)) {
     evo.push({ date: new Date(it.t).toLocaleDateString(), avg3: it.a3 });
   }
 
   const fbAvg3Mean = fbMatches > 0 ? +(fbAvg3 / fbMatches).toFixed(2) : 0;
-  const fbWinPct   = fbMatches > 0 ? Math.round((fbWins / fbMatches) * 1000) / 10 : 0;
+  const fbWinPct = fbMatches > 0 ? Math.round((fbWins / fbMatches) * 1000) / 10 : 0;
 
-  // ---- Compose QUICK + FALLBACK ----
-  const avg3Overall   = quick?.avg3 ?? fbAvg3Mean;
-  const bestVisit     = quick?.bestVisit ?? fbBestVisit;
-  const bestCheckout  = quick?.bestCheckout ?? (fbBestCO || undefined);
-  const winRatePct    = Number.isFinite(quick?.winRatePct as any) ? (quick!.winRatePct) : fbWinPct;
-  const distribution  = quick?.buckets ? {
-    "0-59": N(quick.buckets["0-59"]),
-    "60-99": N(quick.buckets["60-99"]),
-    "100+": N(quick.buckets["100+"]),
-    "140+": N(quick.buckets["140+"]),
-    "180":  N(quick.buckets["180"]),
-  } : fbBuckets;
+  const avg3Overall = quick?.avg3 ?? fbAvg3Mean;
+  const bestVisit = quick?.bestVisit ?? fbBestVisit;
+  const bestCheckout = quick?.bestCheckout ?? (fbBestCO || undefined);
+  const winRatePct = Number.isFinite(quick?.winRatePct as any) ? quick!.winRatePct : fbWinPct;
+  const distribution = quick?.buckets
+    ? {
+        "0-59": N(quick.buckets["0-59"]),
+        "60-99": N(quick.buckets["60-99"]),
+        "100+": N(quick.buckets["100+"]),
+        "140+": N(quick.buckets["140+"]),
+        "180": N(quick.buckets["180"]),
+      }
+    : fbBuckets;
 
   const evolution = evo.length ? evo : [{ date: new Date().toLocaleDateString(), avg3: avg3Overall }];
 
@@ -223,7 +245,6 @@ function buildDashboardForPlayer(
     distribution,
   };
 }
-
 
 /* ---------- Styles cartes/verre ---------- */
 const card: React.CSSProperties = {
@@ -248,6 +269,19 @@ export default function StatsHub(props: Props) {
   const initialTab: "history" | "stats" = props.tab === "stats" ? "stats" : "history";
   const [tab, setTab] = React.useState<"history" | "stats">(initialTab);
 
+  // 0) Récupère les profils (pour enrichir avatars si manquants)
+  const [storeProfiles, setStoreProfiles] = React.useState<PlayerLite[]>([]);
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const s: any = await loadStore<any>();
+        setStoreProfiles(toArr<PlayerLite>(s?.profiles));
+      } catch {
+        setStoreProfiles([]);
+      }
+    })();
+  }, []);
+
   // 1) Sources d'historique
   const persisted = useHistoryAPI();
   const mem = toArr<SavedMatch>(props.memHistory);
@@ -267,10 +301,12 @@ export default function StatsHub(props: Props) {
     persisted.forEach(push);
     mem.forEach(push);
     fromStore.forEach(push);
-    return Array.from(byId.values()).sort(
-      (a, b) => N(b.updatedAt ?? b.createdAt, 0) - N(a.updatedAt ?? a.createdAt, 0)
-    );
-  }, [persisted, mem, fromStore]);
+
+    // 2bis) Normalise les joueurs + avatars pour TOUS les records
+    return Array.from(byId.values())
+      .map((r) => normalizeRecordPlayers(r, storeProfiles))
+      .sort((a, b) => N(b.updatedAt ?? b.createdAt, 0) - N(a.updatedAt ?? a.createdAt, 0));
+  }, [persisted, mem, fromStore, storeProfiles]);
 
   // 3) Liste des joueurs rencontrés dans l'historique
   const players = React.useMemo<PlayerLite[]>(() => {
@@ -318,7 +354,7 @@ export default function StatsHub(props: Props) {
       </div>
 
       {tab === "history" ? (
-        // Page Historique (réutilise la fusion d’enregistrements)
+        // Page Historique (records déjà normalisés avec avatars)
         <HistoryPage store={{ history: records } as any} go={go} />
       ) : (
         <>

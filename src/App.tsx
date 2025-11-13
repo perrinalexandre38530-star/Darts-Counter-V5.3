@@ -1,5 +1,6 @@
 // ============================================
 // src/App.tsx — Navigation + wiring propre (v5 sécurisé)
+// Fix: "Lancer partie" n'affiche plus la dernière reprise
 // ============================================
 import React from "react";
 import BottomNav from "./components/BottomNav";
@@ -38,6 +39,28 @@ import { History } from "./lib/history";
 // DEV uniquement
 import { installHistoryProbe } from "./dev/devHistoryProbe";
 if (import.meta.env.DEV) installHistoryProbe();
+
+/* -- Helper UI : complète les joueurs d’un record avec l’avatar depuis le store -- */
+function withAvatars(rec: any, profiles: any[]) {
+  const get = (arr: any[]) =>
+    (arr || []).map((p: any) => {
+      const prof = profiles.find((pr) => pr.id === p?.id);
+      return {
+        id: p?.id,
+        name: p?.name ?? prof?.name ?? "",
+        avatarDataUrl: p?.avatarDataUrl ?? prof?.avatarDataUrl ?? null,
+      };
+    });
+
+  const players = rec?.players?.length ? rec.players : rec?.payload?.players || [];
+  const filled = get(players);
+
+  return {
+    ...rec,
+    players: filled,
+    payload: { ...(rec?.payload || {}), players: filled },
+  };
+}
 
 // --------------------------------------------
 type Tab =
@@ -257,10 +280,21 @@ export default function App() {
       (m as any)?.matchId ||
       `x01-${now}-${Math.random().toString(36).slice(2, 8)}`;
 
-    const players =
+    // 1) source joueurs (plusieurs formats possibles)
+    const rawPlayers =
       (m as any)?.players ??
       (m as any)?.payload?.players ??
       [];
+
+    // 2) enrichir avec l’avatar depuis le store si manquant
+    const players = (rawPlayers as any[]).map((p: any) => {
+      const prof = (store.profiles || []).find((pr) => pr.id === p?.id);
+      return {
+        id: p?.id,
+        name: p?.name ?? prof?.name ?? "",
+        avatarDataUrl: p?.avatarDataUrl ?? (prof?.avatarDataUrl ?? null),
+      };
+    });
 
     const summary =
       (m as any)?.summary ??
@@ -271,15 +305,16 @@ export default function App() {
       id,
       kind: (m as any)?.kind || "x01",
       status: (m as any)?.status || "finished",
-      players,
+      players, // <-- avatars garantis
       winnerId: (m as any)?.winnerId || (m as any)?.payload?.winnerId || null,
       createdAt: (m as any)?.createdAt || now,
       updatedAt: now,
       summary,
-      payload: m,
+      // on injecte aussi les players enrichis dans le payload pour l’UI
+      payload: { ...(m as any), players },
     };
 
-    // 1) mémoire (dédupe sur id)
+    // 3) mémoire (dédupe sur id)
     update((s) => {
       const list = [...(s.history ?? [])];
       const i = list.findIndex((r: any) => r.id === saved.id);
@@ -287,12 +322,18 @@ export default function App() {
       return { ...s, history: list };
     });
 
-    // 2) persistant (best effort)
+    // 4) persistant (best effort)
     try { (History as any)?.upsert?.(saved); } catch (e) { console.warn("[App] History.upsert failed:", e); }
 
-    // 3) route
+    // 5) route
     go("stats", { tab: "history" });
   }
+
+  // Historique enrichi pour l'UI (avatars garantis même pour autosave)
+  const historyForUI = React.useMemo(
+    () => (store.history || []).map((r: any) => withAvatars(r, store.profiles || [])),
+    [store.history, store.profiles]
+  );
 
   // --------------------------------------------
   // Routes
@@ -341,7 +382,7 @@ export default function App() {
           <StatsHub
             go={go}
             tab={(routeParams?.tab as any) ?? "history"}
-            memHistory={store.history ?? []}
+            memHistory={historyForUI}  // <-- avatars toujours présents
           />
         );
         break;
@@ -350,9 +391,9 @@ export default function App() {
       case "statsDetail": {
         // Charge proprement le record demandé
         const [rec, setRec] = React.useState<any>(() => {
-          if (routeParams?.rec) return routeParams.rec;
+          if (routeParams?.rec) return withAvatars(routeParams.rec, store.profiles || []);
           const fromMem = (store.history || []).find((r: any) => r.id === routeParams?.matchId);
-          return fromMem || null;
+          return fromMem ? withAvatars(fromMem, store.profiles || []) : null;
         });
         const matchId: string | undefined = routeParams?.matchId;
 
@@ -362,11 +403,11 @@ export default function App() {
             if (!matchId) return;
             try {
               const byId = await (History as any)?.get?.(matchId);
-              if (alive && byId) setRec(byId);
+              if (alive && byId) setRec(withAvatars(byId, store.profiles || []));
             } catch {}
           })();
           return () => { alive = false; };
-        }, [matchId]);
+        }, [matchId, store.profiles]);
 
         if (routeParams?.showEnd && rec) {
           page = (
@@ -427,9 +468,10 @@ export default function App() {
               doubleOut: store.settings.doubleOut,
             }}
             onStart={(ids, start, doubleOut) => {
+              // ⚠️ NOUVELLE PARTIE → purge toute reprise + remount forcé
               const players = store.settings.randomOrder ? ids.slice().sort(() => Math.random() - 0.5) : ids;
               setX01Config({ playerIds: players, start, doubleOut });
-              go("x01");
+              go("x01", { resumeId: null, fresh: Date.now() });
             }}
             onBack={() => go("games")}
           />
@@ -438,7 +480,9 @@ export default function App() {
       }
 
       case "x01": {
-        if (!x01Config && !routeParams?.resumeId) {
+        const isResume = !!routeParams?.resumeId;
+
+        if (!x01Config && !isResume) {
           page = (
             <div className="container" style={{ padding: 16 }}>
               <button onClick={() => go("x01setup")}>← Retour</button>
@@ -452,15 +496,23 @@ export default function App() {
             rawStart >= 901 ? 901 : (rawStart as 301 | 501 | 701 | 901);
           const outMode = (x01Config?.doubleOut ?? store.settings.doubleOut) ? "double" : "simple";
 
+          // 🔑 Remount garanti:
+          // - reprise: key = resume-<id>
+          // - nouvelle partie: key = fresh-<timestamp>
+          const key = isResume
+            ? `resume-${routeParams.resumeId}`
+            : `fresh-${routeParams?.fresh ?? (x01Config?.playerIds || []).join("-")}`;
+
           page = (
             <X01Play
+              key={key}
               profiles={store.profiles ?? []}
               playerIds={x01Config?.playerIds ?? []}
               start={startClamped}
               outMode={outMode}
               inMode="simple"
-              // ⬇️ transporte { resumeId } pour la reprise
-              params={routeParams}
+              // ⬇️ on ne transmet params QUE pour une reprise
+              params={isResume ? ({ resumeId: routeParams.resumeId } as any) : (undefined as any)}
               onFinish={(m) => pushHistory(m)}
               onExit={() => go("x01setup")}
             />
@@ -498,10 +550,7 @@ export default function App() {
             <button onClick={() => go("profiles")} style={{ marginBottom: 12 }}>
               ← Retour
             </button>
-            <AvatarCreator
-              size={512}
-              overlaySrc="/assets/medallion.svg"
-            />
+            <AvatarCreator size={512} overlaySrc="/assets/medallion.svg" />
           </div>
         );
         break;
