@@ -284,7 +284,8 @@ function computeLegAggFromHistory(state: any) {
     if (bust) after = before;
     else if (after === 0) {
       checkoutDartsByPlayer[pid].push(arr.length);
-      bestCheckout[pid] = Math.max(bestCheckout[pid] ?? 0, volSum);
+      const prevCo = bestCheckout[pid] ?? 0;
+      bestCheckout[pid] = Math.max(prevCo, volSum);
     }
     runningScores[pid] = after;
   }
@@ -448,8 +449,18 @@ export function useX01Engine(args: {
 
   const officialMatch = officialMatchProp ?? lsOfficialMatch(false);
 
-  const setsTarget = Math.max(1, Math.floor(setsToWin));
-  const legsTarget = Math.max(1, Math.floor(legsPerSet));
+  // ============================
+  // BEST OF (mode tennis)
+  // - setsToWin = nb total de sets configurés : 1,3,5,7,9,11,13
+  //   -> setsTarget = nb de sets À GAGNER = (total+1)/2
+  // - legsPerSet = nb total de manches par set : 1,3,5,7,...
+  //   -> legsTarget = nb de manches À GAGNER = (total+1)/2
+  // ============================
+  const setsConfig = Math.max(1, Math.floor(setsToWin));
+  const legsConfig = Math.max(1, Math.floor(legsPerSet));
+
+  const setsTarget = Math.max(1, Math.floor((setsConfig + 1) / 2));
+  const legsTarget = Math.max(1, Math.floor((legsConfig + 1) / 2));
 
   // ⚠️ Si snapshot contient ses joueurs → priorité au snapshot (ordre + nom)
   const playersFromSnap = React.useMemo(
@@ -658,7 +669,7 @@ export function useX01Engine(args: {
     setLiveFinishPolicy(normalizePolicy(finishPolicy));
     setLastBust(null);
 
-    setEnteredBy((prev) => {
+    setEnteredBy(() => {
       const next: Record<string, boolean> = {};
       for (const p of (state.players || []) as Player[]) {
         next[p.id] = (rules as any)?.doubleIn ? false : true;
@@ -667,9 +678,10 @@ export function useX01Engine(args: {
     });
   }
 
-  // NEW — règle Sets/Legs
+  // NEW — règle Sets/Legs (version simple, 1 appel = 1 leg)
   function applySetLegRule(winnerId: string | null) {
     if (!winnerId) {
+      // leg nul (personne n'a fini) → on avance juste le compteur de leg
       setCurrentLegInSet((x) => x + 1);
       return;
     }
@@ -681,17 +693,21 @@ export function useX01Engine(args: {
         setSetsWon((prevSets) => {
           const ns = { ...prevSets, [winnerId]: (prevSets[winnerId] || 0) + 1 };
 
+          // reset legs de tout le monde
           const resetLegs: Record<string, number> = {};
           Object.keys(next).forEach((id) => { resetLegs[id] = 0; });
           setLegsWon(resetLegs);
 
+          // nouveau set, leg = 1
           setCurrentSet((s) => s + 1);
           setCurrentLegInSet(1);
 
+          // match gagné ?
           if (ns[winnerId] >= setsTarget) setRuleWinnerId(winnerId);
           return ns;
         });
       } else {
+        // même set, leg suivant
         setCurrentLegInSet((x) => x + 1);
       }
       return next;
@@ -757,10 +773,12 @@ export function useX01Engine(args: {
 
           if (justFinished) {
             if (finishedOrder.length === 0 && liveFinishPolicy === "firstToZero") {
+              // 1er joueur terminé → on attend la décision de l'utilisateur
               setPendingFirstWin({ playerId: pid2 });
               return s2;
             }
 
+            // sinon, on ajoute au classement
             setFinishedOrder((arr) => (arr.includes(pid2) ? arr : [...arr, pid2]));
 
             if (liveFinishPolicy === "continueToPenultimate") {
@@ -803,10 +821,9 @@ export function useX01Engine(args: {
 
       for (const h of hist) {
         const pid: string = h.playerId;
-        const beforeEntered = rebuiltEntered[pid];
         const ui: UIThrow = (h.darts || []).map(gameToUIDart);
         const mapped: UIThrow = [];
-        let entered = beforeEntered;
+        let entered = rebuiltEntered[pid];
         for (const d of ui) {
           if (!entered) {
             if (qualifiesEntry(d, inMode)) {
@@ -818,7 +835,7 @@ export function useX01Engine(args: {
           } else mapped.push(d);
         }
         replay = engine.playTurn(replay, uiToGameDarts(mapped));
-        if (!beforeEntered && entered) rebuiltEntered[pid] = true;
+        if (!rebuiltEntered[pid] && entered) rebuiltEntered[pid] = true;
       }
       replay = ensureActiveIsAlive(replay);
       setEnteredBy(rebuiltEntered);
@@ -891,11 +908,15 @@ export function useX01Engine(args: {
     // Sets/Legs pour l'UI
     currentSet,
     currentLegInSet,
-    setsTarget,
-    legsTarget,
+    setsTarget,   // nb de sets à gagner
+    legsTarget,   // nb de legs à gagner dans un set
     setsWon,
     legsWon,
     ruleWinnerId,
+
+    // config brute (1,3,5,7...) au cas où
+    _setsConfig: setsConfig,
+    _legsConfig: legsConfig,
 
     // info entrée (optionnel si tu veux afficher un indicateur)
     _enteredBy: enteredBy,
