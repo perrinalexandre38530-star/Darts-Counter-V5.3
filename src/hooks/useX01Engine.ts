@@ -45,9 +45,14 @@ function toPlayersFromIds(
 }
 
 // Si le snapshot contient ses propres joueurs, on respecte leur ordre + nom
-function toPlayersFromSnapshot(snap: X01Snapshot | any, profiles: Profile[]): Player[] | null {
+function toPlayersFromSnapshot(
+  snap: X01Snapshot | any,
+  profiles: Profile[]
+): Player[] | null {
   try {
-    const snapPlayers = Array.isArray((snap as any)?.players) ? (snap as any).players : null;
+    const snapPlayers = Array.isArray((snap as any)?.players)
+      ? (snap as any).players
+      : null;
     if (!snapPlayers) return null;
     return snapPlayers
       .map((p: any) => {
@@ -55,7 +60,8 @@ function toPlayersFromSnapshot(snap: X01Snapshot | any, profiles: Profile[]): Pl
         if (!id) return null;
         const prof = profiles.find((x) => x.id === id);
         // priorité au nom du snapshot, fallback profil
-        const name = (typeof p?.name === "string" && p.name) || prof?.name || "Player";
+        const name =
+          (typeof p?.name === "string" && p.name) || prof?.name || "Player";
         return { id, name } as Player;
       })
       .filter(Boolean) as Player[];
@@ -82,14 +88,20 @@ function gameToUIDart(d: GameDart): UIDart {
   return { v: d.number ?? 0, mult };
 }
 function makeId() {
-  return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+  return (
+    Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8)
+  );
 }
 
 /* -------- record builder (fin de partie "moteur") -------- */
-function buildMatchRecordX01(params: { state: any; startedAt: number }): MatchRecord {
+function buildMatchRecordX01(params: {
+  state: any;
+  startedAt: number;
+}): MatchRecord {
   const { state, startedAt } = params;
   const players: Player[] = state.players || [];
-  const perTurn: Array<{ playerId: string; darts: GameDart[] }> = state.history || [];
+  const perTurn: Array<{ playerId: string; darts: GameDart[] }> =
+    state.history || [];
 
   const rounds: Array<UIThrow[]> = [];
   let currentRound: Record<string, UIThrow> = {};
@@ -155,11 +167,21 @@ function wouldBustWithEntry(
   inMode: Mode,
   outMode: Mode,
   enteredNow: boolean
-): { bust: boolean; reason: "over" | "oneLeft" | "needFinish" | null; mappedThrow: UIThrow; willEnter: boolean } {
+): {
+  bust: boolean;
+  reason: "over" | "oneLeft" | "needFinish" | null;
+  mappedThrow: UIThrow;
+  willEnter: boolean;
+} {
   const idx = state.currentPlayerIndex ?? 0;
   const players: Player[] = state.players || [];
   if (!players.length || idx < 0 || idx >= players.length) {
-    return { bust: false, reason: null, mappedThrow: dartsUI || [], willEnter: false };
+    return {
+      bust: false,
+      reason: null,
+      mappedThrow: dartsUI || [],
+      willEnter: false,
+    };
   }
   const p = players[idx];
   const remaining = state.table?.[p.id]?.score ?? 0;
@@ -167,7 +189,7 @@ function wouldBustWithEntry(
   let mapped: UIThrow = [];
   let entered = enteredNow || inMode === "simple";
   let willEnter = false;
-  for (const d of (dartsUI || [])) {
+  for (const d of dartsUI || []) {
     if (!entered) {
       if (qualifiesEntry(d, inMode)) {
         entered = true;
@@ -185,12 +207,19 @@ function wouldBustWithEntry(
   const after = remaining - sum;
   const outRequired = outMode !== "simple";
 
-  if (after < 0) return { bust: true, reason: "over", mappedThrow: mapped, willEnter };
-  if (outRequired && after === 1) return { bust: true, reason: "oneLeft", mappedThrow: mapped, willEnter };
+  if (after < 0)
+    return { bust: true, reason: "over", mappedThrow: mapped, willEnter };
+  if (outRequired && after === 1)
+    return { bust: true, reason: "oneLeft", mappedThrow: mapped, willEnter };
   if (after === 0 && outRequired) {
     const last = mapped.slice().reverse().find(Boolean);
     if (!qualifiesFinish(last, outMode)) {
-      return { bust: true, reason: "needFinish", mappedThrow: mapped, willEnter };
+      return {
+        bust: true,
+        reason: "needFinish",
+        mappedThrow: mapped,
+        willEnter,
+      };
     }
   }
   return { bust: false, reason: null, mappedThrow: mapped, willEnter };
@@ -201,7 +230,8 @@ type HitsBySector = Record<string, number>; // S20/D20/T20... S1/D1/T1, OB/IB/MI
 
 function computeLegAggFromHistory(state: any) {
   const players: Player[] = state.players || [];
-  const hist: Array<{ playerId: string; darts: GameDart[] }> = state.history || [];
+  const hist: Array<{ playerId: string; darts: GameDart[] }> =
+    state.history || [];
 
   const darts: Record<string, number> = {};
   const visits: Record<string, number> = {};
@@ -232,7 +262,10 @@ function computeLegAggFromHistory(state: any) {
     visitSumsByPlayer[p.id] = [];
     checkoutDartsByPlayer[p.id] = [];
     hitsBySector[p.id] = {};
-    h60[p.id] = 0; h100[p.id] = 0; h140[p.id] = 0; h180[p.id] = 0;
+    h60[p.id] = 0;
+    h100[p.id] = 0;
+    h140[p.id] = 0;
+    h180[p.id] = 0;
     sumPointsByVisit[p.id] = 0;
   }
 
@@ -267,7 +300,8 @@ function computeLegAggFromHistory(state: any) {
     }
 
     if (arr.length === 3 && volSum === 180) {
-      h180[pid] += 1; x180[pid] += 1;
+      h180[pid] += 1;
+      x180[pid] += 1;
     } else if (volSum >= 140) h140[pid] += 1;
     else if (volSum >= 100) h100[pid] += 1;
     else if (volSum >= 60) h60[pid] += 1;
@@ -298,9 +332,22 @@ function computeLegAggFromHistory(state: any) {
   }
 
   return {
-    darts, visits, bestVisit, bestCheckout, x180, doubles, triples, bulls,
-    avg3, visitSumsByPlayer, checkoutDartsByPlayer, hitsBySector,
-    h60, h100, h140, h180,
+    darts,
+    visits,
+    bestVisit,
+    bestCheckout,
+    x180,
+    doubles,
+    triples,
+    bulls,
+    avg3,
+    visitSumsByPlayer,
+    checkoutDartsByPlayer,
+    hitsBySector,
+    h60,
+    h100,
+    h140,
+    h180,
   };
 }
 
@@ -343,11 +390,16 @@ function ensureActiveIsAlive(state: any) {
 function readStartFromSnapRules(snap: X01Snapshot | any, fallback: number) {
   const r = (snap as any)?.rules || {};
   // accept "startScore" ou "start"
-  return typeof r.startScore === "number" ? r.startScore
-       : typeof r.start === "number" ? r.start
-       : fallback;
+  return typeof r.startScore === "number"
+    ? r.startScore
+    : typeof r.start === "number"
+    ? r.start
+    : fallback;
 }
-function readDoubleOutFromSnapRules(snap: X01Snapshot | any, fallback: boolean) {
+function readDoubleOutFromSnapRules(
+  snap: X01Snapshot | any,
+  fallback: boolean
+) {
   const r = (snap as any)?.rules || {};
   if (typeof r.doubleOut === "boolean") return r.doubleOut;
   if (typeof r.outMode === "string") return r.outMode !== "simple";
@@ -380,14 +432,26 @@ function hydrateFromSnapshot(
 
   // current index
   if (typeof (snap as any).currentIndex === "number") {
-    s.currentPlayerIndex = Math.max(0, Math.min(ids.length - 1, (snap as any).currentIndex));
+    s.currentPlayerIndex = Math.max(
+      0,
+      Math.min(ids.length - 1, (snap as any).currentIndex)
+    );
   }
 
   // règles
   if (s.rules) {
-    (s.rules as any).startingScore = readStartFromSnapRules(snap, rules.startingScore);
-    (s.rules as any).doubleOut = readDoubleOutFromSnapRules(snap, !!rules.doubleOut);
-    (s.rules as any).doubleIn  = readDoubleInFromSnapRules(snap, !!rules.doubleIn);
+    (s.rules as any).startingScore = readStartFromSnapRules(
+      snap,
+      rules.startingScore
+    );
+    (s.rules as any).doubleOut = readDoubleOutFromSnapRules(
+      snap,
+      !!rules.doubleOut
+    );
+    (s.rules as any).doubleIn = readDoubleInFromSnapRules(
+      snap,
+      !!rules.doubleIn
+    );
   }
 
   return s;
@@ -399,7 +463,9 @@ function lsOfficialMatch(defaultVal = false): boolean {
     const raw = localStorage.getItem("settings_x01");
     if (!raw) return defaultVal;
     const obj = JSON.parse(raw);
-    return typeof obj.officialMatch === "boolean" ? obj.officialMatch : defaultVal;
+    return typeof obj.officialMatch === "boolean"
+      ? obj.officialMatch
+      : defaultVal;
   } catch {
     return defaultVal;
   }
@@ -418,12 +484,12 @@ export function useX01Engine(args: {
   resume?: X01Snapshot | any;
 
   // NEW — règles de match
-  setsToWin?: number;   // 1/3/5/7/9/11/13
-  legsPerSet?: number;  // 1/3/5/7
+  setsToWin?: number; // 1/3/5/7/9/11/13
+  legsPerSet?: number; // 1/3/5/7
 
   // NEW — modes d’entrée / sortie
-  inMode?: Mode;        // default "simple"
-  outMode?: Mode;       // default dérivé de doubleOut ? "double" : "simple"
+  inMode?: Mode; // default "simple"
+  outMode?: Mode; // default dérivé de doubleOut ? "double" : "simple"
 
   // NEW — mode officiel (serve alterné)
   officialMatch?: boolean; // si absent, lu depuis localStorage
@@ -480,8 +546,12 @@ export function useX01Engine(args: {
     () => ({
       mode: "x01",
       startingScore: resume ? readStartFromSnapRules(resume, start) : start,
-      doubleOut: resume ? readDoubleOutFromSnapRules(resume, outMode !== "simple") : (outMode !== "simple"),
-      doubleIn: resume ? readDoubleInFromSnapRules(resume, inMode !== "simple") : (inMode !== "simple"),
+      doubleOut: resume
+        ? readDoubleOutFromSnapRules(resume, outMode !== "simple")
+        : outMode !== "simple",
+      doubleIn: resume
+        ? readDoubleInFromSnapRules(resume, inMode !== "simple")
+        : inMode !== "simple",
     }),
     // ⚠️ tant que 'resume' ne change pas, on ne réécrit pas les règles
     [resume, start, inMode, outMode]
@@ -495,15 +565,23 @@ export function useX01Engine(args: {
     if (resume) {
       const r = resume as any;
       const scores = Array.isArray(r?.scores) ? r.scores.join(",") : "noscores";
-      const pids = Array.isArray(r?.players) ? r.players.map((p: any) => p.id).join(",") : "noplayers";
+      const pids = Array.isArray(r?.players)
+        ? r.players.map((p: any) => p.id).join(",")
+        : "noplayers";
       const idx = typeof r?.currentIndex === "number" ? r.currentIndex : 0;
       const rs = readStartFromSnapRules(resume, start);
-      const dout = readDoubleOutFromSnapRules(resume, outMode !== "simple") ? 1 : 0;
-      const din  = readDoubleInFromSnapRules(resume, inMode !== "simple") ? 1 : 0;
-      return `RESUME|${pids}|${scores}|i${idx}|s${rs}|do${dout}|di${din}|sets${setsTarget}|legs${legsTarget}|official${officialMatch ? 1 : 0}`;
+      const dout = readDoubleOutFromSnapRules(resume, outMode !== "simple")
+        ? 1
+        : 0;
+      const din = readDoubleInFromSnapRules(resume, inMode !== "simple") ? 1 : 0;
+      return `RESUME|${pids}|${scores}|i${idx}|s${rs}|do${dout}|di${din}|sets${setsTarget}|legs${legsTarget}|official${
+        officialMatch ? 1 : 0
+      }`;
     }
     const pids = (players || []).map((p) => p.id).join(",");
-    return `FRESH|${pids}|s${start}|in${inMode}|out${outMode}|sets${setsTarget}|legs${legsTarget}|official${officialMatch ? 1 : 0}`;
+    return `FRESH|${pids}|s${start}|in${inMode}|out${outMode}|sets${setsTarget}|legs${legsTarget}|official${
+      officialMatch ? 1 : 0
+    }`;
   }, [resume, players, start, inMode, outMode, setsTarget, legsTarget, officialMatch]);
 
   // ====== ÉTAT — INIT UNIQUEMENT À LA CRÉATION OU SI initKey CHANGE ======
@@ -534,15 +612,19 @@ export function useX01Engine(args: {
   const legStarterRef = React.useRef<number>(0);
 
   // “Entrée” par joueur (utile si inMode != simple)
-  const [enteredBy, setEnteredBy] = React.useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = {};
-    for (const p of (state.players || []) as Player[]) {
-      init[p.id] = (rules as any)?.doubleIn ? false : true;
+  const [enteredBy, setEnteredBy] = React.useState<Record<string, boolean>>(
+    () => {
+      const init: Record<string, boolean> = {};
+      for (const p of (state.players || []) as Player[]) {
+        init[p.id] = (rules as any)?.doubleIn ? false : true;
+      }
+      return init;
     }
-    return init;
-  });
+  );
 
-  const [lastBust, setLastBust] = React.useState<null | { reason: string }>(null);
+  const [lastBust, setLastBust] = React.useState<null | { reason: string }>(
+    null
+  );
   const [finishedOrder, setFinishedOrder] = React.useState<string[]>([]);
   const [pendingFirstWin, setPendingFirstWin] =
     React.useState<null | { playerId: string }>(null);
@@ -599,17 +681,23 @@ export function useX01Engine(args: {
     if (!ids.length) return;
     setEnteredBy((prev) => {
       const next: Record<string, boolean> = {};
-      ids.forEach((id) => { next[id] = prev[id] ?? ((rules as any)?.doubleIn ? false : true); });
+      ids.forEach((id) => {
+        next[id] = prev[id] ?? ((rules as any)?.doubleIn ? false : true);
+      });
       return next;
     });
     setLegsWon((prev) => {
       const next: Record<string, number> = {};
-      ids.forEach((id) => { next[id] = prev[id] ?? 0; });
+      ids.forEach((id) => {
+        next[id] = prev[id] ?? 0;
+      });
       return next;
     });
     setSetsWon((prev) => {
       const next: Record<string, number> = {};
-      ids.forEach((id) => { next[id] = prev[id] ?? 0; });
+      ids.forEach((id) => {
+        next[id] = prev[id] ?? 0;
+      });
       return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -653,7 +741,9 @@ export function useX01Engine(args: {
 
   function resetForNextLeg() {
     const nb = (state.players?.length as number) || 1;
-    const nextStarter = officialMatch ? ((legStarterRef.current + 1) % nb) : legStarterRef.current;
+    const nextStarter = officialMatch
+      ? (legStarterRef.current + 1) % nb
+      : legStarterRef.current;
 
     const s0 = engine.initGame(state.players, rules);
     if (officialMatch) {
@@ -681,36 +771,56 @@ export function useX01Engine(args: {
   // NEW — règle Sets/Legs (version simple, 1 appel = 1 leg)
   function applySetLegRule(winnerId: string | null) {
     if (!winnerId) {
-      // leg nul (personne n'a fini) → on avance juste le compteur de leg
+      // Leg nul (personne n'a fini) → on avance juste le compteur de leg
       setCurrentLegInSet((x) => x + 1);
       return;
     }
+
     setLegsWon((prev) => {
-      const next = { ...prev, [winnerId]: (prev[winnerId] || 0) + 1 };
-      const reachedLegTarget = (next[winnerId] || 0) >= legsTarget;
+      const updated: Record<string, number> = {
+        ...prev,
+        [winnerId]: (prev[winnerId] || 0) + 1,
+      };
 
-      if (reachedLegTarget) {
-        setSetsWon((prevSets) => {
-          const ns = { ...prevSets, [winnerId]: (prevSets[winnerId] || 0) + 1 };
+      // Chercher un éventuel gagnant de SET (n'importe quel joueur)
+      const setWinner =
+        Object.keys(updated).find(
+          (pid) => (updated[pid] || 0) >= legsTarget
+        ) || null;
 
-          // reset legs de tout le monde
-          const resetLegs: Record<string, number> = {};
-          Object.keys(next).forEach((id) => { resetLegs[id] = 0; });
-          setLegsWon(resetLegs);
-
-          // nouveau set, leg = 1
-          setCurrentSet((s) => s + 1);
-          setCurrentLegInSet(1);
-
-          // match gagné ?
-          if (ns[winnerId] >= setsTarget) setRuleWinnerId(winnerId);
-          return ns;
-        });
-      } else {
-        // même set, leg suivant
+      if (!setWinner) {
+        // Pas encore assez de legs pour gagner le set → juste leg suivant
         setCurrentLegInSet((x) => x + 1);
+        return updated;
       }
-      return next;
+
+      // Un SET vient d'être gagné
+      setSetsWon((prevSets) => {
+        const newSets: Record<string, number> = {
+          ...prevSets,
+          [setWinner]: (prevSets[setWinner] || 0) + 1,
+        };
+
+        // Reset des legs pour tout le monde
+        const resetLegs: Record<string, number> = {};
+        Object.keys(updated).forEach((pid) => {
+          resetLegs[pid] = 0;
+        });
+        setLegsWon(resetLegs);
+
+        // Nouveau set → leg = 1
+        setCurrentSet((s) => s + 1);
+        setCurrentLegInSet(1);
+
+        // Match gagné ?
+        if (newSets[setWinner] >= setsTarget) {
+          setRuleWinnerId(setWinner);
+        }
+
+        return newSets;
+      });
+
+      return updated;
     });
   }
 
@@ -719,7 +829,9 @@ export function useX01Engine(args: {
     if (!pendingFirstWin) return;
     setLiveFinishPolicy("continueToPenultimate");
     setFinishedOrder((arr) =>
-      arr.includes(pendingFirstWin.playerId) ? arr : [...arr, pendingFirstWin.playerId]
+      arr.includes(pendingFirstWin.playerId)
+        ? arr
+        : [...arr, pendingFirstWin.playerId]
     );
     setPendingFirstWin(null);
   }
@@ -737,15 +849,25 @@ export function useX01Engine(args: {
       const pid: string | undefined = curr?.id;
       const enteredNow = pid ? !!enteredBy[pid] : true;
 
-      const check = wouldBustWithEntry(prev, throwUI, inMode, outMode, enteredNow);
+      const check = wouldBustWithEntry(
+        prev,
+        throwUI,
+        inMode,
+        outMode,
+        enteredNow
+      );
       const mappedThrow = check.mappedThrow;
 
       if (check.bust) {
-        const historyEntry = { playerId: pid, darts: uiToGameDarts(mappedThrow) };
+        const historyEntry = {
+          playerId: pid,
+          darts: uiToGameDarts(mappedThrow),
+        };
         let next = {
           ...prev,
           history: [...(prev.history || []), historyEntry],
-          currentPlayerIndex: (prev.currentPlayerIndex + 1) % (prev.players?.length || 1),
+          currentPlayerIndex:
+            (prev.currentPlayerIndex + 1) % (prev.players?.length || 1),
           turnIndex: 0,
         };
         next = ensureActiveIsAlive(next);
@@ -765,21 +887,27 @@ export function useX01Engine(args: {
       }
 
       try {
-        const last = (s2.history || [])[Math.max(0, (s2.history || []).length - 1)];
+        const last =
+          (s2.history || [])[Math.max(0, (s2.history || []).length - 1)];
         const pid2: string | undefined = last?.playerId;
         if (pid2 && s2.table?.[pid2]) {
           const scoreNow = s2.table[pid2].score;
           const justFinished = scoreNow === 0;
 
           if (justFinished) {
-            if (finishedOrder.length === 0 && liveFinishPolicy === "firstToZero") {
+            if (
+              finishedOrder.length === 0 &&
+              liveFinishPolicy === "firstToZero"
+            ) {
               // 1er joueur terminé → on attend la décision de l'utilisateur
               setPendingFirstWin({ playerId: pid2 });
               return s2;
             }
 
             // sinon, on ajoute au classement
-            setFinishedOrder((arr) => (arr.includes(pid2) ? arr : [...arr, pid2]));
+            setFinishedOrder((arr) =>
+              arr.includes(pid2) ? arr : [...arr, pid2]
+            );
 
             if (liveFinishPolicy === "continueToPenultimate") {
               const finishedCountNext = finishedOrder.includes(pid2)
@@ -816,7 +944,7 @@ export function useX01Engine(args: {
 
       const rebuiltEntered: Record<string, boolean> = {};
       for (const p of (prev.players || []) as Player[]) {
-        rebuiltEntered[p.id] = (prev.rules?.doubleIn ? false : true);
+        rebuiltEntered[p.id] = prev.rules?.doubleIn ? false : true;
       }
 
       for (const h of hist) {
@@ -871,10 +999,10 @@ export function useX01Engine(args: {
   }, [state]);
 
   const isOver = !isContinuing && engine.isGameOver(state);
-  const winner: Player | null =
-    ruleWinnerId
-      ? ((state.players || []) as Player[]).find((p) => p.id === ruleWinnerId) || null
-      : engine.getWinner(state);
+  const winner: Player | null = ruleWinnerId
+    ? ((state.players || []) as Player[]).find((p) => p.id === ruleWinnerId) ||
+      null
+    : engine.getWinner(state);
 
   React.useEffect(() => {
     if (!ruleWinnerId) return;
@@ -908,8 +1036,8 @@ export function useX01Engine(args: {
     // Sets/Legs pour l'UI
     currentSet,
     currentLegInSet,
-    setsTarget,   // nb de sets à gagner
-    legsTarget,   // nb de legs à gagner dans un set
+    setsTarget, // nb de sets à gagner
+    legsTarget, // nb de legs à gagner dans un set
     setsWon,
     legsWon,
     ruleWinnerId,

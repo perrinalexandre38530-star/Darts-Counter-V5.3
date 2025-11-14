@@ -94,8 +94,7 @@ const miniRankScoreFini: React.CSSProperties = {
 
 /* ==================== CONSTANTES ==================== */
 const NAV_HEIGHT = 64;
-const KEYPAD_HEIGHT = 260;
-const KEYPAD_SCALE = 0.88;
+// (KEYPAD_HEIGHT / SCALE ne sont plus utilisés pour la zone scroll, on mesure la vraie hauteur)
 const CONTENT_MAX = 520;
 
 type Mode = "simple" | "double" | "master";
@@ -1420,11 +1419,11 @@ function X01Core({
     };
     const onBeforeUnload = () => latestPersistFnRef.current();
     document.addEventListener("visibilitychange", onVis);
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => {
-      document.removeEventListener("visibilitychange", onVis);
-      window.removeEventListener("beforeunload", onBeforeUnload);
-    };
+  window.addEventListener("beforeunload", onBeforeUnload);
+  return () => {
+    document.removeEventListener("visibilitychange", onVis);
+    window.removeEventListener("beforeunload", onBeforeUnload);
+  };
   }, []);
 
   /* =====================================================
@@ -1696,12 +1695,36 @@ function X01Core({
   }, []);
 
   /* =====================================================
+     MESURE KEYPAD (pour espace joueurs)
+  ===================================================== */
+  const keypadWrapRef = React.useRef<HTMLDivElement | null>(null);
+  const [keypadH, setKeypadH] = React.useState(0);
+
+  React.useEffect(() => {
+    const el = keypadWrapRef.current;
+    if (!el) return;
+    const measure = () =>
+      setKeypadH(Math.ceil(el.getBoundingClientRect().height));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+
+  /* =====================================================
      RENDU GLOBAL
   ===================================================== */
   const currentPlayerId = currentPlayer?.id ?? "";
 
   return (
-    <div className="x01play-container" style={{ overflow: "hidden" }}>
+    <div
+      className="x01play-container"
+      style={{ overflow: "hidden", minHeight: "100vh" }}
+    >
       {/* HEADER FIXE */}
       <div
         ref={headerWrapRef}
@@ -1712,9 +1735,9 @@ function X01Core({
           top: 0,
           zIndex: 60,
           width: `min(100%, ${CONTENT_MAX}px)`,
-          paddingInline: 12,
-          paddingTop: 6,
-          paddingBottom: 6,
+          paddingInline: 10,
+          paddingTop: 4,
+          paddingBottom: 4,
         }}
       >
         {/* Barre haute */}
@@ -1722,19 +1745,20 @@ function X01Core({
           style={{
             display: "flex",
             justifyContent: "space-between",
-            marginBottom: 8,
+            marginBottom: 6,
           }}
         >
           <button
             onClick={handleQuit}
             style={{
               borderRadius: 10,
-              padding: "6px 12px",
+              padding: "5px 11px",
               border: "1px solid rgba(255,180,0,.3)",
               background: "linear-gradient(180deg, #ffc63a, #ffaf00)",
               color: "#1a1a1a",
               fontWeight: 900,
-              boxShadow: "0 10px 22px rgba(255,170,0,.28)",
+              boxShadow: "0 8px 18px rgba(255,170,0,.25)",
+              fontSize: 13,
             }}
           >
             ← Quitter
@@ -1776,17 +1800,19 @@ function X01Core({
         </div>
       </div>
 
-      {/* ZONE JOUEURS */}
+      {/* ZONE JOUEURS — SCROLLABLE ENTRE HEADER ET KEYPAD */}
       <div
         style={{
           position: "fixed",
           left: "50%",
           transform: "translateX(-50%)",
           top: headerH,
-          bottom: NAV_HEIGHT + Math.round(KEYPAD_HEIGHT * KEYPAD_SCALE) + 8,
+          bottom: NAV_HEIGHT + keypadH + 8,
           width: `min(100%, ${CONTENT_MAX}px)`,
-          paddingInline: 12,
-          overflow: "auto",
+          paddingInline: 10,
+          paddingTop: 4,
+          paddingBottom: 4,
+          overflowY: "auto",
           zIndex: 40,
         }}
       >
@@ -1801,15 +1827,16 @@ function X01Core({
         />
       </div>
 
-      {/* KEYPAD */}
+      {/* KEYPAD FIXE EN BAS, ALIGNÉ EN LARGEUR */}
       <div
+        ref={keypadWrapRef}
         style={{
           position: "fixed",
           left: "50%",
-          transform: `translateX(-50%) scale(${KEYPAD_SCALE})`,
+          transform: "translateX(-50%)",
           bottom: NAV_HEIGHT,
           zIndex: 45,
-          padding: "0 12px 8px",
+          padding: "0 10px 4px",
           width: `min(100%, ${CONTENT_MAX}px)`,
         }}
       >
@@ -1916,15 +1943,15 @@ function X01Core({
             "radial-gradient(120% 140% at 0% 0%, rgba(255,195,26,.10), transparent 55%), linear-gradient(180deg, rgba(15,15,18,.9), rgba(10,10,12,.8))",
           border: "1px solid rgba(255,255,255,.08)",
           borderRadius: 18,
-          padding: 8,
-          boxShadow: "0 10px 30px rgba(0,0,0,.35)",
+          padding: 7,
+          boxShadow: "0 8px 26px rgba(0,0,0,.35)",
         }}
       >
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "auto 1fr",
-            gap: 10,
+            gap: 8,
             alignItems: "center",
           }}
         >
@@ -1934,17 +1961,17 @@ function X01Core({
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              gap: 6,
+              gap: 5,
             }}
           >
             <div
               style={{
-                width: 108,
-                height: 108,
+                width: 96,
+                height: 96,
                 borderRadius: "50%",
                 overflow: "hidden",
                 background: "linear-gradient(180deg,#1b1b1f,#111114)",
-                boxShadow: "0 8px 28px rgba(0,0,0,.35)",
+                boxShadow: "0 6px 22px rgba(0,0,0,.35)",
               }}
             >
               {currentAvatar ? (
@@ -1972,14 +1999,21 @@ function X01Core({
             <div
               style={{
                 fontWeight: 900,
-                fontSize: 18,
+                fontSize: 17,
                 color: "#ffcf57",
               }}
             >
               {currentPlayer?.name ?? "—"}
             </div>
 
-            <div style={{ ...miniCard, width: 180, height: "auto", padding: 8 }}>
+            <div
+              style={{
+                ...miniCard,
+                width: 176,
+                height: "auto",
+                padding: 7,
+              }}
+            >
               <div style={miniText}>
                 <div>
                   Meilleure volée : <b>{bestVisit}</b>
@@ -2003,16 +2037,17 @@ function X01Core({
               textAlign: "center",
               display: "flex",
               flexDirection: "column",
-              gap: 6,
+              gap: 5,
             }}
           >
             {/* SCORE */}
             <div
               style={{
-                fontSize: 72,
+                fontSize: 64,
                 fontWeight: 900,
                 color: "#ffcf57",
-                textShadow: "0 4px 20px rgba(255,195,26,.25)",
+                textShadow: "0 4px 18px rgba(255,195,26,.25)",
+                lineHeight: 1.02,
               }}
             >
               {Math.max(
@@ -2023,7 +2058,7 @@ function X01Core({
             </div>
 
             {/* Pastilles live */}
-            <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+            <div style={{ display: "flex", gap: 5, justifyContent: "center" }}>
               {[0, 1, 2].map((i) => {
                 const d = currentThrow[i];
                 const afterNow =
@@ -2050,14 +2085,15 @@ function X01Core({
                       display: "inline-flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      minWidth: 44,
-                      height: 32,
-                      padding: "0 12px",
+                      minWidth: 40,
+                      height: 28,
+                      padding: "0 10px",
                       borderRadius: 10,
                       border: st.border as string,
                       background: st.background as string,
                       color: st.color as string,
                       fontWeight: 800,
+                      fontSize: 13,
                     }}
                   >
                     {fmt(d)}
@@ -2086,7 +2122,7 @@ function X01Core({
               return (
                 <div
                   style={{
-                    marginTop: 4,
+                    marginTop: 3,
                     display: "flex",
                     justifyContent: "center",
                   }}
@@ -2094,23 +2130,24 @@ function X01Core({
                   <div
                     style={{
                       display: "inline-flex",
-                      padding: 6,
+                      padding: 5,
                       borderRadius: 12,
                       border: "1px solid rgba(255,255,255,.08)",
                       background:
                         "radial-gradient(120% 120% at 50% 0%, rgba(255,195,26,.10), rgba(30,30,34,.95))",
-                      minWidth: 180,
+                      minWidth: 170,
                     }}
                   >
                     <span
                       style={{
-                        padding: "4px 8px",
+                        padding: "3px 8px",
                         borderRadius: 8,
                         border: "1px solid rgba(255,187,51,.4)",
                         background: "rgba(255,187,51,.12)",
                         color: "#ffc63a",
                         fontWeight: 900,
                         whiteSpace: "nowrap",
+                        fontSize: 13,
                       }}
                     >
                       {only}
@@ -2125,14 +2162,14 @@ function X01Core({
               style={{
                 ...miniCard,
                 alignSelf: "center",
-                width: "min(320px,100%)",
+                width: "min(310px,100%)",
                 height: "auto",
                 padding: 6,
               }}
             >
               <div
                 style={{
-                  maxHeight: 3 * 28,
+                  maxHeight: 3 * 26,
                   overflow: liveRanking.length > 3 ? "auto" : "visible",
                 }}
               >
@@ -2174,9 +2211,9 @@ function X01Core({
             "linear-gradient(180deg, rgba(15,15,18,.9), rgba(10,10,12,.85))",
           border: "1px solid rgba(255,255,255,.08)",
           borderRadius: 18,
-          padding: 10,
-          marginBottom: 10,
-          boxShadow: "0 10px 30px rgba(0,0,0,.35)",
+          padding: 9,
+          marginBottom: 8,
+          boxShadow: "0 8px 24px rgba(0,0,0,.35)",
         }}
       >
         {statePlayers.map((p: EnginePlayer) => {
@@ -2194,13 +2231,13 @@ function X01Core({
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 10,
-                padding: "8px 10px",
+                gap: 9,
+                padding: "7px 9px",
                 borderRadius: 12,
                 background:
                   "linear-gradient(180deg, rgba(28,28,32,.65), rgba(18,18,20,.65))",
                 border: "1px solid rgba(255,255,255,.07)",
-                marginBottom: 6,
+                marginBottom: 5,
               }}
             >
               {/* Avatar */}
@@ -2436,13 +2473,13 @@ function SetLegChip({
     display: "inline-flex",
     alignItems: "center",
     gap: 8,
-    padding: "6px 10px",
+    padding: "5px 9px",
     border: "1px solid rgba(255,200,80,.35)",
     background:
       "linear-gradient(180deg, rgba(255,195,26,.12), rgba(30,30,34,.95))",
     color: "#ffcf57",
     fontWeight: 800,
-    fontSize: 12,
+    fontSize: 11.5,
     boxShadow: "0 6px 18px rgba(255,195,26,.15)",
     whiteSpace: "nowrap",
     borderRadius: 999,
