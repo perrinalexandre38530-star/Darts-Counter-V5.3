@@ -2,7 +2,7 @@
 // src/pages/X01Play.tsx
 // Wrapper (chargement snapshot) + X01Core (moteur & UI)
 // + AUTOSAVE (fallback localStorage si IDB vide/HS)
-// Corrige l’erreur React: "Rendered more hooks than during the previous render"
+// Corrige l’erreur React: "Rendered more hooks than during le previous render"
 // + PATCHS reprise: remount via key + persist après changement de joueur
 // + PATCHS A/B/C : autosave restore unique + listeners stables + throttling
 // + FIX 2025-11-13 : FreshStart ne restaure jamais l’autosave + clear immédiat
@@ -18,7 +18,10 @@ import { playSound } from "../lib/sound";
 import { History, type SavedMatch } from "../lib/history";
 
 // Réseau Stats / Agg
-import type { Visit as VisitType, PlayerLite as PlayerLiteType } from "../lib/types";
+import type {
+  Visit as VisitType,
+  PlayerLite as PlayerLiteType,
+} from "../lib/types";
 import { StatsBridge } from "../lib/statsBridge";
 import { addMatchSummary, commitLiteFromLeg } from "../lib/statsLiteIDB";
 import { extractAggFromSavedMatch } from "../lib/aggFromHistory";
@@ -72,7 +75,11 @@ const miniCard: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,.10)",
   boxShadow: "0 10px 22px rgba(0,0,0,.35)",
 };
-const miniText: React.CSSProperties = { fontSize: 12, color: "#d9dbe3", lineHeight: 1.25 };
+const miniText: React.CSSProperties = {
+  fontSize: 12,
+  color: "#d9dbe3",
+  lineHeight: 1.25,
+};
 const miniRankRow: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
@@ -85,7 +92,10 @@ const miniRankRow: React.CSSProperties = {
 };
 const miniRankName: React.CSSProperties = { fontWeight: 700, color: "#ffcf57" };
 const miniRankScore: React.CSSProperties = { fontWeight: 800, color: "#ffcf57" };
-const miniRankScoreFini: React.CSSProperties = { fontWeight: 800, color: "#7fe2a9" };
+const miniRankScoreFini: React.CSSProperties = {
+  fontWeight: 800,
+  color: "#7fe2a9",
+};
 
 /* ---------------------------------------------
    Constantes UI
@@ -245,7 +255,7 @@ function readStartParams(
 ): StartParams {
   const fromProps: Partial<StartParams> = {
     playerIds: propIds || [],
-    start: (propStart as any) || 501,
+    start: (propStart as any) ?? 501,
     outMode: propOut,
     inMode: propIn,
     setsToWin: propSets,
@@ -496,24 +506,35 @@ export default function X01Play(props: {
     legsPerSet = 1,
   } = props;
 
-  const merged = readStartParams(playerIds, start as any, outMode, inMode, setsToWin, legsPerSet, params);
+  const merged = readStartParams(
+    playerIds,
+    start as any,
+    outMode,
+    inMode,
+    setsToWin,
+    legsPerSet,
+    params
+  );
   const resumeId: string | undefined = params?.resumeId;
 
+  // --- PATCH 4 : flags propres ---
   const [ready, setReady] = React.useState(false);
   const [resumeSnapshot, setResumeSnapshot] = React.useState<X01Snapshot | null>(
     merged.resume ?? null
   );
 
-  // 👉 Intention de reprise (paramètre) vs reprise réelle (snapshot)
+  // "intention" de reprise (paramètre)
   const hasResumeIntent = !!resumeId || !!merged.resume;
-  const isResumeMode = !!resumeSnapshot; // "vraiment" en mode reprise seulement si snapshot présent
-  const isFreshStart = !hasResumeIntent; // nouvelle partie depuis le lobby
+  // "vraie" reprise uniquement si un snapshot est là
+  const isResumeMode = !!resumeSnapshot;
+  // FreshStart = on vient d'un nouveau setup, pas d'intention de reprise
+  const isFreshStart = !hasResumeIntent;
 
   React.useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        // FIX: NEW GAME => on s'assure de ne rien reprendre
+        // 👉 NEW GAME → on s'assure de ne rien reprendre du tout
         if (isFreshStart) {
           clearAutosave(); // tue toute autosave résiduelle
           if (alive) setResumeSnapshot(null);
@@ -521,12 +542,14 @@ export default function X01Play(props: {
           return;
         }
 
-        // Mode reprise explicite (resumeId ou snapshot fourni)
+        // Mode reprise explicite : snapshot déjà fourni (ex: depuis setup)
         if (merged.resume) {
           if (alive) setResumeSnapshot(merged.resume as X01Snapshot);
           if (alive) setReady(true);
           return;
         }
+
+        // Mode reprise via resumeId (History.get)
         if (resumeId) {
           const rec: SavedMatch | null = await History.get(resumeId);
           const snap = (rec && rec.kind === "x01"
@@ -540,23 +563,28 @@ export default function X01Play(props: {
         if (alive) setReady(true);
       }
     })();
+
     return () => {
       alive = false;
     };
   }, [resumeId, merged.resume, isFreshStart]);
 
-  // PATCH A — Boot AUTOSAVE: restore une seule fois, et **uniquement** en mode reprise
+  // PATCH A — Boot AUTOSAVE:
+  // - une seule fois
+  // - UNIQUEMENT si on est venu pour reprendre (hasResumeIntent)
+  // - et qu'on n'a PAS déjà un snapshot
   const restoredOnceRef = React.useRef(false);
   React.useEffect(() => {
     if (!ready || restoredOnceRef.current) return;
     restoredOnceRef.current = true;
 
-    // 👉 Ne jamais restaurer l'autosave sans intention de reprise
+    // Pas d'intention de reprise → pas d'autosave
     if (!hasResumeIntent) return;
 
-    // Si on a déjà un snapshot (resume), on ne touche pas à l'autosave
+    // Un snapshot (IDB / params) est déjà là → on ne touche pas à l'autosave
     if (resumeSnapshot) return;
 
+    // Dernier recours : autosave locale
     const snap = loadAutosave();
     if (snap) setResumeSnapshot(snap);
   }, [ready, resumeSnapshot, hasResumeIntent]);
@@ -848,19 +876,21 @@ function X01Core({
   });
 
   // Historique id / match id
-  // ✅ PATCH 4 — Un ID unique et stable pour TOUTE la partie
-  // - en mode reprise: on réutilise l'ID UNIQUEMENT si un snapshot de reprise est présent
-  // - en nouvelle partie (ou si resumeId fuité sans snapshot): on génère un nouvel ID
-  const initialMatchId = React.useRef<string>(
-    resumeSnapshot && resumeId
-      ? String(resumeId)
-      : crypto.randomUUID?.() ?? String(Date.now())
-  ).current;
+// ✅ PATCH 4 — Un ID unique et stable pour TOUTE la partie
+// - en mode reprise: on réutilise l’ID UNIQUEMENT si un snapshot de reprise est présent
+// - en nouvelle partie (ou si resumeId fuité sans snapshot): on génère un nouvel ID
+// Si reprise réelle → on réutilise resumeId
+// Sinon → NOUVEAU MATCH = NOUVEAU ID
+const initialMatchId =
+React.useRef<string>(
+  resumeSnapshot && resumeId
+    ? String(resumeId)
+    : crypto.randomUUID?.() ?? String(Date.now())
+).current;
 
-  // historyIdRef = l'id du record d'historique à upserter en continu
-  // matchIdRef    = identifiant logique de la partie (stats/liaisons)
-  const historyIdRef = React.useRef<string>(initialMatchId);
-  const matchIdRef = React.useRef<string>(initialMatchId);
+// IMPORTANT : historyIdRef DOIT se reset sur fresh start
+const historyIdRef = React.useRef<string>(initialMatchId);
+const matchIdRef = React.useRef<string>(initialMatchId);
 
   // ----- Statistiques live pour l’affichage
   const [lastByPlayer, setLastByPlayer] = React.useState<Record<string, UIDart[]>>({});
