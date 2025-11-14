@@ -8,6 +8,7 @@
 // + FIX 2025-11-13 : FreshStart ne restaure jamais l’autosave + clear immédiat
 // + PATCH 2025-11-13 : Remount garanti via nonce + Audio tryPlay() partout
 // + PATCH 4 2025-11-13 : Anti-écrasement du match "En cours" (ID seulement si snapshot)
+// + PATCH 5 2025-11-14 : Snapshot = état APRÈS la volée (score & joueur suivant)
 // ============================================
 
 import React from "react";
@@ -876,21 +877,21 @@ function X01Core({
   });
 
   // Historique id / match id
-// ✅ PATCH 4 — Un ID unique et stable pour TOUTE la partie
-// - en mode reprise: on réutilise l’ID UNIQUEMENT si un snapshot de reprise est présent
-// - en nouvelle partie (ou si resumeId fuité sans snapshot): on génère un nouvel ID
-// Si reprise réelle → on réutilise resumeId
-// Sinon → NOUVEAU MATCH = NOUVEAU ID
-const initialMatchId =
-React.useRef<string>(
-  resumeSnapshot && resumeId
-    ? String(resumeId)
-    : crypto.randomUUID?.() ?? String(Date.now())
-).current;
+  // ✅ PATCH 4 — Un ID unique et stable pour TOUTE la partie
+  // - en mode reprise: on réutilise l’ID UNIQUEMENT si un snapshot de reprise est présent
+  // - en nouvelle partie (ou si resumeId fuité sans snapshot): on génère un nouvel ID
+  // Si reprise réelle → on réutilise resumeId
+  // Sinon → NOUVEAU MATCH = NOUVEAU ID
+  const initialMatchId =
+    React.useRef<string>(
+      resumeSnapshot && resumeId
+        ? String(resumeId)
+        : crypto.randomUUID?.() ?? String(Date.now())
+    ).current;
 
-// IMPORTANT : historyIdRef DOIT se reset sur fresh start
-const historyIdRef = React.useRef<string>(initialMatchId);
-const matchIdRef = React.useRef<string>(initialMatchId);
+  // IMPORTANT : historyIdRef DOIT se reset sur fresh start
+  const historyIdRef = React.useRef<string>(initialMatchId);
+  const matchIdRef = React.useRef<string>(initialMatchId);
 
   // ----- Statistiques live pour l’affichage
   const [lastByPlayer, setLastByPlayer] = React.useState<Record<string, UIDart[]>>({});
@@ -1023,6 +1024,7 @@ const matchIdRef = React.useRef<string>(initialMatchId);
         [currentPlayer.id]: (m[currentPlayer.id] || 0) + 1,
       }));
 
+    // Log visite pour stats / pastilles
     pushVisitLog({
       playerId: currentPlayer.id,
       score: ptsForStats,
@@ -1077,11 +1079,14 @@ const matchIdRef = React.useRef<string>(initialMatchId);
       return { ...m, [currentPlayer.id]: add };
     });
 
+    // Envoi au moteur
     submitThrowUI(currentThrow);
 
+    // Dernière volée pour l’affichage
     setLastByPlayer((m) => ({ ...m, [currentPlayer.id]: currentThrow }));
     setLastBustByPlayer((m) => ({ ...m, [currentPlayer.id]: !!willBust }));
 
+    // SFX / voice
     if (willBust) {
       try {
         (bustSnd as any).currentTime = 0;
@@ -1102,22 +1107,69 @@ const matchIdRef = React.useRef<string>(initialMatchId);
       }
     }
 
+    // 🧠 PATCH 5 — PERSIST À PARTIR DE L’ÉTAT APRÈS LA VOLÉE
+    try {
+      const playersArr: EnginePlayer[] = ((state.players || []) as EnginePlayer[]).map((p) => ({
+        id: p.id,
+        name: p.name,
+      }));
+
+      const playerCount = playersArr.length || 1;
+      const curIdx =
+        playersArr.findIndex((p) => p.id === currentPlayer.id) >= 0
+          ? playersArr.findIndex((p) => p.id === currentPlayer.id)
+          : 0;
+
+      // Scores après application de la volée
+      const scoresAfter: number[] = playersArr.map((p) => {
+        const base = scoresByPlayer[p.id] ?? startFromResume;
+        if (p.id !== currentPlayer.id) return base;
+        // si bust → le score reste identique
+        return willBust ? base : Math.max(after, 0);
+      });
+
+      const isCheckoutHit = !willBust && after === 0;
+      const nextIndex = isCheckoutHit
+        ? curIdx // leg finie → peu importe, on laisse sur le vainqueur
+        : (curIdx + 1) % playerCount;
+
+      const engineLike = {
+        rules: {
+          start: startFromResume,
+          doubleOut: outMFromResume !== "simple",
+          setsToWin: setsFromResume,
+          legsPerSet: legsFromResume,
+          outMode: outMFromResume,
+          inMode: inMFromResume,
+        },
+        players: playersArr,
+        scores: scoresAfter,
+        currentIndex: nextIndex,
+        dartsThisTurn: [] as UIDart[],
+        winnerId: isCheckoutHit ? (currentPlayer.id as string) : (winner?.id ?? null),
+      };
+
+      const rec: MatchRecord = makeX01RecordFromEngineCompat({
+        engine: engineLike,
+        existingId: historyIdRef.current, // ✅ même match "en cours"
+      });
+
+      History.upsert(rec as any);
+      historyIdRef.current = rec.id;
+
+      // Autosave : seulement si le match n’est pas déjà terminé
+      if (!isCheckoutHit) {
+        saveAutosave((rec as any).payload.state as X01Snapshot);
+      } else {
+        clearAutosave();
+      }
+    } catch (e) {
+      console.warn("[validateThrow:persist-next] fail:", e);
+    }
+
+    // Reset volée UI
     setCurrentThrow([]);
     setMultiplier(1);
-
-    queueMicrotask(() => {
-      try {
-        const rec: MatchRecord = makeX01RecordFromEngineCompat({
-          engine: buildEngineLike([], winner?.id ?? null),
-          existingId: historyIdRef.current, // ✅ garde le même id
-        });
-        History.upsert(rec as any);
-        historyIdRef.current = rec.id;
-        saveAutosave((rec as any).payload.state as X01Snapshot);
-      } catch (e) {
-        console.warn("[validateThrow:persist-after] fail:", e);
-      }
-    });
   }
 
   function handleBackspace() {
