@@ -12,6 +12,7 @@ import Keypad from "../components/Keypad";
 import EndOfLegOverlay from "../components/EndOfLegOverlay";
 import { playSound } from "../lib/sound";
 import { History, type SavedMatch } from "../lib/history";
+import { DuelHeaderCompact } from "../components/DuelHeaderCompact";
 
 // Réseau Stats / Agg
 import type {
@@ -94,7 +95,6 @@ const miniRankScoreFini: React.CSSProperties = {
 
 /* ==================== CONSTANTES ==================== */
 const NAV_HEIGHT = 64;
-// (KEYPAD_HEIGHT / SCALE ne sont plus utilisés pour la zone scroll, on mesure la vraie hauteur)
 const CONTENT_MAX = 520;
 
 type Mode = "simple" | "double" | "master";
@@ -102,7 +102,6 @@ type EnginePlayer = { id: string; name: string };
 
 /* ========================================================
    NOUVEAU BANDEAU MODAL FIN DE MANCHE — LegBannerModal
-   (Système unique — Option A)
 ======================================================== */
 type LegBannerProps = {
   players: { id: string; name: string }[];
@@ -147,23 +146,31 @@ function LegBannerModal(props: LegBannerProps) {
   const winnerPlayer = players.find((p) => p.id === winnerId) || null;
   const winnerProfile = profiles.find((p) => p.id === winnerId) || null;
 
+  // ⚠️ Au moment où le bandeau apparaît, le moteur n’a PAS encore
+  // ajouté cette manche à legsWon. On affiche donc le score
+  // « après cette manche » en ajoutant +1 au vainqueur.
+  const winnerLegsBefore = legsWon[winnerId] ?? 0;
+  const winnerLegsAfter = winnerLegsBefore + 1;
+
   let scoreText: string | null = null;
-  const winnerLegs = legsWon[winnerId] ?? 0;
 
   if (players.length === 2) {
     const other = players.find((p) => p.id !== winnerId);
     if (other) {
       const otherLegs = legsWon[other.id] ?? 0;
-      scoreText = `${winnerLegs} - ${otherLegs}`;
+      scoreText = `${winnerLegsAfter} - ${otherLegs}`;
     }
   } else if (isSetLegMode) {
+    const wl = winnerLegsAfter;
     scoreText =
-      winnerLegs > 0
-        ? `${winnerLegs} manche${winnerLegs > 1 ? "s" : ""} gagnée${
-            winnerLegs > 1 ? "s" : ""
-          }`
+      wl > 0
+        ? `${wl} manche${wl > 1 ? "s" : ""} gagnée${wl > 1 ? "s" : ""}`
         : null;
   }
+
+  // ✅ Affichage "Set" uniquement si duel + plusieurs sets
+  const isDuel = players.length === 2;
+  const showSets = isDuel && setsTarget > 1;
 
   return (
     <div
@@ -270,8 +277,14 @@ function LegBannerModal(props: LegBannerProps) {
                 marginBottom: 2,
               }}
             >
-              Manche {currentLegInSet}/{legsTarget} · Set {currentSet}/
-              {setsTarget}
+              {showSets ? (
+                <>
+                  Manche {currentLegInSet}/{legsTarget} · Set {currentSet}/
+                  {setsTarget}
+                </>
+              ) : (
+                <>Manche {currentLegInSet}/{legsTarget}</>
+              )}
             </div>
             <div
               style={{
@@ -896,7 +909,17 @@ function X01Core({
 
   const outMFromResume = resumeRules?.outMode ?? outMode;
   const inMFromResume = resumeRules?.inMode ?? inMode;
-  const setsFromResume = resumeRules?.setsToWin ?? setsToWin;
+
+  // ✅ Sets uniquement en duel : si nbPlayers >= 3 → sets forcés à 1
+  const rawSetsFromResume = resumeRules?.setsToWin ?? setsToWin;
+  const isDuelConfig = playerIdsFromResume.length === 2;
+  const setsFromResume =
+    rawSetsFromResume && rawSetsFromResume > 0
+      ? isDuelConfig
+        ? rawSetsFromResume
+        : 1
+      : 1;
+
   const legsFromResume = resumeRules?.legsPerSet ?? legsPerSet;
 
   /* =====================================================
@@ -908,7 +931,6 @@ function X01Core({
   const overlayClosedOnceRef = React.useRef(false);
   const lastLegKeyRef = React.useRef("");
 
-  // ouverture auto de overlay fin de manche
   React.useEffect(() => {
     if (!lastLegResult) return;
     const key = `${lastLegResult.finishedAt}|${lastLegResult.legNo}`;
@@ -958,11 +980,46 @@ function X01Core({
     ((localStorage.getItem("opt_continue_policy") ?? "firstToZero") as any);
 
   /* =====================================================
+     STATS LIVE (pour header & players list)
+  ===================================================== */
+  const [lastByPlayer, setLastByPlayer] = React.useState<
+    Record<string, UIDart[]>
+  >({});
+  const [lastBustByPlayer, setLastBustByPlayer] = React.useState<
+    Record<string, boolean>
+  >({});
+  const [dartsCount, setDartsCount] = React.useState<Record<string, number>>({});
+  const [pointsSum, setPointsSum] = React.useState<Record<string, number>>({});
+  const [visitsCount, setVisitsCount] = React.useState<Record<string, number>>(
+    {}
+  );
+  const [bestVisitByPlayer, setBestVisitByPlayer] = React.useState<
+    Record<string, number>
+  >({});
+  const [missByPlayer, setMissByPlayer] = React.useState<
+    Record<string, number>
+  >({});
+  const [bustByPlayer, setBustByPlayer] = React.useState<
+    Record<string, number>
+  >({});
+  const [dbullByPlayer, setDBullByPlayer] = React.useState<
+    Record<string, number>
+  >({});
+
+  const [hitsByPlayer, setHitsByPlayer] = React.useState<
+    Record<string, { h60: number; h100: number; h140: number; h180: number }>
+  >({});
+  const [impactByPlayer, setImpactByPlayer] = React.useState<
+    Record<string, { doubles: number; triples: number; bulls: number }>
+  >({});
+
+  /* =====================================================
      HOOK MOTEUR
   ===================================================== */
   const {
     state,
     currentPlayer,
+    turnIndex,
     scoresByPlayer,
     isOver,
     winner,
@@ -970,32 +1027,31 @@ function X01Core({
     undoLast,
     pendingFirstWin,
     finishedOrder,
-    setsTarget,
-    legsTarget,
-    legsWon,
     continueAfterFirst,
     endNow,
     isContinuing,
+    // Sets / Legs
     currentSet,
     currentLegInSet,
+    setsTarget,
+    legsTarget,
+    setsWon,
+    legsWon,
   } = useX01Engine({
     profiles,
     playerIds: playerIdsFromResume,
     start: startFromResume,
     doubleOut: outMFromResume !== "simple",
     resume: resumeSnapshot,
+    // ✅ côté moteur : si partie à 3+ joueurs, setsFromResume est déjà forcé à 1
     setsToWin: setsFromResume,
     legsPerSet: legsFromResume,
     outMode: outMFromResume,
     inMode: inMFromResume,
     finishPolicy: defaultFinishPolicy,
     onFinish: (m) => {
-      // SÉCURITÉ : on ne finalise JAMAIS le match ici.
-      // On stocke juste le résultat en attente, et c’est finalizeMatch()
-      // qui décidera quand appeler réellement onFinish(m) (fin du dernier set/leg).
       setPendingFinish(m);
     },
-
     /* ===== FIN DE MANCHE (LEG) ===== */
     onLegEnd: async (res: LegResult) => {
       // commit stats minimal
@@ -1043,14 +1099,28 @@ function X01Core({
 
       matchLegsRef.current.push(leg);
 
-      // reset volée
+      // reset volée + stats live de la manche
       visitNoRef.current = 0;
       setVisitsLog([]);
       setMissByPlayer({});
       setBustByPlayer({});
       setDBullByPlayer({});
+
+      // 👉 on remet à zéro tout ce qui doit repartir à 0
+      // à chaque nouvelle manche (mais on garde bestVisitByPlayer)
+      setDartsCount({});
+      setPointsSum({});
+      setVisitsCount({});
     },
   });
+
+  // ✅ duel / sets pour l'affichage
+  const isDuel = (state.players as any)?.length === 2;
+  const useSetsUi = isDuel && (setsTarget ?? setsFromResume) > 1;
+
+  // ✅ mémos frais pour le header compact
+  const legsWonNow = { ...legsWon };
+  const setsWonNow = { ...setsWon };
 
   /* =====================================================
      PERSISTENCE — id du match
@@ -1063,40 +1133,6 @@ function X01Core({
 
   const historyIdRef = React.useRef(initialMatchId);
   const matchIdRef = React.useRef(initialMatchId);
-
-  /* =====================================================
-     STATS LIVE (pour header & players list)
-  ===================================================== */
-  const [lastByPlayer, setLastByPlayer] = React.useState<
-    Record<string, UIDart[]>
-  >({});
-  const [lastBustByPlayer, setLastBustByPlayer] = React.useState<
-    Record<string, boolean>
-  >({});
-  const [dartsCount, setDartsCount] = React.useState<Record<string, number>>({});
-  const [pointsSum, setPointsSum] = React.useState<Record<string, number>>({});
-  const [visitsCount, setVisitsCount] = React.useState<Record<string, number>>(
-    {}
-  );
-  const [bestVisitByPlayer, setBestVisitByPlayer] = React.useState<
-    Record<string, number>
-  >({});
-  const [missByPlayer, setMissByPlayer] = React.useState<
-    Record<string, number>
-  >({});
-  const [bustByPlayer, setBustByPlayer] = React.useState<
-    Record<string, number>
-  >({});
-  const [dbullByPlayer, setDBullByPlayer] = React.useState<
-    Record<string, number>
-  >({});
-
-  const [hitsByPlayer, setHitsByPlayer] = React.useState<
-    Record<string, { h60: number; h100: number; h140: number; h180: number }>
-  >({});
-  const [impactByPlayer, setImpactByPlayer] = React.useState<
-    Record<string, { doubles: number; triples: number; bulls: number }>
-  >({});
 
   /* =====================================================
      SFX
@@ -1200,7 +1236,6 @@ function X01Core({
 
     const ptsForStats = willBust ? 0 : volleyPts;
 
-    // Stats (miss/bust/dbull)
     const miss = currentThrow.filter((d) => d.v === 0).length;
     const db = currentThrow.filter((d) => d.v === 25 && d.mult === 2).length;
 
@@ -1419,11 +1454,11 @@ function X01Core({
     };
     const onBeforeUnload = () => latestPersistFnRef.current();
     document.addEventListener("visibilitychange", onVis);
-  window.addEventListener("beforeunload", onBeforeUnload);
-  return () => {
-    document.removeEventListener("visibilitychange", onVis);
-    window.removeEventListener("beforeunload", onBeforeUnload);
-  };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
   }, []);
 
   /* =====================================================
@@ -1745,9 +1780,12 @@ function X01Core({
           style={{
             display: "flex",
             justifyContent: "space-between",
+            alignItems: "center",
+            width: "100%",
             marginBottom: 6,
           }}
         >
+          {/* BOUTON QUITTER */}
           <button
             onClick={handleQuit}
             style={{
@@ -1759,16 +1797,37 @@ function X01Core({
               fontWeight: 900,
               boxShadow: "0 8px 18px rgba(255,170,0,.25)",
               fontSize: 13,
+              whiteSpace: "nowrap",
             }}
           >
             ← Quitter
           </button>
 
+          {/* HEADER COMPACT (AVATARS + SCORE) */}
+          <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+            {isDuel && useSetsUi && (
+              <DuelHeaderCompact
+                leftAvatarUrl={
+                  profileById[state.players[0].id]?.avatarDataUrl ?? ""
+                }
+                rightAvatarUrl={
+                  profileById[state.players[1].id]?.avatarDataUrl ?? ""
+                }
+                leftSets={setsWonNow[state.players[0].id] ?? 0}
+                rightSets={setsWonNow[state.players[1].id] ?? 0}
+                leftLegs={legsWonNow[state.players[0].id] ?? 0}
+                rightLegs={legsWonNow[state.players[1].id] ?? 0}
+              />
+            )}
+          </div>
+
+          {/* CAPSULE SET / LEG */}
           <SetLegChip
             currentSet={currentSet}
             currentLegInSet={currentLegInSet}
             setsTarget={setsFromResume}
             legsTarget={legsFromResume}
+            useSets={useSetsUi}
           />
         </div>
 
@@ -1796,6 +1855,9 @@ function X01Core({
             }
             bestVisit={bestVisitByPlayer[currentPlayerId] || 0}
             dartsLeft={(3 - currentThrow.length) as 1 | 2 | 3}
+            legsWon={legsWon}
+            setsWon={setsWon}
+            useSets={useSetsUi}
           />
         </div>
       </div>
@@ -1824,6 +1886,9 @@ function X01Core({
           start={startFromResume}
           scoresByPlayer={scoresByPlayer}
           visitsLog={visitsLog}
+          legsWon={legsWon}
+          setsWon={setsWon}
+          useSets={useSetsUi}
         />
       </div>
 
@@ -1935,7 +2000,15 @@ function X01Core({
     curDarts,
     curM3D,
     bestVisit,
+    useSets,
+    legsWon,
+    setsWon,
   }: any) {
+    const legsWonThisSet =
+      currentPlayer?.id && legsWon ? legsWon[currentPlayer.id] ?? 0 : 0;
+    const setsWonTotal =
+      currentPlayer?.id && setsWon ? setsWon[currentPlayer.id] ?? 0 : 0;
+
     return (
       <div
         style={{
@@ -2008,6 +2081,24 @@ function X01Core({
 
             <div
               style={{
+                fontSize: 11.5,
+                color: "#d9dbe3",
+              }}
+            >
+              {useSets ? (
+                <>
+                  Manches : <b>{legsWonThisSet}</b> • Sets :{" "}
+                  <b>{setsWonTotal}</b>
+                </>
+              ) : (
+                <>
+                  Manches : <b>{legsWonThisSet}</b>
+                </>
+              )}
+            </div>
+
+            <div
+              style={{
                 ...miniCard,
                 width: 176,
                 height: "auto",
@@ -2073,7 +2164,10 @@ function X01Core({
                     afterNow === 0 &&
                     !(() => {
                       const last = currentThrow[i];
-                      return last?.mult === 2 || (last?.v === 25 && last.mult === 2);
+                      return (
+                        last?.mult === 2 ||
+                        (last?.v === 25 && last.mult === 2)
+                      );
                     })());
 
                 const st = chipStyle(d, wouldBust);
@@ -2203,6 +2297,9 @@ function X01Core({
     start,
     scoresByPlayer,
     visitsLog,
+    legsWon,
+    setsWon,
+    useSets,
   }: any) {
     return (
       <div
@@ -2224,6 +2321,8 @@ function X01Core({
           const pSum = pointsSum[p.id] || 0;
           const a3d = dCount > 0 ? ((pSum / dCount) * 3).toFixed(2) : "0.00";
           const score = scoresByPlayer[p.id] ?? start;
+          const legsWonThisSet = legsWon?.[p.id] ?? 0;
+          const setsWonTotal = setsWon?.[p.id] ?? 0;
 
           return (
             <div
@@ -2316,6 +2415,18 @@ function X01Core({
                   }}
                 >
                   Darts: {dCount} • Moy/3D: {a3d}
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    color: "#cfd1d7",
+                    marginTop: 1,
+                  }}
+                >
+                  {useSets
+                    ? `Manches : ${legsWonThisSet} • Sets : ${setsWonTotal}`
+                    : `Manches : ${legsWonThisSet}`}
                 </div>
               </div>
 
@@ -2463,11 +2574,13 @@ function SetLegChip({
   currentLegInSet,
   setsTarget,
   legsTarget,
+  useSets,
 }: {
   currentSet: number;
   currentLegInSet: number;
   setsTarget: number;
   legsTarget: number;
+  useSets: boolean;
 }) {
   const st: React.CSSProperties = {
     display: "inline-flex",
@@ -2484,6 +2597,17 @@ function SetLegChip({
     whiteSpace: "nowrap",
     borderRadius: 999,
   };
+
+  // ❌ Pas de notion de sets quand useSets=false → on n'affiche que les legs
+  if (!useSets) {
+    return (
+      <span style={st}>
+        <span>
+          Leg {currentLegInSet}/{legsTarget}
+        </span>
+      </span>
+    );
+  }
 
   return (
     <span style={st}>

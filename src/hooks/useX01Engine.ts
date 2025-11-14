@@ -3,14 +3,14 @@
 // X01 engine wrapper: playTurn + safe BUST + CONTINUER + stats exclusives
 // + SKIP auto des joueurs terminés (score = 0)
 // + Reprise sûre depuis snapshot (hydrateFromSnapshot) — priorité RESUME
-// + NEW: Règles de match Sets/Legs (victoire par Sets)
+// + Règles de match Sets/Legs (victoire par Sets, mode “best of” façon tennis)
 //   - legs gagnés -> set gagné (reset legs + set++)
-//   - fin du match quand sets gagnés >= setsTarget
+//   - fin du match quand sets gagnés >= (totalSets+1)/2
 //   - expose currentSet/currentLegInSet/setsTarget/legsTarget/setsWon/legsWon/ruleWinnerId
-// + NEW: Modes d'entrée/sortie (inMode/outMode)
+// + Modes d'entrée/sortie (inMode/outMode)
 //   - inMode: simple | double | master (double||triple)  => gating des points avant “entrée”
 //   - outMode: simple | double | master (double||triple)  => validation du checkout
-// + NEW: Mode match officiel (serve alterné) — officialMatch
+// + Mode match officiel (serve alterné) — officialMatch
 // ============================================
 import * as React from "react";
 import type {
@@ -405,7 +405,10 @@ function readDoubleOutFromSnapRules(
   if (typeof r.outMode === "string") return r.outMode !== "simple";
   return fallback;
 }
-function readDoubleInFromSnapRules(snap: X01Snapshot | any, fallback: boolean) {
+function readDoubleInFromSnapRules(
+  snap: X01Snapshot | any,
+  fallback: boolean
+) {
   const r = (snap as any)?.rules || {};
   if (typeof r.doubleIn === "boolean") return r.doubleIn;
   if (typeof r.inMode === "string") return r.inMode !== "simple";
@@ -483,15 +486,15 @@ export function useX01Engine(args: {
   onLegEnd?: (res: LegResult) => void;
   resume?: X01Snapshot | any;
 
-  // NEW — règles de match
-  setsToWin?: number; // 1/3/5/7/9/11/13
-  legsPerSet?: number; // 1/3/5/7
+  // règles de match
+  setsToWin?: number; // total de sets (1,3,5,7,9,11,13) -> best of
+  legsPerSet?: number; // total de manches par set (1,3,5,7,...) -> best of
 
-  // NEW — modes d’entrée / sortie
+  // modes d’entrée / sortie
   inMode?: Mode; // default "simple"
   outMode?: Mode; // default dérivé de doubleOut ? "double" : "simple"
 
-  // NEW — mode officiel (serve alterné)
+  // mode officiel (serve alterné)
   officialMatch?: boolean; // si absent, lu depuis localStorage
 }) {
   const {
@@ -517,21 +520,20 @@ export function useX01Engine(args: {
 
   // ============================
   // BEST OF (mode tennis)
-  // - setsToWin = nb total de sets configurés : 1,3,5,7,9,11,13
-  //   -> setsTarget = nb de sets À GAGNER = (total+1)/2
-  // - legsPerSet = nb total de manches par set : 1,3,5,7,...
-  //   -> legsTarget = nb de manches À GAGNER = (total+1)/2
+  // - setsToWin = nb TOTAL de sets (1,3,5,7,9,11,13)
+  //   -> nb de sets à gagner = floor(total/2)+1
+  // - legsPerSet = nb TOTAL de manches par set (1,3,5,7,...)
+  //   -> nb de manches à gagner = floor(total/2)+1
   // ============================
   const setsConfig = Math.max(1, Math.floor(setsToWin));
   const legsConfig = Math.max(1, Math.floor(legsPerSet));
 
-  const setsTarget = Math.max(1, Math.floor((setsConfig + 1) / 2));
-  const legsTarget = Math.max(1, Math.floor((legsConfig + 1) / 2));
+  const setsNeededToWin = Math.floor(setsConfig / 2) + 1;
+  const legsNeededToWin = Math.floor(legsConfig / 2) + 1;
 
   // ⚠️ Si snapshot contient ses joueurs → priorité au snapshot (ordre + nom)
   const playersFromSnap = React.useMemo(
     () => (resume ? toPlayersFromSnapshot(resume, profiles) : null),
-    // dépend seulement de l'identité du resume et des profils (noms)
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [resume, profiles]
   );
@@ -545,7 +547,9 @@ export function useX01Engine(args: {
   const rules: MatchRules = React.useMemo(
     () => ({
       mode: "x01",
-      startingScore: resume ? readStartFromSnapRules(resume, start) : start,
+      startingScore: resume
+        ? readStartFromSnapRules(resume, start)
+        : start,
       doubleOut: resume
         ? readDoubleOutFromSnapRules(resume, outMode !== "simple")
         : outMode !== "simple",
@@ -553,7 +557,7 @@ export function useX01Engine(args: {
         ? readDoubleInFromSnapRules(resume, inMode !== "simple")
         : inMode !== "simple",
     }),
-    // ⚠️ tant que 'resume' ne change pas, on ne réécrit pas les règles
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [resume, start, inMode, outMode]
   );
 
@@ -564,37 +568,56 @@ export function useX01Engine(args: {
   const initKey = React.useMemo(() => {
     if (resume) {
       const r = resume as any;
-      const scores = Array.isArray(r?.scores) ? r.scores.join(",") : "noscores";
+      const scores = Array.isArray(r?.scores)
+        ? r.scores.join(",")
+        : "noscores";
       const pids = Array.isArray(r?.players)
         ? r.players.map((p: any) => p.id).join(",")
         : "noplayers";
       const idx = typeof r?.currentIndex === "number" ? r.currentIndex : 0;
       const rs = readStartFromSnapRules(resume, start);
-      const dout = readDoubleOutFromSnapRules(resume, outMode !== "simple")
+      const dout = readDoubleOutFromSnapRules(
+        resume,
+        outMode !== "simple"
+      )
         ? 1
         : 0;
-      const din = readDoubleInFromSnapRules(resume, inMode !== "simple") ? 1 : 0;
-      return `RESUME|${pids}|${scores}|i${idx}|s${rs}|do${dout}|di${din}|sets${setsTarget}|legs${legsTarget}|official${
+      const din = readDoubleInFromSnapRules(
+        resume,
+        inMode !== "simple"
+      )
+        ? 1
+        : 0;
+      return `RESUME|${pids}|${scores}|i${idx}|s${rs}|do${dout}|di${din}|setsTot${setsConfig}|legsTot${legsConfig}|official${
         officialMatch ? 1 : 0
       }`;
     }
     const pids = (players || []).map((p) => p.id).join(",");
-    return `FRESH|${pids}|s${start}|in${inMode}|out${outMode}|sets${setsTarget}|legs${legsTarget}|official${
+    return `FRESH|${pids}|s${start}|in${inMode}|out${outMode}|setsTot${setsConfig}|legsTot${legsConfig}|official${
       officialMatch ? 1 : 0
     }`;
-  }, [resume, players, start, inMode, outMode, setsTarget, legsTarget, officialMatch]);
+  }, [
+    resume,
+    players,
+    start,
+    inMode,
+    outMode,
+    setsConfig,
+    legsConfig,
+    officialMatch,
+  ]);
 
   // ====== ÉTAT — INIT UNIQUEMENT À LA CRÉATION OU SI initKey CHANGE ======
   const initialState = React.useMemo(() => {
     let s0: any;
     if (resume && (resume as any)?.rules) {
-      const pl = playersFromSnap ?? players; // encore une fois priorité aux joueurs du snap
+      const pl = playersFromSnap ?? players;
       s0 = hydrateFromSnapshot(engine, resume as X01Snapshot, pl, rules);
     } else {
       s0 = engine.initGame(players, rules);
     }
     if (officialMatch && s0) {
-      s0.currentPlayerIndex = 0; // sera ajusté après si nécessaire
+      s0.currentPlayerIndex = 0;
     }
     return ensureActiveIsAlive(s0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -603,7 +626,6 @@ export function useX01Engine(args: {
   const [state, setState] = React.useState<any>(initialState);
 
   React.useEffect(() => {
-    // Si l’initKey change (nouveau snapshot ou vraies règles différentes) → reinit
     setState(initialState);
   }, [initialState]);
 
@@ -622,9 +644,8 @@ export function useX01Engine(args: {
     }
   );
 
-  const [lastBust, setLastBust] = React.useState<null | { reason: string }>(
-    null
-  );
+  const [lastBust, setLastBust] =
+    React.useState<null | { reason: string }>(null);
   const [finishedOrder, setFinishedOrder] = React.useState<string[]>([]);
   const [pendingFirstWin, setPendingFirstWin] =
     React.useState<null | { playerId: string }>(null);
@@ -633,26 +654,25 @@ export function useX01Engine(args: {
       normalizePolicy(finishPolicy)
     );
 
-  // NEW — suivi Sets/Legs pour l'UI + victoire
+  // suivi Sets/Legs pour l'UI + victoire
   const [currentSet, setCurrentSet] = React.useState<number>(1);
-  const [currentLegInSet, setCurrentLegInSet] = React.useState<number>(1);
+  const [currentLegInSet, setCurrentLegInSet] =
+    React.useState<number>(1);
   const [legsWon, setLegsWon] = React.useState<Record<string, number>>({});
   const [setsWon, setSetsWon] = React.useState<Record<string, number>>({});
-  const [ruleWinnerId, setRuleWinnerId] = React.useState<string | null>(null);
+  const [ruleWinnerId, setRuleWinnerId] =
+    React.useState<string | null>(null);
 
-  // (re)init complet si initKey change (pas sur chaque re-render)
+  // (re)init complet si initKey change (nouvelle partie / reprise)
   React.useEffect(() => {
-    // reset overlay/politiques
     setLastBust(null);
     setFinishedOrder([]);
     setPendingFirstWin(null);
     setLiveFinishPolicy(normalizePolicy(finishPolicy));
 
-    // reset sets/legs
     setCurrentSet(1);
     setCurrentLegInSet(1);
 
-    // reset compteurs joueurs
     const initLegs: Record<string, number> = {};
     const initSets: Record<string, number> = {};
     const initEntered: Record<string, boolean> = {};
@@ -666,7 +686,6 @@ export function useX01Engine(args: {
     setEnteredBy(initEntered);
     setRuleWinnerId(null);
 
-    // officialMatch: fix starter
     if (officialMatch) {
       const nb = (state.players?.length as number) || 1;
       const nextStarter = legStarterRef.current % Math.max(1, nb);
@@ -675,14 +694,16 @@ export function useX01Engine(args: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initKey]);
 
-  // keep entered map in sync when players array changes (sans reset global)
+  // keep entered / compteurs en phase avec la liste de joueurs
   React.useEffect(() => {
     const ids = (state.players || []).map((p: Player) => p.id);
     if (!ids.length) return;
+
     setEnteredBy((prev) => {
       const next: Record<string, boolean> = {};
       ids.forEach((id) => {
-        next[id] = prev[id] ?? ((rules as any)?.doubleIn ? false : true);
+        next[id] =
+          prev[id] ?? ((rules as any)?.doubleIn ? false : true);
       });
       return next;
     });
@@ -710,7 +731,8 @@ export function useX01Engine(args: {
       remaining[p.id] = s.table?.[p.id]?.score ?? 0;
 
     const order = [...finishedOrder];
-    for (const p of s.players || []) if (!order.includes(p.id)) order.push(p.id);
+    for (const p of s.players || [])
+      if (!order.includes(p.id)) order.push(p.id);
 
     const agg = computeLegAggFromHistory(s);
     return {
@@ -735,7 +757,11 @@ export function useX01Engine(args: {
       h100: agg.h100,
       h140: agg.h140,
       h180: agg.h180,
-      meta: { setNo: currentSet, setsTarget, legsTarget },
+      meta: {
+        setNo: currentSet,
+        setsTarget: setsConfig, // total configuré pour l’affichage
+        legsTarget: legsConfig, // idem
+      },
     } as unknown as LegResult;
   }
 
@@ -768,59 +794,46 @@ export function useX01Engine(args: {
     });
   }
 
-  // NEW — règle Sets/Legs (version simple, 1 appel = 1 leg)
+  // règle Sets/Legs (1 appel = fin d’une manche)
   function applySetLegRule(winnerId: string | null) {
     if (!winnerId) {
-      // Leg nul (personne n'a fini) → on avance juste le compteur de leg
       setCurrentLegInSet((x) => x + 1);
       return;
     }
-
     setLegsWon((prev) => {
-      const updated: Record<string, number> = {
-        ...prev,
-        [winnerId]: (prev[winnerId] || 0) + 1,
-      };
+      const next = { ...prev, [winnerId]: (prev[winnerId] || 0) + 1 };
+      const reachedLegTarget =
+        (next[winnerId] || 0) >= legsNeededToWin;
 
-      // Chercher un éventuel gagnant de SET (n'importe quel joueur)
-      const setWinner =
-        Object.keys(updated).find(
-          (pid) => (updated[pid] || 0) >= legsTarget
-        ) || null;
+      if (reachedLegTarget) {
+        setSetsWon((prevSets) => {
+          const ns = {
+            ...prevSets,
+            [winnerId]: (prevSets[winnerId] || 0) + 1,
+          };
 
-      if (!setWinner) {
-        // Pas encore assez de legs pour gagner le set → juste leg suivant
-        setCurrentLegInSet((x) => x + 1);
-        return updated;
-      }
+          // reset legs de tout le monde pour le set suivant
+          const resetLegs: Record<string, number> = {};
+          Object.keys(next).forEach((id) => {
+            resetLegs[id] = 0;
+          });
+          setLegsWon(resetLegs);
 
-      // Un SET vient d'être gagné
-      setSetsWon((prevSets) => {
-        const newSets: Record<string, number> = {
-          ...prevSets,
-          [setWinner]: (prevSets[setWinner] || 0) + 1,
-        };
+          // nouveau set, leg = 1
+          setCurrentSet((s) => s + 1);
+          setCurrentLegInSet(1);
 
-        // Reset des legs pour tout le monde
-        const resetLegs: Record<string, number> = {};
-        Object.keys(updated).forEach((pid) => {
-          resetLegs[pid] = 0;
+          // match gagné ?
+          if ((ns[winnerId] || 0) >= setsNeededToWin) {
+            setRuleWinnerId(winnerId);
+          }
+          return ns;
         });
-        setLegsWon(resetLegs);
-
-        // Nouveau set → leg = 1
-        setCurrentSet((s) => s + 1);
-        setCurrentLegInSet(1);
-
-        // Match gagné ?
-        if (newSets[setWinner] >= setsTarget) {
-          setRuleWinnerId(setWinner);
-        }
-
-        return newSets;
-      });
-
-      return updated;
+      } else {
+        // même set, leg suivant
+        setCurrentLegInSet((x) => x + 1);
+      }
+      return next;
     });
   }
 
@@ -867,7 +880,8 @@ export function useX01Engine(args: {
           ...prev,
           history: [...(prev.history || []), historyEntry],
           currentPlayerIndex:
-            (prev.currentPlayerIndex + 1) % (prev.players?.length || 1),
+            (prev.currentPlayerIndex + 1) %
+            (prev.players?.length || 1),
           turnIndex: 0,
         };
         next = ensureActiveIsAlive(next);
@@ -963,7 +977,8 @@ export function useX01Engine(args: {
           } else mapped.push(d);
         }
         replay = engine.playTurn(replay, uiToGameDarts(mapped));
-        if (!rebuiltEntered[pid] && entered) rebuiltEntered[pid] = true;
+        if (!rebuiltEntered[pid] && entered)
+          rebuiltEntered[pid] = true;
       }
       replay = ensureActiveIsAlive(replay);
       setEnteredBy(rebuiltEntered);
@@ -985,7 +1000,7 @@ export function useX01Engine(args: {
   React.useEffect(() => {
     if (!engine.isGameOver(state)) return;
     if (isContinuing) return;
-    // L’UI pilotera via endNow/overlay, la fin de MATCH est gérée par ruleWinnerId.
+    // La fin de MATCH est gérée par ruleWinnerId + onFinish
   }, [state, engine, isContinuing]);
 
   const currentPlayer: Player | null =
@@ -1000,8 +1015,9 @@ export function useX01Engine(args: {
 
   const isOver = !isContinuing && engine.isGameOver(state);
   const winner: Player | null = ruleWinnerId
-    ? ((state.players || []) as Player[]).find((p) => p.id === ruleWinnerId) ||
-      null
+    ? ((state.players || []) as Player[]).find(
+        (p) => p.id === ruleWinnerId
+      ) || null
     : engine.getWinner(state);
 
   React.useEffect(() => {
@@ -1036,22 +1052,24 @@ export function useX01Engine(args: {
     // Sets/Legs pour l'UI
     currentSet,
     currentLegInSet,
-    setsTarget, // nb de sets à gagner
-    legsTarget, // nb de legs à gagner dans un set
+    setsTarget: setsConfig, // pour affichage X/Y
+    legsTarget: legsConfig,
     setsWon,
     legsWon,
     ruleWinnerId,
 
-    // config brute (1,3,5,7...) au cas où
+    // config interne BEST OF
     _setsConfig: setsConfig,
     _legsConfig: legsConfig,
+    _setsNeededToWin: setsNeededToWin,
+    _legsNeededToWin: legsNeededToWin,
 
-    // info entrée (optionnel si tu veux afficher un indicateur)
+    // info entrée (optionnel)
     _enteredBy: enteredBy,
     _inMode: inMode,
     _outMode: outMode,
 
-    // debug/inspect
+    // debug
     _officialMatch: officialMatch,
     _legStarterIndex: legStarterIndex,
   };

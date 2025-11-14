@@ -53,8 +53,9 @@ function saveSettings(s: SavedSettings) {
   } catch {}
 }
 
-function pill(on: boolean): React.CSSProperties {
-  return {
+// pill(on, disabled?) : style pour les chips
+function pill(on: boolean, disabled = false): React.CSSProperties {
+  const base: React.CSSProperties = {
     padding: "8px 12px",
     borderRadius: 999,
     fontWeight: 800,
@@ -65,7 +66,20 @@ function pill(on: boolean): React.CSSProperties {
     color: on ? "#1a1a1a" : "#e9e9ef",
     cursor: "pointer",
     boxShadow: on ? "0 8px 24px rgba(255,180,0,.28)" : "none",
+    transition: "transform .08s ease-out, box-shadow .08s ease-out, opacity .08s ease-out",
   };
+
+  if (disabled) {
+    return {
+      ...base,
+      opacity: 0.35,
+      cursor: "not-allowed",
+      filter: "grayscale(0.4)",
+      boxShadow: "none",
+    };
+  }
+
+  return base;
 }
 
 const card: React.CSSProperties = {
@@ -109,26 +123,36 @@ function useAvgMap(profiles: Profile[]) {
         try {
           const s = await getBasicProfileStats(p.id);
           if (!cancel) setMap((m) => (m[p.id] ? m : { ...m, [p.id]: s }));
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
     })();
-    return () => { cancel = true; };
+    return () => {
+      cancel = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profiles.map(p => p.id).join("|")]);
+  }, [profiles.map((p) => p.id).join("|")]);
   return map;
 }
 
 export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
   const saved = React.useMemo(loadSettings, []);
   const [start, setStart] = React.useState<301 | 501 | 701 | 901>(saved.start ?? 501);
-  const [outMode, setOutMode] = React.useState<"simple" | "double" | "master">(saved.outMode ?? "double");
-  const [inMode, setInMode] = React.useState<"simple" | "double" | "master">(saved.inMode ?? "simple");
+  const [outMode, setOutMode] = React.useState<"simple" | "double" | "master">(
+    saved.outMode ?? "double"
+  );
+  const [inMode, setInMode] = React.useState<"simple" | "double" | "master">(
+    saved.inMode ?? "simple"
+  );
   const [setsToWin, setSetsToWin] = React.useState<number>(saved.setsToWin ?? 1);
   const [legsPerSet, setLegsPerSet] = React.useState<number>(saved.legsPerSet ?? 1);
   const [randomOrder, setRandomOrder] = React.useState<boolean>(saved.randomOrder ?? false);
 
   // nouvelles options persistées
-  const [officialMatch, setOfficialMatch] = React.useState<boolean>(saved.officialMatch ?? false);
+  const [officialMatch, setOfficialMatch] = React.useState<boolean>(
+    saved.officialMatch ?? false
+  );
   const [voiceOn, setVoiceOn] = React.useState<boolean>(saved.voiceOn ?? true);
   const [sfxOn, setSfxOn] = React.useState<boolean>(saved.sfxOn ?? true);
 
@@ -138,10 +162,28 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
   // Map des stats pour les rings (disponibles + sélectionnés)
   const avgMap = useAvgMap([...available, ...selected]);
 
+  // ====== RÈGLE PRODUIT : sets uniquement si nbPlayers === 2 ======
+  const isDuel = selected.length === 2;
+  const disableSets = !isDuel; // dès qu'on n'est pas EXACTEMENT 2 joueurs, on désactive les sets
+
+  React.useEffect(() => {
+    if (!isDuel) {
+      // Forçage interne : pas de sets (un seul set "global")
+      setSetsToWin(1);
+    }
+  }, [isDuel]);
+
   React.useEffect(() => {
     saveSettings({
-      start, outMode, inMode, setsToWin, legsPerSet, randomOrder,
-      officialMatch, voiceOn, sfxOn,
+      start,
+      outMode,
+      inMode,
+      setsToWin,
+      legsPerSet,
+      randomOrder,
+      officialMatch,
+      voiceOn,
+      sfxOn,
     });
   }, [start, outMode, inMode, setsToWin, legsPerSet, randomOrder, officialMatch, voiceOn, sfxOn]);
 
@@ -158,12 +200,18 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
     if (!selected.length) return;
     const order = randomOrder ? shuffle(selected) : selected.slice();
     const doubleOut = outMode !== "simple";
-    const doubleIn  = inMode  !== "simple";
+    const doubleIn = inMode !== "simple";
 
     const payloadForPlay = {
       playerIds: order.map((p) => p.id),
-      start, outMode, inMode, doubleOut, doubleIn,
-      setsToWin, legsPerSet, randomOrder,
+      start,
+      outMode,
+      inMode,
+      doubleOut,
+      doubleIn,
+      setsToWin,
+      legsPerSet,
+      randomOrder,
       officialMatch,
       finishPolicy: "firstToZero" as const,
       audio: { voiceOn, sfxOn },
@@ -172,8 +220,14 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
 
     onStart({
       playerIds: payloadForPlay.playerIds,
-      start, outMode, inMode, doubleOut, doubleIn,
-      setsToWin, legsPerSet, randomOrder,
+      start,
+      outMode,
+      inMode,
+      doubleOut,
+      doubleIn,
+      setsToWin,
+      legsPerSet,
+      randomOrder,
     });
   }
 
@@ -181,7 +235,14 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
   return (
     <div style={{ maxWidth: 520, margin: "0 auto", padding: 12 }}>
       {/* Bandeau titre + Quitter */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 12,
+        }}
+      >
         <span style={title}>Paramètres X01</span>
         <button
           onClick={onCancel}
@@ -205,14 +266,20 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
         <div style={{ fontWeight: 900, color: "#ffcf57", marginBottom: 8 }}>Score de départ</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
           {SCORE_CHOICES.map((s) => (
-            <button key={s} onClick={() => setStart(s)} style={pill(start === s)}>{s}</button>
+            <button key={s} onClick={() => setStart(s)} style={pill(start === s)}>
+              {s}
+            </button>
           ))}
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div style={{ ...card }}>
             <div style={{ fontWeight: 900, color: "#ffcf57", marginBottom: 8 }}>Mode de sortie</div>
-            <select value={outMode} onChange={(e) => setOutMode(e.target.value as any)} style={selectStyle}>
+            <select
+              value={outMode}
+              onChange={(e) => setOutMode(e.target.value as any)}
+              style={selectStyle}
+            >
               <option value="simple">Simple</option>
               <option value="double">Double</option>
               <option value="master">Master</option>
@@ -221,7 +288,11 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
 
           <div style={{ ...card }}>
             <div style={{ fontWeight: 900, color: "#ffcf57", marginBottom: 8 }}>Mode d’entrée</div>
-            <select value={inMode} onChange={(e) => setInMode(e.target.value as any)} style={selectStyle}>
+            <select
+              value={inMode}
+              onChange={(e) => setInMode(e.target.value as any)}
+              style={selectStyle}
+            >
               <option value="simple">Simple</option>
               <option value="double">Double</option>
               <option value="master">Master</option>
@@ -234,21 +305,50 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
       <div style={{ ...card, marginBottom: 10 }}>
         <div style={{ fontWeight: 900, color: "#ffcf57", marginBottom: 8 }}>Format du match</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          {/* === Sets à gagner (désactivés si nbPlayers != 2) === */}
           <div style={{ ...card }}>
             <div style={{ fontWeight: 800, marginBottom: 6, color: "#e9e9ef" }}>Sets à gagner</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {SET_CHOICES.map((n) => (
-                <button key={n} onClick={() => setSetsToWin(n)} style={pill(setsToWin === n)}>{n}</button>
+                <button
+                  key={n}
+                  disabled={disableSets}
+                  onClick={() => !disableSets && setSetsToWin(n)}
+                  style={pill(setsToWin === n, disableSets)}
+                >
+                  {n}
+                </button>
               ))}
             </div>
             <div style={{ ...sub, marginTop: 6 }}>1 = pas de sets (match en un seul set)</div>
+            {!isDuel && (
+              <div
+                style={{
+                  ...sub,
+                  marginTop: 4,
+                  fontStyle: "italic",
+                  color: "#ff9c7a",
+                }}
+              >
+                Les sets sont disponibles uniquement en duel (2 joueurs).
+              </div>
+            )}
           </div>
 
+          {/* === Legs par set === */}
           <div style={{ ...card }}>
-            <div style={{ fontWeight: 800, marginBottom: 6, color: "#e9e9ef" }}>Legs à gagner (par set)</div>
+            <div style={{ fontWeight: 800, marginBottom: 6, color: "#e9e9ef" }}>
+              Legs à gagner (par set)
+            </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {LEG_CHOICES.map((n) => (
-                <button key={n} onClick={() => setLegsPerSet(n)} style={pill(legsPerSet === n)}>{n}</button>
+                <button
+                  key={n}
+                  onClick={() => setLegsPerSet(n)}
+                  style={pill(legsPerSet === n)}
+                >
+                  {n}
+                </button>
               ))}
             </div>
             <div style={{ ...sub, marginTop: 6 }}>1 = pas de best-of dans un set</div>
@@ -256,24 +356,48 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
         </div>
 
         {/* Options */}
-        <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div
+          style={{
+            marginTop: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
           <label style={checkLabel}>
-            <input type="checkbox" checked={randomOrder} onChange={(e) => setRandomOrder(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={randomOrder}
+              onChange={(e) => setRandomOrder(e.target.checked)}
+            />
             <span>Ordre aléatoire au lancement</span>
           </label>
 
           <label style={checkLabel}>
-            <input type="checkbox" checked={officialMatch} onChange={(e) => setOfficialMatch(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={officialMatch}
+              onChange={(e) => setOfficialMatch(e.target.checked)}
+            />
             <span>Mode match officiel (serve alterné)</span>
           </label>
 
           <label style={checkLabel}>
-            <input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={voiceOn}
+              onChange={(e) => setVoiceOn(e.target.checked)}
+            />
             <span>Voix (TTS)</span>
           </label>
 
           <label style={checkLabel}>
-            <input type="checkbox" checked={sfxOn} onChange={(e) => setSfxOn(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={sfxOn}
+              onChange={(e) => setSfxOn(e.target.checked)}
+            />
             <span>Sons arcade</span>
           </label>
         </div>
@@ -321,7 +445,9 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
           </button>
         </div>
 
-        <div style={{ fontWeight: 900, color: "#ffcf57", marginBottom: 8 }}>Joueurs sélectionnés</div>
+        <div style={{ fontWeight: 900, color: "#ffcf57", marginBottom: 8 }}>
+          Joueurs sélectionnés
+        </div>
         <div
           style={{
             display: "grid",
@@ -332,22 +458,29 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
           }}
         >
           {selected.map((p) => {
-            const AVA = 56;         // diamètre avatar sélectionné
-            const STAR = 9;         // taille des étoiles
-            const PAD = 6;          // respiration externe
+            const AVA = 56; // diamètre avatar sélectionné
+            const STAR = 9; // taille des étoiles
+            const PAD = 6; // respiration externe
             const avg3 = avgMap[p.id]?.avg3 ?? 0;
             return (
               <div key={p.id} style={{ textAlign: "center" }}>
                 {/* Wrapper non-clipant pour le RING */}
-                <div style={{ position: "relative", width: AVA, height: AVA, margin: "0 auto" }}>
+                <div
+                  style={{
+                    position: "relative",
+                    width: AVA,
+                    height: AVA,
+                    margin: "0 auto",
+                  }}
+                >
                   {/* Couronne EXTERNE (en dehors du disque clipé) */}
                   <div
                     aria-hidden
                     style={{
                       position: "absolute",
                       left: -(PAD + STAR / 2),
-                      top:  -(PAD + STAR / 2),
-                      width:  AVA + (PAD + STAR / 2) * 2,
+                      top: -(PAD + STAR / 2),
+                      width: AVA + (PAD + STAR / 2) * 2,
                       height: AVA + (PAD + STAR / 2) * 2,
                       pointerEvents: "none",
                       overflow: "visible",
@@ -355,7 +488,7 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
                   >
                     <ProfileStarRing
                       anchorSize={AVA}
-                      gapPx={6}           // ⭐ positif => autour du bord
+                      gapPx={6} // ⭐ positif => autour du bord
                       starSize={STAR}
                       stepDeg={10}
                       rotationDeg={0}
@@ -371,7 +504,7 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
                       width: AVA,
                       height: AVA,
                       borderRadius: "50%",
-                      overflow: "hidden",            // clip seulement l’image
+                      overflow: "hidden", // clip seulement l’image
                       border: "2px solid rgba(255,200,80,.45)",
                       boxShadow: "0 6px 18px rgba(255,195,26,.2)",
                       cursor: "pointer",
@@ -379,23 +512,43 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
                     }}
                   >
                     {p.avatarDataUrl ? (
-                      <img src={p.avatarDataUrl as string} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <img
+                        src={p.avatarDataUrl as string}
+                        alt=""
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
                     ) : (
-                      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#aaa", fontWeight: 800 }}>?</div>
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "#aaa",
+                          fontWeight: 800,
+                        }}
+                      >
+                        ?
+                      </div>
                     )}
                   </div>
                 </div>
               </div>
             );
           })}
-          {!selected.length && <div style={{ color: "#aab", fontSize: 12 }}>Aucun joueur sélectionné</div>}
+          {!selected.length && (
+            <div style={{ color: "#aab", fontSize: 12 }}>Aucun joueur sélectionné</div>
+          )}
         </div>
 
         {/* Joueurs disponibles */}
-        <div style={{ fontWeight: 900, color: "#ffcf57", marginBottom: 8 }}>Joueurs disponibles</div>
+        <div style={{ fontWeight: 900, color: "#ffcf57", marginBottom: 8 }}>
+          Joueurs disponibles
+        </div>
         <div>
           {available.map((p) => {
-            const AVA = 38;    // avatar liste
+            const AVA = 38; // avatar liste
             const STAR = 8;
             const PAD = 6;
             const avg3 = avgMap[p.id]?.avg3 ?? 0;
@@ -416,14 +569,21 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   {/* Wrapper non-clipant */}
-                  <div style={{ position: "relative", width: AVA, height: AVA, flex: "0 0 auto" }}>
+                  <div
+                    style={{
+                      position: "relative",
+                      width: AVA,
+                      height: AVA,
+                      flex: "0 0 auto",
+                    }}
+                  >
                     <div
                       aria-hidden
                       style={{
                         position: "absolute",
                         left: -(PAD + STAR / 2),
-                        top:  -(PAD + STAR / 2),
-                        width:  AVA + (PAD + STAR / 2) * 2,
+                        top: -(PAD + STAR / 2),
+                        width: AVA + (PAD + STAR / 2) * 2,
                         height: AVA + (PAD + STAR / 2) * 2,
                         pointerEvents: "none",
                         overflow: "visible",
@@ -450,9 +610,26 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
                       }}
                     >
                       {p.avatarDataUrl ? (
-                        <img src={p.avatarDataUrl as string} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <img
+                          src={p.avatarDataUrl as string}
+                          alt=""
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        />
                       ) : (
-                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#aaa", fontWeight: 700, fontSize: 12 }}>?</div>
+                        <div
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#aaa",
+                            fontWeight: 700,
+                            fontSize: 12,
+                          }}
+                        >
+                          ?
+                        </div>
                       )}
                     </div>
                   </div>
@@ -477,7 +654,11 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
               </div>
             );
           })}
-          {!available.length && <div style={{ color: "#aab", fontSize: 12 }}>Tous les joueurs sont sélectionnés</div>}
+          {!available.length && (
+            <div style={{ color: "#aab", fontSize: 12 }}>
+              Tous les joueurs sont sélectionnés
+            </div>
+          )}
         </div>
       </div>
     </div>
