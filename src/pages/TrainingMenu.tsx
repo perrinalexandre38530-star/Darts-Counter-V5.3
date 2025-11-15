@@ -7,15 +7,23 @@ import React from "react";
 
 type Props = {
   // fonction go fournie par App.tsx (setTab interne)
-  go: (tab: any, params?: any) => void;
+  go?: (tab: any, params?: any) => void;
 };
 
 export default function TrainingMenu({ go }: Props) {
   function startX01Training() {
+    if (!go) {
+      console.warn("[TrainingMenu] go() manquant");
+      return;
+    }
     go("training_x01");
   }
 
   function openStats() {
+    if (!go) {
+      console.warn("[TrainingMenu] go() manquant");
+      return;
+    }
     go("training_stats");
   }
 

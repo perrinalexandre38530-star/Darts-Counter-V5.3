@@ -556,18 +556,18 @@ export default function App() {
       // ---------- Training ----------
       case "training": {
         // Menu Training (choix mode, bouton "X01 solo", bouton "Voir évolution")
-        page = <TrainingMenu />;
+        page = <TrainingMenu go={go} />;
         break;
       }
 
       case "training_x01": {
-        // Partie Training X01 solo
-        page = <TrainingX01Play />;
+        // Partie Training X01 solo (même keypad que X01 mais sans liste joueurs)
+        page = <TrainingX01Play go={go} />;
         break;
       }
 
       case "training_stats": {
-        // Page "Évolution" des trainings
+        // Page "Évolution" des trainings (historique + % de hits)
         page = <TrainingStatsPage />;
         break;
       }

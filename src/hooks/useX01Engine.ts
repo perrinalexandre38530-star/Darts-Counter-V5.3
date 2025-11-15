@@ -301,7 +301,7 @@ function computeLegAggFromHistory(state: any) {
       volSum += pts;
       if (d.bed === "D") doubles[pid] += 1;
       if (d.bed === "T") triples[pid] += 1;
-      if (d.bed === "OB" || d.bed === "IB") bulls[p.id] += 1;
+      if (d.bed === "OB" || d.bed === "IB") bulls[pid] += 1;
     }
 
     if (arr.length === 3 && volSum === 180) {
@@ -671,6 +671,9 @@ export function useX01Engine(args: {
   const [ruleWinnerId, setRuleWinnerId] =
     React.useState<string | null>(null);
 
+  // 🔒 Empêche d'appliquer la règle plusieurs fois pour la même manche
+  const lastRuleLegKeyRef = React.useRef<string | null>(null);
+
   // (re)init complet si initKey change (nouvelle partie / reprise)
   React.useEffect(() => {
     setLastBust(null);
@@ -693,6 +696,7 @@ export function useX01Engine(args: {
     setSetsWon(initSets);
     setEnteredBy(initEntered);
     setRuleWinnerId(null);
+    lastRuleLegKeyRef.current = null;
 
     if (officialMatch) {
       const nb = (state.players?.length as number) || 1;
@@ -822,6 +826,7 @@ export function useX01Engine(args: {
     setPendingFirstWin(null);
     setLiveFinishPolicy(normalizePolicy(finishPolicy));
     setLastBust(null);
+    lastRuleLegKeyRef.current = null;
 
     setEnteredBy(() => {
       const next: Record<string, boolean> = {};
@@ -832,77 +837,78 @@ export function useX01Engine(args: {
     });
   }
 
-  // règle Sets/Legs (1 appel = fin d’une manche)
+  // règle Sets/Legs (1 appel = fin d’une manche) — protégée contre les doubles appels
   function applySetLegRule(winnerId: string | null) {
+    const legKey = `${currentSet}-${currentLegInSet}`;
+
+    if (lastRuleLegKeyRef.current === legKey) {
+      console.log("[PATCH] SET/RULE déjà appliquée pour", legKey);
+      return;
+    }
+    lastRuleLegKeyRef.current = legKey;
+
     if (!winnerId) {
-      // manche nulle, juste passer à la suivante
       setCurrentLegInSet((x) => x + 1);
       return;
     }
 
     setLegsWon((prevLegs) => {
-      const nextLegs = {
+      const nextLegs: Record<string, number> = {
         ...prevLegs,
         [winnerId]: (prevLegs[winnerId] || 0) + 1,
       };
 
-      const legsForThisPlayer = nextLegs[winnerId] || 0;
-      const reachedLegTarget = legsForThisPlayer >= legsNeededToWin;
+      const legsForWinner = nextLegs[winnerId];
+      const hasWonSet = legsForWinner >= legsNeededToWin;
 
-      console.log("[SET/RULE] fin de manche", {
+      console.log("[PATCH] FIN MANCHE", {
         winnerId,
-        legsForThisPlayer,
+        legsForWinner,
         legsNeededToWin,
         nextLegs,
         currentSet,
         currentLegInSet,
+        legKey,
       });
 
-      if (reachedLegTarget) {
-        setSetsWon((prevSets) => {
-          const nextSets = {
-            ...prevSets,
-            [winnerId]: (prevSets[winnerId] || 0) + 1,
-          };
-
-          const setsForThisPlayer = nextSets[winnerId] || 0;
-          const reachedSetTarget = setsForThisPlayer >= setsNeededToWin;
-
-          console.log("[SET/RULE] set gagné ?", {
-            winnerId,
-            setsForThisPlayer,
-            setsNeededToWin,
-            nextSets,
-          });
-
-          // reset legs de tout le monde pour le set suivant
-          const resetLegs: Record<string, number> = {};
-          Object.keys(nextLegs).forEach((id) => {
-            resetLegs[id] = 0;
-          });
-          setLegsWon(resetLegs);
-
-          // nouveau set, leg = 1
-          setCurrentSet((s) => s + 1);
-          setCurrentLegInSet(1);
-
-          if (reachedSetTarget) {
-            console.log("[SET/RULE] MATCH GAGNÉ (ruleWinnerId posé)", {
-              winnerId,
-              setsForThisPlayer,
-              setsNeededToWin,
-            });
-            setRuleWinnerId(winnerId);
-          }
-
-          return nextSets;
-        });
-      } else {
-        // même set, leg suivant
+      if (!hasWonSet) {
         setCurrentLegInSet((x) => x + 1);
+        return nextLegs;
       }
 
-      return nextLegs;
+      // --- SET GAGNÉ ---
+      setSetsWon((prevSets) => {
+        const nextSets: Record<string, number> = {
+          ...prevSets,
+          [winnerId]: (prevSets[winnerId] || 0) + 1,
+        };
+
+        const setsForWinner = nextSets[winnerId];
+        const hasWonMatch = setsForWinner >= setsNeededToWin;
+
+        console.log("[PATCH] SET GAGNÉ", {
+          winnerId,
+          setsForWinner,
+          setsNeededToWin,
+          nextSets,
+        });
+
+        if (hasWonMatch) {
+          console.log("[PATCH] MATCH GAGNÉ → ruleWinnerId", winnerId);
+          setRuleWinnerId(winnerId);
+        }
+
+        return nextSets;
+      });
+
+      // Reset legs pour nouveau set
+      const resetLegs: Record<string, number> = {};
+      Object.keys(nextLegs).forEach((id) => (resetLegs[id] = 0));
+
+      setCurrentSet((s) => s + 1);
+      setCurrentLegInSet(1);
+
+      return resetLegs;
     });
   }
 
@@ -1079,6 +1085,7 @@ export function useX01Engine(args: {
       setPendingFirstWin(null);
       setLiveFinishPolicy(normalizePolicy(finishPolicy));
       setLastBust(null);
+      lastRuleLegKeyRef.current = null;
       return replay;
     });
   }

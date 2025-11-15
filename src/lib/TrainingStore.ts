@@ -1,5 +1,5 @@
 // ============================================
-// src/lib/trainingStore.ts
+// src/lib/TrainingStore.ts
 // Store IndexedDB / localStorage pour le Training
 // ============================================
 

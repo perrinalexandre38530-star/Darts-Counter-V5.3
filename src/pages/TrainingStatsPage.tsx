@@ -4,7 +4,7 @@
 // ============================================
 
 import React from "react";
-import { TrainingStore } from "../lib/trainingStore";
+import { TrainingStore } from "../lib/TrainingStore";
 import { useCurrentProfile } from "../hooks/useCurrentProfile";
 
 export default function TrainingStatsPage() {
