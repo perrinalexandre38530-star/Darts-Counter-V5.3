@@ -1,7 +1,7 @@
 // ============================================
 // src/components/DuelHeaderCompact.tsx
 // Header duel compact : avatars réduits + score set/legs
-// Une seule ligne, sans texte, design premium
+// Ultra-compact : ronds qui se chevauchent légèrement
 // ============================================
 
 import React from "react";
@@ -23,24 +23,58 @@ export const DuelHeaderCompact: React.FC<Props> = ({
   leftLegs,
   rightLegs,
 }) => {
+  // Style “triple” pour les petits ronds de sets
+  const setPillStyle: React.CSSProperties = {
+    minWidth: 18,
+    height: 18,
+    padding: "0 4px",
+    borderRadius: 999,
+    border: "1px solid rgba(255, 105, 180, 0.9)", // contour rose
+    background: "rgba(255, 105, 180, 0.18)", // fond léger rose
+    color: "#ff79c6", // texte rose
+    fontSize: 10,
+    fontWeight: 700,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    lineHeight: 1,
+    boxSizing: "border-box",
+  };
+
+  const legPillStyle: React.CSSProperties = {
+    minWidth: 22,
+    height: 20,
+    padding: "0 6px",
+    borderRadius: 999,
+    background: "rgba(246,194,86,0.25)",
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: 700,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    lineHeight: 1,
+    boxSizing: "border-box",
+  };
+
   return (
     <div
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 10,
-        padding: "2px 10px",
+        gap: 6, // resserré
+        padding: "2px 8px",
         borderRadius: 999,
         background:
           "linear-gradient(135deg, rgba(255,255,255,0.06), rgba(0,0,0,0.45))",
-        boxShadow: "0 0 12px rgba(0,0,0,0.5)",
+        boxShadow: "0 0 10px rgba(0,0,0,0.55)",
       }}
     >
       {/* Avatar gauche */}
       <div
         style={{
-          width: 32,
-          height: 32,
+          width: 26,
+          height: 26,
           borderRadius: "999px",
           overflow: "hidden",
           boxShadow: "0 0 0 2px rgba(246,194,86,0.55)",
@@ -61,8 +95,8 @@ export const DuelHeaderCompact: React.FC<Props> = ({
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
+          gap: 6, // petit espace entre les deux blocs
           fontWeight: 700,
-          gap: 6,
           position: "relative",
         }}
       >
@@ -70,72 +104,62 @@ export const DuelHeaderCompact: React.FC<Props> = ({
         <div
           style={{
             position: "absolute",
-            width: "90%",
-            height: "70%",
+            width: "80%",
+            height: "65%",
             borderRadius: 999,
             background:
               "radial-gradient(circle, rgba(246,194,86,0.22), transparent 70%)",
             filter: "blur(3px)",
             zIndex: 0,
           }}
-        ></div>
+        />
 
-        {/* (setsA) */}
-        <span
+        {/* Bloc gauche : set (rose) qui chevauche leg (doré) */}
+        <div
           style={{
-            opacity: 0.75,
-            fontSize: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 0,
             zIndex: 1,
           }}
         >
-          ({leftSets})
-        </span>
+          <span
+            style={{
+              ...setPillStyle,
+              marginRight: -6, // chevauchement sur le leg
+            }}
+          >
+            {leftSets}
+          </span>
+          <span style={legPillStyle}>{leftLegs}</span>
+        </div>
 
-        {/* legsA */}
-        <span
+        {/* Bloc droite : leg (doré) puis set (rose) qui chevauche */}
+        <div
           style={{
-            padding: "1px 8px",
-            borderRadius: 999,
-            background: "rgba(246,194,86,0.20)",
-            fontSize: 16,
+            display: "flex",
+            alignItems: "center",
+            gap: 0,
             zIndex: 1,
           }}
         >
-          {leftLegs}
-        </span>
-
-        <span style={{ opacity: 0.7, zIndex: 1 }}>-</span>
-
-        {/* legsB */}
-        <span
-          style={{
-            padding: "1px 8px",
-            borderRadius: 999,
-            background: "rgba(246,194,86,0.20)",
-            fontSize: 16,
-            zIndex: 1,
-          }}
-        >
-          {rightLegs}
-        </span>
-
-        {/* (setsB) */}
-        <span
-          style={{
-            opacity: 0.75,
-            fontSize: 12,
-            zIndex: 1,
-          }}
-        >
-          ({rightSets})
-        </span>
+          <span style={legPillStyle}>{rightLegs}</span>
+          <span
+            style={{
+              ...setPillStyle,
+              marginLeft: -6, // chevauchement sur le leg
+            }}
+          >
+            {rightSets}
+          </span>
+        </div>
       </div>
 
       {/* Avatar droite */}
       <div
         style={{
-          width: 32,
-          height: 32,
+          width: 26,
+          height: 26,
           borderRadius: "999px",
           overflow: "hidden",
           boxShadow: "0 0 0 2px rgba(246,194,86,0.55)",
