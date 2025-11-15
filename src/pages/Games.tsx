@@ -27,7 +27,7 @@ export default function Games({
     {
       id: "x01",
       title: "X01",
-      subtitle: "301 / 501 / 701 / 1001 — double-out",
+      subtitle: "301 / 501 / 701 / 901",
       tab: "x01setup",
       enabled: true,
     },

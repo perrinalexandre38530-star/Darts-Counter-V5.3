@@ -19,7 +19,7 @@ import type {
 export default function TrainingX01Play() {
   const profile = useCurrentProfile();
 
-  // Joueur solo fictif (on ne montre pas la liste de joueurs ici)
+  // Joueur solo fictif
   const soloPlayer: PlayerLite = React.useMemo(
     () =>
       ({
@@ -42,23 +42,32 @@ export default function TrainingX01Play() {
     setSessionId(session.id);
   }, [sessionId, profile]);
 
+  // 🔧 FinishPolicy ultra simple pour le mode Training
+  // -> toujours "valide", jamais de check-out forcé
+  const finishPolicy = React.useCallback(() => {
+    return {
+      isValid: true,
+      isCheckout: false,
+    };
+  }, []);
+
   const {
     state,
-    scoresByPlayer,
+    scoresByPlayer = {},
     playTurn,
     canUndo,
     undoLast,
   } = useX01Engine({
     players: [soloPlayer],
     startScore: 501,
-    finishPolicy: "double" as any, // adapte si tu changes la règle
-    // ... tes autres options par défaut (inMode/outMode etc.) si besoin
+    finishPolicy: finishPolicy as any, // le moteur veut une fonction
+    // tu peux rajouter inMode / outMode ici si ton hook les utilise
   });
 
   // Validation d'une volée
   function handleValidate(visit: VisitType) {
     // On capture l'index de volée AVANT d'appeler playTurn
-    const visitIndex = state.turnIndex ?? 0;
+    const visitIndex = (state as any)?.turnIndex ?? 0;
 
     // 1) on laisse le moteur jouer la visite
     playTurn(visit);
@@ -99,7 +108,7 @@ export default function TrainingX01Play() {
     alert("Session de training terminée. Tu peux aller voir tes stats.");
   }
 
-  const remaining = scoresByPlayer[soloPlayer.id] ?? 501;
+  const remaining = (scoresByPlayer as any)[soloPlayer.id] ?? 501;
 
   return (
     <div className="page training-x01-page" style={{ padding: 16 }}>
@@ -125,8 +134,6 @@ export default function TrainingX01Play() {
         <span>Score restant</span>
         <strong style={{ fontSize: 20 }}>{remaining}</strong>
       </div>
-
-      {/* Ici tu pourrais rajouter un mini affichage joueur / moyennes si tu veux */}
 
       <div style={{ marginTop: "auto" }}>
         <Keypad
