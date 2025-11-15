@@ -13,6 +13,7 @@ import EndOfLegOverlay from "../components/EndOfLegOverlay";
 import { playSound } from "../lib/sound";
 import { History, type SavedMatch } from "../lib/history";
 import { DuelHeaderCompact } from "../components/DuelHeaderCompact";
+import trophyCup from "../ui_assets/trophy-cup.png";
 
 // Réseau Stats / Agg
 import type {
@@ -108,9 +109,10 @@ type LegBannerProps = {
   profiles: Profile[];
   pendingFirstWin: { playerId: string } | null;
   finishedOrder: string[];
-  setsTarget: number;
-  legsTarget: number;
+  setsTarget: number;             // nombre de sets à gagner
+  legsTarget: number;             // nombre de manches à gagner pour un set
   legsWon: Record<string, number>;
+  setsWon: Record<string, number>;
   currentSet: number;
   currentLegInSet: number;
   onContinue: () => void;
@@ -127,6 +129,7 @@ function LegBannerModal(props: LegBannerProps) {
     setsTarget,
     legsTarget,
     legsWon,
+    setsWon,
     currentSet,
     currentLegInSet,
     onContinue,
@@ -134,8 +137,8 @@ function LegBannerModal(props: LegBannerProps) {
     onNextLeg,
   } = props;
 
+  const isDuel = players.length === 2;
   const isSetLegMode = setsTarget > 1 || legsTarget > 1;
-  const endLabel = isSetLegMode ? "Manche suivante" : "Terminer";
 
   const winnerId =
     pendingFirstWin?.playerId ||
@@ -152,13 +155,26 @@ function LegBannerModal(props: LegBannerProps) {
   const winnerLegsBefore = legsWon[winnerId] ?? 0;
   const winnerLegsAfter = winnerLegsBefore + 1;
 
+  // Est-ce que cette manche fait gagner le SET ?
+  const willWinSet =
+    isDuel && isSetLegMode && legsTarget > 0 && winnerLegsAfter >= legsTarget;
+
+  const winnerSetsBefore = setsWon[winnerId] ?? 0;
+  const winnerSetsAfter = willWinSet ? winnerSetsBefore + 1 : winnerSetsBefore;
+
+  // Est-ce que cette manche fait gagner le MATCH (tous les sets requis gagnés) ?
+  const willWinMatch =
+    willWinSet && setsTarget > 0 && winnerSetsAfter >= setsTarget;
+
+  // Texte score "1-1", "2-1", etc. (score des MANCHES dans le set en cours)
   let scoreText: string | null = null;
 
-  if (players.length === 2) {
+  if (isDuel) {
     const other = players.find((p) => p.id !== winnerId);
     if (other) {
-      const otherLegs = legsWon[other.id] ?? 0;
-      scoreText = `${winnerLegsAfter} - ${otherLegs}`;
+      const otherLegsBefore = legsWon[other.id] ?? 0;
+      const otherLegsAfter = otherLegsBefore; // il ne gagne pas cette manche
+      scoreText = `${winnerLegsAfter} - ${otherLegsAfter}`;
     }
   } else if (isSetLegMode) {
     const wl = winnerLegsAfter;
@@ -168,9 +184,31 @@ function LegBannerModal(props: LegBannerProps) {
         : null;
   }
 
-  // ✅ Affichage "Set" uniquement si duel + plusieurs sets
-  const isDuel = players.length === 2;
-  const showSets = isDuel && setsTarget > 1;
+  // ✅ Nom de l’adversaire pour affichage "Alex 1-1 Neven"
+  const opponentName =
+    isDuel ? players.find((p) => p.id !== winnerId)?.name ?? null : null;
+
+  // ✅ Libellé du bouton principal (bas) :
+  // - pas de set/leg : Terminer
+  // - set gagné mais match fini : Terminer le match
+  // - set gagné mais match continue : Set suivant
+  // - sinon : Manche suivante
+  let primaryLabel: string;
+  if (!isSetLegMode) {
+    primaryLabel = "Terminer";
+  } else if (willWinMatch) {
+    primaryLabel = "Terminer le match";
+  } else if (willWinSet) {
+    primaryLabel = "Set suivant";
+  } else {
+    primaryLabel = "Manche suivante";
+  }
+
+  // ✅ Badge sous le nom : "Manche gagnée" ou "SET gagné"
+  const victoryLabel = willWinSet ? "SET gagné" : "Manche gagnée";
+
+  // ✅ "Continuer (laisser finir)" uniquement si 3 joueurs et +
+  const showContinue = players.length >= 3;
 
   return (
     <div
@@ -202,116 +240,170 @@ function LegBannerModal(props: LegBannerProps) {
           style={{
             display: "flex",
             alignItems: "center",
+            justifyContent: "space-between",
             gap: 12,
             marginBottom: 12,
           }}
         >
-          {/* Avatar + coupe */}
+          {/* Avatar + Texte gagnant */}
           <div
             style={{
-              position: "relative",
-              width: 64,
-              height: 64,
-              borderRadius: "50%",
-              overflow: "hidden",
-              background:
-                "radial-gradient(circle at 30% 0%, #ffde75, #c2871f)",
-              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flex: 1,
+              minWidth: 0,
             }}
           >
-            {winnerProfile?.avatarDataUrl ? (
-              <img
-                src={winnerProfile.avatarDataUrl}
-                alt={winnerProfile.name}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontWeight: 900,
-                  color: "#1a1a1a",
-                }}
-              >
-                🏆
-              </div>
-            )}
-
+            {/* Avatar CLEAN */}
             <div
               style={{
-                position: "absolute",
-                right: -4,
-                bottom: -4,
-                width: 28,
-                height: 28,
+                position: "relative",
+                width: 64,
+                height: 64,
                 borderRadius: "50%",
-                border: "2px solid #151518",
+                overflow: "hidden",
                 background:
-                  "radial-gradient(circle at 30% 0%, #ffe49c, #e1a62b)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 16,
+                  "radial-gradient(circle at 30% 0%, #ffde75, #c2871f)",
+                flexShrink: 0,
               }}
             >
-              🏆
+              {winnerProfile?.avatarDataUrl ? (
+                <img
+                  src={winnerProfile.avatarDataUrl}
+                  alt={winnerProfile.name}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 900,
+                    color: "#1a1a1a",
+                    fontSize: 24,
+                  }}
+                >
+                  <img
+                    src={trophyCup}
+                    alt="Trophée"
+                    style={{
+                      width: "80%",
+                      height: "80%",
+                      objectFit: "contain",
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Texte */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: 1,
+                  opacity: 0.85,
+                  marginBottom: 2,
+                }}
+              >
+                {isSetLegMode ? (
+                  <>
+                    Manche {currentLegInSet}/{legsTarget} · Set {currentSet}/
+                    {setsTarget}
+                  </>
+                ) : (
+                  <>Manche {currentLegInSet}</>
+                )}
+              </div>
+
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 900,
+                  color: "#ffcf57",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "baseline",
+                  gap: 4,
+                }}
+              >
+                <span>
+                  {winnerProfile?.name || winnerPlayer?.name || "Vainqueur"}
+                </span>
+
+                {scoreText && (
+                  <>
+                    <span
+                      style={{
+                        fontSize: 15,
+                        color: "#f5f5f7",
+                        opacity: 0.9,
+                      }}
+                    >
+                      · {scoreText}
+                    </span>
+
+                    {opponentName && (
+                      <span
+                        style={{
+                          fontSize: 15,
+                          color: "#f5f5f7",
+                          opacity: 0.9,
+                        }}
+                      >
+                        · {opponentName}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 2,
+                  fontSize: 13,
+                  fontWeight: 800,
+                  color: "#e7e7e7",
+                  opacity: 0.9,
+                }}
+              >
+                {victoryLabel}
+              </div>
             </div>
           </div>
 
-          {/* Texte */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
+          {/* Petit icône TROPHÉE à droite */}
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 14,
+              background: "rgba(246,194,86,0.16)",
+              boxShadow: "0 0 6px rgba(246,194,86,0.35)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <img
+              src={trophyCup}
+              alt="Trophée"
               style={{
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                opacity: 0.85,
-                marginBottom: 2,
+                width: "80%",
+                height: "80%",
+                objectFit: "contain",
               }}
-            >
-              {showSets ? (
-                <>
-                  Manche {currentLegInSet}/{legsTarget} · Set {currentSet}/
-                  {setsTarget}
-                </>
-              ) : (
-                <>Manche {currentLegInSet}/{legsTarget}</>
-              )}
-            </div>
-            <div
-              style={{
-                fontSize: 18,
-                fontWeight: 900,
-                color: "#ffcf57",
-                display: "flex",
-                flexWrap: "wrap",
-                alignItems: "baseline",
-                gap: 4,
-              }}
-            >
-              <span>
-                {winnerProfile?.name || winnerPlayer?.name || "Vainqueur"}
-              </span>
-              {scoreText && (
-                <span
-                  style={{
-                    fontSize: 15,
-                    color: "#f5f5f7",
-                    opacity: 0.9,
-                  }}
-                >
-                  · {scoreText}
-                </span>
-              )}
-            </div>
+            />
           </div>
         </div>
 
@@ -324,22 +416,24 @@ function LegBannerModal(props: LegBannerProps) {
             marginTop: 4,
           }}
         >
-          <button
-            type="button"
-            onClick={onContinue}
-            style={{
-              width: "100%",
-              borderRadius: 999,
-              padding: "10px 12px",
-              border: "1px solid rgba(120,200,140,.5)",
-              background: "linear-gradient(180deg,#35c86d,#23a958)",
-              color: "#08130c",
-              fontWeight: 900,
-              cursor: "pointer",
-            }}
-          >
-            Continuer (laisser finir)
-          </button>
+          {showContinue && (
+            <button
+              type="button"
+              onClick={onContinue}
+              style={{
+                width: "100%",
+                borderRadius: 999,
+                padding: "10px 12px",
+                border: "1px solid rgba(120,200,140,.5)",
+                background: "linear-gradient(180deg,#35c86d,#23a958)",
+                color: "#08130c",
+                fontWeight: 900,
+                cursor: "pointer",
+              }}
+            >
+              Continuer (laisser finir)
+            </button>
+          )}
 
           <button
             type="button"
@@ -356,7 +450,7 @@ function LegBannerModal(props: LegBannerProps) {
               cursor: "pointer",
             }}
           >
-            Classement
+            Résumé
           </button>
 
           <button
@@ -374,7 +468,7 @@ function LegBannerModal(props: LegBannerProps) {
               marginTop: 2,
             }}
           >
-            {endLabel}
+            {primaryLabel}
           </button>
         </div>
       </div>
@@ -988,7 +1082,9 @@ function X01Core({
   const [lastBustByPlayer, setLastBustByPlayer] = React.useState<
     Record<string, boolean>
   >({});
-  const [dartsCount, setDartsCount] = React.useState<Record<string, number>>({});
+  const [dartsCount, setDartsCount] = React.useState<Record<string, number>>(
+    {}
+  );
   const [pointsSum, setPointsSum] = React.useState<Record<string, number>>({});
   const [visitsCount, setVisitsCount] = React.useState<Record<string, number>>(
     {}
@@ -1021,7 +1117,7 @@ function X01Core({
     currentPlayer,
     turnIndex,
     scoresByPlayer,
-    isOver,
+    isOver, // plus utilisé pour terminer le match, mais on le garde pour l’instant
     winner,
     submitThrowUI,
     undoLast,
@@ -1037,6 +1133,7 @@ function X01Core({
     legsTarget,
     setsWon,
     legsWon,
+    ruleWinnerId, // 👈 nouveau champ utilisé pour la fin de match
   } = useX01Engine({
     profiles,
     playerIds: playerIdsFromResume,
@@ -1050,6 +1147,7 @@ function X01Core({
     inMode: inMFromResume,
     finishPolicy: defaultFinishPolicy,
     onFinish: (m) => {
+      // on ne navigue plus ici : on stocke juste le MatchRecord
       setPendingFinish(m);
     },
     /* ===== FIN DE MANCHE (LEG) ===== */
@@ -1450,7 +1548,8 @@ function X01Core({
 
   React.useEffect(() => {
     const onVis = () => {
-      if (document.visibilityState === "hidden") latestPersistFnRef.current();
+      if (document.visibilityState === "hidden")
+        latestPersistFnRef.current();
     };
     const onBeforeUnload = () => latestPersistFnRef.current();
     document.addEventListener("visibilitychange", onVis);
@@ -1462,7 +1561,7 @@ function X01Core({
   }, []);
 
   /* =====================================================
-     FIN DE MATCH
+     FIN DE MATCH — NOUVELLE LOGIQUE
   ===================================================== */
   function persistOnFinish() {
     try {
@@ -1476,19 +1575,33 @@ function X01Core({
     } catch {}
   }
 
-  const prevIsOver = React.useRef(false);
+  // on ne doit terminer le match qu'une seule fois
+  const hasFinishedRef = React.useRef(false);
 
   React.useEffect(() => {
-    const justFinished = !prevIsOver.current && isOver;
-    prevIsOver.current = isOver;
+    if (!ruleWinnerId) return;
+    if (hasFinishedRef.current) return;
 
-    if (justFinished) {
-      persistOnFinish();
-      finalizeMatch();
-    }
-  }, [isOver]);
+    // nombre total de sets (config moteur ou snapshot)
+    const totalSets =
+      (setsTarget && setsTarget > 0 ? setsTarget : setsFromResume) || 1;
+
+    // mode "best of" : sets à gagner = floor(total/2)+1
+    const setsNeededToWin = Math.floor(totalSets / 2) + 1;
+    const winnerSets = setsWon?.[ruleWinnerId] ?? 0;
+
+    if (winnerSets < setsNeededToWin) return;
+
+    finalizeMatch();
+  }, [ruleWinnerId, setsWon, setsTarget, setsFromResume]);
 
   async function finalizeMatch() {
+    if (hasFinishedRef.current) return;
+    hasFinishedRef.current = true;
+
+    // on persiste l'état final
+    persistOnFinish();
+
     try {
       const playersArr = mapEnginePlayersToLite(
         state.players as any,
@@ -1543,7 +1656,10 @@ function X01Core({
           darts: matchLegsRef.current.reduce(
             (n, l: any) =>
               n +
-              (l.perPlayer?.reduce((s: number, p: any) => s + p.darts, 0) ?? 0),
+              (l.perPlayer?.reduce(
+                (s: number, p: any) => s + p.darts,
+                0
+              ) ?? 0),
             0
           ),
         },
@@ -1808,15 +1924,17 @@ function X01Core({
             {isDuel && useSetsUi && (
               <DuelHeaderCompact
                 leftAvatarUrl={
-                  profileById[state.players[0].id]?.avatarDataUrl ?? ""
+                  profileById[(state.players as any)[0].id]?.avatarDataUrl ??
+                  ""
                 }
                 rightAvatarUrl={
-                  profileById[state.players[1].id]?.avatarDataUrl ?? ""
+                  profileById[(state.players as any)[1].id]?.avatarDataUrl ??
+                  ""
                 }
-                leftSets={setsWonNow[state.players[0].id] ?? 0}
-                rightSets={setsWonNow[state.players[1].id] ?? 0}
-                leftLegs={legsWonNow[state.players[0].id] ?? 0}
-                rightLegs={legsWonNow[state.players[1].id] ?? 0}
+                leftSets={setsWonNow[(state.players as any)[0].id] ?? 0}
+                rightSets={setsWonNow[(state.players as any)[1].id] ?? 0}
+                leftLegs={legsWonNow[(state.players as any)[0].id] ?? 0}
+                rightLegs={legsWonNow[(state.players as any)[1].id] ?? 0}
               />
             )}
           </div>
@@ -1930,6 +2048,7 @@ function X01Core({
           setsTarget={setsTarget ?? setsFromResume}
           legsTarget={legsTarget ?? legsFromResume}
           legsWon={legsWon ?? {}}
+          setsWon={setsWon ?? {}}
           currentSet={currentSet}
           currentLegInSet={currentLegInSet}
           onContinue={continueAfterFirst}
@@ -2143,7 +2262,10 @@ function X01Core({
             >
               {Math.max(
                 currentRemaining -
-                  currentThrow.reduce((s: number, d: UIDart) => s + dartValue(d), 0),
+                  currentThrow.reduce(
+                    (s: number, d: UIDart) => s + dartValue(d),
+                    0
+                  ),
                 0
               )}
             </div>

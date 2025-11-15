@@ -1,6 +1,6 @@
 // ============================================
 // src/components/EndOfLegOverlay.tsx
-// Overlay "Classement de la manche" — compact + labels FR
+// Overlay "Résumé de la manche" — compact + labels FR
 // (Compat total: accepte LegacyLegResult *ou* LegStats, sans rien modifier ailleurs)
 // - AUCUNE écriture dans le pont ni profils (zéro side effects)
 // - Calcule/fait des fallbacks pour toutes les valeurs manquantes
@@ -519,7 +519,7 @@ function Inner({
           }}
         >
           <div style={{ fontWeight: 900, color: "#f0b12a", fontSize: 14 }}>
-            Classement de la manche #{legNo}
+            Résumé de la manche #{legNo}
           </div>
           <div style={{ opacity: 0.7, fontSize: 11, marginLeft: 6 }}>
             Manche terminée — {new Date(finishedAt).toLocaleTimeString()}
@@ -532,7 +532,7 @@ function Inner({
 
         {/* Corps */}
         <div style={{ padding: 10, paddingTop: 8 }}>
-          {/* Classement */}
+          {/* Classement (liste joueurs) */}
           <div
             style={{
               borderRadius: 10,
@@ -609,7 +609,7 @@ function Inner({
           </div>
 
           {/* Résumé */}
-          <Accordion title="Résumé de la partie" defaultOpen>
+          <Accordion title="Résumé de la manche" defaultOpen>
             <SummaryRows
               winnerName={nameOf(winnerId || "")}
               minDartsRow={minDartsRow || null}

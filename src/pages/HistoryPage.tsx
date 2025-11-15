@@ -2,6 +2,7 @@
 // src/pages/HistoryPage.tsx — Historique (onglets + sous-onglets temps)
 // (EXTRAIT COMPLET avec correctif "Voir stats" -> x01_end)
 // + FIX 2025-11-14 : ne plus dé-doublonner les parties "En cours"
+// + FIX 2025-11-15 : Reprendre une partie "En cours" = utilise toujours son id d’historique
 // ============================================
 import React, { useEffect, useMemo, useState } from "react";
 import type { Store } from "../lib/types";
@@ -579,7 +580,8 @@ export default function HistoryPage({
                     <button
                       style={{ ...S.pill, ...S.pillGold }}
                       onClick={() => {
-                        const resumeId = matchLink(e) || e.id;
+                        // 🔑 Pour les parties EN COURS, on reprend toujours par l'id d’historique
+                        const resumeId = e.id;
                         const mode = baseMode(e);
                         if (mode === "x01")
                           go("x01", {
@@ -599,7 +601,7 @@ export default function HistoryPage({
                     <button
                       style={S.pill}
                       onClick={() => {
-                        const resumeId = matchLink(e) || e.id;
+                        const resumeId = e.id;
                         const mode = baseMode(e);
                         if (mode === "x01")
                           go("x01", {
@@ -627,7 +629,7 @@ export default function HistoryPage({
                       const resumeId = matchLink(e) || e.id;
                       go("x01_end", {
                         rec: e, // record complet (summary/payload/winner/etc.)
-                        resumeId, // pour re-jouer depuis l’overlay
+                        resumeId, // pour re-jouer depuis l’overlay (legacy)
                         showEnd: true, // force l’overlay
                         from: "history",
                       });

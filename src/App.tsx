@@ -1,6 +1,7 @@
 // ============================================
 // src/App.tsx — Navigation + wiring propre (v5 sécurisé)
 // Fix: "Lancer partie" n'affiche plus la dernière reprise
+// + Intégration pages Training (menu / play / stats)
 // ============================================
 import React from "react";
 import BottomNav from "./components/BottomNav";
@@ -32,6 +33,11 @@ import StatsHub from "./pages/StatsHub";
 import X01End from "./pages/X01End";
 // ✅ Nouvelle page
 import AvatarCreator from "./pages/AvatarCreator";
+
+// ✅ Pages Training (menu / solo X01 / stats)
+import TrainingMenu from "./pages/TrainingMenu";
+import TrainingX01Play from "./pages/TrainingX01Play";
+import TrainingStatsPage from "./pages/TrainingStatsPage";
 
 // Historique (pour StatsDetail / upsert / get)
 import { History } from "./lib/history";
@@ -77,6 +83,10 @@ type Tab =
   | "cricket"
   | "killer"
   | "shanghai"
+  // ✅ nouvelles routes tabs Training
+  | "training"
+  | "training_x01"
+  | "training_stats"
   // ✅ nouvelle route par onglet
   | "avatar";
 
@@ -540,6 +550,25 @@ export default function App() {
 
       case "shanghai": {
         page = <ShanghaiPlay playerIds={[]} onFinish={pushHistory} />;
+        break;
+      }
+
+      // ---------- Training ----------
+      case "training": {
+        // Menu Training (choix mode, bouton "X01 solo", bouton "Voir évolution")
+        page = <TrainingMenu />;
+        break;
+      }
+
+      case "training_x01": {
+        // Partie Training X01 solo
+        page = <TrainingX01Play />;
+        break;
+      }
+
+      case "training_stats": {
+        // Page "Évolution" des trainings
+        page = <TrainingStatsPage />;
         break;
       }
 

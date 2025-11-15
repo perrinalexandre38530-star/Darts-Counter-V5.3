@@ -8,7 +8,7 @@ export default function Games({
 }: {
   setTab: (tab: any) => void;
 }) {
-  // -- Déclare les jeux ici (seul X01 est activé)
+  // -- Déclare les jeux ici
   const GAMES: {
     id: string;
     title: string;
@@ -16,11 +16,49 @@ export default function Games({
     tab: string;
     enabled: boolean;
   }[] = [
-    { id: "x01", title: "X01", subtitle: "301 / 501 / 701 / 1001 — double-out", tab: "x01setup", enabled: true },
-    { id: "cricket", title: "Cricket", subtitle: "15–20 + Bull — fermetures et points", tab: "cricket", enabled: false },
-    { id: "killer", title: "Killer", subtitle: "Double ton numéro — deviens Killer", tab: "killer", enabled: false },
-    { id: "shanghai", title: "Shanghai", subtitle: "Cible du tour, S/D/T — Shanghai = win", tab: "shanghai", enabled: false },
-    { id: "battle", title: "Battle Royale", subtitle: "Mode fun à plusieurs — éliminations successives", tab: "battle", enabled: false },
+    // ✅ TRAINING tout en haut
+    {
+      id: "training",
+      title: "Training",
+      subtitle: "Améliorez votre progression",
+      tab: "training",
+      enabled: true,
+    },
+    {
+      id: "x01",
+      title: "X01",
+      subtitle: "301 / 501 / 701 / 1001 — double-out",
+      tab: "x01setup",
+      enabled: true,
+    },
+    {
+      id: "cricket",
+      title: "Cricket",
+      subtitle: "15–20 + Bull — fermetures et points",
+      tab: "cricket",
+      enabled: false,
+    },
+    {
+      id: "killer",
+      title: "Killer",
+      subtitle: "Double ton numéro — deviens Killer",
+      tab: "killer",
+      enabled: false,
+    },
+    {
+      id: "shanghai",
+      title: "Shanghai",
+      subtitle: "Cible du tour, S/D/T — Shanghai = win",
+      tab: "shanghai",
+      enabled: false,
+    },
+    {
+      id: "battle",
+      title: "Battle Royale",
+      subtitle: "Mode fun à plusieurs — éliminations successives",
+      tab: "battle",
+      enabled: false,
+    },
   ];
 
   return (
@@ -112,7 +150,8 @@ function GameCard({
         padding: "14px 18px",
         borderRadius: 16,
         border: "1px solid rgba(255,255,255,.08)",
-        background: "linear-gradient(180deg, rgba(25,25,28,.6), rgba(15,15,18,.7))",
+        background:
+          "linear-gradient(180deg, rgba(25,25,28,.6), rgba(15,15,18,.7))",
         opacity: disabled ? 0.5 : 1,
         cursor: disabled ? "not-allowed" : "pointer",
         display: "flex",
@@ -145,8 +184,12 @@ function GameCard({
           padding: "6px 14px",
           fontWeight: 800,
           fontSize: 13,
-          border: disabled ? "1px solid rgba(148,163,184,.35)" : "1px solid rgba(255,180,0,.35)",
-          boxShadow: disabled ? "none" : "0 0 10px rgba(240,177,42,.25)",
+          border: disabled
+            ? "1px solid rgba(148,163,184,.35)"
+            : "1px solid rgba(255,180,0,.35)",
+          boxShadow: disabled
+            ? "none"
+            : "0 0 10px rgba(240,177,42,.25)",
           display: "inline-flex",
           alignItems: "center",
           gap: 8,
