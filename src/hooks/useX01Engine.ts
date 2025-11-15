@@ -294,17 +294,28 @@ function computeLegAggFromHistory(state: any) {
       markHit(pid, d);
       const pts = dartPointsGame(d);
       volSum += pts;
-      if (d.bed === "D") doubles[pid] += 1;
-      if (d.bed === "T") triples[pid] += 1;
-      if (d.bed === "OB" || d.bed === "IB") bulls[pid] += 1;
+
+      if (d.bed === "D") {
+        doubles[pid] += 1;
+      }
+      if (d.bed === "T") {
+        triples[pid] += 1;
+      }
+      if (d.bed === "OB" || d.bed === "IB") {
+        bulls[pid] += 1;
+      }
     }
 
     if (arr.length === 3 && volSum === 180) {
       h180[pid] += 1;
       x180[pid] += 1;
-    } else if (volSum >= 140) h140[pid] += 1;
-    else if (volSum >= 100) h100[pid] += 1;
-    else if (volSum >= 60) h60[pid] += 1;
+    } else if (volSum >= 140) {
+      h140[pid] += 1;
+    } else if (volSum >= 100) {
+      h100[pid] += 1;
+    } else if (volSum >= 60) {
+      h60[pid] += 1;
+    }
 
     bestVisit[pid] = Math.max(bestVisit[pid], volSum);
     sumPointsByVisit[pid] += volSum;
@@ -429,7 +440,9 @@ function hydrateFromSnapshot(
     for (let i = 0; i < ids.length; i++) {
       const pid = ids[i];
       const score = (snap as any).scores[i];
-      if (typeof score === "number" && s.table?.[pid]) s.table[pid].score = score;
+      if (typeof score === "number" && s.table?.[pid]) {
+        s.table[pid].score = score;
+      }
     }
   }
 
@@ -974,11 +987,14 @@ export function useX01Engine(args: {
             } else {
               mapped.push({ v: 0, mult: 1 });
             }
-          } else mapped.push(d);
+          } else {
+            mapped.push(d);
+          }
         }
         replay = engine.playTurn(replay, uiToGameDarts(mapped));
-        if (!rebuiltEntered[pid] && entered)
+        if (!rebuiltEntered[pid] && entered) {
           rebuiltEntered[pid] = true;
+        }
       }
       replay = ensureActiveIsAlive(replay);
       setEnteredBy(rebuiltEntered);
@@ -1008,8 +1024,9 @@ export function useX01Engine(args: {
 
   const scoresByPlayer: Record<string, number> = React.useMemo(() => {
     const out: Record<string, number> = {};
-    for (const p of state.players || [])
+    for (const p of state.players || []) {
       out[p.id] = state.table?.[p.id]?.score ?? 0;
+    }
     return out;
   }, [state]);
 
