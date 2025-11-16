@@ -919,10 +919,23 @@ export default function TrainingX01Play({
   // 👉 nouvel état : partie commencée ou non
   const [started, setStarted] = React.useState(false);
 
+  // 👉 nouvel état : fin de partie (checkout) => fenêtre flottante
+  const [showEndModal, setShowEndModal] = React.useState(false);
+
   const sessionIdRef = React.useRef<string | null>(null);
   const visitCountRef = React.useRef<number>(0);
 
-  React.useEffect(() => {
+  // Helper : démarrer / redémarrer proprement une session Training
+  function startNewSession() {
+    if (sessionIdRef.current) {
+      try {
+        TrainingStore.finishSession(sessionIdRef.current);
+      } catch (err) {
+        console.warn("TrainingX01Play finishSession (prev) failed", err);
+      }
+      sessionIdRef.current = null;
+    }
+
     const s = TrainingStore.startSession(
       "x01_solo" as any,
       currentProfile?.id ?? null,
@@ -949,15 +962,24 @@ export default function TrainingX01Play({
 
     setHitMap({});
     visitCountRef.current = 0;
-
-    // nouvelle partie → paramètres visibles
     setStarted(false);
+    setShowEndModal(false);
+  }
+
+  React.useEffect(() => {
+    startNewSession();
 
     return () => {
       if (sessionIdRef.current) {
-        TrainingStore.finishSession(sessionIdRef.current);
+        try {
+          TrainingStore.finishSession(sessionIdRef.current);
+        } catch (err) {
+          console.warn("TrainingX01Play finishSession (cleanup) failed", err);
+        }
+        sessionIdRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProfile?.id, startScore, outMode]);
 
   const currentThrowTotal = throwTotal(currentThrow);
@@ -981,6 +1003,9 @@ export default function TrainingX01Play({
   // HANDLERS
 
   function handleNumber(n: number) {
+    // si la partie est terminée (checkout), on ignore les entrées
+    if (remaining <= 0) return;
+
     if (!started) setStarted(true);
     if (currentThrow.length >= 3) return;
     const d: UIDart = { v: n, mult: multiplier };
@@ -991,6 +1016,9 @@ export default function TrainingX01Play({
   }
 
   function handleBull() {
+    // si la partie est terminée (checkout), on ignore les entrées
+    if (remaining <= 0) return;
+
     if (!started) setStarted(true);
     if (currentThrow.length >= 3) return;
     const d: UIDart = { v: 25, mult: multiplier === 2 ? 2 : 1 };
@@ -1122,6 +1150,9 @@ export default function TrainingX01Play({
         };
 
         setFinishedSessions((arr) => [...arr, stat]);
+
+        // 👉 fin de partie => on affiche la petite fenêtre flottante
+        setShowEndModal(true);
       }
     }
 
@@ -1131,9 +1162,29 @@ export default function TrainingX01Play({
 
   function handleExit() {
     if (sessionIdRef.current) {
-      TrainingStore.finishSession(sessionIdRef.current);
+      try {
+        TrainingStore.finishSession(sessionIdRef.current);
+      } catch (err) {
+        console.warn("TrainingX01Play finishSession (exit) failed", err);
+      }
+      sessionIdRef.current = null;
     }
     go?.("training");
+  }
+
+  function handleReplay() {
+    // 👉 on termine la session actuelle pour la pousser dans les stats Training
+    if (sessionIdRef.current) {
+      try {
+        TrainingStore.finishSession(sessionIdRef.current);
+      } catch (err) {
+        console.warn("TrainingX01Play finishSession (replay) failed", err);
+      }
+      sessionIdRef.current = null;
+    }
+
+    // et on relance une nouvelle session avec les mêmes paramètres
+    startNewSession();
   }
 
   // RENDER — compact sans scroll
@@ -1664,6 +1715,125 @@ export default function TrainingX01Play({
               onRangeChange={setRangeKey}
               onMetricChange={setMetricKey}
             />
+          </div>
+        </div>
+      )}
+
+      {/* FENÊTRE FLOTTANTE FIN DE PARTIE */}
+      {showEndModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.65)",
+            zIndex: 92,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: "min(100%,360px)",
+              background:
+                "linear-gradient(180deg,#15151d 0%,#050509 100%)",
+              borderRadius: 18,
+              padding: 14,
+              border: "1px solid rgba(255,210,130,0.85)",
+              boxShadow:
+                "0 12px 28px rgba(0,0,0,0.8), 0 0 22px rgba(255,200,80,0.55)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 15,
+                fontWeight: 800,
+                color: "#ffffff",
+                marginBottom: 8,
+                textAlign: "center",
+              }}
+            >
+              Session terminée
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: "rgba(230,230,245,0.9)",
+                marginBottom: 12,
+                textAlign: "center",
+              }}
+            >
+              Que voulez-vous faire ?
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  // On affiche le résumé (Sparkline), la fenêtre reste en dessous
+                  setShowProgress(true);
+                }}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid rgba(255,220,140,0.9)",
+                  background:
+                    "linear-gradient(180deg,#ffcf61,#c17b0c)",
+                  color: "#221600",
+                  fontWeight: 800,
+                  fontSize: 13,
+                }}
+              >
+                Résumé
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  handleReplay();
+                  setShowEndModal(false);
+                }}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid rgba(120,240,170,0.9)",
+                  background:
+                    "linear-gradient(180deg,#11c676,#057a46)",
+                  color: "#e9fff4",
+                  fontWeight: 800,
+                  fontSize: 13,
+                }}
+              >
+                Rejouer
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEndModal(false);
+                  handleExit();
+                }}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid rgba(255,120,120,0.9)",
+                  background:
+                    "linear-gradient(180deg,#e63a3a,#8d1212)",
+                  color: "#ffecec",
+                  fontWeight: 800,
+                  fontSize: 13,
+                }}
+              >
+                Quitter
+              </button>
+            </div>
           </div>
         </div>
       )}
