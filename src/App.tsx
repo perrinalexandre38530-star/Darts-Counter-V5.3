@@ -38,6 +38,7 @@ import AvatarCreator from "./pages/AvatarCreator";
 import TrainingMenu from "./pages/TrainingMenu";
 import TrainingX01Play from "./pages/TrainingX01Play";
 import TrainingStatsPage from "./pages/TrainingStatsPage";
+import TrainingClock from "./pages/TrainingClock";
 
 // Historique (pour StatsDetail / upsert / get)
 import { History } from "./lib/history";
@@ -87,6 +88,7 @@ type Tab =
   | "training"
   | "training_x01"
   | "training_stats"
+  | "training_clock"
   // ✅ nouvelle route par onglet
   | "avatar";
 
@@ -569,6 +571,12 @@ export default function App() {
       case "training_stats": {
         // Page "Évolution" des trainings (historique + % de hits)
         page = <TrainingStatsPage />;
+        break;
+      }
+
+      case "training_clock": {
+        // Tour de l'horloge (training)
+        page = <TrainingClock />;
         break;
       }
 

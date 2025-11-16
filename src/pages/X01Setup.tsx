@@ -146,7 +146,10 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
     saved.inMode ?? "simple"
   );
   const [setsToWin, setSetsToWin] = React.useState<number>(saved.setsToWin ?? 1);
-  const [legsPerSet, setLegsPerSet] = React.useState<number>(saved.legsPerSet ?? 1);
+
+  // ⚠️ IMPORTANT : par défaut on veut un "best of 3" → 3 legs par set
+  const [legsPerSet, setLegsPerSet] = React.useState<number>(saved.legsPerSet ?? 3);
+
   const [randomOrder, setRandomOrder] = React.useState<boolean>(saved.randomOrder ?? false);
 
   // nouvelles options persistées

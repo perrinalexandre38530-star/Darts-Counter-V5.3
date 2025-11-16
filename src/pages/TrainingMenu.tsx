@@ -19,6 +19,15 @@ export default function TrainingMenu({ go }: Props) {
     go("training_x01");
   }
 
+  function startClockTraining() {
+    if (!go) {
+      console.warn("[TrainingMenu] go() manquant");
+      return;
+    }
+    // 👉 Tab défini dans App.tsx
+    go("training_clock");
+  }
+
   function openStats() {
     if (!go) {
       console.warn("[TrainingMenu] go() manquant");
@@ -77,6 +86,13 @@ export default function TrainingMenu({ go }: Props) {
           subtitle="501 • enregistre chaque volée et chaque fléchette"
           actionLabel="Lancer"
           onClick={startX01Training}
+        />
+
+        <TrainingCard
+          title="Tour de l'horloge"
+          subtitle="1 → 20 puis Bull • Classique, Doubles, Triples, S-D-T"
+          actionLabel="Lancer"
+          onClick={startClockTraining}
         />
 
         <TrainingCard
