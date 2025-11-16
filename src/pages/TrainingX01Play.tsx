@@ -1286,7 +1286,7 @@ return (
     </div>
 
     {/* MARGE sous header */}
-    <div style={{ height: 50 }} />
+    <div style={{ height: 55 }} />
 
     {/* BLOC CENTRAL : 2 colonnes + volée */}
     <div
@@ -1325,8 +1325,8 @@ return (
   <div
     style={{
       position: "relative",
-      width: 70,
-      height: 70,
+      width: 65,
+      height: 65,
       borderRadius: "50%",
       display: "flex",
       alignItems: "center",
@@ -1350,8 +1350,8 @@ return (
     <div
       style={{
         position: "relative",
-        width: 70,
-        height: 70,
+        width: 65,
+        height: 65,
         borderRadius: "50%",
         overflow: "hidden",
         zIndex: 1,
