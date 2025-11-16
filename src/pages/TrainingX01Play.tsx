@@ -761,17 +761,28 @@ function TrainingStatsTable({
 /* -------------------------------------------------------
    VOLÉE EN COURS — 3 chips + total sur une seule ligne
    (le total juste après le 3ᵉ bloc, le tout centré)
+   + rouge si bustLock actif
 ---------------------------------------------------------*/
 
-function ThrowPreviewBar({ darts }: { darts: UIDart[] }) {
+function ThrowPreviewBar({
+  darts,
+  isBustLocked,
+}: {
+  darts: UIDart[];
+  isBustLocked: boolean;
+}) {
   const total = throwTotal(darts);
+
+  const wrapperBorderTop = isBustLocked
+    ? "1px solid rgba(255,80,80,0.85)"
+    : "1px solid rgba(255,255,255,0.07)";
 
   return (
     <div
       style={{
         marginTop: 8,
         paddingTop: 6,
-        borderTop: "1px solid rgba(255,255,255,0.07)",
+        borderTop: wrapperBorderTop,
         width: "100%",
         display: "flex",
         justifyContent: "center",
@@ -790,6 +801,22 @@ function ThrowPreviewBar({ darts }: { darts: UIDart[] }) {
           const d = darts[idx];
           const label = chipLabel(d);
 
+          const bg = isBustLocked
+            ? "linear-gradient(180deg,#5a1010,#2a0505)"
+            : chipBg(d);
+
+          const border = isBustLocked
+            ? "1px solid rgba(255,80,80,0.9)"
+            : d
+            ? "1px solid rgba(0,0,0,0.35)"
+            : "1px solid rgba(255,255,255,0.05)";
+
+          const color = isBustLocked
+            ? "#ffd6d6"
+            : d
+            ? "#fff7dc"
+            : "rgba(180,180,190,0.7)";
+
           return (
             <div
               key={"chip" + idx}
@@ -797,16 +824,14 @@ function ThrowPreviewBar({ darts }: { darts: UIDart[] }) {
                 minWidth: 44,
                 padding: "4px 12px",
                 borderRadius: 999,
-                background: chipBg(d),
+                background: bg,
                 boxShadow: d
                   ? "0 4px 12px rgba(0,0,0,0.7)"
                   : "0 2px 8px rgba(0,0,0,0.6)",
-                border: d
-                  ? "1px solid rgba(0,0,0,0.35)"
-                  : "1px solid rgba(255,255,255,0.05)",
+                border,
                 fontSize: 11,
                 fontWeight: 700,
-                color: d ? "#fff7dc" : "rgba(180,180,190,0.7)",
+                color,
                 textAlign: "center",
               }}
             >
@@ -821,14 +846,17 @@ function ThrowPreviewBar({ darts }: { darts: UIDart[] }) {
             minWidth: 40,
             padding: "4px 8px",
             borderRadius: 8,
-            background: "#050506",
-            border: "1px solid #ffcf61",
-            boxShadow:
-              "0 0 12px rgba(255,195,80,0.55), 0 0 0 1px rgba(0,0,0,0.9)",
+            background: isBustLocked ? "#350707" : "#050506",
+            border: isBustLocked
+              ? "1px solid rgba(255,80,80,0.9)"
+              : "1px solid #ffcf61",
+            boxShadow: isBustLocked
+              ? "0 0 12px rgba(255,60,60,0.75), 0 0 0 1px rgba(0,0,0,0.9)"
+              : "0 0 12px rgba(255,195,80,0.55), 0 0 0 1px rgba(0,0,0,0.9)",
             textAlign: "center",
             fontSize: 13,
             fontWeight: 900,
-            color: "#ffcf61",
+            color: isBustLocked ? "#ffe0e0" : "#ffcf61",
           }}
         >
           {total}
@@ -871,10 +899,7 @@ export default function TrainingX01Play({
           avatarSrc = value;
           break;
         }
-        if (
-          typeof value === "string" &&
-          /data:image\//.test(value)
-        ) {
+        if (typeof value === "string" && /data:image\//.test(value)) {
           avatarSrc = value;
           break;
         }
@@ -916,11 +941,14 @@ export default function TrainingX01Play({
   const [showInfo, setShowInfo] = React.useState(false);
   const [showProgress, setShowProgress] = React.useState(false);
 
-  // 👉 nouvel état : partie commencée ou non
+  // partie commencée ou non
   const [started, setStarted] = React.useState(false);
 
-  // 👉 nouvel état : fin de partie (checkout) => fenêtre flottante
+  // fenètre de fin de partie
   const [showEndModal, setShowEndModal] = React.useState(false);
+
+  // bust "forcé" : on a dépassé le score restant pendant la volée
+  const [bustLocked, setBustLocked] = React.useState(false);
 
   const sessionIdRef = React.useRef<string | null>(null);
   const visitCountRef = React.useRef<number>(0);
@@ -964,6 +992,7 @@ export default function TrainingX01Play({
     visitCountRef.current = 0;
     setStarted(false);
     setShowEndModal(false);
+    setBustLocked(false);
   }
 
   React.useEffect(() => {
@@ -1003,34 +1032,69 @@ export default function TrainingX01Play({
   // HANDLERS
 
   function handleNumber(n: number) {
-    // si la partie est terminée (checkout), on ignore les entrées
-    if (remaining <= 0) return;
-
+    // partie terminée ou bust verrouillé => on ignore
+    if (remaining <= 0 || bustLocked) return;
+  
     if (!started) setStarted(true);
     if (currentThrow.length >= 3) return;
+  
     const d: UIDart = { v: n, mult: multiplier };
-    setCurrentThrow((t) => [...t, d]);
+    const nextThrow = [...currentThrow, d];
+    const after = remaining - throwTotal(nextThrow);
+  
+    const impossibleDoubleScore =
+      (outMode === "double" || outMode === "master") && after === 1;
+  
+    if (after < 0 || impossibleDoubleScore) {
+      // bust automatique dès qu'on dépasse OU qu'on tombe sur 1 en double/master
+      setBustLocked(true);
+      playSound("bust");
+      navigator.vibrate?.([120, 60, 140]);
+    } else {
+      playSound("dart-hit");
+      navigator.vibrate?.(20);
+    }
+  
+    setCurrentThrow(nextThrow);
     setMultiplier(1);
-    playSound("dart-hit");
-    navigator.vibrate?.(20);
   }
 
   function handleBull() {
-    // si la partie est terminée (checkout), on ignore les entrées
-    if (remaining <= 0) return;
-
+    // partie terminée ou bust verrouillé => on ignore
+    if (remaining <= 0 || bustLocked) return;
+  
     if (!started) setStarted(true);
     if (currentThrow.length >= 3) return;
+  
     const d: UIDart = { v: 25, mult: multiplier === 2 ? 2 : 1 };
-    setCurrentThrow((t) => [...t, d]);
+    const nextThrow = [...currentThrow, d];
+    const after = remaining - throwTotal(nextThrow);
+  
+    const impossibleDoubleScore =
+      (outMode === "double" || outMode === "master") && after === 1;
+  
+    if (after < 0 || impossibleDoubleScore) {
+      setBustLocked(true);
+      playSound("bust");
+      navigator.vibrate?.([120, 60, 140]);
+    } else {
+      playSound("dart-hit");
+      navigator.vibrate?.(20);
+    }
+  
+    setCurrentThrow(nextThrow);
     setMultiplier(1);
-    playSound("dart-hit");
-    navigator.vibrate?.(20);
-  }
+  }  
 
   function handleBackspace() {
     if (!currentThrow.length) return;
-    setCurrentThrow((t) => t.slice(0, -1));
+
+    const next = currentThrow.slice(0, -1);
+    setCurrentThrow(next);
+    const after = remaining - throwTotal(next);
+    if (after >= 0) {
+      setBustLocked(false);
+    }
     playSound("dart-hit");
   }
 
@@ -1038,6 +1102,7 @@ export default function TrainingX01Play({
     if (currentThrow.length > 0) {
       setCurrentThrow([]);
       setMultiplier(1);
+      setBustLocked(false);
       playSound("bust");
       return;
     }
@@ -1045,12 +1110,16 @@ export default function TrainingX01Play({
 
   function handleValidate() {
     if (!currentThrow.length || remaining <= 0 || !sessionIdRef.current) return;
-
+  
     const volleyTotal = throwTotal(currentThrow);
     const after = remaining - volleyTotal;
-
+  
     let isBust = false;
-    if (after < 0) {
+  
+    const impossibleDoubleScore =
+      (outMode === "double" || outMode === "master") && after === 1;
+  
+    if (after < 0 || impossibleDoubleScore) {
       isBust = true;
     } else if (after === 0) {
       const last = currentThrow[currentThrow.length - 1];
@@ -1058,9 +1127,9 @@ export default function TrainingX01Play({
         isBust = true;
       }
     }
-
+  
     const didCheckout = !isBust && after === 0;
-
+  
     const hitsPayload = currentThrow.map((d) => ({
       profileId: currentProfile?.id ?? null,
       value: dartValue(d),
@@ -1070,22 +1139,21 @@ export default function TrainingX01Play({
       remainingAfter: isBust ? remaining : after,
       mode: "x01_solo" as any,
     }));
-
+  
     try {
       TrainingStore.addHits(sessionIdRef.current, hitsPayload as any);
     } catch (err) {
       console.warn("TrainingX01Play addHits failed", err);
     }
-
+  
     setTotalDarts((n) => n + currentThrow.length);
-
+  
     const missCount = currentThrow.filter((d) => d.v === 0).length;
     setMissHits((n) => n + missCount);
-
+  
     if (isBust) {
       setBustCount((n) => n + 1);
-      playSound("bust");
-      navigator.vibrate?.([120, 60, 140]);
+      // score "remaining" ne bouge pas (on reste au début de la volée)
     } else {
       const validHits = currentThrow.filter((d) => d.v !== 0);
       const addHits = validHits.length;
@@ -1094,7 +1162,7 @@ export default function TrainingX01Play({
       let addT = 0;
       let addB = 0;
       let addDB = 0;
-
+  
       for (const d of validHits) {
         if (d.v === 25) {
           if (d.mult === 2) addDB++;
@@ -1103,14 +1171,14 @@ export default function TrainingX01Play({
         else if (d.mult === 2) addD++;
         else if (d.mult === 3) addT++;
       }
-
+  
       setTotalHits((n) => n + addHits);
       setSingleHits((n) => n + addS);
       setDoubleHits((n) => n + addD);
       setTripleHits((n) => n + addT);
       setBullHits((n) => n + addB);
       setDBullHits((n) => n + addDB);
-
+  
       setHitMap((prev) => {
         const next: HitMap = { ...prev };
         for (const d of validHits) {
@@ -1120,24 +1188,24 @@ export default function TrainingX01Play({
         }
         return next;
       });
-
+  
       setBestVisit((b) => Math.max(b, volleyTotal));
       setRemaining(after);
-
+  
       if (didCheckout) {
         playSound("doubleout");
       }
-
+  
       if (didCheckout) {
         const finalDarts = totalDarts + currentThrow.length;
         const avgPerDartFinal =
           finalDarts > 0 ? startScore / finalDarts : 0;
-
+  
         const newTotalHits = totalHits + addHits;
         const newS = singleHits + addS;
         const newD = doubleHits + addD;
         const newT = tripleHits + addT;
-
+  
         const stat: TrainingFinishStats = {
           date: Date.now(),
           darts: finalDarts,
@@ -1148,17 +1216,17 @@ export default function TrainingX01Play({
           bestVisit: Math.max(bestVisit, volleyTotal),
           checkout: dartValue(currentThrow[currentThrow.length - 1]),
         };
-
+  
         setFinishedSessions((arr) => [...arr, stat]);
-
-        // 👉 fin de partie => on affiche la petite fenêtre flottante
         setShowEndModal(true);
       }
     }
-
+  
     setCurrentThrow([]);
     setMultiplier(1);
+    setBustLocked(false);
   }
+  
 
   function handleExit() {
     if (sessionIdRef.current) {
@@ -1173,7 +1241,6 @@ export default function TrainingX01Play({
   }
 
   function handleReplay() {
-    // 👉 on termine la session actuelle pour la pousser dans les stats Training
     if (sessionIdRef.current) {
       try {
         TrainingStore.finishSession(sessionIdRef.current);
@@ -1183,7 +1250,6 @@ export default function TrainingX01Play({
       sessionIdRef.current = null;
     }
 
-    // et on relance une nouvelle session avec les mêmes paramètres
     startNewSession();
   }
 
@@ -1529,7 +1595,7 @@ export default function TrainingX01Play({
         </div>
 
         {/* Volée */}
-        <ThrowPreviewBar darts={currentThrow} />
+        <ThrowPreviewBar darts={currentThrow} isBustLocked={bustLocked} />
       </div>
 
       {/* KEYPAD FIXE EN BAS (au-dessus du BottomNav) */}
@@ -1777,7 +1843,6 @@ export default function TrainingX01Play({
               <button
                 type="button"
                 onClick={() => {
-                  // On affiche le résumé (Sparkline), la fenêtre reste en dessous
                   setShowProgress(true);
                 }}
                 style={{
