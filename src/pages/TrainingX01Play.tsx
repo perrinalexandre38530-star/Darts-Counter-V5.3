@@ -916,6 +916,9 @@ export default function TrainingX01Play({
   const [showInfo, setShowInfo] = React.useState(false);
   const [showProgress, setShowProgress] = React.useState(false);
 
+  // 👉 nouvel état : partie commencée ou non
+  const [started, setStarted] = React.useState(false);
+
   const sessionIdRef = React.useRef<string | null>(null);
   const visitCountRef = React.useRef<number>(0);
 
@@ -947,6 +950,9 @@ export default function TrainingX01Play({
     setHitMap({});
     visitCountRef.current = 0;
 
+    // nouvelle partie → paramètres visibles
+    setStarted(false);
+
     return () => {
       if (sessionIdRef.current) {
         TrainingStore.finishSession(sessionIdRef.current);
@@ -975,6 +981,7 @@ export default function TrainingX01Play({
   // HANDLERS
 
   function handleNumber(n: number) {
+    if (!started) setStarted(true);
     if (currentThrow.length >= 3) return;
     const d: UIDart = { v: n, mult: multiplier };
     setCurrentThrow((t) => [...t, d]);
@@ -984,6 +991,7 @@ export default function TrainingX01Play({
   }
 
   function handleBull() {
+    if (!started) setStarted(true);
     if (currentThrow.length >= 3) return;
     const d: UIDart = { v: 25, mult: multiplier === 2 ? 2 : 1 };
     setCurrentThrow((t) => [...t, d]);
@@ -1128,497 +1136,298 @@ export default function TrainingX01Play({
     go?.("training");
   }
 
- // RENDER — compact sans scroll
+  // RENDER — compact sans scroll
 
-return (
-  <div
-    style={{
-      position: "fixed",
-      inset: 0,
-      paddingBottom: NAV_HEIGHT,
-      overflow: "hidden",
-      background: "#020205",
-      zIndex: 1,
-    }}
-  >
-    {/* HEADER FIXE */}
+  return (
     <div
       style={{
         position: "fixed",
-        top: 0,
-        left: "50%",
-        transform: "translateX(-50%)",
-        width: "min(100%,520px)",
-        zIndex: 50,
-        padding: "6px 10px 4px",
-        background: "rgba(0,0,0,0.55)",
-        backdropFilter: "blur(10px)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 4,
-        }}
-      >
-        <button
-          type="button"
-          onClick={handleExit}
-          style={{
-            borderRadius: 10,
-            padding: "5px 10px",
-            border: "1px solid rgba(255,180,0,.35)",
-            background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
-            fontWeight: 900,
-            color: "#1a1a1a",
-            boxShadow: "0 4px 14px rgba(255,170,0,.25)",
-            fontSize: 12,
-          }}
-        >
-          ← Training
-        </button>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            style={{
-              borderRadius: 999,
-              padding: "5px 12px",
-              border: "1px solid rgba(255,200,80,.45)",
-              background: "linear-gradient(180deg,#ffd865,#ffb700)",
-              color: "#221800",
-              fontWeight: 800,
-              fontSize: 12,
-            }}
-          >
-            Training X01
-          </button>
-
-          <button
-            onClick={() => setShowInfo(true)}
-            style={{
-              width: 22,
-              height: 22,
-              borderRadius: "50%",
-              background: "#ffffff",
-              border: "1px solid #000",
-              color: "#000",
-              fontWeight: 900,
-              fontSize: 13,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            i
-          </button>
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 10,
-        }}
-      >
-        <div style={{ display: "flex", gap: 6 }}>
-          {START_CHOICES.map((sc) => (
-            <button
-              key={sc}
-              onClick={() => setStartScore(sc)}
-              style={{
-                padding: "2px 8px",
-                borderRadius: 999,
-                fontSize: 11,
-                fontWeight: 700,
-                border:
-                  startScore === sc
-                    ? "1px solid rgba(255,200,90,0.9)"
-                    : "1px solid rgba(255,255,255,0.16)",
-                background:
-                  startScore === sc
-                    ? "linear-gradient(180deg,#ffcf61,#c17b0c)"
-                    : "rgba(10,10,12,0.9)",
-                color:
-                  startScore === sc
-                    ? "#221600"
-                    : "rgba(230,230,240,0.95)",
-              }}
-            >
-              {sc}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ display: "flex", gap: 6 }}>
-          {OUT_CHOICES.map((om) => (
-            <button
-              key={om}
-              onClick={() => setOutMode(om)}
-              style={{
-                padding: "2px 8px",
-                borderRadius: 999,
-                fontSize: 11,
-                fontWeight: 700,
-                border:
-                  outMode === om
-                    ? "1px solid rgba(255,200,90,0.9)"
-                    : "1px solid rgba(255,255,255,0.16)",
-                background:
-                  outMode === om
-                    ? "linear-gradient(180deg,#ffcf61,#c17b0c)"
-                    : "rgba(10,10,12,0.9)",
-                color:
-                  outMode === om ? "#221600" : "rgba(230,230,240,0.95)",
-                textTransform: "capitalize",
-              }}
-            >
-              {om}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-
-    {/* MARGE sous header */}
-    <div style={{ height: 55 }} />
-
-    {/* BLOC CENTRAL : 2 colonnes + volée */}
-    <div
-      style={{
-        width: "min(100%,520px)",
-        margin: "0 auto",
-        padding: "0 10px",
-      }}
-    >
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 10,
-        }}
-      >
-        {/* Colonne gauche : avatar + stats */}
-        <div
-          style={{
-            background:
-              "linear-gradient(180deg,rgba(10,10,15,0.96),rgba(5,5,9,0.96))",
-            borderRadius: 16,
-            padding: 8,
-            border: "1px solid rgba(255,255,255,0.10)",
-            boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
-          }}
-        >
-          <div
-  style={{
-    display: "flex",
-    justifyContent: "center",
-    marginBottom: 6,
-  }}
->
-  {/* Aura derrière */}
-  <div
-    style={{
-      position: "relative",
-      width: 65,
-      height: 65,
-      borderRadius: "50%",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-    }}
-  >
-    {/* Glow */}
-    <div
-      style={{
-        position: "absolute",
         inset: 0,
-        borderRadius: "50%",
-        background:
-          "radial-gradient(circle, rgba(255,220,140,0.9) 0%, rgba(255,190,80,0.45) 45%, rgba(0,0,0,0) 70%)",
-        boxShadow: "0 0 25px rgba(255,200,70,0.75)",
-        zIndex: 0,
-      }}
-    />
-
-    {/* Avatar SANS MARGE / SANS FOND */}
-    <div
-      style={{
-        position: "relative",
-        width: 65,
-        height: 65,
-        borderRadius: "50%",
+        paddingBottom: NAV_HEIGHT,
         overflow: "hidden",
+        background: "#020205",
         zIndex: 1,
       }}
     >
-      {avatarSrc ? (
-        <img
-          src={avatarSrc}
-          alt=""
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            borderRadius: "50%",
-          }}
-        />
-      ) : (
+      {/* HEADER FIXE */}
+      <div
+        style={{
+          position: "fixed",
+          top: 0,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "min(100%,520px)",
+          zIndex: 50,
+          padding: "6px 10px 4px",
+          background: "rgba(0,0,0,0.55)",
+          backdropFilter: "blur(10px)",
+        }}
+      >
         <div
           style={{
-            width: "100%",
-            height: "100%",
-            borderRadius: "50%",
-            background: "rgba(255,255,255,0.20)",
             display: "flex",
+            justifyContent: "space-between",
             alignItems: "center",
-            justifyContent: "center",
-            fontWeight: 900,
-            fontSize: 26,
-            color: "#fff",
+            marginBottom: 4,
           }}
         >
-          {currentProfile?.name?.[0]?.toUpperCase() ?? "?"}
-        </div>
-      )}
-    </div>
-  </div>
-</div>
-
-          <TrainingStatsTable
-            avg3D={avg3D}
-            avg1D={avg1D}
-            bestVisit={bestVisit}
-            darts={totalDarts}
-            hitRate={hitRate}
-            pctS={pctS}
-            pctD={pctD}
-            pctT={pctT}
-            miss={missHits}
-            bull={bullHits}
-            dbull={dBullHits}
-            bust={bustCount}
-          />
-        </div>
-
-        {/* Colonne droite : nom + score + radar + bouton Progression */}
-        <div
-          style={{
-            background:
-              "linear-gradient(180deg,rgba(10,10,15,0.96),rgba(5,5,9,0.96))",
-            borderRadius: 16,
-            padding: 8,
-            border: "1px solid rgba(255,255,255,0.10)",
-            boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-          }}
-        >
-          <div
-            style={{
-              fontSize: 15,
-              fontWeight: 800,
-              color: "#ffffff",
-              marginBottom: 2,
-              textAlign: "center",
-            }}
-          >
-            {currentProfile?.name ?? "Joueur"}
-          </div>
-
-          <div
-            style={{
-              fontSize: 40,
-              fontWeight: 900,
-              color: "#ffcf61",
-              textShadow: "0 4px 14px rgba(255,195,26,.3)",
-              marginBottom: 4,
-              lineHeight: 1,
-              textAlign: "center",
-            }}
-          >
-            {effectiveRemaining}
-          </div>
-
-          <RadarHitChart hitMap={hitMap} />
-
           <button
             type="button"
-            onClick={() => setShowProgress(true)}
+            onClick={handleExit}
             style={{
-              marginTop: 6,
-              padding: "4px 12px",
-              borderRadius: 999,
-              border: "1px solid rgba(255,200,80,.6)",
-              background: "linear-gradient(180deg,#ffcf61,#c17b0c)",
-              color: "#221600",
-              fontWeight: 800,
-              fontSize: 11,
+              borderRadius: 10,
+              padding: "5px 10px",
+              border: "1px solid rgba(255,180,0,.35)",
+              background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
+              fontWeight: 900,
+              color: "#1a1a1a",
+              boxShadow: "0 4px 14px rgba(255,170,0,.25)",
+              fontSize: 12,
             }}
           >
-            Progression
+            ← Training
           </button>
-        </div>
-      </div>
 
-      {/* Volée */}
-      <ThrowPreviewBar darts={currentThrow} />
-    </div>
-
-    {/* KEYPAD FIXE EN BAS (au-dessus du BottomNav) */}
-    <div
-      style={{
-        position: "fixed",
-        bottom: NAV_HEIGHT,
-        left: "50%",
-        transform: "translateX(-50%)",
-        width: "min(100%,520px)",
-        background: "rgba(0,0,0,0.9)",
-        padding: "6px 10px 10px",
-        zIndex: 60,
-        boxShadow: "0 -6px 18px rgba(0,0,0,0.55)",
-        borderTop: "1px solid rgba(255,255,255,0.10)",
-      }}
-    >
-      <Keypad
-        currentThrow={currentThrow}
-        multiplier={multiplier}
-        onSimple={() => setMultiplier(1)}
-        onDouble={() => setMultiplier(2)}
-        onTriple={() => setMultiplier(3)}
-        onNumber={handleNumber}
-        onBull={handleBull}
-        onBackspace={handleBackspace}
-        onCancel={handleCancel}
-        onValidate={handleValidate}
-        hidePreview={true}
-      />
-    </div>
-
-    {/* OVERLAY INFO ("i") */}
-    {showInfo && (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.75)",
-          zIndex: 90,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 20,
-        }}
-        onClick={() => setShowInfo(false)}
-      >
-        <div
-          style={{
-            width: "min(100%,420px)",
-            background:
-              "linear-gradient(180deg,#14141a 0%,#07070a 100%)",
-            borderRadius: 16,
-            padding: 14,
-            border: "1px solid rgba(255,255,255,0.12)",
-            boxShadow: "0 12px 28px rgba(0,0,0,0.7)",
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div
-            style={{
-              fontSize: 16,
-              fontWeight: 800,
-              color: "#ffffff",
-              marginBottom: 8,
-              display: "flex",
-              justifyContent: "space-between",
-            }}
-          >
-            <span>Règles du Training X01</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button
-              onClick={() => setShowInfo(false)}
               style={{
-                background: "transparent",
-                border: "none",
-                color: "#fff",
-                fontSize: 20,
-                fontWeight: 700,
+                borderRadius: 999,
+                padding: "5px 12px",
+                border: "1px solid rgba(255,200,80,.45)",
+                background: "linear-gradient(180deg,#ffd865,#ffb700)",
+                color: "#221800",
+                fontWeight: 800,
+                fontSize: 12,
               }}
             >
-              ×
+              Training X01
+            </button>
+
+            <button
+              onClick={() => setShowInfo(true)}
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: "50%",
+                background: "#ffffff",
+                border: "1px solid #000",
+                color: "#000",
+                fontWeight: 900,
+                fontSize: 13,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              i
             </button>
           </div>
-
-          <div
-            style={{
-              fontSize: 12.5,
-              lineHeight: 1.45,
-              color: "#e2e4ef",
-            }}
-          >
-            <ul style={{ paddingLeft: 18 }}>
-              <li>Score de départ : {startScore}.</li>
-              <li>
-                Sortie : <b>{outMode}</b> (
-                {outMode === "simple"
-                  ? "n'importe quel coup valide"
-                  : outMode === "double"
-                  ? "le dernier coup doit être un double ou DBULL"
-                  : "dernier coup simple/double/triple/DBULL"}
-                ).
-              </li>
-              <li>
-                Chaque fléchette est enregistrée dans l’historique Training
-                pour suivre votre progression.
-              </li>
-              <li>
-                Le radar montre les segments les plus touchés (1–20 + 25),
-                pondérés par simple/double/triple.
-              </li>
-              <li>
-                La fenêtre “Progression” affiche la Sparkline des parties
-                terminées avec plusieurs métriques.
-              </li>
-            </ul>
-          </div>
         </div>
-      </div>
-    )}
 
-    {/* OVERLAY PROGRESSION (Sparkline plein écran) */}
-    {showProgress && (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.85)",
-          zIndex: 95,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 10,
-        }}
-        onClick={() => setShowProgress(false)}
-      >
-        <div
-          style={{
-            width: "min(100%,520px)",
-            background:
-              "linear-gradient(180deg,#14141a 0%,#050509 100%)",
-            borderRadius: 16,
-            padding: 12,
-            border: "1px solid rgba(255,255,255,0.18)",
-            boxShadow: "0 16px 36px rgba(0,0,0,0.8)",
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
+        {/* PARAMÈTRES — masqués une fois la partie commencée */}
+        {!started && (
           <div
             style={{
               display: "flex",
               justifyContent: "space-between",
+              gap: 10,
+            }}
+          >
+            <div style={{ display: "flex", gap: 6 }}>
+              {START_CHOICES.map((sc) => (
+                <button
+                  key={sc}
+                  onClick={() => setStartScore(sc)}
+                  style={{
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    border:
+                      startScore === sc
+                        ? "1px solid rgba(255,200,90,0.9)"
+                        : "1px solid rgba(255,255,255,0.16)",
+                    background:
+                      startScore === sc
+                        ? "linear-gradient(180deg,#ffcf61,#c17b0c)"
+                        : "rgba(10,10,12,0.9)",
+                    color:
+                      startScore === sc
+                        ? "#221600"
+                        : "rgba(230,230,240,0.95)",
+                  }}
+                >
+                  {sc}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", gap: 6 }}>
+              {OUT_CHOICES.map((om) => (
+                <button
+                  key={om}
+                  onClick={() => setOutMode(om)}
+                  style={{
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    border:
+                      outMode === om
+                        ? "1px solid rgba(255,200,90,0.9)"
+                        : "1px solid rgba(255,255,255,0.16)",
+                    background:
+                      outMode === om
+                        ? "linear-gradient(180deg,#ffcf61,#c17b0c)"
+                        : "rgba(10,10,12,0.9)",
+                    color:
+                      outMode === om
+                        ? "#221600"
+                        : "rgba(230,230,240,0.95)",
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {om}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* MARGE sous header */}
+      <div style={{ height: 55 }} />
+
+      {/* BLOC CENTRAL : 2 colonnes + volée */}
+      <div
+        style={{
+          width: "min(100%,520px)",
+          margin: "0 auto",
+          padding: "0 10px",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 10,
+          }}
+        >
+          {/* Colonne gauche : avatar + stats */}
+          <div
+            style={{
+              background:
+                "linear-gradient(180deg,rgba(10,10,15,0.96),rgba(5,5,9,0.96))",
+              borderRadius: 16,
+              padding: 8,
+              border: "1px solid rgba(255,255,255,0.10)",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                marginBottom: 6,
+              }}
+            >
+              {/* Aura derrière */}
+              <div
+                style={{
+                  position: "relative",
+                  width: 65,
+                  height: 65,
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {/* Glow */}
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    borderRadius: "50%",
+                    background:
+                      "radial-gradient(circle, rgba(255,220,140,0.9) 0%, rgba(255,190,80,0.45) 45%, rgba(0,0,0,0) 70%)",
+                    boxShadow: "0 0 25px rgba(255,200,70,0.75)",
+                    zIndex: 0,
+                  }}
+                />
+
+                {/* Avatar SANS MARGE / SANS FOND */}
+                <div
+                  style={{
+                    position: "relative",
+                    width: 65,
+                    height: 65,
+                    borderRadius: "50%",
+                    overflow: "hidden",
+                    zIndex: 1,
+                  }}
+                >
+                  {avatarSrc ? (
+                    <img
+                      src={avatarSrc}
+                      alt=""
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        borderRadius: "50%",
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        borderRadius: "50%",
+                        background: "rgba(255,255,255,0.20)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 900,
+                        fontSize: 26,
+                        color: "#fff",
+                      }}
+                    >
+                      {currentProfile?.name?.[0]?.toUpperCase() ?? "?"}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <TrainingStatsTable
+              avg3D={avg3D}
+              avg1D={avg1D}
+              bestVisit={bestVisit}
+              darts={totalDarts}
+              hitRate={hitRate}
+              pctS={pctS}
+              pctD={pctD}
+              pctT={pctT}
+              miss={missHits}
+              bull={bullHits}
+              dbull={dBullHits}
+              bust={bustCount}
+            />
+          </div>
+
+          {/* Colonne droite : nom + score + radar + bouton Progression */}
+          <div
+            style={{
+              background:
+                "linear-gradient(180deg,rgba(10,10,15,0.96),rgba(5,5,9,0.96))",
+              borderRadius: 16,
+              padding: 8,
+              border: "1px solid rgba(255,255,255,0.10)",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
+              display: "flex",
+              flexDirection: "column",
               alignItems: "center",
-              marginBottom: 8,
             }}
           >
             <div
@@ -1626,34 +1435,238 @@ return (
                 fontSize: 15,
                 fontWeight: 800,
                 color: "#ffffff",
+                marginBottom: 2,
+                textAlign: "center",
               }}
             >
-              Progression des stats
+              {currentProfile?.name ?? "Joueur"}
             </div>
-            <button
-              onClick={() => setShowProgress(false)}
+
+            <div
               style={{
-                background: "transparent",
-                border: "none",
-                color: "#fff",
-                fontSize: 20,
-                fontWeight: 700,
+                fontSize: 40,
+                fontWeight: 900,
+                color: "#ffcf61",
+                textShadow: "0 4px 14px rgba(255,195,26,.3)",
+                marginBottom: 4,
+                lineHeight: 1,
+                textAlign: "center",
               }}
             >
-              ×
+              {effectiveRemaining}
+            </div>
+
+            <RadarHitChart hitMap={hitMap} />
+
+            <button
+              type="button"
+              onClick={() => setShowProgress(true)}
+              style={{
+                marginTop: 6,
+                padding: "4px 12px",
+                borderRadius: 999,
+                border: "1px solid rgba(255,200,80,.6)",
+                background: "linear-gradient(180deg,#ffcf61,#c17b0c)",
+                color: "#221600",
+                fontWeight: 800,
+                fontSize: 11,
+              }}
+            >
+              Progression
             </button>
           </div>
-
-          <Sparkline
-            sessions={finishedSessions}
-            range={rangeKey}
-            metric={metricKey}
-            onRangeChange={setRangeKey}
-            onMetricChange={setMetricKey}
-          />
         </div>
+
+        {/* Volée */}
+        <ThrowPreviewBar darts={currentThrow} />
       </div>
-    )}
-  </div>
-);
+
+      {/* KEYPAD FIXE EN BAS (au-dessus du BottomNav) */}
+      <div
+        style={{
+          position: "fixed",
+          bottom: NAV_HEIGHT,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "min(100%,520px)",
+          background: "rgba(0,0,0,0.9)",
+          padding: "6px 10px 10px",
+          zIndex: 60,
+          boxShadow: "0 -6px 18px rgba(0,0,0,0.55)",
+          borderTop: "1px solid rgba(255,255,255,0.10)",
+        }}
+      >
+        <Keypad
+          currentThrow={currentThrow}
+          multiplier={multiplier}
+          onSimple={() => setMultiplier(1)}
+          onDouble={() => setMultiplier(2)}
+          onTriple={() => setMultiplier(3)}
+          onNumber={handleNumber}
+          onBull={handleBull}
+          onBackspace={handleBackspace}
+          onCancel={handleCancel}
+          onValidate={handleValidate}
+          hidePreview={true}
+        />
+      </div>
+
+      {/* OVERLAY INFO ("i") */}
+      {showInfo && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.75)",
+            zIndex: 90,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+          onClick={() => setShowInfo(false)}
+        >
+          <div
+            style={{
+              width: "min(100%,420px)",
+              background:
+                "linear-gradient(180deg,#14141a 0%,#07070a 100%)",
+              borderRadius: 16,
+              padding: 14,
+              border: "1px solid rgba(255,255,255,0.12)",
+              boxShadow: "0 12px 28px rgba(0,0,0,0.7)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 800,
+                color: "#ffffff",
+                marginBottom: 8,
+                display: "flex",
+                justifyContent: "space-between",
+              }}
+            >
+              <span>Règles du Training X01</span>
+              <button
+                onClick={() => setShowInfo(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#fff",
+                  fontSize: 20,
+                  fontWeight: 700,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                fontSize: 12.5,
+                lineHeight: 1.45,
+                color: "#e2e4ef",
+              }}
+            >
+              <ul style={{ paddingLeft: 18 }}>
+                <li>Score de départ : {startScore}.</li>
+                <li>
+                  Sortie : <b>{outMode}</b> (
+                  {outMode === "simple"
+                    ? "n'importe quel coup valide"
+                    : outMode === "double"
+                    ? "le dernier coup doit être un double ou DBULL"
+                    : "dernier coup simple/double/triple/DBULL"}
+                  ).
+                </li>
+                <li>
+                  Chaque fléchette est enregistrée dans l’historique Training
+                  pour suivre votre progression.
+                </li>
+                <li>
+                  Le radar montre les segments les plus touchés (1–20 + 25),
+                  pondérés par simple/double/triple.
+                </li>
+                <li>
+                  La fenêtre “Progression” affiche la Sparkline des parties
+                  terminées avec plusieurs métriques.
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OVERLAY PROGRESSION (Sparkline plein écran) */}
+      {showProgress && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.85)",
+            zIndex: 95,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 10,
+          }}
+          onClick={() => setShowProgress(false)}
+        >
+          <div
+            style={{
+              width: "min(100%,520px)",
+              background:
+                "linear-gradient(180deg,#14141a 0%,#050509 100%)",
+              borderRadius: 16,
+              padding: 12,
+              border: "1px solid rgba(255,255,255,0.18)",
+              boxShadow: "0 16px 36px rgba(0,0,0,0.8)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 800,
+                  color: "#ffffff",
+                }}
+              >
+                Progression des stats
+              </div>
+              <button
+                onClick={() => setShowProgress(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#fff",
+                  fontSize: 20,
+                  fontWeight: 700,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <Sparkline
+              sessions={finishedSessions}
+              range={rangeKey}
+              metric={metricKey}
+              onRangeChange={setRangeKey}
+              onMetricChange={setMetricKey}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
