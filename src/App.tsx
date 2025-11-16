@@ -37,7 +37,6 @@ import AvatarCreator from "./pages/AvatarCreator";
 // ✅ Pages Training (menu / solo X01 / stats)
 import TrainingMenu from "./pages/TrainingMenu";
 import TrainingX01Play from "./pages/TrainingX01Play";
-import TrainingStatsPage from "./pages/TrainingStatsPage";
 import TrainingClock from "./pages/TrainingClock";
 
 // Historique (pour StatsDetail / upsert / get)
@@ -91,6 +90,14 @@ type Tab =
   | "training_clock"
   // ✅ nouvelle route par onglet
   | "avatar";
+
+// Petit composant pour rediriger "training_stats" vers StatsHub onglet Training
+function RedirectToStatsTraining({ go }: { go: (tab: Tab, params?: any) => void }) {
+  React.useEffect(() => {
+    go("stats", { tab: "training" });
+  }, [go]);
+  return null;
+}
 
 // Store initial minimal
 const initialStore: Store = {
@@ -360,7 +367,14 @@ export default function App() {
   } else {
     switch (tab) {
       case "home": {
-        page = <Home store={store} update={update} go={(t: any, p?: any) => go(t, p)} onConnect={() => go("profiles")} />;
+        page = (
+          <Home
+            store={store}
+            update={update}
+            go={(t: any, p?: any) => go(t, p)}
+            onConnect={() => go("profiles")}
+          />
+        );
         break;
       }
 
@@ -394,7 +408,7 @@ export default function App() {
           <StatsHub
             go={go}
             tab={(routeParams?.tab as any) ?? "history"}
-            memHistory={historyForUI}  // <-- avatars toujours présents
+            memHistory={historyForUI} // <-- avatars toujours présents
           />
         );
         break;
@@ -418,7 +432,9 @@ export default function App() {
               if (alive && byId) setRec(withAvatars(byId, store.profiles || []));
             } catch {}
           })();
-          return () => { alive = false; };
+          return () => {
+            alive = false;
+          };
         }, [matchId, store.profiles]);
 
         if (routeParams?.showEnd && rec) {
@@ -438,8 +454,8 @@ export default function App() {
         if (rec) {
           const when = Number(rec.updatedAt ?? rec.createdAt ?? Date.now());
           const dateStr = new Date(when).toLocaleString();
-          const toArr = (v: any) => (Array.isArray(v) ? v : []);
-          const players = toArr(rec.players?.length ? rec.players : rec.payload?.players);
+          const toArrLoc = (v: any) => (Array.isArray(v) ? v : []);
+          const players = toArrLoc(rec.players?.length ? rec.players : rec.payload?.players);
           const names = players.map((p: any) => p?.name ?? "—").join(" · ");
           const winnerName = rec.winnerId
             ? (players.find((p: any) => p?.id === rec.winnerId)?.name ?? "—")
@@ -481,7 +497,9 @@ export default function App() {
             }}
             onStart={(ids, start, doubleOut) => {
               // ⚠️ NOUVELLE PARTIE → purge toute reprise + remount forcé
-              const players = store.settings.randomOrder ? ids.slice().sort(() => Math.random() - 0.5) : ids;
+              const players = store.settings.randomOrder
+                ? ids.slice().sort(() => Math.random() - 0.5)
+                : ids;
               setX01Config({ playerIds: players, start, doubleOut });
               go("x01", { resumeId: null, fresh: Date.now() });
             }}
@@ -569,8 +587,8 @@ export default function App() {
       }
 
       case "training_stats": {
-        // Page "Évolution" des trainings (historique + % de hits)
-        page = <TrainingStatsPage />;
+        // Redirection vers StatsHub onglet "Training"
+        page = <RedirectToStatsTraining go={go} />;
         break;
       }
 
@@ -599,7 +617,14 @@ export default function App() {
       }
 
       default: {
-        page = <Home store={store} update={update} go={(t: any, p?: any) => go(t, p)} onConnect={() => go("profiles")} />;
+        page = (
+          <Home
+            store={store}
+            update={update}
+            go={(t: any, p?: any) => go(t, p)}
+            onConnect={() => go("profiles")}
+          />
+        );
       }
     }
   }

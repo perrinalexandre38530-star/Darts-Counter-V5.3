@@ -1,9 +1,9 @@
 // ============================================
 // src/pages/TrainingClock.tsx
-// Training — Tour de l'horloge (v5, solo + multi)
+// Training — Tour de l'horloge (v5, multi-joueurs)
 // - Choix de 1+ joueurs via médaillons d'avatars
 // - Chaque joueur joue sa session à la suite
-// - Historique local par session
+// - Historique local par session (localStorage)
 // ============================================
 
 import React from "react";
@@ -47,8 +47,8 @@ const STORAGE_KEY = "dc-training-clock-v1";
 type PlayerLite = { id: string | null; name: string };
 
 type Props = {
-  profiles: Profile[];
-  activeProfileId: string | null;
+  profiles?: Profile[];
+  activeProfileId?: string | null;
 };
 
 // --------- helpers temps / format ---------
@@ -78,18 +78,86 @@ function initialsFromName(name: string | undefined | null) {
     .join("");
 }
 
+// petit format pour l'historique des lancers
+function formatThrowLabel(
+  isMiss: boolean,
+  value: Target | null,
+  mult: 1 | 2 | 3
+): string {
+  if (isMiss || !value) return "Miss";
+  if (value === "BULL") {
+    if (mult === 2) return "DBull";
+    if (mult === 3) return "TBull";
+    return "Bull";
+  }
+  const prefix = mult === 1 ? "S" : mult === 2 ? "D" : "T";
+  return `${prefix}${value}`;
+}
+
+type ThrowKind = "miss" | "simple" | "double" | "triple" | "bull";
+
+// pour colorer les pastilles d'historique
+function getThrowKind(label: string): ThrowKind {
+  if (label === "Miss") return "miss";
+  if (label.startsWith("D") || label.startsWith("DBull")) return "double";
+  if (label.startsWith("T") || label.startsWith("TBull")) return "triple";
+  if (label === "Bull") return "bull";
+  return "simple";
+}
+
+// pour la couleur de l'objectif
+type ObjectiveKind = "simple" | "double" | "triple";
+
+function getObjectiveKind(
+  config: ClockConfig,
+  stage: StageSDT
+): ObjectiveKind {
+  if (config.mode === "sdt") {
+    if (stage === 0) return "simple";
+    if (stage === 1) return "double";
+    return "triple";
+  }
+  if (config.mode === "doubles") return "double";
+  if (config.mode === "triples") return "triple";
+  return "simple";
+}
+
+function labelObjective(
+  target: Target,
+  config: ClockConfig,
+  stage: StageSDT
+): string {
+  const base = target === "BULL" ? "Bull" : target.toString();
+  if (config.mode === "sdt") {
+    const prefix = stage === 0 ? "S" : stage === 1 ? "D" : "T";
+    return `${prefix}${base}`;
+  }
+  if (config.mode === "doubles") return `D${base}`;
+  if (config.mode === "triples") return `T${base}`;
+  return base;
+}
+
 // ============================================
 // Component principal
 // ============================================
 
-const TrainingClock: React.FC<Props> = ({ profiles, activeProfileId }) => {
+const TrainingClock: React.FC<Props> = (props) => {
+  // Récupération des profils depuis les props OU depuis le store global exposé par App
+  const globalStore = (window as any).__appStore || {};
+  const profiles: Profile[] = props.profiles ?? globalStore.profiles ?? [];
+  const activeProfileId: string | null =
+    props.activeProfileId ?? globalStore.activeProfileId ?? null;
+
   // --- sélection de joueurs (solo + multi) ---
-  const [selectedPlayerIds, setSelectedPlayerIds] = React.useState<string[]>(() => {
-    const list = profiles || [];
-    if (!list.length) return [];
-    const found = activeProfileId && list.find((p) => p.id === activeProfileId);
-    return [found?.id ?? list[0].id];
-  });
+  const [selectedPlayerIds, setSelectedPlayerIds] = React.useState<string[]>(
+    () => {
+      const list = profiles || [];
+      if (!list.length) return [];
+      const found =
+        activeProfileId && list.find((p) => p.id === activeProfileId);
+      return [found?.id ?? list[0].id];
+    }
+  );
 
   const players: PlayerLite[] = React.useMemo(
     () =>
@@ -103,18 +171,16 @@ const TrainingClock: React.FC<Props> = ({ profiles, activeProfileId }) => {
     [selectedPlayerIds, profiles]
   );
 
-  // index du joueur actuellement en train de jouer (step = "play" / "summary")
+  const [step, setStep] = React.useState<"setup" | "play" | "summary">(
+    "setup"
+  );
   const [currentPlayerIndex, setCurrentPlayerIndex] = React.useState(0);
-
   const currentPlayer: PlayerLite | null =
     players[currentPlayerIndex] ?? players[0] ?? {
       id: null,
       name: "Joueur solo",
     };
-
-  const [step, setStep] = React.useState<"setup" | "play" | "summary">(
-    "setup"
-  );
+  const isMulti = players.length > 1;
 
   const [config, setConfig] = React.useState<ClockConfig>({
     mode: "classic",
@@ -122,7 +188,6 @@ const TrainingClock: React.FC<Props> = ({ profiles, activeProfileId }) => {
     dartLimit: null,
   });
 
-  // état de la session en cours (pour LE joueur courant uniquement)
   const [currentTargetIndex, setCurrentTargetIndex] = React.useState(0);
   const [stageSDT, setStageSDT] = React.useState<StageSDT>(0);
   const [dartsThrown, setDartsThrown] = React.useState(0);
@@ -133,15 +198,20 @@ const TrainingClock: React.FC<Props> = ({ profiles, activeProfileId }) => {
   const [endTime, setEndTime] = React.useState<number | null>(null);
 
   // sélection actuelle sur le mini keypad
-  const [selectedValue, setSelectedValue] = React.useState<Target | null>(null);
+  const [selectedValue, setSelectedValue] = React.useState<Target | null>(1);
   const [selectedMult, setSelectedMult] = React.useState<1 | 2 | 3>(1);
   const [isMiss, setIsMiss] = React.useState(false);
+
+  // historique court des derniers lancers (affiché en bas)
+  const [lastThrows, setLastThrows] = React.useState<string[]>([]);
 
   // résumé de la session terminée (joueur courant)
   const [lastSession, setLastSession] = React.useState<ClockSession | null>(
     null
   );
   const [history, setHistory] = React.useState<ClockSession[]>([]);
+
+  const [showInfo, setShowInfo] = React.useState(false);
 
   // Charger historique local au mount
   React.useEffect(() => {
@@ -193,10 +263,8 @@ const TrainingClock: React.FC<Props> = ({ profiles, activeProfileId }) => {
         return { hit: mult === 2, advanceTarget: mult === 2 };
       }
       if (mode === "triples") {
-        // Triple bull n'existe pas vraiment, on considère double-only
-        return { hit: false };
+        return { hit: false }; // pas de triple bull
       }
-      // mode sdt sur bull — S=25, D=50
       if (mode === "sdt") {
         if (stage === 0 && mult === 1) {
           return { hit: true, nextStage: 1, advanceTarget: false };
@@ -248,9 +316,10 @@ const TrainingClock: React.FC<Props> = ({ profiles, activeProfileId }) => {
     setBestStreak(0);
     setStartTime(null);
     setEndTime(null);
-    setSelectedValue(null);
+    setSelectedValue(1);
     setSelectedMult(1);
     setIsMiss(false);
+    setLastThrows([]);
   }
 
   function handleStartForPlayer(playerIndex: number) {
@@ -307,7 +376,6 @@ const TrainingClock: React.FC<Props> = ({ profiles, activeProfileId }) => {
 
   function handleThrow() {
     if (step !== "play") return;
-    if (!isMiss && !selectedValue) return;
 
     // limite de fléchettes (par joueur)
     if (config.dartLimit != null && dartsThrown >= config.dartLimit) {
@@ -317,7 +385,14 @@ const TrainingClock: React.FC<Props> = ({ profiles, activeProfileId }) => {
     const newDarts = dartsThrown + 1;
     setDartsThrown(newDarts);
 
-    if (isMiss) {
+    // enregistrer lancers pour la petite ligne d'historique
+    const label = formatThrowLabel(isMiss, selectedValue, selectedMult);
+    setLastThrows((prev) => {
+      const next = [label, ...prev];
+      return next.slice(0, 14);
+    });
+
+    if (isMiss || !selectedValue) {
       setCurrentStreak(0);
       playSound("miss");
     } else {
@@ -403,765 +478,1279 @@ const TrainingClock: React.FC<Props> = ({ profiles, activeProfileId }) => {
     return `${base} (${stageLabel})`;
   }
 
-  const isMulti = players.length > 1;
+  const currentObjectiveKind = getObjectiveKind(config, stageSDT);
+  const objectiveLabel = labelObjective(
+    currentTarget,
+    config,
+    stageSDT
+  );
+
+  const currentProfile = React.useMemo(
+    () =>
+      profiles.find(
+        (p) => p.id === (currentPlayer?.id || activeProfileId)
+      ),
+    [profiles, currentPlayer, activeProfileId]
+  );
+
+  const precision =
+    dartsThrown > 0 ? Math.round((hits / dartsThrown) * 100) : 0;
 
   // ============================================
   // Rendu
   // ============================================
   return (
-    <div
-      className="page training-clock-page"
-      style={{
-        padding: 16,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-      }}
-    >
+    <>
       <div
+        className="page training-clock-page"
         style={{
-          width: "100%",
-          maxWidth: 520,
+          padding: 16,
           display: "flex",
           flexDirection: "column",
-          gap: 12,
+          alignItems: "center",
         }}
       >
-        {/* Header / breadcrumb */}
-        <div style={{ marginBottom: 4 }}>
-          <button
-            type="button"
-            onClick={() => window.history.back()}
-            style={{
-              borderRadius: 999,
-              border: "1px solid rgba(255,255,255,.12)",
-              padding: "4px 10px",
-              fontSize: 11,
-              background:
-                "linear-gradient(180deg, rgba(40,40,45,.9), rgba(15,15,20,.95))",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              opacity: 0.9,
-            }}
-          >
-            <span style={{ fontSize: 12 }}>←</span>
-            <span>Games / Training</span>
-          </button>
-        </div>
-
-        {/* Titre avec accent or (rappel X01Setup) */}
         <div
           style={{
-            borderRadius: 22,
-            padding: "10px 14px 12px",
-            background:
-              "linear-gradient(180deg, #ffc63a, #ffaf00)",
-            color: "#111",
-            boxShadow: "0 0 22px rgba(255,198,58,.55)",
+            width: "100%",
+            maxWidth: 520,
             display: "flex",
             flexDirection: "column",
-            gap: 2,
+            gap: 12,
           }}
         >
-          <div
-            style={{
-              fontSize: 16,
-              fontWeight: 900,
-              letterSpacing: 0.5,
-            }}
-          >
-            Tour de l&apos;horloge
-          </div>
-          <div
-            style={{
-              fontSize: 11,
-              opacity: 0.9,
-            }}
-          >
-            Vise 1 → 20 puis Bull. Choisis ton mode et suis ta précision.
-          </div>
-          <div
-            style={{
-              marginTop: 4,
-              fontSize: 10,
-              opacity: 0.85,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <span
+          {/* Header / breadcrumb */}
+          <div style={{ marginBottom: 4 }}>
+            <button
+              type="button"
+              onClick={() => window.history.back()}
               style={{
-                padding: "2px 8px",
                 borderRadius: 999,
-                background: "rgba(0,0,0,.12)",
-                fontWeight: 700,
-              }}
-            >
-              Training
-            </span>
-            <span>Sessions enregistrées localement (hors stats globales).</span>
-          </div>
-        </div>
-
-        {/* ================== STEP SETUP ================== */}
-        {step === "setup" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* JOUERS */}
-            <section
-              className="card"
-              style={{
-                borderRadius: 18,
-                padding: 14,
-                marginTop: 2,
-                background:
-                  "linear-gradient(180deg, rgba(25,25,30,.98), rgba(5,5,8,.98))",
-                border: "1px solid rgba(255,255,255,.10)",
-                boxShadow: "0 0 16px rgba(0,0,0,.7)",
-              }}
-            >
-              <h2
-                style={{
-                  fontSize: 14,
-                  fontWeight: 700,
-                  marginBottom: 4,
-                }}
-              >
-                Joueurs
-              </h2>
-              <div
-                style={{
-                  fontSize: 11,
-                  opacity: 0.75,
-                  marginBottom: 10,
-                }}
-              >
-                Sélectionne 1 à 4 joueurs. Chaque joueur jouera une
-                session à la suite.
-              </div>
-
-              {profiles.length === 0 ? (
-                <div style={{ fontSize: 12, opacity: 0.7 }}>
-                  Aucun profil pour l&apos;instant. Crée un profil dans
-                  l&apos;onglet &quot;Profils&quot; pour enregistrer tes
-                  stats.
-                </div>
-              ) : (
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 14,
-                    paddingBottom: 4,
-                  }}
-                >
-                  {profiles.map((p) => {
-                    const selected = selectedPlayerIds.includes(p.id);
-                    const name = p.nickname ?? p.name ?? "Joueur";
-                    const initials = initialsFromName(name);
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        title={name}
-                        onClick={() => {
-                          setSelectedPlayerIds((prev) => {
-                            const exists = prev.includes(p.id);
-                            if (exists) {
-                              // ne jamais vider complètement
-                              if (prev.length === 1) return prev;
-                              return prev.filter((id) => id !== p.id);
-                            }
-                            if (prev.length >= 4) return prev;
-                            return [...prev, p.id];
-                          });
-                        }}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          padding: 0,
-                          cursor: "pointer",
-                          position: "relative",
-                          width: 70,
-                        }}
-                      >
-                        <div
-                          style={{
-                            borderRadius: "50%",
-                            padding: 2,
-                            background: selected
-                              ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
-                              : "rgba(255,255,255,0.12)",
-                            boxShadow: selected
-                              ? "0 0 16px rgba(255,198,58,.55)"
-                              : "none",
-                            transition: "transform .12s ease, box-shadow .12s ease",
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: 60,
-                              height: 60,
-                              borderRadius: "50%",
-                              overflow: "hidden",
-                              background: "#222",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            {p.avatarDataUrl ? (
-                              <img
-                                src={p.avatarDataUrl}
-                                alt={name}
-                                style={{
-                                  width: "100%",
-                                  height: "100%",
-                                  objectFit: "cover",
-                                }}
-                              />
-                            ) : (
-                              <span
-                                style={{
-                                  fontSize: 18,
-                                  fontWeight: 700,
-                                  color: "#f5f5f5",
-                                }}
-                              >
-                                {initials}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            marginTop: 4,
-                            fontSize: 10,
-                            textAlign: "center",
-                            opacity: 0.9,
-                            whiteSpace: "nowrap",
-                            textOverflow: "ellipsis",
-                            overflow: "hidden",
-                          }}
-                        >
-                          {name}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-            {/* Infos résumé joueurs */}
-            <div
-              style={{
-                alignSelf: "flex-start",
-                borderRadius: 999,
-                border: "1px solid rgba(255,198,58,.45)",
+                border: "1px solid rgba(255,255,255,.12)",
                 padding: "4px 10px",
                 fontSize: 11,
                 background:
-                  "linear-gradient(180deg, rgba(50,40,20,.95), rgba(20,14,6,.98))",
-                boxShadow: "0 0 12px rgba(255,198,58,.4)",
+                  "linear-gradient(180deg, rgba(40,40,45,.9), rgba(15,15,20,.95))",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                opacity: 0.9,
               }}
             >
-              {isMulti
-                ? `${players.length} joueurs sélectionnés`
-                : `Mode solo • ${
-                    currentPlayer?.name ?? "Joueur solo"
-                  }`}
+              <span style={{ fontSize: 12 }}>←</span>
+              <span>Games / Training</span>
+            </button>
+          </div>
+
+          {/* Titre + bouton info */}
+          <div
+            style={{
+              position: "relative",
+              borderRadius: 20,
+              padding: "10px 14px 12px",
+              background:
+                "linear-gradient(180deg,#19191f,#0b0b10)",
+              border: "1px solid rgba(255,255,255,.12)",
+              boxShadow: "0 0 18px rgba(0,0,0,.7)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <div
+              style={{
+                padding: "4px 14px",
+                borderRadius: 999,
+                background:
+                  "linear-gradient(180deg,#ffc63a,#ffaf00)",
+                color: "#111",
+                fontWeight: 900,
+                letterSpacing: 0.8,
+                fontSize: 15,
+                boxShadow: "0 0 20px rgba(255,198,58,.55)",
+              }}
+            >
+              Tour de l&apos;horloge
             </div>
 
-            {/* Choix du mode */}
-            <section
-              className="card"
-              style={{
-                borderRadius: 18,
-                padding: 14,
-                background:
-                  "linear-gradient(180deg, rgba(25,25,30,.98), rgba(5,5,8,.98))",
-                border: "1px solid rgba(255,255,255,.10)",
-                boxShadow: "0 0 16px rgba(0,0,0,.7)",
-              }}
-            >
-              <h2
-                style={{
-                  fontSize: 14,
-                  fontWeight: 700,
-                  marginBottom: 8,
-                }}
-              >
-                Mode de jeu
-              </h2>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {(["classic", "doubles", "triples", "sdt"] as ClockMode[]).map(
-                  (mode) => {
-                    const active = config.mode === mode;
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        className={
-                          "chip w-full justify-between " +
-                          (active ? "chip-active" : "")
-                        }
-                        style={{
-                          justifyContent: "space-between",
-                          fontSize: 13,
-                          background: active
-                            ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
-                            : undefined,
-                          color: active ? "#111" : undefined,
-                          borderColor: active
-                            ? "rgba(0,0,0,.45)"
-                            : undefined,
-                          boxShadow: active
-                            ? "0 0 14px rgba(255,198,58,.55)"
-                            : undefined,
-                        }}
-                        onClick={() =>
-                          setConfig((c) => ({ ...c, mode }))
-                        }
-                      >
-                        <span>{labelMode(mode)}</span>
-                        {active && (
-                          <span
-                            style={{
-                              fontSize: 11,
-                              opacity: 0.8,
-                            }}
-                          >
-                            ✓ sélectionné
-                          </span>
-                        )}
-                      </button>
-                    );
-                  }
-                )}
-              </div>
-            </section>
-
-            {/* Options timer / limite fléchettes */}
-            <section
-              className="card"
-              style={{
-                borderRadius: 18,
-                padding: 14,
-                background:
-                  "linear-gradient(180deg, rgba(25,25,30,.98), rgba(5,5,8,.98))",
-                border: "1px solid rgba(255,255,255,.10)",
-                boxShadow: "0 0 16px rgba(0,0,0,.7)",
-              }}
-            >
-              <h2
-                style={{
-                  fontSize: 14,
-                  fontWeight: 700,
-                  marginBottom: 8,
-                }}
-              >
-                Options
-              </h2>
-
-              {/* Timer */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  marginBottom: 10,
-                  gap: 8,
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: 13 }}>Afficher le timer</div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      opacity: 0.7,
-                    }}
-                  >
-                    Chrono visible pendant la session
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className={
-                    "chip " + (config.showTimer ? "chip-active" : "")
-                  }
-                  style={{
-                    fontSize: 12,
-                    minWidth: 64,
-                    background: config.showTimer
-                      ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
-                      : undefined,
-                    color: config.showTimer ? "#111" : undefined,
-                    borderColor: config.showTimer
-                      ? "rgba(0,0,0,.45)"
-                      : undefined,
-                    boxShadow: config.showTimer
-                      ? "0 0 10px rgba(255,198,58,.55)"
-                      : undefined,
-                  }}
-                  onClick={() =>
-                    setConfig((c) => ({
-                      ...c,
-                      showTimer: !c.showTimer,
-                    }))
-                  }
-                >
-                  {config.showTimer ? "Oui" : "Non"}
-                </button>
-              </div>
-
-              {/* Limite de fléchettes */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: 13 }}>
-                    Limite de fléchettes
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      opacity: 0.7,
-                    }}
-                  >
-                    Par joueur : 0 = illimité, sinon fin auto quand
-                    la limite est atteinte
-                  </div>
-                </div>
-                <select
-                  className="chip"
-                  style={{
-                    fontSize: 12,
-                    minWidth: 132,
-                    background:
-                      "linear-gradient(180deg, rgba(40,40,46,.95), rgba(18,18,24,.98))",
-                    borderColor: "rgba(255,255,255,.22)",
-                  }}
-                  value={config.dartLimit ?? 0}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setConfig((c) => ({
-                      ...c,
-                      dartLimit: v > 0 ? v : null,
-                    }));
-                  }}
-                >
-                  <option value={0}>Illimité</option>
-                  <option value={30}>30 fléchettes</option>
-                  <option value={60}>60 fléchettes</option>
-                  <option value={90}>90 fléchettes</option>
-                </select>
-              </div>
-            </section>
-
-            {/* Bouton démarrer — style global doré */}
             <button
               type="button"
-              className="btn-primary"
+              onClick={() => setShowInfo(true)}
               style={{
-                width: "100%",
-                padding: "12px 0",
-                borderRadius: 16,
-                fontSize: 15,
-                fontWeight: 700,
-                marginTop: 2,
-              }}
-              onClick={handleStart}
-              disabled={!players.length}
-            >
-              Commencer la session
-            </button>
-
-            {/* Historique en bas */}
-            {history.length > 0 && (
-              <section style={{ marginTop: 6 }}>
-                <h2
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    marginBottom: 6,
-                  }}
-                >
-                  Dernières sessions
-                </h2>
-                <HistoryList history={history.slice(0, 5)} />
-              </section>
-            )}
-          </div>
-        )}
-
-        {/* ================== STEP PLAY ================== */}
-        {step === "play" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* Bandeau infos */}
-            <section
-              className="card"
-              style={{
-                borderRadius: 16,
-                padding: 12,
+                position: "absolute",
+                right: 10,
+                top: 8,
+                width: 24,
+                height: 24,
+                borderRadius: "50%",
+                border: "1px solid rgba(255,255,255,.3)",
                 background:
-                  "linear-gradient(180deg, rgba(25,25,30,.95), rgba(8,8,12,.98))",
-                border: "1px solid rgba(255,255,255,.10)",
+                  "linear-gradient(180deg,#333640,#1b1c22)",
+                color: "#f5f5f5",
+                fontSize: 13,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 0 8px rgba(0,0,0,.7)",
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: 12,
-                  marginBottom: 6,
-                }}
-              >
-                <div>
-                  Joueur{" "}
-                  {isMulti
-                    ? `${currentPlayerIndex + 1}/${players.length}`
-                    : "solo"}
-                  :{" "}
-                  <strong>{currentPlayer?.name}</strong>
-                </div>
-                {config.showTimer && (
-                  <div>
-                    Temps :{" "}
-                    <strong>{formatTime(elapsedNow)}</strong>
-                  </div>
-                )}
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: 12,
-                  marginBottom: 4,
-                }}
-              >
-                <div>
-                  Cible :{" "}
-                  <strong>
-                    {labelTarget(
-                      currentTarget,
-                      config.mode,
-                      stageSDT
-                    )}
-                  </strong>
-                </div>
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: 11,
-                  opacity: 0.85,
-                }}
-              >
-                <div>
-                  Fléchettes :{" "}
-                  <strong>{dartsThrown}</strong>
-                  {config.dartLimit != null &&
-                    ` / ${config.dartLimit}`}
-                </div>
-                <div>
-                  Hits : <strong>{hits}</strong>
-                </div>
-                <div>
-                  Meilleure série :{" "}
-                  <strong>{bestStreak}</strong>
-                </div>
-              </div>
-            </section>
+              i
+            </button>
+          </div>
 
-            {/* Mini keypad Tour de l'horloge */}
-            <ClockPad
+          {/* ================== STEP SETUP ================== */}
+          {step === "setup" && (
+            <SetupSection
+              profiles={profiles}
+              selectedPlayerIds={selectedPlayerIds}
+              setSelectedPlayerIds={setSelectedPlayerIds}
+              config={config}
+              setConfig={setConfig}
+              players={players}
+              isMulti={isMulti}
+              history={history}
+              labelMode={labelMode}
+              onStart={handleStart}
+            />
+          )}
+
+          {/* ================== STEP PLAY ================== */}
+          {step === "play" && (
+            <PlaySection
+              isMulti={isMulti}
+              currentPlayerIndex={currentPlayerIndex}
+              players={players}
+              currentPlayer={currentPlayer}
+              currentProfile={currentProfile}
+              config={config}
+              currentTarget={currentTarget}
+              stageSDT={stageSDT}
+              dartsThrown={dartsThrown}
+              hits={hits}
+              bestStreak={bestStreak}
+              currentStreak={currentStreak}
+              elapsedNow={elapsedNow}
+              objectiveKind={currentObjectiveKind}
+              objectiveLabel={objectiveLabel}
+              precision={precision}
+              labelTarget={labelTarget}
               selectedValue={selectedValue}
               setSelectedValue={setSelectedValue}
               selectedMult={selectedMult}
               setSelectedMult={setSelectedMult}
               isMiss={isMiss}
               setIsMiss={setIsMiss}
+              lastThrows={lastThrows}
+              onAbort={handleAbort}
+              onThrow={handleThrow}
             />
+          )}
 
-            {/* Actions bas */}
-            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              <button
-                type="button"
-                className="btn-ghost"
-                style={{
-                  flex: 1,
-                  padding: "10px 0",
-                  borderRadius: 14,
-                  fontSize: 13,
-                }}
-                onClick={handleAbort}
-              >
-                Annuler
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                style={{
-                  flex: 1,
-                  padding: "10px 0",
-                  borderRadius: 14,
-                  fontSize: 13,
-                  fontWeight: 700,
-                }}
-                onClick={handleThrow}
-              >
-                Valider la fléchette
-              </button>
-            </div>
-          </div>
-        )}
+          {/* ================== STEP SUMMARY ================== */}
+          {step === "summary" && lastSession && (
+            <SummarySection
+              lastSession={lastSession}
+              history={history}
+              labelMode={labelMode}
+              onBackToSetup={() => setStep("setup")}
+              onReplayCurrent={() =>
+                handleStartForPlayer(currentPlayerIndex)
+              }
+              isMulti={isMulti}
+              currentPlayerIndex={currentPlayerIndex}
+              players={players}
+              onNextPlayer={() =>
+                handleStartForPlayer(currentPlayerIndex + 1)
+              }
+            />
+          )}
+        </div>
+      </div>
 
-        {/* ================== STEP SUMMARY ================== */}
-        {step === "summary" && lastSession && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <section
-              className="card"
+      {/* Overlay d'info règles */}
+      {showInfo && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.7)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => setShowInfo(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              borderRadius: 18,
+              padding: 16,
+              background:
+                "linear-gradient(180deg,#1b1c22,#07070b)",
+              border: "1px solid rgba(255,255,255,.18)",
+              boxShadow: "0 0 26px rgba(0,0,0,.9)",
+              fontSize: 13,
+            }}
+          >
+            <div
               style={{
-                borderRadius: 18,
-                padding: 14,
-                background:
-                  "linear-gradient(180deg, rgba(25,25,30,.98), rgba(5,5,8,.98))",
-                border: "1px solid rgba(255,255,255,.10)",
-                boxShadow: "0 0 16px rgba(0,0,0,.7)",
-                fontSize: 13,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 8,
               }}
             >
-              <h2
+              <div
                 style={{
-                  fontSize: 15,
                   fontWeight: 700,
-                  marginBottom: 8,
+                  fontSize: 14,
                 }}
               >
-                Résumé de la session
-              </h2>
-              <div style={{ marginBottom: 2 }}>
-                Joueur :{" "}
-                <strong>{lastSession.profileName}</strong>
+                Règles — Tour de l&apos;horloge
               </div>
-              <div style={{ marginBottom: 2 }}>
-                Mode :{" "}
-                <strong>{labelMode(lastSession.config.mode)}</strong>
-              </div>
-              <div style={{ marginBottom: 2 }}>
-                Terminé ?{" "}
-                <strong>
-                  {lastSession.completed ? "Oui 🎯" : "Non"}
-                </strong>
-              </div>
-              <div style={{ marginBottom: 2 }}>
-                Fléchettes :{" "}
-                <strong>{lastSession.dartsThrown}</strong>
-                {lastSession.config.dartLimit != null &&
-                  ` / ${lastSession.config.dartLimit}`}
-              </div>
-              <div style={{ marginBottom: 2 }}>
-                Hits : <strong>{lastSession.hits}</strong>
-              </div>
-              <div style={{ marginBottom: 2 }}>
-                Meilleure série :{" "}
-                <strong>{lastSession.bestStreak}</strong>
-              </div>
-              {lastSession.config.showTimer && (
-                <div style={{ marginTop: 2 }}>
-                  Temps :{" "}
-                  <strong>
-                    {formatTime(lastSession.elapsedMs)}
-                  </strong>
-                </div>
-              )}
-            </section>
-
-            {history.length > 0 && (
-              <section>
-                <h2
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    marginBottom: 6,
-                  }}
-                >
-                  Historique (local)
-                </h2>
-                <HistoryList history={history.slice(0, 10)} />
-              </section>
-            )}
-
-            {/* Boutons bas : suivant / rejouer / retour */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {isMulti && currentPlayerIndex < players.length - 1 && (
-                <button
-                  type="button"
-                  className="btn-primary"
-                  style={{
-                    width: "100%",
-                    padding: "10px 0",
-                    borderRadius: 14,
-                    fontSize: 13,
-                    fontWeight: 700,
-                  }}
-                  onClick={() =>
-                    handleStartForPlayer(currentPlayerIndex + 1)
-                  }
-                >
-                  Joueur suivant :{" "}
-                  {players[currentPlayerIndex + 1]?.name ?? ""}
-                </button>
-              )}
-
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  style={{
-                    flex: 1,
-                    padding: "10px 0",
-                    borderRadius: 14,
-                    fontSize: 13,
-                  }}
-                  onClick={() => setStep("setup")}
-                >
-                  Retour au paramétrage
-                </button>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  style={{
-                    flex: 1,
-                    padding: "10px 0",
-                    borderRadius: 14,
-                    fontSize: 13,
-                    fontWeight: 700,
-                  }}
-                  onClick={() =>
-                    handleStartForPlayer(currentPlayerIndex)
-                  }
-                >
-                  Rejouer ce joueur
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowInfo(false)}
+                style={{
+                  borderRadius: "50%",
+                  width: 24,
+                  height: 24,
+                  border: "1px solid rgba(255,255,255,.3)",
+                  background:
+                    "linear-gradient(180deg,#333640,#1b1c22)",
+                  color: "#f5f5f5",
+                  fontSize: 13,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ✕
+              </button>
             </div>
+            <ul
+              style={{
+                margin: 0,
+                paddingLeft: 18,
+                lineHeight: 1.4,
+                opacity: 0.9,
+              }}
+            >
+              <li>
+                Tu tires sur chaque numéro de <strong>1 à 20</strong>, puis{" "}
+                <strong>Bull</strong>.
+              </li>
+              <li>
+                En mode <strong>Classique</strong>, <em>n&apos;importe
+                quel</em> segment compte.
+              </li>
+              <li>
+                En mode <strong>Doubles</strong> ou{" "}
+                <strong>Triples</strong>, seul le segment
+                correspondant valide la cible.
+              </li>
+              <li>
+                En mode <strong>S → D → T</strong>, tu dois toucher
+                Simple, puis Double, puis Triple pour chaque numéro.
+              </li>
+              <li>
+                La session peut être limitée en nombre de fléchettes
+                ou illimitée.
+              </li>
+            </ul>
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </>
   );
 };
 
 export default TrainingClock;
+
+// ============================================
+// SECTION SETUP
+// ============================================
+
+type SetupSectionProps = {
+  profiles: Profile[];
+  selectedPlayerIds: string[];
+  setSelectedPlayerIds: (fn: (prev: string[]) => string[]) => void;
+  config: ClockConfig;
+  setConfig: React.Dispatch<React.SetStateAction<ClockConfig>>;
+  players: PlayerLite[];
+  isMulti: boolean;
+  history: ClockSession[];
+  labelMode: (mode: ClockMode) => string;
+  onStart: () => void;
+};
+
+function SetupSection(props: SetupSectionProps) {
+  const {
+    profiles,
+    selectedPlayerIds,
+    setSelectedPlayerIds,
+    config,
+    setConfig,
+    players,
+    isMulti,
+    history,
+    labelMode,
+    onStart,
+  } = props;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* JOUERS */}
+      <section
+        className="card"
+        style={{
+          borderRadius: 18,
+          padding: 14,
+          marginTop: 2,
+          background:
+            "linear-gradient(180deg, rgba(25,25,30,.98), rgba(5,5,8,.98))",
+          border: "1px solid rgba(255,255,255,.10)",
+          boxShadow: "0 0 16px rgba(0,0,0,.7)",
+        }}
+      >
+        <h2
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            marginBottom: 4,
+          }}
+        >
+          Joueurs
+        </h2>
+        <div
+          style={{
+            fontSize: 11,
+            opacity: 0.75,
+            marginBottom: 10,
+          }}
+        >
+          Sélectionne 1 à 4 joueurs. Chaque joueur jouera une session à
+          la suite.
+        </div>
+
+        {profiles.length === 0 ? (
+          <div style={{ fontSize: 12, opacity: 0.7 }}>
+            Aucun profil pour l&apos;instant. Crée un profil dans
+            l&apos;onglet &quot;Profils&quot; pour enregistrer tes stats.
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 14,
+              paddingBottom: 4,
+            }}
+          >
+            {profiles.map((p) => {
+              const selected = selectedPlayerIds.includes(p.id);
+              const name = p.nickname ?? p.name ?? "Joueur";
+              const initials = initialsFromName(name);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  title={name}
+                  onClick={() => {
+                    setSelectedPlayerIds((prev) => {
+                      const exists = prev.includes(p.id);
+                      if (exists) {
+                        // ne jamais vider complètement
+                        if (prev.length === 1) return prev;
+                        return prev.filter((id) => id !== p.id);
+                      }
+                      if (prev.length >= 4) return prev;
+                      return [...prev, p.id];
+                    });
+                  }}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    position: "relative",
+                    width: 70,
+                  }}
+                >
+                  <div
+                    style={{
+                      borderRadius: "50%",
+                      padding: 2,
+                      background: selected
+                        ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
+                        : "rgba(255,255,255,0.12)",
+                      boxShadow: selected
+                        ? "0 0 16px rgba(255,198,58,.55)"
+                        : "none",
+                      transition:
+                        "transform .12s ease, box-shadow .12s ease",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 60,
+                        height: 60,
+                        borderRadius: "50%",
+                        overflow: "hidden",
+                        background: "#222",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {p.avatarDataUrl ? (
+                        <img
+                          src={p.avatarDataUrl}
+                          alt={name}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                          }}
+                        />
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: 18,
+                            fontWeight: 700,
+                            color: "#f5f5f5",
+                          }}
+                        >
+                          {initials}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 10,
+                      textAlign: "center",
+                      opacity: 0.9,
+                      whiteSpace: "nowrap",
+                      textOverflow: "ellipsis",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {name}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Infos résumé joueurs */}
+      <div
+        style={{
+          alignSelf: "flex-start",
+          borderRadius: 999,
+          border: "1px solid rgba(255,198,58,.45)",
+          padding: "4px 10px",
+          fontSize: 11,
+          background:
+            "linear-gradient(180deg, rgba(50,40,20,.95), rgba(20,14,6,.98))",
+          boxShadow: "0 0 12px rgba(255,198,58,.4)",
+        }}
+      >
+        {isMulti
+          ? `${players.length} joueurs sélectionnés`
+          : `Mode solo • ${
+              players[0]?.name ?? "Joueur solo"
+            }`}
+      </div>
+
+      {/* Choix du mode */}
+      <section
+        className="card"
+        style={{
+          borderRadius: 18,
+          padding: 14,
+          background:
+            "linear-gradient(180deg, rgba(25,25,30,.98), rgba(5,5,8,.98))",
+          border: "1px solid rgba(255,255,255,.10)",
+          boxShadow: "0 0 16px rgba(0,0,0,.7)",
+        }}
+      >
+        <h2
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            marginBottom: 8,
+          }}
+        >
+          Mode de jeu
+        </h2>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {(["classic", "doubles", "triples", "sdt"] as ClockMode[]).map(
+            (mode) => {
+              const active = config.mode === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  className={
+                    "chip w-full justify-between " +
+                    (active ? "chip-active" : "")
+                  }
+                  style={{
+                    justifyContent: "space-between",
+                    fontSize: 13,
+                    background: active
+                      ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
+                      : undefined,
+                    color: active ? "#111" : undefined,
+                    borderColor: active
+                      ? "rgba(0,0,0,.45)"
+                      : undefined,
+                    boxShadow: active
+                      ? "0 0 14px rgba(255,198,58,.55)"
+                      : undefined,
+                  }}
+                  onClick={() => setConfig((c) => ({ ...c, mode }))}
+                >
+                  <span>{labelMode(mode)}</span>
+                  {active && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        opacity: 0.8,
+                      }}
+                    >
+                      ✓ sélectionné
+                    </span>
+                  )}
+                </button>
+              );
+            }
+          )}
+        </div>
+      </section>
+
+      {/* Options timer / limite fléchettes */}
+      <section
+        className="card"
+        style={{
+          borderRadius: 18,
+          padding: 14,
+          background:
+            "linear-gradient(180deg, rgba(25,25,30,.98), rgba(5,5,8,.98))",
+          border: "1px solid rgba(255,255,255,.10)",
+          boxShadow: "0 0 16px rgba(0,0,0,.7)",
+        }}
+      >
+        <h2
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            marginBottom: 8,
+          }}
+        >
+          Options
+        </h2>
+
+        {/* Timer */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 10,
+            gap: 8,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 13 }}>Afficher le timer</div>
+            <div
+              style={{
+                fontSize: 11,
+                opacity: 0.7,
+              }}
+            >
+              Chrono visible pendant la session
+            </div>
+          </div>
+          <button
+            type="button"
+            className={"chip " + (config.showTimer ? "chip-active" : "")}
+            style={{
+              fontSize: 12,
+              minWidth: 64,
+              background: config.showTimer
+                ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
+                : undefined,
+              color: config.showTimer ? "#111" : undefined,
+              borderColor: config.showTimer
+                ? "rgba(0,0,0,.45)"
+                : undefined,
+              boxShadow: config.showTimer
+                ? "0 0 10px rgba(255,198,58,.55)"
+                : undefined,
+            }}
+            onClick={() =>
+              setConfig((c) => ({
+                ...c,
+                showTimer: !c.showTimer,
+              }))
+            }
+          >
+            {config.showTimer ? "Oui" : "Non"}
+          </button>
+        </div>
+
+        {/* Limite de fléchettes */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 13 }}>
+              Limite de fléchettes
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                opacity: 0.7,
+              }}
+            >
+              Par joueur : 0 = illimité, sinon fin auto quand la limite
+              est atteinte
+            </div>
+          </div>
+          <select
+            className="chip"
+            style={{
+              fontSize: 12,
+              minWidth: 132,
+              background:
+                "linear-gradient(180deg, rgba(40,40,46,.95), rgba(18,18,24,.98))",
+              borderColor: "rgba(255,255,255,.22)",
+            }}
+            value={config.dartLimit ?? 0}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              setConfig((c) => ({
+                ...c,
+                dartLimit: v > 0 ? v : null,
+              }));
+            }}
+          >
+            <option value={0}>Illimité</option>
+            <option value={30}>30 fléchettes</option>
+            <option value={60}>60 fléchettes</option>
+            <option value={90}>90 fléchettes</option>
+          </select>
+        </div>
+      </section>
+
+      {/* Bouton démarrer */}
+      <button
+        type="button"
+        className="btn-primary"
+        style={{
+          width: "100%",
+          padding: "12px 0",
+          borderRadius: 16,
+          fontSize: 15,
+          fontWeight: 700,
+          marginTop: 2,
+        }}
+        onClick={onStart}
+        disabled={!players.length}
+      >
+        Commencer la session
+      </button>
+
+      {/* Historique en bas */}
+      {history.length > 0 && (
+        <section style={{ marginTop: 6 }}>
+          <h2
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              marginBottom: 6,
+            }}
+          >
+            Dernières sessions
+          </h2>
+          <HistoryList history={history.slice(0, 5)} />
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// SECTION PLAY
+// ============================================
+
+type PlaySectionProps = {
+  isMulti: boolean;
+  currentPlayerIndex: number;
+  players: PlayerLite[];
+  currentPlayer: PlayerLite | null;
+  currentProfile?: Profile;
+  config: ClockConfig;
+  currentTarget: Target;
+  stageSDT: StageSDT;
+  dartsThrown: number;
+  hits: number;
+  bestStreak: number;
+  currentStreak: number;
+  elapsedNow: number;
+  objectiveKind: ObjectiveKind;
+  objectiveLabel: string;
+  precision: number;
+  labelTarget: (t: Target, m: ClockMode, s: StageSDT) => string;
+  selectedValue: Target | null;
+  setSelectedValue: (v: Target | null) => void;
+  selectedMult: 1 | 2 | 3;
+  setSelectedMult: (m: 1 | 2 | 3) => void;
+  isMiss: boolean;
+  setIsMiss: (v: boolean) => void;
+  lastThrows: string[];
+  onAbort: () => void;
+  onThrow: () => void;
+};
+
+function PlaySection(props: PlaySectionProps) {
+  const {
+    isMulti,
+    currentPlayerIndex,
+    players,
+    currentPlayer,
+    currentProfile,
+    config,
+    currentTarget,
+    stageSDT,
+    dartsThrown,
+    hits,
+    bestStreak,
+    currentStreak,
+    elapsedNow,
+    objectiveKind,
+    objectiveLabel,
+    precision,
+    labelTarget,
+    selectedValue,
+    setSelectedValue,
+    selectedMult,
+    setSelectedMult,
+    isMiss,
+    setIsMiss,
+    lastThrows,
+    onAbort,
+    onThrow,
+  } = props;
+
+  // couleurs de l'objectif
+  let objBg =
+    "linear-gradient(180deg,#ffc63a,#ffaf00)";
+  let objShadow = "0 0 12px rgba(255,198,58,.7)";
+  let objColor = "#111";
+
+  if (objectiveKind === "double") {
+    objBg = "linear-gradient(180deg,#26d0a8,#1ca086)";
+    objShadow = "0 0 12px rgba(38,208,168,.7)";
+    objColor = "#061312";
+  } else if (objectiveKind === "triple") {
+    objBg = "linear-gradient(180deg,#b16adf,#8e44ad)";
+    objShadow = "0 0 12px rgba(177,106,223,.7)";
+    objColor = "#110713";
+  }
+
+  const targetFullLabel = labelTarget(currentTarget, config.mode, stageSDT);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Bandeau infos joueur / objectif / stats */}
+      <section
+        className="card"
+        style={{
+          borderRadius: 16,
+          padding: 12,
+          background:
+            "linear-gradient(180deg,#191920,#08080c)",
+          border: "1px solid rgba(255,255,255,.12)",
+          boxShadow: "0 0 18px rgba(0,0,0,.7)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          {/* Avatar gros comme X01 */}
+          <div
+            style={{
+              borderRadius: "50%",
+              padding: 3,
+              background:
+                "linear-gradient(180deg,#ffc63a,#ffaf00)",
+              boxShadow: "0 0 18px rgba(255,198,58,.6)",
+              width: 64,
+              height: 64,
+              flexShrink: 0,
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                borderRadius: "50%",
+                overflow: "hidden",
+                background: "#222",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {currentProfile?.avatarDataUrl ? (
+                <img
+                  src={currentProfile.avatarDataUrl}
+                  alt={currentPlayer?.name ?? ""}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
+                />
+              ) : (
+                <span
+                  style={{
+                    fontSize: 20,
+                    fontWeight: 800,
+                    color: "#f5f5f5",
+                  }}
+                >
+                  {initialsFromName(currentPlayer?.name)}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Infos à droite */}
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            {/* Ligne temps + objectif */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  opacity: 0.8,
+                }}
+              >
+                {isMulti
+                  ? `Joueur ${currentPlayerIndex + 1}/${
+                      players.length
+                    }`
+                  : "Mode solo"}
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: "#ffc63a",
+                }}
+              >
+                Temps : {formatTime(elapsedNow)}
+              </div>
+            </div>
+
+            {/* Objectif */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <div style={{ fontSize: 12 }}>
+                Objectif
+                <div
+                  style={{
+                    marginTop: 3,
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    background: objBg,
+                    boxShadow: objShadow,
+                    color: objColor,
+                    fontWeight: 800,
+                    fontSize: 14,
+                    minWidth: 64,
+                    textAlign: "center",
+                  }}
+                >
+                  {objectiveLabel}
+                </div>
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  opacity: 0.8,
+                  textAlign: "right",
+                }}
+              >
+                Cible : {targetFullLabel}
+              </div>
+            </div>
+
+            {/* Stats détaillées */}
+            <div
+              style={{
+                marginTop: 4,
+                display: "flex",
+                flexDirection: "column",
+                gap: 2,
+                fontSize: 11,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span>
+                  Fléchettes :{" "}
+                  <strong>{dartsThrown}</strong>
+                </span>
+                <span>
+                  Hits : <strong>{hits}</strong>
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span>
+                  Précision :{" "}
+                  <strong>{precision}%</strong>
+                </span>
+                <span>
+                  Série / Best :{" "}
+                  <strong>
+                    {currentStreak} / {bestStreak}
+                  </strong>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Mini keypad Tour de l'horloge */}
+      <ClockPad
+        selectedValue={selectedValue}
+        setSelectedValue={setSelectedValue}
+        selectedMult={selectedMult}
+        setSelectedMult={setSelectedMult}
+        isMiss={isMiss}
+        setIsMiss={setIsMiss}
+      />
+
+      {/* Ligne d'historique de hits */}
+      <section
+        className="card"
+        style={{
+          borderRadius: 14,
+          padding: 8,
+          background:
+            "linear-gradient(180deg,#17171d,#09090c)",
+          border: "1px solid rgba(255,255,255,.08)",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            opacity: 0.8,
+            marginBottom: 4,
+          }}
+        >
+          Derniers lancers
+        </div>
+        {lastThrows.length === 0 ? (
+          <div
+            style={{
+              fontSize: 11,
+              opacity: 0.6,
+            }}
+          >
+            En attente des premiers lancers…
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              overflowX: "auto",
+              paddingBottom: 2,
+            }}
+          >
+            {lastThrows.map((t, idx) => {
+              const kind = getThrowKind(t);
+              let bg =
+                "linear-gradient(180deg,#444751,#2c2e35)";
+              let color = "#f5f5f5";
+              if (kind === "simple") {
+                bg =
+                  "linear-gradient(180deg,#ffc63a,#ffaf00)";
+                color = "#111";
+              } else if (kind === "double") {
+                bg =
+                  "linear-gradient(180deg,#26d0a8,#1ca086)";
+                color = "#061312";
+              } else if (kind === "triple") {
+                bg =
+                  "linear-gradient(180deg,#b16adf,#8e44ad)";
+                color = "#110713";
+              } else if (kind === "bull") {
+                bg =
+                  "linear-gradient(180deg,#29c76f,#1e8b4a)";
+                color = "#03140a";
+              }
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    padding: "3px 8px",
+                    borderRadius: 999,
+                    background: bg,
+                    color,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {t}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Actions bas */}
+      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+        <button
+          type="button"
+          className="btn-ghost"
+          style={{
+            flex: 1,
+            padding: "10px 0",
+            borderRadius: 14,
+            fontSize: 13,
+          }}
+          onClick={onAbort}
+        >
+          Annuler
+        </button>
+        <button
+          type="button"
+          className="btn-primary"
+          style={{
+            flex: 1,
+            padding: "10px 0",
+            borderRadius: 14,
+            fontSize: 13,
+            fontWeight: 700,
+          }}
+          onClick={onThrow}
+        >
+          Valider la fléchette
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// SECTION SUMMARY
+// ============================================
+
+type SummarySectionProps = {
+  lastSession: ClockSession;
+  history: ClockSession[];
+  labelMode: (mode: ClockMode) => string;
+  onBackToSetup: () => void;
+  onReplayCurrent: () => void;
+  isMulti: boolean;
+  currentPlayerIndex: number;
+  players: PlayerLite[];
+  onNextPlayer: () => void;
+};
+
+function SummarySection(props: SummarySectionProps) {
+  const {
+    lastSession,
+    history,
+    labelMode,
+    onBackToSetup,
+    onReplayCurrent,
+    isMulti,
+    currentPlayerIndex,
+    players,
+    onNextPlayer,
+  } = props;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <section
+        className="card"
+        style={{
+          borderRadius: 18,
+          padding: 14,
+          background:
+            "linear-gradient(180deg, rgba(25,25,30,.98), rgba(5,5,8,.98))",
+          border: "1px solid rgba(255,255,255,.10)",
+          boxShadow: "0 0 16px rgba(0,0,0,.7)",
+          fontSize: 13,
+        }}
+      >
+        <h2
+          style={{
+            fontSize: 15,
+            fontWeight: 700,
+            marginBottom: 8,
+          }}
+        >
+          Résumé de la session
+        </h2>
+        <div style={{ marginBottom: 2 }}>
+          Joueur :{" "}
+          <strong>{lastSession.profileName}</strong>
+        </div>
+        <div style={{ marginBottom: 2 }}>
+          Mode :{" "}
+          <strong>{labelMode(lastSession.config.mode)}</strong>
+        </div>
+        <div style={{ marginBottom: 2 }}>
+          Terminé ?{" "}
+          <strong>
+            {lastSession.completed ? "Oui 🎯" : "Non"}
+          </strong>
+        </div>
+        <div style={{ marginBottom: 2 }}>
+          Fléchettes :{" "}
+          <strong>{lastSession.dartsThrown}</strong>
+          {lastSession.config.dartLimit != null &&
+            ` / ${lastSession.config.dartLimit}`}
+        </div>
+        <div style={{ marginBottom: 2 }}>
+          Hits : <strong>{lastSession.hits}</strong>
+        </div>
+        <div style={{ marginBottom: 2 }}>
+          Meilleure série :{" "}
+          <strong>{lastSession.bestStreak}</strong>
+        </div>
+        {lastSession.config.showTimer && (
+          <div style={{ marginTop: 2 }}>
+            Temps :{" "}
+            <strong>{formatTime(lastSession.elapsedMs)}</strong>
+          </div>
+        )}
+      </section>
+
+      {history.length > 0 && (
+        <section>
+          <h2
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              marginBottom: 6,
+            }}
+          >
+            Historique (local)
+          </h2>
+          <HistoryList history={history.slice(0, 10)} />
+        </section>
+      )}
+
+      {/* Boutons bas : suivant / rejouer / retour */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {isMulti && currentPlayerIndex < players.length - 1 && (
+          <button
+            type="button"
+            className="btn-primary"
+            style={{
+              width: "100%",
+              padding: "10px 0",
+              borderRadius: 14,
+              fontSize: 13,
+              fontWeight: 700,
+            }}
+            onClick={onNextPlayer}
+          >
+            Joueur suivant :{" "}
+            {players[currentPlayerIndex + 1]?.name ?? ""}
+          </button>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            className="btn-ghost"
+            style={{
+              flex: 1,
+              padding: "10px 0",
+              borderRadius: 14,
+              fontSize: 13,
+            }}
+            onClick={onBackToSetup}
+          >
+            Retour au paramétrage
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            style={{
+              flex: 1,
+              padding: "10px 0",
+              borderRadius: 14,
+              fontSize: 13,
+              fontWeight: 700,
+            }}
+            onClick={onReplayCurrent}
+          >
+            Rejouer ce joueur
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ============================================
 // Mini keypad spécifique Tour de l'horloge
@@ -1212,56 +1801,58 @@ const ClockPad: React.FC<ClockPadProps> = ({
   }) => {
     // Styles de base par variante (inspirés du keypad X01)
     let bg = "linear-gradient(180deg,#3b3f49,#262830)";
-    let border = "1px solid rgba(0,0,0,.75)";
+    let border = "1px solid rgba(0,0,0,.85)";
     let color = "#f5f5f5";
     let boxShadow = "inset 0 1px 0 rgba(255,255,255,.12)";
 
     if (variant === "gold") {
       bg = "linear-gradient(180deg,#ffc63a,#ffaf00)";
-      border = "1px solid rgba(0,0,0,.75)";
+      border = "1px solid rgba(0,0,0,.85)";
       color = "#111";
-      boxShadow = "0 0 12px rgba(255,198,58,.55)";
+      boxShadow = "0 0 12px rgba(255,198,58,.65)";
     }
 
     if (variant === "teal") {
       bg = "linear-gradient(180deg,#26d0a8,#1ca086)";
-      border = "1px solid rgba(0,0,0,.75)";
+      border = "1px solid rgba(0,0,0,.85)";
       color = "#061312";
-      boxShadow = "0 0 10px rgba(38,208,168,.45)";
+      boxShadow = "0 0 10px rgba(38,208,168,.55)";
     }
 
     if (variant === "purple") {
       bg = "linear-gradient(180deg,#b16adf,#8e44ad)";
-      border = "1px solid rgba(0,0,0,.75)";
+      border = "1px solid rgba(0,0,0,.85)";
       color = "#110713";
-      boxShadow = "0 0 10px rgba(177,106,223,.45)";
+      boxShadow = "0 0 10px rgba(177,106,223,.55)";
     }
 
     if (variant === "green") {
       bg = "linear-gradient(180deg,#29c76f,#1e8b4a)";
-      border = "1px solid rgba(0,0,0,.75)";
+      border = "1px solid rgba(0,0,0,.85)";
       color = "#03140a";
-      boxShadow = "0 0 10px rgba(41,199,111,.45)";
+      boxShadow = "0 0 10px rgba(41,199,111,.55)";
     }
 
     if (variant === "grey") {
       bg = "linear-gradient(180deg,#565a61,#3a3d43)";
-      border = "1px solid rgba(0,0,0,.75)";
+      border = "1px solid rgba(0,0,0,.85)";
       color = "#f5f5f5";
       boxShadow = "inset 0 1px 0 rgba(255,255,255,.14)";
     }
 
-    // Effet "actif" : on surligne en or, comme la touche active du keypad X01
+    // Effet "actif" : aura dorée style X01
     if (active && variant === "default") {
       bg = "linear-gradient(180deg,#ffc63a,#ffaf00)";
-      border = "1px solid rgba(0,0,0,.8)";
+      border = "1px solid rgba(0,0,0,.9)";
       color = "#111";
-      boxShadow = "0 0 10px rgba(255,198,58,.55)";
+      boxShadow =
+        "0 0 14px rgba(255,198,58,.9), 0 0 0 1px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.3)";
     }
 
-    // Pour les variantes colorées, on renforce la lumière en actif
     if (active && variant !== "default") {
-      boxShadow = boxShadow + ", 0 0 8px rgba(255,255,255,.2)";
+      boxShadow =
+        boxShadow +
+        ", 0 0 10px rgba(255,255,255,.28)";
     }
 
     return (
@@ -1272,7 +1863,7 @@ const ClockPad: React.FC<ClockPadProps> = ({
           flex: grow ? 1 : undefined,
           minWidth: grow ? undefined : 32,
           height: 34,
-          borderRadius: 10,
+          borderRadius: 12,
           border,
           background: bg,
           boxShadow,
@@ -1297,24 +1888,24 @@ const ClockPad: React.FC<ClockPadProps> = ({
         borderRadius: 18,
         padding: 10,
         background:
-          "linear-gradient(180deg, rgba(18,18,22,.98), rgba(5,5,8,.98))",
-        border: "1px solid rgba(255,255,255,.10)",
-        boxShadow: "0 0 16px rgba(0,0,0,.7)",
+          "linear-gradient(180deg,#181820,#08080c)",
+        border: "1px solid rgba(255,255,255,.12)",
+        boxShadow: "0 0 20px rgba(0,0,0,.8)",
       }}
     >
       <div
         style={{
-          borderRadius: 16,
+          borderRadius: 18,
           padding: 10,
           background:
-            "linear-gradient(180deg, rgba(35,35,42,.96), rgba(16,16,22,.99))",
-          boxShadow: "inset 0 1px 0 rgba(255,255,255,.08)",
+            "linear-gradient(180deg,#22232b,#101117)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,.06)",
           display: "flex",
           flexDirection: "column",
           gap: 8,
         }}
       >
-        {/* Ligne Miss / Bull (Miss ~ bouton gris, Bull ~ bouton vert X01) */}
+        {/* Ligne Miss / Bull */}
         <div style={{ display: "flex", gap: 6 }}>
           <Key
             variant="grey"
@@ -1334,7 +1925,7 @@ const ClockPad: React.FC<ClockPadProps> = ({
           </Key>
         </div>
 
-        {/* Grille 1–20 (touches chiffres gris foncé, actif en or) */}
+        {/* Grille 1–20 */}
         <div
           style={{
             display: "grid",
@@ -1357,14 +1948,8 @@ const ClockPad: React.FC<ClockPadProps> = ({
           })}
         </div>
 
-        {/* Ligne Simple / Double / Triple 
-           → mapping visuel vers X01 :
-           - Simple  = BLEU (comme "DOUBLE")
-           - Double  = VIOLET (comme "TRIPLE")
-           - Triple  = OR (comme "VALIDER")
-        */}
+        {/* Simple / Double / Triple */}
         <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-          {/* Simple = bleu */}
           <Key
             variant="teal"
             active={!isMiss && selectedMult === 1}
@@ -1377,7 +1962,6 @@ const ClockPad: React.FC<ClockPadProps> = ({
             Simple
           </Key>
 
-          {/* Double = violet */}
           <Key
             variant="purple"
             active={!isMiss && selectedMult === 2}
@@ -1390,7 +1974,6 @@ const ClockPad: React.FC<ClockPadProps> = ({
             Double
           </Key>
 
-          {/* Triple = or */}
           <Key
             variant="gold"
             active={!isMiss && selectedMult === 3}
