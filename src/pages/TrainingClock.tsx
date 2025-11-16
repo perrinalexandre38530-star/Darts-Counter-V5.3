@@ -197,6 +197,9 @@ const TrainingClock: React.FC<Props> = (props) => {
   const [startTime, setStartTime] = React.useState<number | null>(null);
   const [endTime, setEndTime] = React.useState<number | null>(null);
 
+  // timer "live" pour que le temps défile en continu
+  const [nowTick, setNowTick] = React.useState<number>(Date.now());
+
   // sélection actuelle sur le mini keypad
   const [selectedValue, setSelectedValue] = React.useState<Target | null>(1);
   const [selectedMult, setSelectedMult] = React.useState<1 | 2 | 3>(1);
@@ -204,6 +207,12 @@ const TrainingClock: React.FC<Props> = (props) => {
 
   // historique court des derniers lancers (affiché en bas)
   const [lastThrows, setLastThrows] = React.useState<string[]>([]);
+
+  // dernier objectif validé + temps au moment du hit
+  const [lastObjectiveLabel, setLastObjectiveLabel] =
+    React.useState<string | null>(null);
+  const [lastObjectiveTimeMs, setLastObjectiveTimeMs] =
+    React.useState<number | null>(null);
 
   // résumé de la session terminée (joueur courant)
   const [lastSession, setLastSession] = React.useState<ClockSession | null>(
@@ -224,6 +233,19 @@ const TrainingClock: React.FC<Props> = (props) => {
       console.warn("Impossible de charger l'historique Tour de l'horloge", e);
     }
   }, []);
+
+  // Timer qui fait défiler le temps pendant la session
+  React.useEffect(() => {
+    if (!config.showTimer || step !== "play" || startTime == null || endTime != null) {
+      return;
+    }
+    const id = window.setInterval(() => {
+      setNowTick(Date.now());
+    }, 500);
+    return () => {
+      window.clearInterval(id);
+    };
+  }, [config.showTimer, step, startTime, endTime]);
 
   // sauver historique local
   function saveSessionToHistory(session: ClockSession) {
@@ -320,6 +342,8 @@ const TrainingClock: React.FC<Props> = (props) => {
     setSelectedMult(1);
     setIsMiss(false);
     setLastThrows([]);
+    setLastObjectiveLabel(null);
+    setLastObjectiveTimeMs(null);
   }
 
   function handleStartForPlayer(playerIndex: number) {
@@ -419,7 +443,20 @@ const TrainingClock: React.FC<Props> = (props) => {
         if (res.nextStage !== undefined) {
           setStageSDT(res.nextStage);
         }
+
         if (res.advanceTarget) {
+          // mémoriser le dernier objectif validé + temps
+          if (startTime != null) {
+            const elapsedAtObjective = Math.max(
+              0,
+              (endTime ?? Date.now()) - startTime
+            );
+            setLastObjectiveTimeMs(elapsedAtObjective);
+            setLastObjectiveLabel(
+              labelObjective(currentTarget, config, stageSDT)
+            );
+          }
+
           const nextIndex = currentTargetIndex + 1;
           if (nextIndex >= TARGETS.length) {
             setCurrentTargetIndex(nextIndex - 1);
@@ -448,7 +485,7 @@ const TrainingClock: React.FC<Props> = (props) => {
 
   const elapsedNow =
     startTime != null
-      ? (endTime ?? Date.now()) - startTime
+      ? (endTime ?? nowTick) - startTime
       : 0;
 
   // ---------------- UI helpers ----------------
@@ -519,84 +556,87 @@ const TrainingClock: React.FC<Props> = (props) => {
             gap: 12,
           }}
         >
-          {/* Header / breadcrumb */}
-          <div style={{ marginBottom: 4 }}>
+                    {/* Header global : Training + Tour de l'horloge (avec "i" intégré) */}
+                    <div
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              marginBottom: 4,
+            }}
+          >
+            {/* Petit pill "Training" */}
             <button
               type="button"
               onClick={() => window.history.back()}
               style={{
                 borderRadius: 999,
-                border: "1px solid rgba(255,255,255,.12)",
-                padding: "4px 10px",
-                fontSize: 11,
-                background:
-                  "linear-gradient(180deg, rgba(40,40,45,.9), rgba(15,15,20,.95))",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                opacity: 0.9,
-              }}
-            >
-              <span style={{ fontSize: 12 }}>←</span>
-              <span>Games / Training</span>
-            </button>
-          </div>
-
-          {/* Titre + bouton info */}
-          <div
-            style={{
-              position: "relative",
-              borderRadius: 20,
-              padding: "10px 14px 12px",
-              background:
-                "linear-gradient(180deg,#19191f,#0b0b10)",
-              border: "1px solid rgba(255,255,255,.12)",
-              boxShadow: "0 0 18px rgba(0,0,0,.7)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <div
-              style={{
-                padding: "4px 14px",
-                borderRadius: 999,
+                padding: "6px 16px",
+                border: "none",
                 background:
                   "linear-gradient(180deg,#ffc63a,#ffaf00)",
-                color: "#111",
-                fontWeight: 900,
-                letterSpacing: 0.8,
-                fontSize: 15,
-                boxShadow: "0 0 20px rgba(255,198,58,.55)",
+                color: "#2b1900",
+                fontWeight: 700,
+                fontSize: 12,
+                textTransform: "uppercase",
+                boxShadow: "0 0 12px rgba(247,201,72,0.6)",
+                flexShrink: 0,
               }}
             >
-              Tour de l&apos;horloge
-            </div>
+              Training
+            </button>
 
+            {/* Gros bouton doré "Tour de l'horloge" avec le "i" intégré */}
             <button
               type="button"
               onClick={() => setShowInfo(true)}
               style={{
-                position: "absolute",
-                right: 10,
-                top: 8,
-                width: 24,
-                height: 24,
-                borderRadius: "50%",
-                border: "1px solid rgba(255,255,255,.3)",
-                background:
-                  "linear-gradient(180deg,#333640,#1b1c22)",
-                color: "#f5f5f5",
-                fontSize: 13,
-                display: "flex",
+                flex: 1,
+                display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
-                boxShadow: "0 0 8px rgba(0,0,0,.7)",
+                gap: 10,
+                borderRadius: 999,
+                padding: "8px 22px",
+                border: "none",
+                background:
+                  "linear-gradient(180deg,#ffd85c,#b77b06)",
+                color: "#2b1900",
+                fontWeight: 800,
+                fontSize: 14,
+                textTransform: "uppercase",
+                boxShadow: "0 0 16px rgba(255,216,92,0.9)",
               }}
             >
-              i
+              <span
+                style={{
+                  letterSpacing: "0.05em",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Tour de l&apos;horloge
+              </span>
+              <span
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: "50%",
+                  background: "#2b1900",
+                  color: "#ffd85c",
+                  fontWeight: 800,
+                  fontSize: 13,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                i
+              </span>
             </button>
           </div>
+
 
           {/* ================== STEP SETUP ================== */}
           {step === "setup" && (
@@ -641,6 +681,8 @@ const TrainingClock: React.FC<Props> = (props) => {
               isMiss={isMiss}
               setIsMiss={setIsMiss}
               lastThrows={lastThrows}
+              lastObjectiveLabel={lastObjectiveLabel}
+              lastObjectiveTimeMs={lastObjectiveTimeMs}
               onAbort={handleAbort}
               onThrow={handleThrow}
             />
@@ -804,7 +846,7 @@ function SetupSection(props: SetupSectionProps) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* JOUERS */}
+      {/* JOUEURS */}
       <section
         className="card"
         style={{
@@ -845,10 +887,13 @@ function SetupSection(props: SetupSectionProps) {
         ) : (
           <div
             style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 14,
+              display: "grid",
+              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              gap: 12,
               paddingBottom: 4,
+              maxHeight: 220,
+              overflowY: profiles.length > 4 ? "auto" : "visible",
+              paddingRight: profiles.length > 4 ? 4 : 0,
             }}
           >
             {profiles.map((p) => {
@@ -878,33 +923,36 @@ function SetupSection(props: SetupSectionProps) {
                     padding: 0,
                     cursor: "pointer",
                     position: "relative",
-                    width: 70,
+                    width: "100%",
                   }}
                 >
                   <div
                     style={{
                       borderRadius: "50%",
-                      padding: 2,
-                      background: selected
-                        ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
-                        : "rgba(255,255,255,0.12)",
+                      padding: 3,
+                      background: "transparent",
                       boxShadow: selected
-                        ? "0 0 16px rgba(255,198,58,.55)"
-                        : "none",
+                        ? "0 0 20px rgba(255,198,58,.85)"
+                        : "0 0 0 rgba(0,0,0,0)",
                       transition:
-                        "transform .12s ease, box-shadow .12s ease",
+                        "box-shadow .12s ease, transform .12s ease, filter .12s ease",
                     }}
                   >
                     <div
                       style={{
-                        width: 60,
-                        height: 60,
+                        width: 56,
+                        height: 56,
                         borderRadius: "50%",
                         overflow: "hidden",
-                        background: "#222",
+                        background: "#111",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
+                        border: selected
+                          ? "2px solid rgba(255,198,58,.95)"
+                          : "1px solid rgba(255,255,255,.10)",
+                        filter: selected ? "none" : "grayscale(1)",
+                        opacity: selected ? 1 : 0.35,
                       }}
                     >
                       {p.avatarDataUrl ? (
@@ -920,7 +968,7 @@ function SetupSection(props: SetupSectionProps) {
                       ) : (
                         <span
                           style={{
-                            fontSize: 18,
+                            fontSize: 16,
                             fontWeight: 700,
                             color: "#f5f5f5",
                           }}
@@ -995,41 +1043,32 @@ function SetupSection(props: SetupSectionProps) {
           {(["classic", "doubles", "triples", "sdt"] as ClockMode[]).map(
             (mode) => {
               const active = config.mode === mode;
+
+              const baseBg =
+                "linear-gradient(180deg, rgba(32,32,38,.95), rgba(10,10,14,.98))";
+              const activeBg =
+                "linear-gradient(180deg, rgba(50,40,20,.95), rgba(20,14,6,.98))";
+
               return (
                 <button
                   key={mode}
                   type="button"
-                  className={
-                    "chip w-full justify-between " +
-                    (active ? "chip-active" : "")
-                  }
+                  className="chip w-full justify-between"
                   style={{
                     justifyContent: "space-between",
                     fontSize: 13,
-                    background: active
-                      ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
-                      : undefined,
-                    color: active ? "#111" : undefined,
+                    background: active ? activeBg : baseBg,
+                    color: "#f5f5f5",
                     borderColor: active
-                      ? "rgba(0,0,0,.45)"
-                      : undefined,
+                      ? "#ffc63a"
+                      : "rgba(255,255,255,.18)",
                     boxShadow: active
-                      ? "0 0 14px rgba(255,198,58,.55)"
-                      : undefined,
+                      ? "0 0 14px rgba(255,198,58,.45)"
+                      : "none",
                   }}
                   onClick={() => setConfig((c) => ({ ...c, mode }))}
                 >
                   <span>{labelMode(mode)}</span>
-                  {active && (
-                    <span
-                      style={{
-                        fontSize: 11,
-                        opacity: 0.8,
-                      }}
-                    >
-                      ✓ sélectionné
-                    </span>
-                  )}
                 </button>
               );
             }
@@ -1088,14 +1127,14 @@ function SetupSection(props: SetupSectionProps) {
               minWidth: 64,
               background: config.showTimer
                 ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
-                : undefined,
-              color: config.showTimer ? "#111" : undefined,
+                : "linear-gradient(180deg, rgba(40,40,46,.95), rgba(18,18,24,.98))",
+              color: config.showTimer ? "#111" : "#f5f5f5",
               borderColor: config.showTimer
                 ? "rgba(0,0,0,.45)"
-                : undefined,
+                : "rgba(255,255,255,.22)",
               boxShadow: config.showTimer
                 ? "0 0 10px rgba(255,198,58,.55)"
-                : undefined,
+                : "none",
             }}
             onClick={() =>
               setConfig((c) => ({
@@ -1168,6 +1207,14 @@ function SetupSection(props: SetupSectionProps) {
           fontSize: 15,
           fontWeight: 700,
           marginTop: 2,
+          background: players.length
+            ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
+            : "linear-gradient(180deg,#555,#333)",
+          color: players.length ? "#111" : "#888",
+          border: "1px solid rgba(0,0,0,.9)",
+          boxShadow: players.length
+            ? "0 0 16px rgba(255,198,58,.6)"
+            : "none",
         }}
         onClick={onStart}
         disabled={!players.length}
@@ -1223,6 +1270,8 @@ type PlaySectionProps = {
   isMiss: boolean;
   setIsMiss: (v: boolean) => void;
   lastThrows: string[];
+  lastObjectiveLabel: string | null;
+  lastObjectiveTimeMs: number | null;
   onAbort: () => void;
   onThrow: () => void;
 };
@@ -1253,6 +1302,8 @@ function PlaySection(props: PlaySectionProps) {
     isMiss,
     setIsMiss,
     lastThrows,
+    lastObjectiveLabel,
+    lastObjectiveTimeMs,
     onAbort,
     onThrow,
   } = props;
@@ -1263,10 +1314,11 @@ function PlaySection(props: PlaySectionProps) {
   let objShadow = "0 0 12px rgba(255,198,58,.7)";
   let objColor = "#111";
 
+  // Simple = doré, Double = vert, Triple = violet
   if (objectiveKind === "double") {
-    objBg = "linear-gradient(180deg,#26d0a8,#1ca086)";
-    objShadow = "0 0 12px rgba(38,208,168,.7)";
-    objColor = "#061312";
+    objBg = "linear-gradient(180deg,#29c76f,#1e8b4a)";
+    objShadow = "0 0 12px rgba(41,199,111,.7)";
+    objColor = "#03140a";
   } else if (objectiveKind === "triple") {
     objBg = "linear-gradient(180deg,#b16adf,#8e44ad)";
     objShadow = "0 0 12px rgba(177,106,223,.7)";
@@ -1274,6 +1326,11 @@ function PlaySection(props: PlaySectionProps) {
   }
 
   const targetFullLabel = labelTarget(currentTarget, config.mode, stageSDT);
+
+  const lastObjectiveDisplay =
+    lastObjectiveLabel != null && lastObjectiveTimeMs != null
+      ? `${lastObjectiveLabel} à ${formatTime(lastObjectiveTimeMs)}`
+      : "—";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1296,14 +1353,14 @@ function PlaySection(props: PlaySectionProps) {
             alignItems: "center",
           }}
         >
-          {/* Avatar gros comme X01 */}
+          {/* Avatar type X01 avec aura */}
           <div
             style={{
               borderRadius: "50%",
               padding: 3,
               background:
-                "linear-gradient(180deg,#ffc63a,#ffaf00)",
-              boxShadow: "0 0 18px rgba(255,198,58,.6)",
+                "radial-gradient(circle, rgba(255,198,58,.9) 0, rgba(255,198,58,.25) 55%, transparent 70%)",
+              boxShadow: "0 0 20px rgba(255,198,58,.65)",
               width: 64,
               height: 64,
               flexShrink: 0,
@@ -1319,6 +1376,7 @@ function PlaySection(props: PlaySectionProps) {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                border: "2px solid rgba(0,0,0,.8)",
               }}
             >
               {currentProfile?.avatarDataUrl ? (
@@ -1354,7 +1412,7 @@ function PlaySection(props: PlaySectionProps) {
               gap: 6,
             }}
           >
-            {/* Ligne temps + objectif */}
+            {/* Ligne temps + mode */}
             <div
               style={{
                 display: "flex",
@@ -1375,18 +1433,20 @@ function PlaySection(props: PlaySectionProps) {
                     }`
                   : "Mode solo"}
               </div>
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: "#ffc63a",
-                }}
-              >
-                Temps : {formatTime(elapsedNow)}
-              </div>
+              {config.showTimer && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#ffc63a",
+                  }}
+                >
+                  Temps : {formatTime(elapsedNow)}
+                </div>
+              )}
             </div>
 
-            {/* Objectif */}
+            {/* Objectif + cible */}
             <div
               style={{
                 display: "flex",
@@ -1421,11 +1481,11 @@ function PlaySection(props: PlaySectionProps) {
                   textAlign: "right",
                 }}
               >
-                Cible : {targetFullLabel}
+                Cible actuelle : {targetFullLabel}
               </div>
             </div>
 
-            {/* Stats détaillées */}
+            {/* Stats détaillées + dernier objectif */}
             <div
               style={{
                 marginTop: 4,
@@ -1466,22 +1526,29 @@ function PlaySection(props: PlaySectionProps) {
                   </strong>
                 </span>
               </div>
+              <div
+                style={{
+                  marginTop: 2,
+                  display: "flex",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span>Dernier objectif validé :</span>
+                <span
+                  style={{
+                    fontWeight: 600,
+                    textAlign: "right",
+                  }}
+                >
+                  {lastObjectiveDisplay}
+                </span>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Mini keypad Tour de l'horloge */}
-      <ClockPad
-        selectedValue={selectedValue}
-        setSelectedValue={setSelectedValue}
-        selectedMult={selectedMult}
-        setSelectedMult={setSelectedMult}
-        isMiss={isMiss}
-        setIsMiss={setIsMiss}
-      />
-
-      {/* Ligne d'historique de hits */}
+      {/* Ligne d'historique de hits (sous le header, au-dessus du keypad) */}
       <section
         className="card"
         style={{
@@ -1524,14 +1591,16 @@ function PlaySection(props: PlaySectionProps) {
               let bg =
                 "linear-gradient(180deg,#444751,#2c2e35)";
               let color = "#f5f5f5";
+
+              // Simple = doré, Double = vert, Triple = violet
               if (kind === "simple") {
                 bg =
                   "linear-gradient(180deg,#ffc63a,#ffaf00)";
                 color = "#111";
               } else if (kind === "double") {
                 bg =
-                  "linear-gradient(180deg,#26d0a8,#1ca086)";
-                color = "#061312";
+                  "linear-gradient(180deg,#29c76f,#1e8b4a)";
+                color = "#03140a";
               } else if (kind === "triple") {
                 bg =
                   "linear-gradient(180deg,#b16adf,#8e44ad)";
@@ -1541,6 +1610,7 @@ function PlaySection(props: PlaySectionProps) {
                   "linear-gradient(180deg,#29c76f,#1e8b4a)";
                 color = "#03140a";
               }
+
               return (
                 <div
                   key={idx}
@@ -1561,6 +1631,16 @@ function PlaySection(props: PlaySectionProps) {
           </div>
         )}
       </section>
+
+      {/* Mini keypad Tour de l'horloge */}
+      <ClockPad
+        selectedValue={selectedValue}
+        setSelectedValue={setSelectedValue}
+        selectedMult={selectedMult}
+        setSelectedMult={setSelectedMult}
+        isMiss={isMiss}
+        setIsMiss={setIsMiss}
+      />
 
       {/* Actions bas */}
       <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
@@ -1586,6 +1666,11 @@ function PlaySection(props: PlaySectionProps) {
             borderRadius: 14,
             fontSize: 13,
             fontWeight: 700,
+            background:
+              "linear-gradient(180deg,#ffc63a,#ffaf00)",
+            color: "#111",
+            border: "1px solid rgba(0,0,0,.9)",
+            boxShadow: "0 0 16px rgba(255,198,58,.6)",
           }}
           onClick={onThrow}
         >
@@ -1766,7 +1851,14 @@ type ClockPadProps = {
   setIsMiss: (v: boolean) => void;
 };
 
-type KeyVariant = "default" | "gold" | "teal" | "purple" | "green" | "grey";
+type KeyVariant =
+  | "default"
+  | "gold"
+  | "teal"
+  | "purple"
+  | "green"
+  | "grey"
+  | "red";
 
 const ClockPad: React.FC<ClockPadProps> = ({
   selectedValue,
@@ -1840,6 +1932,13 @@ const ClockPad: React.FC<ClockPadProps> = ({
       boxShadow = "inset 0 1px 0 rgba(255,255,255,.14)";
     }
 
+    if (variant === "red") {
+      bg = "linear-gradient(180deg,#ff4b5c,#a82030)";
+      border = "1px solid rgba(0,0,0,.85)";
+      color = "#fff";
+      boxShadow = "0 0 10px rgba(255,75,92,.6)";
+    }
+
     // Effet "actif" : aura dorée style X01
     if (active && variant === "default") {
       bg = "linear-gradient(180deg,#ffc63a,#ffaf00)";
@@ -1908,7 +2007,7 @@ const ClockPad: React.FC<ClockPadProps> = ({
         {/* Ligne Miss / Bull */}
         <div style={{ display: "flex", gap: 6 }}>
           <Key
-            variant="grey"
+            variant="red"
             active={isMiss}
             onClick={handleSelectMiss}
             grow
@@ -1951,7 +2050,7 @@ const ClockPad: React.FC<ClockPadProps> = ({
         {/* Simple / Double / Triple */}
         <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
           <Key
-            variant="teal"
+            variant="gold"
             active={!isMiss && selectedMult === 1}
             onClick={() => {
               setIsMiss(false);
@@ -1963,7 +2062,7 @@ const ClockPad: React.FC<ClockPadProps> = ({
           </Key>
 
           <Key
-            variant="purple"
+            variant="green"
             active={!isMiss && selectedMult === 2}
             onClick={() => {
               setIsMiss(false);
@@ -1975,7 +2074,7 @@ const ClockPad: React.FC<ClockPadProps> = ({
           </Key>
 
           <Key
-            variant="gold"
+            variant="purple"
             active={!isMiss && selectedMult === 3}
             onClick={() => {
               setIsMiss(false);
