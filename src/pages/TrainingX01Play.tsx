@@ -758,9 +758,10 @@ function TrainingStatsTable({
   );
 }
 
-// ============================================
-// Volée en cours — 3 chips + total
-// ============================================
+/* -------------------------------------------------------
+   VOLÉE EN COURS — 3 chips + total sur une seule ligne
+   (le total juste après le 3ᵉ bloc, le tout centré)
+---------------------------------------------------------*/
 
 function ThrowPreviewBar({ darts }: { darts: UIDart[] }) {
   const total = throwTotal(darts);
@@ -768,57 +769,53 @@ function ThrowPreviewBar({ darts }: { darts: UIDart[] }) {
   return (
     <div
       style={{
-        marginTop: 5,
+        marginTop: 8,
         paddingTop: 6,
-        borderTop: "1px solid rgba(255,255,255,0.09)",
+        borderTop: "1px solid rgba(255,255,255,0.07)",
+        width: "100%",
+        display: "flex",
+        justifyContent: "center",
       }}
     >
-
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
+          justifyContent: "center",
+          gap: 8,
         }}
       >
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            justifyContent: "center",
-            gap: 6,
-          }}
-        >
-          {[0, 1, 2].map((idx) => {
-            const d = darts[idx];
-            const label = chipLabel(d);
-            return (
-              <div
-                key={"chip" + idx}
-                style={{
-                  minWidth: 40,
-                  padding: "4px 10px",
-                  borderRadius: 999,
-                  background: chipBg(d),
-                  boxShadow: d
-                    ? "0 4px 12px rgba(0,0,0,0.7)"
-                    : "0 2px 8px rgba(0,0,0,0.6)",
-                  border: d
-                    ? "1px solid rgba(0,0,0,0.4)"
-                    : "1px solid rgba(255,255,255,0.06)",
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  color: d ? "#fff7dc" : "rgba(180,180,190,0.75)",
-                  textAlign: "center",
-                }}
-              >
-                {label}
-              </div>
-            );
-          })}
-        </div>
+        {/* 3 chips */}
+        {[0, 1, 2].map((idx) => {
+          const d = darts[idx];
+          const label = chipLabel(d);
 
+          return (
+            <div
+              key={"chip" + idx}
+              style={{
+                minWidth: 44,
+                padding: "4px 12px",
+                borderRadius: 999,
+                background: chipBg(d),
+                boxShadow: d
+                  ? "0 4px 12px rgba(0,0,0,0.7)"
+                  : "0 2px 8px rgba(0,0,0,0.6)",
+                border: d
+                  ? "1px solid rgba(0,0,0,0.35)"
+                  : "1px solid rgba(255,255,255,0.05)",
+                fontSize: 11,
+                fontWeight: 700,
+                color: d ? "#fff7dc" : "rgba(180,180,190,0.7)",
+                textAlign: "center",
+              }}
+            >
+              {label}
+            </div>
+          );
+        })}
+
+        {/* TOTAL juste après la 3ᵉ flèche */}
         <div
           style={{
             minWidth: 40,
@@ -827,7 +824,7 @@ function ThrowPreviewBar({ darts }: { darts: UIDart[] }) {
             background: "#050506",
             border: "1px solid #ffcf61",
             boxShadow:
-              "0 0 12px rgba(255,195,80,0.6), 0 0 0 1px rgba(0,0,0,0.9)",
+              "0 0 12px rgba(255,195,80,0.55), 0 0 0 1px rgba(0,0,0,0.9)",
             textAlign: "center",
             fontSize: 13,
             fontWeight: 900,
