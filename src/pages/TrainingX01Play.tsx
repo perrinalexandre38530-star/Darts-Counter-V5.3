@@ -861,23 +861,37 @@ export default function TrainingX01Play({
 }: {
   go?: (tab: any, p?: any) => void;
 }) {
+  // --------------------------------------------------
+  // PROFIL COURANT + AVATAR
+  // --------------------------------------------------
   const currentProfile = useCurrentProfile() as Profile | null;
 
-  // Avatar dynamique
   let avatarSrc: string | null = null;
   if (currentProfile) {
     const p = currentProfile as any;
-    const possibleKeys = [
-      "avatarUrl",
-      "avatar",
-      "photoUrl",
-      "picture",
-      "image",
-    ];
-    for (const key of possibleKeys) {
-      if (typeof p[key] === "string") {
-        avatarSrc = p[key];
-        break;
+
+    // 1. Clés les plus probables
+    if (typeof p.avatarUrl === "string") {
+      avatarSrc = p.avatarUrl;
+    } else if (typeof p.avatar === "string") {
+      avatarSrc = p.avatar;
+    } else {
+      // 2. Fallback : on cherche un string qui ressemble à une image
+      for (const [key, value] of Object.entries(p)) {
+        if (
+          typeof value === "string" &&
+          /\.(png|jpe?g|webp|gif)$/i.test(value)
+        ) {
+          avatarSrc = value;
+          break;
+        }
+        if (
+          typeof value === "string" &&
+          /data:image\//.test(value)
+        ) {
+          avatarSrc = value;
+          break;
+        }
       }
     }
   }
@@ -1133,10 +1147,12 @@ export default function TrainingX01Play({
 return (
   <div
     style={{
-      position: "relative",
-      height: `calc(100vh - ${NAV_HEIGHT}px)`,
+      position: "fixed",
+      inset: 0,
+      paddingBottom: NAV_HEIGHT,
       overflow: "hidden",
       background: "#020205",
+      zIndex: 1,
     }}
   >
     {/* HEADER FIXE */}
@@ -1281,7 +1297,7 @@ return (
     </div>
 
     {/* MARGE sous header */}
-    <div style={{ height: 96 }} />
+    <div style={{ height: 70 }} />
 
     {/* BLOC CENTRAL : 2 colonnes + volée */}
     <div
@@ -1445,7 +1461,7 @@ return (
       <ThrowPreviewBar darts={currentThrow} />
     </div>
 
-    {/* KEYPAD FIXE EN BAS */}
+    {/* KEYPAD FIXE EN BAS (au-dessus du BottomNav) */}
     <div
       style={{
         position: "fixed",
@@ -1581,7 +1597,8 @@ return (
         <div
           style={{
             width: "min(100%,520px)",
-            background: "linear-gradient(180deg,#14141a 0%,#050509 100%)",
+            background:
+              "linear-gradient(180deg,#14141a 0%,#050509 100%)",
             borderRadius: 16,
             padding: 12,
             border: "1px solid rgba(255,255,255,0.18)",
