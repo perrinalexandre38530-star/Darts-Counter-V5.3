@@ -13,6 +13,46 @@ import { TrainingStore } from "../lib/TrainingStore";
 const NAV_HEIGHT = 64; // hauteur du BottomNav (approx)
 
 // --------------------------------------------------
+// PERSISTENCE LOCALSTORAGE — TRAINING X01
+// --------------------------------------------------
+
+const TRAINING_X01_STATS_KEY = "dc_training_x01_stats_v1";
+
+function loadTrainingStatsFromStorage(): TrainingFinishStats[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(TRAINING_X01_STATS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((x) => ({
+      date: Number(x.date) || Date.now(),
+      darts: Number(x.darts) || 0,
+      avg3D: Number(x.avg3D) || 0,
+      pctS: Number(x.pctS) || 0,
+      pctD: Number(x.pctD) || 0,
+      pctT: Number(x.pctT) || 0,
+      bestVisit: Number(x.bestVisit) || 0,
+      checkout: Number(x.checkout) || 0,
+    })) as TrainingFinishStats[];
+  } catch {
+    return [];
+  }
+}
+
+function saveTrainingStatsToStorage(list: TrainingFinishStats[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      TRAINING_X01_STATS_KEY,
+      JSON.stringify(list)
+    );
+  } catch (err) {
+    console.warn("saveTrainingStatsToStorage failed", err);
+  }
+}
+
+// --------------------------------------------------
 // TYPES
 // --------------------------------------------------
 
@@ -934,7 +974,7 @@ export default function TrainingX01Play({
   const [hitMap, setHitMap] = React.useState<HitMap>({});
   const [finishedSessions, setFinishedSessions] = React.useState<
     TrainingFinishStats[]
-  >([]);
+  >(() => loadTrainingStatsFromStorage());
   const [metricKey, setMetricKey] = React.useState<MetricKey>("darts");
   const [rangeKey, setRangeKey] = React.useState<RangeKey>("week");
 
@@ -1034,17 +1074,17 @@ export default function TrainingX01Play({
   function handleNumber(n: number) {
     // partie terminée ou bust verrouillé => on ignore
     if (remaining <= 0 || bustLocked) return;
-  
+
     if (!started) setStarted(true);
     if (currentThrow.length >= 3) return;
-  
+
     const d: UIDart = { v: n, mult: multiplier };
     const nextThrow = [...currentThrow, d];
     const after = remaining - throwTotal(nextThrow);
-  
+
     const impossibleDoubleScore =
       (outMode === "double" || outMode === "master") && after === 1;
-  
+
     if (after < 0 || impossibleDoubleScore) {
       // bust automatique dès qu'on dépasse OU qu'on tombe sur 1 en double/master
       setBustLocked(true);
@@ -1054,7 +1094,7 @@ export default function TrainingX01Play({
       playSound("dart-hit");
       navigator.vibrate?.(20);
     }
-  
+
     setCurrentThrow(nextThrow);
     setMultiplier(1);
   }
@@ -1062,17 +1102,17 @@ export default function TrainingX01Play({
   function handleBull() {
     // partie terminée ou bust verrouillé => on ignore
     if (remaining <= 0 || bustLocked) return;
-  
+
     if (!started) setStarted(true);
     if (currentThrow.length >= 3) return;
-  
+
     const d: UIDart = { v: 25, mult: multiplier === 2 ? 2 : 1 };
     const nextThrow = [...currentThrow, d];
     const after = remaining - throwTotal(nextThrow);
-  
+
     const impossibleDoubleScore =
       (outMode === "double" || outMode === "master") && after === 1;
-  
+
     if (after < 0 || impossibleDoubleScore) {
       setBustLocked(true);
       playSound("bust");
@@ -1081,10 +1121,10 @@ export default function TrainingX01Play({
       playSound("dart-hit");
       navigator.vibrate?.(20);
     }
-  
+
     setCurrentThrow(nextThrow);
     setMultiplier(1);
-  }  
+  }
 
   function handleBackspace() {
     if (!currentThrow.length) return;
@@ -1110,15 +1150,15 @@ export default function TrainingX01Play({
 
   function handleValidate() {
     if (!currentThrow.length || remaining <= 0 || !sessionIdRef.current) return;
-  
+
     const volleyTotal = throwTotal(currentThrow);
     const after = remaining - volleyTotal;
-  
+
     let isBust = false;
-  
+
     const impossibleDoubleScore =
       (outMode === "double" || outMode === "master") && after === 1;
-  
+
     if (after < 0 || impossibleDoubleScore) {
       isBust = true;
     } else if (after === 0) {
@@ -1127,9 +1167,9 @@ export default function TrainingX01Play({
         isBust = true;
       }
     }
-  
+
     const didCheckout = !isBust && after === 0;
-  
+
     const hitsPayload = currentThrow.map((d) => ({
       profileId: currentProfile?.id ?? null,
       value: dartValue(d),
@@ -1139,18 +1179,18 @@ export default function TrainingX01Play({
       remainingAfter: isBust ? remaining : after,
       mode: "x01_solo" as any,
     }));
-  
+
     try {
       TrainingStore.addHits(sessionIdRef.current, hitsPayload as any);
     } catch (err) {
       console.warn("TrainingX01Play addHits failed", err);
     }
-  
+
     setTotalDarts((n) => n + currentThrow.length);
-  
+
     const missCount = currentThrow.filter((d) => d.v === 0).length;
     setMissHits((n) => n + missCount);
-  
+
     if (isBust) {
       setBustCount((n) => n + 1);
       // score "remaining" ne bouge pas (on reste au début de la volée)
@@ -1162,7 +1202,7 @@ export default function TrainingX01Play({
       let addT = 0;
       let addB = 0;
       let addDB = 0;
-  
+
       for (const d of validHits) {
         if (d.v === 25) {
           if (d.mult === 2) addDB++;
@@ -1171,14 +1211,14 @@ export default function TrainingX01Play({
         else if (d.mult === 2) addD++;
         else if (d.mult === 3) addT++;
       }
-  
+
       setTotalHits((n) => n + addHits);
       setSingleHits((n) => n + addS);
       setDoubleHits((n) => n + addD);
       setTripleHits((n) => n + addT);
       setBullHits((n) => n + addB);
       setDBullHits((n) => n + addDB);
-  
+
       setHitMap((prev) => {
         const next: HitMap = { ...prev };
         for (const d of validHits) {
@@ -1188,24 +1228,24 @@ export default function TrainingX01Play({
         }
         return next;
       });
-  
+
       setBestVisit((b) => Math.max(b, volleyTotal));
       setRemaining(after);
-  
+
       if (didCheckout) {
         playSound("doubleout");
       }
-  
+
       if (didCheckout) {
         const finalDarts = totalDarts + currentThrow.length;
         const avgPerDartFinal =
           finalDarts > 0 ? startScore / finalDarts : 0;
-  
+
         const newTotalHits = totalHits + addHits;
         const newS = singleHits + addS;
         const newD = doubleHits + addD;
         const newT = tripleHits + addT;
-  
+
         const stat: TrainingFinishStats = {
           date: Date.now(),
           darts: finalDarts,
@@ -1216,17 +1256,21 @@ export default function TrainingX01Play({
           bestVisit: Math.max(bestVisit, volleyTotal),
           checkout: dartValue(currentThrow[currentThrow.length - 1]),
         };
-  
-        setFinishedSessions((arr) => [...arr, stat]);
+
+        setFinishedSessions((arr) => {
+          const next = [...arr, stat];
+          saveTrainingStatsToStorage(next);
+          return next;
+        });
+
         setShowEndModal(true);
       }
     }
-  
+
     setCurrentThrow([]);
     setMultiplier(1);
     setBustLocked(false);
   }
-  
 
   function handleExit() {
     if (sessionIdRef.current) {

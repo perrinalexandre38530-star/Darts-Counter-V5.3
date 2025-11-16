@@ -15,6 +15,7 @@ import StatsPlayerDashboard, {
 } from "../components/StatsPlayerDashboard";
 import { useQuickStats } from "../hooks/useQuickStats";
 import HistoryPage from "./HistoryPage";
+import TrainingX01StatsPanel from "../components/TrainingX01StatsPanel";
 
 /* ---------- Thème local ---------- */
 const T = {
@@ -675,7 +676,13 @@ export default function StatsHub(props: Props) {
       )}
 
       {tab === "training" && (
-        <TrainingSection sessions={trainingSessions} />
+        <>
+          {/* Panneau Training X01 (localStorage) */}
+          <TrainingX01StatsPanel />
+          {/* Liste brute des sessions TrainingStore en dessous */}
+          <div style={{ height: 12 }} />
+          <TrainingSection sessions={trainingSessions} />
+        </>
       )}
     </div>
   );
