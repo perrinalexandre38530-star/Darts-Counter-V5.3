@@ -1286,7 +1286,7 @@ return (
     </div>
 
     {/* MARGE sous header */}
-    <div style={{ height: 70 }} />
+    <div style={{ height: 50 }} />
 
     {/* BLOC CENTRAL : 2 colonnes + volée */}
     <div
