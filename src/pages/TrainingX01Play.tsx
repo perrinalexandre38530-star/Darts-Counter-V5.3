@@ -193,9 +193,9 @@ export function getMetricValue(
 // ============================================
 
 function RadarHitChart({ hitMap }: { hitMap: HitMap }) {
-  const size = 120;
+  const size = 160;
   const center = size / 2;
-  const maxRadius = size / 2 - 12;
+  const maxRadius = size / 2 - 16;
 
   const values = SEGMENTS.map((key) => hitMap[String(key)] ?? 0);
   const maxVal = Math.max(...values, 1);
@@ -773,17 +773,6 @@ function ThrowPreviewBar({ darts }: { darts: UIDart[] }) {
         borderTop: "1px solid rgba(255,255,255,0.09)",
       }}
     >
-      <div
-        style={{
-          fontSize: 11,
-          color: "#ffcf61",
-          fontWeight: 700,
-          marginBottom: 4,
-          textAlign: "center",
-        }}
-      >
-        Volée
-      </div>
 
       <div
         style={{
@@ -1326,59 +1315,80 @@ return (
           }}
         >
           <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              marginBottom: 6,
-            }}
-          >
-            <div
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: "50%",
-                padding: 3,
-                background:
-                  "conic-gradient(from 200deg,#ffdf8f,#ffb53a,#ffdf8f)",
-                boxShadow:
-                  "0 0 0 2px rgba(0,0,0,0.8),0 0 16px rgba(255,200,50,0.5)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                overflow: "hidden",
-              }}
-            >
-              {avatarSrc ? (
-                <img
-                  src={avatarSrc}
-                  alt=""
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                    borderRadius: "50%",
-                  }}
-                />
-              ) : (
-                <div
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    borderRadius: "50%",
-                    background: "rgba(255,255,255,0.2)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: 900,
-                    fontSize: 18,
-                    color: "#1c1302",
-                  }}
-                >
-                  {currentProfile?.name?.[0]?.toUpperCase() ?? "?"}
-                </div>
-              )}
-            </div>
-          </div>
+  style={{
+    display: "flex",
+    justifyContent: "center",
+    marginBottom: 6,
+  }}
+>
+  {/* Aura derrière */}
+  <div
+    style={{
+      position: "relative",
+      width: 70,
+      height: 70,
+      borderRadius: "50%",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+    }}
+  >
+    {/* Glow */}
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        borderRadius: "50%",
+        background:
+          "radial-gradient(circle, rgba(255,220,140,0.9) 0%, rgba(255,190,80,0.45) 45%, rgba(0,0,0,0) 70%)",
+        boxShadow: "0 0 25px rgba(255,200,70,0.75)",
+        zIndex: 0,
+      }}
+    />
+
+    {/* Avatar SANS MARGE / SANS FOND */}
+    <div
+      style={{
+        position: "relative",
+        width: 70,
+        height: 70,
+        borderRadius: "50%",
+        overflow: "hidden",
+        zIndex: 1,
+      }}
+    >
+      {avatarSrc ? (
+        <img
+          src={avatarSrc}
+          alt=""
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            borderRadius: "50%",
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            borderRadius: "50%",
+            background: "rgba(255,255,255,0.20)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontWeight: 900,
+            fontSize: 26,
+            color: "#fff",
+          }}
+        >
+          {currentProfile?.name?.[0]?.toUpperCase() ?? "?"}
+        </div>
+      )}
+    </div>
+  </div>
+</div>
 
           <TrainingStatsTable
             avg3D={avg3D}
