@@ -575,8 +575,13 @@ export default function App() {
       }
 
       case "training_clock": {
-        // Tour de l'horloge (training)
-        page = <TrainingClock />;
+        // Tour de l'horloge (training — solo + multi)
+        page = (
+          <TrainingClock
+            profiles={store.profiles ?? []}
+            activeProfileId={store.activeProfileId}
+          />
+        );
         break;
       }
 

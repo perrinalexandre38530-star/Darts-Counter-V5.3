@@ -17,8 +17,8 @@ type SetupProps = {
     inMode: "simple" | "double" | "master";
     doubleOut: boolean;
     doubleIn: boolean;
-    setsToWin: number;   // 1/3/5/7/9/11/13
-    legsPerSet: number;  // 1/3/5/7
+    setsToWin: number; // 1/3/5/7/9/11/13
+    legsPerSet: number; // 1/3/5/7
     randomOrder: boolean;
   }) => void;
 };
@@ -35,9 +35,22 @@ type SavedSettings = Partial<{
   legsPerSet: number;
   randomOrder: boolean;
   officialMatch: boolean; // 👈 serve alterné
-  voiceOn: boolean;       // 👈 TTS
-  sfxOn: boolean;         // 👈 sons arcade
+  voiceOn: boolean; // 👈 TTS
+  sfxOn: boolean; // 👈 sons arcade
 }>;
+
+// Valeurs par défaut sûres (inclut legsPerSet = 3 → BO3)
+const DEFAULT_SETTINGS_X01: SavedSettings = {
+  start: 501,
+  outMode: "double",
+  inMode: "simple",
+  setsToWin: 3,
+  legsPerSet: 3,
+  randomOrder: false,
+  officialMatch: false,
+  voiceOn: true,
+  sfxOn: true,
+};
 
 function loadSettings(): SavedSettings {
   try {
@@ -137,27 +150,45 @@ function useAvgMap(profiles: Profile[]) {
 }
 
 export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
-  const saved = React.useMemo(loadSettings, []);
-  const [start, setStart] = React.useState<301 | 501 | 701 | 901>(saved.start ?? 501);
+  // On merge une fois : defaults + valeurs sauvegardées
+  const rawSaved = React.useMemo(loadSettings, []);
+  const saved = React.useMemo(
+    () => ({ ...DEFAULT_SETTINGS_X01, ...rawSaved }),
+    [rawSaved]
+  );
+
+  const [start, setStart] = React.useState<301 | 501 | 701 | 901>(
+    saved.start ?? DEFAULT_SETTINGS_X01.start ?? 501
+  );
   const [outMode, setOutMode] = React.useState<"simple" | "double" | "master">(
-    saved.outMode ?? "double"
+    saved.outMode ?? DEFAULT_SETTINGS_X01.outMode ?? "double"
   );
   const [inMode, setInMode] = React.useState<"simple" | "double" | "master">(
-    saved.inMode ?? "simple"
+    saved.inMode ?? DEFAULT_SETTINGS_X01.inMode ?? "simple"
   );
-  const [setsToWin, setSetsToWin] = React.useState<number>(saved.setsToWin ?? 1);
+  const [setsToWin, setSetsToWin] = React.useState<number>(
+    saved.setsToWin ?? DEFAULT_SETTINGS_X01.setsToWin ?? 3
+  );
 
   // ⚠️ IMPORTANT : par défaut on veut un "best of 3" → 3 legs par set
-  const [legsPerSet, setLegsPerSet] = React.useState<number>(saved.legsPerSet ?? 3);
+  const [legsPerSet, setLegsPerSet] = React.useState<number>(
+    saved.legsPerSet ?? DEFAULT_SETTINGS_X01.legsPerSet ?? 3
+  );
 
-  const [randomOrder, setRandomOrder] = React.useState<boolean>(saved.randomOrder ?? false);
+  const [randomOrder, setRandomOrder] = React.useState<boolean>(
+    saved.randomOrder ?? DEFAULT_SETTINGS_X01.randomOrder ?? false
+  );
 
   // nouvelles options persistées
   const [officialMatch, setOfficialMatch] = React.useState<boolean>(
-    saved.officialMatch ?? false
+    saved.officialMatch ?? DEFAULT_SETTINGS_X01.officialMatch ?? false
   );
-  const [voiceOn, setVoiceOn] = React.useState<boolean>(saved.voiceOn ?? true);
-  const [sfxOn, setSfxOn] = React.useState<boolean>(saved.sfxOn ?? true);
+  const [voiceOn, setVoiceOn] = React.useState<boolean>(
+    saved.voiceOn ?? DEFAULT_SETTINGS_X01.voiceOn ?? true
+  );
+  const [sfxOn, setSfxOn] = React.useState<boolean>(
+    saved.sfxOn ?? DEFAULT_SETTINGS_X01.sfxOn ?? true
+  );
 
   const [available, setAvailable] = React.useState<Profile[]>(() => profiles.slice());
   const [selected, setSelected] = React.useState<Profile[]>([]);
@@ -205,6 +236,15 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
     const doubleOut = outMode !== "simple";
     const doubleIn = inMode !== "simple";
 
+    // garde-fous : on s'assure que le moteur reçoit toujours des valeurs valides
+    const safeSetsToWin = setsToWin ?? (DEFAULT_SETTINGS_X01.setsToWin ?? 3);
+    const safeLegsPerSet = legsPerSet ?? (DEFAULT_SETTINGS_X01.legsPerSet ?? 3);
+
+    console.log("[X01Setup] START X01", {
+      setsToWin: safeSetsToWin,
+      legsPerSet: safeLegsPerSet,
+    });
+
     const payloadForPlay = {
       playerIds: order.map((p) => p.id),
       start,
@@ -212,8 +252,8 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
       inMode,
       doubleOut,
       doubleIn,
-      setsToWin,
-      legsPerSet,
+      setsToWin: safeSetsToWin,
+      legsPerSet: safeLegsPerSet,
       randomOrder,
       officialMatch,
       finishPolicy: "firstToZero" as const,
@@ -228,8 +268,8 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
       inMode,
       doubleOut,
       doubleIn,
-      setsToWin,
-      legsPerSet,
+      setsToWin: safeSetsToWin,
+      legsPerSet: safeLegsPerSet,
       randomOrder,
     });
   }
@@ -345,11 +385,7 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {LEG_CHOICES.map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setLegsPerSet(n)}
-                  style={pill(legsPerSet === n)}
-                >
+                <button key={n} onClick={() => setLegsPerSet(n)} style={pill(legsPerSet === n)}>
                   {n}
                 </button>
               ))}

@@ -1,19 +1,21 @@
 // ============================================
 // src/pages/TrainingClock.tsx
-// Training — Tour de l'horloge (design v5)
-// Solo only, avec écran de paramétrage
+// Training — Tour de l'horloge (v5, solo + multi)
+// - Choix de 1+ joueurs via médaillons d'avatars
+// - Chaque joueur joue sa session à la suite
+// - Historique local par session
 // ============================================
 
 import React from "react";
 import { playSound } from "../lib/sound";
-import { useCurrentProfile } from "../hooks/useCurrentProfile";
+import type { Profile } from "../lib/types";
 
 type ClockMode = "classic" | "doubles" | "triples" | "sdt";
 
 type ClockConfig = {
   mode: ClockMode;
   showTimer: boolean;
-  dartLimit: number | null; // ex : 30 fléchettes max ou null = illimité
+  dartLimit: number | null; // nb de fléchettes max par joueur, null = illimité
 };
 
 type Target = number | "BULL";
@@ -42,6 +44,13 @@ type ClockSession = {
 
 const STORAGE_KEY = "dc-training-clock-v1";
 
+type PlayerLite = { id: string | null; name: string };
+
+type Props = {
+  profiles: Profile[];
+  activeProfileId: string | null;
+};
+
 // --------- helpers temps / format ---------
 function formatTime(ms: number): string {
   if (ms <= 0) return "00:00";
@@ -59,17 +68,49 @@ function generateId() {
     .slice(2, 8)}`;
 }
 
+function initialsFromName(name: string | undefined | null) {
+  if (!name) return "?";
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
 // ============================================
 // Component principal
 // ============================================
 
-const TrainingClock: React.FC = () => {
-  // useCurrentProfile peut retourner null → on sécurise
-  const cp = useCurrentProfile() ?? ({} as any);
-  const profile = cp.profile as any | null;
+const TrainingClock: React.FC<Props> = ({ profiles, activeProfileId }) => {
+  // --- sélection de joueurs (solo + multi) ---
+  const [selectedPlayerIds, setSelectedPlayerIds] = React.useState<string[]>(() => {
+    const list = profiles || [];
+    if (!list.length) return [];
+    const found = activeProfileId && list.find((p) => p.id === activeProfileId);
+    return [found?.id ?? list[0].id];
+  });
 
-  const playerName = profile?.nickname ?? profile?.name ?? "Joueur solo";
-  const playerId = profile?.id ?? null;
+  const players: PlayerLite[] = React.useMemo(
+    () =>
+      (selectedPlayerIds || []).map((id) => {
+        const p = profiles.find((pr) => pr.id === id);
+        return {
+          id,
+          name: p?.nickname ?? p?.name ?? "Joueur",
+        };
+      }),
+    [selectedPlayerIds, profiles]
+  );
+
+  // index du joueur actuellement en train de jouer (step = "play" / "summary")
+  const [currentPlayerIndex, setCurrentPlayerIndex] = React.useState(0);
+
+  const currentPlayer: PlayerLite | null =
+    players[currentPlayerIndex] ?? players[0] ?? {
+      id: null,
+      name: "Joueur solo",
+    };
 
   const [step, setStep] = React.useState<"setup" | "play" | "summary">(
     "setup"
@@ -81,7 +122,7 @@ const TrainingClock: React.FC = () => {
     dartLimit: null,
   });
 
-  // état de la session en cours
+  // état de la session en cours (pour LE joueur courant uniquement)
   const [currentTargetIndex, setCurrentTargetIndex] = React.useState(0);
   const [stageSDT, setStageSDT] = React.useState<StageSDT>(0);
   const [dartsThrown, setDartsThrown] = React.useState(0);
@@ -96,7 +137,7 @@ const TrainingClock: React.FC = () => {
   const [selectedMult, setSelectedMult] = React.useState<1 | 2 | 3>(1);
   const [isMiss, setIsMiss] = React.useState(false);
 
-  // résumé de la session terminée
+  // résumé de la session terminée (joueur courant)
   const [lastSession, setLastSession] = React.useState<ClockSession | null>(
     null
   );
@@ -212,7 +253,10 @@ const TrainingClock: React.FC = () => {
     setIsMiss(false);
   }
 
-  function handleStart() {
+  function handleStartForPlayer(playerIndex: number) {
+    if (!players.length) return;
+    const bounded = Math.max(0, Math.min(playerIndex, players.length - 1));
+    setCurrentPlayerIndex(bounded);
     resetGameState();
     setLastSession(null);
     setStep("play");
@@ -222,11 +266,16 @@ const TrainingClock: React.FC = () => {
     playSound("start");
   }
 
+  function handleStart() {
+    handleStartForPlayer(0);
+  }
+
   function handleAbort() {
     setStep("setup");
   }
 
-  function finishSession(completed: boolean) {
+  function finishSessionForCurrentPlayer(completed: boolean) {
+    const player = currentPlayer;
     const now = Date.now();
     setEndTime(now);
 
@@ -235,8 +284,8 @@ const TrainingClock: React.FC = () => {
 
     const session: ClockSession = {
       id: generateId(),
-      profileId: playerId,
-      profileName: playerName,
+      profileId: player?.id ?? null,
+      profileName: player?.name ?? "Joueur solo",
       config,
       startedAt:
         startTime != null
@@ -257,8 +306,10 @@ const TrainingClock: React.FC = () => {
   }
 
   function handleThrow() {
+    if (step !== "play") return;
     if (!isMiss && !selectedValue) return;
 
+    // limite de fléchettes (par joueur)
     if (config.dartLimit != null && dartsThrown >= config.dartLimit) {
       return;
     }
@@ -297,7 +348,7 @@ const TrainingClock: React.FC = () => {
           const nextIndex = currentTargetIndex + 1;
           if (nextIndex >= TARGETS.length) {
             setCurrentTargetIndex(nextIndex - 1);
-            finishSession(true);
+            finishSessionForCurrentPlayer(true);
             return;
           } else {
             setCurrentTargetIndex(nextIndex);
@@ -310,12 +361,13 @@ const TrainingClock: React.FC = () => {
       }
     }
 
+    // si limite atteinte -> fin de session pour ce joueur
     if (
       config.dartLimit != null &&
       newDarts >= config.dartLimit &&
       step === "play"
     ) {
-      finishSession(false);
+      finishSessionForCurrentPlayer(false);
     }
   }
 
@@ -350,6 +402,8 @@ const TrainingClock: React.FC = () => {
     const base = target === "BULL" ? "Bull" : target.toString();
     return `${base} (${stageLabel})`;
   }
+
+  const isMulti = players.length > 1;
 
   // ============================================
   // Rendu
@@ -396,45 +450,230 @@ const TrainingClock: React.FC = () => {
           </button>
         </div>
 
-        <div style={{ marginBottom: 4 }}>
+        {/* Titre avec accent or (rappel X01Setup) */}
+        <div
+          style={{
+            borderRadius: 22,
+            padding: "10px 14px 12px",
+            background:
+              "linear-gradient(180deg, #ffc63a, #ffaf00)",
+            color: "#111",
+            boxShadow: "0 0 22px rgba(255,198,58,.55)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+          }}
+        >
           <div
             style={{
-              fontSize: 22,
+              fontSize: 16,
               fontWeight: 900,
               letterSpacing: 0.5,
-              marginBottom: 4,
             }}
           >
             Tour de l&apos;horloge
           </div>
           <div
             style={{
-              fontSize: 12,
-              opacity: 0.8,
+              fontSize: 11,
+              opacity: 0.9,
             }}
           >
             Vise 1 → 20 puis Bull. Choisis ton mode et suis ta précision.
           </div>
-        </div>
-
-        <div
-          style={{
-            alignSelf: "flex-start",
-            borderRadius: 999,
-            border: "1px solid rgba(255,255,255,.12)",
-            padding: "4px 10px",
-            fontSize: 11,
-            opacity: 0.85,
-            background:
-              "linear-gradient(180deg, rgba(30,30,35,.9), rgba(10,10,12,.95))",
-          }}
-        >
-          Profil : <strong>{playerName}</strong>
+          <div
+            style={{
+              marginTop: 4,
+              fontSize: 10,
+              opacity: 0.85,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <span
+              style={{
+                padding: "2px 8px",
+                borderRadius: 999,
+                background: "rgba(0,0,0,.12)",
+                fontWeight: 700,
+              }}
+            >
+              Training
+            </span>
+            <span>Sessions enregistrées localement (hors stats globales).</span>
+          </div>
         </div>
 
         {/* ================== STEP SETUP ================== */}
         {step === "setup" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* JOUERS */}
+            <section
+              className="card"
+              style={{
+                borderRadius: 18,
+                padding: 14,
+                marginTop: 2,
+                background:
+                  "linear-gradient(180deg, rgba(25,25,30,.98), rgba(5,5,8,.98))",
+                border: "1px solid rgba(255,255,255,.10)",
+                boxShadow: "0 0 16px rgba(0,0,0,.7)",
+              }}
+            >
+              <h2
+                style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  marginBottom: 4,
+                }}
+              >
+                Joueurs
+              </h2>
+              <div
+                style={{
+                  fontSize: 11,
+                  opacity: 0.75,
+                  marginBottom: 10,
+                }}
+              >
+                Sélectionne 1 à 4 joueurs. Chaque joueur jouera une
+                session à la suite.
+              </div>
+
+              {profiles.length === 0 ? (
+                <div style={{ fontSize: 12, opacity: 0.7 }}>
+                  Aucun profil pour l&apos;instant. Crée un profil dans
+                  l&apos;onglet &quot;Profils&quot; pour enregistrer tes
+                  stats.
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 14,
+                    paddingBottom: 4,
+                  }}
+                >
+                  {profiles.map((p) => {
+                    const selected = selectedPlayerIds.includes(p.id);
+                    const name = p.nickname ?? p.name ?? "Joueur";
+                    const initials = initialsFromName(name);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        title={name}
+                        onClick={() => {
+                          setSelectedPlayerIds((prev) => {
+                            const exists = prev.includes(p.id);
+                            if (exists) {
+                              // ne jamais vider complètement
+                              if (prev.length === 1) return prev;
+                              return prev.filter((id) => id !== p.id);
+                            }
+                            if (prev.length >= 4) return prev;
+                            return [...prev, p.id];
+                          });
+                        }}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          padding: 0,
+                          cursor: "pointer",
+                          position: "relative",
+                          width: 70,
+                        }}
+                      >
+                        <div
+                          style={{
+                            borderRadius: "50%",
+                            padding: 2,
+                            background: selected
+                              ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
+                              : "rgba(255,255,255,0.12)",
+                            boxShadow: selected
+                              ? "0 0 16px rgba(255,198,58,.55)"
+                              : "none",
+                            transition: "transform .12s ease, box-shadow .12s ease",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 60,
+                              height: 60,
+                              borderRadius: "50%",
+                              overflow: "hidden",
+                              background: "#222",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            {p.avatarDataUrl ? (
+                              <img
+                                src={p.avatarDataUrl}
+                                alt={name}
+                                style={{
+                                  width: "100%",
+                                  height: "100%",
+                                  objectFit: "cover",
+                                }}
+                              />
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: 18,
+                                  fontWeight: 700,
+                                  color: "#f5f5f5",
+                                }}
+                              >
+                                {initials}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontSize: 10,
+                            textAlign: "center",
+                            opacity: 0.9,
+                            whiteSpace: "nowrap",
+                            textOverflow: "ellipsis",
+                            overflow: "hidden",
+                          }}
+                        >
+                          {name}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {/* Infos résumé joueurs */}
+            <div
+              style={{
+                alignSelf: "flex-start",
+                borderRadius: 999,
+                border: "1px solid rgba(255,198,58,.45)",
+                padding: "4px 10px",
+                fontSize: 11,
+                background:
+                  "linear-gradient(180deg, rgba(50,40,20,.95), rgba(20,14,6,.98))",
+                boxShadow: "0 0 12px rgba(255,198,58,.4)",
+              }}
+            >
+              {isMulti
+                ? `${players.length} joueurs sélectionnés`
+                : `Mode solo • ${
+                    currentPlayer?.name ?? "Joueur solo"
+                  }`}
+            </div>
+
             {/* Choix du mode */}
             <section
               className="card"
@@ -442,9 +681,9 @@ const TrainingClock: React.FC = () => {
                 borderRadius: 18,
                 padding: 14,
                 background:
-                  "linear-gradient(180deg, rgba(25,25,30,.95), rgba(10,10,14,.98))",
-                border: "1px solid rgba(255,255,255,.08)",
-                boxShadow: "0 0 16px rgba(0,0,0,.6)",
+                  "linear-gradient(180deg, rgba(25,25,30,.98), rgba(5,5,8,.98))",
+                border: "1px solid rgba(255,255,255,.10)",
+                boxShadow: "0 0 16px rgba(0,0,0,.7)",
               }}
             >
               <h2
@@ -458,35 +697,48 @@ const TrainingClock: React.FC = () => {
               </h2>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {(["classic", "doubles", "triples", "sdt"] as ClockMode[]).map(
-                  (mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      className={
-                        "chip w-full justify-between " +
-                        (config.mode === mode ? "chip-active" : "")
-                      }
-                      style={{
-                        justifyContent: "space-between",
-                        fontSize: 13,
-                      }}
-                      onClick={() =>
-                        setConfig((c) => ({ ...c, mode }))
-                      }
-                    >
-                      <span>{labelMode(mode)}</span>
-                      {config.mode === mode && (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            opacity: 0.75,
-                          }}
-                        >
-                          ✓ sélectionné
-                        </span>
-                      )}
-                    </button>
-                  )
+                  (mode) => {
+                    const active = config.mode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        className={
+                          "chip w-full justify-between " +
+                          (active ? "chip-active" : "")
+                        }
+                        style={{
+                          justifyContent: "space-between",
+                          fontSize: 13,
+                          background: active
+                            ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
+                            : undefined,
+                          color: active ? "#111" : undefined,
+                          borderColor: active
+                            ? "rgba(0,0,0,.45)"
+                            : undefined,
+                          boxShadow: active
+                            ? "0 0 14px rgba(255,198,58,.55)"
+                            : undefined,
+                        }}
+                        onClick={() =>
+                          setConfig((c) => ({ ...c, mode }))
+                        }
+                      >
+                        <span>{labelMode(mode)}</span>
+                        {active && (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              opacity: 0.8,
+                            }}
+                          >
+                            ✓ sélectionné
+                          </span>
+                        )}
+                      </button>
+                    );
+                  }
                 )}
               </div>
             </section>
@@ -498,9 +750,9 @@ const TrainingClock: React.FC = () => {
                 borderRadius: 18,
                 padding: 14,
                 background:
-                  "linear-gradient(180deg, rgba(25,25,30,.95), rgba(10,10,14,.98))",
-                border: "1px solid rgba(255,255,255,.08)",
-                boxShadow: "0 0 16px rgba(0,0,0,.6)",
+                  "linear-gradient(180deg, rgba(25,25,30,.98), rgba(5,5,8,.98))",
+                border: "1px solid rgba(255,255,255,.10)",
+                boxShadow: "0 0 16px rgba(0,0,0,.7)",
               }}
             >
               <h2
@@ -539,7 +791,20 @@ const TrainingClock: React.FC = () => {
                   className={
                     "chip " + (config.showTimer ? "chip-active" : "")
                   }
-                  style={{ fontSize: 12 }}
+                  style={{
+                    fontSize: 12,
+                    minWidth: 64,
+                    background: config.showTimer
+                      ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
+                      : undefined,
+                    color: config.showTimer ? "#111" : undefined,
+                    borderColor: config.showTimer
+                      ? "rgba(0,0,0,.45)"
+                      : undefined,
+                    boxShadow: config.showTimer
+                      ? "0 0 10px rgba(255,198,58,.55)"
+                      : undefined,
+                  }}
                   onClick={() =>
                     setConfig((c) => ({
                       ...c,
@@ -570,13 +835,19 @@ const TrainingClock: React.FC = () => {
                       opacity: 0.7,
                     }}
                   >
-                    0 = illimité, sinon fin auto quand la limite
-                    est atteinte
+                    Par joueur : 0 = illimité, sinon fin auto quand
+                    la limite est atteinte
                   </div>
                 </div>
                 <select
                   className="chip"
-                  style={{ fontSize: 12 }}
+                  style={{
+                    fontSize: 12,
+                    minWidth: 132,
+                    background:
+                      "linear-gradient(180deg, rgba(40,40,46,.95), rgba(18,18,24,.98))",
+                    borderColor: "rgba(255,255,255,.22)",
+                  }}
                   value={config.dartLimit ?? 0}
                   onChange={(e) => {
                     const v = Number(e.target.value);
@@ -594,7 +865,7 @@ const TrainingClock: React.FC = () => {
               </div>
             </section>
 
-            {/* Bouton démarrer */}
+            {/* Bouton démarrer — style global doré */}
             <button
               type="button"
               className="btn-primary"
@@ -607,6 +878,7 @@ const TrainingClock: React.FC = () => {
                 marginTop: 2,
               }}
               onClick={handleStart}
+              disabled={!players.length}
             >
               Commencer la session
             </button>
@@ -640,7 +912,7 @@ const TrainingClock: React.FC = () => {
                 padding: 12,
                 background:
                   "linear-gradient(180deg, rgba(25,25,30,.95), rgba(8,8,12,.98))",
-                border: "1px solid rgba(255,255,255,.08)",
+                border: "1px solid rgba(255,255,255,.10)",
               }}
             >
               <div
@@ -652,7 +924,30 @@ const TrainingClock: React.FC = () => {
                 }}
               >
                 <div>
-                  Cible actuelle :{" "}
+                  Joueur{" "}
+                  {isMulti
+                    ? `${currentPlayerIndex + 1}/${players.length}`
+                    : "solo"}
+                  :{" "}
+                  <strong>{currentPlayer?.name}</strong>
+                </div>
+                {config.showTimer && (
+                  <div>
+                    Temps :{" "}
+                    <strong>{formatTime(elapsedNow)}</strong>
+                  </div>
+                )}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: 12,
+                  marginBottom: 4,
+                }}
+              >
+                <div>
+                  Cible :{" "}
                   <strong>
                     {labelTarget(
                       currentTarget,
@@ -661,12 +956,6 @@ const TrainingClock: React.FC = () => {
                     )}
                   </strong>
                 </div>
-                {config.showTimer && (
-                  <div>
-                    Temps :{" "}
-                    <strong>{formatTime(elapsedNow)}</strong>
-                  </div>
-                )}
               </div>
               <div
                 style={{
@@ -744,9 +1033,9 @@ const TrainingClock: React.FC = () => {
                 borderRadius: 18,
                 padding: 14,
                 background:
-                  "linear-gradient(180deg, rgba(25,25,30,.95), rgba(10,10,14,.98))",
-                border: "1px solid rgba(255,255,255,.08)",
-                boxShadow: "0 0 16px rgba(0,0,0,.6)",
+                  "linear-gradient(180deg, rgba(25,25,30,.98), rgba(5,5,8,.98))",
+                border: "1px solid rgba(255,255,255,.10)",
+                boxShadow: "0 0 16px rgba(0,0,0,.7)",
                 fontSize: 13,
               }}
             >
@@ -759,6 +1048,10 @@ const TrainingClock: React.FC = () => {
               >
                 Résumé de la session
               </h2>
+              <div style={{ marginBottom: 2 }}>
+                Joueur :{" "}
+                <strong>{lastSession.profileName}</strong>
+              </div>
               <div style={{ marginBottom: 2 }}>
                 Mode :{" "}
                 <strong>{labelMode(lastSession.config.mode)}</strong>
@@ -807,34 +1100,59 @@ const TrainingClock: React.FC = () => {
               </section>
             )}
 
-            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              <button
-                type="button"
-                className="btn-ghost"
-                style={{
-                  flex: 1,
-                  padding: "10px 0",
-                  borderRadius: 14,
-                  fontSize: 13,
-                }}
-                onClick={() => setStep("setup")}
-              >
-                Retour au paramétrage
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                style={{
-                  flex: 1,
-                  padding: "10px 0",
-                  borderRadius: 14,
-                  fontSize: 13,
-                  fontWeight: 700,
-                }}
-                onClick={handleStart}
-              >
-                Rejouer
-              </button>
+            {/* Boutons bas : suivant / rejouer / retour */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {isMulti && currentPlayerIndex < players.length - 1 && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  style={{
+                    width: "100%",
+                    padding: "10px 0",
+                    borderRadius: 14,
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                  onClick={() =>
+                    handleStartForPlayer(currentPlayerIndex + 1)
+                  }
+                >
+                  Joueur suivant :{" "}
+                  {players[currentPlayerIndex + 1]?.name ?? ""}
+                </button>
+              )}
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  style={{
+                    flex: 1,
+                    padding: "10px 0",
+                    borderRadius: 14,
+                    fontSize: 13,
+                  }}
+                  onClick={() => setStep("setup")}
+                >
+                  Retour au paramétrage
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  style={{
+                    flex: 1,
+                    padding: "10px 0",
+                    borderRadius: 14,
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                  onClick={() =>
+                    handleStartForPlayer(currentPlayerIndex)
+                  }
+                >
+                  Rejouer ce joueur
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -847,6 +1165,7 @@ export default TrainingClock;
 
 // ============================================
 // Mini keypad spécifique Tour de l'horloge
+// Look harmonisé avec le Keypad X01
 // ============================================
 
 type ClockPadProps = {
@@ -857,6 +1176,8 @@ type ClockPadProps = {
   isMiss: boolean;
   setIsMiss: (v: boolean) => void;
 };
+
+type KeyVariant = "default" | "gold" | "teal" | "purple" | "green" | "grey";
 
 const ClockPad: React.FC<ClockPadProps> = ({
   selectedValue,
@@ -876,116 +1197,212 @@ const ClockPad: React.FC<ClockPadProps> = ({
     setSelectedValue(null);
   };
 
+  const Key = ({
+    variant,
+    active,
+    children,
+    onClick,
+    grow,
+  }: {
+    variant: KeyVariant;
+    active?: boolean;
+    children: React.ReactNode;
+    onClick: () => void;
+    grow?: boolean;
+  }) => {
+    // Styles de base par variante (inspirés du keypad X01)
+    let bg = "linear-gradient(180deg,#3b3f49,#262830)";
+    let border = "1px solid rgba(0,0,0,.75)";
+    let color = "#f5f5f5";
+    let boxShadow = "inset 0 1px 0 rgba(255,255,255,.12)";
+
+    if (variant === "gold") {
+      bg = "linear-gradient(180deg,#ffc63a,#ffaf00)";
+      border = "1px solid rgba(0,0,0,.75)";
+      color = "#111";
+      boxShadow = "0 0 12px rgba(255,198,58,.55)";
+    }
+
+    if (variant === "teal") {
+      bg = "linear-gradient(180deg,#26d0a8,#1ca086)";
+      border = "1px solid rgba(0,0,0,.75)";
+      color = "#061312";
+      boxShadow = "0 0 10px rgba(38,208,168,.45)";
+    }
+
+    if (variant === "purple") {
+      bg = "linear-gradient(180deg,#b16adf,#8e44ad)";
+      border = "1px solid rgba(0,0,0,.75)";
+      color = "#110713";
+      boxShadow = "0 0 10px rgba(177,106,223,.45)";
+    }
+
+    if (variant === "green") {
+      bg = "linear-gradient(180deg,#29c76f,#1e8b4a)";
+      border = "1px solid rgba(0,0,0,.75)";
+      color = "#03140a";
+      boxShadow = "0 0 10px rgba(41,199,111,.45)";
+    }
+
+    if (variant === "grey") {
+      bg = "linear-gradient(180deg,#565a61,#3a3d43)";
+      border = "1px solid rgba(0,0,0,.75)";
+      color = "#f5f5f5";
+      boxShadow = "inset 0 1px 0 rgba(255,255,255,.14)";
+    }
+
+    // Effet "actif" : on surligne en or, comme la touche active du keypad X01
+    if (active && variant === "default") {
+      bg = "linear-gradient(180deg,#ffc63a,#ffaf00)";
+      border = "1px solid rgba(0,0,0,.8)";
+      color = "#111";
+      boxShadow = "0 0 10px rgba(255,198,58,.55)";
+    }
+
+    // Pour les variantes colorées, on renforce la lumière en actif
+    if (active && variant !== "default") {
+      boxShadow = boxShadow + ", 0 0 8px rgba(255,255,255,.2)";
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        style={{
+          flex: grow ? 1 : undefined,
+          minWidth: grow ? undefined : 32,
+          height: 34,
+          borderRadius: 10,
+          border,
+          background: bg,
+          boxShadow,
+          color,
+          fontSize: 13,
+          fontWeight: 600,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "0 6px",
+        }}
+      >
+        {children}
+      </button>
+    );
+  };
+
   return (
     <section
       className="card"
       style={{
         borderRadius: 18,
-        padding: 12,
+        padding: 10,
         background:
-          "linear-gradient(180deg, rgba(25,25,30,.95), rgba(8,8,12,.98))",
-        border: "1px solid rgba(255,255,255,.08)",
-        boxShadow: "0 0 14px rgba(0,0,0,.55)",
+          "linear-gradient(180deg, rgba(18,18,22,.98), rgba(5,5,8,.98))",
+        border: "1px solid rgba(255,255,255,.10)",
+        boxShadow: "0 0 16px rgba(0,0,0,.7)",
       }}
     >
-      {/* Ligne Miss + Bull */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-        <button
-          type="button"
-          className={
-            "chip flex-1 " + (isMiss ? "chip-active" : "")
-          }
-          onClick={handleSelectMiss}
-        >
-          Miss
-        </button>
-        <button
-          type="button"
-          className={
-            "chip flex-1 " +
-            (selectedValue === "BULL" && !isMiss
-              ? "chip-active"
-              : "")
-          }
-          onClick={() => handleSelectValue("BULL")}
-        >
-          Bull
-        </button>
-      </div>
-
-      {/* Grille 1-20 */}
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(5, 1fr)",
-          gap: 4,
-          fontSize: 13,
+          borderRadius: 16,
+          padding: 10,
+          background:
+            "linear-gradient(180deg, rgba(35,35,42,.96), rgba(16,16,22,.99))",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,.08)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
         }}
       >
-        {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
-          <button
-            key={n}
-            type="button"
-            className={
-              "chip py-1 " +
-              (selectedValue === n && !isMiss
-                ? "chip-active"
-                : "")
-            }
-            onClick={() => handleSelectValue(n as Target)}
+        {/* Ligne Miss / Bull (Miss ~ bouton gris, Bull ~ bouton vert X01) */}
+        <div style={{ display: "flex", gap: 6 }}>
+          <Key
+            variant="grey"
+            active={isMiss}
+            onClick={handleSelectMiss}
+            grow
           >
-            {n}
-          </button>
-        ))}
-      </div>
+            Miss
+          </Key>
+          <Key
+            variant="green"
+            active={selectedValue === "BULL" && !isMiss}
+            onClick={() => handleSelectValue("BULL")}
+            grow
+          >
+            Bull
+          </Key>
+        </div>
 
-      {/* Multiplicateurs */}
-      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-        <button
-          type="button"
-          className={
-            "chip flex-1 " +
-            (!isMiss && selectedMult === 1
-              ? "chip-active"
-              : "")
-          }
-          onClick={() => {
-            setIsMiss(false);
-            setSelectedMult(1);
+        {/* Grille 1–20 (touches chiffres gris foncé, actif en or) */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(5, 1fr)",
+            gap: 4,
           }}
         >
-          Simple
-        </button>
-        <button
-          type="button"
-          className={
-            "chip flex-1 " +
-            (!isMiss && selectedMult === 2
-              ? "chip-active"
-              : "")
-          }
-          onClick={() => {
-            setIsMiss(false);
-            setSelectedMult(2);
-          }}
-        >
-          Double
-        </button>
-        <button
-          type="button"
-          className={
-            "chip flex-1 " +
-            (!isMiss && selectedMult === 3
-              ? "chip-active"
-              : "")
-          }
-          onClick={() => {
-            setIsMiss(false);
-            setSelectedMult(3);
-          }}
-        >
-          Triple
-        </button>
+          {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => {
+            const active = selectedValue === n && !isMiss;
+            return (
+              <Key
+                key={n}
+                variant="default"
+                active={active}
+                onClick={() => handleSelectValue(n as Target)}
+              >
+                {n}
+              </Key>
+            );
+          })}
+        </div>
+
+        {/* Ligne Simple / Double / Triple 
+           → mapping visuel vers X01 :
+           - Simple  = BLEU (comme "DOUBLE")
+           - Double  = VIOLET (comme "TRIPLE")
+           - Triple  = OR (comme "VALIDER")
+        */}
+        <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
+          {/* Simple = bleu */}
+          <Key
+            variant="teal"
+            active={!isMiss && selectedMult === 1}
+            onClick={() => {
+              setIsMiss(false);
+              setSelectedMult(1);
+            }}
+            grow
+          >
+            Simple
+          </Key>
+
+          {/* Double = violet */}
+          <Key
+            variant="purple"
+            active={!isMiss && selectedMult === 2}
+            onClick={() => {
+              setIsMiss(false);
+              setSelectedMult(2);
+            }}
+            grow
+          >
+            Double
+          </Key>
+
+          {/* Triple = or */}
+          <Key
+            variant="gold"
+            active={!isMiss && selectedMult === 3}
+            onClick={() => {
+              setIsMiss(false);
+              setSelectedMult(3);
+            }}
+            grow
+          >
+            Triple
+          </Key>
+        </div>
       </div>
     </section>
   );
@@ -1017,7 +1434,7 @@ const HistoryList: React.FC<HistoryListProps> = ({ history }) => {
             fontSize: 11,
             background:
               "linear-gradient(180deg, rgba(20,20,24,.95), rgba(8,8,10,.98))",
-            border: "1px solid rgba(255,255,255,.06)",
+            border: "1px solid rgba(255,255,255,.08)",
           }}
         >
           <div>
