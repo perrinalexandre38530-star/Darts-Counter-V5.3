@@ -34,6 +34,14 @@ function loadTrainingStatsFromStorage(): TrainingFinishStats[] {
       pctT: Number(x.pctT) || 0,
       bestVisit: Number(x.bestVisit) || 0,
       checkout: Number(x.checkout) || 0,
+      // nouveaux champs (fallback 0 si absents dans les anciennes sessions)
+      hitsS: Number(x.hitsS) || 0,
+      hitsD: Number(x.hitsD) || 0,
+      hitsT: Number(x.hitsT) || 0,
+      miss: Number(x.miss) || 0,
+      bull: Number(x.bull) || 0,
+      dBull: Number(x.dBull) || 0,
+      bust: Number(x.bust) || 0,
     })) as TrainingFinishStats[];
   } catch {
     return [];
@@ -76,6 +84,15 @@ export type TrainingFinishStats = {
   pctT: number;
   bestVisit: number;
   checkout: number;
+
+  // ✅ champs supplémentaires pour StatsHub / stats détaillées
+  hitsS: number;
+  hitsD: number;
+  hitsT: number;
+  miss: number;
+  bull: number;
+  dBull: number;
+  bust: number;
 };
 
 export type HitMap = Record<string, number>;
@@ -1246,6 +1263,12 @@ export default function TrainingX01Play({
         const newD = doubleHits + addD;
         const newT = tripleHits + addT;
 
+        // ✅ compteurs finaux pour la session
+        const finalMiss = missHits + missCount;
+        const finalBull = bullHits + addB;
+        const finalDBull = dBullHits + addDB;
+        const finalBust = bustCount; // pas de bust sur la volée de checkout
+
         const stat: TrainingFinishStats = {
           date: Date.now(),
           darts: finalDarts,
@@ -1255,6 +1278,13 @@ export default function TrainingX01Play({
           pctT: newTotalHits > 0 ? (newT / newTotalHits) * 100 : 0,
           bestVisit: Math.max(bestVisit, volleyTotal),
           checkout: dartValue(currentThrow[currentThrow.length - 1]),
+          hitsS: newS,
+          hitsD: newD,
+          hitsT: newT,
+          miss: finalMiss,
+          bull: finalBull,
+          dBull: finalDBull,
+          bust: finalBust,
         };
 
         setFinishedSessions((arr) => {
