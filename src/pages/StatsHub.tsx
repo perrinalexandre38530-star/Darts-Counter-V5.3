@@ -431,14 +431,51 @@ const row: React.CSSProperties = {
     const [sessions, setSessions] = React.useState<TrainingX01Session[]>([]);
     const [range, setRange] = React.useState<TimeRange>("all");
     const [selected, setSelected] = React.useState<TrainingX01Session | null>(null);
+  
+    // Ordre de défilement des métriques de la sparkline
+    const metricKeys: Array<
+      "darts" | "avg3D" | "pctS" | "pctD" | "pctT" | "BV" | "CO"
+    > = ["darts", "avg3D", "pctS", "pctD", "pctT", "BV", "CO"];
+  
     const [metric, setMetric] = React.useState<
       "darts" | "avg3D" | "pctS" | "pctD" | "pctT" | "BV" | "CO"
     >("avg3D");
+  
+    // true = l’utilisateur a cliqué, on met l’auto défilement en pause
+    const [metricLocked, setMetricLocked] = React.useState(false);
+  
     const [page, setPage] = React.useState(1);
   
     React.useEffect(() => {
       setSessions(loadTrainingSessions());
     }, []);
+
+    // Auto-défilement des métriques de la sparkline (toutes les 4s)
+  React.useEffect(() => {
+    if (!sessions.length) return; // rien à afficher
+    if (metricLocked) return;     // l'utilisateur a cliqué, on laisse tranquille
+
+    const id = window.setInterval(() => {
+      setMetric((prev) => {
+        const idx = metricKeys.indexOf(prev);
+        const nextIdx =
+          idx === -1 ? 0 : (idx + 1) % metricKeys.length;
+        return metricKeys[nextIdx];
+      });
+    }, 4000);
+
+    return () => window.clearInterval(id);
+  }, [sessions.length, metricLocked]);
+
+  // Quand l'utilisateur clique sur une métrique, on bloque l'auto-défilement 15s
+  React.useEffect(() => {
+    if (!metricLocked) return;
+    const id = window.setTimeout(() => {
+      setMetricLocked(false);
+    }, 15000); // 15 secondes de « pause utilisateur »
+
+    return () => window.clearTimeout(id);
+  }, [metricLocked]);
   
     /* ---------- Sessions filtrées ---------- */
     const filtered = React.useMemo(
