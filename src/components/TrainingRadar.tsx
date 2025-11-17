@@ -1,63 +1,112 @@
 // ============================================
 // src/components/TrainingRadar.tsx
-// Radar "dartboard" simplifié pour Training X01
-// - Prend toutes les fléchettes (UIDart[])
-// - Calcule le nb de hits par segment (1..20 + 25)
-// - Dessine un radar polygonal + labels du board
+// Radar Training X01 — version premium
+// - 20 segments + 25 (Bull) entre 5 et 20
+// - Polygone jaune qui s'arrête juste avant les chiffres
+// - Halo animé "pulse" + breathing léger du polygone
+// - Chiffres dorés avec effet néon
 // ============================================
 import React from "react";
 import type { Dart as UIDart } from "../lib/types";
+
+// Même ordre que dans StatsHub / Training (avec 25 entre 5 et 20 en cercle)
+const SEGMENTS: number[] = [
+  20, 1, 18, 4, 13, 6, 10, 15, 2, 17,
+  3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 25,
+];
 
 type Props = {
   darts: UIDart[];
 };
 
-const BOARD_ORDER = [
-  20, 1, 18, 4, 13, 6, 10, 15, 2, 17,
-  3, 19, 7, 16, 8, 11, 14, 9, 12, 5,
-];
+const T = {
+  bg: "#101116",
+  text: "#FFFFFF",
+  text70: "rgba(255,255,255,.70)",
+  gold: "#F6C256",
+};
 
-const TrainingRadar: React.FC<Props> = ({ darts }) => {
-  const size = 220;
-  const cx = size / 2;
-  const cy = size / 2;
-  const maxRadius = 90;
+export default function TrainingRadar({ darts }: Props) {
+  // -----------------------------
+  // 1) Agrégation des hits par segment
+  // -----------------------------
+  const hits: Record<number, number> = {};
 
-  // Compte les hits par valeur (1..20, 25)
-  const counts: Record<number, number> = {};
   for (const d of darts || []) {
-    if (!d) continue;
-    const v = Number(d.v);
-    if (!v) continue;
-    if (v < 1 || (v > 20 && v !== 25)) continue;
-    counts[v] = (counts[v] || 0) + 1;
+    const v = Number((d as any)?.v) || 0;
+    const mult = Number((d as any)?.mult) || 0;
+    if (!v || !mult) continue;
+
+    const key = v === 25 ? 25 : v;
+    if (!hits[key]) hits[key] = 0;
+    hits[key] += 1;
   }
 
-  // max pour normaliser le rayon
-  const maxCount = Object.values(counts).reduce(
-    (m, v) => (v > m ? v : m),
-    0
-  );
+  let maxHit = 0;
+  for (const seg of SEGMENTS) {
+    const v = hits[seg] || 0;
+    if (v > maxHit) maxHit = v;
+  }
+  if (maxHit <= 0) maxHit = 1;
 
-  const norm = (val: number) =>
-    maxCount === 0 ? 0 : val / maxCount;
+  // -----------------------------
+  // 2) Géométrie du radar — VERSION PLUS GRANDE
+  // -----------------------------
+  const size = 320;
+  const cx = size / 2;
+  const cy = size / 2;
 
-  // Points du polygone radar (ordre standard + bull)
-  const polyPoints: string[] = [];
+  const outerRadius = 132;  // cercle externe principal
+  const labelRadius = 140;  // chiffres juste à l’extérieur
 
-  BOARD_ORDER.forEach((num, idx) => {
-    const angle = ((-90 + (idx / BOARD_ORDER.length) * 360) * Math.PI) / 180;
+  const gridRadius1 = 60;
+  const gridRadius2 = 96;
+
+  const polygonMinRadius = 26;
+  const polygonMaxRadius = 126; // pointe très proche des chiffres
+
+  const haloRadius = outerRadius + 6;
+  const n = SEGMENTS.length;
+
+  // -----------------------------
+  // 3) Helpers coordonnées polaires
+  // -----------------------------
+  function angleForIndex(i: number): number {
+    const step = (Math.PI * 2) / n;
+    return -Math.PI / 2 + i * step;
+  }
+
+  function pointAt(radius: number, angle: number) {
+    return {
+      x: cx + radius * Math.cos(angle),
+      y: cy + radius * Math.sin(angle),
+    };
+  }
+
+  // -----------------------------
+  // 4) Construction du polygone
+  // -----------------------------
+  const polygonPoints: { x: number; y: number }[] = [];
+
+  SEGMENTS.forEach((seg, idx) => {
+    const a = angleForIndex(idx);
+    const v = hits[seg] || 0;
+    const ratio = v / maxHit;
     const r =
-      20 + norm(counts[num] || 0) * maxRadius;
-    const x = cx + r * Math.cos(angle);
-    const y = cy + r * Math.sin(angle);
-    polyPoints.push(`${x},${y}`);
+      polygonMinRadius + (polygonMaxRadius - polygonMinRadius) * ratio;
+    polygonPoints.push(pointAt(r, a));
   });
 
-  // BULL (25)
-  const bullCount = counts[25] || 0;
-  const bullR =
-    20 + norm(bullCount) * maxRadius;
+  const polygonPath =
+    polygonPoints.length > 0
+      ? polygonPoints
+          .map((p, i) =>
+            i === 0
+              ? `M ${p.x.toFixed(1)} ${p.y.toFixed(1)}`
+              : `L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`
+          )
+          .join(" ") + " Z"
+      : "";
 
   return (
     <div
@@ -68,135 +117,253 @@ const TrainingRadar: React.FC<Props> = ({ darts }) => {
       }}
     >
       <svg
+        width={size}
+        height={size}
         viewBox={`0 0 ${size} ${size}`}
-        style={{ maxWidth: size, display: "block" }}
+        style={{ maxWidth: "100%" }}
       >
-        {/* fond */}
-        <defs>
-          <radialGradient
-            id="radarBg"
-            cx="50%"
-            cy="50%"
-            r="50%"
-          >
-            <stop
-              offset="0%"
-              stopColor="rgba(255,255,255,0.05)"
-            />
-            <stop
-              offset="100%"
-              stopColor="rgba(0,0,0,1)"
-            />
-          </radialGradient>
-        </defs>
-        <circle
-          cx={cx}
-          cy={cy}
-          r={maxRadius + 20}
-          fill="url(#radarBg)"
-          stroke="rgba(255,255,255,.12)"
-          strokeWidth={2}
-        />
+        {/* Styles locaux pour les animations */}
+        <style>{`
+          @keyframes radarPulse {
+            0% {
+              r: ${haloRadius};
+              opacity: 0.35;
+            }
+            50% {
+              r: ${haloRadius + 14};
+              opacity: 0;
+            }
+            100% {
+              r: ${haloRadius};
+              opacity: 0.35;
+            }
+          }
 
-        {/* cercles concentriques */}
-        {[0.25, 0.5, 0.75, 1].map((f, i) => (
+          @keyframes radarBreathe {
+            0% {
+              transform: scale(0.97);
+            }
+            50% {
+              transform: scale(1.03);
+            }
+            100% {
+              transform: scale(0.97);
+            }
+          }
+
+          @keyframes radarEnter {
+            0% {
+              opacity: 0;
+              transform: scale(0.85);
+            }
+            100% {
+              opacity: 1;
+              transform: scale(1);
+            }
+          }
+        `}</style>
+
+        <defs>
+          {/* Gradient fond du radar */}
+          <radialGradient id="radar-bg" cx="50%" cy="45%" r="60%">
+            <stop offset="0%" stopColor="#20222A" />
+            <stop offset="40%" stopColor="#14151B" />
+            <stop offset="100%" stopColor="#05060A" />
+          </radialGradient>
+
+          {/* Gradient du polygone */}
+          <linearGradient id="radar-poly" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#FFEFAF" stopOpacity={0.95} />
+            <stop offset="100%" stopColor="#F6C256" stopOpacity={0.6} />
+          </linearGradient>
+
+          {/* Halo doré autour du radar */}
+          <radialGradient id="radar-halo" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#F6C256" stopOpacity={0.4} />
+            <stop offset="60%" stopColor="#F6C256" stopOpacity={0.15} />
+            <stop offset="100%" stopColor="#F6C256" stopOpacity={0} />
+          </radialGradient>
+
+          {/* Légère lueur sur le polygone */}
+          <filter id="radar-glow" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
+          {/* Glow central */}
+          <radialGradient id="radar-center-glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#F6C256" stopOpacity={0.8} />
+            <stop offset="40%" stopColor="#F6C256" stopOpacity={0.0} />
+            <stop offset="100%" stopColor="#000000" stopOpacity={0} />
+          </radialGradient>
+
+          {/* Glow néon pour les chiffres */}
+          <filter id="radar-text-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="1.4" result="blur" />
+            <feColorMatrix
+              in="blur"
+              type="matrix"
+              values="
+                1 0 0 0 0
+                0.85 0.7 0 0 0
+                0 0 0 0 0
+                0 0 0 1 0
+              "
+              result="glow"
+            />
+            <feMerge>
+              <feMergeNode in="glow" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Groupe global avec anim d'entrée douce */}
+        <g
+          style={{
+            transformOrigin: "50% 50%",
+            animation: "radarEnter 0.6s ease-out",
+          }}
+        >
+          {/* HALO ANIMÉ */}
           <circle
-            key={i}
             cx={cx}
             cy={cy}
-            r={maxRadius * f}
+            r={haloRadius}
+            fill="url(#radar-halo)"
+            style={{
+              transformOrigin: "50% 50%",
+              animation: "radarPulse 3.2s ease-out infinite",
+            }}
+          />
+
+          {/* Fond du radar */}
+          <circle cx={cx} cy={cy} r={outerRadius} fill="url(#radar-bg)" />
+
+          {/* Cercles de grille */}
+          <circle
+            cx={cx}
+            cy={cy}
+            r={gridRadius1}
             fill="none"
-            stroke="rgba(255,255,255,.10)"
+            stroke="rgba(255,255,255,0.10)"
             strokeWidth={1}
           />
-        ))}
+          <circle
+            cx={cx}
+            cy={cy}
+            r={gridRadius2}
+            fill="none"
+            stroke="rgba(255,255,255,0.10)"
+            strokeWidth={1}
+          />
+          <circle
+            cx={cx}
+            cy={cy}
+            r={outerRadius}
+            fill="none"
+            stroke="rgba(255,255,255,0.18)"
+            strokeWidth={1}
+          />
 
-        {/* rayons */}
-        {BOARD_ORDER.map((_, idx) => {
-          const angle =
-            ((-90 + (idx / BOARD_ORDER.length) * 360) * Math.PI) /
-            180;
-          const x = cx + (maxRadius + 5) * Math.cos(angle);
-          const y = cy + (maxRadius + 5) * Math.sin(angle);
-          return (
-            <line
-              key={idx}
-              x1={cx}
-              y1={cy}
-              x2={x}
-              y2={y}
-              stroke="rgba(255,255,255,.08)"
-              strokeWidth={1}
-            />
-          );
-        })}
+          {/* Rayons */}
+          {SEGMENTS.map((_, idx) => {
+            const a = angleForIndex(idx);
+            const p = pointAt(outerRadius, a);
+            return (
+              <line
+                key={`ray-${idx}`}
+                x1={cx}
+                y1={cy}
+                x2={p.x}
+                y2={p.y}
+                stroke="rgba(255,255,255,0.08)"
+                strokeWidth={1}
+              />
+            );
+          })}
 
-        {/* polygone des hits */}
-        {polyPoints.length > 0 && (
-          <>
-            <polygon
-              points={polyPoints.join(" ")}
-              fill="rgba(246,194,86,0.25)"
-              stroke="#F6C256"
-              strokeWidth={2}
-            />
-            {/* bull interne (pour 25) */}
-            <circle
-              cx={cx}
-              cy={cy}
-              r={bullR}
-              fill="rgba(246,194,86,0.1)"
-              stroke="#F6C256"
-              strokeWidth={1}
-            />
-          </>
-        )}
-
-        {/* centre */}
-        <circle
-          cx={cx}
-          cy={cy}
-          r={3}
-          fill="#F6C256"
-        />
-
-        {/* labels autour du board */}
-        {BOARD_ORDER.map((num, idx) => {
-          const angle =
-            ((-90 + (idx / BOARD_ORDER.length) * 360) * Math.PI) /
-            180;
-          const r = maxRadius + 14;
-          const x = cx + r * Math.cos(angle);
-          const y = cy + r * Math.sin(angle);
-          return (
-            <text
-              key={num}
-              x={x}
-              y={y}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontSize={10}
-              fill="#FFFFFF"
+          {/* Polygone des hits avec breathing */}
+          {polygonPath && (
+            <g
+              filter="url(#radar-glow)"
+              style={{
+                transformOrigin: "50% 50%",
+                animation: "radarBreathe 4.2s ease-in-out infinite",
+              }}
             >
-              {num}
-            </text>
-          );
-        })}
+              <path
+                d={polygonPath}
+                fill="url(#radar-poly)"
+                stroke={T.gold}
+                strokeWidth={2}
+                fillOpacity={0.8}
+              />
+            </g>
+          )}
 
-        {/* label 25 (bull) en haut */}
-        <text
-          x={cx}
-          y={cy - (maxRadius + 26)}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fontSize={10}
-          fill="#FFFFFF"
-        >
-          25
-        </text>
+          {/* Glow central + disque */}
+          <circle
+            cx={cx}
+            cy={cy}
+            r={polygonMinRadius + 12}
+            fill="url(#radar-center-glow)"
+          />
+          <circle
+            cx={cx}
+            cy={cy}
+            r={polygonMinRadius - 4}
+            fill="rgba(0,0,0,0.75)"
+            stroke={T.gold}
+            strokeWidth={1}
+            opacity={0.95}
+          />
+          <circle cx={cx} cy={cy} r={2.8} fill={T.gold} opacity={0.95} />
+
+          {/* Petit réticule */}
+          <line
+            x1={cx - 8}
+            y1={cy}
+            x2={cx + 8}
+            y2={cy}
+            stroke="rgba(246,194,86,0.45)"
+            strokeWidth={0.8}
+          />
+          <line
+            x1={cx}
+            y1={cy - 8}
+            x2={cx}
+            y2={cy + 8}
+            stroke="rgba(246,194,86,0.45)"
+            strokeWidth={0.8}
+          />
+
+          {/* Labels 1–20 + 25 (Bull) en doré néon, version large */}
+{SEGMENTS.map((seg, idx) => {
+  const a = angleForIndex(idx);
+  const p = pointAt(labelRadius + 4, a); // léger décalage pour gros texte
+  return (
+    <text
+      key={`label-${seg}-${idx}`}
+      x={p.x}
+      y={p.y}
+      textAnchor="middle"
+      dominantBaseline="middle"
+      fontSize={14} // <— plus grand
+      fontWeight={600}
+      fill={T.gold}
+      style={{ paintOrder: "stroke", strokeWidth: 0.6, stroke: "rgba(0,0,0,0.35)" }}
+      filter="url(#radar-text-glow)"
+    >
+      {seg === 25 ? "25" : seg}
+    </text>
+            );
+          })}
+        </g>
       </svg>
     </div>
   );
-};
-
-export default TrainingRadar;
+}
