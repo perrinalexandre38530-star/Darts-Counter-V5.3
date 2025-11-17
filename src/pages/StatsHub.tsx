@@ -813,7 +813,7 @@ const row: React.CSSProperties = {
         kind: "text",
         label: "Hit préféré (global)",
         text: favoriteHitDisplay
-          ? `${favoriteHitDisplay} (préféré)`
+          ? `${favoriteHitDisplay}`
           : null,
       },
       { kind: "num", label: "Best Visit (session)", raw: bestVisit },
@@ -964,15 +964,22 @@ const row: React.CSSProperties = {
       padding: 10,
       display: "flex",
       flexDirection: "column",
+      alignItems: "center",      // ← centrage horizontal
+      justifyContent: "center",  // ← centrage vertical
+      textAlign: "center",       // ← centrage du texte
       gap: 4,
       background: "linear-gradient(180deg,#15171B,#101115)",
-      minHeight: 68,
+      minHeight: 78,
     };
   
     const makeKpiBox = (accent: string): React.CSSProperties => ({
       ...baseKpiBox,
       border: `1px solid ${accent}`,
-      boxShadow: `0 0 0 1px ${accent}40, 0 0 22px ${accent}55`,
+      boxShadow: `0 0 0 1px ${accent}33, 0 0 14px ${accent}88, 0 0 28px ${accent}55`,
+      background:
+        "radial-gradient(circle at 0% 0%, " +
+        accent +
+        "26 0, transparent 55%), linear-gradient(180deg,#15171B,#101115)",
     });
   
     const kpiLabel: React.CSSProperties = {
@@ -1083,14 +1090,16 @@ const row: React.CSSProperties = {
 
 </div>
 
-      {/* ============================================================
-    ZONE KPI — 5 BLOCS, LAYOUT ORIGINAL
-    ============================================================ */}
-
+{/* ZONE KPI — 5 BLOCS AVEC DÉFILEMENT AUTO (2 LIGNES) */}
 {totalSessions > 0 && hasAnyKpi && (
-  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-
-    {/* --------- LIGNE 1 : GOLD + PINK --------- */}
+  <div
+    style={{
+      display: "flex",
+      flexDirection: "column",
+      gap: 8,
+    }}
+  >
+    {/* ---------- LIGNE 1 : CUMUL (BLEU) + MOYENNES (ROSE) ---------- */}
     <div
       style={{
         display: "grid",
@@ -1098,9 +1107,9 @@ const row: React.CSSProperties = {
         gap: 10,
       }}
     >
-      {/* Bloc 1 — Doré */}
-      <div style={makeKpiBox(T.gold)}>
-        <div style={kpiLabel}>Cumul</div>
+      {/* 🔵 CUMUL */}
+      <div style={makeKpiBox("#47B5FF")}>
+        <div style={{ ...kpiLabel, color: "#47B5FF" }}>CUMUL</div>
         {currentGold ? (
           <>
             <div style={kpiSub}>{currentGold.label}</div>
@@ -1108,7 +1117,7 @@ const row: React.CSSProperties = {
               style={{
                 fontSize: 18,
                 fontWeight: 800,
-                color: T.gold,
+                color: "#47B5FF",
               }}
             >
               {currentGold.value}
@@ -1119,9 +1128,9 @@ const row: React.CSSProperties = {
         )}
       </div>
 
-      {/* Bloc 2 — Rose */}
+      {/* 🌸 MOYENNES */}
       <div style={makeKpiBox("#FF6FB5")}>
-        <div style={kpiLabel}>Moyennes</div>
+        <div style={{ ...kpiLabel, color: "#FF6FB5" }}>MOYENNES</div>
         {currentPink ? (
           <>
             <div style={kpiSub}>{currentPink.label}</div>
@@ -1141,17 +1150,17 @@ const row: React.CSSProperties = {
       </div>
     </div>
 
-    {/* --------- LIGNE 2 : BLUE + GREEN1 + GREEN2 --------- */}
+    {/* ---------- LIGNE 2 : RECORDS (OR) + POURCENTAGES (VERT) + BV/CO (VERT) ---------- */}
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "1fr 0.8fr 0.8fr",
+        gridTemplateColumns: "1fr 1fr 1fr",
         gap: 10,
       }}
     >
-      {/* Bloc 3 — Bleu clair (grand comme gold/rose) */}
-      <div style={makeKpiBox("#47B5FF")}>
-        <div style={kpiLabel}>Records</div>
+      {/* 🟡 RECORDS */}
+      <div style={makeKpiBox(T.gold)}>
+        <div style={{ ...kpiLabel, color: T.gold }}>RECORDS</div>
         {currentBlue ? (
           <>
             <div style={kpiSub}>{currentBlue.label}</div>
@@ -1159,7 +1168,7 @@ const row: React.CSSProperties = {
               style={{
                 fontSize: 18,
                 fontWeight: 800,
-                color: "#BFE4FF",
+                color: T.gold,
               }}
             >
               {currentBlue.value}
@@ -1170,15 +1179,15 @@ const row: React.CSSProperties = {
         )}
       </div>
 
-      {/* Bloc 4 — Vert clair */}
+      {/* 🟩 POURCENTAGES */}
       <div style={makeKpiBox("#7CFF9A")}>
-        <div style={kpiLabel}>Pourcentages</div>
+        <div style={{ ...kpiLabel, color: "#7CFF9A" }}>POURCENTAGES</div>
         {currentGreen1 ? (
           <>
             <div style={kpiSub}>{currentGreen1.label}</div>
             <div
               style={{
-                fontSize: 16,
+                fontSize: 18,
                 fontWeight: 800,
                 color: "#E5FFEF",
               }}
@@ -1191,15 +1200,15 @@ const row: React.CSSProperties = {
         )}
       </div>
 
-      {/* Bloc 5 — Vert clair */}
+      {/* 🟩 BV / CO */}
       <div style={makeKpiBox("#7CFF9A")}>
-        <div style={kpiLabel}>BV / CO</div>
+        <div style={{ ...kpiLabel, color: "#7CFF9A" }}>% / BV / CO</div>
         {currentGreen2 ? (
           <>
             <div style={kpiSub}>{currentGreen2.label}</div>
             <div
               style={{
-                fontSize: 16,
+                fontSize: 18,
                 fontWeight: 800,
                 color: "#E5FFEF",
               }}
@@ -1214,6 +1223,170 @@ const row: React.CSSProperties = {
     </div>
   </div>
 )}
+
+      {/* ============================================================
+          STATS DÉTAILLÉES — style bronze/doré
+          ============================================================ */}
+      <div
+        style={{
+          borderRadius: 26,
+          padding: 16,
+          background: "linear-gradient(180deg,#141416,#0E0F12)",
+          border: "1px solid rgba(255,255,255,.14)",
+          boxShadow: "0 12px 26px rgba(0,0,0,.65)",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            color: T.gold,
+            marginBottom: 12,
+            textAlign: "center",
+          }}
+        >
+          Stats détaillées (période)
+        </div>
+
+        {/* ------ Lignes principales ------ */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 0",
+              borderBottom: "1px solid rgba(246,194,86,.35)",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: T.text70 }}>Moy.3D</span>
+            <span style={{ fontWeight: 700 }}>{globalAvg3D.toFixed(1)}</span>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 0",
+              borderBottom: "1px solid rgba(246,194,86,.35)",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: T.text70 }}>Moy.1D</span>
+            <span style={{ fontWeight: 700 }}>{globalAvg1D.toFixed(2)}</span>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 0",
+              borderBottom: "1px solid rgba(246,194,86,.35)",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: T.text70 }}>Best Visit</span>
+            <span style={{ fontWeight: 700 }}>{bestVisit}</span>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 0",
+              borderBottom: "1px solid rgba(246,194,86,.35)",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: T.text70 }}>Best Checkout</span>
+            <span style={{ fontWeight: 700 }}>{bestCheckout || 0}</span>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 0",
+              borderBottom: "1px solid rgba(246,194,86,.35)",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: T.text70 }}>Darts</span>
+            <span style={{ fontWeight: 700 }}>{totalDarts}</span>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 0",
+              borderBottom: "1px solid rgba(246,194,86,.35)",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: T.text70 }}>%Hits</span>
+            <span style={{ fontWeight: 700 }}>{hitsPercent.toFixed(1)}%</span>
+          </div>
+        </div>
+
+        {/* ------ S / D / T ------ */}
+        <div
+          style={{
+            marginTop: 12,
+            paddingTop: 10,
+            borderTop: "1px solid rgba(246,194,86,.35)",
+            display: "flex",
+            justifyContent: "space-around",
+            textAlign: "center",
+          }}
+        >
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>S%</div>
+            <div style={{ fontWeight: 700 }}>{simplePercent.toFixed(1)}%</div>
+          </div>
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>D%</div>
+            <div style={{ fontWeight: 700 }}>{doublePercent.toFixed(1)}%</div>
+          </div>
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>T%</div>
+            <div style={{ fontWeight: 700 }}>{triplePercent.toFixed(1)}%</div>
+          </div>
+        </div>
+
+        {/* ------ Miss / Bull / DBull / Bust ------ */}
+        <div
+          style={{
+            marginTop: 12,
+            paddingTop: 10,
+            borderTop: "1px solid rgba(246,194,86,.35)",
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            textAlign: "center",
+            gap: 4,
+          }}
+        >
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>Miss</div>
+            <div style={{ fontWeight: 700 }}>{gMiss}</div>
+          </div>
+
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>Bull</div>
+            <div style={{ fontWeight: 700 }}>{gBull}</div>
+          </div>
+
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>DBull</div>
+            <div style={{ fontWeight: 700 }}>{gDBull}</div>
+          </div>
+
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>Bust</div>
+            <div style={{ fontWeight: 700 }}>{gBust}</div>
+          </div>
+        </div>
+      </div>
 
       {/* ============================================================
           SPARKLINE + PANNEAU DÉROULANT
@@ -1542,171 +1715,6 @@ const row: React.CSSProperties = {
     </div>
   )}
 </div>
-
-
-      {/* ============================================================
-          STATS DÉTAILLÉES — style bronze/doré
-          ============================================================ */}
-      <div
-        style={{
-          borderRadius: 26,
-          padding: 16,
-          background: "linear-gradient(180deg,#141416,#0E0F12)",
-          border: "1px solid rgba(255,255,255,.14)",
-          boxShadow: "0 12px 26px rgba(0,0,0,.65)",
-        }}
-      >
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 700,
-            color: T.gold,
-            marginBottom: 12,
-            textAlign: "center",
-          }}
-        >
-          Stats détaillées (période)
-        </div>
-
-        {/* ------ Lignes principales ------ */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Moy.3D</span>
-            <span style={{ fontWeight: 700 }}>{globalAvg3D.toFixed(1)}</span>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Moy.1D</span>
-            <span style={{ fontWeight: 700 }}>{globalAvg1D.toFixed(2)}</span>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Best Visit</span>
-            <span style={{ fontWeight: 700 }}>{bestVisit}</span>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Best Checkout</span>
-            <span style={{ fontWeight: 700 }}>{bestCheckout || 0}</span>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Darts</span>
-            <span style={{ fontWeight: 700 }}>{totalDarts}</span>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>%Hits</span>
-            <span style={{ fontWeight: 700 }}>{hitsPercent.toFixed(1)}%</span>
-          </div>
-        </div>
-
-        {/* ------ S / D / T ------ */}
-        <div
-          style={{
-            marginTop: 12,
-            paddingTop: 10,
-            borderTop: "1px solid rgba(246,194,86,.35)",
-            display: "flex",
-            justifyContent: "space-around",
-            textAlign: "center",
-          }}
-        >
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>S%</div>
-            <div style={{ fontWeight: 700 }}>{simplePercent.toFixed(1)}%</div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>D%</div>
-            <div style={{ fontWeight: 700 }}>{doublePercent.toFixed(1)}%</div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>T%</div>
-            <div style={{ fontWeight: 700 }}>{triplePercent.toFixed(1)}%</div>
-          </div>
-        </div>
-
-        {/* ------ Miss / Bull / DBull / Bust ------ */}
-        <div
-          style={{
-            marginTop: 12,
-            paddingTop: 10,
-            borderTop: "1px solid rgba(246,194,86,.35)",
-            display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
-            textAlign: "center",
-            gap: 4,
-          }}
-        >
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>Miss</div>
-            <div style={{ fontWeight: 700 }}>{gMiss}</div>
-          </div>
-
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>Bull</div>
-            <div style={{ fontWeight: 700 }}>{gBull}</div>
-          </div>
-
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>DBull</div>
-            <div style={{ fontWeight: 700 }}>{gDBull}</div>
-          </div>
-
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>Bust</div>
-            <div style={{ fontWeight: 700 }}>{gBust}</div>
-          </div>
-        </div>
-      </div>
 
               {/* ============================================================
           LISTE DES DERNIÈRES SESSIONS + PAGINATION
