@@ -589,78 +589,123 @@ const row: React.CSSProperties = {
     /* ============================================================
        AGRÉGATION FLÉCHETTES GLOBALES (période)
        ============================================================ */
-    let gHitsS = 0,
-      gHitsD = 0,
-      gHitsT = 0,
-      gMiss = 0,
-      gBull = 0,
-      gDBull = 0,
-      gBust = 0;
-  
-    let minMiss: number | null = null,
-      maxMiss: number | null = null,
-      minBust: number | null = null,
-      maxBust: number | null = null;
-  
-    for (const s of filtered) {
-      const hasCounters =
-        (s.hitsS ?? 0) +
-          (s.hitsD ?? 0) +
-          (s.hitsT ?? 0) +
-          (s.miss ?? 0) +
-          (s.bull ?? 0) +
-          (s.dBull ?? 0) +
-          (s.bust ?? 0) >
-        0;
-  
-      if (hasCounters) {
-        gHitsS += s.hitsS ?? 0;
-        gHitsD += s.hitsD ?? 0;
-        gHitsT += s.hitsT ?? 0;
-        gMiss += s.miss ?? 0;
-        gBull += s.bull ?? 0;
-        gDBull += s.dBull ?? 0;
-        gBust += s.bust ?? 0;
-  
-        if (s.darts > 0) {
-          const m = s.miss ?? 0;
-          const b = s.bust ?? 0;
-  
-          if (minMiss === null || m < minMiss) minMiss = m;
-          if (maxMiss === null || m > maxMiss) maxMiss = m;
-          if (minBust === null || b < minBust) minBust = b;
-          if (maxBust === null || b > maxBust) maxBust = b;
-        }
-        continue;
-      }
-  
-      /* ---------- Fallback depuis dartsDetail ---------- */
-      if (Array.isArray(s.dartsDetail)) {
-        for (const d of s.dartsDetail) {
-          const v = Number((d as any)?.v) || 0;
-          const mult = Number((d as any)?.mult) || 0;
-  
-          if (v === 0 || mult === 0) {
-            gMiss++;
-          } else {
-            if (v === 25 && mult === 2) gDBull++;
-            else if (v === 25) gBull++;
-  
-            if (mult === 1) gHitsS++;
-            else if (mult === 2) gHitsD++;
-            else if (mult === 3) gHitsT++;
-          }
-        }
-      }
-    }
-  
-    const totalHits = gHitsS + gHitsD + gHitsT;
-    const totalThrows = totalHits + gMiss;
-  
-    const hitsPercent = totalThrows > 0 ? (totalHits / totalThrows) * 100 : 0;
-    const simplePercent = totalHits > 0 ? (gHitsS / totalHits) * 100 : 0;
-    const doublePercent = totalHits > 0 ? (gHitsD / totalHits) * 100 : 0;
-    const triplePercent = totalHits > 0 ? (gHitsT / totalHits) * 100 : 0;
+       let gHitsS = 0,
+       gHitsD = 0,
+       gHitsT = 0,
+       gMiss = 0,
+       gBull = 0,
+       gDBull = 0,
+       gBust = 0;
+ 
+     // Min / Max par session
+     let minDarts: number | null = null,
+       maxDarts: number | null = null,
+       minHits: number | null = null,
+       maxHits: number | null = null,
+       minS: number | null = null,
+       maxS: number | null = null,
+       minD: number | null = null,
+       maxD: number | null = null,
+       minT: number | null = null,
+       maxT: number | null = null,
+       minMiss: number | null = null,
+       maxMiss: number | null = null,
+       minBull: number | null = null,
+       maxBull: number | null = null,
+       minDBull: number | null = null,
+       maxDBull: number | null = null,
+       minBust: number | null = null,
+       maxBust: number | null = null;
+ 
+     for (const s of filtered) {
+       const darts = s.darts || 0;
+       const sS = s.hitsS ?? 0;
+       const sD = s.hitsD ?? 0;
+       const sT = s.hitsT ?? 0;
+       const sMiss = s.miss ?? 0;
+       const sBull = s.bull ?? 0;
+       const sDBull = s.dBull ?? 0;
+       const sBust = s.bust ?? 0;
+       const sHits = sS + sD + sT;
+ 
+       const hasCounters =
+         sS + sD + sT + sMiss + sBull + sDBull + sBust > 0;
+ 
+       if (hasCounters) {
+         // Totaux globaux
+         gHitsS += sS;
+         gHitsD += sD;
+         gHitsT += sT;
+         gMiss += sMiss;
+         gBull += sBull;
+         gDBull += sDBull;
+         gBust += sBust;
+ 
+         if (darts > 0) {
+           // Darts
+           if (minDarts === null || darts < minDarts) minDarts = darts;
+           if (maxDarts === null || darts > maxDarts) maxDarts = darts;
+ 
+           // Hits
+           if (minHits === null || sHits < minHits) minHits = sHits;
+           if (maxHits === null || sHits > maxHits) maxHits = sHits;
+ 
+           // S / D / T
+           if (minS === null || sS < minS) minS = sS;
+           if (maxS === null || sS > maxS) maxS = sS;
+ 
+           if (minD === null || sD < minD) minD = sD;
+           if (maxD === null || sD > maxD) maxD = sD;
+ 
+           if (minT === null || sT < minT) minT = sT;
+           if (maxT === null || sT > maxT) maxT = sT;
+ 
+           // Miss / Bull / DBull / Bust
+           if (minMiss === null || sMiss < minMiss) minMiss = sMiss;
+           if (maxMiss === null || sMiss > maxMiss) maxMiss = sMiss;
+ 
+           if (minBull === null || sBull < minBull) minBull = sBull;
+           if (maxBull === null || sBull > maxBull) maxBull = sBull;
+ 
+           if (minDBull === null || sDBull < minDBull) minDBull = sDBull;
+           if (maxDBull === null || sDBull > maxDBull) maxDBull = sDBull;
+ 
+           if (minBust === null || sBust < minBust) minBust = sBust;
+           if (maxBust === null || sBust > maxBust) maxBust = sBust;
+         }
+ 
+         continue;
+       }
+ 
+       /* ---------- Fallback depuis dartsDetail (vieux enregistrements) ---------- */
+       if (Array.isArray(s.dartsDetail)) {
+         for (const d of s.dartsDetail) {
+           const v = Number((d as any)?.v) || 0;
+           const mult = Number((d as any)?.mult) || 0;
+ 
+           if (v === 0 || mult === 0) {
+             gMiss++;
+             continue;
+           }
+ 
+           if (v === 25 && mult === 2) gDBull++;
+           else if (v === 25) gBull++;
+ 
+           if (mult === 1) gHitsS++;
+           else if (mult === 2) gHitsD++;
+           else if (mult === 3) gHitsT++;
+         }
+       }
+     }
+ 
+     const totalHits = gHitsS + gHitsD + gHitsT;
+     const totalThrows = totalHits + gMiss;
+ 
+     const hitsPercent = totalThrows > 0 ? (totalHits / totalThrows) * 100 : 0;
+     const simplePercent = totalHits > 0 ? (gHitsS / totalHits) * 100 : 0;
+     const doublePercent = totalHits > 0 ? (gHitsD / totalHits) * 100 : 0;
+     const triplePercent = totalHits > 0 ? (gHitsT / totalHits) * 100 : 0;
+ 
   
     /* ---------- Dérivés session ---------- */
     const avgHitsSPerSession =
@@ -677,6 +722,8 @@ const row: React.CSSProperties = {
       totalSessions > 0 ? gBull / totalSessions : 0;
     const avgDBullPerSession =
       totalSessions > 0 ? gDBull / totalSessions : 0;
+    const bestAvg3DSession =
+      totalSessions > 0 ? Math.max(...filtered.map((x) => x.avg3D || 0)) : 0;  
   
     const pctHitsGlobal = totalThrows > 0 ? hitsPercent : null;
     const pctMissGlobal =
@@ -693,6 +740,8 @@ const row: React.CSSProperties = {
       totalBullHits > 0 ? (gBull / totalBullHits) * 100 : null;
     const pctDBullGlobal =
       totalBullHits > 0 ? (gDBull / totalBullHits) * 100 : null;
+    const pctBustGlobal =
+      totalThrows > 0 ? (gBust / totalThrows) * 100 : null;
   
     /* ---------- Normalisation d’une fléchette ---------- */
     function normalizeTrainingDart(raw: any): UIDart | null {
@@ -849,6 +898,46 @@ const maxStackHits = HITS_SEGMENTS.reduce(
   0
 );
 
+    // Préférences par type de hit (S / D / T) + segment le moins touché
+    let favSimpleKey: string | null = null;
+    let favSimpleCount = 0;
+    let favDoubleKey: string | null = null;
+    let favDoubleCount = 0;
+    let favTripleKey: string | null = null;
+    let favTripleCount = 0;
+
+    for (const [key, val] of Object.entries(segSDTMap)) {
+      if (val.S > favSimpleCount) {
+        favSimpleCount = val.S;
+        favSimpleKey = key;
+      }
+      if (val.D > favDoubleCount) {
+        favDoubleCount = val.D;
+        favDoubleKey = key;
+      }
+      if (val.T > favTripleCount) {
+        favTripleCount = val.T;
+        favTripleKey = key;
+      }
+    }
+
+    let leastHitKey: string | null = null;
+    let leastHitCount = Infinity;
+
+    for (const [key, count] of Object.entries(segmentCount)) {
+      if (count > 0 && count < leastHitCount) {
+        leastHitCount = count;
+        leastHitKey = key;
+      }
+    }
+
+    const labelForSegment = (k: string | null) =>
+      k === null ? null : k === "25" ? "25 (Bull)" : k;
+
+    const favoriteSimpleDisplay = labelForSegment(favSimpleKey);
+    const favoriteDoubleDisplay = labelForSegment(favDoubleKey);
+    const favoriteTripleDisplay = labelForSegment(favTripleKey);
+    const leastHitDisplay = labelForSegment(leastHitKey);
   
     /* ============================================================
        Sparkline
@@ -1224,6 +1313,96 @@ const maxStackHits = HITS_SEGMENTS.reduce(
       (page - 1) * pageSize,
       page * pageSize
     );
+
+        /* ---------- Résumé période (profil joueur Training X01) ---------- */
+        let summaryTitle = "Mots du Coach";
+        const summaryLines: string[] = [];
+    
+        if (totalSessions === 0) {
+          summaryLines.push("Aucune session sur la période sélectionnée.");
+        } else {
+          // 1) Scoring global (Moy.3D)
+          if (globalAvg3D >= 70) {
+            summaryLines.push(
+              "Très gros scoring global, moyenne 3D élevée sur la période."
+            );
+          } else if (globalAvg3D >= 60) {
+            summaryLines.push(
+              "Scoring solide avec une moyenne 3D correcte et régulière."
+            );
+          } else if (globalAvg3D >= 50) {
+            summaryLines.push(
+              "Scoring en progression, objectif : stabiliser au-dessus de 60 de moyenne 3D."
+            );
+          } else {
+            summaryLines.push(
+              "Scoring encore irrégulier, l’objectif est de stabiliser les visites et les scores moyens."
+            );
+          }
+    
+          // 2) Profil S / D / T (agressivité)
+          if (pctTripleGlobal !== null && pctTripleGlobal >= 20) {
+            summaryLines.push(
+              "Fort volume de triples, jeu très offensif sur les segments T."
+            );
+          } else if (pctTripleGlobal !== null && pctTripleGlobal >= 10) {
+            summaryLines.push(
+              "Les triples commencent à bien rentrer, volume intéressant sur les T."
+            );
+          } else {
+            summaryLines.push(
+              "Peu de triples sur la période, axe de travail possible sur les segments T."
+            );
+          }
+    
+          // 3) Sécurité : Miss
+          if (pctMissGlobal !== null) {
+            if (pctMissGlobal <= 20) {
+              summaryLines.push(
+                "Taux de miss maîtrisé, bonne sécurité générale au tir."
+              );
+            } else if (pctMissGlobal <= 35) {
+              summaryLines.push(
+                "Taux de miss moyen, encore perfectible pour gagner en régularité."
+              );
+            } else {
+              summaryLines.push(
+                "Taux de miss élevé, priorité à la régularité et au contrôle des lancers."
+              );
+            }
+          }
+    
+          // 4) Busts : gestion des fins
+          if (avgBustPerSession > 0) {
+            if (avgBustPerSession <= 1) {
+              summaryLines.push(
+                "Les busts restent rares, gestion des fins de legs plutôt propre."
+              );
+            } else if (avgBustPerSession <= 3) {
+              summaryLines.push(
+                "Quelques busts par session, attention aux fins de legs et aux calculs de checkout."
+              );
+            } else {
+              summaryLines.push(
+                "Beaucoup de busts sur la période, le travail sur les fins de legs et les checkouts est prioritaire."
+              );
+            }
+          }
+    
+          // 5) Zone centrale : Bull / DBull
+          const totalBullHits = gBull + gDBull;
+          if (totalBullHits > 0) {
+            if (pctDBullGlobal !== null && pctDBullGlobal >= 40) {
+              summaryLines.push(
+                "Très bon ratio DBull dans la zone centrale, excellente précision au centre."
+              );
+            } else if (pctBullGlobal !== null) {
+              summaryLines.push(
+                "Zone Bull utilisée régulièrement, précision correcte dans l’axe central."
+              );
+            }
+          }
+        }    
   
     /* ============================================================
        RENDER
@@ -1420,8 +1599,8 @@ const maxStackHits = HITS_SEGMENTS.reduce(
   </div>
 )}
 
-            {/* ============================================================
-          STATS DÉTAILLÉES — style bronze/doré (version riche)
+      {/* ============================================================
+          STATS DÉTAILLÉES — style bronze/doré (NOUVELLE VERSION)
           ============================================================ */}
       <div
         style={{
@@ -1437,366 +1616,445 @@ const maxStackHits = HITS_SEGMENTS.reduce(
             fontSize: 14,
             fontWeight: 700,
             color: T.gold,
-            marginBottom: 12,
+            marginBottom: 10,
             textAlign: "center",
           }}
         >
-          Stats détaillées (période)
+          STATS DÉTAILLÉES (Période)
         </div>
 
-        {/* ------ Volume & moyennes générales ------ */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {/* Sessions */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Sessions</span>
-            <span style={{ fontWeight: 700 }}>{totalSessions}</span>
+        {totalSessions === 0 ? (
+          <div style={{ fontSize: 12, color: T.text70, textAlign: "center" }}>
+            Aucune session de training enregistrée sur la période sélectionnée.
           </div>
+        ) : (
+          <>
+            {/* Helpers locaux */}
+            {(() => {
+              const fmtRange = (min: number | null, max: number | null) => {
+                if (min === null && max === null) return "—";
+                if (min === null) return `— / ${max}`;
+                if (max === null) return `${min} / —`;
+                if (min === max) return `${min}`;
+                return `${min} / ${max}`;
+              };
 
-          {/* Darts totaux */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Darts totaux</span>
-            <span style={{ fontWeight: 700 }}>{totalDarts}</span>
-          </div>
+              const fmtPercent = (v: number | null) =>
+                v === null ? "—" : `${v.toFixed(1)}%`;
 
-          {/* Darts / session */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Darts / session</span>
-            <span style={{ fontWeight: 700 }}>
-              {avgDarts.toFixed(1)}
-            </span>
-          </div>
+              /* =======================
+                 1) TABLEAU PRINCIPAL
+                 ======================= */
+              const rows = [
+                {
+                  label: "Darts",
+                  range: fmtRange(minDarts, maxDarts),
+                  total: totalDarts,
+                  pct: "—",
+                },
+                {
+                  label: "Hits",
+                  range: fmtRange(minHits, maxHits),
+                  total: totalHits,
+                  pct: fmtPercent(totalThrows > 0 ? hitsPercent : null),
+                },
+                {
+                  label: "Miss",
+                  range: fmtRange(minMiss, maxMiss),
+                  total: gMiss,
+                  pct: fmtPercent(pctMissGlobal),
+                },
+                {
+                  label: "S",
+                  range: fmtRange(minS, maxS),
+                  total: gHitsS,
+                  pct: fmtPercent(pctSimpleGlobal),
+                },
+                {
+                  label: "D",
+                  range: fmtRange(minD, maxD),
+                  total: gHitsD,
+                  pct: fmtPercent(pctDoubleGlobal),
+                },
+                {
+                  label: "T",
+                  range: fmtRange(minT, maxT),
+                  total: gHitsT,
+                  pct: fmtPercent(pctTripleGlobal),
+                },
+                {
+                  label: "Bull",
+                  range: fmtRange(minBull, maxBull),
+                  total: gBull,
+                  pct: fmtPercent(pctBullGlobal),
+                },
+                {
+                  label: "DBull",
+                  range: fmtRange(minDBull, maxDBull),
+                  total: gDBull,
+                  pct: fmtPercent(pctDBullGlobal),
+                },
+                {
+                  label: "Bust",
+                  range: fmtRange(minBust, maxBust),
+                  total: gBust,
+                  pct: fmtPercent(pctBustGlobal),
+                },
+              ];
 
-          {/* Moy.3D & Moy.1D */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Moy.3D (période)</span>
-            <span style={{ fontWeight: 700 }}>
-              {globalAvg3D.toFixed(1)}
-            </span>
-          </div>
+              return (
+                <>
+                  {/* En-têtes des colonnes */}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1.1fr 1.4fr 1.1fr 0.9fr",
+                      fontSize: 11,
+                      paddingBottom: 4,
+                      borderBottom: "1px solid rgba(246,194,86,.45)",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <div style={{ color: T.text70 }}>Intitulé</div>
+                    <div style={{ textAlign: "center", color: T.text70 }}>
+                      Session (min / max)
+                    </div>
+                    <div style={{ textAlign: "center", color: T.text70 }}>
+                      Total
+                    </div>
+                    <div style={{ textAlign: "right", color: T.text70 }}>
+                      %
+                    </div>
+                  </div>
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Moy.1D (période)</span>
-            <span style={{ fontWeight: 700 }}>
-              {globalAvg1D.toFixed(2)}
-            </span>
-          </div>
+                  {/* Lignes */}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 2,
+                    }}
+                  >
+                    {rows.map((r) => (
+                      <div
+                        key={r.label}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1.1fr 1.4fr 1.1fr 0.9fr",
+                          fontSize: 11,
+                          padding: "4px 0",
+                          borderBottom:
+                            "1px solid rgba(246,194,86,.18)",
+                        }}
+                      >
+                        <div style={{ color: T.text70 }}>{r.label}</div>
+                        <div
+                          style={{
+                            textAlign: "center",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {r.range}
+                        </div>
+                        <div
+                          style={{
+                            textAlign: "center",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {r.total}
+                        </div>
+                        <div
+                          style={{
+                            textAlign: "right",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {r.pct}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
 
-          {/* Best visit / Best checkout */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Best Visit</span>
-            <span style={{ fontWeight: 700 }}>{bestVisit}</span>
-          </div>
+            {/* =======================
+    2) MOYENNES — ROSE
+   ======================= */}
+<div
+  style={{
+    marginTop: 12,
+    paddingTop: 10,
+    borderTop: "1px solid rgba(246,194,86,.45)",
+  }}
+>
+  <div
+    style={{
+      fontSize: 12,
+      fontWeight: 800,
+      color: "#FF6FB5", // ROSE
+      textTransform: "uppercase",
+      letterSpacing: 0.6,
+      marginBottom: 6,
+      textAlign: "center",
+    }}
+  >
+    Moyennes
+  </div>
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Best Checkout</span>
-            <span style={{ fontWeight: 700 }}>
-              {bestCheckout || 0}
-            </span>
-          </div>
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-around",
+      textAlign: "center",
+      gap: 8,
+    }}
+  >
+    <div>
+      <div style={{ fontSize: 11, color: T.text70, marginBottom: 2 }}>
+        Moy.1D
+      </div>
+      <div
+        style={{
+          fontWeight: 900,
+          fontSize: 17,
+          color: "#FFB8DE",
+          textShadow:
+            "0 0 10px rgba(255,135,200,.8), 0 0 20px rgba(255,135,200,.4)",
+        }}
+      >
+        {globalAvg1D.toFixed(2)}
+      </div>
+    </div>
 
-          {/* %Hits & %Miss global */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>%Hits global</span>
-            <span style={{ fontWeight: 700 }}>
-              {pctHitsGlobal !== null
-                ? `${pctHitsGlobal.toFixed(1)}%`
-                : "—"}
-            </span>
-          </div>
+    <div>
+      <div style={{ fontSize: 11, color: T.text70, marginBottom: 2 }}>
+        Moy.3D
+      </div>
+      <div
+        style={{
+          fontWeight: 900,
+          fontSize: 17,
+          color: "#FFB8DE",
+          textShadow:
+            "0 0 10px rgba(255,135,200,.8), 0 0 20px rgba(255,135,200,.4)",
+        }}
+      >
+        {globalAvg3D.toFixed(1)}
+      </div>
+    </div>
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>%Miss global</span>
-            <span style={{ fontWeight: 700 }}>
-              {pctMissGlobal !== null
-                ? `${pctMissGlobal.toFixed(1)}%`
-                : "—"}
-            </span>
-          </div>
+    <div>
+      <div style={{ fontSize: 11, color: T.text70, marginBottom: 2 }}>
+        Best Moy. / 1 session
+      </div>
+      <div
+        style={{
+          fontWeight: 900,
+          fontSize: 17,
+          color: "#FFB8DE",
+          textShadow:
+            "0 0 10px rgba(255,135,200,.8), 0 0 20px rgba(255,135,200,.4)",
+        }}
+      >
+        {bestAvg3DSession.toFixed(1)}
+      </div>
+    </div>
+  </div>
+</div>
 
-          {/* Miss / Bust par session + min / max */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Miss / session</span>
-            <span style={{ fontWeight: 700 }}>
-              {avgMissPerSession.toFixed(1)}
-            </span>
-          </div>
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Miss min / max</span>
-            <span style={{ fontWeight: 700 }}>
-              {minMiss !== null ? minMiss : "—"} /{" "}
-              {maxMiss !== null ? maxMiss : "—"}
-            </span>
-          </div>
+  {/* =======================
+    3) RECORDS — VERT
+   ======================= */}
+<div
+  style={{
+    marginTop: 12,
+    paddingTop: 10,
+    borderTop: "1px solid rgba(246,194,86,.45)",
+  }}
+>
+  <div
+    style={{
+      fontSize: 12,
+      fontWeight: 800,
+      color: "#7CFF9A", // VERT
+      textTransform: "uppercase",
+      letterSpacing: 0.6,
+      marginBottom: 6,
+      textAlign: "center",
+    }}
+  >
+    Records
+  </div>
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Bust / session</span>
-            <span style={{ fontWeight: 700 }}>
-              {avgBustPerSession.toFixed(1)}
-            </span>
-          </div>
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-around",
+      textAlign: "center",
+      gap: 8,
+      paddingBottom: 6,
+    }}
+  >
+    <div>
+      <div style={{ color: T.text70, marginBottom: 2 }}>Best Visit</div>
+      <div
+        style={{
+          fontWeight: 900,
+          fontSize: 17,
+          color: "#B2FFD0",
+          textShadow:
+            "0 0 10px rgba(100,255,180,.7), 0 0 20px rgba(100,255,180,.4)",
+        }}
+      >
+        {bestVisit}
+      </div>
+    </div>
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              borderBottom: "1px solid rgba(246,194,86,.35)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: T.text70 }}>Bust min / max</span>
-            <span style={{ fontWeight: 700 }}>
-              {minBust !== null ? minBust : "—"} /{" "}
-              {maxBust !== null ? maxBust : "—"}
-            </span>
-          </div>
-        </div>
+    <div>
+      <div style={{ color: T.text70, marginBottom: 2 }}>Best CO</div>
+      <div
+        style={{
+          fontWeight: 900,
+          fontSize: 17,
+          color: "#B2FFD0",
+          textShadow:
+            "0 0 10px rgba(100,255,180,.7), 0 0 20px rgba(100,255,180,.4)",
+        }}
+      >
+        {bestCheckout || 0}
+      </div>
+    </div>
+  </div>
+</div>
 
-        {/* ------ Répartition S / D / T ------ */}
-        <div
-          style={{
-            marginTop: 12,
-            paddingTop: 10,
-            borderTop: "1px solid rgba(246,194,86,.35)",
-            display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
-            gap: 6,
-            textAlign: "center",
-          }}
-        >
-          {/* Totaux S/D/T */}
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>Hits S totaux</div>
-            <div style={{ fontWeight: 700 }}>{gHitsS}</div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>Hits D totaux</div>
-            <div style={{ fontWeight: 700 }}>{gHitsD}</div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>Hits T totaux</div>
-            <div style={{ fontWeight: 700 }}>{gHitsT}</div>
-          </div>
+{/* =======================
+    FAVORIS — BLEU
+   ======================= */}
+<div
+  style={{
+    marginTop: 12,
+    paddingTop: 10,
+    borderTop: "1px solid rgba(246,194,86,.45)",
+  }}
+>
+  <div
+    style={{
+      fontSize: 12,
+      fontWeight: 800,
+      color: "#47B5FF", // BLEU
+      textTransform: "uppercase",
+      letterSpacing: 0.6,
+      marginBottom: 6,
+      textAlign: "center",
+    }}
+  >
+    Favoris
+  </div>
 
-          {/* Hits / session */}
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>S / session</div>
-            <div style={{ fontWeight: 700 }}>
-              {avgHitsSPerSession.toFixed(1)}
-            </div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>D / session</div>
-            <div style={{ fontWeight: 700 }}>
-              {avgHitsDPerSession.toFixed(1)}
-            </div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>T / session</div>
-            <div style={{ fontWeight: 700 }}>
-              {avgHitsTPerSession.toFixed(1)}
-            </div>
-          </div>
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-around",
+      textAlign: "center",
+      gap: 8,
+      marginBottom: 2,
+    }}
+  >
+    <div>
+      <div style={{ color: T.text70, marginBottom: 2 }}>S</div>
+      <div
+        style={{
+          fontWeight: 900,
+          fontSize: 17,
+          color: "#A6D4FF",
+          textShadow:
+            "0 0 10px rgba(100,160,255,.8), 0 0 20px rgba(100,160,255,.45)",
+        }}
+      >
+        {favoriteSimpleDisplay ?? "—"}
+      </div>
+    </div>
 
-          {/* Pourcentages S/D/T */}
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>S%</div>
-            <div style={{ fontWeight: 700 }}>
-              {simplePercent.toFixed(1)}%
-            </div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>D%</div>
-            <div style={{ fontWeight: 700 }}>
-              {doublePercent.toFixed(1)}%
-            </div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>T%</div>
-            <div style={{ fontWeight: 700 }}>
-              {triplePercent.toFixed(1)}%
-            </div>
-          </div>
-        </div>
+    <div>
+      <div style={{ color: T.text70, marginBottom: 2 }}>D</div>
+      <div
+        style={{
+          fontWeight: 900,
+          fontSize: 17,
+          color: "#A6D4FF",
+          textShadow:
+            "0 0 10px rgba(100,160,255,.8), 0 0 20px rgba(100,160,255,.45)",
+        }}
+      >
+        {favoriteDoubleDisplay ?? "—"}
+      </div>
+    </div>
 
-        {/* ------ Miss / Bull / DBull / Bust ------ */}
-        <div
-          style={{
-            marginTop: 12,
-            paddingTop: 10,
-            borderTop: "1px solid rgba(246,194,86,.35)",
-            display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
-            textAlign: "center",
-            gap: 4,
-          }}
-        >
-          {/* Totaux */}
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>Miss</div>
-            <div style={{ fontWeight: 700 }}>{gMiss}</div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>Bull</div>
-            <div style={{ fontWeight: 700 }}>{gBull}</div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>DBull</div>
-            <div style={{ fontWeight: 700 }}>{gDBull}</div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>Bust</div>
-            <div style={{ fontWeight: 700 }}>{gBust}</div>
-          </div>
+    <div>
+      <div style={{ color: T.text70, marginBottom: 2 }}>T</div>
+      <div
+        style={{
+          fontWeight: 900,
+          fontSize: 17,
+          color: "#A6D4FF",
+          textShadow:
+            "0 0 10px rgba(100,160,255,.8), 0 0 20px rgba(100,160,255,.45)",
+        }}
+      >
+        {favoriteTripleDisplay ?? "—"}
+      </div>
+    </div>
+  </div>
+</div>
 
-          {/* Par session */}
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>Miss / session</div>
-            <div style={{ fontWeight: 700 }}>
-              {avgMissPerSession.toFixed(1)}
-            </div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>Bull / session</div>
-            <div style={{ fontWeight: 700 }}>
-              {avgBullPerSession.toFixed(1)}
-            </div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>
-              DBull / session
-            </div>
-            <div style={{ fontWeight: 700 }}>
-              {avgDBullPerSession.toFixed(1)}
-            </div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>Bust / session</div>
-            <div style={{ fontWeight: 700 }}>
-              {avgBustPerSession.toFixed(1)}
-            </div>
-          </div>
-
-          {/* Pourcentages Bull / DBull */}
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>%Bull*</div>
-            <div style={{ fontWeight: 700 }}>
-              {pctBullGlobal !== null
-                ? `${pctBullGlobal.toFixed(1)}%`
-                : "—"}
-            </div>
-          </div>
-          <div>
-            <div style={{ color: T.text70, fontSize: 11 }}>%DBull*</div>
-            <div style={{ fontWeight: 700 }}>
-              {pctDBullGlobal !== null
-                ? `${pctDBullGlobal.toFixed(1)}%`
-                : "—"}
-            </div>
-          </div>
-          <div style={{ gridColumn: "span 2", fontSize: 9, color: T.text70 }}>
-            * % sur (Bull + DBull)
-          </div>
-        </div>
+          </>
+        )}
       </div>
 
+      {/* ------ 4) Résumé texte de la période ------ */}
+      <div
+          style={{
+            marginTop: 12,
+            paddingTop: 10,
+            borderTop: "1px solid rgba(246,194,86,.35)",
+            fontSize: 11,
+            color: T.text70,
+            lineHeight: 1.45,
+          }}
+        >
+          <div
+            style={{
+              fontWeight: 700,
+              marginBottom: 4,
+              color: T.gold,
+            }}
+          >
+            {summaryTitle}
+          </div>
+
+          {summaryLines.length ? (
+            <ul
+              style={{
+                margin: 0,
+                paddingLeft: 16,
+                listStyleType: "disc",
+              }}
+            >
+              {summaryLines.map((line, idx) => (
+                <li key={idx} style={{ marginBottom: 2 }}>
+                  {line}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div>
+              Aucune donnée exploitable sur la période sélectionnée.
+            </div>
+          )}
+        </div>
 
       {/* ============================================================
           SPARKLINE + PANNEAU DÉROULANT
