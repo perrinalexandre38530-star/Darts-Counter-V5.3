@@ -1,8 +1,5 @@
 // ============================================
-// src/pages/StatsHub.tsx — Stats + Historique + Training (safe)
-// Sélecteur de joueurs AU-DESSUS du dashboard dans un bloc dépliant
-// + Fix avatars : normalisation rec.players / rec.payload.players
-// + Onglet "Training X01" (localStorage dc_training_x01_stats_v1)
+// src/pages/StatsHub.tsx — Stats + Historique + Training (v2 complet)
 // ============================================
 import React from "react";
 import { History } from "../lib/history";
@@ -14,11 +11,11 @@ import StatsPlayerDashboard, {
 } from "../components/StatsPlayerDashboard";
 import { useQuickStats } from "../hooks/useQuickStats";
 import HistoryPage from "./HistoryPage";
-import SparklinePro from "../components/SparklinePro"; // sparkline PRO
-import TrainingRadar from "../components/TrainingRadar"; // radar Training
+import SparklinePro from "../components/SparklinePro";
+import TrainingRadar from "../components/TrainingRadar";
 import type { Dart as UIDart } from "../lib/types";
 
-/* ---------- Thème local ---------- */
+/* ---------- Thème ---------- */
 const T = {
   gold: "#F6C256",
   text: "#FFFFFF",
@@ -28,7 +25,12 @@ const T = {
 };
 
 /* ---------- Types ---------- */
-type PlayerLite = { id: string; name?: string; avatarDataUrl?: string | null };
+type PlayerLite = {
+  id: string;
+  name?: string;
+  avatarDataUrl?: string | null;
+};
+
 type SavedMatch = {
   id: string;
   kind?: "x01" | "cricket" | string;
@@ -48,22 +50,21 @@ type Props = {
 };
 
 /* ---------- Helpers génériques ---------- */
-const toArr = <T,>(v: any): T[] => (Array.isArray(v) ? (v as T[]) : []);
-const toObj = <T,>(v: any): T =>
-  v && typeof v === "object" ? (v as T) : ({} as T);
-const N = (x: any, d = 0) =>
-  Number.isFinite(Number(x)) ? Number(x) : d;
+const toArr = <T,>(v: any): T[] => (Array.isArray(v) ? v : []);
+const toObj = <T,>(v: any): T => (v && typeof v === "object" ? v : ({} as T));
+const N = (x: any, d = 0) => (Number.isFinite(Number(x)) ? Number(x) : d);
 const fmtDate = (ts?: number) =>
   new Date(N(ts, Date.now())).toLocaleString();
 
-/* ---------- TRAINING X01 (stats sessions) ---------- */
+/* ========== TRAINING X01 : SESSIONS LOCALSTORAGE ========== */
+
 type TimeRange = "all" | "day" | "week" | "month" | "year";
 
 export type TrainingX01Session = {
   id: string;
-  date: number; // timestamp (ms)
+  date: number;
   profileId: string;
-  darts: number; // nb total de fléchettes
+  darts: number;
   avg3D: number;
   avg1D: number;
   bestVisit: number;
@@ -75,20 +76,18 @@ export type TrainingX01Session = {
   bull: number;
   dBull: number;
   bust: number;
-  // NEW : heatmap par segment (issu du TrainingX01Play récent)
   bySegment?: Record<string, number>;
-  // détail flèche par flèche pour le radar
   dartsDetail?: UIDart[];
 };
 
 const TRAINING_X01_STATS_KEY = "dc_training_x01_stats_v1";
 
-// même ordre que le radar TrainingX01Play
 const SEGMENTS: number[] = [
   20, 1, 18, 4, 13, 6, 10, 15, 2, 17,
-  3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 25,
+  3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 25, // +25 ajouté
 ];
 
+/* ---------- Charge sessions ---------- */
 function loadTrainingSessions(): TrainingX01Session[] {
   if (typeof window === "undefined") return [];
   try {
@@ -101,7 +100,6 @@ function loadTrainingSessions(): TrainingX01Session[] {
       const darts = Number(row.darts) || 0;
       const avg3D = Number(row.avg3D) || 0;
 
-      // ancien format : avg1D déjà présent ; nouveau : on recompute
       const avg1DExplicit =
         row.avg1D !== undefined && row.avg1D !== null
           ? Number(row.avg1D) || 0
@@ -113,7 +111,6 @@ function loadTrainingSessions(): TrainingX01Session[] {
           ? avg3D / 3
           : 0;
 
-      // ancien format : bestCheckout ; nouveau : checkout
       const bestCheckoutRaw =
         row.bestCheckout !== undefined && row.bestCheckout !== null
           ? row.bestCheckout
@@ -123,18 +120,15 @@ function loadTrainingSessions(): TrainingX01Session[] {
           ? null
           : Number(bestCheckoutRaw) || 0;
 
-      // NEW : bySegment (format TrainingX01Play v2)
       const bySegmentRaw =
         row.bySegment && typeof row.bySegment === "object"
           ? (row.bySegment as Record<string, any>)
           : undefined;
 
-      // dartsDetail :
-      //  - si présent (ancien format) → on le garde
-      //  - sinon on reconstruit un "nuage" de fléchettes à partir de bySegment
+      // Reconstruit dartsDetail si manquant
       let dartsDetail: UIDart[] | undefined = undefined;
       if (Array.isArray(row.dartsDetail)) {
-        dartsDetail = row.dartsDetail as UIDart[];
+        dartsDetail = row.dartsDetail;
       } else if (bySegmentRaw) {
         const tmp: UIDart[] = [];
         for (const [segStr, weightAny] of Object.entries(bySegmentRaw)) {
@@ -176,26 +170,25 @@ function loadTrainingSessions(): TrainingX01Session[] {
   }
 }
 
-function filterByRange(
-  sessions: TrainingX01Session[],
-  range: TimeRange
-) {
+function filterByRange(sessions: TrainingX01Session[], range: TimeRange) {
   if (range === "all") return sessions;
   const now = Date.now();
   const ONE_DAY = 24 * 60 * 60 * 1000;
-  let delta = ONE_DAY;
-  if (range === "week") delta = 7 * ONE_DAY;
-  if (range === "month") delta = 30 * ONE_DAY;
-  if (range === "year") delta = 365 * ONE_DAY;
-
+  const delta =
+    range === "day"
+      ? ONE_DAY
+      : range === "week"
+      ? 7 * ONE_DAY
+      : range === "month"
+      ? 30 * ONE_DAY
+      : 365 * ONE_DAY;
   const minDate = now - delta;
   return sessions.filter((s) => s.date >= minDate);
 }
 
 function formatShortDate(ts: number) {
   try {
-    const d = new Date(ts);
-    return d.toLocaleDateString(undefined, {
+    return new Date(ts).toLocaleDateString(undefined, {
       day: "2-digit",
       month: "2-digit",
       hour: "2-digit",
@@ -211,11 +204,7 @@ function safePercent(num: number, den: number) {
   return (num / den) * 100;
 }
 
-/** Normalise les joueurs d’un record :
- * - prend rec.players sinon rec.payload.players
- * - injecte avatarDataUrl/name depuis le store si manquant
- * - reflète aussi dans rec.payload.players pour les composants qui le lisent
- */
+/* ---------- Normalise les joueurs ---------- */
 function normalizeRecordPlayers(
   rec: SavedMatch,
   storeProfiles: PlayerLite[]
@@ -230,10 +219,9 @@ function normalizeRecordPlayers(
       id: p?.id,
       name: p?.name ?? prof?.name ?? "",
       avatarDataUrl: p?.avatarDataUrl ?? prof?.avatarDataUrl ?? null,
-    } as PlayerLite;
+    };
   });
 
-  // retourne un nouvel objet pour ne rien muter
   return {
     ...rec,
     players: withAvatars,
@@ -241,9 +229,10 @@ function normalizeRecordPlayers(
   };
 }
 
-/* ---------- Hooks ---------- */
+/* ---------- Hooks Historique ---------- */
 function useHistoryAPI(): SavedMatch[] {
   const [rows, setRows] = React.useState<SavedMatch[]>([]);
+
   React.useEffect(() => {
     (async () => {
       try {
@@ -264,16 +253,21 @@ function useHistoryAPI(): SavedMatch[] {
         }
       })();
     };
+
     window.addEventListener("dc-history-updated", onUpd);
-    return () => window.removeEventListener("dc-history-updated", onUpd);
+    return () =>
+      window.removeEventListener("dc-history-updated", onUpd);
   }, []);
+
   return rows;
 }
 
 function useStoreHistory(): SavedMatch[] {
   const [rows, setRows] = React.useState<SavedMatch[]>([]);
+
   React.useEffect(() => {
     let mounted = true;
+
     (async () => {
       try {
         const store: any = await loadStore<any>();
@@ -283,36 +277,38 @@ function useStoreHistory(): SavedMatch[] {
         setRows([]);
       }
     })();
+
     return () => {
       mounted = false;
     };
   }, []);
+
   return rows;
 }
 
-/* ---------- Adaptateur -> PlayerDashboardStats (fusion QUICK + fallback Historique) ---------- */
+/* ---------- Adaptateur → PlayerDashboardStats ---------- */
 function buildDashboardForPlayer(
   player: PlayerLite,
   records: SavedMatch[],
-  quick?:
-    | {
-        avg3: number;
-        bestVisit: number;
-        bestCheckout?: number;
-        winRatePct: number;
-        buckets: Record<string, number>;
-      }
-    | null
-): PlayerDashboardStats {
+  quick?
+):
+  | {
+      avg3: number;
+      bestVisit: number;
+      bestCheckout?: number;
+      winRatePct: number;
+      buckets: Record<string, number>;
+    }
+  | null
+{
   const pid = player.id;
-  const pname = player.name || "Joueur";
 
-  // ==== Fallback: calcule depuis l'historique si quick vide ====
   let fbAvg3 = 0,
     fbBestVisit = 0,
     fbBestCO = 0,
     fbWins = 0,
     fbMatches = 0;
+
   const fbBuckets = {
     "0-59": 0,
     "60-99": 0,
@@ -320,16 +316,14 @@ function buildDashboardForPlayer(
     "140+": 0,
     "180": 0,
   };
+
   const evo: Array<{ date: string; avg3: number }> = [];
+  const byDate: Array<{ t: number; a3: number }> = [];
 
   const toArrLoc = <T,>(v: any): T[] => (Array.isArray(v) ? v : []);
-  const Nloc = (x: any, d = 0) =>
-    Number.isFinite(Number(x)) ? Number(x) : d;
-
-  const byDate: { t: number; a3: number }[] = [];
+  const Nloc = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : 0);
 
   for (const r of records) {
-    // Matchs où le joueur a participé
     const inMatch = toArrLoc<PlayerLite>(r.players).some(
       (p) => p?.id === pid
     );
@@ -339,10 +333,7 @@ function buildDashboardForPlayer(
 
     const ss: any = r.summary ?? r.payload?.summary ?? {};
     const per: any[] =
-      ss.perPlayer ??
-      ss.players ??
-      r.payload?.summary?.perPlayer ??
-      [];
+      ss.perPlayer ?? ss.players ?? r.payload?.summary?.perPlayer ?? [];
 
     const pstat =
       per.find((x) => x?.playerId === pid) ??
@@ -360,7 +351,7 @@ function buildDashboardForPlayer(
 
     if (a3 > 0) {
       byDate.push({
-        t: Nloc(r.updatedAt ?? r.createdAt, Date.now()),
+        t: Nloc(r.updatedAt ?? r.createdAt),
         a3,
       });
     }
@@ -368,10 +359,8 @@ function buildDashboardForPlayer(
     fbAvg3 += a3;
     fbBestVisit = Math.max(fbBestVisit, bestV);
     fbBestCO = Math.max(fbBestCO, bestCO);
+    if (r.winnerId === pid) fbWins++;
 
-    if (r.winnerId && r.winnerId === pid) fbWins++;
-
-    // Buckets
     const buckets =
       ss.buckets?.[pid] ?? pstat.buckets ?? null;
 
@@ -381,18 +370,6 @@ function buildDashboardForPlayer(
       fbBuckets["100+"] += Nloc(buckets["100+"]);
       fbBuckets["140+"] += Nloc(buckets["140+"]);
       fbBuckets["180"] += Nloc(buckets["180"]);
-    } else if (Array.isArray(r.payload?.legs)) {
-      for (const leg of r.payload.legs as any[]) {
-        const pp = toArrLoc<any>(leg.perPlayer).find(
-          (x) => x.playerId === pid
-        );
-        const v = Nloc(pp?.bestVisit);
-        if (v >= 180) fbBuckets["180"]++;
-        else if (v >= 140) fbBuckets["140+"]++;
-        else if (v >= 100) fbBuckets["100+"]++;
-        else if (v >= 60) fbBuckets["60-99"]++;
-        else if (v > 0) fbBuckets["0-59"]++;
-      }
     }
   }
 
@@ -404,49 +381,28 @@ function buildDashboardForPlayer(
     });
   }
 
-  const fbAvg3Mean =
-    fbMatches > 0 ? +(fbAvg3 / fbMatches).toFixed(2) : 0;
+  const fbAvg3Mean = fbMatches > 0 ? fbAvg3 / fbMatches : 0;
   const fbWinPct =
-    fbMatches > 0
-      ? Math.round((fbWins / fbMatches) * 1000) / 10
-      : 0;
-
-  const avg3Overall = quick?.avg3 ?? fbAvg3Mean;
-  const bestVisit = quick?.bestVisit ?? fbBestVisit;
-  const bestCheckout = quick?.bestCheckout ?? (fbBestCO || undefined);
-  const winRatePct = Number.isFinite(
-    quick?.winRatePct as any
-  )
-    ? quick!.winRatePct
-    : fbWinPct;
-  const distribution = quick?.buckets
-    ? {
-        "0-59": N(quick.buckets["0-59"]),
-        "60-99": N(quick.buckets["60-99"]),
-        "100+": N(quick.buckets["100+"]),
-        "140+": N(quick.buckets["140+"]),
-        "180": N(quick.buckets["180"]),
-      }
-    : fbBuckets;
-
-  const evolution = evo.length
-    ? evo
-    : [
-        {
-          date: new Date().toLocaleDateString(),
-          avg3: avg3Overall,
-        },
-      ];
+    fbMatches > 0 ? Math.round((fbWins / fbMatches) * 1000) / 10 : 0;
 
   return {
     playerId: pid,
-    playerName: pname,
-    avg3Overall,
-    bestVisit,
-    winRatePct,
-    bestCheckout,
-    evolution,
-    distribution,
+    playerName: player.name || "Joueur",
+    avg3Overall: quick?.avg3 ?? fbAvg3Mean,
+    bestVisit: quick?.bestVisit ?? fbBestVisit,
+    bestCheckout: quick?.bestCheckout ?? fbBestCO,
+    winRatePct: Number.isFinite(quick?.winRatePct ?? null)
+      ? quick!.winRatePct
+      : fbWinPct,
+    distribution: quick?.buckets ?? fbBuckets,
+    evolution: evo.length
+      ? evo
+      : [
+          {
+            date: new Date().toLocaleDateString(),
+            avg3: quick?.avg3 ?? fbAvg3Mean,
+          },
+        ],
   };
 }
 
@@ -459,6 +415,7 @@ const card: React.CSSProperties = {
   boxShadow: "0 10px 26px rgba(0,0,0,.35)",
   backdropFilter: "blur(10px)",
 };
+
 const row: React.CSSProperties = {
   ...card,
   display: "grid",
@@ -467,348 +424,802 @@ const row: React.CSSProperties = {
   gap: 8,
 };
 
-/* ---------- ONGLET TRAINING X01 (sparkline + radar + liste) ---------- */
-function TrainingX01StatsTab() {
-  const [sessions, setSessions] =
-    React.useState<TrainingX01Session[]>([]);
-  const [range, setRange] =
-    React.useState<TimeRange>("all");
-  const [selected, setSelected] =
-    React.useState<TrainingX01Session | null>(null);
-  const [metric, setMetric] =
-    React.useState<
+/* ============================================================
+   ONGLET TRAINING X01 — v2 complet
+   ============================================================ */
+   function TrainingX01StatsTab() {
+    const [sessions, setSessions] = React.useState<TrainingX01Session[]>([]);
+    const [range, setRange] = React.useState<TimeRange>("all");
+    const [selected, setSelected] = React.useState<TrainingX01Session | null>(null);
+    const [metric, setMetric] = React.useState<
       "darts" | "avg3D" | "pctS" | "pctD" | "pctT" | "BV" | "CO"
     >("avg3D");
-
-  React.useEffect(() => {
-    setSessions(loadTrainingSessions());
-  }, []);
-
-  const filtered = React.useMemo(
-    () =>
-      filterByRange(sessions, range).sort(
-        (a, b) => a.date - b.date
-      ),
-    [sessions, range]
-  );
-
-  const totalSessions = filtered.length;
-  const totalDarts = filtered.reduce(
-    (sum, s) => sum + (s.darts || 0),
-    0
-  );
-  const avgDarts =
-    totalSessions > 0 ? totalDarts / totalSessions : 0;
-  const bestAvg3D = filtered.reduce(
-    (max, s) => (s.avg3D > max ? s.avg3D : max),
-    0
-  );
-  const bestVisit = filtered.reduce(
-    (max, s) => (s.bestVisit > max ? s.bestVisit : max),
-    0
-  );
-  const bestCheckout = filtered.reduce(
-    (max, s) =>
-      s.bestCheckout && s.bestCheckout > max
-        ? s.bestCheckout
-        : max,
-    0
-  );
-
-  const globalAvg3D =
-    totalSessions > 0
-      ? filtered.reduce((s, x) => s + x.avg3D, 0) /
-        totalSessions
-      : 0;
-
-  const globalAvg1D =
-    totalSessions > 0
-      ? filtered.reduce((s, x) => s + x.avg1D, 0) /
-        totalSessions
-      : 0;
-
-  /* ---------- Agrégation fléchettes pour stats détaillées / radar ---------- */
-
-  let gHitsS = 0,
-    gHitsD = 0,
-    gHitsT = 0,
-    gMiss = 0,
-    gBull = 0,
-    gDBull = 0,
-    gBust = 0;
-
-  for (const s of filtered) {
-    // si la session a déjà des compteurs -> on les utilise
-    if (
-      (s.hitsS ?? 0) +
-        (s.hitsD ?? 0) +
-        (s.hitsT ?? 0) +
-        (s.miss ?? 0) +
-        (s.bull ?? 0) +
-        (s.dBull ?? 0) +
-        (s.bust ?? 0) >
-      0
-    ) {
-      gHitsS += s.hitsS ?? 0;
-      gHitsD += s.hitsD ?? 0;
-      gHitsT += s.hitsT ?? 0;
-      gMiss += s.miss ?? 0;
-      gBull += s.bull ?? 0;
-      gDBull += s.dBull ?? 0;
-      gBust += s.bust ?? 0;
-      continue;
-    }
-
-    // sinon, fallback depuis dartsDetail si dispo
-    if (Array.isArray(s.dartsDetail)) {
-      for (const d of s.dartsDetail) {
-        const v = Number((d as any)?.v) || 0;
-        const mult = Number((d as any)?.mult) || 0;
-        if (v === 0 || mult === 0) {
-          gMiss++;
-        } else {
-          if (v === 25 && mult === 2) gDBull++;
-          else if (v === 25) gBull++;
-          if (mult === 1) gHitsS++;
-          else if (mult === 2) gHitsD++;
-          else if (mult === 3) gHitsT++;
+    const [page, setPage] = React.useState(1);
+  
+    React.useEffect(() => {
+      setSessions(loadTrainingSessions());
+    }, []);
+  
+    /* ---------- Sessions filtrées ---------- */
+    const filtered = React.useMemo(
+      () =>
+        filterByRange(sessions, range).sort((a, b) => a.date - b.date),
+      [sessions, range]
+    );
+  
+    const totalSessions = filtered.length;
+    const totalDarts = filtered.reduce((s, x) => s + x.darts, 0);
+    const avgDarts = totalSessions > 0 ? totalDarts / totalSessions : 0;
+  
+    const bestVisit =
+      totalSessions > 0
+        ? Math.max(...filtered.map((x) => x.bestVisit))
+        : 0;
+  
+    const bestCheckout =
+      totalSessions > 0
+        ? Math.max(...filtered.map((x) => x.bestCheckout || 0))
+        : 0;
+  
+    const globalAvg3D =
+      totalSessions > 0
+        ? filtered.reduce((s, x) => s + x.avg3D, 0) / totalSessions
+        : 0;
+  
+    const globalAvg1D =
+      totalSessions > 0
+        ? filtered.reduce((s, x) => s + x.avg1D, 0) / totalSessions
+        : 0;
+  
+    /* ============================================================
+       AGRÉGATION FLÉCHETTES GLOBALES (période)
+       ============================================================ */
+    let gHitsS = 0,
+      gHitsD = 0,
+      gHitsT = 0,
+      gMiss = 0,
+      gBull = 0,
+      gDBull = 0,
+      gBust = 0;
+  
+    let minMiss: number | null = null,
+      maxMiss: number | null = null,
+      minBust: number | null = null,
+      maxBust: number | null = null;
+  
+    for (const s of filtered) {
+      const hasCounters =
+        (s.hitsS ?? 0) +
+          (s.hitsD ?? 0) +
+          (s.hitsT ?? 0) +
+          (s.miss ?? 0) +
+          (s.bull ?? 0) +
+          (s.dBull ?? 0) +
+          (s.bust ?? 0) >
+        0;
+  
+      if (hasCounters) {
+        gHitsS += s.hitsS ?? 0;
+        gHitsD += s.hitsD ?? 0;
+        gHitsT += s.hitsT ?? 0;
+        gMiss += s.miss ?? 0;
+        gBull += s.bull ?? 0;
+        gDBull += s.dBull ?? 0;
+        gBust += s.bust ?? 0;
+  
+        if (s.darts > 0) {
+          const m = s.miss ?? 0;
+          const b = s.bust ?? 0;
+  
+          if (minMiss === null || m < minMiss) minMiss = m;
+          if (maxMiss === null || m > maxMiss) maxMiss = m;
+          if (minBust === null || b < minBust) minBust = b;
+          if (maxBust === null || b > maxBust) maxBust = b;
+        }
+        continue;
+      }
+  
+      /* ---------- Fallback depuis dartsDetail ---------- */
+      if (Array.isArray(s.dartsDetail)) {
+        for (const d of s.dartsDetail) {
+          const v = Number((d as any)?.v) || 0;
+          const mult = Number((d as any)?.mult) || 0;
+  
+          if (v === 0 || mult === 0) {
+            gMiss++;
+          } else {
+            if (v === 25 && mult === 2) gDBull++;
+            else if (v === 25) gBull++;
+  
+            if (mult === 1) gHitsS++;
+            else if (mult === 2) gHitsD++;
+            else if (mult === 3) gHitsT++;
+          }
         }
       }
     }
-  }
-
-  const totalHits = gHitsS + gHitsD + gHitsT;
-  const hitsPercent =
-    totalHits + gMiss > 0
-      ? (totalHits / (totalHits + gMiss)) * 100
-      : 0;
-  const simplePercent =
-    totalHits > 0 ? (gHitsS / totalHits) * 100 : 0;
-  const doublePercent =
-    totalHits > 0 ? (gHitsD / totalHits) * 100 : 0;
-  const triplePercent =
-    totalHits > 0 ? (gHitsT / totalHits) * 100 : 0;
-
-  const allDartsDetail =
-    filtered.flatMap((s) => s.dartsDetail ?? []) ?? [];
-
-  // Agrégation par segment pour le graphique en bâtons
-  const segHitMap: Record<string, number> = {};
-  for (const d of allDartsDetail) {
-    const v = Number((d as any)?.v) || 0;
-    if (v <= 0) continue;
-    const key = v === 25 ? "25" : String(v);
-    segHitMap[key] = (segHitMap[key] || 0) + 1;
-  }
-  const maxSegHits = Object.values(segHitMap).reduce(
-    (m, v) => (v > m ? v : m),
-    0
-  );
-
-  /* ---------- Sparkline façon TrainingX01Play ---------- */
-
-  function valueForMetric(
-    s: TrainingX01Session,
-    m:
-      | "darts"
-      | "avg3D"
-      | "pctS"
-      | "pctD"
-      | "pctT"
-      | "BV"
-      | "CO"
-  ): number {
-    switch (m) {
-      case "darts":
-        return s.darts || 0;
-      case "avg3D":
-        return s.avg3D || 0;
-      case "pctS": {
-        const total =
-          (s.hitsS || 0) + (s.hitsD || 0) + (s.hitsT || 0);
-        return total > 0
-          ? ((s.hitsS || 0) / total) * 100
-          : 0;
-      }
-      case "pctD": {
-        const total =
-          (s.hitsS || 0) + (s.hitsD || 0) + (s.hitsT || 0);
-        return total > 0
-          ? ((s.hitsD || 0) / total) * 100
-          : 0;
-      }
-      case "pctT": {
-        const total =
-          (s.hitsS || 0) + (s.hitsD || 0) + (s.hitsT || 0);
-        return total > 0
-          ? ((s.hitsT || 0) / total) * 100
-          : 0;
-      }
-      case "BV":
-        return s.bestVisit || 0;
-      case "CO":
-        return s.bestCheckout || 0;
-      default:
-        return 0;
+  
+    const totalHits = gHitsS + gHitsD + gHitsT;
+    const totalThrows = totalHits + gMiss;
+  
+    const hitsPercent = totalThrows > 0 ? (totalHits / totalThrows) * 100 : 0;
+    const simplePercent = totalHits > 0 ? (gHitsS / totalHits) * 100 : 0;
+    const doublePercent = totalHits > 0 ? (gHitsD / totalHits) * 100 : 0;
+    const triplePercent = totalHits > 0 ? (gHitsT / totalHits) * 100 : 0;
+  
+    /* ---------- Dérivés session ---------- */
+    const avgHitsSPerSession =
+      totalSessions > 0 ? gHitsS / totalSessions : 0;
+    const avgHitsDPerSession =
+      totalSessions > 0 ? gHitsD / totalSessions : 0;
+    const avgHitsTPerSession =
+      totalSessions > 0 ? gHitsT / totalSessions : 0;
+    const avgMissPerSession =
+      totalSessions > 0 ? gMiss / totalSessions : 0;
+    const avgBustPerSession =
+      totalSessions > 0 ? gBust / totalSessions : 0;
+    const avgBullPerSession =
+      totalSessions > 0 ? gBull / totalSessions : 0;
+    const avgDBullPerSession =
+      totalSessions > 0 ? gDBull / totalSessions : 0;
+  
+    const pctHitsGlobal = totalThrows > 0 ? hitsPercent : null;
+    const pctMissGlobal =
+      totalThrows > 0 ? (gMiss / totalThrows) * 100 : null;
+    const pctSimpleGlobal =
+      totalHits > 0 ? (gHitsS / totalHits) * 100 : null;
+    const pctDoubleGlobal =
+      totalHits > 0 ? (gHitsD / totalHits) * 100 : null;
+    const pctTripleGlobal =
+      totalHits > 0 ? (gHitsT / totalHits) * 100 : null;
+  
+    const totalBullHits = gBull + gDBull;
+    const pctBullGlobal =
+      totalBullHits > 0 ? (gBull / totalBullHits) * 100 : null;
+    const pctDBullGlobal =
+      totalBullHits > 0 ? (gDBull / totalBullHits) * 100 : null;
+  
+    /* ---------- Détails fléchettes pour graph + radar ---------- */
+    const allDartsDetail =
+      filtered.flatMap((s) => s.dartsDetail ?? []) ?? [];
+  
+    /* ============================================================
+       HIT PRÉFÉRÉ (GLOBAL)
+       ============================================================ */
+    const segmentCount: Record<string, number> = {};
+    for (const d of allDartsDetail) {
+      const v = Number((d as any)?.v) || 0;
+      if (v <= 0) continue;
+      const key = v === 25 ? "25" : String(v);
+      segmentCount[key] = (segmentCount[key] || 0) + 1;
     }
-  }
+  
+    let favoriteSegmentKey: string | null = null;
+    let favoriteSegmentCount = 0;
+  
+    for (const [k, c] of Object.entries(segmentCount)) {
+      if (c > favoriteSegmentCount) {
+        favoriteSegmentCount = c;
+        favoriteSegmentKey = k;
+      }
+    }
+  
+    let favoriteHitDisplay: string | null = null;
+    if (favoriteSegmentKey !== null) {
+      favoriteHitDisplay =
+        favoriteSegmentKey === "25"
+          ? "25 (Bull)"
+          : `${favoriteSegmentKey}`;
+    }
+  
+    /* ============================================================
+       STACK S/D/T PAR SEGMENT + MISS
+       ============================================================ */
+    const segSDTMap: Record<string, { S: number; D: number; T: number }> = {};
+    let chartMissCount = 0;
+  
+    for (const d of allDartsDetail) {
+      const v = Number((d as any)?.v) || 0;
+      const mult = Number((d as any)?.mult) || 0;
+  
+      if (v === 0 || mult === 0) {
+        chartMissCount++;
+        continue;
+      }
+  
+      const key = v === 25 ? "25" : String(v);
+      if (!segSDTMap[key]) segSDTMap[key] = { S: 0, D: 0, T: 0 };
+  
+      if (mult === 1) segSDTMap[key].S++;
+      else if (mult === 2) segSDTMap[key].D++;
+      else if (mult === 3) segSDTMap[key].T++;
+    }
+  
+    const HITS_SEGMENTS: (number | "MISS")[] = [
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+      11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+      25,
+      "MISS",
+    ];
+  
+    const maxStackHits = HITS_SEGMENTS.reduce(
+      (max, seg) => {
+        if (seg === "MISS") {
+          return chartMissCount > max ? chartMissCount : max;
+        }
+        const data = segSDTMap[String(seg)];
+        const tot = data ? data.S + data.D + data.T : 0;
+        return tot > max ? tot : max;
+      },
+      0
+    );
+  
+    /* ============================================================
+       Sparkline
+       ============================================================ */
+    function valueForMetric(
+      s: TrainingX01Session,
+      m: "darts" | "avg3D" | "pctS" | "pctD" | "pctT" | "BV" | "CO"
+    ): number {
+      switch (m) {
+        case "darts":
+          return s.darts;
+        case "avg3D":
+          return s.avg3D;
+        case "pctS": {
+          const t = s.hitsS + s.hitsD + s.hitsT;
+          return t > 0 ? (s.hitsS / t) * 100 : 0;
+        }
+        case "pctD": {
+          const t = s.hitsS + s.hitsD + s.hitsT;
+          return t > 0 ? (s.hitsD / t) * 100 : 0;
+        }
+        case "pctT": {
+          const t = s.hitsS + s.hitsD + s.hitsT;
+          return t > 0 ? (s.hitsT / t) * 100 : 0;
+        }
+        case "BV":
+          return s.bestVisit;
+        case "CO":
+          return s.bestCheckout || 0;
+        default:
+          return 0;
+      }
+    }
+  
+    const sparkSeries = filtered.map((s) => ({
+      x: s.date,
+      y: valueForMetric(s, metric),
+      session: s,
+    }));
+  
+    /* ============================================================
+       KPI CARROUSELS (5 BLOCS)
+       ============================================================ */
+  
+    type RawKpiItem =
+      | {
+          kind: "num";
+          label: string;
+          raw: number | null;
+          format?: (v: number) => string;
+          allowZero?: boolean;
+        }
+      | {
+          kind: "text";
+          label: string;
+          text: string | null;
+        };
+  
+    type KpiDisplayItem = { label: string; value: string };
+  
+    function finalizeKpiItems(items: RawKpiItem[]): KpiDisplayItem[] {
+      const out: KpiDisplayItem[] = [];
+  
+      for (const it of items) {
+        if (it.kind === "num") {
+          if (it.raw === null || Number.isNaN(it.raw)) continue;
+          if (!it.allowZero && it.raw === 0) continue;
+          const fmt = it.format ?? ((v: number) => `${v}`);
+          out.push({ label: it.label, value: fmt(it.raw) });
+        } else {
+          if (!it.text) continue;
+          out.push({ label: it.label, value: it.text });
+        }
+      }
+      return out;
+    }
+  
+    /* ---------- Bloc 1 — Doré (Cumul) ---------- */
+    const goldItems = finalizeKpiItems([
+      { kind: "num", label: "Darts totaux", raw: totalDarts, allowZero: true },
+      { kind: "num", label: "Sessions", raw: totalSessions, allowZero: true },
+      { kind: "num", label: "Hits S cumulés", raw: gHitsS },
+      { kind: "num", label: "Hits D cumulés", raw: gHitsD },
+      { kind: "num", label: "Hits T cumulés", raw: gHitsT },
+      { kind: "num", label: "Miss cumulés", raw: gMiss },
+      { kind: "num", label: "Bull cumulés", raw: gBull },
+      { kind: "num", label: "DBull cumulés", raw: gDBull },
+      { kind: "num", label: "Bust cumulés", raw: gBust },
+    ]);
+  
+    /* ---------- Bloc 2 — Rose (Moyennes) ---------- */
+    const pinkItems = finalizeKpiItems([
+      {
+        kind: "num",
+        label: "Moy.3D (période)",
+        raw: totalSessions > 0 ? globalAvg3D : null,
+        format: (v) => v.toFixed(1),
+      },
+      {
+        kind: "num",
+        label: "Moy.1D (période)",
+        raw: totalSessions > 0 ? globalAvg1D : null,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        kind: "num",
+        label: "Darts / session",
+        raw: totalSessions > 0 ? avgDarts : null,
+        format: (v) => v.toFixed(1),
+      },
+      {
+        kind: "num",
+        label: "Hits S / session",
+        raw: totalSessions > 0 ? avgHitsSPerSession : null,
+        format: (v) => v.toFixed(1),
+      },
+      {
+        kind: "num",
+        label: "Hits D / session",
+        raw: totalSessions > 0 ? avgHitsDPerSession : null,
+        format: (v) => v.toFixed(1),
+      },
+      {
+        kind: "num",
+        label: "Hits T / session",
+        raw: totalSessions > 0 ? avgHitsTPerSession : null,
+        format: (v) => v.toFixed(1),
+      },
+      {
+        kind: "num",
+        label: "Miss / session",
+        raw: totalSessions > 0 ? avgMissPerSession : null,
+        format: (v) => v.toFixed(1),
+      },
+      {
+        kind: "num",
+        label: "Bust / session",
+        raw: totalSessions > 0 ? avgBustPerSession : null,
+        format: (v) => v.toFixed(1),
+      },
+      {
+        kind: "num",
+        label: "Bull / session",
+        raw: totalSessions > 0 ? avgBullPerSession : null,
+        format: (v) => v.toFixed(1),
+      },
+      {
+        kind: "num",
+        label: "DBull / session",
+        raw: totalSessions > 0 ? avgDBullPerSession : null,
+        format: (v) => v.toFixed(1),
+      },
+    ]);
+  
+    /* ---------- Bloc 3 — Bleu (Records + Hit préféré) ---------- */
+    const blueItems = finalizeKpiItems([
+      {
+        kind: "text",
+        label: "Hit préféré (global)",
+        text: favoriteHitDisplay
+          ? `${favoriteHitDisplay} (préféré)`
+          : null,
+      },
+      { kind: "num", label: "Best Visit (session)", raw: bestVisit },
+      {
+        kind: "num",
+        label: "Best Checkout (session)",
+        raw: bestCheckout > 0 ? bestCheckout : null,
+      },
+      {
+        kind: "num",
+        label: "Miss min / session",
+        raw: minMiss,
+        allowZero: true,
+      },
+      {
+        kind: "num",
+        label: "Miss max / session",
+        raw: maxMiss,
+      },
+      {
+        kind: "num",
+        label: "Bust min / session",
+        raw: minBust,
+        allowZero: true,
+      },
+      {
+        kind: "num",
+        label: "Bust max / session",
+        raw: maxBust,
+      },
+    ]);
+  
+    /* ---------- Bloc 4 — Vert clair (pourcentages généraux) ---------- */
+    const green1Items = finalizeKpiItems([
+      {
+        kind: "num",
+        label: "%Hits global",
+        raw: pctHitsGlobal,
+        format: (v) => `${v.toFixed(1)}%`,
+      },
+      {
+        kind: "num",
+        label: "%Miss",
+        raw: pctMissGlobal,
+        format: (v) => `${v.toFixed(1)}%`,
+      },
+      {
+        kind: "num",
+        label: "%S",
+        raw: pctSimpleGlobal,
+        format: (v) => `${v.toFixed(1)}%`,
+      },
+      {
+        kind: "num",
+        label: "%D",
+        raw: pctDoubleGlobal,
+        format: (v) => `${v.toFixed(1)}%`,
+      },
+      {
+        kind: "num",
+        label: "%T",
+        raw: pctTripleGlobal,
+        format: (v) => `${v.toFixed(1)}%`,
+      },
+      {
+        kind: "num",
+        label: "%Bull (Bull+DBull)",
+        raw: pctBullGlobal,
+        format: (v) => `${v.toFixed(1)}%`,
+      },
+      {
+        kind: "num",
+        label: "%DBull (Bull+DBull)",
+        raw: pctDBullGlobal,
+        format: (v) => `${v.toFixed(1)}%`,
+      },
+    ]);
+  
+    /* ---------- Bloc 5 — Vert clair (BV / CO + dérivés) ---------- */
+    const green2Items = finalizeKpiItems([
+      { kind: "num", label: "Best Visit", raw: bestVisit },
+      {
+        kind: "num",
+        label: "Best Checkout",
+        raw: bestCheckout > 0 ? bestCheckout : null,
+      },
+      {
+        kind: "num",
+        label: "Moy.3D (période)",
+        raw: totalSessions > 0 ? globalAvg3D : null,
+        format: (v) => v.toFixed(1),
+      },
+      {
+        kind: "num",
+        label: "%Hits global",
+        raw: pctHitsGlobal,
+        format: (v) => `${v.toFixed(1)}%`,
+      },
+      {
+        kind: "num",
+        label: "%T (global)",
+        raw: pctTripleGlobal,
+        format: (v) => `${v.toFixed(1)}%`,
+      },
+    ]);
+  
+    const hasAnyKpi =
+      goldItems.length ||
+      pinkItems.length ||
+      blueItems.length ||
+      green1Items.length ||
+      green2Items.length;
+  
+    /* ---------- Animation du carrousel ---------- */
+    const [ticker, setTicker] = React.useState(0);
+    React.useEffect(() => {
+      if (!hasAnyKpi) return;
+      const id = window.setInterval(() => {
+        setTicker((t) => t + 1);
+      }, 4000);
+      return () => window.clearInterval(id);
+    }, [hasAnyKpi, filtered.length]);
+  
+    const currentGold =
+      goldItems.length > 0
+        ? goldItems[ticker % goldItems.length]
+        : null;
+    const currentPink =
+      pinkItems.length > 0
+        ? pinkItems[ticker % pinkItems.length]
+        : null;
+    const currentBlue =
+      blueItems.length > 0
+        ? blueItems[ticker % blueItems.length]
+        : null;
+    const currentGreen1 =
+      green1Items.length > 0
+        ? green1Items[ticker % green1Items.length]
+        : null;
+    const currentGreen2 =
+      green2Items.length > 0
+        ? green2Items[ticker % green2Items.length]
+        : null;
+  
+    /* ---------- Styles KPI ---------- */
+    const baseKpiBox: React.CSSProperties = {
+      borderRadius: 22,
+      padding: 10,
+      display: "flex",
+      flexDirection: "column",
+      gap: 4,
+      background: "linear-gradient(180deg,#15171B,#101115)",
+      minHeight: 68,
+    };
+  
+    const makeKpiBox = (accent: string): React.CSSProperties => ({
+      ...baseKpiBox,
+      border: `1px solid ${accent}`,
+      boxShadow: `0 0 0 1px ${accent}40, 0 0 22px ${accent}55`,
+    });
+  
+    const kpiLabel: React.CSSProperties = {
+      fontSize: 10,
+      color: T.text70,
+      textTransform: "uppercase",
+      letterSpacing: 0.6,
+    };
+  
+    const kpiSub: React.CSSProperties = {
+      fontSize: 11,
+      color: T.text70,
+    };
+  
+    const statRowBox: React.CSSProperties = {
+      display: "flex",
+      justifyContent: "space-between",
+      fontSize: 13,
+      padding: "6px 0",
+      borderTop: `1px solid rgba(255,255,255,.06)`,
+    };
+  
+    const metricPill: React.CSSProperties = {
+      padding: "4px 10px",
+      borderRadius: 999,
+      fontSize: 11,
+      border: "1px solid rgba(255,255,255,.18)",
+      background: "rgba(0,0,0,.45)",
+      cursor: "pointer",
+    };
+  
+    /* ---------- Pagination sessions ---------- */
+    React.useEffect(() => {
+      setPage(1);
+    }, [range, sessions.length]);
+  
+    const pageSize = 10;
+    const totalPages =
+      totalSessions > 0
+        ? Math.max(1, Math.ceil(totalSessions / pageSize))
+        : 1;
+  
+    const reversedSessions = filtered.slice().reverse();
+  
+    const pagedSessions = reversedSessions.slice(
+      (page - 1) * pageSize,
+      page * pageSize
+    );
+  
+    /* ============================================================
+       RENDER
+       ============================================================ */
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-  const sparkSeries = filtered.map((s) => ({
-    x: s.date,
-    y: valueForMetric(s, metric),
-    session: s,
-  }));
+      {/* ============================================================
+          FILTRES JOUR / SEMAINE / MOIS / ANNÉE / TOTAL
+          ============================================================ */}
+      {/* FILTRES J/S/M/A/ALL — TITRE CENTRÉ, BOUTONS SUR UNE LIGNE SÉPARÉE */}
+<div style={{ ...card, padding: 14, textAlign: "center" }}>
+  
+  {/* Titre centré */}
+  <div
+    style={{
+      fontWeight: 800,
+      fontSize: 16,
+      color: T.gold,
+      marginBottom: 10,
+    }}
+  >
+    Training X01
+  </div>
 
-  /* ---------- Styles ---------- */
-
-  // 4 KPI du haut
-  const baseKpiBox: React.CSSProperties = {
-    borderRadius: 22,
-    padding: 10,
-    display: "flex",
-    flexDirection: "column",
-    gap: 4,
-    background: "linear-gradient(180deg,#15171B,#101115)",
-  };
-
-  const makeKpiBox = (accent: string): React.CSSProperties => ({
-    ...baseKpiBox,
-    border: `1px solid ${accent}`,
-    boxShadow: `0 0 0 1px ${accent}40, 0 0 22px ${accent}55`,
-  });
-
-  const kpiLabel: React.CSSProperties = {
-    fontSize: 11,
-    color: T.text70,
-  };
-
-  const statRowBox: React.CSSProperties = {
-    display: "flex",
-    justifyContent: "space-between",
-    fontSize: 13,
-    padding: "6px 0",
-    borderTop: `1px solid rgba(255,255,255,.06)`,
-  };
-
-  const metricPill: React.CSSProperties = {
-    padding: "4px 10px",
-    borderRadius: 999,
-    fontSize: 11,
-    border: "1px solid rgba(255,255,255,.18)",
-    background: "rgba(0,0,0,.45)",
-    cursor: "pointer",
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* FILTRES J/S/M/A */}
-      <div style={{ ...card, padding: 12 }}>
-        <div
+  {/* Ligne unique de boutons */}
+  <div
+    style={{
+      display: "flex",
+      flexDirection: "row",
+      justifyContent: "center",
+      gap: 6,
+      flexWrap: "nowrap",        // ❗ force une seule ligne
+      transform: "scale(0.92)",  // ❗ légèrement plus petit
+      transformOrigin: "center",
+    }}
+  >
+    {(["day", "week", "month", "year", "all"] as TimeRange[]).map(
+      (r) => (
+        <GoldPill
+          key={r}
+          active={range === r}
+          onClick={() => setRange(r)}
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: 10,
-            alignItems: "center",
+            padding: "4px 12px",
+            fontSize: 11,
+            minWidth: "unset",
+            whiteSpace: "nowrap",
           }}
         >
-          <div style={{ fontWeight: 800, fontSize: 15 }}>
-            Training X01
-          </div>
-          <div
-            style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
-          >
-            {(["day", "week", "month", "year", "all"] as TimeRange[]).map(
-              (r) => (
-                <GoldPill
-                  key={r}
-                  active={range === r}
-                  onClick={() => setRange(r)}
-                >
-                  {r === "day" && "Jour"}
-                  {r === "week" && "Semaine"}
-                  {r === "month" && "Mois"}
-                  {r === "year" && "Année"}
-                  {r === "all" && "Total"}
-                </GoldPill>
-              )
-            )}
-          </div>
-        </div>
+          {r === "day" && "Jour"}
+          {r === "week" && "Semaine"}
+          {r === "month" && "Mois"}
+          {r === "year" && "Année"}
+          {r === "all" && "All"}
+        </GoldPill>
+      )
+    )}
+  </div>
+
+</div>
+
+      {/* ============================================================
+    ZONE KPI — 5 BLOCS, LAYOUT ORIGINAL
+    ============================================================ */}
+
+{totalSessions > 0 && hasAnyKpi && (
+  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+
+    {/* --------- LIGNE 1 : GOLD + PINK --------- */}
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 10,
+      }}
+    >
+      {/* Bloc 1 — Doré */}
+      <div style={makeKpiBox(T.gold)}>
+        <div style={kpiLabel}>Cumul</div>
+        {currentGold ? (
+          <>
+            <div style={kpiSub}>{currentGold.label}</div>
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 800,
+                color: T.gold,
+              }}
+            >
+              {currentGold.value}
+            </div>
+          </>
+        ) : (
+          <div style={kpiSub}>Aucune donnée</div>
+        )}
       </div>
 
-      {/* 4 BLOCS DU HAUT AVEC AURA COULEUR = TEXTE */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 10,
-        }}
-      >
-        {/* Sessions (or) */}
-        <div style={makeKpiBox(T.gold)}>
-          <div style={kpiLabel}>Sessions</div>
-          <div
-            style={{
-              fontSize: 18,
-              fontWeight: 800,
-              color: T.gold,
-            }}
-          >
-            {totalSessions}
-          </div>
-        </div>
+      {/* Bloc 2 — Rose */}
+      <div style={makeKpiBox("#FF6FB5")}>
+        <div style={kpiLabel}>Moyennes</div>
+        {currentPink ? (
+          <>
+            <div style={kpiSub}>{currentPink.label}</div>
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 800,
+                color: "#FFB8DE",
+              }}
+            >
+              {currentPink.value}
+            </div>
+          </>
+        ) : (
+          <div style={kpiSub}>Aucune donnée</div>
+        )}
+      </div>
+    </div>
 
-        {/* Moy.3D (période, or) */}
-        <div style={makeKpiBox(T.gold)}>
-          <div style={kpiLabel}>Moy.3D (période)</div>
-          <div
-            style={{
-              fontSize: 18,
-              fontWeight: 800,
-              color: T.gold,
-            }}
-          >
-            {globalAvg3D.toFixed(1)}
-          </div>
-        </div>
-
-        {/* Moy.1D (période, bleu ciel) */}
-        <div style={makeKpiBox("#47B5FF")}>
-          <div style={kpiLabel}>Moy.1D (période)</div>
-          <div
-            style={{
-              fontSize: 18,
-              fontWeight: 800,
-              color: "#47B5FF",
-            }}
-          >
-            {globalAvg1D.toFixed(2)}
-          </div>
-        </div>
-
-        {/* Best visit / checkout (vert clair) */}
-        <div style={makeKpiBox("#7CFF9A")}>
-          <div style={kpiLabel}>Best visit / checkout</div>
-          <div
-            style={{
-              fontSize: 16,
-              fontWeight: 800,
-            }}
-          >
-            <span style={{ color: "#FFFFFF" }}>BV </span>
-            <span style={{ color: "#47B5FF" }}>{bestVisit}</span>
-            <span style={{ color: "#FFFFFF" }}> — CO </span>
-            <span style={{ color: "#7CFF9A" }}>
-              {bestCheckout}
-            </span>
-          </div>
-        </div>
+    {/* --------- LIGNE 2 : BLUE + GREEN1 + GREEN2 --------- */}
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 0.8fr 0.8fr",
+        gap: 10,
+      }}
+    >
+      {/* Bloc 3 — Bleu clair (grand comme gold/rose) */}
+      <div style={makeKpiBox("#47B5FF")}>
+        <div style={kpiLabel}>Records</div>
+        {currentBlue ? (
+          <>
+            <div style={kpiSub}>{currentBlue.label}</div>
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 800,
+                color: "#BFE4FF",
+              }}
+            >
+              {currentBlue.value}
+            </div>
+          </>
+        ) : (
+          <div style={kpiSub}>Aucune donnée</div>
+        )}
       </div>
 
-      {/* SPARKLINE PRO + PANNEAU DÉROULANT */}
+      {/* Bloc 4 — Vert clair */}
+      <div style={makeKpiBox("#7CFF9A")}>
+        <div style={kpiLabel}>Pourcentages</div>
+        {currentGreen1 ? (
+          <>
+            <div style={kpiSub}>{currentGreen1.label}</div>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 800,
+                color: "#E5FFEF",
+              }}
+            >
+              {currentGreen1.value}
+            </div>
+          </>
+        ) : (
+          <div style={kpiSub}>Aucune donnée</div>
+        )}
+      </div>
+
+      {/* Bloc 5 — Vert clair */}
+      <div style={makeKpiBox("#7CFF9A")}>
+        <div style={kpiLabel}>BV / CO</div>
+        {currentGreen2 ? (
+          <>
+            <div style={kpiSub}>{currentGreen2.label}</div>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 800,
+                color: "#E5FFEF",
+              }}
+            >
+              {currentGreen2.value}
+            </div>
+          </>
+        ) : (
+          <div style={kpiSub}>Aucune donnée</div>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+
+      {/* ============================================================
+          SPARKLINE + PANNEAU DÉROULANT
+          ============================================================ */}
       <div style={card}>
-        {/* Titre seul */}
+        {/* Titre */}
         <div
           style={{
             display: "flex",
@@ -818,17 +1229,10 @@ function TrainingX01StatsTab() {
             marginBottom: 8,
           }}
         >
-          <div
-            style={{
-              fontSize: 13,
-              color: T.text70,
-            }}
-          >
-            Progression
-          </div>
+          <div style={{ fontSize: 13, color: T.text70 }}>Progression</div>
         </div>
 
-        {/* Sparkline + panneau déroulant */}
+        {/* Layout Sparkline + liste */}
         <div
           style={{
             display: "grid",
@@ -837,34 +1241,21 @@ function TrainingX01StatsTab() {
             alignItems: "stretch",
           }}
         >
-          {/* Sparkline elle-même */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
+          {/* Sparkline */}
+          <div style={{ display: "flex", alignItems: "center" }}>
             {sparkSeries.length ? (
               <SparklinePro
-                points={sparkSeries.map((p) => ({
-                  x: p.x,
-                  y: p.y,
-                }))}
+                points={sparkSeries.map((p) => ({ x: p.x, y: p.y }))}
                 height={64}
               />
             ) : (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: T.text70,
-                }}
-              >
+              <div style={{ fontSize: 12, color: T.text70 }}>
                 Aucune session sur la période.
               </div>
             )}
           </div>
 
-          {/* Panneau déroulant avec les valeurs des points */}
+          {/* Liste déroulante des points */}
           <div
             style={{
               fontSize: 11,
@@ -878,29 +1269,20 @@ function TrainingX01StatsTab() {
             {sparkSeries
               .slice()
               .reverse()
-              .map((p, idx) => (
+              .map((p, i) => (
                 <div
-                  key={idx}
+                  key={i}
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
-                    gap: 6,
                     padding: "2px 0",
+                    gap: 6,
                   }}
                 >
-                  <span
-                    style={{
-                      whiteSpace: "nowrap",
-                    }}
-                  >
+                  <span style={{ whiteSpace: "nowrap" }}>
                     {formatShortDate(p.session.date)}
                   </span>
-                  <span
-                    style={{
-                      fontWeight: 700,
-                      color: T.gold,
-                    }}
-                  >
+                  <span style={{ fontWeight: 700, color: T.gold }}>
                     {p.y.toFixed(1)}
                   </span>
                 </div>
@@ -908,25 +1290,17 @@ function TrainingX01StatsTab() {
           </div>
         </div>
 
-        {/* Sous la sparkline : sélecteur de métrique */}
+        {/* Sélecteur de métrique */}
         <div
           style={{
             marginTop: 8,
             display: "flex",
             justifyContent: "space-between",
-            gap: 8,
-            alignItems: "center",
             flexWrap: "wrap",
+            gap: 8,
           }}
         >
-          {/* MetricSelector */}
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 4,
-            }}
-          >
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
             {(
               [
                 ["darts", "Darts"],
@@ -937,37 +1311,31 @@ function TrainingX01StatsTab() {
                 ["BV", "BV"],
                 ["CO", "CO"],
               ] as const
-            ).map(([key, label]) => (
+            ).map(([k, lbl]) => (
               <button
-                key={key}
-                onClick={() => setMetric(key)}
+                key={k}
+                onClick={() => setMetric(k)}
                 style={{
                   ...metricPill,
-                  borderColor:
-                    metric === key
-                      ? T.gold
-                      : "rgba(255,255,255,.18)",
-                  color: metric === key ? T.gold : T.text70,
+                  borderColor: metric === k ? T.gold : "rgba(255,255,255,.18)",
+                  color: metric === k ? T.gold : T.text70,
                 }}
               >
-                {label}
+                {lbl}
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      {/* RADAR */}
+      {/* ============================================================
+          RADAR — toutes les fléchettes
+          ============================================================ */}
       <div style={card}>
-        <div
-          style={{
-            fontSize: 13,
-            color: T.text70,
-            marginBottom: 6,
-          }}
-        >
+        <div style={{ fontSize: 13, color: T.text70, marginBottom: 6 }}>
           Radar — toutes les fléchettes
         </div>
+
         {allDartsDetail.length ? (
           <TrainingRadar darts={allDartsDetail} />
         ) : (
@@ -977,62 +1345,76 @@ function TrainingX01StatsTab() {
         )}
       </div>
 
-      {/* GRAPHIQUE EN BÂTONS : HITS PAR SEGMENT */}
-      <div style={card}>
+      {/* GRAPHIQUE EN BÂTONS : HITS PAR SEGMENT (2 LIGNES CUSTOM ORDER) */}
+<div style={card}>
+  <div
+    style={{
+      fontSize: 13,
+      color: T.text70,
+      marginBottom: 6,
+    }}
+  >
+    Hits par segment
+  </div>
+
+  {allDartsDetail.length ? (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        background: "linear-gradient(180deg,#15171B,#0C0D10)",
+        padding: "12px 6px",
+        borderRadius: 12,
+      }}
+    >
+      {/* ORDRE EXACT demandé */}
+      {[
+        ["MISS", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], // Ligne 1
+        [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25], // Ligne 2
+      ].map((rowSegs, rowIndex) => (
         <div
+          key={rowIndex}
           style={{
-            fontSize: 13,
-            color: T.text70,
-            marginBottom: 6,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-end",
+            gap: 4,
+            height: 120,
           }}
         >
-          Hits par segment
-        </div>
-        {allDartsDetail.length ? (
-          <div
-            style={{
-              height: 130,
-              display: "flex",
-              alignItems: "flex-end",
-              gap: 4,
-              padding: "8px 4px",
-              borderRadius: 14,
-              background:
-                "linear-gradient(180deg,#15171B,#0C0D10)",
-            }}
-          >
-            {SEGMENTS.map((seg) => {
-              const key = String(seg);
-              const count = segHitMap[key] || 0;
+          {rowSegs.map((seg) => {
+            // MISS
+            if (seg === "MISS") {
+              const count = chartMissCount;
               const hPct =
-                maxSegHits > 0
-                  ? (count / maxSegHits) * 100
+                maxStackHits > 0
+                  ? (count / maxStackHits) * 100
                   : 0;
-
               return (
                 <div
-                  key={seg}
+                  key="MISS"
                   style={{
                     flex: 1,
                     display: "flex",
                     flexDirection: "column",
                     alignItems: "center",
                     justifyContent: "flex-end",
-                    gap: 4,
+                    gap: 3,
                   }}
                 >
                   <div
                     style={{
                       width: 10,
                       borderRadius: 999,
-                      background: "#32D47A",
+                      background: "#FF4B4B",
                       boxShadow: count
-                        ? "0 0 8px rgba(50,212,122,0.85)"
+                        ? "0 0 6px rgba(255,75,75,0.85)"
                         : "none",
                       height: count
-                        ? `${Math.max(8, hPct)}%`
+                        ? `${Math.max(10, hPct)}%`
                         : 4,
-                      opacity: count ? 1 : 0.15,
+                      opacity: count ? 1 : 0.18,
                     }}
                   />
                   <div
@@ -1041,31 +1423,139 @@ function TrainingX01StatsTab() {
                       color: T.text70,
                     }}
                   >
-                    {seg === 25 ? "B" : seg}
+                    M
                   </div>
                 </div>
               );
-            })}
-          </div>
-        ) : (
-          <div style={{ fontSize: 12, color: T.text70 }}>
-            Aucune fléchette enregistrée sur la période.
-          </div>
-        )}
-      </div>
+            }
 
-      {/* STATS DÉTAILLÉES — style bronze/doré */}
+            // SEGMENTS 1–20 + 25
+            const key = String(seg);
+            const data = segSDTMap[key] || { S: 0, D: 0, T: 0 };
+            const total = data.S + data.D + data.T;
+
+            const hPct =
+              maxStackHits > 0
+                ? (total / maxStackHits) * 100
+                : 0;
+
+            const baseHeight = total
+              ? Math.max(10, hPct)
+              : 4;
+
+            const totalForRatio = total > 0 ? total : 1;
+
+            const hS =
+              total > 0
+                ? Math.max(
+                    2,
+                    (data.S / totalForRatio) * baseHeight
+                  )
+                : 0;
+
+            const hD =
+              total > 0
+                ? Math.max(
+                    2,
+                    (data.D / totalForRatio) * baseHeight
+                  )
+                : 0;
+
+            const hT =
+              total > 0
+                ? Math.max(
+                    2,
+                    (data.T / totalForRatio) * baseHeight
+                  )
+                : 0;
+
+            return (
+              <div
+                key={seg}
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  gap: 3,
+                }}
+              >
+                <div
+                  style={{
+                    width: 12,
+                    borderRadius: 999,
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column-reverse",
+                    opacity: total ? 1 : 0.18,
+                    boxShadow: total
+                      ? "0 0 6px rgba(255,255,255,0.15)"
+                      : "none",
+                    height: total ? `${baseHeight}%` : 4,
+                  }}
+                >
+                  {data.S > 0 && (
+                    <div
+                      style={{
+                        height: `${hS}%`,
+                        background: T.gold, // SIMPLE doré
+                      }}
+                    />
+                  )}
+                  {data.D > 0 && (
+                    <div
+                      style={{
+                        height: `${hD}%`,
+                        background: "#007A88", // DOUBLE bleu pétrole
+                      }}
+                    />
+                  )}
+                  {data.T > 0 && (
+                    <div
+                      style={{
+                        height: `${hT}%`,
+                        background: "#A259FF", // TRIPLE violet
+                      }}
+                    />
+                  )}
+                </div>
+
+                {/* Label segment */}
+                <div
+                  style={{
+                    fontSize: 8,
+                    color: T.text70,
+                  }}
+                >
+                  {seg === 25 ? "25" : seg}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  ) : (
+    <div style={{ fontSize: 12, color: T.text70 }}>
+      Aucune fléchette enregistrée sur la période.
+    </div>
+  )}
+</div>
+
+
+      {/* ============================================================
+          STATS DÉTAILLÉES — style bronze/doré
+          ============================================================ */}
       <div
         style={{
           borderRadius: 26,
           padding: 16,
-          background:
-            "linear-gradient(180deg,#141416,#0E0F12)",
+          background: "linear-gradient(180deg,#141416,#0E0F12)",
           border: "1px solid rgba(255,255,255,.14)",
           boxShadow: "0 12px 26px rgba(0,0,0,.65)",
         }}
       >
-        {/* ENTÊTE */}
         <div
           style={{
             fontSize: 14,
@@ -1078,9 +1568,8 @@ function TrainingX01StatsTab() {
           Stats détaillées (période)
         </div>
 
-        {/* Groupes de lignes */}
+        {/* ------ Lignes principales ------ */}
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {/* Ligne 1 : Moy.3D */}
           <div
             style={{
               display: "flex",
@@ -1094,7 +1583,6 @@ function TrainingX01StatsTab() {
             <span style={{ fontWeight: 700 }}>{globalAvg3D.toFixed(1)}</span>
           </div>
 
-          {/* Ligne 2 : Moy.1D */}
           <div
             style={{
               display: "flex",
@@ -1108,7 +1596,6 @@ function TrainingX01StatsTab() {
             <span style={{ fontWeight: 700 }}>{globalAvg1D.toFixed(2)}</span>
           </div>
 
-          {/* Ligne 3 : Best Visit */}
           <div
             style={{
               display: "flex",
@@ -1122,7 +1609,6 @@ function TrainingX01StatsTab() {
             <span style={{ fontWeight: 700 }}>{bestVisit}</span>
           </div>
 
-          {/* Ligne 4 : Best Checkout (CO) */}
           <div
             style={{
               display: "flex",
@@ -1133,12 +1619,9 @@ function TrainingX01StatsTab() {
             }}
           >
             <span style={{ color: T.text70 }}>Best Checkout</span>
-            <span style={{ fontWeight: 700 }}>
-              {bestCheckout || 0}
-            </span>
+            <span style={{ fontWeight: 700 }}>{bestCheckout || 0}</span>
           </div>
 
-          {/* Ligne 5 : Darts */}
           <div
             style={{
               display: "flex",
@@ -1152,7 +1635,6 @@ function TrainingX01StatsTab() {
             <span style={{ fontWeight: 700 }}>{totalDarts}</span>
           </div>
 
-          {/* Ligne 6 : %Hits */}
           <div
             style={{
               display: "flex",
@@ -1167,7 +1649,7 @@ function TrainingX01StatsTab() {
           </div>
         </div>
 
-        {/* Bloc S / D / T */}
+        {/* ------ S / D / T ------ */}
         <div
           style={{
             marginTop: 12,
@@ -1192,7 +1674,7 @@ function TrainingX01StatsTab() {
           </div>
         </div>
 
-        {/* Miss / Bull / DBull / Bust */}
+        {/* ------ Miss / Bull / DBull / Bust ------ */}
         <div
           style={{
             marginTop: 12,
@@ -1226,7 +1708,9 @@ function TrainingX01StatsTab() {
         </div>
       </div>
 
-      {/* LISTE DES DERNIÈRES SESSIONS */}
+              {/* ============================================================
+          LISTE DES DERNIÈRES SESSIONS + PAGINATION
+          ============================================================ */}
       <div style={card}>
         <div
           style={{
@@ -1239,64 +1723,162 @@ function TrainingX01StatsTab() {
 
         {filtered.length === 0 && (
           <div style={{ fontSize: 12, color: T.text70 }}>
-            Aucune session de training enregistrée pour
-            l’instant.
+            Aucune session de training enregistrée pour l’instant.
           </div>
         )}
 
-        {filtered
-          .slice()
-          .reverse()
-          .slice(0, 30)
-          .map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setSelected(s)}
+        {/* Sessions affichées 10 par page */}
+        {pagedSessions.map((s) => (
+          <div
+            key={s.id}
+            style={{
+              marginTop: 6,
+              padding: 8,
+              borderRadius: 12,
+              background: "rgba(0,0,0,.45)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+            }}
+          >
+            <div
               style={{
-                width: "100%",
-                textAlign: "left",
-                marginTop: 6,
-                padding: 8,
-                borderRadius: 12,
-                background: "rgba(0,0,0,.45)",
-                border: "none",
-                color: T.text,
+                display: "flex",
+                justifyContent: "space-between",
+                color: T.text70,
                 fontSize: 12,
-                cursor: "pointer",
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  color: T.text70,
-                }}
-              >
-                <span>{formatShortDate(s.date)}</span>
-                <span style={{ fontWeight: 700 }}>
-                  {s.avg3D.toFixed(1)} Moy.3D
-                </span>
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  color: T.text70,
-                }}
-              >
+              <span>{formatShortDate(s.date)}</span>
+              <span style={{ fontWeight: 700 }}>
+                {s.avg3D.toFixed(1)} Moy.3D
+              </span>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 6,
+                color: T.text70,
+                fontSize: 12,
+              }}
+            >
+              <div>
                 <span>{s.darts} darts</span>
                 <span>
-                  BV {s.bestVisit}{" "}
-                  {s.bestCheckout
-                    ? `• CO ${s.bestCheckout}`
-                    : ""}
+                  {" "}
+                  · BV {s.bestVisit}
+                  {s.bestCheckout ? ` · CO ${s.bestCheckout}` : ""}
                 </span>
               </div>
+
+              {/* Petit bouton Détails à droite */}
+              <button
+                onClick={() => setSelected(s)}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  border: "none",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background:
+                    "linear-gradient(135deg,#F6C256,#FBE29A)",
+                  color: "#141416",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+              >
+                Détails
+              </button>
+            </div>
+          </div>
+        ))}
+
+        {/* Pagination 10 par page */}
+        {totalPages > 1 && (
+          <div
+            style={{
+              marginTop: 10,
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: 6,
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                border: "none",
+                background:
+                  page === 1
+                    ? "rgba(255,255,255,.05)"
+                    : "rgba(255,255,255,.18)",
+                color: "#fff",
+                fontSize: 11,
+                cursor: page === 1 ? "default" : "pointer",
+              }}
+            >
+              ‹
             </button>
-          ))}
+
+            {Array.from({ length: totalPages }).map((_, i) => {
+              const p = i + 1;
+              const active = p === page;
+              return (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 999,
+                    border: "none",
+                    background: active
+                      ? T.gold
+                      : "rgba(255,255,255,.12)",
+                    color: active ? "#000" : "#fff",
+                    fontSize: 11,
+                    cursor: "pointer",
+                  }}
+                >
+                  {p}
+                </button>
+              );
+            })}
+
+            <button
+              onClick={() =>
+                setPage((p) => Math.min(totalPages, p + 1))
+              }
+              disabled={page === totalPages}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                border: "none",
+                background:
+                  page === totalPages
+                    ? "rgba(255,255,255,.05)"
+                    : "rgba(255,255,255,.18)",
+                color: "#fff",
+                fontSize: 11,
+                cursor:
+                  page === totalPages ? "default" : "pointer",
+              }}
+            >
+              ›
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Modal détail session */}
+      {/* ============================================================
+          MODAL DÉTAIL SESSION — avec radar + hits par segment
+          ============================================================ */}
       {selected && (
         <div
           onClick={() => setSelected(null)}
@@ -1314,10 +1896,13 @@ function TrainingX01StatsTab() {
             onClick={(e) => e.stopPropagation()}
             style={{
               ...card,
-              maxWidth: 320,
-              width: "90%",
+              maxWidth: 340,
+              width: "92%",
+              maxHeight: "90vh",
+              overflowY: "auto",
             }}
           >
+            {/* Header modal */}
             <div
               style={{
                 display: "flex",
@@ -1332,8 +1917,7 @@ function TrainingX01StatsTab() {
                   fontSize: 14,
                 }}
               >
-                Session du{" "}
-                {formatShortDate(selected.date)}
+                Session du {formatShortDate(selected.date)}
               </div>
               <button
                 onClick={() => setSelected(null)}
@@ -1349,6 +1933,7 @@ function TrainingX01StatsTab() {
               </button>
             </div>
 
+            {/* Stats principales */}
             <div>
               <div style={statRowBox}>
                 <span>Moy.3D</span>
@@ -1368,36 +1953,296 @@ function TrainingX01StatsTab() {
               </div>
               <div style={statRowBox}>
                 <span>Best checkout</span>
-                <span>
-                  {selected.bestCheckout ?? "—"}
-                </span>
+                <span>{selected.bestCheckout ?? "—"}</span>
               </div>
               <div style={statRowBox}>
                 <span>S / D / T</span>
                 <span>
-                  {(selected.hitsS ?? 0)} /{" "}
-                  {(selected.hitsD ?? 0)} /{" "}
+                  {(selected.hitsS ?? 0)} / {(selected.hitsD ?? 0)} /{" "}
                   {(selected.hitsT ?? 0)}
                 </span>
               </div>
               <div style={statRowBox}>
                 <span>Miss / Bust</span>
                 <span>
-                  {(selected.miss ?? 0)} /{" "}
-                  {(selected.bust ?? 0)}
+                  {(selected.miss ?? 0)} / {(selected.bust ?? 0)}
                 </span>
               </div>
               <div style={statRowBox}>
                 <span>Bull / DBull</span>
                 <span>
-                  {(selected.bull ?? 0)} /{" "}
-                  {(selected.dBull ?? 0)}
+                  {(selected.bull ?? 0)} / {(selected.dBull ?? 0)}
                 </span>
               </div>
+            </div>
+
+            {/* Radar de la session */}
+            <div
+              style={{
+                marginTop: 12,
+                paddingTop: 8,
+                borderTop: "1px solid rgba(255,255,255,.12)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  color: T.text70,
+                  marginBottom: 4,
+                }}
+              >
+                Radar — session
+              </div>
+              {Array.isArray(selected.dartsDetail) &&
+              selected.dartsDetail.length ? (
+                <TrainingRadar darts={selected.dartsDetail} />
+              ) : (
+                <div style={{ fontSize: 11, color: T.text70 }}>
+                  Pas de détail flèche par flèche pour cette session.
+                </div>
+              )}
+            </div>
+
+            {/* Hits par segment — session */}
+            <div
+              style={{
+                marginTop: 12,
+                paddingTop: 8,
+                borderTop: "1px solid rgba(255,255,255,.12)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  color: T.text70,
+                  marginBottom: 4,
+                }}
+              >
+                Hits par segment (session)
+              </div>
+
+              {Array.isArray(selected.dartsDetail) &&
+              selected.dartsDetail.length ? (() => {
+                const localMap: Record<
+                  string,
+                  { S: number; D: number; T: number }
+                > = {};
+                let localMiss = 0;
+
+                for (const d of selected.dartsDetail!) {
+                  const v = Number((d as any)?.v) || 0;
+                  const mult = Number((d as any)?.mult) || 0;
+
+                  if (v === 0 || mult === 0) {
+                    localMiss++;
+                    continue;
+                  }
+
+                  const key = v === 25 ? "25" : String(v);
+                  if (!localMap[key]) {
+                    localMap[key] = { S: 0, D: 0, T: 0 };
+                  }
+                  if (mult === 1) localMap[key].S++;
+                  else if (mult === 2) localMap[key].D++;
+                  else if (mult === 3) localMap[key].T++;
+                }
+
+                const SESSION_SEGMENTS: (number | "MISS")[] = [
+                  1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                  11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+                  25,
+                  "MISS",
+                ];
+
+                const maxLocal = SESSION_SEGMENTS.reduce((m, seg) => {
+                  if (seg === "MISS") {
+                    return localMiss > m ? localMiss : m;
+                  }
+                  const d = localMap[String(seg)];
+                  const tot = d ? d.S + d.D + d.T : 0;
+                  return tot > m ? tot : m;
+                }, 0);
+
+                if (maxLocal === 0) {
+                  return (
+                    <div
+                      style={{ fontSize: 11, color: T.text70 }}
+                    >
+                      Aucun hit enregistré pour cette session.
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    style={{
+                      height: 110,
+                      display: "flex",
+                      alignItems: "flex-end",
+                      gap: 3,
+                      padding: "6px 2px",
+                      borderRadius: 14,
+                      background:
+                        "linear-gradient(180deg,#15171B,#0C0D10)",
+                    }}
+                  >
+                    {SESSION_SEGMENTS.map((seg) => {
+                      if (seg === "MISS") {
+                        const count = localMiss;
+                        const hPct =
+                          maxLocal > 0
+                            ? (count / maxLocal) * 100
+                            : 0;
+                        return (
+                          <div
+                            key="MISS"
+                            style={{
+                              flex: 1,
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              justifyContent: "flex-end",
+                              gap: 3,
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: 9,
+                                borderRadius: 999,
+                                background: "#FF4B4B",
+                                boxShadow: count
+                                  ? "0 0 6px rgba(255,75,75,0.85)"
+                                  : "none",
+                                height: count
+                                  ? `${Math.max(10, hPct)}%`
+                                  : 4,
+                                opacity: count ? 1 : 0.25,
+                              }}
+                            />
+                            <div
+                              style={{
+                                fontSize: 7,
+                                color: T.text70,
+                              }}
+                            >
+                              M
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      const key = String(seg);
+                      const data =
+                        localMap[key] || { S: 0, D: 0, T: 0 };
+                      const total = data.S + data.D + data.T;
+                      const hPct =
+                        maxLocal > 0
+                          ? (total / maxLocal) * 100
+                          : 0;
+
+                      const baseHeight = total
+                        ? Math.max(12, hPct)
+                        : 4;
+                      const totalForRatio =
+                        total > 0 ? total : 1;
+                      const hS =
+                        total > 0
+                          ? Math.max(
+                              3,
+                              (data.S / totalForRatio) * baseHeight
+                            )
+                          : 0;
+                      const hD =
+                        total > 0
+                          ? Math.max(
+                              3,
+                              (data.D / totalForRatio) * baseHeight
+                            )
+                          : 0;
+                      const hT =
+                        total > 0
+                          ? Math.max(
+                              3,
+                              (data.T / totalForRatio) * baseHeight
+                            )
+                          : 0;
+
+                      return (
+                        <div
+                          key={seg}
+                          style={{
+                            flex: 1,
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            justifyContent: "flex-end",
+                            gap: 3,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 10,
+                              borderRadius: 999,
+                              overflow: "hidden",
+                              display: "flex",
+                              flexDirection: "column-reverse",
+                              opacity: total ? 1 : 0.2,
+                              boxShadow: total
+                                ? "0 0 6px rgba(255,255,255,0.2)"
+                                : "none",
+                              height: total
+                                ? `${baseHeight}%`
+                                : 4,
+                            }}
+                          >
+                            {data.S > 0 && (
+                              <div
+                                style={{
+                                  height: `${hS}%`,
+                                  background: T.gold, // S = doré
+                                }}
+                              />
+                            )}
+                            {data.D > 0 && (
+                              <div
+                                style={{
+                                  height: `${hD}%`,
+                                  background: "#007A88", // D = bleu pétrole
+                                }}
+                              />
+                            )}
+                            {data.T > 0 && (
+                              <div
+                                style={{
+                                  height: `${hT}%`,
+                                  background: "#A259FF", // T = violet
+                                }}
+                              />
+                            )}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 7,
+                              color: T.text70,
+                            }}
+                          >
+                            {seg === 25 ? "25" : seg}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })() : (
+                <div style={{ fontSize: 11, color: T.text70 }}>
+                  Pas de détail flèche par flèche pour cette session.
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }
