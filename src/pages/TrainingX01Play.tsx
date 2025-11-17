@@ -42,6 +42,8 @@ function loadTrainingStatsFromStorage(): TrainingFinishStats[] {
       bull: Number(x.bull) || 0,
       dBull: Number(x.dBull) || 0,
       bust: Number(x.bust) || 0,
+      // 🔥 NEW : heatmap radar agrégée par segment
+      bySegment: x.bySegment ? x.bySegment : {},
     })) as TrainingFinishStats[];
   } catch {
     return [];
@@ -93,6 +95,9 @@ export type TrainingFinishStats = {
   bull: number;
   dBull: number;
   bust: number;
+
+  // 🔥 NEW : heatmap radar, somme pondérée par segment ("20", "5", "25"...)
+  bySegment: Record<string, number>;
 };
 
 export type HitMap = Record<string, number>;
@@ -282,7 +287,7 @@ function RadarHitChart({ hitMap }: { hitMap: HitMap }) {
     >
       <defs>
         <radialGradient id="radarFill" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#ffe69b" stopOpacity="0.10" />
+          <stop offset="0%" stopColor="#ffe69b" stopOpacity="0.1" />
           <stop offset="100%" stopColor="#ffb800" stopOpacity="0.35" />
         </radialGradient>
       </defs>
@@ -430,7 +435,6 @@ function MetricSelector({
         display: "flex",
         gap: 6,
         flexWrap: "wrap",
-        marginTop: 8,
       }}
     >
       <SparkChip
@@ -505,28 +509,38 @@ function Sparkline({
       >
         <div
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginBottom: 4,
             fontSize: 12,
             color: "rgba(225,225,240,0.9)",
+            marginBottom: 6,
           }}
         >
-          <span>Progression</span>
-          <TimeSelector range={range} onChange={onRangeChange} />
+          Progression
         </div>
-
-        <MetricSelector metric={metric} onChange={onMetricChange} />
 
         <div
           style={{
-            marginTop: 10,
+            marginTop: 4,
             fontSize: 12,
             color: "rgba(200,200,220,0.75)",
             textAlign: "center",
           }}
         >
           Aucune partie terminée sur cette période.
+        </div>
+
+        {/* Boutons sous la zone de message */}
+        <div
+          style={{
+            marginTop: 10,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <MetricSelector metric={metric} onChange={onMetricChange} />
+          <TimeSelector range={range} onChange={onRangeChange} />
         </div>
       </div>
     );
@@ -576,25 +590,20 @@ function Sparkline({
     >
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          marginBottom: 4,
           fontSize: 12,
           color: "rgba(225,225,240,0.9)",
+          marginBottom: 6,
         }}
       >
-        <span>Progression</span>
-        <TimeSelector range={range} onChange={onRangeChange} />
+        Progression
       </div>
-
-      <MetricSelector metric={metric} onChange={onMetricChange} />
 
       <div
         style={{
           display: "flex",
           alignItems: "center",
           gap: 8,
-          marginTop: 8,
+          marginTop: 2,
         }}
       >
         <svg width={width} height={height}>
@@ -635,6 +644,21 @@ function Sparkline({
         >
           {getMetricValue(last, metric).toFixed(1)} — {formatDate(last.date)}
         </div>
+      </div>
+
+      {/* 🔽 Boutons SOUS la courbe */}
+      <div
+        style={{
+          marginTop: 10,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        <MetricSelector metric={metric} onChange={onMetricChange} />
+        <TimeSelector range={range} onChange={onRangeChange} />
       </div>
     </div>
   );
@@ -1236,15 +1260,15 @@ export default function TrainingX01Play({
       setBullHits((n) => n + addB);
       setDBullHits((n) => n + addDB);
 
-      setHitMap((prev) => {
-        const next: HitMap = { ...prev };
-        for (const d of validHits) {
-          const key = d.v === 25 ? "25" : String(d.v);
-          next[key] =
-            (next[key] ?? 0) + (d.mult === 3 ? 3 : d.mult === 2 ? 2 : 1);
-        }
-        return next;
-      });
+      // 🔥 NEW : hitMap calculé en local pour cette volée
+      const nextHitMap: HitMap = { ...hitMap };
+      for (const d of validHits) {
+        const key = d.v === 25 ? "25" : String(d.v);
+        nextHitMap[key] =
+          (nextHitMap[key] ?? 0) +
+          (d.mult === 3 ? 3 : d.mult === 2 ? 2 : 1);
+      }
+      setHitMap(nextHitMap);
 
       setBestVisit((b) => Math.max(b, volleyTotal));
       setRemaining(after);
@@ -1285,6 +1309,8 @@ export default function TrainingX01Play({
           bull: finalBull,
           dBull: finalDBull,
           bust: finalBust,
+          // 🔥 NEW : on sauve toute la heatmap de la session
+          bySegment: nextHitMap,
         };
 
         setFinishedSessions((arr) => {
@@ -1511,7 +1537,7 @@ export default function TrainingX01Play({
                 "linear-gradient(180deg,rgba(10,10,15,0.96),rgba(5,5,9,0.96))",
               borderRadius: 16,
               padding: 8,
-              border: "1px solid rgba(255,255,255,0.10)",
+              border: "1px solid rgba(255,255,255,0.1)",
               boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
             }}
           >
@@ -1575,7 +1601,7 @@ export default function TrainingX01Play({
                         width: "100%",
                         height: "100%",
                         borderRadius: "50%",
-                        background: "rgba(255,255,255,0.20)",
+                        background: "rgba(255,255,255,0.2)",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -1614,7 +1640,7 @@ export default function TrainingX01Play({
                 "linear-gradient(180deg,rgba(10,10,15,0.96),rgba(5,5,9,0.96))",
               borderRadius: 16,
               padding: 8,
-              border: "1px solid rgba(255,255,255,0.10)",
+              border: "1px solid rgba(255,255,255,0.1)",
               boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
               display: "flex",
               flexDirection: "column",
@@ -1684,7 +1710,7 @@ export default function TrainingX01Play({
           padding: "6px 10px 10px",
           zIndex: 60,
           boxShadow: "0 -6px 18px rgba(0,0,0,0.55)",
-          borderTop: "1px solid rgba(255,255,255,0.10)",
+          borderTop: "1px solid rgba(255,255,255,0.1)",
         }}
       >
         <Keypad

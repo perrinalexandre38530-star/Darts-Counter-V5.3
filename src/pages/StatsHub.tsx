@@ -75,6 +75,8 @@ export type TrainingX01Session = {
   bull: number;
   dBull: number;
   bust: number;
+  // NEW : heatmap par segment (issu du TrainingX01Play récent)
+  bySegment?: Record<string, number>;
   // détail flèche par flèche pour le radar
   dartsDetail?: UIDart[];
 };
@@ -89,29 +91,80 @@ function loadTrainingSessions(): TrainingX01Session[] {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
 
-    return parsed.map((row: any, idx: number) => ({
-      id: row.id ?? String(idx),
-      date: Number(row.date) || Date.now(),
-      profileId: String(row.profileId ?? "unknown"),
-      darts: Number(row.darts) || 0,
-      avg3D: Number(row.avg3D) || 0,
-      avg1D: Number(row.avg1D) || 0,
-      bestVisit: Number(row.bestVisit) || 0,
-      bestCheckout:
-        row.bestCheckout === null || row.bestCheckout === undefined
+    return parsed.map((row: any, idx: number) => {
+      const darts = Number(row.darts) || 0;
+      const avg3D = Number(row.avg3D) || 0;
+
+      // ancien format : avg1D déjà présent ; nouveau : on recompute
+      const avg1DExplicit =
+        row.avg1D !== undefined && row.avg1D !== null
+          ? Number(row.avg1D) || 0
+          : null;
+      const avg1D =
+        avg1DExplicit !== null
+          ? avg1DExplicit
+          : darts > 0
+          ? avg3D / 3
+          : 0;
+
+      // ancien format : bestCheckout ; nouveau : checkout
+      const bestCheckoutRaw =
+        row.bestCheckout !== undefined && row.bestCheckout !== null
+          ? row.bestCheckout
+          : row.checkout;
+      const bestCheckout =
+        bestCheckoutRaw === null || bestCheckoutRaw === undefined
           ? null
-          : Number(row.bestCheckout),
-      hitsS: Number(row.hitsS) || 0,
-      hitsD: Number(row.hitsD) || 0,
-      hitsT: Number(row.hitsT) || 0,
-      miss: Number(row.miss) || 0,
-      bull: Number(row.bull) || 0,
-      dBull: Number(row.dBull) || 0,
-      bust: Number(row.bust) || 0,
-      dartsDetail: Array.isArray(row.dartsDetail)
-        ? row.dartsDetail
-        : undefined,
-    }));
+          : Number(bestCheckoutRaw) || 0;
+
+      // NEW : bySegment (format TrainingX01Play v2)
+      const bySegmentRaw =
+        row.bySegment && typeof row.bySegment === "object"
+          ? (row.bySegment as Record<string, any>)
+          : undefined;
+
+      // dartsDetail :
+      //  - si présent (ancien format) → on le garde
+      //  - sinon on reconstruit un "nuage" de fléchettes à partir de bySegment
+      let dartsDetail: UIDart[] | undefined = undefined;
+      if (Array.isArray(row.dartsDetail)) {
+        dartsDetail = row.dartsDetail as UIDart[];
+      } else if (bySegmentRaw) {
+        const tmp: UIDart[] = [];
+        for (const [segStr, weightAny] of Object.entries(bySegmentRaw)) {
+          const seg = Number(segStr);
+          if (!Number.isFinite(seg) || seg <= 0) continue;
+          const w = Number(weightAny) || 0;
+          const count = Math.max(0, Math.round(w));
+          // petit cap pour éviter des tableaux monstrueux si un jour ça dérive
+          const capped = Math.min(count, 200);
+          for (let i = 0; i < capped; i++) {
+            tmp.push({ v: seg, mult: 1 } as UIDart);
+          }
+        }
+        dartsDetail = tmp;
+      }
+
+      return {
+        id: row.id ?? String(idx),
+        date: Number(row.date) || Date.now(),
+        profileId: String(row.profileId ?? "unknown"),
+        darts,
+        avg3D,
+        avg1D,
+        bestVisit: Number(row.bestVisit) || 0,
+        bestCheckout,
+        hitsS: Number(row.hitsS) || 0,
+        hitsD: Number(row.hitsD) || 0,
+        hitsT: Number(row.hitsT) || 0,
+        miss: Number(row.miss) || 0,
+        bull: Number(row.bull) || 0,
+        dBull: Number(row.dBull) || 0,
+        bust: Number(row.bust) || 0,
+        bySegment: bySegmentRaw,
+        dartsDetail,
+      } as TrainingX01Session;
+    });
   } catch (e) {
     console.warn("[StatsHub] loadTrainingSessions failed", e);
     return [];
@@ -458,14 +511,16 @@ function TrainingX01StatsTab() {
   );
 
   const globalAvg3D =
-  totalSessions > 0
-    ? filtered.reduce((s, x) => s + x.avg3D, 0) / totalSessions
-    : 0;
+    totalSessions > 0
+      ? filtered.reduce((s, x) => s + x.avg3D, 0) /
+        totalSessions
+      : 0;
 
   const globalAvg1D =
-  totalSessions > 0
-    ? filtered.reduce((s, x) => s + x.avg1D, 0) / totalSessions
-    : 0;
+    totalSessions > 0
+      ? filtered.reduce((s, x) => s + x.avg1D, 0) /
+        totalSessions
+      : 0;
 
   /* ---------- Agrégation fléchettes pour stats détaillées / radar ---------- */
 
@@ -733,7 +788,6 @@ function TrainingX01StatsTab() {
         </div>
       </div>
 
-      {/* ⚠️ Bloc "Aucune session de training..." SUPPRIMÉ */}
       {/* SPARKLINE PRO + PANNEAU DÉROULANT */}
       <div style={card}>
         {/* Titre seul */}
@@ -836,7 +890,7 @@ function TrainingX01StatsTab() {
           </div>
         </div>
 
-        {/* Sous la sparkline : sélecteur de métrique (+ éventuel TimeSelector à droite) */}
+        {/* Sous la sparkline : sélecteur de métrique */}
         <div
           style={{
             marginTop: 8,
@@ -882,10 +936,6 @@ function TrainingX01StatsTab() {
               </button>
             ))}
           </div>
-
-          {/* Ici tu peux brancher ton TimeSelector si tu veux les J/S/M/A à droite
-          <TimeSelector range={range} onChange={setRange} />
-          */}
         </div>
       </div>
 
@@ -909,7 +959,7 @@ function TrainingX01StatsTab() {
         )}
       </div>
 
-                  {/* STATS DÉTAILLÉES — reproduction style bronze/doré TrainingX01Play */}
+      {/* STATS DÉTAILLÉES — style bronze/doré */}
       <div
         style={{
           borderRadius: 26,
@@ -1135,7 +1185,7 @@ function TrainingX01StatsTab() {
           ))}
       </div>
 
-      {/* Modal détail session (inchangé, tu peux le garder si tu l’avais déjà) */}
+      {/* Modal détail session */}
       {selected && (
         <div
           onClick={() => setSelected(null)}
