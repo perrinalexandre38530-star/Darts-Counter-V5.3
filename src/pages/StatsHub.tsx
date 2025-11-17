@@ -736,10 +736,12 @@ const row: React.CSSProperties = {
       totalHits > 0 ? (gHitsT / totalHits) * 100 : null;
   
     const totalBullHits = gBull + gDBull;
+    // %Bull et %DBull calculés sur le total de darts
     const pctBullGlobal =
-      totalBullHits > 0 ? (gBull / totalBullHits) * 100 : null;
+      totalDarts > 0 ? (gBull / totalDarts) * 100 : null;
+
     const pctDBullGlobal =
-      totalBullHits > 0 ? (gDBull / totalBullHits) * 100 : null;
+      totalDarts > 0 ? (gDBull / totalDarts) * 100 : null;
     const pctBustGlobal =
       totalThrows > 0 ? (gBust / totalThrows) * 100 : null;
   
@@ -1642,141 +1644,181 @@ const maxStackHits = HITS_SEGMENTS.reduce(
               const fmtPercent = (v: number | null) =>
                 v === null ? "—" : `${v.toFixed(1)}%`;
 
-              /* =======================
+                            /* =======================
                  1) TABLEAU PRINCIPAL
                  ======================= */
-              const rows = [
-                {
-                  label: "Darts",
-                  range: fmtRange(minDarts, maxDarts),
-                  total: totalDarts,
-                  pct: "—",
-                },
-                {
-                  label: "Hits",
-                  range: fmtRange(minHits, maxHits),
-                  total: totalHits,
-                  pct: fmtPercent(totalThrows > 0 ? hitsPercent : null),
-                },
-                {
-                  label: "Miss",
-                  range: fmtRange(minMiss, maxMiss),
-                  total: gMiss,
-                  pct: fmtPercent(pctMissGlobal),
-                },
-                {
-                  label: "S",
-                  range: fmtRange(minS, maxS),
-                  total: gHitsS,
-                  pct: fmtPercent(pctSimpleGlobal),
-                },
-                {
-                  label: "D",
-                  range: fmtRange(minD, maxD),
-                  total: gHitsD,
-                  pct: fmtPercent(pctDoubleGlobal),
-                },
-                {
-                  label: "T",
-                  range: fmtRange(minT, maxT),
-                  total: gHitsT,
-                  pct: fmtPercent(pctTripleGlobal),
-                },
-                {
-                  label: "Bull",
-                  range: fmtRange(minBull, maxBull),
-                  total: gBull,
-                  pct: fmtPercent(pctBullGlobal),
-                },
-                {
-                  label: "DBull",
-                  range: fmtRange(minDBull, maxDBull),
-                  total: gDBull,
-                  pct: fmtPercent(pctDBullGlobal),
-                },
-                {
-                  label: "Bust",
-                  range: fmtRange(minBust, maxBust),
-                  total: gBust,
-                  pct: fmtPercent(pctBustGlobal),
-                },
-              ];
-
-              return (
-                <>
-                  {/* En-têtes des colonnes */}
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1.1fr 1.4fr 1.1fr 0.9fr",
-                      fontSize: 11,
-                      paddingBottom: 4,
-                      borderBottom: "1px solid rgba(246,194,86,.45)",
-                      marginBottom: 4,
-                    }}
-                  >
-                    <div style={{ color: T.text70 }}>Intitulé</div>
-                    <div style={{ textAlign: "center", color: T.text70 }}>
-                      Session (min / max)
+                 const rows = [
+                  {
+                    label: "Darts",
+                    range: fmtRange(minDarts, maxDarts),
+                    total: totalDarts,
+                    pct: "", // ✅ colonne % vide pour Darts
+                  },
+                  {
+                    label: "Hits",
+                    range: fmtRange(minHits, maxHits),
+                    total: totalHits,
+                    pct: fmtPercent(totalThrows > 0 ? hitsPercent : null),
+                  },
+                  {
+                    label: "Miss",
+                    range: fmtRange(minMiss, maxMiss),
+                    total: gMiss,
+                    pct: fmtPercent(pctMissGlobal),
+                  },
+                  {
+                    label: "S",
+                    range: fmtRange(minS, maxS),
+                    total: gHitsS,
+                    pct: fmtPercent(pctSimpleGlobal),
+                  },
+                  {
+                    label: "D",
+                    range: fmtRange(minD, maxD),
+                    total: gHitsD,
+                    pct: fmtPercent(pctDoubleGlobal),
+                  },
+                  {
+                    label: "T",
+                    range: fmtRange(minT, maxT),
+                    total: gHitsT,
+                    pct: fmtPercent(pctTripleGlobal),
+                  },
+                  {
+                    label: "Bull",
+                    range: fmtRange(minBull, maxBull),
+                    total: gBull,
+                    pct: fmtPercent(pctBullGlobal),
+                  },
+                  {
+                    label: "DBull",
+                    range: fmtRange(minDBull, maxDBull),
+                    total: gDBull,
+                    pct: fmtPercent(pctDBullGlobal),
+                  },
+                  {
+                    label: "Bust",
+                    range: fmtRange(minBust, maxBust),
+                    total: gBust,
+                    pct: fmtPercent(pctBustGlobal),
+                  },
+                ];
+  
+                return (
+                  <>
+                    {/* Petite précision sur le volume de sessions */}
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: T.text70,
+                        textAlign: "center",
+                        marginBottom: 6,
+                      }}
+                    >
+                      {totalSessions === 1
+                        ? "1 session sur la période"
+                        : `${totalSessions} sessions sur la période`}
                     </div>
-                    <div style={{ textAlign: "center", color: T.text70 }}>
-                      Total
-                    </div>
-                    <div style={{ textAlign: "right", color: T.text70 }}>
-                      %
-                    </div>
-                  </div>
-
-                  {/* Lignes */}
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 2,
-                    }}
-                  >
-                    {rows.map((r) => (
+  
+                    {/* En-têtes des colonnes */}
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1.1fr 1.4fr 1.1fr 0.9fr",
+                        fontSize: 11,
+                        paddingBottom: 4,
+                        borderBottom: "1px solid rgba(246,194,86,.45)",
+                        marginBottom: 4,
+                      }}
+                    >
+                      {/* Colonne label — sans texte "Intitulé" */}
+                      <div />
+  
+                      {/* Colonne Session avec saut de ligne */}
                       <div
-                        key={r.label}
                         style={{
-                          display: "grid",
-                          gridTemplateColumns: "1.1fr 1.4fr 1.1fr 0.9fr",
-                          fontSize: 11,
-                          padding: "4px 0",
-                          borderBottom:
-                            "1px solid rgba(246,194,86,.18)",
+                          textAlign: "center",
+                          color: T.text70,
+                          display: "flex",
+                          flexDirection: "column",
+                          lineHeight: 1.1,
                         }}
                       >
-                        <div style={{ color: T.text70 }}>{r.label}</div>
-                        <div
-                          style={{
-                            textAlign: "center",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {r.range}
-                        </div>
-                        <div
-                          style={{
-                            textAlign: "center",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {r.total}
-                        </div>
-                        <div
-                          style={{
-                            textAlign: "right",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {r.pct}
-                        </div>
+                        <span>Session</span>
+                        <span style={{ fontSize: 10 }}>min / max</span>
                       </div>
-                    ))}
-                  </div>
-                </>
-              );
+  
+                      {/* Colonne Total */}
+                      <div
+                        style={{
+                          textAlign: "center",
+                          color: T.text70,
+                        }}
+                      >
+                        Total
+                      </div>
+  
+                      {/* Colonne % */}
+                      <div
+                        style={{
+                          textAlign: "right",
+                          color: T.text70,
+                        }}
+                      >
+                        %
+                      </div>
+                    </div>
+  
+                    {/* Lignes */}
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 2,
+                      }}
+                    >
+                      {rows.map((r) => (
+                        <div
+                          key={r.label}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1.1fr 1.4fr 1.1fr 0.9fr",
+                            fontSize: 11,
+                            padding: "4px 0",
+                            borderBottom:
+                              "1px solid rgba(246,194,86,.18)",
+                          }}
+                        >
+                          <div style={{ color: T.text70 }}>{r.label}</div>
+                          <div
+                            style={{
+                              textAlign: "center",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {r.range}
+                          </div>
+                          <div
+                            style={{
+                              textAlign: "center",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {r.total}
+                          </div>
+                          <div
+                            style={{
+                              textAlign: "right",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {r.pct}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
             })()}
 
             {/* =======================
@@ -1847,7 +1889,7 @@ const maxStackHits = HITS_SEGMENTS.reduce(
 
     <div>
       <div style={{ fontSize: 11, color: T.text70, marginBottom: 2 }}>
-        Best Moy. / 1 session
+        Best Moy./S
       </div>
       <div
         style={{
