@@ -616,15 +616,76 @@ const row: React.CSSProperties = {
     const pctDBullGlobal =
       totalBullHits > 0 ? (gDBull / totalBullHits) * 100 : null;
   
+    /* ---------- Normalisation d’une fléchette ---------- */
+    function normalizeTrainingDart(raw: any): UIDart | null {
+      if (!raw) return null;
+
+      const rawV =
+        (raw as any).v ??
+        (raw as any).value ??
+        (raw as any).segment ??
+        (raw as any).s;
+
+      const rawMult =
+        (raw as any).mult ??
+        (raw as any).m ??
+        (raw as any).multiplier ??
+        (raw as any).type;
+
+      const vNum = Number(rawV) || 0;
+
+      let mNum: number;
+      if (rawMult === "S") mNum = 1;
+      else if (rawMult === "D") mNum = 2;
+      else if (rawMult === "T") mNum = 3;
+      else mNum = Number(rawMult) || 0;
+
+      if (!Number.isFinite(vNum)) return null;
+      if (!Number.isFinite(mNum)) mNum = 0;
+
+      return { v: vNum, mult: mNum as 0 | 1 | 2 | 3 };
+    }
+
     /* ---------- Détails fléchettes pour graph + radar ---------- */
-    const allDartsDetail =
-      filtered.flatMap((s) => s.dartsDetail ?? []) ?? [];
+    const trainingDartsAll: UIDart[] = React.useMemo(() => {
+      const out: UIDart[] = [];
+
+      for (const s of filtered) {
+        // 1) Cas idéal : on a le détail fléchette par fléchette
+        if (Array.isArray(s.dartsDetail) && s.dartsDetail.length) {
+          for (const raw of s.dartsDetail) {
+            const nd = normalizeTrainingDart(raw);
+            if (nd) out.push(nd);
+          }
+          continue;
+        }
+
+        // 2) Fallback : on reconstruit depuis bySegment (sessions plus anciennes)
+        if (s.bySegment && typeof s.bySegment === "object") {
+          for (const [segStr, raw] of Object.entries(s.bySegment)) {
+            const seg = Number(segStr);
+            if (!Number.isFinite(seg) || seg <= 0) continue;
+
+            const weight = Number(raw) || 0;
+            const count = Math.max(0, Math.round(weight));
+            const capped = Math.min(count, 200); // limite de sécurité
+
+            for (let i = 0; i < capped; i++) {
+              const nd = normalizeTrainingDart({ v: seg, mult: 1 });
+              if (nd) out.push(nd);
+            }
+          }
+        }
+      }
+
+      return out;
+    }, [filtered]);
   
     /* ============================================================
        HIT PRÉFÉRÉ (GLOBAL)
        ============================================================ */
-    const segmentCount: Record<string, number> = {};
-    for (const d of allDartsDetail) {
+       const segmentCount: Record<string, number> = {};
+       for (const d of trainingDartsAll) {
       const v = Number((d as any)?.v) || 0;
       if (v <= 0) continue;
       const key = v === 25 ? "25" : String(v);
@@ -652,10 +713,10 @@ const row: React.CSSProperties = {
     /* ============================================================
        STACK S/D/T PAR SEGMENT + MISS
        ============================================================ */
-    const segSDTMap: Record<string, { S: number; D: number; T: number }> = {};
-    let chartMissCount = 0;
-  
-    for (const d of allDartsDetail) {
+       const segSDTMap: Record<string, { S: number; D: number; T: number }> = {};
+       let chartMissCount = 0;
+       
+       for (const d of trainingDartsAll) {
       const v = Number((d as any)?.v) || 0;
       const mult = Number((d as any)?.mult) || 0;
   
@@ -1546,212 +1607,214 @@ const row: React.CSSProperties = {
           Radar — toutes les fléchettes
         </div>
 
-        {allDartsDetail.length ? (
-          <TrainingRadar darts={allDartsDetail} />
-        ) : (
+        {trainingDartsAll.length ? (
+  <TrainingRadar darts={trainingDartsAll} />
+) : (
           <div style={{ fontSize: 12, color: T.text70 }}>
             Aucune fléchette enregistrée sur la période.
           </div>
         )}
       </div>
 
-      {/* GRAPHIQUE EN BÂTONS : HITS PAR SEGMENT (2 LIGNES CUSTOM ORDER) */}
-<div style={card}>
-  <div
-    style={{
-      fontSize: 13,
-      color: T.text70,
-      marginBottom: 6,
-    }}
-  >
-    Hits par segment
-  </div>
-
-  {allDartsDetail.length ? (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-        background: "linear-gradient(180deg,#15171B,#0C0D10)",
-        padding: "12px 6px",
-        borderRadius: 12,
-      }}
-    >
-      {/* ORDRE EXACT demandé */}
-      {[
-        ["MISS", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], // Ligne 1
-        [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25], // Ligne 2
-      ].map((rowSegs, rowIndex) => (
+            {/* GRAPHIQUE EN BÂTONS : HITS PAR SEGMENT (2 LIGNES CUSTOM ORDER) */}
+            <div style={card}>
         <div
-          key={rowIndex}
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-end",
-            gap: 4,
-            height: 120,
+            fontSize: 13,
+            color: T.text70,
+            marginBottom: 6,
           }}
         >
-          {rowSegs.map((seg) => {
-            // MISS
-            if (seg === "MISS") {
-              const count = chartMissCount;
-              const hPct =
-                maxStackHits > 0
-                  ? (count / maxStackHits) * 100
-                  : 0;
-              return (
-                <div
-                  key="MISS"
-                  style={{
-                    flex: 1,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "flex-end",
-                    gap: 3,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 10,
-                      borderRadius: 999,
-                      background: "#FF4B4B",
-                      boxShadow: count
-                        ? "0 0 6px rgba(255,75,75,0.85)"
-                        : "none",
-                      height: count
-                        ? `${Math.max(10, hPct)}%`
-                        : 4,
-                      opacity: count ? 1 : 0.18,
-                    }}
-                  />
-                  <div
-                    style={{
-                      fontSize: 8,
-                      color: T.text70,
-                    }}
-                  >
-                    M
-                  </div>
-                </div>
-              );
-            }
+          Hits par segment
+        </div>
 
-            // SEGMENTS 1–20 + 25
-            const key = String(seg);
-            const data = segSDTMap[key] || { S: 0, D: 0, T: 0 };
-            const total = data.S + data.D + data.T;
-
-            const hPct =
-              maxStackHits > 0
-                ? (total / maxStackHits) * 100
-                : 0;
-
-            const baseHeight = total
-              ? Math.max(10, hPct)
-              : 4;
-
-            const totalForRatio = total > 0 ? total : 1;
-
-            const hS =
-              total > 0
-                ? Math.max(
-                    2,
-                    (data.S / totalForRatio) * baseHeight
-                  )
-                : 0;
-
-            const hD =
-              total > 0
-                ? Math.max(
-                    2,
-                    (data.D / totalForRatio) * baseHeight
-                  )
-                : 0;
-
-            const hT =
-              total > 0
-                ? Math.max(
-                    2,
-                    (data.T / totalForRatio) * baseHeight
-                  )
-                : 0;
-
-            return (
+        {trainingDartsAll.length ? (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+              background: "linear-gradient(180deg,#15171B,#0C0D10)",
+              padding: "12px 6px",
+              borderRadius: 12,
+            }}
+          >
+            {/* ORDRE EXACT demandé */}
+            {[
+              ["MISS", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], // Ligne 1
+              [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25], // Ligne 2
+            ].map((rowSegs, rowIndex) => (
               <div
-                key={seg}
+                key={rowIndex}
                 style={{
-                  flex: 1,
                   display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "flex-end",
-                  gap: 3,
+                  justifyContent: "space-between",
+                  alignItems: "flex-end",
+                  gap: 4,
+                  height: 120,
                 }}
               >
-                <div
-                  style={{
-                    width: 12,
-                    borderRadius: 999,
-                    overflow: "hidden",
-                    display: "flex",
-                    flexDirection: "column-reverse",
-                    opacity: total ? 1 : 0.18,
-                    boxShadow: total
-                      ? "0 0 6px rgba(255,255,255,0.15)"
-                      : "none",
-                    height: total ? `${baseHeight}%` : 4,
-                  }}
-                >
-                  {data.S > 0 && (
-                    <div
-                      style={{
-                        height: `${hS}%`,
-                        background: T.gold, // SIMPLE doré
-                      }}
-                    />
-                  )}
-                  {data.D > 0 && (
-                    <div
-                      style={{
-                        height: `${hD}%`,
-                        background: "#007A88", // DOUBLE bleu pétrole
-                      }}
-                    />
-                  )}
-                  {data.T > 0 && (
-                    <div
-                      style={{
-                        height: `${hT}%`,
-                        background: "#A259FF", // TRIPLE violet
-                      }}
-                    />
-                  )}
-                </div>
+                {rowSegs.map((seg) => {
+                  // MISS
+                  if (seg === "MISS") {
+                    const count = chartMissCount;
+                    const hPct =
+                      maxStackHits > 0
+                        ? (count / maxStackHits) * 100
+                        : 0;
+                    return (
+                      <div
+                        key="MISS"
+                        style={{
+                          flex: 1,
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "flex-end",
+                          gap: 3,
+                          height: "100%", // ✅ important
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 10,
+                            borderRadius: 999,
+                            background: "#FF4B4B",
+                            boxShadow: count
+                              ? "0 0 6px rgba(255,75,75,0.85)"
+                              : "none",
+                            height: count
+                              ? `${Math.max(10, hPct)}%`
+                              : 4,
+                            opacity: count ? 1 : 0.18,
+                          }}
+                        />
+                        <div
+                          style={{
+                            fontSize: 8,
+                            color: T.text70,
+                          }}
+                        >
+                          M
+                        </div>
+                      </div>
+                    );
+                  }
 
-                {/* Label segment */}
-                <div
-                  style={{
-                    fontSize: 8,
-                    color: T.text70,
-                  }}
-                >
-                  {seg === 25 ? "25" : seg}
-                </div>
+                  // SEGMENTS 1–20 + 25
+                  const key = String(seg);
+                  const data = segSDTMap[key] || { S: 0, D: 0, T: 0 };
+                  const total = data.S + data.D + data.T;
+
+                  const hPct =
+                    maxStackHits > 0
+                      ? (total / maxStackHits) * 100
+                      : 0;
+
+                  const baseHeight = total
+                    ? Math.max(10, hPct)
+                    : 4;
+
+                  const totalForRatio = total > 0 ? total : 1;
+
+                  const hS =
+                    total > 0
+                      ? Math.max(
+                          2,
+                          (data.S / totalForRatio) * baseHeight
+                        )
+                      : 0;
+
+                  const hD =
+                    total > 0
+                      ? Math.max(
+                          2,
+                          (data.D / totalForRatio) * baseHeight
+                        )
+                      : 0;
+
+                  const hT =
+                    total > 0
+                      ? Math.max(
+                          2,
+                          (data.T / totalForRatio) * baseHeight
+                        )
+                      : 0;
+
+                  return (
+                    <div
+                      key={seg}
+                      style={{
+                        flex: 1,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "flex-end",
+                        gap: 3,
+                        height: "100%", // ✅ important
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 12,
+                          borderRadius: 999,
+                          overflow: "hidden",
+                          display: "flex",
+                          flexDirection: "column-reverse",
+                          opacity: total ? 1 : 0.18,
+                          boxShadow: total
+                            ? "0 0 6px rgba(255,255,255,0.15)"
+                            : "none",
+                          height: total ? `${baseHeight}%` : 4,
+                        }}
+                      >
+                        {data.S > 0 && (
+                          <div
+                            style={{
+                              height: `${hS}%`,
+                              background: T.gold, // SIMPLE doré
+                            }}
+                          />
+                        )}
+                        {data.D > 0 && (
+                          <div
+                            style={{
+                              height: `${hD}%`,
+                              background: "#007A88", // DOUBLE bleu pétrole
+                            }}
+                          />
+                        )}
+                        {data.T > 0 && (
+                          <div
+                            style={{
+                              height: `${hT}%`,
+                              background: "#A259FF", // TRIPLE violet
+                            }}
+                          />
+                        )}
+                      </div>
+
+                      {/* Label segment */}
+                      <div
+                        style={{
+                          fontSize: 8,
+                          color: T.text70,
+                        }}
+                      >
+                        {seg === 25 ? "25" : seg}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  ) : (
-    <div style={{ fontSize: 12, color: T.text70 }}>
-      Aucune fléchette enregistrée sur la période.
-    </div>
-  )}
-</div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: T.text70 }}>
+            Aucune fléchette enregistrée sur la période.
+          </div>
+        )}
+      </div>
 
               {/* ============================================================
           LISTE DES DERNIÈRES SESSIONS + PAGINATION
