@@ -83,6 +83,12 @@ export type TrainingX01Session = {
 
 const TRAINING_X01_STATS_KEY = "dc_training_x01_stats_v1";
 
+// même ordre que le radar TrainingX01Play
+const SEGMENTS: number[] = [
+  20, 1, 18, 4, 13, 6, 10, 15, 2, 17,
+  3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 25,
+];
+
 function loadTrainingSessions(): TrainingX01Session[] {
   if (typeof window === "undefined") return [];
   try {
@@ -136,7 +142,6 @@ function loadTrainingSessions(): TrainingX01Session[] {
           if (!Number.isFinite(seg) || seg <= 0) continue;
           const w = Number(weightAny) || 0;
           const count = Math.max(0, Math.round(w));
-          // petit cap pour éviter des tableaux monstrueux si un jour ça dérive
           const capped = Math.min(count, 200);
           for (let i = 0; i < capped; i++) {
             tmp.push({ v: seg, mult: 1 } as UIDart);
@@ -587,6 +592,19 @@ function TrainingX01StatsTab() {
   const allDartsDetail =
     filtered.flatMap((s) => s.dartsDetail ?? []) ?? [];
 
+  // Agrégation par segment pour le graphique en bâtons
+  const segHitMap: Record<string, number> = {};
+  for (const d of allDartsDetail) {
+    const v = Number((d as any)?.v) || 0;
+    if (v <= 0) continue;
+    const key = v === 25 ? "25" : String(v);
+    segHitMap[key] = (segHitMap[key] || 0) + 1;
+  }
+  const maxSegHits = Object.values(segHitMap).reduce(
+    (m, v) => (v > m ? v : m),
+    0
+  );
+
   /* ---------- Sparkline façon TrainingX01Play ---------- */
 
   function valueForMetric(
@@ -741,9 +759,9 @@ function TrainingX01StatsTab() {
           </div>
         </div>
 
-        {/* Moy. darts / session (or) */}
+        {/* Moy.3D (période, or) */}
         <div style={makeKpiBox(T.gold)}>
-          <div style={kpiLabel}>Moy. darts / session</div>
+          <div style={kpiLabel}>Moy.3D (période)</div>
           <div
             style={{
               fontSize: 18,
@@ -751,13 +769,13 @@ function TrainingX01StatsTab() {
               color: T.gold,
             }}
           >
-            {avgDarts.toFixed(1)}
+            {globalAvg3D.toFixed(1)}
           </div>
         </div>
 
-        {/* Meilleure Moy.3D (bleu ciel) */}
+        {/* Moy.1D (période, bleu ciel) */}
         <div style={makeKpiBox("#47B5FF")}>
-          <div style={kpiLabel}>Meilleure Moy.3D</div>
+          <div style={kpiLabel}>Moy.1D (période)</div>
           <div
             style={{
               fontSize: 18,
@@ -765,7 +783,7 @@ function TrainingX01StatsTab() {
               color: "#47B5FF",
             }}
           >
-            {bestAvg3D.toFixed(1)}
+            {globalAvg1D.toFixed(2)}
           </div>
         </div>
 
@@ -959,6 +977,83 @@ function TrainingX01StatsTab() {
         )}
       </div>
 
+      {/* GRAPHIQUE EN BÂTONS : HITS PAR SEGMENT */}
+      <div style={card}>
+        <div
+          style={{
+            fontSize: 13,
+            color: T.text70,
+            marginBottom: 6,
+          }}
+        >
+          Hits par segment
+        </div>
+        {allDartsDetail.length ? (
+          <div
+            style={{
+              height: 130,
+              display: "flex",
+              alignItems: "flex-end",
+              gap: 4,
+              padding: "8px 4px",
+              borderRadius: 14,
+              background:
+                "linear-gradient(180deg,#15171B,#0C0D10)",
+            }}
+          >
+            {SEGMENTS.map((seg) => {
+              const key = String(seg);
+              const count = segHitMap[key] || 0;
+              const hPct =
+                maxSegHits > 0
+                  ? (count / maxSegHits) * 100
+                  : 0;
+
+              return (
+                <div
+                  key={seg}
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    gap: 4,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 10,
+                      borderRadius: 999,
+                      background: "#32D47A",
+                      boxShadow: count
+                        ? "0 0 8px rgba(50,212,122,0.85)"
+                        : "none",
+                      height: count
+                        ? `${Math.max(8, hPct)}%`
+                        : 4,
+                      opacity: count ? 1 : 0.15,
+                    }}
+                  />
+                  <div
+                    style={{
+                      fontSize: 8,
+                      color: T.text70,
+                    }}
+                  >
+                    {seg === 25 ? "B" : seg}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: T.text70 }}>
+            Aucune fléchette enregistrée sur la période.
+          </div>
+        )}
+      </div>
+
       {/* STATS DÉTAILLÉES — style bronze/doré */}
       <div
         style={{
@@ -985,7 +1080,7 @@ function TrainingX01StatsTab() {
 
         {/* Groupes de lignes */}
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {/* Ligne 1 */}
+          {/* Ligne 1 : Moy.3D */}
           <div
             style={{
               display: "flex",
@@ -999,7 +1094,7 @@ function TrainingX01StatsTab() {
             <span style={{ fontWeight: 700 }}>{globalAvg3D.toFixed(1)}</span>
           </div>
 
-          {/* Ligne 2 */}
+          {/* Ligne 2 : Moy.1D */}
           <div
             style={{
               display: "flex",
@@ -1013,7 +1108,7 @@ function TrainingX01StatsTab() {
             <span style={{ fontWeight: 700 }}>{globalAvg1D.toFixed(2)}</span>
           </div>
 
-          {/* Ligne 3 */}
+          {/* Ligne 3 : Best Visit */}
           <div
             style={{
               display: "flex",
@@ -1027,7 +1122,23 @@ function TrainingX01StatsTab() {
             <span style={{ fontWeight: 700 }}>{bestVisit}</span>
           </div>
 
-          {/* Ligne 4 */}
+          {/* Ligne 4 : Best Checkout (CO) */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 0",
+              borderBottom: "1px solid rgba(246,194,86,.35)",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: T.text70 }}>Best Checkout</span>
+            <span style={{ fontWeight: 700 }}>
+              {bestCheckout || 0}
+            </span>
+          </div>
+
+          {/* Ligne 5 : Darts */}
           <div
             style={{
               display: "flex",
@@ -1041,7 +1152,7 @@ function TrainingX01StatsTab() {
             <span style={{ fontWeight: 700 }}>{totalDarts}</span>
           </div>
 
-          {/* Ligne 5 */}
+          {/* Ligne 6 : %Hits */}
           <div
             style={{
               display: "flex",
