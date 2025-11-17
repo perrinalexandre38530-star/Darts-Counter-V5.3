@@ -98,6 +98,9 @@ export type TrainingFinishStats = {
 
   // 🔥 NEW : heatmap radar, somme pondérée par segment ("20", "5", "25"...)
   bySegment: Record<string, number>;
+  bySegmentS: Record<string, number>;
+  bySegmentD: Record<string, number>;
+  bySegmentT: Record<string, number>;
 };
 
 export type HitMap = Record<string, number>;
@@ -1016,6 +1019,9 @@ export default function TrainingX01Play({
   const [finishedSessions, setFinishedSessions] = React.useState<
     TrainingFinishStats[]
   >(() => loadTrainingStatsFromStorage());
+  const [hitMapS, setHitMapS] = React.useState<HitMap>({});
+  const [hitMapD, setHitMapD] = React.useState<HitMap>({});
+  const [hitMapT, setHitMapT] = React.useState<HitMap>({});
   const [metricKey, setMetricKey] = React.useState<MetricKey>("darts");
   const [rangeKey, setRangeKey] = React.useState<RangeKey>("week");
 
@@ -1270,6 +1276,25 @@ export default function TrainingX01Play({
       }
       setHitMap(nextHitMap);
 
+      // NEW — heatmaps S / D / T séparées pour StatsHub
+      const nextS = { ...hitMapS };
+      const nextD = { ...hitMapD };
+      const nextT = { ...hitMapT };
+
+      for (const d of validHits) {
+      const key = d.v === 25 ? "25" : String(d.v);
+
+    if (d.v !== 0 && d.v !== 25) {
+    if (d.mult === 1) nextS[key] = (nextS[key] ?? 0) + 1;
+    if (d.mult === 2) nextD[key] = (nextD[key] ?? 0) + 1;
+    if (d.mult === 3) nextT[key] = (nextT[key] ?? 0) + 1;
+  }
+}
+
+setHitMapS(nextS);
+setHitMapD(nextD);
+setHitMapT(nextT);
+
       setBestVisit((b) => Math.max(b, volleyTotal));
       setRemaining(after);
 
@@ -1311,6 +1336,9 @@ export default function TrainingX01Play({
           bust: finalBust,
           // 🔥 NEW : on sauve toute la heatmap de la session
           bySegment: nextHitMap,
+          bySegmentS: hitMapS,
+          bySegmentD: hitMapD,
+          bySegmentT: hitMapT,
         };
 
         setFinishedSessions((arr) => {

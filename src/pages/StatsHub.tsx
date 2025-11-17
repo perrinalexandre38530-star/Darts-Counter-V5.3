@@ -14,6 +14,7 @@ import HistoryPage from "./HistoryPage";
 import SparklinePro from "../components/SparklinePro";
 import TrainingRadar from "../components/TrainingRadar";
 import type { Dart as UIDart } from "../lib/types";
+import type { TrainingX01Session } from "../lib/TrainingStore";
 
 /* ---------- Thème ---------- */
 const T = {
@@ -125,22 +126,96 @@ function loadTrainingSessions(): TrainingX01Session[] {
           ? (row.bySegment as Record<string, any>)
           : undefined;
 
+      const bySegmentSRaw =
+        row.bySegmentS && typeof row.bySegmentS === "object"
+          ? (row.bySegmentS as Record<string, any>)
+          : undefined;
+
+      const bySegmentDRaw =
+        row.bySegmentD && typeof row.bySegmentD === "object"
+          ? (row.bySegmentD as Record<string, any>)
+          : undefined;
+
+      const bySegmentTRaw =
+        row.bySegmentT && typeof row.bySegmentT === "object"
+          ? (row.bySegmentT as Record<string, any>)
+          : undefined;
+
+      // --------------------------------------------------
       // Reconstruit dartsDetail si manquant
+      // --------------------------------------------------
       let dartsDetail: UIDart[] | undefined = undefined;
+
       if (Array.isArray(row.dartsDetail)) {
+        // Nouveau format déjà avec détail
         dartsDetail = row.dartsDetail;
-      } else if (bySegmentRaw) {
+      } else if (bySegmentSRaw || bySegmentDRaw || bySegmentTRaw) {
+        // ✅ Format TrainingX01Play actuel : S/D/T séparés
         const tmp: UIDart[] = [];
-        for (const [segStr, weightAny] of Object.entries(bySegmentRaw)) {
+        const keys = new Set<string>([
+          ...Object.keys(bySegmentSRaw || {}),
+          ...Object.keys(bySegmentDRaw || {}),
+          ...Object.keys(bySegmentTRaw || {}),
+        ]);
+
+        const cap = (n: number) =>
+          Math.min(200, Math.max(0, Math.round(n)));
+
+        for (const segStr of keys) {
           const seg = Number(segStr);
           if (!Number.isFinite(seg) || seg <= 0) continue;
-          const w = Number(weightAny) || 0;
-          const count = Math.max(0, Math.round(w));
-          const capped = Math.min(count, 200);
-          for (let i = 0; i < capped; i++) {
+
+          const sCount = cap(Number(bySegmentSRaw?.[segStr] || 0));
+          const dCount = cap(Number(bySegmentDRaw?.[segStr] || 0));
+          const tCount = cap(Number(bySegmentTRaw?.[segStr] || 0));
+
+          for (let i = 0; i < sCount; i++) {
             tmp.push({ v: seg, mult: 1 } as UIDart);
           }
+          for (let i = 0; i < dCount; i++) {
+            tmp.push({ v: seg, mult: 2 } as UIDart);
+          }
+          for (let i = 0; i < tCount; i++) {
+            tmp.push({ v: seg, mult: 3 } as UIDart);
+          }
         }
+
+        dartsDetail = tmp;
+      } else if (bySegmentRaw) {
+        // ⚠️ Ancien format : tout mélangé, ou éventuellement objet {S,D,T}
+        const tmp: UIDart[] = [];
+
+        const cap = (n: number) =>
+          Math.min(200, Math.max(0, Math.round(n)));
+
+        for (const [segStr, entry] of Object.entries(bySegmentRaw)) {
+          const seg = Number(segStr);
+          if (!Number.isFinite(seg) || seg <= 0) continue;
+
+          let sCount = 0,
+            dCount = 0,
+            tCount = 0;
+
+          if (typeof entry === "number") {
+            // Vieux de vieux : tout en simple
+            sCount = cap(entry);
+          } else if (entry && typeof entry === "object") {
+            sCount = cap(Number((entry as any).S || 0));
+            dCount = cap(Number((entry as any).D || 0));
+            tCount = cap(Number((entry as any).T || 0));
+          }
+
+          for (let i = 0; i < sCount; i++) {
+            tmp.push({ v: seg, mult: 1 } as UIDart);
+          }
+          for (let i = 0; i < dCount; i++) {
+            tmp.push({ v: seg, mult: 2 } as UIDart);
+          }
+          for (let i = 0; i < tCount; i++) {
+            tmp.push({ v: seg, mult: 3 } as UIDart);
+          }
+        }
+
         dartsDetail = tmp;
       }
 
@@ -161,6 +236,9 @@ function loadTrainingSessions(): TrainingX01Session[] {
         dBull: Number(row.dBull) || 0,
         bust: Number(row.bust) || 0,
         bySegment: bySegmentRaw,
+        bySegmentS: bySegmentSRaw,
+        bySegmentD: bySegmentDRaw,
+        bySegmentT: bySegmentTRaw,
         dartsDetail,
       } as TrainingX01Session;
     });
@@ -649,7 +727,7 @@ const row: React.CSSProperties = {
     /* ---------- Détails fléchettes pour graph + radar ---------- */
     const trainingDartsAll: UIDart[] = React.useMemo(() => {
       const out: UIDart[] = [];
-
+    
       for (const s of filtered) {
         // 1) Cas idéal : on a le détail fléchette par fléchette
         if (Array.isArray(s.dartsDetail) && s.dartsDetail.length) {
@@ -659,20 +737,36 @@ const row: React.CSSProperties = {
           }
           continue;
         }
-
+    
         // 2) Fallback : on reconstruit depuis bySegment (sessions plus anciennes)
         if (s.bySegment && typeof s.bySegment === "object") {
-          for (const [segStr, raw] of Object.entries(s.bySegment)) {
+          for (const [segStr, entry] of Object.entries(s.bySegment)) {
             const seg = Number(segStr);
             if (!Number.isFinite(seg) || seg <= 0) continue;
-
-            const weight = Number(raw) || 0;
-            const count = Math.max(0, Math.round(weight));
-            const capped = Math.min(count, 200); // limite de sécurité
-
-            for (let i = 0; i < capped; i++) {
-              const nd = normalizeTrainingDart({ v: seg, mult: 1 });
-              if (nd) out.push(nd);
+    
+            // entry peut être : nombre, ou {S,D,T}
+            let S = 0, D = 0, T = 0;
+    
+            if (typeof entry === "number") {
+              // vieux format = tout en simple
+              S = Math.max(0, Math.round(entry));
+            } else if (typeof entry === "object") {
+              S = Number((entry as any).S) || 0;
+              D = Number((entry as any).D) || 0;
+              T = Number((entry as any).T) || 0;
+            }
+    
+            // Simple
+            for (let i = 0; i < S; i++) {
+              out.push({ v: seg, mult: 1 });
+            }
+            // Double
+            for (let i = 0; i < D; i++) {
+              out.push({ v: seg, mult: 2 });
+            }
+            // Triple
+            for (let i = 0; i < T; i++) {
+              out.push({ v: seg, mult: 3 });
             }
           }
         }
@@ -710,47 +804,51 @@ const row: React.CSSProperties = {
           : `${favoriteSegmentKey}`;
     }
   
-    /* ============================================================
-       STACK S/D/T PAR SEGMENT + MISS
-       ============================================================ */
-       const segSDTMap: Record<string, { S: number; D: number; T: number }> = {};
-       let chartMissCount = 0;
-       
-       for (const d of trainingDartsAll) {
-      const v = Number((d as any)?.v) || 0;
-      const mult = Number((d as any)?.mult) || 0;
-  
-      if (v === 0 || mult === 0) {
-        chartMissCount++;
-        continue;
-      }
-  
-      const key = v === 25 ? "25" : String(v);
-      if (!segSDTMap[key]) segSDTMap[key] = { S: 0, D: 0, T: 0 };
-  
-      if (mult === 1) segSDTMap[key].S++;
-      else if (mult === 2) segSDTMap[key].D++;
-      else if (mult === 3) segSDTMap[key].T++;
+   /* ============================================================
+   STACK S/D/T PAR SEGMENT + MISS
+   ============================================================ */
+// S/D/T par valeur, construits à partir de trainingDartsAll (hits uniquement)
+const segSDTMap: Record<string, { S: number; D: number; T: number }> = {};
+
+// Miss = compteur global déjà calculé plus haut
+let chartMissCount = gMiss;
+
+for (const d of trainingDartsAll) {
+  const v = Number((d as any)?.v) || 0;
+  const mult = Number((d as any)?.mult) || 0;
+
+  // On ignore les miss dans trainingDartsAll
+  if (v === 0 || mult === 0) {
+    continue;
+  }
+
+  const key = v === 25 ? "25" : String(v);
+  if (!segSDTMap[key]) segSDTMap[key] = { S: 0, D: 0, T: 0 };
+
+  if (mult === 1) segSDTMap[key].S++;
+  else if (mult === 2) segSDTMap[key].D++;
+  else if (mult === 3) segSDTMap[key].T++;
+}
+
+const HITS_SEGMENTS: (number | "MISS")[] = [
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+  11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+  25,
+  "MISS",
+];
+
+const maxStackHits = HITS_SEGMENTS.reduce(
+  (max, seg) => {
+    if (seg === "MISS") {
+      return chartMissCount > max ? chartMissCount : max;
     }
-  
-    const HITS_SEGMENTS: (number | "MISS")[] = [
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-      11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-      25,
-      "MISS",
-    ];
-  
-    const maxStackHits = HITS_SEGMENTS.reduce(
-      (max, seg) => {
-        if (seg === "MISS") {
-          return chartMissCount > max ? chartMissCount : max;
-        }
-        const data = segSDTMap[String(seg)];
-        const tot = data ? data.S + data.D + data.T : 0;
-        return tot > max ? tot : max;
-      },
-      0
-    );
+    const data = segSDTMap[String(seg)];
+    const tot = data ? data.S + data.D + data.T : 0;
+    return tot > max ? tot : max;
+  },
+  0
+);
+
   
     /* ============================================================
        Sparkline
@@ -2351,6 +2449,160 @@ const row: React.CSSProperties = {
         </div>
       )}
 
+    </div>
+  );
+}
+
+// ============================================
+// Sous-composant : TrainingHitsBySegment
+// - utilise TrainingX01Session (TrainingStore)
+// - ajoute un segment spécial "MISS"
+// ============================================
+
+const TRAINING_SEGMENTS: number[] = [
+  20, 1, 18, 4, 13, 6, 10, 15, 2, 17,
+  3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 25,
+];
+
+type SegmentBarAgg = {
+  key: string;   // "1".."20","25","MISS"
+  label: string; // texte affiché sous la barre
+  s: number;
+  d: number;
+  t: number;
+};
+
+/**
+ * Construit les données pour "Hits par segment" à partir des sessions X01.
+ * - Empile S/D/T pour chaque valeur 1..20,25
+ * - Ajoute un segment spécial "MISS" alimenté par session.miss
+ */
+function buildTrainingBarsFromSessions(
+  sessions: TrainingX01Session[],
+): SegmentBarAgg[] {
+  const map: Record<string, SegmentBarAgg> = {};
+
+  // initialise 1..20,25
+  for (const v of TRAINING_SEGMENTS) {
+    const k = String(v);
+    map[k] = {
+      key: k,
+      label: k,
+      s: 0,
+      d: 0,
+      t: 0,
+    };
+  }
+
+  // initialise le segment spécial "MISS"
+  map["MISS"] = {
+    key: "MISS",
+    label: "Miss",
+    s: 0,
+    d: 0,
+    t: 0,
+  };
+
+  for (const s of sessions) {
+    // agrégats détaillés par valeur
+    if (s.bySegmentS) {
+      for (const [k, val] of Object.entries(s.bySegmentS)) {
+        if (!map[k]) continue;
+        map[k].s += val || 0;
+      }
+    }
+    if (s.bySegmentD) {
+      for (const [k, val] of Object.entries(s.bySegmentD)) {
+        if (!map[k]) continue;
+        map[k].d += val || 0;
+      }
+    }
+    if (s.bySegmentT) {
+      for (const [k, val] of Object.entries(s.bySegmentT)) {
+        if (!map[k]) continue;
+        map[k].t += val || 0;
+      }
+    }
+
+    // 👉 Miss : on utilise le compteur global s.miss
+    const missCount = s.miss ?? 0;
+    if (missCount > 0) {
+      // on le met dans "s" (Simple) pour une seule couleur
+      map["MISS"].s += missCount;
+    }
+  }
+
+  // On renvoie les segments dans l'ordre radar + Miss en dernier
+  const ordered: SegmentBarAgg[] = [];
+
+  for (const v of TRAINING_SEGMENTS) {
+    const k = String(v);
+    if (map[k]) ordered.push(map[k]);
+  }
+
+  // segment Miss à la fin
+  ordered.push(map["MISS"]);
+
+  return ordered;
+}
+
+type TrainingHitsBySegmentProps = {
+  sessions: TrainingX01Session[];
+};
+
+function TrainingHitsBySegment({ sessions }: TrainingHitsBySegmentProps) {
+  const bars = buildTrainingBarsFromSessions(sessions);
+
+  if (!bars.length) {
+    return (
+      <div className="panel-card training-card">
+        <div className="panel-card-header">
+          <span>Hits par segment</span>
+        </div>
+        <div className="panel-card-body text-muted">
+          Aucune session Training X01 pour ce joueur.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="panel-card training-card">
+      <div className="panel-card-header">
+        <span>Hits par segment</span>
+      </div>
+
+      <div className="training-bars">
+        {bars.map((b) => {
+          const total = b.s + b.d + b.t;
+          const sHeight = total ? (b.s / total) * 100 : 0;
+          const dHeight = total ? (b.d / total) * 100 : 0;
+          const tHeight = total ? (b.t / total) * 100 : 0;
+
+          return (
+            <div key={b.key} className="training-bar">
+              <div className="training-bar-stack">
+                {/* Simple = doré */}
+                <div
+                  className="training-bar-seg training-bar-seg-s"
+                  style={{ height: `${sHeight}%` }}
+                />
+                {/* Double = bleu pétrole */}
+                <div
+                  className="training-bar-seg training-bar-seg-d"
+                  style={{ height: `${dHeight}%` }}
+                />
+                {/* Triple = violet */}
+                <div
+                  className="training-bar-seg training-bar-seg-t"
+                  style={{ height: `${tHeight}%` }}
+                />
+              </div>
+              <div className="training-bar-label">{b.label}</div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
