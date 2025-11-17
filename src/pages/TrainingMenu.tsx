@@ -69,8 +69,7 @@ export default function TrainingMenu({ go }: Props) {
             maxWidth: 520,
           }}
         >
-          Joue en solo, chaque fléchette est mémorisée pour suivre ta
-          progression.
+          Améliorez votre progression dans plusieurs modes de jeux d'entrainements solo ou à plusieurs et suivez votre évolution en statistiques.
         </div>
 
         {/* -------- Cartes Training -------- */}
