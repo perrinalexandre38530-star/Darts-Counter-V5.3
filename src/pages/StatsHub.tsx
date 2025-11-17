@@ -25,6 +25,15 @@ const T = {
   card: "linear-gradient(180deg,rgba(17,18,20,.94),rgba(13,14,17,.92))",
 };
 
+const goldNeon = {
+  fontSize: 14,
+  fontWeight: 900,
+  textTransform: "uppercase",
+  color: "#F6C256",
+  textShadow: "0 0 8px rgba(246,194,86,.9), 0 0 16px rgba(246,194,86,.45)",
+  letterSpacing: 0.8,
+};
+
 /* ---------- Types ---------- */
 type PlayerLite = {
   id: string;
@@ -1420,15 +1429,15 @@ const maxStackHits = HITS_SEGMENTS.reduce(
   
   {/* Titre centré */}
   <div
-    style={{
-      fontWeight: 800,
-      fontSize: 16,
-      color: T.gold,
-      marginBottom: 10,
-    }}
-  >
-    Training X01
-  </div>
+  style={{
+    ...goldNeon,
+    fontSize: 18,
+    marginBottom: 10,
+    textAlign: "center",
+  }}
+>
+  TRAINING X01
+</div>
 
   {/* Ligne unique de boutons */}
   <div
@@ -1601,6 +1610,46 @@ const maxStackHits = HITS_SEGMENTS.reduce(
   </div>
 )}
 
+{/* ============================================================
+    RÉSUMÉ DE LA PÉRIODE — Sessions
+   ============================================================ */}
+<div
+  style={{
+    borderRadius: 20,
+    padding: "12px 14px",
+    marginBottom: 3,     // marge réduite vers Stats détaillées
+    marginTop: 15,       // marge augmentée vers les KPI
+    background: "linear-gradient(180deg,#18181A,#0F0F11)",
+    border: "1px solid rgba(255,255,255,.12)",
+    boxShadow: "0 6px 18px rgba(0,0,0,.55)",
+  }}
+>
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      fontSize: 13,
+      fontWeight: 700,
+      color: T.gold,
+    }}
+  >
+    <span>Session</span>
+
+    <span
+      style={{
+        fontWeight: 900,
+        fontSize: 15,
+        color: T.gold,
+        textShadow:
+          "0 0 6px rgba(246,194,86,.9), 0 0 14px rgba(246,194,86,.55)",
+      }}
+    >
+      {totalSessions}
+    </span>
+  </div>
+</div>
+
       {/* ============================================================
           STATS DÉTAILLÉES — style bronze/doré (NOUVELLE VERSION)
           ============================================================ */}
@@ -1614,16 +1663,20 @@ const maxStackHits = HITS_SEGMENTS.reduce(
         }}
       >
         <div
-          style={{
-            fontSize: 14,
-            fontWeight: 700,
-            color: T.gold,
-            marginBottom: 10,
-            textAlign: "center",
-          }}
-        >
-          STATS DÉTAILLÉES (Période)
-        </div>
+  style={{
+    fontSize: 14,
+    fontWeight: 900,
+    textTransform: "uppercase",
+    color: T.gold,
+    textShadow:
+      "0 0 8px rgba(246,194,86,.9), 0 0 16px rgba(246,194,86,.45)",
+    letterSpacing: 0.8,
+    marginBottom: 10,
+    textAlign: "center",
+  }}
+>
+  Stats détaillées (période)
+</div>
 
         {totalSessions === 0 ? (
           <div style={{ fontSize: 12, color: T.text70, textAlign: "center" }}>
@@ -1706,20 +1759,6 @@ const maxStackHits = HITS_SEGMENTS.reduce(
   
                 return (
                   <>
-                    {/* Petite précision sur le volume de sessions */}
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: T.text70,
-                        textAlign: "center",
-                        marginBottom: 6,
-                      }}
-                    >
-                      {totalSessions === 1
-                        ? "1 session sur la période"
-                        : `${totalSessions} sessions sur la période`}
-                    </div>
-  
                     {/* En-têtes des colonnes */}
                     <div
                       style={{
@@ -2099,347 +2138,362 @@ const maxStackHits = HITS_SEGMENTS.reduce(
         </div>
 
       {/* ============================================================
-          SPARKLINE + PANNEAU DÉROULANT
-          ============================================================ */}
-      <div style={card}>
-        {/* Titre */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 8,
-            alignItems: "center",
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ fontSize: 13, color: T.text70 }}>Progression</div>
+    SPARKLINE + PANNEAU DÉROULANT
+    ============================================================ */}
+<div style={card}>
+  {/* Titre */}
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      gap: 8,
+      alignItems: "center",
+      marginBottom: 8,
+    }}
+  >
+    <div
+      style={{
+        fontSize: 13,
+        fontWeight: 800,
+        textTransform: "uppercase",
+        color: T.gold,
+        textShadow:
+          "0 0 6px rgba(246,194,86,.9), 0 0 14px rgba(246,194,86,.45)",
+        letterSpacing: 0.8,
+      }}
+    >
+      Progression
+    </div>
+  </div>
+
+  {/* Layout Sparkline + liste */}
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: "2fr minmax(120px,1.1fr)",
+      gap: 10,
+      alignItems: "stretch",
+    }}
+  >
+    {/* Sparkline */}
+    <div style={{ display: "flex", alignItems: "center" }}>
+      {sparkSeries.length ? (
+        <SparklinePro
+          points={sparkSeries.map((p) => ({ x: p.x, y: p.y }))}
+          height={64}
+        />
+      ) : (
+        <div style={{ fontSize: 12, color: T.text70 }}>
+          Aucune session sur la période.
         </div>
+      )}
+    </div>
 
-        {/* Layout Sparkline + liste */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "2fr minmax(120px,1.1fr)",
-            gap: 10,
-            alignItems: "stretch",
-          }}
-        >
-          {/* Sparkline */}
-          <div style={{ display: "flex", alignItems: "center" }}>
-            {sparkSeries.length ? (
-              <SparklinePro
-                points={sparkSeries.map((p) => ({ x: p.x, y: p.y }))}
-                height={64}
-              />
-            ) : (
-              <div style={{ fontSize: 12, color: T.text70 }}>
-                Aucune session sur la période.
-              </div>
-            )}
-          </div>
-
-          {/* Liste déroulante des points */}
+    {/* Liste déroulante des points */}
+    <div
+      style={{
+        fontSize: 11,
+        color: T.text70,
+        maxHeight: 90,
+        overflowY: "auto",
+        paddingLeft: 4,
+        borderLeft: "1px solid rgba(255,255,255,.12)",
+      }}
+    >
+      {sparkSeries
+        .slice()
+        .reverse()
+        .map((p, i) => (
           <div
-            style={{
-              fontSize: 11,
-              color: T.text70,
-              maxHeight: 90,
-              overflowY: "auto",
-              paddingLeft: 4,
-              borderLeft: "1px solid rgba(255,255,255,.12)",
-            }}
-          >
-            {sparkSeries
-              .slice()
-              .reverse()
-              .map((p, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    padding: "2px 0",
-                    gap: 6,
-                  }}
-                >
-                  <span style={{ whiteSpace: "nowrap" }}>
-                    {formatShortDate(p.session.date)}
-                  </span>
-                  <span style={{ fontWeight: 700, color: T.gold }}>
-                    {p.y.toFixed(1)}
-                  </span>
-                </div>
-              ))}
-          </div>
-        </div>
-
-        {/* Sélecteur de métrique */}
-        <div
-          style={{
-            marginTop: 8,
-            display: "flex",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: 8,
-          }}
-        >
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-            {(
-              [
-                ["darts", "Darts"],
-                ["avg3D", "3D"],
-                ["pctS", "%S"],
-                ["pctD", "%D"],
-                ["pctT", "%T"],
-                ["BV", "BV"],
-                ["CO", "CO"],
-              ] as const
-            ).map(([k, lbl]) => (
-              <button
-                key={k}
-                onClick={() => setMetric(k)}
-                style={{
-                  ...metricPill,
-                  borderColor: metric === k ? T.gold : "rgba(255,255,255,.18)",
-                  color: metric === k ? T.gold : T.text70,
-                }}
-              >
-                {lbl}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* ============================================================
-          RADAR — toutes les fléchettes
-          ============================================================ */}
-      <div style={card}>
-        <div style={{ fontSize: 13, color: T.text70, marginBottom: 6 }}>
-          Radar — toutes les fléchettes
-        </div>
-
-        {trainingDartsAll.length ? (
-  <TrainingRadar darts={trainingDartsAll} />
-) : (
-          <div style={{ fontSize: 12, color: T.text70 }}>
-            Aucune fléchette enregistrée sur la période.
-          </div>
-        )}
-      </div>
-
-            {/* GRAPHIQUE EN BÂTONS : HITS PAR SEGMENT (2 LIGNES CUSTOM ORDER) */}
-            <div style={card}>
-        <div
-          style={{
-            fontSize: 13,
-            color: T.text70,
-            marginBottom: 6,
-          }}
-        >
-          Hits par segment
-        </div>
-
-        {trainingDartsAll.length ? (
-          <div
+            key={i}
             style={{
               display: "flex",
-              flexDirection: "column",
-              gap: 12,
-              background: "linear-gradient(180deg,#15171B,#0C0D10)",
-              padding: "12px 6px",
-              borderRadius: 12,
+              justifyContent: "space-between",
+              padding: "2px 0",
+              gap: 6,
             }}
           >
-            {/* ORDRE EXACT demandé */}
-            {[
-              ["MISS", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], // Ligne 1
-              [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25], // Ligne 2
-            ].map((rowSegs, rowIndex) => (
+            <span style={{ whiteSpace: "nowrap" }}>
+              {formatShortDate(p.session.date)}
+            </span>
+            <span style={{ fontWeight: 700, color: T.gold }}>
+              {p.y.toFixed(1)}
+            </span>
+          </div>
+        ))}
+    </div>
+  </div>
+
+  {/* Sélecteur de métrique */}
+  <div
+    style={{
+      marginTop: 8,
+      display: "flex",
+      justifyContent: "space-between",
+      flexWrap: "wrap",
+      gap: 8,
+    }}
+  >
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+      {(
+        [
+          ["darts", "Darts"],
+          ["avg3D", "3D"],
+          ["pctS", "%S"],
+          ["pctD", "%D"],
+          ["pctT", "%T"],
+          ["BV", "BV"],
+          ["CO", "CO"],
+        ] as const
+      ).map(([k, lbl]) => (
+        <button
+          key={k}
+          onClick={() => setMetric(k)}
+          style={{
+            ...metricPill,
+            borderColor: metric === k ? T.gold : "rgba(255,255,255,.18)",
+            color: metric === k ? T.gold : T.text70,
+          }}
+        >
+          {lbl}
+        </button>
+      ))}
+    </div>
+  </div>
+</div>
+
+     {/* ============================================================
+    RADAR HITS
+    ============================================================ */}
+<div style={card}>
+  <div
+    style={{
+      fontSize: 13,
+      fontWeight: 800,
+      textTransform: "uppercase",
+      color: T.gold,
+      textShadow:
+        "0 0 6px rgba(246,194,86,.9), 0 0 14px rgba(246,194,86,.45)",
+      letterSpacing: 0.8,
+      marginBottom: 6,
+    }}
+  >
+    RADAR HITS
+  </div>
+
+  {trainingDartsAll.length ? (
+    <TrainingRadar darts={trainingDartsAll} />
+  ) : (
+    <div style={{ fontSize: 12, color: T.text70 }}>
+      Aucune fléchette enregistrée sur la période.
+    </div>
+  )}
+</div>
+
+{/* ============================================================
+    GRAPHIQUE EN BÂTONS : HITS PAR SEGMENT (2 LIGNES CUSTOM ORDER)
+    ============================================================ */}
+<div style={card}>
+  <div
+    style={{
+      fontSize: 13,
+      fontWeight: 700,
+      color: T.gold,
+      marginBottom: 6,
+      textTransform: "uppercase",
+      letterSpacing: 0.6,
+      textShadow: "0 0 6px rgba(246,194,86,.6)",
+    }}
+  >
+    Hits par segment
+  </div>
+
+  {trainingDartsAll.length ? (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        background: "linear-gradient(180deg,#15171B,#0C0D10)",
+        padding: "12px 6px",
+        borderRadius: 12,
+      }}
+    >
+      {/* ORDRE EXACT demandé */}
+      {[
+        ["MISS", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], // Ligne 1
+        [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25], // Ligne 2
+      ].map((rowSegs, rowIndex) => (
+        <div
+          key={rowIndex}
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-end",
+            gap: 4,
+            height: 120,
+          }}
+        >
+          {rowSegs.map((seg) => {
+            // MISS
+            if (seg === "MISS") {
+              const count = chartMissCount;
+              const hPct =
+                maxStackHits > 0 ? (count / maxStackHits) * 100 : 0;
+              return (
+                <div
+                  key="MISS"
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    gap: 3,
+                    height: "100%", // ✅ important
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 10,
+                      borderRadius: 999,
+                      background: "#FF4B4B",
+                      boxShadow: count
+                        ? "0 0 6px rgba(255,75,75,0.85)"
+                        : "none",
+                      height: count
+                        ? `${Math.max(10, hPct)}%`
+                        : 4,
+                      opacity: count ? 1 : 0.18,
+                    }}
+                  />
+                  <div
+                    style={{
+                      fontSize: 8,
+                      color: T.text70,
+                    }}
+                  >
+                    M
+                  </div>
+                </div>
+              );
+            }
+
+            // SEGMENTS 1–20 + 25
+            const key = String(seg);
+            const data = segSDTMap[key] || { S: 0, D: 0, T: 0 };
+            const total = data.S + data.D + data.T;
+
+            const hPct =
+              maxStackHits > 0 ? (total / maxStackHits) * 100 : 0;
+
+            const baseHeight = total ? Math.max(10, hPct) : 4;
+
+            const totalForRatio = total > 0 ? total : 1;
+
+            const hS =
+              total > 0
+                ? Math.max(2, (data.S / totalForRatio) * baseHeight)
+                : 0;
+
+            const hD =
+              total > 0
+                ? Math.max(2, (data.D / totalForRatio) * baseHeight)
+                : 0;
+
+            const hT =
+              total > 0
+                ? Math.max(2, (data.T / totalForRatio) * baseHeight)
+                : 0;
+
+            return (
               <div
-                key={rowIndex}
+                key={seg}
                 style={{
+                  flex: 1,
                   display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-end",
-                  gap: 4,
-                  height: 120,
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  gap: 3,
+                  height: "100%", // ✅ important
                 }}
               >
-                {rowSegs.map((seg) => {
-                  // MISS
-                  if (seg === "MISS") {
-                    const count = chartMissCount;
-                    const hPct =
-                      maxStackHits > 0
-                        ? (count / maxStackHits) * 100
-                        : 0;
-                    return (
-                      <div
-                        key="MISS"
-                        style={{
-                          flex: 1,
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          justifyContent: "flex-end",
-                          gap: 3,
-                          height: "100%", // ✅ important
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: 10,
-                            borderRadius: 999,
-                            background: "#FF4B4B",
-                            boxShadow: count
-                              ? "0 0 6px rgba(255,75,75,0.85)"
-                              : "none",
-                            height: count
-                              ? `${Math.max(10, hPct)}%`
-                              : 4,
-                            opacity: count ? 1 : 0.18,
-                          }}
-                        />
-                        <div
-                          style={{
-                            fontSize: 8,
-                            color: T.text70,
-                          }}
-                        >
-                          M
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // SEGMENTS 1–20 + 25
-                  const key = String(seg);
-                  const data = segSDTMap[key] || { S: 0, D: 0, T: 0 };
-                  const total = data.S + data.D + data.T;
-
-                  const hPct =
-                    maxStackHits > 0
-                      ? (total / maxStackHits) * 100
-                      : 0;
-
-                  const baseHeight = total
-                    ? Math.max(10, hPct)
-                    : 4;
-
-                  const totalForRatio = total > 0 ? total : 1;
-
-                  const hS =
-                    total > 0
-                      ? Math.max(
-                          2,
-                          (data.S / totalForRatio) * baseHeight
-                        )
-                      : 0;
-
-                  const hD =
-                    total > 0
-                      ? Math.max(
-                          2,
-                          (data.D / totalForRatio) * baseHeight
-                        )
-                      : 0;
-
-                  const hT =
-                    total > 0
-                      ? Math.max(
-                          2,
-                          (data.T / totalForRatio) * baseHeight
-                        )
-                      : 0;
-
-                  return (
+                <div
+                  style={{
+                    width: 12,
+                    borderRadius: 999,
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column-reverse",
+                    opacity: total ? 1 : 0.18,
+                    boxShadow: total
+                      ? "0 0 6px rgba(255,255,255,0.15)"
+                      : "none",
+                    height: total ? `${baseHeight}%` : 4,
+                  }}
+                >
+                  {data.S > 0 && (
                     <div
-                      key={seg}
                       style={{
-                        flex: 1,
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        justifyContent: "flex-end",
-                        gap: 3,
-                        height: "100%", // ✅ important
+                        height: `${hS}%`,
+                        background: T.gold, // SIMPLE doré
                       }}
-                    >
-                      <div
-                        style={{
-                          width: 12,
-                          borderRadius: 999,
-                          overflow: "hidden",
-                          display: "flex",
-                          flexDirection: "column-reverse",
-                          opacity: total ? 1 : 0.18,
-                          boxShadow: total
-                            ? "0 0 6px rgba(255,255,255,0.15)"
-                            : "none",
-                          height: total ? `${baseHeight}%` : 4,
-                        }}
-                      >
-                        {data.S > 0 && (
-                          <div
-                            style={{
-                              height: `${hS}%`,
-                              background: T.gold, // SIMPLE doré
-                            }}
-                          />
-                        )}
-                        {data.D > 0 && (
-                          <div
-                            style={{
-                              height: `${hD}%`,
-                              background: "#007A88", // DOUBLE bleu pétrole
-                            }}
-                          />
-                        )}
-                        {data.T > 0 && (
-                          <div
-                            style={{
-                              height: `${hT}%`,
-                              background: "#A259FF", // TRIPLE violet
-                            }}
-                          />
-                        )}
-                      </div>
+                    />
+                  )}
+                  {data.D > 0 && (
+                    <div
+                      style={{
+                        height: `${hD}%`,
+                        background: "#007A88", // DOUBLE bleu pétrole
+                      }}
+                    />
+                  )}
+                  {data.T > 0 && (
+                    <div
+                      style={{
+                        height: `${hT}%`,
+                        background: "#A259FF", // TRIPLE violet
+                      }}
+                    />
+                  )}
+                </div>
 
-                      {/* Label segment */}
-                      <div
-                        style={{
-                          fontSize: 8,
-                          color: T.text70,
-                        }}
-                      >
-                        {seg === 25 ? "25" : seg}
-                      </div>
-                    </div>
-                  );
-                })}
+                {/* Label segment */}
+                <div
+                  style={{
+                    fontSize: 8,
+                    color: T.text70,
+                  }}
+                >
+                  {seg === 25 ? "25" : seg}
+                </div>
               </div>
-            ))}
-          </div>
-        ) : (
-          <div style={{ fontSize: 12, color: T.text70 }}>
-            Aucune fléchette enregistrée sur la période.
-          </div>
-        )}
-      </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  ) : (
+    <div style={{ fontSize: 12, color: T.text70 }}>
+      Aucune fléchette enregistrée sur la période.
+    </div>
+  )}
+</div>
 
               {/* ============================================================
           LISTE DES DERNIÈRES SESSIONS + PAGINATION
           ============================================================ */}
       <div style={card}>
-        <div
-          style={{
-            fontWeight: 800,
-            marginBottom: 6,
-          }}
-        >
-          Dernières sessions
-        </div>
+      <div
+  style={{
+    ...goldNeon,
+    fontSize: 13,
+    marginBottom: 6,
+  }}
+>
+  DERNIÈRES SESSIONS
+</div>
 
         {filtered.length === 0 && (
           <div style={{ fontSize: 12, color: T.text70 }}>
