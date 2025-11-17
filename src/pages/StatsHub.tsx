@@ -734,9 +734,9 @@ function TrainingX01StatsTab() {
       </div>
 
       {/* ⚠️ Bloc "Aucune session de training..." SUPPRIMÉ */}
-
       {/* SPARKLINE PRO + PANNEAU DÉROULANT */}
       <div style={card}>
+        {/* Titre seul */}
         <div
           style={{
             display: "flex",
@@ -754,44 +754,9 @@ function TrainingX01StatsTab() {
           >
             Progression
           </div>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 4,
-              justifyContent: "flex-end",
-            }}
-          >
-            {(
-              [
-                ["darts", "Darts"],
-                ["avg3D", "3D"],
-                ["pctS", "%S"],
-                ["pctD", "%D"],
-                ["pctT", "%T"],
-                ["BV", "BV"],
-                ["CO", "CO"],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setMetric(key)}
-                style={{
-                  ...metricPill,
-                  borderColor:
-                    metric === key
-                      ? T.gold
-                      : "rgba(255,255,255,.18)",
-                  color:
-                    metric === key ? T.gold : T.text70,
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
         </div>
 
+        {/* Sparkline + panneau déroulant */}
         <div
           style={{
             display: "grid",
@@ -835,8 +800,7 @@ function TrainingX01StatsTab() {
               maxHeight: 90,
               overflowY: "auto",
               paddingLeft: 4,
-              borderLeft:
-                "1px solid rgba(255,255,255,.12)",
+              borderLeft: "1px solid rgba(255,255,255,.12)",
             }}
           >
             {sparkSeries
@@ -870,6 +834,58 @@ function TrainingX01StatsTab() {
                 </div>
               ))}
           </div>
+        </div>
+
+        {/* Sous la sparkline : sélecteur de métrique (+ éventuel TimeSelector à droite) */}
+        <div
+          style={{
+            marginTop: 8,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 8,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          {/* MetricSelector */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 4,
+            }}
+          >
+            {(
+              [
+                ["darts", "Darts"],
+                ["avg3D", "3D"],
+                ["pctS", "%S"],
+                ["pctD", "%D"],
+                ["pctT", "%T"],
+                ["BV", "BV"],
+                ["CO", "CO"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setMetric(key)}
+                style={{
+                  ...metricPill,
+                  borderColor:
+                    metric === key
+                      ? T.gold
+                      : "rgba(255,255,255,.18)",
+                  color: metric === key ? T.gold : T.text70,
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Ici tu peux brancher ton TimeSelector si tu veux les J/S/M/A à droite
+          <TimeSelector range={range} onChange={setRange} />
+          */}
         </div>
       </div>
 
