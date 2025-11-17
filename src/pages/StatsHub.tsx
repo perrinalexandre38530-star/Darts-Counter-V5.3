@@ -1420,8 +1420,8 @@ const maxStackHits = HITS_SEGMENTS.reduce(
   </div>
 )}
 
-      {/* ============================================================
-          STATS DÉTAILLÉES — style bronze/doré
+            {/* ============================================================
+          STATS DÉTAILLÉES — style bronze/doré (version riche)
           ============================================================ */}
       <div
         style={{
@@ -1444,8 +1444,9 @@ const maxStackHits = HITS_SEGMENTS.reduce(
           Stats détaillées (période)
         </div>
 
-        {/* ------ Lignes principales ------ */}
+        {/* ------ Volume & moyennes générales ------ */}
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {/* Sessions */}
           <div
             style={{
               display: "flex",
@@ -1455,8 +1456,54 @@ const maxStackHits = HITS_SEGMENTS.reduce(
               fontSize: 13,
             }}
           >
-            <span style={{ color: T.text70 }}>Moy.3D</span>
-            <span style={{ fontWeight: 700 }}>{globalAvg3D.toFixed(1)}</span>
+            <span style={{ color: T.text70 }}>Sessions</span>
+            <span style={{ fontWeight: 700 }}>{totalSessions}</span>
+          </div>
+
+          {/* Darts totaux */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 0",
+              borderBottom: "1px solid rgba(246,194,86,.35)",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: T.text70 }}>Darts totaux</span>
+            <span style={{ fontWeight: 700 }}>{totalDarts}</span>
+          </div>
+
+          {/* Darts / session */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 0",
+              borderBottom: "1px solid rgba(246,194,86,.35)",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: T.text70 }}>Darts / session</span>
+            <span style={{ fontWeight: 700 }}>
+              {avgDarts.toFixed(1)}
+            </span>
+          </div>
+
+          {/* Moy.3D & Moy.1D */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 0",
+              borderBottom: "1px solid rgba(246,194,86,.35)",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: T.text70 }}>Moy.3D (période)</span>
+            <span style={{ fontWeight: 700 }}>
+              {globalAvg3D.toFixed(1)}
+            </span>
           </div>
 
           <div
@@ -1468,10 +1515,13 @@ const maxStackHits = HITS_SEGMENTS.reduce(
               fontSize: 13,
             }}
           >
-            <span style={{ color: T.text70 }}>Moy.1D</span>
-            <span style={{ fontWeight: 700 }}>{globalAvg1D.toFixed(2)}</span>
+            <span style={{ color: T.text70 }}>Moy.1D (période)</span>
+            <span style={{ fontWeight: 700 }}>
+              {globalAvg1D.toFixed(2)}
+            </span>
           </div>
 
+          {/* Best visit / Best checkout */}
           <div
             style={{
               display: "flex",
@@ -1495,7 +1545,27 @@ const maxStackHits = HITS_SEGMENTS.reduce(
             }}
           >
             <span style={{ color: T.text70 }}>Best Checkout</span>
-            <span style={{ fontWeight: 700 }}>{bestCheckout || 0}</span>
+            <span style={{ fontWeight: 700 }}>
+              {bestCheckout || 0}
+            </span>
+          </div>
+
+          {/* %Hits & %Miss global */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 0",
+              borderBottom: "1px solid rgba(246,194,86,.35)",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: T.text70 }}>%Hits global</span>
+            <span style={{ fontWeight: 700 }}>
+              {pctHitsGlobal !== null
+                ? `${pctHitsGlobal.toFixed(1)}%`
+                : "—"}
+            </span>
           </div>
 
           <div
@@ -1507,8 +1577,28 @@ const maxStackHits = HITS_SEGMENTS.reduce(
               fontSize: 13,
             }}
           >
-            <span style={{ color: T.text70 }}>Darts</span>
-            <span style={{ fontWeight: 700 }}>{totalDarts}</span>
+            <span style={{ color: T.text70 }}>%Miss global</span>
+            <span style={{ fontWeight: 700 }}>
+              {pctMissGlobal !== null
+                ? `${pctMissGlobal.toFixed(1)}%`
+                : "—"}
+            </span>
+          </div>
+
+          {/* Miss / Bust par session + min / max */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 0",
+              borderBottom: "1px solid rgba(246,194,86,.35)",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: T.text70 }}>Miss / session</span>
+            <span style={{ fontWeight: 700 }}>
+              {avgMissPerSession.toFixed(1)}
+            </span>
           </div>
 
           <div
@@ -1520,33 +1610,109 @@ const maxStackHits = HITS_SEGMENTS.reduce(
               fontSize: 13,
             }}
           >
-            <span style={{ color: T.text70 }}>%Hits</span>
-            <span style={{ fontWeight: 700 }}>{hitsPercent.toFixed(1)}%</span>
+            <span style={{ color: T.text70 }}>Miss min / max</span>
+            <span style={{ fontWeight: 700 }}>
+              {minMiss !== null ? minMiss : "—"} /{" "}
+              {maxMiss !== null ? maxMiss : "—"}
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 0",
+              borderBottom: "1px solid rgba(246,194,86,.35)",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: T.text70 }}>Bust / session</span>
+            <span style={{ fontWeight: 700 }}>
+              {avgBustPerSession.toFixed(1)}
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 0",
+              borderBottom: "1px solid rgba(246,194,86,.35)",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: T.text70 }}>Bust min / max</span>
+            <span style={{ fontWeight: 700 }}>
+              {minBust !== null ? minBust : "—"} /{" "}
+              {maxBust !== null ? maxBust : "—"}
+            </span>
           </div>
         </div>
 
-        {/* ------ S / D / T ------ */}
+        {/* ------ Répartition S / D / T ------ */}
         <div
           style={{
             marginTop: 12,
             paddingTop: 10,
             borderTop: "1px solid rgba(246,194,86,.35)",
-            display: "flex",
-            justifyContent: "space-around",
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: 6,
             textAlign: "center",
           }}
         >
+          {/* Totaux S/D/T */}
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>Hits S totaux</div>
+            <div style={{ fontWeight: 700 }}>{gHitsS}</div>
+          </div>
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>Hits D totaux</div>
+            <div style={{ fontWeight: 700 }}>{gHitsD}</div>
+          </div>
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>Hits T totaux</div>
+            <div style={{ fontWeight: 700 }}>{gHitsT}</div>
+          </div>
+
+          {/* Hits / session */}
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>S / session</div>
+            <div style={{ fontWeight: 700 }}>
+              {avgHitsSPerSession.toFixed(1)}
+            </div>
+          </div>
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>D / session</div>
+            <div style={{ fontWeight: 700 }}>
+              {avgHitsDPerSession.toFixed(1)}
+            </div>
+          </div>
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>T / session</div>
+            <div style={{ fontWeight: 700 }}>
+              {avgHitsTPerSession.toFixed(1)}
+            </div>
+          </div>
+
+          {/* Pourcentages S/D/T */}
           <div>
             <div style={{ color: T.text70, fontSize: 11 }}>S%</div>
-            <div style={{ fontWeight: 700 }}>{simplePercent.toFixed(1)}%</div>
+            <div style={{ fontWeight: 700 }}>
+              {simplePercent.toFixed(1)}%
+            </div>
           </div>
           <div>
             <div style={{ color: T.text70, fontSize: 11 }}>D%</div>
-            <div style={{ fontWeight: 700 }}>{doublePercent.toFixed(1)}%</div>
+            <div style={{ fontWeight: 700 }}>
+              {doublePercent.toFixed(1)}%
+            </div>
           </div>
           <div>
             <div style={{ color: T.text70, fontSize: 11 }}>T%</div>
-            <div style={{ fontWeight: 700 }}>{triplePercent.toFixed(1)}%</div>
+            <div style={{ fontWeight: 700 }}>
+              {triplePercent.toFixed(1)}%
+            </div>
           </div>
         </div>
 
@@ -1562,27 +1728,75 @@ const maxStackHits = HITS_SEGMENTS.reduce(
             gap: 4,
           }}
         >
+          {/* Totaux */}
           <div>
             <div style={{ color: T.text70, fontSize: 11 }}>Miss</div>
             <div style={{ fontWeight: 700 }}>{gMiss}</div>
           </div>
-
           <div>
             <div style={{ color: T.text70, fontSize: 11 }}>Bull</div>
             <div style={{ fontWeight: 700 }}>{gBull}</div>
           </div>
-
           <div>
             <div style={{ color: T.text70, fontSize: 11 }}>DBull</div>
             <div style={{ fontWeight: 700 }}>{gDBull}</div>
           </div>
-
           <div>
             <div style={{ color: T.text70, fontSize: 11 }}>Bust</div>
             <div style={{ fontWeight: 700 }}>{gBust}</div>
           </div>
+
+          {/* Par session */}
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>Miss / session</div>
+            <div style={{ fontWeight: 700 }}>
+              {avgMissPerSession.toFixed(1)}
+            </div>
+          </div>
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>Bull / session</div>
+            <div style={{ fontWeight: 700 }}>
+              {avgBullPerSession.toFixed(1)}
+            </div>
+          </div>
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>
+              DBull / session
+            </div>
+            <div style={{ fontWeight: 700 }}>
+              {avgDBullPerSession.toFixed(1)}
+            </div>
+          </div>
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>Bust / session</div>
+            <div style={{ fontWeight: 700 }}>
+              {avgBustPerSession.toFixed(1)}
+            </div>
+          </div>
+
+          {/* Pourcentages Bull / DBull */}
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>%Bull*</div>
+            <div style={{ fontWeight: 700 }}>
+              {pctBullGlobal !== null
+                ? `${pctBullGlobal.toFixed(1)}%`
+                : "—"}
+            </div>
+          </div>
+          <div>
+            <div style={{ color: T.text70, fontSize: 11 }}>%DBull*</div>
+            <div style={{ fontWeight: 700 }}>
+              {pctDBullGlobal !== null
+                ? `${pctDBullGlobal.toFixed(1)}%`
+                : "—"}
+            </div>
+          </div>
+          <div style={{ gridColumn: "span 2", fontSize: 9, color: T.text70 }}>
+            * % sur (Bull + DBull)
+          </div>
         </div>
       </div>
+
 
       {/* ============================================================
           SPARKLINE + PANNEAU DÉROULANT
