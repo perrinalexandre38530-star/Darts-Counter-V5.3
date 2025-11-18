@@ -8,6 +8,9 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 
+// ✅ Mode Online : Provider d'auth globale
+import { AuthOnlineProvider } from "./hooks/useAuthOnline";
+
 /* ---------- Service Worker policy ---------- */
 if ("serviceWorker" in navigator) {
   if (import.meta.env.PROD) {
@@ -55,18 +58,22 @@ if ("serviceWorker" in navigator) {
     }
   }
 
-// ===== DEBUG: exposer un dump du store dans la console =====
-(async () => {
-  (window as any).dumpStore = async () => {
-    const { loadStore } = await import("./lib/storage");
-    const s = await loadStore<any>();
-    console.log("STORE =", s);
-    console.log("statsByPlayer =", s?.statsByPlayer);
-    console.log("Dernier summary =", Array.isArray(s?.history) ? s.history[s.history.length - 1]?.summary : undefined);
-    return s;
-  };
-})();
-
+  // ===== DEBUG: exposer un dump du store dans la console =====
+  (async () => {
+    (window as any).dumpStore = async () => {
+      const { loadStore } = await import("./lib/storage");
+      const s = await loadStore<any>();
+      console.log("STORE =", s);
+      console.log("statsByPlayer =", s?.statsByPlayer);
+      console.log(
+        "Dernier summary =",
+        Array.isArray(s?.history)
+          ? s.history[s.history.length - 1]?.summary
+          : undefined
+      );
+      return s;
+    };
+  })();
 }
 
 /* ---------- Point d’entrée React ---------- */
@@ -75,6 +82,9 @@ if (!container) throw new Error("❌ Élément #root introuvable dans index.html
 
 createRoot(container).render(
   <React.StrictMode>
-    <App />
+    {/* 🌐 Contexte Mode Online pour toute l'app */}
+    <AuthOnlineProvider>
+      <App />
+    </AuthOnlineProvider>
   </React.StrictMode>
 );

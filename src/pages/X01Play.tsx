@@ -34,6 +34,8 @@ import * as StatsOnce from "../lib/statsOnce";
 import { saveMatchStats, aggregateMatch } from "../lib/stats";
 import { commitMatchSummary, buildX01Summary } from "../lib/playerStats";
 
+import { onlineApi } from "../lib/onlineApi";
+
 /* ==================== AUTOSAVE ==================== */
 const AUTOSAVE_KEY = "dc-x01-autosave-v1";
 
@@ -1616,26 +1618,22 @@ function X01Core({
         "x01"
       );
 
-      try {
-        const wId = summary.winnerId ?? winner?.id ?? null;
-        await addMatchSummary({
-          winnerId: wId,
-          perPlayer: Object.fromEntries(
-            playersArr.map((p) => [
-              p.id,
-              {
-                id: p.id,
-                games: 1,
-                wins: wId === p.id ? 1 : 0,
-                avg3:
-                  typeof summary.perPlayerAvg3?.[p.id] === "number"
-                    ? summary.perPlayerAvg3[p.id]
-                    : undefined,
-              },
-            ])
-          ),
-        });
-      } catch {}
+      // --- dérivés par joueur pour History.summary ---
+      const avg3ByPlayer: Record<string, number> = {};
+      const bestVisitByPlayer: Record<string, number> = {};
+      const bestCheckoutByPlayer: Record<string, number> = {};
+
+      if (Array.isArray(summary.perPlayer)) {
+        for (const p of summary.perPlayer) {
+          const pid = p.playerId;
+          avg3ByPlayer[pid] =
+            typeof p.avg3 === "number" ? p.avg3 : 0;
+          bestVisitByPlayer[pid] =
+            typeof p.bestVisit === "number" ? p.bestVisit : 0;
+          bestCheckoutByPlayer[pid] =
+            typeof p.bestCheckout === "number" ? p.bestCheckout : 0;
+        }
+      }
 
       const visitsForPersist: VisitType[] = visitsLog.map((v) => ({
         p: v.p,
@@ -1647,22 +1645,30 @@ function X01Core({
         remainingAfter: v.remainingAfter,
       }));
 
+      const summaryForHistory = {
+        legs: matchLegsRef.current.length,
+        darts: matchLegsRef.current.reduce(
+          (n, l: any) =>
+            n +
+            (l.perPlayer?.reduce(
+              (s: number, p: any) => s + p.darts,
+              0
+            ) ?? 0),
+          0
+        ),
+        // moyennes par joueur (pour onglet X01 multi)
+        avg3ByPlayer,
+        bestVisitByPlayer,
+        bestCheckoutByPlayer,
+        // on garde aussi la liste brute, pour rec.summary.perPlayer
+        perPlayer: summary.perPlayer ?? [],
+      };
+
       await safeSaveMatch({
         id: matchId,
         players: playersArr,
         winnerId: summary.winnerId ?? null,
-        summary: {
-          legs: matchLegsRef.current.length,
-          darts: matchLegsRef.current.reduce(
-            (n, l: any) =>
-              n +
-              (l.perPlayer?.reduce(
-                (s: number, p: any) => s + p.darts,
-                0
-              ) ?? 0),
-            0
-          ),
-        },
+        summary: summaryForHistory, // ⬅️ c’est celui-là qu’on stocke
         payload: {
           visits: visitsForPersist,
           legs: matchLegsRef.current,
@@ -1674,22 +1680,29 @@ function X01Core({
         },
       });
 
+      // ✅ Sync Online (mode X01 classique) — best effort, ne casse rien en offline
+      try {
+        await onlineApi.uploadMatch({
+          mode: "x01",
+          payload: {
+            visits: visitsForPersist,
+            legs: matchLegsRef.current,
+            meta: {
+              currentSet,
+              currentLegInSet,
+              legsTarget: legsFromResume,
+            },
+          },
+          isTraining: false,
+        } as any);
+      } catch (err) {
+        console.warn("[Online] uploadMatch failed:", err);
+      }
+
       await History.list();
 
-      // fallback history (mini)
-      try {
-        const legForLegacy =
-          lastLegResult?.__legStats ?? matchLegsRef.current.at(-1);
-
-        await emitHistoryRecord_X01({
-          playersLite: playersArr,
-          winnerId: summary.winnerId ?? null,
-          resumeId: resumeId ?? null,
-          legStats: legForLegacy,
-          visitsLog: [],
-          onFinish,
-        });
-      } catch {}
+      // ⚠️ IMPORTANT : plus de emitHistoryRecord_X01 ici
+      // (sinon on crée un 2ᵉ match X01 "fantôme" → compteur à 2)
 
       try {
         commitMatchSummary(
@@ -1763,7 +1776,7 @@ function X01Core({
       console.warn("[finalizeMatch]", e);
     }
   }
-
+  
   /* =====================================================
      FLUSH FIN
   ===================================================== */
@@ -2653,6 +2666,8 @@ async function safeSaveMatch({
     legs?: number;
     darts?: number;
     avg3ByPlayer?: Record<string, number>;
+    bestVisitByPlayer?: Record<string, number>;
+    bestCheckoutByPlayer?: Record<string, number>;
     co?: number;
   } | null;
   payload: any;

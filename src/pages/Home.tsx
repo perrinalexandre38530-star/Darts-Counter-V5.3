@@ -12,11 +12,26 @@ import React from "react";
 import ProfileAvatar from "../components/ProfileAvatar";
 import ProfileStarRing from "../components/ProfileStarRing";
 import type { Store, Profile } from "../lib/types";
-import { getBasicProfileStatsSync, type BasicProfileStats } from "../lib/statsLiteIDB";
+import {
+  getBasicProfileStatsSync,
+  type BasicProfileStats,
+} from "../lib/statsLiteIDB";
+import { useAuthOnline } from "../hooks/useAuthOnline";
 
 type Tab =
-  | "home" | "games" | "profiles" | "friends" | "all" | "stats" | "settings"
-  | "x01setup" | "x01" | "cricket" | "killer" | "shanghai" | "lobby";
+  | "home"
+  | "games"
+  | "profiles"
+  | "friends"
+  | "all"
+  | "stats"
+  | "settings"
+  | "x01setup"
+  | "x01"
+  | "cricket"
+  | "killer"
+  | "shanghai"
+  | "lobby";
 
 export default function Home({
   store,
@@ -34,6 +49,23 @@ export default function Home({
   const active = profiles.find((p) => p.id === activeProfileId) ?? null;
 
   const basicStats = active?.id ? useBasicStats(active.id) : undefined;
+
+  // 🌐 Auth online (mock ou futur backend)
+  const { status: onlineStatus } = useAuthOnline();
+  const isSignedIn = onlineStatus === "signed_in";
+
+  // statut local (selfStatus dans le store : "online" | "away" | "offline")
+  const localStatus = (store?.selfStatus as any) || "offline";
+
+  // statut combiné (session + selfStatus)
+  let mergedStatus: "online" | "away" | "offline" = "offline";
+  if (!isSignedIn) {
+    mergedStatus = "offline";
+  } else if (localStatus === "away") {
+    mergedStatus = "away";
+  } else {
+    mergedStatus = "online";
+  }
 
   return (
     <div
@@ -84,6 +116,18 @@ export default function Home({
         /* Tablette: élargir et basculer les cartes en 2 colonnes */
         @media (min-width: 640px) {
           .home-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--menu-gap); }
+        }
+
+        /* Petit scintillement néon du point de statut */
+        @keyframes homeStatusFlicker {
+          0%, 100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+          50% {
+            transform: scale(1.15);
+            opacity: 0.85;
+          }
         }
       `}</style>
 
@@ -139,7 +183,7 @@ export default function Home({
         ) : active ? (
           <ActiveProfileCard
             profile={active}
-            status={(store?.selfStatus as any) ?? "online"}
+            status={mergedStatus}
             onNameClick={() => go("stats")}
             basicStats={basicStats}
           />
@@ -153,7 +197,7 @@ export default function Home({
           width: "100%",
           maxWidth: 520,
           gap: "var(--menu-gap)",
-          display: "flex",          // remplacé par grid >=640px via .home-grid
+          display: "flex", // remplacé par grid >=640px via .home-grid
           flexDirection: "column",
           paddingInline: 12,
         }}
@@ -174,7 +218,7 @@ export default function Home({
           title="JEU ONLINE"
           subtitle="Parties à distance (mode à venir)"
           icon={<Icon name="online" size={24} />}
-          disabled
+          onClick={() => go("friends")}
         />
         <HomeCard
           title="STATS"
@@ -191,7 +235,6 @@ export default function Home({
 }
 
 /* ---------- PATCH: lecture réactive depuis statsLiteIDB ---------- */
-/* Remplace ENTIEREMENT ta fonction useBasicStats actuelle par celle-ci */
 function useBasicStats(playerId: string) {
   const getSnap = React.useCallback(
     () => (playerId ? getBasicProfileStatsSync(playerId) : undefined),
@@ -253,29 +296,60 @@ function ActiveProfileCard({
 }) {
   // Fallback legacy si jamais des anciennes cartes poussent encore des valeurs
   const legacy = (profile as any).stats || {};
-  const avg3n = isNum(basicStats?.avg3) ? basicStats!.avg3 : (isNum(legacy.avg3) ? legacy.avg3 : 0);
-  const bestVisit = isNum(basicStats?.bestVisit) ? basicStats!.bestVisit : (isNum(legacy.bestVisit) ? legacy.bestVisit : 0);
-  const bestCheckout = isNum(basicStats?.bestCheckout) ? basicStats!.bestCheckout : (isNum(legacy.bestCheckout) ? legacy.bestCheckout : 0);
+  const avg3n = isNum(basicStats?.avg3)
+    ? basicStats!.avg3
+    : isNum(legacy.avg3)
+    ? legacy.avg3
+    : 0;
+  const bestVisit = isNum(basicStats?.bestVisit)
+    ? basicStats!.bestVisit
+    : isNum(legacy.bestVisit)
+    ? legacy.bestVisit
+    : 0;
+  const bestCheckout = isNum(basicStats?.bestCheckout)
+    ? basicStats!.bestCheckout
+    : isNum(legacy.bestCheckout)
+    ? legacy.bestCheckout
+    : 0;
 
-  const wins = isNum(basicStats?.wins) ? basicStats!.wins : (isNum(legacy.wins) ? legacy.wins : 0);
-  const games = isNum(basicStats?.games) ? basicStats!.games : (isNum(legacy.games) ? legacy.games : 0);
-  const winRate = isNum(basicStats?.winRate) ? basicStats!.winRate
-                 : games > 0 ? Math.round((wins / games) * 1000) / 10
-                 : null;
+  const wins = isNum(basicStats?.wins)
+    ? basicStats!.wins
+    : isNum(legacy.wins)
+    ? legacy.wins
+    : 0;
+  const games = isNum(basicStats?.games)
+    ? basicStats!.games
+    : isNum(legacy.games)
+    ? legacy.games
+    : 0;
+  const winRate = isNum(basicStats?.winRate)
+    ? basicStats!.winRate
+    : games > 0
+    ? Math.round((wins / games) * 1000) / 10
+    : null;
 
   const avg3 = (Math.round(avg3n * 10) / 10).toFixed(1);
   const best = String(bestVisit || 0);
   const co = String(bestCheckout || 0);
 
   const statusLabel =
-    status === "away" ? "Absent" : status === "offline" ? "Hors ligne" : "En ligne";
+    status === "away"
+      ? "Absent"
+      : status === "offline"
+      ? "Hors ligne"
+      : "En ligne";
+
   const statusColor =
-    status === "away" ? "var(--gold-2)" : status === "offline" ? "#9aa" : "var(--ok)";
+    status === "away"
+      ? "var(--gold-2)"
+      : status === "offline"
+      ? "#9aa"
+      : "var(--ok)";
 
   // === Paramètres ring externe (alignés avec Profiles.tsx) ===
   const AVA = getCssNumber("--avatar-size", 92); // diamètre avatar réel en px
-  const PAD = 10;         // marge externe pour laisser respirer les étoiles
-  const STAR = 14;        // taille d’une étoile
+  const PAD = 10; // marge externe pour laisser respirer les étoiles
+  const STAR = 14; // taille d’une étoile
 
   return (
     <div
@@ -284,7 +358,8 @@ function ActiveProfileCard({
         width: "100%",
         maxWidth: 420,
         margin: "0 auto",
-        background: "linear-gradient(180deg, rgba(240,177,42,.25), rgba(240,177,42,.10))",
+        background:
+          "linear-gradient(180deg, rgba(240,177,42,.25), rgba(240,177,42,.10))",
         borderColor: "rgba(240,177,42,.45)",
         borderWidth: 1,
         borderStyle: "solid",
@@ -322,7 +397,7 @@ function ActiveProfileCard({
         >
           <ProfileStarRing
             anchorSize={AVA}
-            gapPx={-2}          // proche du bord du médaillon
+            gapPx={-2} // proche du bord du médaillon
             starSize={STAR}
             stepDeg={10}
             rotationDeg={0}
@@ -400,17 +475,38 @@ function ActiveProfileCard({
         {profile.name}
       </button>
 
-      {/* Statut */}
+      {/* Statut avec point néon */}
       <div
         className="subtitle"
         style={{
           marginTop: 0,
           fontSize: 13,
-          color: statusColor,
           fontWeight: 500,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          justifyContent: "center",
+          color: statusColor,
         }}
       >
-        {statusLabel}
+        <span
+          aria-hidden
+          style={{
+            width: 9,
+            height: 9,
+            borderRadius: "50%",
+            background: statusColor,
+            boxShadow: `0 0 6px ${statusColor}, 0 0 14px ${statusColor}`,
+            animation: "homeStatusFlicker 1.8s ease-in-out infinite",
+          }}
+        />
+        <span
+          style={{
+            textShadow: `0 0 6px ${statusColor}, 0 0 12px ${statusColor}`,
+          }}
+        >
+          {statusLabel}
+        </span>
       </div>
 
       {/* Stats */}
@@ -428,7 +524,10 @@ function ActiveProfileCard({
         <StatMini label="Moy/3" value={avg3} />
         <StatMini label="Best" value={best} />
         <StatMini label="CO" value={co} />
-        <StatMini label="Win%" value={winRate !== null ? `${Math.round(Number(winRate))}%` : "—"} />
+        <StatMini
+          label="Win%"
+          value={winRate !== null ? `${Math.round(Number(winRate))}%` : "—"}
+        />
       </div>
     </div>
   );
@@ -437,10 +536,19 @@ function ActiveProfileCard({
 function StatMini({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ textAlign: "center" }}>
-      <div className="subtitle" style={{ fontSize: 10.5, opacity: 0.8, lineHeight: 1.1 }}>
+      <div
+        className="subtitle"
+        style={{ fontSize: 10.5, opacity: 0.8, lineHeight: 1.1 }}
+      >
         {label}
       </div>
-      <div style={{ fontWeight: 800, color: "var(--gold-2)", textShadow: "0 0 8px rgba(240,177,42,.3)" }}>
+      <div
+        style={{
+          fontWeight: 800,
+          color: "var(--gold-2)",
+          textShadow: "0 0 8px rgba(240,177,42,.3)",
+        }}
+      >
         {value}
       </div>
     </div>
@@ -471,7 +579,8 @@ function HomeCard({
         paddingTop: 14,
         paddingBottom: 14,
         paddingInline: 10,
-        background: "linear-gradient(180deg, rgba(20,20,26,.55), rgba(14,14,18,.75))",
+        background:
+          "linear-gradient(180deg, rgba(20,20,26,.55), rgba(14,14,18,.75))",
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.75 : 1,
         textAlign: "center",
@@ -481,7 +590,8 @@ function HomeCard({
       onClick={!disabled ? onClick : undefined}
       onMouseEnter={(e) =>
         (e.currentTarget.style.boxShadow =
-          "0 0 18px rgba(240,177,42,.18), 0 8px 18px rgba(0,0,0,.38)")}
+          "0 0 18px rgba(240,177,42,.18), 0 8px 18px rgba(0,0,0,.38)")
+      }
       onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "none")}
     >
       <div
@@ -588,7 +698,9 @@ function isNum(v: any): v is number {
 }
 function getCssNumber(varName: string, fallback = 0): number {
   try {
-    const v = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    const v = getComputedStyle(
+      document.documentElement
+    ).getPropertyValue(varName).trim();
     const n = parseFloat(v.replace("px", ""));
     return Number.isFinite(n) ? n : fallback;
   } catch {

@@ -36,7 +36,8 @@ export default function Games({
       title: "Cricket",
       subtitle: "15–20 + Bull — fermetures et points",
       tab: "cricket",
-      enabled: false,
+      // 🟡 On l’active
+      enabled: true,
     },
     {
       id: "killer",
@@ -187,9 +188,7 @@ function GameCard({
           border: disabled
             ? "1px solid rgba(148,163,184,.35)"
             : "1px solid rgba(255,180,0,.35)",
-          boxShadow: disabled
-            ? "none"
-            : "0 0 10px rgba(240,177,42,.25)",
+          boxShadow: disabled ? "none" : "0 0 10px rgba(240,177,42,.25)",
           display: "inline-flex",
           alignItems: "center",
           gap: 8,

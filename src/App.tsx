@@ -14,6 +14,9 @@ import { ensurePersisted } from "./lib/deviceStore";
 // ✅ Amorçage agrégateur léger (warm-up au démarrage)
 import { warmAggOnce } from "./boot/warmAgg";
 
+// ✅ Mode Online — API (mock ou backend réel)
+import { onlineApi } from "./lib/onlineApi";
+
 // Types
 import type { Store, Profile, MatchRecord } from "./lib/types";
 
@@ -224,6 +227,19 @@ export default function App() {
     } catch {}
   }, []);
 
+  // ✅ Mode Online : tentative de restauration de session au boot
+  React.useEffect(() => {
+    onlineApi
+      .restoreSession()
+      .then((session) => {
+        console.log("[Online] session restaurée :", session);
+        // plus tard : on pourra brancher ça sur un contexte ou sur le store
+      })
+      .catch((err) => {
+        console.warn("[Online] restoreSession failed:", err);
+      });
+  }, []);
+
   // ⚠️ Expose le store en global pour les fallbacks (X01End / autres)
   React.useEffect(() => {
     (window as any).__appStore = store;
@@ -299,13 +315,13 @@ export default function App() {
       (m as any)?.matchId ||
       `x01-${now}-${Math.random().toString(36).slice(2, 8)}`;
 
-    // 1) source joueurs (plusieurs formats possibles)
+    // 1) source joueurs
     const rawPlayers =
       (m as any)?.players ??
       (m as any)?.payload?.players ??
       [];
 
-    // 2) enrichir avec l’avatar depuis le store si manquant
+    // 2) enrichir avec avatars locaux
     const players = (rawPlayers as any[]).map((p: any) => {
       const prof = (store.profiles || []).find((pr) => pr.id === p?.id);
       return {
@@ -324,27 +340,56 @@ export default function App() {
       id,
       kind: (m as any)?.kind || "x01",
       status: (m as any)?.status || "finished",
-      players, // <-- avatars garantis
+      players,
       winnerId: (m as any)?.winnerId || (m as any)?.payload?.winnerId || null,
       createdAt: (m as any)?.createdAt || now,
       updatedAt: now,
       summary,
-      // on injecte aussi les players enrichis dans le payload pour l’UI
       payload: { ...(m as any), players },
     };
 
-    // 3) mémoire (dédupe sur id)
+    // 3) mémoire locale
     update((s) => {
       const list = [...(s.history ?? [])];
       const i = list.findIndex((r: any) => r.id === saved.id);
-      if (i >= 0) list[i] = saved; else list.unshift(saved);
+      if (i >= 0) list[i] = saved;
+      else list.unshift(saved);
       return { ...s, history: list };
     });
 
-    // 4) persistant (best effort)
-    try { (History as any)?.upsert?.(saved); } catch (e) { console.warn("[App] History.upsert failed:", e); }
+    // 4) persistant local
+    try {
+      (History as any)?.upsert?.(saved);
+    } catch (e) {
+      console.warn("[App] History.upsert failed:", e);
+    }
 
-    // 5) route
+    // 5) upload online (best effort)
+    try {
+      const kind = saved.kind as string;
+      const supported = ["x01", "cricket", "killer", "shanghai"];
+
+      if (supported.includes(kind)) {
+        onlineApi
+          .uploadMatch({
+            mode: kind as any,
+            payload: {
+              summary: saved.summary ?? null,
+              payload: saved.payload ?? null,
+            },
+            isTraining: false,
+            startedAt: saved.createdAt,
+            finishedAt: saved.updatedAt,
+          })
+          .catch(() => {
+            /* ignore erreurs online */
+          });
+      }
+    } catch (e) {
+      console.warn("[App] onlineApi.uploadMatch failed:", e);
+    }
+
+    // 6) route UI
     go("stats", { tab: "history" });
   }
 
@@ -389,7 +434,7 @@ export default function App() {
       }
 
       case "friends": {
-        page = <FriendsPage />;
+        page = <FriendsPage store={store} update={update} />;
         break;
       }
 
@@ -558,8 +603,8 @@ export default function App() {
 
       // ---------- Autres jeux ----------
       case "cricket": {
-        // Placeholder jeu
-        page = <CricketPlay playerIds={[]} onFinish={pushHistory} />;
+        // 🆕 Cricket branché sur les vrais profils
+        page = <CricketPlay profiles={store.profiles ?? []} />;
         break;
       }
 

@@ -3174,6 +3174,435 @@ function TrainingHitsBySegment({ sessions }: TrainingHitsBySegmentProps) {
     </div>
   );
 }
+// ============================================================
+// Onglet "X01 multi" dans Stats joueurs
+// - Stats par joueur à partir de l'historique X01 (X01Play)
+// - Filtres J/S/M/A/All
+// - KPI + Sparkline + liste des matchs
+// ============================================================
+
+type X01MultiSession = {
+  id: string;
+  date: number;
+  avg3D: number;
+  bestVisit: number;
+  bestCheckout: number;
+};
+
+type X01MultiStatsTabProps = {
+  records: SavedMatch[];
+  playerId: string;
+};
+
+function X01MultiStatsTab({ records, playerId }: X01MultiStatsTabProps) {
+  const [range, setRange] = React.useState<TimeRange>("all");
+
+  // --- helpers dates ---
+  const now = Date.now();
+  const ONE_DAY = 24 * 60 * 60 * 1000;
+  function inRange(ts: number | undefined, r: TimeRange) {
+    if (!ts) return false;
+    if (r === "all") return true;
+    const t = ts;
+    const delta =
+      r === "day"
+        ? ONE_DAY
+        : r === "week"
+        ? 7 * ONE_DAY
+        : r === "month"
+        ? 30 * ONE_DAY
+        : 365 * ONE_DAY;
+    return t >= now - delta;
+  }
+
+  // --- extrait les stats X01 pour un joueur dans un match ---
+  function extractX01PlayerStats(rec: SavedMatch, pid: string) {
+    const ss: any = rec.summary ?? rec.payload?.summary ?? {};
+    const per: any[] =
+      ss.perPlayer ??
+      ss.players ??
+      rec.payload?.summary?.perPlayer ??
+      [];
+
+    const pstat =
+      per.find((x) => x?.playerId === pid) ??
+      (ss[pid] || ss.players?.[pid] || ss.perPlayer?.[pid]) ??
+      {};
+
+    const Nloc = (x: any) =>
+      Number.isFinite(Number(x)) ? Number(x) : 0;
+
+    // --- Moyenne 3D : on essaie beaucoup de variantes ---
+    let avg3 =
+      Nloc(pstat.avg3) ||
+      Nloc(pstat.avg_3) ||
+      Nloc(pstat.avg3Darts) ||
+      Nloc(pstat.average3) ||
+      Nloc(pstat.avg3D) ||
+      Nloc(pstat.avg);
+
+    // maps éventuelles créées dans summaryForHistory
+    if (!avg3 && ss.avg3ByPlayer && ss.avg3ByPlayer[pid] != null) {
+      avg3 = Nloc(ss.avg3ByPlayer[pid]);
+    }
+    if (!avg3 && ss.perPlayerAvg3 && ss.perPlayerAvg3[pid] != null) {
+      avg3 = Nloc(ss.perPlayerAvg3[pid]);
+    }
+
+    // --- Best visit / checkout ---
+    let bestVisit =
+      Nloc(pstat.bestVisit) || Nloc(pstat.best_visit) || 0;
+    let bestCheckout =
+      Nloc(pstat.bestCheckout) ||
+      Nloc(pstat.best_co) ||
+      Nloc(pstat.bestFinish) ||
+      0;
+
+    if (!bestVisit && ss.bestVisitByPlayer?.[pid] != null) {
+      bestVisit = Nloc(ss.bestVisitByPlayer[pid]);
+    }
+    if (!bestCheckout && ss.bestCheckoutByPlayer?.[pid] != null) {
+      bestCheckout = Nloc(ss.bestCheckoutByPlayer[pid]);
+    }
+
+    // --- Fallback brutal : on recalcule depuis payload.legs si tout est à 0 ---
+    if (
+      (!avg3 || avg3 === 0) &&
+      rec.payload &&
+      Array.isArray((rec.payload as any).legs)
+    ) {
+      const legs: any[] = (rec.payload as any).legs || [];
+      let dartsTotal = 0;
+      let pointsTotal = 0;
+      let bestV = bestVisit;
+      let bestCo = bestCheckout;
+
+      for (const leg of legs) {
+        const arr =
+          leg.perPlayer || leg.players || leg.byPlayer || [];
+        const p = arr.find(
+          (x: any) => x.playerId === pid || x.id === pid
+        );
+        if (!p) continue;
+
+        const d = Nloc(p.darts ?? p.nbDarts ?? p.dartsCount);
+        dartsTotal += d;
+
+        const pts = Nloc(
+          p.points ??
+            p.scored ??
+            p.totalPoints ??
+            p.scoreSum ??
+            p.scoredPoints
+        );
+        pointsTotal += pts;
+
+        const bv = Nloc(
+          p.bestVisit ?? p.bestVol ?? p.best ?? p.best_visit
+        );
+        if (bv > bestV) bestV = bv;
+
+        const co = Nloc(
+          p.bestCheckout ??
+            p.bestCo ??
+            p.bestFinish ??
+            p.best_co
+        );
+        if (co > bestCo) bestCo = co;
+      }
+
+      if (dartsTotal > 0) {
+        avg3 = (pointsTotal / dartsTotal) * 3;
+      }
+      if (!bestVisit) bestVisit = bestV;
+      if (!bestCheckout) bestCheckout = bestCo;
+    }
+
+    return {
+      avg3,
+      bestVisit,
+      bestCheckout,
+    };
+  }
+
+  // --- matches X01 du joueur sélectionné ---
+  const x01Matches = React.useMemo(() => {
+    const out: Array<{
+      rec: SavedMatch;
+      t: number;
+      avg3: number;
+      bestVisit: number;
+      bestCheckout: number;
+    }> = [];
+
+    for (const rec of records) {
+      if (rec.kind !== "x01") continue;
+      if (rec.status && rec.status !== "finished") continue;
+
+      const players = toArr<PlayerLite>(rec.players);
+      if (!players.some((p) => p?.id === playerId)) continue;
+
+      const t = N(rec.updatedAt ?? rec.createdAt, 0);
+      if (!inRange(t, range)) continue;
+
+      const s = extractX01PlayerStats(rec, playerId);
+      out.push({
+        rec,
+        t,
+        avg3: s.avg3,
+        bestVisit: s.bestVisit,
+        bestCheckout: s.bestCheckout,
+      });
+    }
+
+    // tri chronologique
+    out.sort((a, b) => a.t - b.t);
+    return out;
+  }, [records, playerId, range]);
+
+  const matchCount = x01Matches.length;
+
+  const avg3Period =
+    matchCount > 0
+      ? x01Matches.reduce((s, m) => s + (m.avg3 || 0), 0) / matchCount
+      : 0;
+
+  const bestVisitPeriod =
+    matchCount > 0
+      ? Math.max(...x01Matches.map((m) => m.bestVisit || 0))
+      : 0;
+
+  const bestCheckoutPeriod =
+    matchCount > 0
+      ? Math.max(...x01Matches.map((m) => m.bestCheckout || 0))
+      : 0;
+
+  // --- sparkline ---
+  const sparkPoints = x01Matches.map((m) => ({
+    x: m.t,
+    y: m.avg3 || 0,
+  }));
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* HEADER + FILTRES TEMPORELS */}
+      <div style={card}>
+        <div
+          style={{
+            ...goldNeon,
+            fontSize: 16,
+            marginBottom: 6,
+          }}
+        >
+          X01 multi — stats par joueur
+        </div>
+
+        {/* Filtres J/S/M/A/All */}
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            flexWrap: "wrap",
+            marginBottom: 10,
+          }}
+        >
+          {(["day", "week", "month", "year", "all"] as TimeRange[]).map(
+            (r) => (
+              <GoldPill
+                key={r}
+                active={range === r}
+                onClick={() => setRange(r)}
+                style={{
+                  padding: "4px 10px",
+                  fontSize: 11,
+                  minWidth: "unset",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {r === "day" && "Jour"}
+                {r === "week" && "Semaine"}
+                {r === "month" && "Mois"}
+                {r === "year" && "Année"}
+                {r === "all" && "All"}
+              </GoldPill>
+            )
+          )}
+        </div>
+
+        {/* Petits KPI période */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3,1fr)",
+            gap: 8,
+          }}
+        >
+          <div
+            style={{
+              borderRadius: 16,
+              padding: 8,
+              background:
+                "linear-gradient(180deg,#18181A,#101015)",
+              border: "1px solid rgba(255,255,255,.12)",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: 10, color: T.text70 }}>
+              Matchs X01 (période)
+            </div>
+            <div
+              style={{
+                fontSize: 20,
+                fontWeight: 900,
+                color: T.gold,
+              }}
+            >
+              {matchCount}
+            </div>
+          </div>
+
+          <div
+            style={{
+              borderRadius: 16,
+              padding: 8,
+              background:
+                "linear-gradient(180deg,#18181A,#101015)",
+              border: "1px solid rgba(255,255,255,.12)",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: 10, color: T.text70 }}>
+              Moy.3D (période)
+            </div>
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 900,
+                color: "#FFB8DE",
+              }}
+            >
+              {avg3Period.toFixed(1)}
+            </div>
+          </div>
+
+          <div
+            style={{
+              borderRadius: 16,
+              padding: 8,
+              background:
+                "linear-gradient(180deg,#18181A,#101015)",
+              border: "1px solid rgba(255,255,255,.12)",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: 10, color: T.text70 }}>
+              Best Visit / Best CO
+            </div>
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 900,
+                color: "#7CFF9A",
+              }}
+            >
+              {bestVisitPeriod || 0} / {bestCheckoutPeriod || 0}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SPARKLINE PROGRESSION */}
+      <div style={card}>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 800,
+            textTransform: "uppercase",
+            color: T.gold,
+            textShadow:
+              "0 0 6px rgba(246,194,86,.9), 0 0 14px rgba(246,194,86,.45)",
+            letterSpacing: 0.8,
+            marginBottom: 6,
+          }}
+        >
+          Progression X01
+        </div>
+
+        {sparkPoints.length ? (
+          <SparklinePro points={sparkPoints} height={64} />
+        ) : (
+          <div style={{ fontSize: 12, color: T.text70 }}>
+            Aucun match X01 dans la période sélectionnée.
+          </div>
+        )}
+      </div>
+
+      {/* LISTE DÉTAILLÉE DES MATCHS */}
+      <div style={card}>
+        <div
+          style={{
+            ...goldNeon,
+            fontSize: 13,
+            marginBottom: 6,
+          }}
+        >
+          Matchs X01 (détail)
+        </div>
+
+        {x01Matches.length === 0 ? (
+          <div style={{ fontSize: 12, color: T.text70 }}>
+            Aucun match X01 pour cette période.
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            {x01Matches
+              .slice()
+              .reverse()
+              .map((m) => (
+                <div
+                  key={m.rec.id}
+                  style={{
+                    padding: 8,
+                    borderRadius: 12,
+                    background: "rgba(0,0,0,.45)",
+                    fontSize: 11,
+                    color: T.text70,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginBottom: 2,
+                    }}
+                  >
+                    <span>
+                      {formatShortDate(
+                        m.rec.updatedAt ?? m.rec.createdAt ?? Date.now()
+                      )}
+                    </span>
+                    <span style={{ fontWeight: 700, color: T.gold }}>
+                      {m.avg3.toFixed(1)} Moy.3D
+                    </span>
+                  </div>
+                  <div>
+                    BV {m.bestVisit || 0}
+                    {m.bestCheckout ? ` · CO ${m.bestCheckout}` : ""}
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /* ---------- Page ---------- */
 export default function StatsHub(props: Props) {
@@ -3187,6 +3616,12 @@ export default function StatsHub(props: Props) {
   const [tab, setTab] = React.useState<
     "history" | "stats" | "training"
   >(initialTab);
+
+   // Sous-onglets dans "Stats joueurs" :
+  // - "dashboard" = vue générale StatsPlayerDashboard
+  // - "x01_multi" = stats X01Play (multijoueurs)
+  const [statsSubTab, setStatsSubTab] =
+  React.useState<"dashboard" | "x01_multi">("dashboard");
 
   // 0) Récupère les profils (pour enrichir avatars si manquants)
   const [storeProfiles, setStoreProfiles] =
@@ -3301,7 +3736,7 @@ export default function StatsHub(props: Props) {
         />
       )}
 
-      {tab === "stats" && (
+{tab === "stats" && (
         <>
           {/* ===== Bloc dépliant Joueurs (au-dessus du dashboard) ===== */}
           <div style={{ ...card, marginBottom: 12 }}>
@@ -3317,9 +3752,7 @@ export default function StatsHub(props: Props) {
               </div>
               <GoldPill
                 active={openPlayers}
-                onClick={() =>
-                  setOpenPlayers((o) => !o)
-                }
+                onClick={() => setOpenPlayers((o) => !o)}
               >
                 {openPlayers ? "Replier" : "Déplier"}
               </GoldPill>
@@ -3339,13 +3772,9 @@ export default function StatsHub(props: Props) {
                     <ProfilePill
                       key={p.id}
                       name={p.name || "Joueur"}
-                      avatarDataUrl={
-                        p.avatarDataUrl || undefined
-                      }
+                      avatarDataUrl={p.avatarDataUrl || undefined}
                       active={p.id === selectedPlayer?.id}
-                      onClick={() =>
-                        setSelectedPlayerId(p.id)
-                      }
+                      onClick={() => setSelectedPlayerId(p.id)}
                     />
                   ))
                 ) : (
@@ -3362,20 +3791,60 @@ export default function StatsHub(props: Props) {
             )}
           </div>
 
-          {/* ===== Dashboard joueur ===== */}
-          {selectedPlayer ? (
-            <StatsPlayerDashboard
-              data={buildDashboardForPlayer(
-                selectedPlayer,
-                records,
-                quick || null
+          {/* ===== Sous-onglets de "Stats joueurs" ===== */}
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              marginBottom: 10,
+            }}
+          >
+            <GoldPill
+              active={statsSubTab === "dashboard"}
+              onClick={() => setStatsSubTab("dashboard")}
+            >
+              Vue générale
+            </GoldPill>
+            <GoldPill
+              active={statsSubTab === "x01_multi"}
+              onClick={() => setStatsSubTab("x01_multi")}
+            >
+              X01 multi
+            </GoldPill>
+          </div>
+
+          {/* ===== Contenu selon sous-onglet ===== */}
+          {statsSubTab === "dashboard" && (
+            <>
+              {selectedPlayer ? (
+                <StatsPlayerDashboard
+                  data={buildDashboardForPlayer(
+                    selectedPlayer,
+                    records,
+                    quick || null
+                  )}
+                />
+              ) : (
+                <div style={card}>
+                  Sélectionne un joueur pour afficher ses stats.
+                </div>
               )}
-            />
-          ) : (
-            <div style={card}>
-              Sélectionne un joueur pour afficher ses
-              stats.
-            </div>
+            </>
+          )}
+
+          {statsSubTab === "x01_multi" && (
+            <>
+              {selectedPlayer ? (
+                <X01MultiStatsTab
+                  records={records}
+                  playerId={selectedPlayer.id}
+                />
+              ) : (
+                <div style={card}>
+                  Sélectionne un joueur pour afficher ses stats X01.
+                </div>
+              )}
+            </>
           )}
         </>
       )}
