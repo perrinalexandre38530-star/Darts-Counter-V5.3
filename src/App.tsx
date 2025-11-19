@@ -603,7 +603,6 @@ export default function App() {
 
       // ---------- Autres jeux ----------
       case "cricket": {
-        // 🆕 Cricket branché sur les vrais profils
         page = <CricketPlay profiles={store.profiles ?? []} />;
         break;
       }

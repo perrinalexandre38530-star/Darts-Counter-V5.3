@@ -3174,6 +3174,7 @@ function TrainingHitsBySegment({ sessions }: TrainingHitsBySegmentProps) {
     </div>
   );
 }
+ 
 // ============================================================
 // Onglet "X01 multi" dans Stats joueurs
 // - Stats par joueur à partir de l'historique X01 (X01Play)
@@ -3229,93 +3230,60 @@ function X01MultiStatsTab({ records, playerId }: X01MultiStatsTabProps) {
       (ss[pid] || ss.players?.[pid] || ss.perPlayer?.[pid]) ??
       {};
 
-    const Nloc = (x: any) =>
-      Number.isFinite(Number(x)) ? Number(x) : 0;
+    const Nloc = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : 0);
 
-    // --- Moyenne 3D : on essaie beaucoup de variantes ---
+    // 🔹 1) priorité : map avg3ByPlayer créée dans finalizeMatch
     let avg3 =
+      Nloc(ss.avg3ByPlayer?.[pid]) ||
       Nloc(pstat.avg3) ||
       Nloc(pstat.avg_3) ||
       Nloc(pstat.avg3Darts) ||
       Nloc(pstat.average3) ||
-      Nloc(pstat.avg3D) ||
-      Nloc(pstat.avg);
+      Nloc(pstat.avg3D); // au cas où le champ s’appelle comme ça
 
-    // maps éventuelles créées dans summaryForHistory
-    if (!avg3 && ss.avg3ByPlayer && ss.avg3ByPlayer[pid] != null) {
-      avg3 = Nloc(ss.avg3ByPlayer[pid]);
-    }
-    if (!avg3 && ss.perPlayerAvg3 && ss.perPlayerAvg3[pid] != null) {
-      avg3 = Nloc(ss.perPlayerAvg3[pid]);
-    }
+    let bestVisit = Nloc(pstat.bestVisit);
+    let bestCheckout = Nloc(pstat.bestCheckout);
 
-    // --- Best visit / checkout ---
-    let bestVisit =
-      Nloc(pstat.bestVisit) || Nloc(pstat.best_visit) || 0;
-    let bestCheckout =
-      Nloc(pstat.bestCheckout) ||
-      Nloc(pstat.best_co) ||
-      Nloc(pstat.bestFinish) ||
-      0;
+    // 🔁 2) FALLBACK legs (payload.legs) si le summary est pauvre
+    if ((!avg3 || (!bestVisit && !bestCheckout)) && rec.payload?.legs) {
+      const legs: any[] = Array.isArray((rec.payload as any).legs)
+        ? (rec.payload as any).legs
+        : [];
 
-    if (!bestVisit && ss.bestVisitByPlayer?.[pid] != null) {
-      bestVisit = Nloc(ss.bestVisitByPlayer[pid]);
-    }
-    if (!bestCheckout && ss.bestCheckoutByPlayer?.[pid] != null) {
-      bestCheckout = Nloc(ss.bestCheckoutByPlayer[pid]);
-    }
-
-    // --- Fallback brutal : on recalcule depuis payload.legs si tout est à 0 ---
-    if (
-      (!avg3 || avg3 === 0) &&
-      rec.payload &&
-      Array.isArray((rec.payload as any).legs)
-    ) {
-      const legs: any[] = (rec.payload as any).legs || [];
-      let dartsTotal = 0;
-      let pointsTotal = 0;
-      let bestV = bestVisit;
-      let bestCo = bestCheckout;
+      let sumAvg3 = 0;
+      let legsCount = 0;
+      let bv = bestVisit;
+      let bc = bestCheckout;
 
       for (const leg of legs) {
-        const arr =
-          leg.perPlayer || leg.players || leg.byPlayer || [];
-        const p = arr.find(
-          (x: any) => x.playerId === pid || x.id === pid
-        );
-        if (!p) continue;
+        const plArr: any[] = Array.isArray(leg.perPlayer)
+          ? leg.perPlayer
+          : [];
+        const pl = plArr.find((x) => x?.playerId === pid);
+        if (!pl) continue;
 
-        const d = Nloc(p.darts ?? p.nbDarts ?? p.dartsCount);
-        dartsTotal += d;
+        const legAvg =
+          Nloc(pl.avg3) ||
+          Nloc(pl.avg_3) ||
+          Nloc(pl.avg3Darts) ||
+          Nloc(pl.average3) ||
+          Nloc(pl.avg3D);
 
-        const pts = Nloc(
-          p.points ??
-            p.scored ??
-            p.totalPoints ??
-            p.scoreSum ??
-            p.scoredPoints
-        );
-        pointsTotal += pts;
-
-        const bv = Nloc(
-          p.bestVisit ?? p.bestVol ?? p.best ?? p.best_visit
-        );
-        if (bv > bestV) bestV = bv;
-
-        const co = Nloc(
-          p.bestCheckout ??
-            p.bestCo ??
-            p.bestFinish ??
-            p.best_co
-        );
-        if (co > bestCo) bestCo = co;
+        if (legAvg > 0) {
+          sumAvg3 += legAvg;
+          legsCount++;
+        }
+        const legBV = Nloc(pl.bestVisit);
+        const legBC = Nloc(pl.bestCheckout);
+        if (legBV > bv) bv = legBV;
+        if (legBC > bc) bc = legBC;
       }
 
-      if (dartsTotal > 0) {
-        avg3 = (pointsTotal / dartsTotal) * 3;
+      if (legsCount > 0 && (!avg3 || avg3 === 0)) {
+        avg3 = sumAvg3 / legsCount;
       }
-      if (!bestVisit) bestVisit = bestV;
-      if (!bestCheckout) bestCheckout = bestCo;
+      if (bv > bestVisit) bestVisit = bv;
+      if (bc > bestCheckout) bestCheckout = bc;
     }
 
     return {
@@ -3335,9 +3303,15 @@ function X01MultiStatsTab({ records, playerId }: X01MultiStatsTabProps) {
       bestCheckout: number;
     }> = [];
 
+    const seen = new Set<string>(); // évite les doublons de match
+
     for (const rec of records) {
       if (rec.kind !== "x01") continue;
       if (rec.status && rec.status !== "finished") continue;
+
+      // déduplication forte par id
+      if (rec.id && seen.has(rec.id)) continue;
+      if (rec.id) seen.add(rec.id);
 
       const players = toArr<PlayerLite>(rec.players);
       if (!players.some((p) => p?.id === playerId)) continue;
@@ -3346,6 +3320,10 @@ function X01MultiStatsTab({ records, playerId }: X01MultiStatsTabProps) {
       if (!inRange(t, range)) continue;
 
       const s = extractX01PlayerStats(rec, playerId);
+
+      // si vraiment aucune info, on ignore ce match
+      if (!s.avg3 && !s.bestVisit && !s.bestCheckout) continue;
+
       out.push({
         rec,
         t,

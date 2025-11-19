@@ -1601,7 +1601,7 @@ function X01Core({
     if (hasFinishedRef.current) return;
     hasFinishedRef.current = true;
 
-    // on persiste l'état final
+    // on persiste l'état final minimal (match record V5)
     persistOnFinish();
 
     try {
@@ -1611,6 +1611,7 @@ function X01Core({
       );
       const matchId = matchIdRef.current;
 
+      // Résumé "riche" via StatsBridge (buckets, etc.)
       const summary = StatsBridge.makeMatch(
         matchLegsRef.current,
         playersArr,
@@ -1618,23 +1619,149 @@ function X01Core({
         "x01"
       );
 
-      // --- dérivés par joueur pour History.summary ---
+      const winnerIdFinal = summary.winnerId ?? winner?.id ?? null;
+
+      // =====================================================
+      // 1) AGRÉGATION MANUELLE DES STATS PAR JOUEUR
+      //    → comme TrainingX01 : on se base sur les legs
+      // =====================================================
+      type Agg = {
+        darts: number;
+        scored: number;
+        bestVisit: number;
+        bestCheckout: number;
+      };
+      const perPlayerAgg: Record<string, Agg> = {};
+
+      for (const leg of matchLegsRef.current as any[]) {
+        const arr: any[] = Array.isArray(leg.perPlayer)
+          ? leg.perPlayer
+          : [];
+        for (const pl of arr) {
+          const pid = pl.playerId ?? pl.id;
+          if (!pid) continue;
+          if (!perPlayerAgg[pid]) {
+            perPlayerAgg[pid] = {
+              darts: 0,
+              scored: 0,
+              bestVisit: 0,
+              bestCheckout: 0,
+            };
+          }
+          const agg = perPlayerAgg[pid];
+
+          const d = Number(pl.darts ?? pl.nbDarts ?? 0) || 0;
+          const scored =
+            Number(
+              pl.scored ??
+                pl.points ??
+                pl.totalPoints ??
+                pl.scoreSum ??
+                pl.scoredPoints
+            ) || 0;
+          const bv =
+            Number(
+              pl.bestVisit ??
+                pl.best_visit ??
+                pl.best ??
+                0
+            ) || 0;
+          const bc =
+            Number(
+              pl.bestCheckout ??
+                pl.best_co ??
+                pl.bestFinish ??
+                0
+            ) || 0;
+
+          agg.darts += d;
+          agg.scored += scored;
+          if (bv > agg.bestVisit) agg.bestVisit = bv;
+          if (bc > agg.bestCheckout) agg.bestCheckout = bc;
+        }
+      }
+
+      // =====================================================
+      // 2) CONSTRUCTION d'un perPlayer "propre" pour summary
+      // =====================================================
+      const summaryPerPlayer = playersArr.map((p) => {
+        const agg = perPlayerAgg[p.id] ?? {
+          darts: 0,
+          scored: 0,
+          bestVisit: 0,
+          bestCheckout: 0,
+        };
+
+        const existing =
+          summary.perPlayer?.find(
+            (x: any) => x.playerId === p.id
+          ) ?? {};
+
+        const darts = agg.darts || existing.darts || 0;
+        const scored = agg.scored || existing.scored || 0;
+        const avg3 =
+          darts > 0
+            ? (scored / darts) * 3
+            : existing.avg3 || 0;
+        const bestVisit = Math.max(
+          agg.bestVisit || 0,
+          existing.bestVisit || 0
+        );
+        const bestCheckout = Math.max(
+          agg.bestCheckout || 0,
+          existing.bestCheckout || 0
+        );
+
+        return {
+          playerId: p.id,
+          name: p.name,
+          avg3,
+          bestVisit,
+          bestCheckout,
+          darts,
+          win: winnerIdFinal === p.id,
+          buckets: existing.buckets ?? undefined,
+        };
+      });
+
+      // Maps rapides pour l'onglet X01 multi
       const avg3ByPlayer: Record<string, number> = {};
       const bestVisitByPlayer: Record<string, number> = {};
       const bestCheckoutByPlayer: Record<string, number> = {};
 
-      if (Array.isArray(summary.perPlayer)) {
-        for (const p of summary.perPlayer) {
-          const pid = p.playerId;
-          avg3ByPlayer[pid] =
-            typeof p.avg3 === "number" ? p.avg3 : 0;
-          bestVisitByPlayer[pid] =
-            typeof p.bestVisit === "number" ? p.bestVisit : 0;
-          bestCheckoutByPlayer[pid] =
-            typeof p.bestCheckout === "number" ? p.bestCheckout : 0;
-        }
+      for (const p of summaryPerPlayer) {
+        avg3ByPlayer[p.playerId] = p.avg3 || 0;
+        bestVisitByPlayer[p.playerId] = p.bestVisit || 0;
+        bestCheckoutByPlayer[p.playerId] =
+          p.bestCheckout || 0;
       }
 
+      // =====================================================
+      // 3) QUICK STATS (addMatchSummary)
+      // =====================================================
+      try {
+        await addMatchSummary({
+          winnerId: winnerIdFinal,
+          perPlayer: Object.fromEntries(
+            playersArr.map((p) => [
+              p.id,
+              {
+                id: p.id,
+                games: 1,
+                wins: winnerIdFinal === p.id ? 1 : 0,
+                avg3:
+                  typeof avg3ByPlayer[p.id] === "number"
+                    ? avg3ByPlayer[p.id]
+                    : undefined,
+              },
+            ])
+          ),
+        });
+      } catch {}
+
+      // =====================================================
+      // 4) PERSISTENCE COMPLETTE DU MATCH (History / storage)
+      // =====================================================
       const visitsForPersist: VisitType[] = visitsLog.map((v) => ({
         p: v.p,
         segments: v.segments,
@@ -1647,28 +1774,21 @@ function X01Core({
 
       const summaryForHistory = {
         legs: matchLegsRef.current.length,
-        darts: matchLegsRef.current.reduce(
-          (n, l: any) =>
-            n +
-            (l.perPlayer?.reduce(
-              (s: number, p: any) => s + p.darts,
-              0
-            ) ?? 0),
+        darts: summaryPerPlayer.reduce(
+          (s, p) => s + (p.darts || 0),
           0
         ),
-        // moyennes par joueur (pour onglet X01 multi)
         avg3ByPlayer,
         bestVisitByPlayer,
         bestCheckoutByPlayer,
-        // on garde aussi la liste brute, pour rec.summary.perPlayer
-        perPlayer: summary.perPlayer ?? [],
+        perPlayer: summaryPerPlayer,
       };
 
       await safeSaveMatch({
         id: matchId,
         players: playersArr,
-        winnerId: summary.winnerId ?? null,
-        summary: summaryForHistory, // ⬅️ c’est celui-là qu’on stocke
+        winnerId: winnerIdFinal,
+        summary: summaryForHistory,
         payload: {
           visits: visitsForPersist,
           legs: matchLegsRef.current,
@@ -1680,7 +1800,7 @@ function X01Core({
         },
       });
 
-      // ✅ Sync Online (mode X01 classique) — best effort, ne casse rien en offline
+      // ✅ Sync Online (mode X01 classique) — best effort
       try {
         await onlineApi.uploadMatch({
           mode: "x01",
@@ -1701,32 +1821,44 @@ function X01Core({
 
       await History.list();
 
-      // ⚠️ IMPORTANT : plus de emitHistoryRecord_X01 ici
-      // (sinon on crée un 2ᵉ match X01 "fantôme" → compteur à 2)
+      // Fallback history (mini) pour les anciens écrans
+      try {
+        const legForLegacy =
+          lastLegResult?.__legStats ??
+          matchLegsRef.current.at(-1);
 
+        await emitHistoryRecord_X01({
+          playersLite: playersArr,
+          winnerId: winnerIdFinal,
+          resumeId: resumeId ?? null,
+          legStats: legForLegacy,
+          visitsLog: [],
+          onFinish,
+        });
+      } catch {}
+
+      // =====================================================
+      // 5) Stats "profil" (quick medaillons / couronnes)
+      // =====================================================
       try {
         commitMatchSummary(
           buildX01Summary({
             kind: "x01",
-            winnerId: summary.winnerId ?? null,
-            perPlayer: summary.perPlayer?.map((p: any) => ({
-              playerId: p.playerId,
-              name:
-                playersArr.find((x) => x.id === p.playerId)?.name ?? "",
-              avg3: p.avg3 ?? 0,
-              bestVisit: p.bestVisit ?? 0,
-              bestCheckout: p.bestCheckout ?? 0,
-              darts: p.darts ?? 0,
-              win: p.win,
-              buckets: p.buckets ?? undefined,
-            })),
+            winnerId: winnerIdFinal,
+            perPlayer: summaryPerPlayer,
           })
         );
       } catch {}
 
+      // =====================================================
+      // 6) Stats avancées (StatsHub › X01 multi global)
+      // =====================================================
       try {
         const playersIds = playersArr.map((p) => p.id);
-        const m = aggregateMatch(matchLegsRef.current as any, playersIds);
+        const m = aggregateMatch(
+          matchLegsRef.current as any,
+          playersIds
+        );
 
         saveMatchStats({
           id: crypto.randomUUID?.() ?? String(Date.now()),
@@ -1734,12 +1866,14 @@ function X01Core({
           rules: {
             x01Start: startFromResume,
             finishPolicy:
-              outMFromResume !== "simple" ? "doubleOut" : "singleOut",
+              outMFromResume !== "simple"
+                ? "doubleOut"
+                : "singleOut",
             setsToWin: setsFromResume,
             legsPerSet: legsFromResume,
           },
           players: playersIds,
-          winnerId: summary.winnerId ?? null,
+          winnerId: winnerIdFinal,
           computed: m,
         });
       } catch {}
@@ -1776,7 +1910,7 @@ function X01Core({
       console.warn("[finalizeMatch]", e);
     }
   }
-  
+
   /* =====================================================
      FLUSH FIN
   ===================================================== */
