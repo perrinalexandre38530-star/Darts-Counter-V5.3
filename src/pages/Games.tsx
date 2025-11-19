@@ -1,25 +1,17 @@
 // ============================================
-// src/pages/Games.tsx — Sélecteur de modes de jeu
+// src/pages/Games.tsx — Sélecteur de modes (Option C compact)
 // ============================================
 import React from "react";
 
-export default function Games({
-  setTab,
-}: {
-  setTab: (tab: any) => void;
-}) {
-  // -- Déclare les jeux ici
-  const GAMES: {
-    id: string;
-    title: string;
-    subtitle: string;
-    tab: string;
-    enabled: boolean;
-  }[] = [
-    // ✅ TRAINING tout en haut
+type GameId = "training" | "x01" | "cricket" | "killer" | "shanghai" | "battle";
+
+export default function Games({ setTab }: { setTab: (tab: any) => void }) {
+  const [openInfoId, setOpenInfoId] = React.useState<GameId | null>(null);
+
+  const GAMES = [
     {
       id: "training",
-      title: "Training",
+      title: "TRAINING",
       subtitle: "Améliorez votre progression",
       tab: "training",
       enabled: true,
@@ -33,38 +25,55 @@ export default function Games({
     },
     {
       id: "cricket",
-      title: "Cricket",
-      subtitle: "15–20 + Bull — fermetures et points",
+      title: "CRICKET",
+      subtitle: "Fermez les zones 15…20 + Bull",
       tab: "cricket",
-      // 🟡 On l’active
       enabled: true,
     },
     {
       id: "killer",
-      title: "Killer",
-      subtitle: "Double ton numéro — deviens Killer",
+      title: "KILLER",
+      subtitle: "Double ton numéro → deviens Killer",
       tab: "killer",
       enabled: false,
     },
     {
       id: "shanghai",
-      title: "Shanghai",
-      subtitle: "Cible du tour, S/D/T — Shanghai = win",
+      title: "SHANGHAI",
+      subtitle: "Cible du tour, S/D/T → Shanghai = win",
       tab: "shanghai",
       enabled: false,
     },
     {
       id: "battle",
-      title: "Battle Royale",
-      subtitle: "Mode fun à plusieurs — éliminations successives",
+      title: "BATTLE ROYALE",
+      subtitle:
+        "Mode fun à plusieurs — éliminations successives",
       tab: "battle",
       enabled: false,
     },
-  ];
+  ] as const;
+
+  const GAME_INFOS: Record<GameId, string> = {
+    training:
+      "Mode entraînement solo : scoring, sorties, radar, moyennes, historique.",
+    x01:
+      "01 classique : partez de 301 / 501 / 701 / 901 et terminez exactement à 0 selon les règles (simple-out / double-out / master-out).",
+    cricket:
+      "Cricket : fermez les zones 15,16,17,18,19,20 & Bull avec 3 marques. Les sur-marques rapportent des points tant qu’un adversaire n’a pas fermé.",
+    killer:
+      "Chaque joueur reçoit un numéro. Double-le pour devenir Killer, puis élimine les autres.",
+    shanghai:
+      "À chaque tour une cible différente. Shanghai = simple + double + triple de la cible en une volée.",
+    battle:
+      "Mode fun à plusieurs : vies, malus, bonus, éliminations successives.",
+  };
+
+  const currentInfoGame =
+    openInfoId ? GAMES.find((g) => g.id === openInfoId) : null;
 
   return (
     <div
-      className="container"
       style={{
         padding: 16,
         display: "flex",
@@ -73,29 +82,36 @@ export default function Games({
         gap: 16,
       }}
     >
-      {/* -------- Titre principal -------- */}
       <div
         style={{
-          fontSize: 24,
+          fontSize: 20,
           fontWeight: 900,
-          marginBottom: 10,
           letterSpacing: 1,
+          color: "#F6C256",
+          textShadow:
+            "0 0 6px rgba(246,194,86,.9), 0 0 14px rgba(246,194,86,.6)",
         }}
       >
         TOUS LES JEUX
       </div>
-      <div style={{ opacity: 0.7, fontSize: 14, marginBottom: 8 }}>
+
+      <div
+        style={{
+          opacity: 0.7,
+          fontSize: 11,
+          color: "#E5E7EB",
+        }}
+      >
         Sélectionne un mode de jeu :
       </div>
 
-      {/* -------- Liste des cartes de jeu -------- */}
       <div
         style={{
           width: "100%",
           maxWidth: 520,
           display: "flex",
           flexDirection: "column",
-          gap: 14,
+          gap: 12,
         }}
       >
         {GAMES.map((g) => (
@@ -103,105 +119,223 @@ export default function Games({
             key={g.id}
             title={g.title}
             subtitle={g.subtitle}
-            onClick={() => setTab(g.tab)}
             disabled={!g.enabled}
+            onClick={() => setTab(g.tab)}
+            onInfoClick={() => setOpenInfoId(g.id)}
           />
         ))}
       </div>
+
+      {currentInfoGame && (
+        <InfoModal
+          title={currentInfoGame.title}
+          description={GAME_INFOS[currentInfoGame.id]}
+          onClose={() => setOpenInfoId(null)}
+        />
+      )}
     </div>
   );
 }
 
-/* ---------- Carte de sélection de jeu ---------- */
+// ---------------------------------------------
+// CARD
+// ---------------------------------------------
 function GameCard({
   title,
   subtitle,
-  onClick,
   disabled,
+  onClick,
+  onInfoClick,
 }: {
   title: string;
-  subtitle?: string;
+  subtitle: string;
+  disabled: boolean;
   onClick: () => void;
-  disabled?: boolean;
+  onInfoClick: () => void;
 }) {
-  const handleClick: React.MouseEventHandler<HTMLButtonElement> = (e) => {
-    if (disabled) {
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-    onClick();
-  };
-
   return (
     <button
-      aria-disabled={disabled ? true : undefined}
       disabled={disabled}
-      onClick={handleClick}
-      onKeyDown={(e) => {
-        if (disabled && (e.key === "Enter" || e.key === " ")) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-      }}
-      title={disabled ? "Bientôt disponible" : undefined}
+      onClick={() => !disabled && onClick()}
       style={{
         width: "100%",
-        textAlign: "left",
-        padding: "14px 18px",
-        borderRadius: 16,
-        border: "1px solid rgba(255,255,255,.08)",
+        padding: "10px 14px",
+        borderRadius: 14,
         background:
-          "linear-gradient(180deg, rgba(25,25,28,.6), rgba(15,15,18,.7))",
-        opacity: disabled ? 0.5 : 1,
+          "linear-gradient(180deg, rgba(15,16,28,.8), rgba(5,7,18,.9))",
+        border: "1px solid rgba(255,255,255,.07)",
+        opacity: disabled ? 0.55 : 1,
         cursor: disabled ? "not-allowed" : "pointer",
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        transition: "transform 0.15s ease",
-        pointerEvents: "auto", // On garde le tooltip
       }}
-      onMouseEnter={(e) =>
-        !disabled && (e.currentTarget.style.transform = "scale(1.02)")
-      }
-      onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
     >
-      <div>
-        <div style={{ fontWeight: 900, fontSize: 16 }}>{title}</div>
-        {subtitle && (
-          <div style={{ fontSize: 13, opacity: 0.75, marginTop: 2 }}>
-            {subtitle}
+      {/* LEFT */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        {/* LINE 1 : i + title */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* i button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onInfoClick();
+            }}
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: "999px",
+              border: "1px solid rgba(246,194,86,.75)",
+              background:
+                "radial-gradient(circle, #fff 0, #F6C256 40%, #8b5a16 100%)",
+              boxShadow:
+                "0 0 5px rgba(246,194,86,.8), 0 0 10px rgba(246,194,86,.5)",
+              color: "#1f1303",
+              fontSize: 10,
+              fontWeight: 900,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0,
+              cursor: "pointer",
+            }}
+          >
+            i
+          </button>
+
+          {/* TITLE */}
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 900,
+              letterSpacing: 1,
+              color: "#F6C256",
+              textShadow:
+                "0 0 4px rgba(246,194,86,.8), 0 0 10px rgba(246,194,86,.5)",
+              textTransform: "uppercase",
+            }}
+          >
+            {title}
           </div>
-        )}
+        </div>
+
+        {/* SUBTITLE */}
+        <div
+          style={{
+            fontSize: 8,
+            opacity: 0.85,
+            marginLeft: 26,
+            color: "#F8FAFC",
+          }}
+        >
+          {subtitle}
+        </div>
       </div>
 
-      <span
+      {/* RIGHT : PLAY BUTTON */}
+      <div
         style={{
-          background: disabled
-            ? "linear-gradient(180deg, #6b7280, #4b5563)" // gris
-            : "linear-gradient(180deg, #ffc63a, #ffaf00)",
-          color: disabled ? "#e5e7eb" : "#111",
+          padding: "4px 10px",
           borderRadius: 999,
-          padding: "6px 14px",
+          fontSize: 9,
           fontWeight: 800,
-          fontSize: 13,
+          color: disabled ? "#e5e7eb" : "#211500",
+          background: disabled
+            ? "linear-gradient(180deg,#6b7280,#4b5563)"
+            : "linear-gradient(180deg,#ffc63a,#ffaf00)",
           border: disabled
             ? "1px solid rgba(148,163,184,.35)"
-            : "1px solid rgba(255,180,0,.35)",
-          boxShadow: disabled ? "none" : "0 0 10px rgba(240,177,42,.25)",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 8,
+            : "1px solid rgba(255,180,0,.3)",
+          boxShadow: disabled ? "none" : "0 0 8px rgba(240,177,42,.3)",
         }}
       >
-        {disabled ? (
-          <>
-            <span aria-hidden>🔒</span> Bientôt
-          </>
-        ) : (
-          "Jouer"
-        )}
-      </span>
+        {disabled ? "Bientôt" : "Jouer"}
+      </div>
     </button>
+  );
+}
+
+// ---------------------------------------------
+// MODAL
+// ---------------------------------------------
+function InfoModal({
+  title,
+  description,
+  onClose,
+}: {
+  title: string;
+  description: string;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.6)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 80,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "90%",
+          maxWidth: 400,
+          borderRadius: 14,
+          padding: 14,
+          background:
+            "radial-gradient(circle, #111827 0, #020617 65%, #000 100%)",
+          border: "1px solid rgba(255,255,255,.12)",
+          color: "#fff",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 900,
+            color: "#F6C256",
+            textShadow:
+              "0 0 5px rgba(246,194,86,.9), 0 0 14px rgba(246,194,86,.6)",
+            marginBottom: 6,
+          }}
+        >
+          {title}
+        </div>
+
+        <div
+          style={{
+            fontSize: 10,
+            opacity: 0.9,
+            marginBottom: 12,
+            lineHeight: 1.4,
+          }}
+        >
+          {description}
+        </div>
+
+        <button
+          onClick={onClose}
+          style={{
+            width: "100%",
+            padding: "6px 10px",
+            borderRadius: 999,
+            border: "none",
+            background:
+              "linear-gradient(135deg,#ffc63a,#ffaf00)",
+            color: "#211500",
+            fontSize: 10,
+            fontWeight: 800,
+            cursor: "pointer",
+            boxShadow: "0 0 12px rgba(240,177,42,.4)",
+          }}
+        >
+          Compris
+        </button>
+      </div>
+    </div>
   );
 }

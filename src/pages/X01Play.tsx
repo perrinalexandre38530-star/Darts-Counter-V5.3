@@ -35,6 +35,114 @@ import { saveMatchStats, aggregateMatch } from "../lib/stats";
 import { commitMatchSummary, buildX01Summary } from "../lib/playerStats";
 
 import { onlineApi } from "../lib/onlineApi";
+import { useAuthOnline } from "../hooks/useAuthOnline";
+
+/* ===================================================================== 
+   TRAINING-LIKE SAVE FOR NORMAL X01 MATCHES
+   Sauvegarde simple dans LA MÊME STRUCTURE que TrainingX01Play
+   (clé : dc_training_x01_stats_v1)
+===================================================================== */
+
+const TRAINING_X01_STATS_KEY = "dc_training_x01_stats_v1";
+
+type TrainingLikeEntry = {
+  // même base que TrainingFinishStats de TrainingX01Play
+  date: number;
+  darts: number;
+  avg3D: number;
+  pctS: number;
+  pctD: number;
+  pctT: number;
+  bestVisit: number;
+  checkout: number;
+
+  hitsS: number;
+  hitsD: number;
+  hitsT: number;
+  miss: number;
+  bull: number;
+  dBull: number;
+  bust: number;
+
+  bySegment: Record<string, number>;
+  bySegmentS: Record<string, number>;
+  bySegmentD: Record<string, number>;
+  bySegmentT: Record<string, number>;
+
+  // champs bonus (ignorés par TrainingX01Play / StatsHub si non utilisés)
+  playerId: string;
+  startScore: number;
+  visits: number;
+};
+
+function loadTrainingStats(): TrainingLikeEntry[] {
+  try {
+    const raw = localStorage.getItem(TRAINING_X01_STATS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as TrainingLikeEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveTrainingStats(arr: TrainingLikeEntry[]) {
+  try {
+    localStorage.setItem(TRAINING_X01_STATS_KEY, JSON.stringify(arr));
+  } catch {
+    // quota plein => on ignore, pas grave pour le match normal
+  }
+}
+
+/**
+ * Ajoute une entrée “type Training” pour un match X01 normal
+ */
+function addTrainingLikeEntry(params: {
+  playerId: string;
+  darts: number;
+  scored: number;
+  bestVisit: number;
+  bestCheckout: number;
+  startScore: number;
+}) {
+  const { playerId, darts, scored, bestVisit, bestCheckout, startScore } =
+    params;
+
+  const avg3D = darts > 0 ? (scored / darts) * 3 : 0;
+  const visits = Math.ceil(darts / 3);
+
+  const entry: TrainingLikeEntry = {
+    date: Date.now(),
+    darts,
+    avg3D,
+    pctS: 0,
+    pctD: 0,
+    pctT: 0,
+    bestVisit,
+    checkout: bestCheckout,
+
+    hitsS: 0,
+    hitsD: 0,
+    hitsT: 0,
+    miss: 0,
+    bull: 0,
+    dBull: 0,
+    bust: 0,
+
+    bySegment: {},
+    bySegmentS: {},
+    bySegmentD: {},
+    bySegmentT: {},
+
+    playerId,
+    startScore,
+    visits,
+  };
+
+  const prev = loadTrainingStats();
+  prev.push(entry);
+  saveTrainingStats(prev);
+}
 
 /* ==================== AUTOSAVE ==================== */
 const AUTOSAVE_KEY = "dc-x01-autosave-v1";
@@ -986,6 +1094,11 @@ function X01Core({
   onFinish: (m: MatchRecord) => void;
   onExit: () => void;
 }) {
+
+  // --- Auth online (pour savoir si on peut uploader le match) ---
+  const { status: onlineStatus, user: onlineUser } = useAuthOnline();
+  const canUploadOnline = onlineStatus === "signed_in" && !!onlineUser;
+
   /* =====================================================
      RÈGLES (snapshot > props)
   ===================================================== */
@@ -1042,27 +1155,30 @@ function X01Core({
   const [visitsLog, setVisitsLog] = React.useState<VisitLite[]>([]);
   const visitNoRef = React.useRef(0);
   const matchLegsRef = React.useRef<any[]>([]);
+  const matchVisitsRef = React.useRef<VisitLite[]>([]); // 🔥 toutes les visites du match
 
   function pushVisitLog(visit: any) {
-    setVisitsLog((prev) => {
-      const arr = [...prev];
-      const segs =
-        visit?.darts?.map((d: UIDart) => ({
-          v: d.v,
-          mult: d.mult as 1 | 2 | 3,
-        })) ?? [];
+    const segs =
+      visit?.darts?.map((d: UIDart) => ({
+        v: d.v,
+        mult: (d.mult || 1) as 1 | 2 | 3,
+      })) ?? [];
 
-      arr.push({
-        p: visit.playerId,
-        score: visit.score || 0,
-        remainingAfter: visit.remainingAfter || 0,
-        bust: visit.bust,
-        isCheckout: visit.isCheckout,
-        segments: segs,
-        ts: Date.now(),
-      });
-      return arr;
-    });
+    const v: VisitLite = {
+      p: visit.playerId,
+      score: visit.score || 0,
+      remainingAfter: visit.remainingAfter || 0,
+      bust: visit.bust,
+      isCheckout: visit.isCheckout,
+      segments: segs,
+      ts: Date.now(),
+    };
+
+    // ✅ log de la manche en cours (pour pastilles / overlay)
+    setVisitsLog((prev) => [...prev, v]);
+
+    // ✅ log global du match (pour stats & History)
+    matchVisitsRef.current.push(v);
   }
 
   /* =====================================================
@@ -1563,206 +1679,253 @@ function X01Core({
   }, []);
 
   /* =====================================================
-     FIN DE MATCH — NOUVELLE LOGIQUE
-  ===================================================== */
-  function persistOnFinish() {
-    try {
-      const rec = makeX01RecordFromEngineCompat({
-        engine: buildEngineLike([], winner?.id ?? null),
-        existingId: historyIdRef.current,
-      });
-      History.upsert(rec);
-      historyIdRef.current = rec.id;
-      clearAutosave();
-    } catch {}
-  }
+   FIN DE MATCH — NOUVELLE LOGIQUE (VERSION FINALE)
+===================================================== */
 
-  // on ne doit terminer le match qu'une seule fois
-  const hasFinishedRef = React.useRef(false);
+// Sauvegarde l’état final (snapshot) dans History + clear autosave
+function persistOnFinish() {
+  try {
+    const rec = makeX01RecordFromEngineCompat({
+      engine: buildEngineLike([], winner?.id ?? null),
+      existingId: historyIdRef.current,
+    });
 
-  React.useEffect(() => {
-    if (!ruleWinnerId) return;
-    if (hasFinishedRef.current) return;
+    History.upsert(rec);
+    historyIdRef.current = rec.id;
+    clearAutosave();
+  } catch {}
+}
 
-    // nombre total de sets (config moteur ou snapshot)
-    const totalSets =
-      (setsTarget && setsTarget > 0 ? setsTarget : setsFromResume) || 1;
+// Sécurité : on ne finalise qu’une seule fois
+const hasFinishedRef = React.useRef(false);
 
-    // mode "best of" : sets à gagner = floor(total/2)+1
-    const setsNeededToWin = Math.floor(totalSets / 2) + 1;
-    const winnerSets = setsWon?.[ruleWinnerId] ?? 0;
+// Déclenchement si le moteur a déterminé un winnerId
+React.useEffect(() => {
+  if (!ruleWinnerId) return;
+  if (hasFinishedRef.current) return;
 
-    if (winnerSets < setsNeededToWin) return;
+  // total sets configuré (props ou snapshot)
+  const totalSets =
+    (setsTarget && setsTarget > 0 ? setsTarget : setsFromResume) || 1;
 
-    finalizeMatch();
-  }, [ruleWinnerId, setsWon, setsTarget, setsFromResume]);
+  // mode "best of"
+  const setsNeededToWin = Math.floor(totalSets / 2) + 1;
 
-  async function finalizeMatch() {
-    if (hasFinishedRef.current) return;
-    hasFinishedRef.current = true;
+  const winnerSets = setsWon?.[ruleWinnerId] ?? 0;
+  if (winnerSets < setsNeededToWin) return;
 
-    // on persiste l'état final minimal (match record V5)
-    persistOnFinish();
+  finalizeMatch();
+}, [ruleWinnerId, setsWon, setsTarget, setsFromResume]);
 
-    try {
-      const playersArr = mapEnginePlayersToLite(
-        state.players as any,
-        profiles
-      );
-      const matchId = matchIdRef.current;
+/* =====================================================
+   FINALIZE MATCH — VERSION FINALE
+===================================================== */
+async function finalizeMatch() {
+  if (hasFinishedRef.current) return;
+  hasFinishedRef.current = true;
 
-      // Résumé "riche" via StatsBridge (buckets, etc.)
-      const summary = StatsBridge.makeMatch(
-        matchLegsRef.current,
-        playersArr,
-        matchId,
-        "x01"
-      );
+  // snapshot final
+  persistOnFinish();
 
-      const winnerIdFinal = summary.winnerId ?? winner?.id ?? null;
+  try {
+    /* -------------------------------------------------
+       0) Setup de base
+    ------------------------------------------------- */
+    const playersArr = mapEnginePlayersToLite(state.players as any, profiles);
+    const matchId = matchIdRef.current;
 
-      // =====================================================
-      // 1) AGRÉGATION MANUELLE DES STATS PAR JOUEUR
-      //    → comme TrainingX01 : on se base sur les legs
-      // =====================================================
-      type Agg = {
-        darts: number;
-        scored: number;
-        bestVisit: number;
-        bestCheckout: number;
-      };
-      const perPlayerAgg: Record<string, Agg> = {};
+    // Résumé brut via StatsBridge
+    const bridgeSummary = StatsBridge.makeMatch(
+      matchLegsRef.current,
+      playersArr,
+      matchId,
+      "x01"
+    );
 
-      for (const leg of matchLegsRef.current as any[]) {
-        const arr: any[] = Array.isArray(leg.perPlayer)
-          ? leg.perPlayer
-          : [];
-        for (const pl of arr) {
-          const pid = pl.playerId ?? pl.id;
-          if (!pid) continue;
-          if (!perPlayerAgg[pid]) {
-            perPlayerAgg[pid] = {
-              darts: 0,
-              scored: 0,
-              bestVisit: 0,
-              bestCheckout: 0,
-            };
-          }
-          const agg = perPlayerAgg[pid];
+    // gagnant final
+    const winnerIdFinal =
+      ruleWinnerId ?? winner?.id ?? bridgeSummary.winnerId ?? null;
 
-          const d = Number(pl.darts ?? pl.nbDarts ?? 0) || 0;
-          const scored =
-            Number(
-              pl.scored ??
-                pl.points ??
-                pl.totalPoints ??
-                pl.scoreSum ??
-                pl.scoredPoints
-            ) || 0;
-          const bv =
-            Number(
-              pl.bestVisit ??
-                pl.best_visit ??
-                pl.best ??
-                0
-            ) || 0;
-          const bc =
-            Number(
-              pl.bestCheckout ??
-                pl.best_co ??
-                pl.bestFinish ??
-                0
-            ) || 0;
+    /* -------------------------------------------------
+       1) AGRÉGATION MANUELLE DES LEGS
+          (fidèle à TrainingFinish)
+    ------------------------------------------------- */
+    type Agg = {
+      darts: number;
+      scored: number;
+      bestVisit: number;
+      bestCheckout: number;
+      h60: number;
+      h100: number;
+      h140: number;
+      h180: number;
+      miss: number;
+      bust: number;
+      dbull: number;
+    };
 
-          agg.darts += d;
-          agg.scored += scored;
-          if (bv > agg.bestVisit) agg.bestVisit = bv;
-          if (bc > agg.bestCheckout) agg.bestCheckout = bc;
-        }
+    const perPlayerAgg: Record<string, Agg> = {};
+
+    for (const leg of matchLegsRef.current as any[]) {
+      const arr: any[] = Array.isArray(leg.perPlayer) ? leg.perPlayer : [];
+
+      for (const pl of arr) {
+        const pid = pl.playerId ?? pl.id;
+        if (!pid) continue;
+
+        const agg =
+          perPlayerAgg[pid] ||
+          (perPlayerAgg[pid] = {
+            darts: 0,
+            scored: 0,
+            bestVisit: 0,
+            bestCheckout: 0,
+            h60: 0,
+            h100: 0,
+            h140: 0,
+            h180: 0,
+            miss: 0,
+            bust: 0,
+            dbull: 0,
+          });
+
+        const d = Number(pl.darts ?? pl.nbDarts ?? 0) || 0;
+        const scored =
+          Number(
+            pl.scored ??
+              pl.points ??
+              pl.totalPoints ??
+              pl.scoreSum ??
+              pl.scoredPoints
+          ) || 0;
+
+        const bv = Number(pl.bestVisit ?? pl.best_visit ?? pl.best ?? 0) || 0;
+        const bc =
+          Number(
+            pl.bestCheckout ??
+              pl.best_co ??
+              pl.bestFinish ??
+              0
+          ) || 0;
+
+        agg.darts += d;
+        agg.scored += scored;
+
+        if (bv > agg.bestVisit) agg.bestVisit = bv;
+        if (bc > agg.bestCheckout) agg.bestCheckout = bc;
+
+        agg.h60 += Number(pl.h60 ?? 0) || 0;
+        agg.h100 += Number(pl.h100 ?? 0) || 0;
+        agg.h140 += Number(pl.h140 ?? 0) || 0;
+        agg.h180 += Number(pl.h180 ?? 0) || 0;
+        agg.miss += Number(pl.miss ?? 0) || 0;
+        agg.bust += Number(pl.bust ?? 0) || 0;
+        agg.dbull += Number(pl.dbull ?? 0) || 0;
       }
+    }
 
-      // =====================================================
-      // 2) CONSTRUCTION d'un perPlayer "propre" pour summary
-      // =====================================================
-      const summaryPerPlayer = playersArr.map((p) => {
-        const agg = perPlayerAgg[p.id] ?? {
+    /* -------------------------------------------------
+       2) Merge avec les impacts LIVE (doubles/triples/bulls)
+    ------------------------------------------------- */
+    const summaryPerPlayer = playersArr.map((p) => {
+      const agg =
+        perPlayerAgg[p.id] ||
+        ({
           darts: 0,
           scored: 0,
           bestVisit: 0,
           bestCheckout: 0,
-        };
+          h60: 0,
+          h100: 0,
+          h140: 0,
+          h180: 0,
+          miss: 0,
+          bust: 0,
+          dbull: 0,
+        } as Agg);
 
-        const existing =
-          summary.perPlayer?.find(
-            (x: any) => x.playerId === p.id
-          ) ?? {};
+      const impact = impactByPlayer[p.id] || {
+        doubles: 0,
+        triples: 0,
+        bulls: 0,
+      };
 
-        const darts = agg.darts || existing.darts || 0;
-        const scored = agg.scored || existing.scored || 0;
-        const avg3 =
-          darts > 0
-            ? (scored / darts) * 3
-            : existing.avg3 || 0;
-        const bestVisit = Math.max(
-          agg.bestVisit || 0,
-          existing.bestVisit || 0
-        );
-        const bestCheckout = Math.max(
-          agg.bestCheckout || 0,
-          existing.bestCheckout || 0
-        );
+      const darts = agg.darts;
+      const scored = agg.scored;
+      const avg3 = darts > 0 ? (scored / darts) * 3 : 0;
 
-        return {
-          playerId: p.id,
-          name: p.name,
-          avg3,
-          bestVisit,
-          bestCheckout,
-          darts,
-          win: winnerIdFinal === p.id,
-          buckets: existing.buckets ?? undefined,
-        };
+      // fallback si StatsBridge a mieux
+      const fromBridge =
+        bridgeSummary.perPlayer?.find(
+          (pp: any) => pp.playerId === p.id
+        ) ?? {};
+
+      const bestVisit = Math.max(
+        agg.bestVisit,
+        Number(fromBridge.bestVisit ?? 0)
+      );
+
+      const bestCheckout = Math.max(
+        agg.bestCheckout,
+        Number(fromBridge.bestCheckout ?? 0)
+      );
+
+      return {
+        playerId: p.id,
+        name: p.name,
+        darts,
+        avg3,
+        bestVisit,
+        bestCheckout,
+        h60: agg.h60,
+        h100: agg.h100,
+        h140: agg.h140,
+        h180: agg.h180,
+        miss: agg.miss,
+        bust: agg.bust,
+        dbull: agg.dbull,
+        doubles: impact.doubles,
+        triples: impact.triples,
+        bulls: impact.bulls,
+        win: winnerIdFinal === p.id,
+      };
+    });
+
+    /* -------------------------------------------------
+       3) QUICK STATS — addMatchSummary
+    ------------------------------------------------- */
+    const avg3ByPlayer: Record<string, number> = {};
+    const bestVisitByPlayer: Record<string, number> = {};
+    const bestCheckoutByPlayer: Record<string, number> = {};
+
+    for (const s of summaryPerPlayer) {
+      avg3ByPlayer[s.playerId] = Math.round((s.avg3 || 0) * 100) / 100;
+      bestVisitByPlayer[s.playerId] = s.bestVisit || 0;
+      bestCheckoutByPlayer[s.playerId] = s.bestCheckout || 0;
+    }
+
+    try {
+      await addMatchSummary({
+        winnerId: winnerIdFinal,
+        perPlayer: Object.fromEntries(
+          playersArr.map((p) => [
+            p.id,
+            {
+              id: p.id,
+              games: 1,
+              wins: winnerIdFinal === p.id ? 1 : 0,
+              avg3: avg3ByPlayer[p.id],
+            },
+          ])
+        ),
       });
+    } catch {}
 
-      // Maps rapides pour l'onglet X01 multi
-      const avg3ByPlayer: Record<string, number> = {};
-      const bestVisitByPlayer: Record<string, number> = {};
-      const bestCheckoutByPlayer: Record<string, number> = {};
-
-      for (const p of summaryPerPlayer) {
-        avg3ByPlayer[p.playerId] = p.avg3 || 0;
-        bestVisitByPlayer[p.playerId] = p.bestVisit || 0;
-        bestCheckoutByPlayer[p.playerId] =
-          p.bestCheckout || 0;
-      }
-
-      // =====================================================
-      // 3) QUICK STATS (addMatchSummary)
-      // =====================================================
-      try {
-        await addMatchSummary({
-          winnerId: winnerIdFinal,
-          perPlayer: Object.fromEntries(
-            playersArr.map((p) => [
-              p.id,
-              {
-                id: p.id,
-                games: 1,
-                wins: winnerIdFinal === p.id ? 1 : 0,
-                avg3:
-                  typeof avg3ByPlayer[p.id] === "number"
-                    ? avg3ByPlayer[p.id]
-                    : undefined,
-              },
-            ])
-          ),
-        });
-      } catch {}
-
-      // =====================================================
-      // 4) PERSISTENCE COMPLETTE DU MATCH (History / storage)
-      // =====================================================
-      const visitsForPersist: VisitType[] = visitsLog.map((v) => ({
+    /* -------------------------------------------------
+       4) VISITES + SUMMARY POUR HISTORY
+    ------------------------------------------------- */
+    const visitsForPersist: VisitType[] = (matchVisitsRef.current || []).map(
+      (v) => ({
         p: v.p,
         segments: v.segments,
         bust: v.bust,
@@ -1770,146 +1933,155 @@ function X01Core({
         ts: v.ts!,
         isCheckout: v.isCheckout,
         remainingAfter: v.remainingAfter,
-      }));
+      })
+    );
 
-      const summaryForHistory = {
-        legs: matchLegsRef.current.length,
-        darts: summaryPerPlayer.reduce(
-          (s, p) => s + (p.darts || 0),
-          0
-        ),
-        avg3ByPlayer,
-        bestVisitByPlayer,
-        bestCheckoutByPlayer,
-        perPlayer: summaryPerPlayer,
-      };
+    const summaryForHistory = {
+      kind: "x01",
+      legs: matchLegsRef.current.length,
+      darts: summaryPerPlayer.reduce((s, p) => s + (p.darts || 0), 0),
+      avg3ByPlayer,
+      bestVisitByPlayer,
+      bestCheckoutByPlayer,
+      perPlayer: summaryPerPlayer,
+    };
 
-      await safeSaveMatch({
-        id: matchId,
-        players: playersArr,
-        winnerId: winnerIdFinal,
-        summary: summaryForHistory,
-        payload: {
-          visits: visitsForPersist,
-          legs: matchLegsRef.current,
-          meta: {
-            currentSet,
-            currentLegInSet,
-            legsTarget: legsFromResume,
-          },
+    await safeSaveMatch({
+      id: matchId,
+      players: playersArr,
+      winnerId: winnerIdFinal,
+      summary: summaryForHistory,
+      payload: {
+        visits: visitsForPersist,
+        legs: matchLegsRef.current,
+        meta: {
+          currentSet,
+          currentLegInSet,
+          legsTarget: legsFromResume,
         },
-      });
+      },
+    });
 
-      // ✅ Sync Online (mode X01 classique) — best effort
+    /* -------------------------------------------------
+       5) ONLINE SYNC — non bloquant
+    ------------------------------------------------- */
+    if (canUploadOnline) {
       try {
         await onlineApi.uploadMatch({
           mode: "x01",
+          isTraining: false,
           payload: {
-            visits: visitsForPersist,
+            matchId,
+            rules: {
+              start: startFromResume,
+              outMode: outMFromResume,
+              inMode: inMFromResume,
+              setsToWin: setsFromResume,
+              legsPerSet: legsFromResume,
+              finishPolicy:
+                outMFromResume !== "simple" ? "doubleOut" : "singleOut",
+            },
+            players: playersArr,
+            winnerId: winnerIdFinal,
             legs: matchLegsRef.current,
+            visits: visitsForPersist,
             meta: {
               currentSet,
               currentLegInSet,
               legsTarget: legsFromResume,
             },
           },
-          isTraining: false,
-        } as any);
+        });
       } catch (err) {
         console.warn("[Online] uploadMatch failed:", err);
       }
-
-      await History.list();
-
-      // Fallback history (mini) pour les anciens écrans
-      try {
-        const legForLegacy =
-          lastLegResult?.__legStats ??
-          matchLegsRef.current.at(-1);
-
-        await emitHistoryRecord_X01({
-          playersLite: playersArr,
-          winnerId: winnerIdFinal,
-          resumeId: resumeId ?? null,
-          legStats: legForLegacy,
-          visitsLog: [],
-          onFinish,
-        });
-      } catch {}
-
-      // =====================================================
-      // 5) Stats "profil" (quick medaillons / couronnes)
-      // =====================================================
-      try {
-        commitMatchSummary(
-          buildX01Summary({
-            kind: "x01",
-            winnerId: winnerIdFinal,
-            perPlayer: summaryPerPlayer,
-          })
-        );
-      } catch {}
-
-      // =====================================================
-      // 6) Stats avancées (StatsHub › X01 multi global)
-      // =====================================================
-      try {
-        const playersIds = playersArr.map((p) => p.id);
-        const m = aggregateMatch(
-          matchLegsRef.current as any,
-          playersIds
-        );
-
-        saveMatchStats({
-          id: crypto.randomUUID?.() ?? String(Date.now()),
-          createdAt: Date.now(),
-          rules: {
-            x01Start: startFromResume,
-            finishPolicy:
-              outMFromResume !== "simple"
-                ? "doubleOut"
-                : "singleOut",
-            setsToWin: setsFromResume,
-            legsPerSet: legsFromResume,
-          },
-          players: playersIds,
-          winnerId: winnerIdFinal,
-          computed: m,
-        });
-      } catch {}
-
-      // VOIX — annonce classement
-      try {
-        if (
-          (localStorage.getItem("opt_voice") ?? "true") === "true" &&
-          "speechSynthesis" in window
-        ) {
-          const ordered = [...liveRanking];
-          const ords = [
-            "",
-            "Deuxième",
-            "Troisième",
-            "Quatrième",
-            "Cinquième",
-          ];
-          const parts: string[] = [];
-          if (ordered[0]) parts.push(`Victoire ${ordered[0].name}`);
-          for (let i = 1; i < ordered.length; i++) {
-            if (ords[i]) parts.push(`${ords[i]} ${ordered[i].name}`);
-          }
-          const text = parts.join(". ") + ".";
-          const u = new SpeechSynthesisUtterance(text);
-          window.speechSynthesis.cancel();
-          window.speechSynthesis.speak(u);
-        }
-      } catch {}
-
-      // Fin effective
-      flushPendingFinish();
-    } catch (e) {
-      console.warn("[finalizeMatch]", e);
     }
+
+    await History.list();
+
+    /* -------------------------------------------------
+       6) Fallback mini-history
+    ------------------------------------------------- */
+    try {
+      const legForLegacy =
+        lastLegResult?.__legStats ?? matchLegsRef.current.at(-1);
+
+      await emitHistoryRecord_X01({
+        playersLite: playersArr,
+        winnerId: winnerIdFinal,
+        resumeId: resumeId ?? null,
+        legStats: legForLegacy,
+        visitsLog: [],
+        onFinish,
+      });
+    } catch {}
+
+    /* -------------------------------------------------
+       7) Stats profils (médaillons / couronnes)
+    ------------------------------------------------- */
+    try {
+      commitMatchSummary(
+        buildX01Summary({
+          kind: "x01",
+          winnerId: winnerIdFinal,
+          perPlayer: summaryPerPlayer,
+        })
+      );
+    } catch {}
+
+    /* -------------------------------------------------
+       8) StatsHub X01 global (rich stats)
+    ------------------------------------------------- */
+    try {
+      const playersIds = playersArr.map((p) => p.id);
+      const m = aggregateMatch(matchLegsRef.current as any, playersIds);
+
+      saveMatchStats({
+        id: crypto.randomUUID?.() ?? String(Date.now()),
+        createdAt: Date.now(),
+        rules: {
+          x01Start: startFromResume,
+          finishPolicy:
+            outMFromResume !== "simple" ? "doubleOut" : "singleOut",
+          setsToWin: setsFromResume,
+          legsPerSet: legsFromResume,
+        },
+        players: playersIds,
+        winnerId: winnerIdFinal,
+        computed: m,
+      });
+    } catch {}
+
+    /* -------------------------------------------------
+       9) Voix - annonce classement final
+    ------------------------------------------------- */
+    try {
+      if (
+        (localStorage.getItem("opt_voice") ?? "true") === "true" &&
+        "speechSynthesis" in window
+      ) {
+        const ordered = [...liveRanking];
+        const ords = ["", "Deuxième", "Troisième", "Quatrième", "Cinquième"];
+        const parts: string[] = [];
+
+        if (ordered[0]) parts.push(`Victoire ${ordered[0].name}`);
+        for (let i = 1; i < ordered.length; i++) {
+          if (ords[i]) parts.push(`${ords[i]} ${ordered[i].name}`);
+        }
+
+        const text = parts.join(". ") + ".";
+        const u = new SpeechSynthesisUtterance(text);
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(u);
+      }
+    } catch {}
+
+    // Fin effective
+    flushPendingFinish();
+  } catch (e) {
+    console.warn("[finalizeMatch]", e);
   }
+}
 
   /* =====================================================
      FLUSH FIN

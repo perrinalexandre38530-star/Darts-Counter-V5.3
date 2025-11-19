@@ -93,21 +93,34 @@ export type CricketMarkIconProps = {
 export function CricketMarkIcon({
   marks,
   color,
-  size = 20,
+  size = 18,
   glow = true,
 }: CricketMarkIconProps) {
   if (marks <= 0) return null;
-  const clamped = Math.max(1, Math.min(3, marks));
 
-  const src =
-    clamped === 1 ? mark1Png : clamped === 2 ? mark2Png : mark3Png;
+  const src = marks === 1 ? mark1Png : marks === 2 ? mark2Png : mark3Png;
+
+  const filter = glow
+    ? marks === 3
+      // 🔥 mark-3 : halo couleur joueur + double contour sombre
+      ? `drop-shadow(0 0 2px #000000dd)
+         drop-shadow(0 0 4px #000000aa)
+         drop-shadow(0 0 8px ${color})`
+      // mark-1 / mark-2 : halo couleur joueur classique
+      : `drop-shadow(0 0 3px ${color})
+         drop-shadow(0 0 7px ${color})`
+    : "drop-shadow(0 0 2px rgba(0,0,0,0.8))";
 
   return (
-    <MaskIcon
+    <img
       src={src}
-      color={color}
-      size={size}
-      glow={glow}
+      alt={`mark-${marks}`}
+      style={{
+        width: size,
+        height: size,
+        display: "block",
+        filter,
+      }}
     />
   );
 }

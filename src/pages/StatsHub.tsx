@@ -3230,7 +3230,8 @@ function X01MultiStatsTab({ records, playerId }: X01MultiStatsTabProps) {
       (ss[pid] || ss.players?.[pid] || ss.perPlayer?.[pid]) ??
       {};
 
-    const Nloc = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : 0);
+    const Nloc = (x: any) =>
+      Number.isFinite(Number(x)) ? Number(x) : 0;
 
     // 🔹 1) priorité : map avg3ByPlayer créée dans finalizeMatch
     let avg3 =
@@ -3239,7 +3240,7 @@ function X01MultiStatsTab({ records, playerId }: X01MultiStatsTabProps) {
       Nloc(pstat.avg_3) ||
       Nloc(pstat.avg3Darts) ||
       Nloc(pstat.average3) ||
-      Nloc(pstat.avg3D); // au cas où le champ s’appelle comme ça
+      Nloc(pstat.avg3D);
 
     let bestVisit = Nloc(pstat.bestVisit);
     let bestCheckout = Nloc(pstat.bestCheckout);
@@ -3306,8 +3307,24 @@ function X01MultiStatsTab({ records, playerId }: X01MultiStatsTabProps) {
     const seen = new Set<string>(); // évite les doublons de match
 
     for (const rec of records) {
-      if (rec.kind !== "x01") continue;
-      if (rec.status && rec.status !== "finished") continue;
+      // ----- détection robuste du "kind" -----
+      const ss: any = rec.summary ?? rec.payload?.summary ?? {};
+      const kind =
+        rec.kind ??
+        ss.kind ??
+        (rec.payload as any)?.kind ??
+        (rec.payload as any)?.mode ??
+        (rec as any).mode;
+
+      // si on a une info de kind et qu'elle n'est pas x01 → on skippe
+      if (kind && kind !== "x01") continue;
+
+      // ----- status (fallback = finished) -----
+      const status =
+        rec.status ??
+        (rec.payload as any)?.status ??
+        "finished";
+      if (status !== "finished") continue;
 
       // déduplication forte par id
       if (rec.id && seen.has(rec.id)) continue;
@@ -3581,6 +3598,7 @@ function X01MultiStatsTab({ records, playerId }: X01MultiStatsTabProps) {
     </div>
   );
 }
+
 
 /* ---------- Page ---------- */
 export default function StatsHub(props: Props) {

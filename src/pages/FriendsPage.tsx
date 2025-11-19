@@ -153,6 +153,25 @@ export default function FriendsPage({ store, update }: Props) {
 
   const isChecking = status === "checking";
 
+  /* ------ Online matches list (mock) ------ */
+  const [onlineMatches, setOnlineMatches] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+      const raw = window.localStorage.getItem("dc_online_matches_v1");
+      if (!raw) {
+        setOnlineMatches([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) setOnlineMatches(parsed);
+      else setOnlineMatches([]);
+    } catch {
+      setOnlineMatches([]);
+    }
+  }, [status]); // on rafraîchit quand la session online change
+
   return (
     <div
       className="container"
@@ -462,7 +481,7 @@ export default function FriendsPage({ store, update }: Props) {
                       height: 8,
                       borderRadius: "50%",
                       background: statusColor,
-                      boxShadow: `0 0 6px ${statusColor}`, // ✨ halo néon
+                      boxShadow: `0 0 6px ${statusColor}`,
                     }}
                   />
                   <span>{statusLabel}</span>
@@ -653,6 +672,49 @@ export default function FriendsPage({ store, update }: Props) {
           Rejoindre avec un code (à venir)
         </button>
       </div>
+
+      {/* --------- Historique online (mock) --------- */}
+      {onlineMatches.length > 0 && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,.10)",
+            background:
+              "linear-gradient(180deg, rgba(30,30,34,.96), rgba(12,12,14,.98))",
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>
+            Historique Online (mock)
+          </div>
+
+          {onlineMatches
+            .slice()
+            .reverse()
+            .map((m: any, i: number) => {
+              const ts = m.finishedAt || m.startedAt || Date.now();
+              const label = new Date(ts).toLocaleString();
+              return (
+                <div
+                  key={i}
+                  style={{
+                    padding: "6px 8px",
+                    borderRadius: 8,
+                    marginBottom: 6,
+                    background: "rgba(255,255,255,.04)",
+                  }}
+                >
+                  <div style={{ fontSize: 12 }}>
+                    <b>{(m.mode || "x01").toUpperCase()}</b>{" "}
+                    {m.isTraining ? "(training)" : "(match)"}
+                  </div>
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>{label}</div>
+                </div>
+              );
+            })}
+        </div>
+      )}
     </div>
   );
 }
