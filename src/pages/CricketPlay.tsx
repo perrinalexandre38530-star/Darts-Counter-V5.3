@@ -1,8 +1,9 @@
 // ============================================
 // src/pages/CricketPlay.tsx
-// Mode Cricket — v1 avec vrais profils & avatars
-// - Phase SETUP : sélection de 2 à 4 profils locaux + paramètres
-// - Phase PLAY  : moteur Cricket (marks + score) avec scoreboard néon
+// Mode Cricket — profils réels + tableau centré
+// - Setup : sélection 2 à 4 profils + options simples
+// - Play  : tableau Cricket (20..15 + Bull) avec colonnes centrées
+// - Keypad 0..20 (3 × 7) + bouton BULL
 // ============================================
 
 import React from "react";
@@ -17,7 +18,121 @@ import {
 } from "../lib/cricketEngine";
 import { playSound } from "../lib/sound";
 import type { Profile } from "../lib/types";
-import dartIcon from "../ui_assets/cricket-dart-white.png";
+
+/* --------------------------------------------
+   SVG INLINE — FLECHETTE + MARKS
+---------------------------------------------*/
+
+function DartSvg({ active, color }: { active: boolean; color: string }) {
+  const baseSize = active ? 30 : 26;
+  const opacity = active ? 1 : 0.3;
+  const glow = active
+    ? `0 0 6px ${color}, 0 0 14px ${color}cc`
+    : "0 0 4px rgba(0,0,0,0.6)";
+
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      style={{
+        width: baseSize,
+        height: baseSize,
+        transform: "rotate(180deg)", // pointe vers le bas
+        filter: `drop-shadow(${glow})`,
+        opacity,
+        transition: "all 0.15s ease",
+      }}
+    >
+      {/* aile */}
+      <polygon points="15,10 55,10 45,30 15,30" fill="#ffffff" />
+      {/* corps */}
+      <rect x="40" y="30" width="6" height="40" fill="#ffffff" />
+      {/* stries */}
+      <rect x="37" y="38" width="12" height="3" fill="#ffffff" />
+      <rect x="37" y="44" width="12" height="3" fill="#ffffff" />
+      <rect x="37" y="50" width="12" height="3" fill="#ffffff" />
+      {/* pointe */}
+      <polygon points="43,70 49,70 46,90" fill="#ffffff" />
+    </svg>
+  );
+}
+
+// Icône Cricket (1 / 2 / 3 marks) inline — style I / X / cible
+function CricketMarkIcon({ marks }: { marks: number }) {
+  if (marks <= 0) return null;
+
+  if (marks === 1) {
+    // trait /
+    return (
+      <svg viewBox="0 0 100 100" style={{ width: 18, height: 18 }}>
+        <rect
+          x="20"
+          y="45"
+          width="60"
+          height="10"
+          rx="4"
+          ry="4"
+          fill="#ffffff"
+          transform="rotate(-30 50 50)"
+        />
+      </svg>
+    );
+  }
+
+  if (marks === 2) {
+    // croix X
+    return (
+      <svg viewBox="0 0 100 100" style={{ width: 18, height: 18 }}>
+        <rect
+          x="20"
+          y="45"
+          width="60"
+          height="10"
+          rx="4"
+          ry="4"
+          fill="#ffffff"
+          transform="rotate(-35 50 50)"
+        />
+        <rect
+          x="20"
+          y="45"
+          width="60"
+          height="10"
+          rx="4"
+          ry="4"
+          fill="#ffffff"
+          transform="rotate(35 50 50)"
+        />
+      </svg>
+    );
+  }
+
+  // 3 marks : cercle avec croix (target)
+  return (
+    <svg viewBox="0 0 100 100" style={{ width: 18, height: 18 }}>
+      {/* cercle */}
+      <circle
+        cx="50"
+        cy="50"
+        r="26"
+        stroke="#ffffff"
+        strokeWidth="8"
+        fill="none"
+      />
+      {/* croix */}
+      <rect x="32" y="47" width="36" height="8" rx="4" ry="4" fill="#ffffff" />
+      <rect
+        x="32"
+        y="47"
+        width="36"
+        height="8"
+        rx="4"
+        ry="4"
+        fill="#ffffff"
+        transform="rotate(90 50 51)"
+      />
+    </svg>
+  );
+}
 
 const T = {
   bg: "#050712",
@@ -25,7 +140,6 @@ const T = {
   text: "#FFFFFF",
   textSoft: "rgba(255,255,255,0.7)",
   gold: "#F6C256",
-  red: "#FF4A4A",
   borderSoft: "rgba(255,255,255,0.08)",
 };
 
@@ -35,7 +149,7 @@ const ACCENTS = ["#fbbf24", "#f472b6", "#22c55e", "#38bdf8"];
 
 type Phase = "setup" | "play";
 type ScoreMode = "points" | "no-points";
-type HitMode = "S" | "D" | "T" | "BULL";
+type HitMode = "S" | "D" | "T";
 
 type Props = {
   profiles?: Profile[];
@@ -53,7 +167,8 @@ export default function CricketPlay({ profiles }: Props) {
   // ---- Paramètres de jeu ----
   const [scoreMode, setScoreMode] = React.useState<ScoreMode>("points");
   const [maxRounds, setMaxRounds] = React.useState<number>(20);
-  const [rotateFirstPlayer, setRotateFirstPlayer] = React.useState<boolean>(true);
+  const [rotateFirstPlayer, setRotateFirstPlayer] =
+    React.useState<boolean>(true);
 
   // ---- Match en cours (phase PLAY) ----
   const [state, setState] = React.useState<CricketState | null>(null);
@@ -65,8 +180,6 @@ export default function CricketPlay({ profiles }: Props) {
       : null;
 
   const isFinished = !!state?.winnerId;
-  const scoreModeLabel =
-    scoreMode === "points" ? "Score : points" : "Score : sans points";
 
   // Map id -> profil (pour avatars pendant le jeu)
   const profileById = React.useMemo(() => {
@@ -150,90 +263,6 @@ export default function CricketPlay({ profiles }: Props) {
     );
   }
 
-  function CricketMarkIcon({
-    marks,
-    color,
-  }: {
-    marks: number;
-    color: string;
-  }) {
-    if (marks <= 0) return null;
-
-    // 1 = trait / 2 = X / 3+ = cible barrée
-    if (marks === 1) {
-      return (
-        <svg width={22} height={22} viewBox="0 0 24 24">
-          <line
-            x1="6"
-            y1="18"
-            x2="18"
-            y2="8"
-            stroke={color}
-            strokeWidth={2.4}
-            strokeLinecap="round"
-          />
-        </svg>
-      );
-    }
-
-    if (marks === 2) {
-      return (
-        <svg width={22} height={22} viewBox="0 0 24 24">
-          <line
-            x1="6"
-            y1="18"
-            x2="18"
-            y2="6"
-            stroke={color}
-            strokeWidth={2.4}
-            strokeLinecap="round"
-          />
-          <line
-            x1="6"
-            y1="6"
-            x2="18"
-            y2="18"
-            stroke={color}
-            strokeWidth={2.4}
-            strokeLinecap="round"
-          />
-        </svg>
-      );
-    }
-
-    // 3+ : cercle + croix (cible)
-    return (
-      <svg width={22} height={22} viewBox="0 0 24 24">
-        <circle
-          cx="12"
-          cy="12"
-          r="6.2"
-          stroke={color}
-          strokeWidth={2.2}
-          fill="none"
-        />
-        <line
-          x1="12"
-          y1="5"
-          x2="12"
-          y2="19"
-          stroke={color}
-          strokeWidth={2}
-          strokeLinecap="round"
-        />
-        <line
-          x1="5"
-          y1="12"
-          x2="19"
-          y2="12"
-          stroke={color}
-          strokeWidth={2}
-          strokeLinecap="round"
-        />
-      </svg>
-    );
-  }
-
   // --------------------------------------------------
   // SETUP : sélection des profils + options
   // --------------------------------------------------
@@ -297,22 +326,16 @@ export default function CricketPlay({ profiles }: Props) {
     if (!state || !currentPlayer) return;
     if (state.winnerId) return;
 
-    let target: CricketTarget | null = null;
-
-    if (hitMode === "BULL") {
-      // Bull, peu importe le chiffre pressé
-      target = 25;
-    } else {
-      if (value >= 15 && value <= 20) {
-        target = value as CricketTarget;
-      } else {
-        // Touche non fonctionnelle pour le Cricket : on ignore
-        return;
-      }
-    }
-
-    if (target == null) return;
+    // 0..20 = valeur de fléchette, Cricket n'utilise que 15..20 pour les marks
+    const target = value as CricketTarget;
     registerHit(target);
+  }
+
+  function handleBull() {
+    if (!state || !currentPlayer) return;
+    if (state.winnerId) return;
+    // 25 = Bull, multiplicateur selon hitMode (S/D/T)
+    registerHit(25 as CricketTarget);
   }
 
   function handleUndo() {
@@ -866,6 +889,12 @@ export default function CricketPlay({ profiles }: Props) {
     Math.min(totalDartsPerTurn, totalDartsPerTurn - state.remainingDarts)
   );
 
+  const activePlayerIndex = state.players.findIndex(
+    (p) => p.id === currentPlayer.id
+  );
+  const activeAccent =
+    ACCENTS[activePlayerIndex >= 0 ? activePlayerIndex : 0];
+
   // Palette pour cartes joueurs (fond)
   const playerCardColors = ["#1f2937", "#2d1b2f", "#052e16", "#082f49"];
 
@@ -879,68 +908,30 @@ export default function CricketPlay({ profiles }: Props) {
     isActive: boolean;
   }) {
     const accent = ACCENTS[playerIndex % ACCENTS.length];
-    const filled = Math.min(marks, 3);
-    const ratio = filled / 3;
+    const hasMarks = marks > 0;
 
     return (
       <div
         style={{
-          position: "relative",
-          height: 22,
+          height: 26,
           borderRadius: 10,
-          overflow: "hidden",
-          background: isActive
-            ? "rgba(15,23,42,0.9)"
-            : "rgba(15,23,42,0.7)",
-          border:
-            marks >= 3
-              ? `1px solid ${accent}`
-              : isActive
-              ? `1px solid ${T.gold}`
-              : `1px solid rgba(148,163,184,0.4)`,
-          boxShadow:
-            marks >= 3
-              ? `0 0 12px ${accent}80`
-              : isActive
-              ? "0 0 16px rgba(246,194,86,0.5)"
-              : "none",
+          background: hasMarks ? accent : "rgba(15,23,42,0.9)",
+          border: hasMarks
+            ? `1px solid ${accent}`
+            : `1px solid rgba(148,163,184,0.5)`,
+          boxShadow: isActive
+            ? `0 0 14px ${accent}aa`
+            : hasMarks
+            ? `0 0 6px ${accent}55`
+            : "none",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          padding: "2px 0",
+          transition: "all 0.12s ease",
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            padding: 2,
-          }}
-        >
-          <div
-            style={{
-              width: `${ratio * 100}%`,
-              height: "100%",
-              borderRadius: 8,
-              background:
-                marks >= 3
-                  ? `linear-gradient(90deg,${accent},#22c55e)`
-                  : isActive
-                  ? "linear-gradient(90deg,rgba(250,204,21,0.7),rgba(250,204,21,0.2))"
-                  : `linear-gradient(90deg,${accent}55,${accent}20)`,
-              transition: "width 0.15s ease",
-            }}
-          />
-        </div>
-        <div
-          style={{
-            position: "relative",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <CricketMarkIcon marks={marks} color="#f9fafb" />
-        </div>
+        {hasMarks && <CricketMarkIcon marks={marks} />}
       </div>
     );
   }
@@ -989,7 +980,7 @@ export default function CricketPlay({ profiles }: Props) {
             Cricket
           </div>
 
-          {/* 3 fléchettes basées sur ton PNG */}
+          {/* 3 fléchettes (sans ronds, plus grosses, aura couleur joueur actif) */}
           <div
             style={{
               display: "flex",
@@ -1003,58 +994,22 @@ export default function CricketPlay({ profiles }: Props) {
                 <div
                   key={i}
                   style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: "999px",
-                    border: active
-                      ? "1px solid rgba(250,204,21,0.9)"
-                      : `1px solid ${T.borderSoft}`,
-                    background: active
-                      ? "radial-gradient(circle at 30% 20%, #fff, #facc15)"
-                      : "radial-gradient(circle at 30% 20%, #020617, #020617)",
-                    boxShadow: active
-                      ? "0 0 14px rgba(250,204,21,0.9)"
-                      : "0 0 4px rgba(0,0,0,0.7)",
+                    width: 32,
+                    height: 32,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    padding: 3,
                   }}
                 >
-                  <img
-                    src={dartIcon}
-                    alt="dart"
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "contain",
-                      transform: "rotate(135deg)", // pointe bas droite
-                      filter: active
-                        ? "drop-shadow(0 0 6px rgba(250,204,21,0.9)) sepia(1) saturate(5) hue-rotate(5deg) brightness(1.2)"
-                        : "brightness(1.1)",
-                    }}
-                  />
+                  <DartSvg active={active} color={activeAccent} />
                 </div>
               );
             })}
           </div>
         </div>
-
-        {/* la ligne infos reste possible mais discrète (tu peux la virer si tu veux 100% clean) */}
-        <div
-          style={{
-            fontSize: 11,
-            textTransform: "uppercase",
-            letterSpacing: 1,
-            color: "rgba(148,163,184,0.7)",
-          }}
-        >
-          {scoreModeLabel} · Max manches : {maxRounds}
-          {rotateFirstPlayer && " · Premier joueur tourne"}
-        </div>
       </div>
 
-      {/* CARTES JOUEURS : avatar + score, couleurs par joueur */}
+      {/* CARTES JOUEURS : avatar + score (pas de noms) */}
       <div
         style={{
           display: "flex",
@@ -1131,8 +1086,9 @@ export default function CricketPlay({ profiles }: Props) {
       </div>
 
       {/* TABLEAU MARQUES :
-          - si 2 joueurs : P1 | cible | P2 (cibles au milieu)
-          - sinon : layout multi-colonnes classique
+          - 2 joueurs : P1 | cible | P2
+          - 4 joueurs : P1,P2 | cible | P3,P4
+          - sinon : layout multi-col classique
       */}
       <div
         style={{
@@ -1145,46 +1101,6 @@ export default function CricketPlay({ profiles }: Props) {
       >
         {state.players.length === 2 ? (
           <>
-            {/* entêtes P1 | cible | P2 */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 70px 1fr",
-                gap: 8,
-                alignItems: "center",
-                marginBottom: 6,
-              }}
-            >
-              {state.players.map((p, idx) => {
-                const isActive = p.id === currentPlayer.id;
-                const align = idx === 0 ? "right" : "left";
-                const accent = ACCENTS[idx % ACCENTS.length];
-
-                return (
-                  <div
-                    key={p.id}
-                    style={{
-                      gridColumn: idx === 0 ? 1 : 3,
-                      fontSize: 11,
-                      textTransform: "uppercase",
-                      letterSpacing: 1,
-                      textAlign: align as any,
-                      color: isActive ? accent : T.textSoft,
-                      textShadow: isActive ? `0 0 8px ${accent}aa` : "none",
-                      padding: "2px 0",
-                      borderBottom: isActive
-                        ? `2px solid ${accent}cc`
-                        : "2px solid transparent",
-                    }}
-                  >
-                    {p.name}
-                  </div>
-                );
-              })}
-
-              <div />
-            </div>
-
             {CRICKET_TARGETS.map((target) => {
               const label = target === 25 ? "Bull" : String(target);
               return (
@@ -1192,7 +1108,7 @@ export default function CricketPlay({ profiles }: Props) {
                   key={target}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 70px 1fr",
+                    gridTemplateColumns: "1fr 40px 1fr",
                     gap: 8,
                     alignItems: "center",
                     padding: "5px 0",
@@ -1234,45 +1150,8 @@ export default function CricketPlay({ profiles }: Props) {
               );
             })}
           </>
-        ) : (
+        ) : state.players.length === 4 ? (
           <>
-            {/* layout multi-colonnes (3-4 joueurs) */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: `70px repeat(${state.players.length}, 1fr)`,
-                gap: 8,
-                alignItems: "center",
-                marginBottom: 6,
-              }}
-            >
-              <div />
-              {state.players.map((p, idx) => {
-                const isActive = p.id === currentPlayer.id;
-                const accent = ACCENTS[idx % ACCENTS.length];
-
-                return (
-                  <div
-                    key={p.id}
-                    style={{
-                      fontSize: 11,
-                      textTransform: "uppercase",
-                      letterSpacing: 1,
-                      textAlign: "center",
-                      color: isActive ? accent : T.textSoft,
-                      textShadow: isActive ? `0 0 8px ${accent}aa` : "none",
-                      padding: "2px 0",
-                      borderBottom: isActive
-                        ? `2px solid ${accent}cc`
-                        : "2px solid transparent",
-                    }}
-                  >
-                    {p.name}
-                  </div>
-                );
-              })}
-            </div>
-
             {CRICKET_TARGETS.map((target) => {
               const label = target === 25 ? "Bull" : String(target);
               return (
@@ -1280,7 +1159,69 @@ export default function CricketPlay({ profiles }: Props) {
                   key={target}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: `70px repeat(${state.players.length}, 1fr)`,
+                    gridTemplateColumns: "1fr 1fr 40px 1fr 1fr",
+                    gap: 8,
+                    alignItems: "center",
+                    padding: "5px 0",
+                    borderTop: `1px solid rgba(255,255,255,0.04)`,
+                  }}
+                >
+                  {/* J1 / J2 à gauche */}
+                  <MarkCell
+                    marks={state.players[0].marks[target]}
+                    playerIndex={0}
+                    isActive={state.players[0].id === currentPlayer.id}
+                  />
+                  <MarkCell
+                    marks={state.players[1].marks[target]}
+                    playerIndex={1}
+                    isActive={state.players[1].id === currentPlayer.id}
+                  />
+
+                  {/* Cible au centre */}
+                  <div
+                    style={{
+                      fontSize: label === "Bull" ? 16 : 18,
+                      fontWeight: 900,
+                      textAlign: "center",
+                      color: "#fef3c7",
+                      textShadow:
+                        "0 0 6px rgba(250,204,21,0.8), 0 0 16px rgba(234,179,8,0.8)",
+                      letterSpacing: 1,
+                      padding: "2px 0",
+                      borderLeft: `1px solid rgba(148,163,184,0.5)`,
+                      borderRight: `1px solid rgba(148,163,184,0.5)`,
+                    }}
+                  >
+                    {label}
+                  </div>
+
+                  {/* J3 / J4 à droite */}
+                  <MarkCell
+                    marks={state.players[2].marks[target]}
+                    playerIndex={2}
+                    isActive={state.players[2].id === currentPlayer.id}
+                  />
+                  <MarkCell
+                    marks={state.players[3].marks[target]}
+                    playerIndex={3}
+                    isActive={state.players[3].id === currentPlayer.id}
+                  />
+                </div>
+              );
+            })}
+          </>
+        ) : (
+          <>
+            {/* fallback 3 joueurs : cible à gauche, colonnes joueurs à droite */}
+            {CRICKET_TARGETS.map((target) => {
+              const label = target === 25 ? "Bull" : String(target);
+              return (
+                <div
+                  key={target}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: `40px repeat(${state.players.length}, 1fr)`,
                     gap: 8,
                     alignItems: "center",
                     padding: "5px 0",
@@ -1318,7 +1259,7 @@ export default function CricketPlay({ profiles }: Props) {
         )}
       </div>
 
-      {/* MULTIPLIERS : DOUBLE / TRIPLE / BULL (Simple = aucun actif) */}
+      {/* MULTIPLIERS : SIMPLE / DOUBLE / TRIPLE */}
       <div
         style={{
           display: "flex",
@@ -1327,19 +1268,17 @@ export default function CricketPlay({ profiles }: Props) {
         }}
       >
         {[
-          { label: "DOUBLE", mode: "D" as HitMode, color: "#0f172a" },
-          { label: "TRIPLE", mode: "T" as HitMode, color: "#2e1065" },
-          { label: "BULL", mode: "BULL" as HitMode, color: "#022c22" },
+          { label: "Simple", mode: "S" as HitMode },
+          { label: "Double", mode: "D" as HitMode },
+          { label: "Triple", mode: "T" as HitMode },
         ].map((btn, idx) => {
           const active = hitMode === btn.mode;
-          const accent = ACCENTS[idx + 1] ?? T.gold;
+          const accent = ACCENTS[idx % ACCENTS.length];
 
           return (
             <button
               key={btn.mode}
-              onClick={() =>
-                setHitMode((cur) => (cur === btn.mode ? "S" : btn.mode))
-              }
+              onClick={() => setHitMode(btn.mode)}
               style={{
                 flex: 1,
                 padding: "9px 12px",
@@ -1352,7 +1291,7 @@ export default function CricketPlay({ profiles }: Props) {
                 letterSpacing: 1.1,
                 background: active
                   ? `linear-gradient(135deg,${accent},${accent}aa)`
-                  : btn.color,
+                  : "#111827",
                 color: active ? "#020617" : "#e5e7eb",
                 boxShadow: active
                   ? `0 0 18px ${accent}80`
@@ -1366,59 +1305,71 @@ export default function CricketPlay({ profiles }: Props) {
         })}
       </div>
 
-      {/* CLAVIER 0–20 (style keypad) */}
+      {/* CLAVIER 0–20 : 3 lignes × 7 colonnes */}
       <div
         style={{
           borderRadius: 20,
           background: "#050816",
           border: `1px solid ${T.borderSoft}`,
           padding: 10,
-          marginBottom: 12,
+          marginBottom: 10,
           boxShadow: "0 0 24px rgba(0,0,0,0.6)",
         }}
       >
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, minmax(0,1fr))",
+            gridTemplateColumns: "repeat(7, minmax(0,1fr))",
             gap: 8,
           }}
         >
-          {Array.from({ length: 21 }).map((_, v) => {
-            const isActiveTarget =
-              hitMode === "BULL"
-                ? v >= 0 // toute touche déclenche Bull
-                : v >= 15 && v <= 20;
-
-            const label = String(v);
-
-            return (
-              <button
-                key={v}
-                onClick={() => handleKeyPress(v)}
-                disabled={!isActiveTarget}
-                style={{
-                  padding: "11px 0",
-                  borderRadius: 16,
-                  border: "none",
-                  cursor: isActiveTarget ? "pointer" : "default",
-                  fontSize: 16,
-                  fontWeight: 700,
-                  background: isActiveTarget
-                    ? "linear-gradient(135deg,#111827,#020617)"
-                    : "rgba(15,23,42,0.6)",
-                  color: isActiveTarget ? "#f9fafb" : "rgba(148,163,184,0.7)",
-                  boxShadow: isActiveTarget
-                    ? "0 0 14px rgba(0,0,0,0.65)"
-                    : "none",
-                  opacity: isActiveTarget ? 1 : 0.4,
-                }}
-              >
-                {label}
-              </button>
-            );
-          })}
+          {Array.from({ length: 21 }).map((_, value) => (
+            <button
+              key={value}
+              onClick={() => handleKeyPress(value)}
+              style={{
+                padding: "11px 0",
+                borderRadius: 16,
+                border: "none",
+                cursor: "pointer",
+                fontSize: 16,
+                fontWeight: 700,
+                background: "linear-gradient(135deg,#111827,#020617)",
+                color: "#f9fafb",
+                boxShadow: "0 0 14px rgba(0,0,0,0.65)",
+              }}
+            >
+              {value}
+            </button>
+          ))}
         </div>
+      </div>
+
+      {/* BOUTON BULL séparé (25 / 50 avec DOUBLE) */}
+      <div
+        style={{
+          marginBottom: 12,
+        }}
+      >
+        <button
+          onClick={handleBull}
+          style={{
+            width: "100%",
+            padding: "10px 12px",
+            borderRadius: 999,
+            border: "none",
+            background: "linear-gradient(135deg,#22c55e,#16a34a)",
+            color: "#02120a",
+            fontSize: 14,
+            fontWeight: 800,
+            textTransform: "uppercase",
+            letterSpacing: 1.2,
+            cursor: "pointer",
+            boxShadow: "0 0 18px rgba(34,197,94,0.6)",
+          }}
+        >
+          Bull
+        </button>
       </div>
 
       {/* BAS : ANNULER / (QUITTER) / VALIDER ou REJOUER */}
