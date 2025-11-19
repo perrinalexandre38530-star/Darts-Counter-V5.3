@@ -1718,14 +1718,20 @@ React.useEffect(() => {
 }, [ruleWinnerId, setsWon, setsTarget, setsFromResume]);
 
 /* =====================================================
-   FINALIZE MATCH — VERSION PERSISTANTE POUR STATS
+   FINALIZE MATCH — VERSION FINALE (bridge-only)
 ===================================================== */
 async function finalizeMatch() {
   if (hasFinishedRef.current) return;
   hasFinishedRef.current = true;
 
-  // snapshot final (autosave)
+  // snapshot final
   persistOnFinish();
+
+  // petit helper num()
+  const num = (x: any): number => {
+    const n = Number(x);
+    return Number.isFinite(n) ? n : 0;
+  };
 
   try {
     /* -------------------------------------------------
@@ -1737,87 +1743,83 @@ async function finalizeMatch() {
     );
     const matchId = matchIdRef.current;
 
-    // Résumé brut via StatsBridge (stats complètes du match)
-    const bridgeSummary: any =
-      StatsBridge.makeMatch(
-        matchLegsRef.current,
-        playersArr,
-        matchId,
-        "x01"
-      ) || {};
+    // Résumé complet via StatsBridge (la source fiable)
+    const bridgeSummary = StatsBridge.makeMatch(
+      matchLegsRef.current,
+      playersArr,
+      matchId,
+      "x01"
+    );
 
-    const perPlayerFromBridge: any[] = Array.isArray(
-      bridgeSummary.perPlayer
+    const bridgePerPlayer: any[] = Array.isArray(
+      (bridgeSummary as any).perPlayer
     )
-      ? bridgeSummary.perPlayer
+      ? (bridgeSummary as any).perPlayer
       : [];
 
-    // gagnant final (règle > moteur > bridge)
+    // gagnant final
     const winnerIdFinal =
       ruleWinnerId ??
       winner?.id ??
-      bridgeSummary.winnerId ??
+      (bridgeSummary as any).winnerId ??
       null;
 
     /* -------------------------------------------------
-       1) Construire un résumé par joueur
-          (ce qui sera lu par StatsHub + Historique)
+       1) SUMMARY PAR JOUEUR (on fait confiance au bridge)
     ------------------------------------------------- */
-    const avg3ByPlayer: Record<string, number> = {};
-    const bestVisitByPlayer: Record<string, number> = {};
-    const bestCheckoutByPlayer: Record<string, number> = {};
-
     const summaryPerPlayer = playersArr.map((p) => {
-      const fromBridge =
-        perPlayerFromBridge.find(
-          (pp) => pp.playerId === p.id
-        ) || {};
+      const b =
+        bridgePerPlayer.find(
+          (pp: any) =>
+            pp?.playerId === p.id || pp?.id === p.id
+        ) ?? {};
+
+      const impact = impactByPlayer[p.id] || {
+        doubles: 0,
+        triples: 0,
+        bulls: 0,
+      };
 
       const darts =
-        Number(
-          fromBridge.darts ??
-            fromBridge.nbDarts ??
-            fromBridge.totalDarts
-        ) || 0;
+        num(b.darts) ||
+        num(b.nbDarts) ||
+        num(b.totalDarts);
 
       const scored =
-        Number(
-          fromBridge.scored ??
-            fromBridge.points ??
-            fromBridge.totalPoints ??
-            fromBridge.scoreSum ??
-            0
-        ) || 0;
+        num(b.scored) ||
+        num(b.points) ||
+        num(b.totalPoints) ||
+        num(b.scoreSum) ||
+        num(b.scoredPoints);
 
-      // moyenne 3D : priorité aux champs fournis, sinon recalcul
-      let avg3 =
-        Number(
-          fromBridge.avg3 ??
-            fromBridge.avg_3 ??
-            fromBridge.avg3D ??
-            fromBridge.average3
-        ) || 0;
+      const avg3FromBridge =
+        num(b.avg3) ||
+        num(b.avg_3) ||
+        num(b.avg3Darts) ||
+        num(b.average3) ||
+        num(b.avg3D);
 
-      if (!avg3 && darts > 0) {
-        avg3 = (scored / darts) * 3;
-      }
+      const avg3 =
+        avg3FromBridge ||
+        (darts > 0 ? (scored / darts) * 3 : 0);
 
       const bestVisit =
-        Number(fromBridge.bestVisit ?? 0) || 0;
+        num(b.bestVisit) ||
+        num(b.best_visit) ||
+        num(b.best);
+
       const bestCheckout =
-        Number(fromBridge.bestCheckout ?? 0) || 0;
+        num(b.bestCheckout) ||
+        num(b.best_co) ||
+        num(b.bestFinish);
 
-      const doubles =
-        Number(fromBridge.doubles ?? 0) || 0;
-      const triples =
-        Number(fromBridge.triples ?? 0) || 0;
-      const bulls =
-        Number(fromBridge.bulls ?? 0) || 0;
-
-      avg3ByPlayer[p.id] =
-        Math.round((avg3 || 0) * 100) / 100;
-      bestVisitByPlayer[p.id] = bestVisit;
-      bestCheckoutByPlayer[p.id] = bestCheckout;
+      const h60 = num(b.h60);
+      const h100 = num(b.h100);
+      const h140 = num(b.h140);
+      const h180 = num(b.h180);
+      const miss = num(b.miss);
+      const bust = num(b.bust);
+      const dbull = num(b.dbull);
 
       return {
         playerId: p.id,
@@ -1826,16 +1828,35 @@ async function finalizeMatch() {
         avg3,
         bestVisit,
         bestCheckout,
-        doubles,
-        triples,
-        bulls,
+        h60,
+        h100,
+        h140,
+        h180,
+        miss,
+        bust,
+        dbull,
+        doubles: impact.doubles,
+        triples: impact.triples,
+        bulls: impact.bulls,
         win: winnerIdFinal === p.id,
       };
     });
 
     /* -------------------------------------------------
-       2) QUICK STATS — addMatchSummary (useStatsLiteIDB)
+       2) QUICK STATS — addMatchSummary
     ------------------------------------------------- */
+    const avg3ByPlayer: Record<string, number> = {};
+    const bestVisitByPlayer: Record<string, number> = {};
+    const bestCheckoutByPlayer: Record<string, number> = {};
+
+    for (const s of summaryPerPlayer) {
+      avg3ByPlayer[s.playerId] =
+        Math.round((s.avg3 || 0) * 100) / 100;
+      bestVisitByPlayer[s.playerId] = s.bestVisit || 0;
+      bestCheckoutByPlayer[s.playerId] =
+        s.bestCheckout || 0;
+    }
+
     try {
       await addMatchSummary({
         winnerId: winnerIdFinal,
@@ -1846,17 +1867,17 @@ async function finalizeMatch() {
               id: p.id,
               games: 1,
               wins: winnerIdFinal === p.id ? 1 : 0,
-              avg3: avg3ByPlayer[p.id] ?? 0,
+              avg3: avg3ByPlayer[p.id],
             },
           ])
         ),
       });
     } catch {
-      // non bloquant
+      // quick stats non bloquant
     }
 
     /* -------------------------------------------------
-       3) VISITES pour payload / stats globales
+       3) VISITES + SUMMARY POUR HISTORY
     ------------------------------------------------- */
     const visitsForPersist: VisitType[] = (
       matchVisitsRef.current || []
@@ -1870,12 +1891,9 @@ async function finalizeMatch() {
       remainingAfter: v.remainingAfter,
     }));
 
-    /* -------------------------------------------------
-       4) SUMMARY GLOBAL POUR HISTORY / STATS HUB
-    ------------------------------------------------- */
     const summaryForHistory = {
-      kind: "x01" as const,
-      legs: (matchLegsRef.current || []).length,
+      kind: "x01",
+      legs: matchLegsRef.current.length,
       darts: summaryPerPlayer.reduce(
         (s, p) => s + (p.darts || 0),
         0
@@ -1886,9 +1904,10 @@ async function finalizeMatch() {
       perPlayer: summaryPerPlayer,
     };
 
-    // =================================================
-    // 4bis) History.upsert — source principale StatsHub
-    // =================================================
+    // =====================================================
+    // 3bis) History.upsert avec le vrai summary X01
+    //       → utilisé par StatsHub › X01 multi
+    // =====================================================
     try {
       History.upsert({
         id: matchId,
@@ -1901,8 +1920,6 @@ async function finalizeMatch() {
         payload: {
           visits: visitsForPersist,
           legs: matchLegsRef.current,
-          // on garde le résumé complet StatsBridge pour d’autres vues
-          bridgeSummary,
           meta: {
             currentSet,
             currentLegInSet,
@@ -1912,12 +1929,11 @@ async function finalizeMatch() {
       } as any);
     } catch (err) {
       console.warn(
-        "[X01Play] History.upsert failed",
+        "[X01Play] History.upsert (summaryForHistory) failed",
         err
       );
     }
 
-    // Sauvegarde “complète” (IDB)
     await safeSaveMatch({
       id: matchId,
       players: playersArr,
@@ -1926,7 +1942,6 @@ async function finalizeMatch() {
       payload: {
         visits: visitsForPersist,
         legs: matchLegsRef.current,
-        bridgeSummary,
         meta: {
           currentSet,
           currentLegInSet,
@@ -1936,7 +1951,7 @@ async function finalizeMatch() {
     });
 
     /* -------------------------------------------------
-       5) ONLINE SYNC — non bloquant
+       4) ONLINE SYNC — non bloquant
     ------------------------------------------------- */
     if (canUploadOnline) {
       try {
@@ -1968,20 +1983,15 @@ async function finalizeMatch() {
           },
         });
       } catch (err) {
-        console.warn(
-          "[Online] uploadMatch failed:",
-          err
-        );
+        console.warn("[Online] uploadMatch failed:", err);
       }
     }
 
-    // force un refresh des listeners d’historique
-    try {
-      await History.list();
-    } catch {}
+    // force refresh des listeners StatsHub (dc-history-updated)
+    await History.list();
 
     /* -------------------------------------------------
-       6) Fallback mini-history (ancien système)
+       5) Fallback mini-history
     ------------------------------------------------- */
     try {
       const legForLegacy =
@@ -1996,10 +2006,12 @@ async function finalizeMatch() {
         visitsLog: [],
         onFinish,
       });
-    } catch {}
+    } catch {
+      // non bloquant
+    }
 
     /* -------------------------------------------------
-       7) Stats profils (couronnes, médaillons)
+       6) Stats profils (médaillons / couronnes)
     ------------------------------------------------- */
     try {
       commitMatchSummary(
@@ -2009,10 +2021,12 @@ async function finalizeMatch() {
           perPlayer: summaryPerPlayer,
         })
       );
-    } catch {}
+    } catch {
+      // non bloquant
+    }
 
     /* -------------------------------------------------
-       8) StatsHub X01 global (stats avancées)
+       7) StatsHub X01 global (rich stats)
     ------------------------------------------------- */
     try {
       const playersIds = playersArr.map((p) => p.id);
@@ -2022,9 +2036,7 @@ async function finalizeMatch() {
       );
 
       saveMatchStats({
-        id:
-          crypto.randomUUID?.() ??
-          String(Date.now()),
+        id: crypto.randomUUID?.() ?? String(Date.now()),
         createdAt: Date.now(),
         rules: {
           x01Start: startFromResume,
@@ -2039,15 +2051,17 @@ async function finalizeMatch() {
         winnerId: winnerIdFinal,
         computed: m,
       });
-    } catch {}
+    } catch {
+      // non bloquant
+    }
 
     /* -------------------------------------------------
-       9) Voix — annonce du classement final
+       8) Voix - annonce classement final
     ------------------------------------------------- */
     try {
       if (
-        (localStorage.getItem("opt_voice") ??
-          "true") === "true" &&
+        (localStorage.getItem("opt_voice") ?? "true") ===
+          "true" &&
         "speechSynthesis" in window
       ) {
         const ordered = [...liveRanking];
@@ -2060,30 +2074,27 @@ async function finalizeMatch() {
         ];
         const parts: string[] = [];
 
-        if (ordered[0])
-          parts.push(`Victoire ${ordered[0].name}`);
+        if (ordered[0]) parts.push(`Victoire ${ordered[0].name}`);
         for (let i = 1; i < ordered.length; i++) {
-          if (ords[i])
-            parts.push(
-              `${ords[i]} ${ordered[i].name}`
-            );
+          if (ords[i]) parts.push(`${ords[i]} ${ordered[i].name}`);
         }
 
         const text = parts.join(". ") + ".";
-        const u = new SpeechSynthesisUtterance(
-          text
-        );
+        const u = new SpeechSynthesisUtterance(text);
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(u);
       }
-    } catch {}
+    } catch {
+      // non bloquant
+    }
 
-    // Fin effective (fermeture overlay, etc.)
+    // Fin effective
     flushPendingFinish();
   } catch (e) {
     console.warn("[finalizeMatch]", e);
   }
 }
+
   /* =====================================================
      FLUSH FIN
   ===================================================== */

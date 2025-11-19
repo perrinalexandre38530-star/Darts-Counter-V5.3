@@ -382,7 +382,8 @@ export default function CricketPlay({ profiles }: Props) {
       marginBottom: 10,
     }}
   >
-    Sélectionne <strong>2 à 4 joueurs</strong>.
+    Sélectionne <strong>2 à 4 joueurs</strong>. Chaque joueur jouera la
+    manche à la suite, dans l&apos;ordre indiqué.
   </div>
 
   {/* --- CARROUSEL --- */}
@@ -429,7 +430,8 @@ export default function CricketPlay({ profiles }: Props) {
         gap: 14,
         overflowX: "auto",
         scrollSnapType: "x mandatory",
-        paddingBottom: 8,
+        // 👉 marge gauche/droite pour espacer des flèches
+        padding: "0 26px 8px 26px",
       }}
     >
       {allProfiles.map((p) => {
@@ -442,7 +444,7 @@ export default function CricketPlay({ profiles }: Props) {
             onClick={() => toggleProfile(p.id)}
             style={{
               scrollSnapAlign: "start",
-              minWidth: "25%", // 4 par largeur
+              minWidth: "25%", // 4 profils visibles
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
