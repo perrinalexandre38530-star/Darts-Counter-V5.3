@@ -18,121 +18,10 @@ import {
 } from "../lib/cricketEngine";
 import { playSound } from "../lib/sound";
 import type { Profile } from "../lib/types";
-
-/* --------------------------------------------
-   SVG INLINE — FLECHETTE + MARKS
----------------------------------------------*/
-
-function DartSvg({ active, color }: { active: boolean; color: string }) {
-  const baseSize = active ? 30 : 26;
-  const opacity = active ? 1 : 0.3;
-  const glow = active
-    ? `0 0 6px ${color}, 0 0 14px ${color}cc`
-    : "0 0 4px rgba(0,0,0,0.6)";
-
-  return (
-    <svg
-      viewBox="0 0 100 100"
-      style={{
-        width: baseSize,
-        height: baseSize,
-        transform: "rotate(180deg)", // pointe vers le bas
-        filter: `drop-shadow(${glow})`,
-        opacity,
-        transition: "all 0.15s ease",
-      }}
-    >
-      {/* aile */}
-      <polygon points="15,10 55,10 45,30 15,30" fill="#ffffff" />
-      {/* corps */}
-      <rect x="40" y="30" width="6" height="40" fill="#ffffff" />
-      {/* stries */}
-      <rect x="37" y="38" width="12" height="3" fill="#ffffff" />
-      <rect x="37" y="44" width="12" height="3" fill="#ffffff" />
-      <rect x="37" y="50" width="12" height="3" fill="#ffffff" />
-      {/* pointe */}
-      <polygon points="43,70 49,70 46,90" fill="#ffffff" />
-    </svg>
-  );
-}
-
-// Icône Cricket (1 / 2 / 3 marks) inline — style I / X / cible
-function CricketMarkIcon({ marks }: { marks: number }) {
-  if (marks <= 0) return null;
-
-  if (marks === 1) {
-    // trait /
-    return (
-      <svg viewBox="0 0 100 100" style={{ width: 18, height: 18 }}>
-        <rect
-          x="20"
-          y="45"
-          width="60"
-          height="10"
-          rx="4"
-          ry="4"
-          fill="#ffffff"
-          transform="rotate(-30 50 50)"
-        />
-      </svg>
-    );
-  }
-
-  if (marks === 2) {
-    // croix X
-    return (
-      <svg viewBox="0 0 100 100" style={{ width: 18, height: 18 }}>
-        <rect
-          x="20"
-          y="45"
-          width="60"
-          height="10"
-          rx="4"
-          ry="4"
-          fill="#ffffff"
-          transform="rotate(-35 50 50)"
-        />
-        <rect
-          x="20"
-          y="45"
-          width="60"
-          height="10"
-          rx="4"
-          ry="4"
-          fill="#ffffff"
-          transform="rotate(35 50 50)"
-        />
-      </svg>
-    );
-  }
-
-  // 3 marks : cercle avec croix (target)
-  return (
-    <svg viewBox="0 0 100 100" style={{ width: 18, height: 18 }}>
-      {/* cercle */}
-      <circle
-        cx="50"
-        cy="50"
-        r="26"
-        stroke="#ffffff"
-        strokeWidth="8"
-        fill="none"
-      />
-      {/* croix */}
-      <rect x="32" y="47" width="36" height="8" rx="4" ry="4" fill="#ffffff" />
-      <rect
-        x="32"
-        y="47"
-        width="36"
-        height="8"
-        rx="4"
-        ry="4"
-        fill="#ffffff"
-        transform="rotate(90 50 51)"
-      />
-    </svg>
-  );
-}
+import {
+  DartIconColorizable,
+  CricketMarkIcon,
+} from "../components/MaskIcon";
 
 const T = {
   bg: "#050712",
@@ -915,15 +804,16 @@ export default function CricketPlay({ profiles }: Props) {
         style={{
           height: 26,
           borderRadius: 10,
-          background: hasMarks ? accent : "rgba(15,23,42,0.9)",
+          background: "rgba(15,23,42,0.95)", // fond sombre fixe
           border: hasMarks
             ? `1px solid ${accent}`
             : `1px solid rgba(148,163,184,0.5)`,
-          boxShadow: isActive
-            ? `0 0 14px ${accent}aa`
-            : hasMarks
-            ? `0 0 6px ${accent}55`
-            : "none",
+          boxShadow:
+            hasMarks && isActive
+              ? `0 0 14px ${accent}aa`
+              : hasMarks
+              ? `0 0 6px ${accent}55`
+              : "none",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -931,7 +821,14 @@ export default function CricketPlay({ profiles }: Props) {
           transition: "all 0.12s ease",
         }}
       >
-        {hasMarks && <CricketMarkIcon marks={marks} />}
+        {hasMarks && (
+          <CricketMarkIcon
+            marks={marks}
+            color={accent}
+            size={18}
+            glow={isActive}
+          />
+        )}
       </div>
     );
   }
@@ -980,7 +877,7 @@ export default function CricketPlay({ profiles }: Props) {
             Cricket
           </div>
 
-          {/* 3 fléchettes (sans ronds, plus grosses, aura couleur joueur actif) */}
+          {/* 3 fléchettes (PNG masqué, pointe vers le bas, aura couleur joueur actif) */}
           <div
             style={{
               display: "flex",
@@ -1001,7 +898,11 @@ export default function CricketPlay({ profiles }: Props) {
                     justifyContent: "center",
                   }}
                 >
-                  <DartSvg active={active} color={activeAccent} />
+                  <DartIconColorizable
+                    color={activeAccent}
+                    active={active}
+                    size={30}
+                  />
                 </div>
               );
             })}
