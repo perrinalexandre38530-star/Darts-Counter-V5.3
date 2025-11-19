@@ -353,166 +353,170 @@ export default function CricketPlay({ profiles }: Props) {
           </div>
         </div>
 
-        {/* JOUEURS — MÉDAILLONS STYLE TOUR DE L'HORLOGE */}
-        <div
-          style={{
-            borderRadius: 18,
-            background: T.card,
-            border: `1px solid ${T.borderSoft}`,
-            padding: 14,
-            marginBottom: 18,
-          }}
-        >
+        {/* JOUEURS — CARROUSEL HORIZONTAL 4 par vue */}
+<div
+  style={{
+    borderRadius: 18,
+    background: T.card,
+    border: `1px solid ${T.borderSoft}`,
+    padding: 14,
+    marginBottom: 18,
+  }}
+>
+  <div
+    style={{
+      fontSize: 13,
+      textTransform: "uppercase",
+      letterSpacing: 1.2,
+      color: T.textSoft,
+      marginBottom: 4,
+    }}
+  >
+    Joueurs
+  </div>
+
+  <div
+    style={{
+      fontSize: 12,
+      color: T.textSoft,
+      marginBottom: 10,
+    }}
+  >
+    Sélectionne <strong>2 à 4 joueurs</strong>.
+  </div>
+
+  {/* --- CARROUSEL --- */}
+  <div
+    style={{
+      position: "relative",
+      width: "100%",
+      overflow: "hidden",
+    }}
+  >
+    {/* Flèche gauche */}
+    <button
+      onClick={() => {
+        const el = document.getElementById("cricket-profiles-scroll");
+        if (el) el.scrollBy({ left: -90, behavior: "smooth" });
+      }}
+      style={{
+        position: "absolute",
+        left: -4,
+        top: "50%",
+        transform: "translateY(-50%)",
+        zIndex: 10,
+        background: "rgba(0,0,0,0.6)",
+        border: `1px solid ${T.borderSoft}`,
+        color: T.gold,
+        width: 28,
+        height: 28,
+        borderRadius: "50%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        boxShadow: "0 0 10px rgba(0,0,0,0.7)",
+      }}
+    >
+      ‹
+    </button>
+
+    {/* Liste scrollable */}
+    <div
+      id="cricket-profiles-scroll"
+      style={{
+        display: "flex",
+        gap: 14,
+        overflowX: "auto",
+        scrollSnapType: "x mandatory",
+        paddingBottom: 8,
+      }}
+    >
+      {allProfiles.map((p) => {
+        const idx = selectedIds.indexOf(p.id);
+        const isSelected = idx !== -1;
+
+        return (
           <div
+            key={p.id}
+            onClick={() => toggleProfile(p.id)}
             style={{
-              fontSize: 13,
-              textTransform: "uppercase",
-              letterSpacing: 1.2,
-              color: T.textSoft,
-              marginBottom: 4,
+              scrollSnapAlign: "start",
+              minWidth: "25%", // 4 par largeur
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              cursor: "pointer",
             }}
           >
-            Joueurs
-          </div>
+            {renderAvatarCircle(p, {
+              selected: isSelected,
+              size: 58,
+              mode: "setup",
+            })}
 
-          {allProfiles.length === 0 ? (
             <div
               style={{
+                marginTop: 4,
+                fontSize: 11,
+                fontWeight: 600,
+                color: isSelected ? "#ffffff" : T.textSoft,
                 textAlign: "center",
-                padding: "32px 16px 8px",
-                fontSize: 14,
-                color: T.textSoft,
               }}
             >
-              <div
-                style={{
-                  fontSize: 18,
-                  fontWeight: 800,
-                  marginBottom: 8,
-                }}
-              >
-                Aucun profil disponible
-              </div>
-              <div>
-                Crée au moins deux profils dans l&apos;onglet{" "}
-                <strong>Profils</strong> avant de lancer une partie de Cricket.
-              </div>
+              {p.name}
             </div>
-          ) : (
-            <>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: T.textSoft,
-                  marginBottom: 10,
-                }}
-              >
-                Sélectionne <strong>2 à 4 joueurs</strong>. Chaque joueur jouera
-                la manche à la suite, dans l&apos;ordre indiqué.
-              </div>
 
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 14,
-                }}
-              >
-                {allProfiles.map((p) => {
-                  const idx = selectedIds.indexOf(p.id);
-                  const isSelected = idx !== -1;
-                  const badge =
-                    idx !== -1 ? `J${idx + 1}` : "—";
+            <div
+              style={{
+                marginTop: 2,
+                padding: "2px 8px",
+                borderRadius: 999,
+                background: isSelected
+                  ? "rgba(246,194,86,0.2)"
+                  : "rgba(255,255,255,0.07)",
+                color: isSelected ? T.gold : T.textSoft,
+                fontSize: 10,
+                fontWeight: 700,
+              }}
+            >
+              {isSelected ? `J${idx + 1}` : "—"}
+            </div>
+          </div>
+        );
+      })}
+    </div>
 
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => toggleProfile(p.id)}
-                      style={{
-                        width: 80,
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: 6,
-                        border: "none",
-                        background: "transparent",
-                        padding: 0,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {renderAvatarCircle(p, {
-                        selected: isSelected,
-                        size: 56,
-                        mode: "setup",
-                      })}
+    {/* Flèche droite */}
+    <button
+      onClick={() => {
+        const el = document.getElementById("cricket-profiles-scroll");
+        if (el) el.scrollBy({ left: 90, behavior: "smooth" });
+      }}
+      style={{
+        position: "absolute",
+        right: -4,
+        top: "50%",
+        transform: "translateY(-50%)",
+        zIndex: 10,
+        background: "rgba(0,0,0,0.6)",
+        border: `1px solid ${T.borderSoft}`,
+        color: T.gold,
+        width: 28,
+        height: 28,
+        borderRadius: "50%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        boxShadow: "0 0 10px rgba(0,0,0,0.7)",
+      }}
+    >
+      ›
+    </button>
+  </div>
+</div>
 
-                      <div
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 600,
-                          color: isSelected ? "#f9fafb" : T.textSoft,
-                          textAlign: "center",
-                          marginTop: 3,
-                          maxWidth: "100%",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {p.name}
-                      </div>
-
-                      <div
-                        style={{
-                          marginTop: 2,
-                          padding: "2px 8px",
-                          borderRadius: 999,
-                          fontSize: 9,
-                          fontWeight: 700,
-                          letterSpacing: 1.1,
-                          textTransform: "uppercase",
-                          backgroundColor: isSelected
-                            ? "rgba(15,23,42,0.95)"
-                            : "rgba(15,23,42,0.4)",
-                          color: isSelected ? T.gold : T.textSoft,
-                          boxShadow: isSelected
-                            ? "0 0 10px rgba(246,194,86,0.6)"
-                            : "none",
-                        }}
-                      >
-                        {badge}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div
-                style={{
-                  marginTop: 10,
-                  fontSize: 12,
-                  color: T.textSoft,
-                }}
-              >
-                {selectedCount === 0 && "Choisis au moins deux joueurs."}
-                {selectedCount === 1 && "Ajoute encore un joueur."}
-                {selectedCount >= 2 && selectedCount <= 4 && (
-                  <>
-                    Ordre de jeu :
-                    {selectedIds.map((id, i) => {
-                      const p = allProfiles.find((pr) => pr.id === id);
-                      return p
-                        ? `${i > 0 ? " · " : " "}${i + 1}. ${p.name}`
-                        : "";
-                    })}
-                  </>
-                )}
-                {selectedCount > 4 && "Maximum 4 joueurs."}
-              </div>
-            </>
-          )}
-        </div>
 
         {/* PARAMÈTRES */}
         <div

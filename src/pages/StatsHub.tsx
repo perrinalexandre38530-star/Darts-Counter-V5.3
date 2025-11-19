@@ -3687,22 +3687,67 @@ export default function StatsHub(props: Props) {
   const mem = toArr<SavedMatch>(props.memHistory);
   const fromStore = useStoreHistory();
 
-  // 2) Fusion & déduplication (par id, conserve la version la plus récente)
+  // 2) Fusion & déduplication (par id)
+  //    → on préfère les records avec un summary riche
   const records = React.useMemo(() => {
     const byId = new Map<string, SavedMatch>();
-    const push = (r: any) => {
-      const rec = toObj<SavedMatch>(r);
-      if (!rec.id) return;
-      const prev = byId.get(rec.id);
-      const curT = N(rec.updatedAt ?? rec.createdAt, 0);
-      const prevT = N(prev?.updatedAt ?? prev?.createdAt, -1);
-      if (!prev || curT > prevT) byId.set(rec.id, rec);
-    };
-    persisted.forEach(push);
-    mem.forEach(push);
-    fromStore.forEach(push);
 
-    // 2bis) Normalise les joueurs + avatars pour TOUS les records
+    // Score de "qualité" d'un record : plus il a de summary, mieux c'est
+    const qualityOf = (rec: SavedMatch | undefined): number => {
+      if (!rec) return -1;
+      const ss: any = rec.summary ?? rec.payload?.summary ?? {};
+      if (!ss) return 0;
+
+      // summary "riche" = perPlayer[] ou avg3ByPlayer / bestVisitByPlayer / bestCheckoutByPlayer
+      if (
+        Array.isArray(ss.perPlayer) ||
+        ss.avg3ByPlayer ||
+        ss.bestVisitByPlayer ||
+        ss.bestCheckoutByPlayer
+      ) {
+        return 2;
+      }
+
+      // summary présent mais minimal
+      if (Object.keys(ss).length > 0) return 1;
+
+      return 0;
+    };
+
+    const push = (raw: any) => {
+      const rec = toObj<SavedMatch>(raw);
+      if (!rec.id) return;
+
+      const prev = byId.get(rec.id);
+      if (!prev) {
+        byId.set(rec.id, rec);
+        return;
+      }
+
+      const prevQ = qualityOf(prev);
+      const curQ = qualityOf(rec);
+
+      // Si le nouveau a un summary de meilleure qualité → on remplace
+      if (curQ > prevQ) {
+        byId.set(rec.id, rec);
+        return;
+      }
+      // Si le nouveau est moins bon → on garde l’ancien
+      if (curQ < prevQ) {
+        return;
+      }
+
+      // Même qualité → on départage à la date
+      const curT = N(rec.updatedAt ?? rec.createdAt, 0);
+      const prevT = N(prev.updatedAt ?? prev.createdAt, -1);
+      if (curT > prevT) byId.set(rec.id, rec);
+    };
+
+    persisted.forEach(push); // IndexedDB (History.list) — records complets
+    mem.forEach(push);       // éventuellement passés via props
+    fromStore.forEach(push); // vieux store.history (plus pauvre)
+
+    // Normalise joueurs + avatars et trie par date décroissante
     return Array.from(byId.values())
       .map((r) => normalizeRecordPlayers(r, storeProfiles))
       .sort(
