@@ -1718,157 +1718,106 @@ React.useEffect(() => {
 }, [ruleWinnerId, setsWon, setsTarget, setsFromResume]);
 
 /* =====================================================
-   FINALIZE MATCH — VERSION FINALE
+   FINALIZE MATCH — VERSION PERSISTANTE POUR STATS
 ===================================================== */
 async function finalizeMatch() {
   if (hasFinishedRef.current) return;
   hasFinishedRef.current = true;
 
-  // snapshot final
+  // snapshot final (autosave)
   persistOnFinish();
 
   try {
     /* -------------------------------------------------
        0) Setup de base
     ------------------------------------------------- */
-    const playersArr = mapEnginePlayersToLite(state.players as any, profiles);
+    const playersArr = mapEnginePlayersToLite(
+      state.players as any,
+      profiles
+    );
     const matchId = matchIdRef.current;
 
-    // Résumé brut via StatsBridge
-    const bridgeSummary = StatsBridge.makeMatch(
-      matchLegsRef.current,
-      playersArr,
-      matchId,
-      "x01"
-    );
+    // Résumé brut via StatsBridge (stats complètes du match)
+    const bridgeSummary: any =
+      StatsBridge.makeMatch(
+        matchLegsRef.current,
+        playersArr,
+        matchId,
+        "x01"
+      ) || {};
 
-    // gagnant final
+    const perPlayerFromBridge: any[] = Array.isArray(
+      bridgeSummary.perPlayer
+    )
+      ? bridgeSummary.perPlayer
+      : [];
+
+    // gagnant final (règle > moteur > bridge)
     const winnerIdFinal =
-      ruleWinnerId ?? winner?.id ?? bridgeSummary.winnerId ?? null;
+      ruleWinnerId ??
+      winner?.id ??
+      bridgeSummary.winnerId ??
+      null;
 
     /* -------------------------------------------------
-       1) AGRÉGATION MANUELLE DES LEGS
-          (fidèle à TrainingFinish)
+       1) Construire un résumé par joueur
+          (ce qui sera lu par StatsHub + Historique)
     ------------------------------------------------- */
-    type Agg = {
-      darts: number;
-      scored: number;
-      bestVisit: number;
-      bestCheckout: number;
-      h60: number;
-      h100: number;
-      h140: number;
-      h180: number;
-      miss: number;
-      bust: number;
-      dbull: number;
-    };
+    const avg3ByPlayer: Record<string, number> = {};
+    const bestVisitByPlayer: Record<string, number> = {};
+    const bestCheckoutByPlayer: Record<string, number> = {};
 
-    const perPlayerAgg: Record<string, Agg> = {};
-
-    for (const leg of matchLegsRef.current as any[]) {
-      const arr: any[] = Array.isArray(leg.perPlayer) ? leg.perPlayer : [];
-
-      for (const pl of arr) {
-        const pid = pl.playerId ?? pl.id;
-        if (!pid) continue;
-
-        const agg =
-          perPlayerAgg[pid] ||
-          (perPlayerAgg[pid] = {
-            darts: 0,
-            scored: 0,
-            bestVisit: 0,
-            bestCheckout: 0,
-            h60: 0,
-            h100: 0,
-            h140: 0,
-            h180: 0,
-            miss: 0,
-            bust: 0,
-            dbull: 0,
-          });
-
-        const d = Number(pl.darts ?? pl.nbDarts ?? 0) || 0;
-        const scored =
-          Number(
-            pl.scored ??
-              pl.points ??
-              pl.totalPoints ??
-              pl.scoreSum ??
-              pl.scoredPoints
-          ) || 0;
-
-        const bv = Number(pl.bestVisit ?? pl.best_visit ?? pl.best ?? 0) || 0;
-        const bc =
-          Number(
-            pl.bestCheckout ??
-              pl.best_co ??
-              pl.bestFinish ??
-              0
-          ) || 0;
-
-        agg.darts += d;
-        agg.scored += scored;
-
-        if (bv > agg.bestVisit) agg.bestVisit = bv;
-        if (bc > agg.bestCheckout) agg.bestCheckout = bc;
-
-        agg.h60 += Number(pl.h60 ?? 0) || 0;
-        agg.h100 += Number(pl.h100 ?? 0) || 0;
-        agg.h140 += Number(pl.h140 ?? 0) || 0;
-        agg.h180 += Number(pl.h180 ?? 0) || 0;
-        agg.miss += Number(pl.miss ?? 0) || 0;
-        agg.bust += Number(pl.bust ?? 0) || 0;
-        agg.dbull += Number(pl.dbull ?? 0) || 0;
-      }
-    }
-
-    /* -------------------------------------------------
-       2) Merge avec les impacts LIVE (doubles/triples/bulls)
-    ------------------------------------------------- */
     const summaryPerPlayer = playersArr.map((p) => {
-      const agg =
-        perPlayerAgg[p.id] ||
-        ({
-          darts: 0,
-          scored: 0,
-          bestVisit: 0,
-          bestCheckout: 0,
-          h60: 0,
-          h100: 0,
-          h140: 0,
-          h180: 0,
-          miss: 0,
-          bust: 0,
-          dbull: 0,
-        } as Agg);
-
-      const impact = impactByPlayer[p.id] || {
-        doubles: 0,
-        triples: 0,
-        bulls: 0,
-      };
-
-      const darts = agg.darts;
-      const scored = agg.scored;
-      const avg3 = darts > 0 ? (scored / darts) * 3 : 0;
-
-      // fallback si StatsBridge a mieux
       const fromBridge =
-        bridgeSummary.perPlayer?.find(
-          (pp: any) => pp.playerId === p.id
-        ) ?? {};
+        perPlayerFromBridge.find(
+          (pp) => pp.playerId === p.id
+        ) || {};
 
-      const bestVisit = Math.max(
-        agg.bestVisit,
-        Number(fromBridge.bestVisit ?? 0)
-      );
+      const darts =
+        Number(
+          fromBridge.darts ??
+            fromBridge.nbDarts ??
+            fromBridge.totalDarts
+        ) || 0;
 
-      const bestCheckout = Math.max(
-        agg.bestCheckout,
-        Number(fromBridge.bestCheckout ?? 0)
-      );
+      const scored =
+        Number(
+          fromBridge.scored ??
+            fromBridge.points ??
+            fromBridge.totalPoints ??
+            fromBridge.scoreSum ??
+            0
+        ) || 0;
+
+      // moyenne 3D : priorité aux champs fournis, sinon recalcul
+      let avg3 =
+        Number(
+          fromBridge.avg3 ??
+            fromBridge.avg_3 ??
+            fromBridge.avg3D ??
+            fromBridge.average3
+        ) || 0;
+
+      if (!avg3 && darts > 0) {
+        avg3 = (scored / darts) * 3;
+      }
+
+      const bestVisit =
+        Number(fromBridge.bestVisit ?? 0) || 0;
+      const bestCheckout =
+        Number(fromBridge.bestCheckout ?? 0) || 0;
+
+      const doubles =
+        Number(fromBridge.doubles ?? 0) || 0;
+      const triples =
+        Number(fromBridge.triples ?? 0) || 0;
+      const bulls =
+        Number(fromBridge.bulls ?? 0) || 0;
+
+      avg3ByPlayer[p.id] =
+        Math.round((avg3 || 0) * 100) / 100;
+      bestVisitByPlayer[p.id] = bestVisit;
+      bestCheckoutByPlayer[p.id] = bestCheckout;
 
       return {
         playerId: p.id,
@@ -1877,33 +1826,16 @@ async function finalizeMatch() {
         avg3,
         bestVisit,
         bestCheckout,
-        h60: agg.h60,
-        h100: agg.h100,
-        h140: agg.h140,
-        h180: agg.h180,
-        miss: agg.miss,
-        bust: agg.bust,
-        dbull: agg.dbull,
-        doubles: impact.doubles,
-        triples: impact.triples,
-        bulls: impact.bulls,
+        doubles,
+        triples,
+        bulls,
         win: winnerIdFinal === p.id,
       };
     });
 
     /* -------------------------------------------------
-       3) QUICK STATS — addMatchSummary
+       2) QUICK STATS — addMatchSummary (useStatsLiteIDB)
     ------------------------------------------------- */
-    const avg3ByPlayer: Record<string, number> = {};
-    const bestVisitByPlayer: Record<string, number> = {};
-    const bestCheckoutByPlayer: Record<string, number> = {};
-
-    for (const s of summaryPerPlayer) {
-      avg3ByPlayer[s.playerId] = Math.round((s.avg3 || 0) * 100) / 100;
-      bestVisitByPlayer[s.playerId] = s.bestVisit || 0;
-      bestCheckoutByPlayer[s.playerId] = s.bestCheckout || 0;
-    }
-
     try {
       await addMatchSummary({
         winnerId: winnerIdFinal,
@@ -1914,38 +1846,78 @@ async function finalizeMatch() {
               id: p.id,
               games: 1,
               wins: winnerIdFinal === p.id ? 1 : 0,
-              avg3: avg3ByPlayer[p.id],
+              avg3: avg3ByPlayer[p.id] ?? 0,
             },
           ])
         ),
       });
-    } catch {}
+    } catch {
+      // non bloquant
+    }
 
     /* -------------------------------------------------
-       4) VISITES + SUMMARY POUR HISTORY
+       3) VISITES pour payload / stats globales
     ------------------------------------------------- */
-    const visitsForPersist: VisitType[] = (matchVisitsRef.current || []).map(
-      (v) => ({
-        p: v.p,
-        segments: v.segments,
-        bust: v.bust,
-        score: v.score,
-        ts: v.ts!,
-        isCheckout: v.isCheckout,
-        remainingAfter: v.remainingAfter,
-      })
-    );
+    const visitsForPersist: VisitType[] = (
+      matchVisitsRef.current || []
+    ).map((v) => ({
+      p: v.p,
+      segments: v.segments,
+      bust: v.bust,
+      score: v.score,
+      ts: v.ts!,
+      isCheckout: v.isCheckout,
+      remainingAfter: v.remainingAfter,
+    }));
 
+    /* -------------------------------------------------
+       4) SUMMARY GLOBAL POUR HISTORY / STATS HUB
+    ------------------------------------------------- */
     const summaryForHistory = {
-      kind: "x01",
-      legs: matchLegsRef.current.length,
-      darts: summaryPerPlayer.reduce((s, p) => s + (p.darts || 0), 0),
+      kind: "x01" as const,
+      legs: (matchLegsRef.current || []).length,
+      darts: summaryPerPlayer.reduce(
+        (s, p) => s + (p.darts || 0),
+        0
+      ),
       avg3ByPlayer,
       bestVisitByPlayer,
       bestCheckoutByPlayer,
       perPlayer: summaryPerPlayer,
     };
 
+    // =================================================
+    // 4bis) History.upsert — source principale StatsHub
+    // =================================================
+    try {
+      History.upsert({
+        id: matchId,
+        kind: "x01",
+        status: "finished",
+        players: playersArr,
+        winnerId: winnerIdFinal,
+        updatedAt: Date.now(),
+        summary: summaryForHistory,
+        payload: {
+          visits: visitsForPersist,
+          legs: matchLegsRef.current,
+          // on garde le résumé complet StatsBridge pour d’autres vues
+          bridgeSummary,
+          meta: {
+            currentSet,
+            currentLegInSet,
+            legsTarget: legsFromResume,
+          },
+        },
+      } as any);
+    } catch (err) {
+      console.warn(
+        "[X01Play] History.upsert failed",
+        err
+      );
+    }
+
+    // Sauvegarde “complète” (IDB)
     await safeSaveMatch({
       id: matchId,
       players: playersArr,
@@ -1954,6 +1926,7 @@ async function finalizeMatch() {
       payload: {
         visits: visitsForPersist,
         legs: matchLegsRef.current,
+        bridgeSummary,
         meta: {
           currentSet,
           currentLegInSet,
@@ -1979,7 +1952,9 @@ async function finalizeMatch() {
               setsToWin: setsFromResume,
               legsPerSet: legsFromResume,
               finishPolicy:
-                outMFromResume !== "simple" ? "doubleOut" : "singleOut",
+                outMFromResume !== "simple"
+                  ? "doubleOut"
+                  : "singleOut",
             },
             players: playersArr,
             winnerId: winnerIdFinal,
@@ -1993,18 +1968,25 @@ async function finalizeMatch() {
           },
         });
       } catch (err) {
-        console.warn("[Online] uploadMatch failed:", err);
+        console.warn(
+          "[Online] uploadMatch failed:",
+          err
+        );
       }
     }
 
-    await History.list();
+    // force un refresh des listeners d’historique
+    try {
+      await History.list();
+    } catch {}
 
     /* -------------------------------------------------
-       6) Fallback mini-history
+       6) Fallback mini-history (ancien système)
     ------------------------------------------------- */
     try {
       const legForLegacy =
-        lastLegResult?.__legStats ?? matchLegsRef.current.at(-1);
+        lastLegResult?.__legStats ??
+        matchLegsRef.current.at(-1);
 
       await emitHistoryRecord_X01({
         playersLite: playersArr,
@@ -2017,7 +1999,7 @@ async function finalizeMatch() {
     } catch {}
 
     /* -------------------------------------------------
-       7) Stats profils (médaillons / couronnes)
+       7) Stats profils (couronnes, médaillons)
     ------------------------------------------------- */
     try {
       commitMatchSummary(
@@ -2030,19 +2012,26 @@ async function finalizeMatch() {
     } catch {}
 
     /* -------------------------------------------------
-       8) StatsHub X01 global (rich stats)
+       8) StatsHub X01 global (stats avancées)
     ------------------------------------------------- */
     try {
       const playersIds = playersArr.map((p) => p.id);
-      const m = aggregateMatch(matchLegsRef.current as any, playersIds);
+      const m = aggregateMatch(
+        matchLegsRef.current as any,
+        playersIds
+      );
 
       saveMatchStats({
-        id: crypto.randomUUID?.() ?? String(Date.now()),
+        id:
+          crypto.randomUUID?.() ??
+          String(Date.now()),
         createdAt: Date.now(),
         rules: {
           x01Start: startFromResume,
           finishPolicy:
-            outMFromResume !== "simple" ? "doubleOut" : "singleOut",
+            outMFromResume !== "simple"
+              ? "doubleOut"
+              : "singleOut",
           setsToWin: setsFromResume,
           legsPerSet: legsFromResume,
         },
@@ -2053,36 +2042,48 @@ async function finalizeMatch() {
     } catch {}
 
     /* -------------------------------------------------
-       9) Voix - annonce classement final
+       9) Voix — annonce du classement final
     ------------------------------------------------- */
     try {
       if (
-        (localStorage.getItem("opt_voice") ?? "true") === "true" &&
+        (localStorage.getItem("opt_voice") ??
+          "true") === "true" &&
         "speechSynthesis" in window
       ) {
         const ordered = [...liveRanking];
-        const ords = ["", "Deuxième", "Troisième", "Quatrième", "Cinquième"];
+        const ords = [
+          "",
+          "Deuxième",
+          "Troisième",
+          "Quatrième",
+          "Cinquième",
+        ];
         const parts: string[] = [];
 
-        if (ordered[0]) parts.push(`Victoire ${ordered[0].name}`);
+        if (ordered[0])
+          parts.push(`Victoire ${ordered[0].name}`);
         for (let i = 1; i < ordered.length; i++) {
-          if (ords[i]) parts.push(`${ords[i]} ${ordered[i].name}`);
+          if (ords[i])
+            parts.push(
+              `${ords[i]} ${ordered[i].name}`
+            );
         }
 
         const text = parts.join(". ") + ".";
-        const u = new SpeechSynthesisUtterance(text);
+        const u = new SpeechSynthesisUtterance(
+          text
+        );
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(u);
       }
     } catch {}
 
-    // Fin effective
+    // Fin effective (fermeture overlay, etc.)
     flushPendingFinish();
   } catch (e) {
     console.warn("[finalizeMatch]", e);
   }
 }
-
   /* =====================================================
      FLUSH FIN
   ===================================================== */

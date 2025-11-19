@@ -4,16 +4,79 @@
 // - Compte online (pseudo) synchronisé avec le profil local actif
 // - Connexion / création rapide
 // - Statut en ligne (online / absent) lié à store.selfStatus
+// - Historique Online (mock) : Training + Matches
+// - Présence locale (lastSeen) pingée toutes les 30s
 // ============================================
 
 import React from "react";
 import type { Store } from "../lib/types";
 import { useAuthOnline } from "../hooks/useAuthOnline";
+import { onlineApi } from "../lib/onlineApi";
+import type { OnlineMatch } from "../lib/onlineTypes";
 
 type Props = {
   store: Store;
   update: (mut: (s: Store) => Store) => void;
 };
+
+/* ---------- Constantes localStorage ---------- */
+
+const LS_PRESENCE_KEY = "dc_online_presence_v1";
+const LS_ONLINE_MATCHES_KEY = "dc_online_matches_v1";
+
+type PresenceStatus = "online" | "away" | "offline";
+
+type StoredPresence = {
+  status: PresenceStatus;
+  lastSeen: number;
+};
+
+function savePresenceToLS(status: PresenceStatus) {
+  if (typeof window === "undefined") return;
+  const payload: StoredPresence = {
+    status,
+    lastSeen: Date.now(),
+  };
+  try {
+    window.localStorage.setItem(LS_PRESENCE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore
+  }
+}
+
+function loadPresenceFromLS(): StoredPresence | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(LS_PRESENCE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.lastSeen !== "number") return null;
+    return {
+      status:
+        parsed.status === "online" ||
+        parsed.status === "away" ||
+        parsed.status === "offline"
+          ? parsed.status
+          : "offline",
+      lastSeen: parsed.lastSeen,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function formatLastSeenAgo(lastSeen: number | null): string | null {
+  if (!lastSeen) return null;
+  const diffMs = Date.now() - lastSeen;
+  if (diffMs < 0) return null;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin <= 0) return "À l’instant";
+  if (diffMin === 1) return "Il y a 1 min";
+  if (diffMin < 60) return `Il y a ${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH === 1) return "Il y a 1 h";
+  return `Il y a ${diffH} h`;
+}
 
 export default function FriendsPage({ store, update }: Props) {
   const {
@@ -43,6 +106,16 @@ export default function FriendsPage({ store, update }: Props) {
   const [error, setError] = React.useState<string | null>(null);
   const [info, setInfo] = React.useState<string | null>(null);
 
+  // Historique Online (mock)
+  const [matches, setMatches] = React.useState<OnlineMatch[]>([]);
+  const [loadingMatches, setLoadingMatches] = React.useState(false);
+
+  // Présence locale (lastSeen)
+  const initialPresence = React.useMemo(() => loadPresenceFromLS(), []);
+  const [lastSeen, setLastSeen] = React.useState<number | null>(
+    initialPresence?.lastSeen ?? null
+  );
+
   // Met à jour le pseudo quand la session change
   React.useEffect(() => {
     if (user?.nickname) {
@@ -50,12 +123,126 @@ export default function FriendsPage({ store, update }: Props) {
     }
   }, [user?.nickname]);
 
-  function setPresence(status: "online" | "away" | "offline") {
+  const isChecking = status === "checking";
+
+  /* ---------- Présence : set + ping périodique ---------- */
+
+  function setPresence(status: PresenceStatus) {
     update((s) => ({
       ...s,
       selfStatus: status as any,
     }));
+    savePresenceToLS(status);
+    setLastSeen(Date.now());
   }
+
+  // Ping périodique toutes les 30s quand on est en ligne
+  React.useEffect(() => {
+    if (!isSignedIn || store.selfStatus !== "online") return;
+    if (typeof window === "undefined") return;
+
+    const id = window.setInterval(() => {
+      savePresenceToLS("online");
+      setLastSeen(Date.now());
+    }, 30000); // 30s
+
+    return () => window.clearInterval(id);
+  }, [isSignedIn, store.selfStatus]);
+
+  // Auto-ajustement si la dernière activité est très ancienne (ex > 10 min)
+  React.useEffect(() => {
+    if (!initialPresence) return;
+    const diffMs = Date.now() - initialPresence.lastSeen;
+    if (diffMs > 10 * 60 * 1000 && store.selfStatus === "online") {
+      setPresence("away");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const statusLabel =
+    store.selfStatus === "away"
+      ? "Absent"
+      : store.selfStatus === "online"
+      ? "En ligne"
+      : "Hors ligne";
+
+  const statusColor =
+    store.selfStatus === "away"
+      ? "#ffb347"
+      : store.selfStatus === "online"
+      ? "#7fe2a9"
+      : "#cccccc";
+
+  const displayName =
+    profile?.displayName ||
+    user?.nickname ||
+    activeProfile?.name ||
+    "Profil online";
+
+  const lastSeenLabel = formatLastSeenAgo(lastSeen);
+
+  /* ---------- Historique Online (mock) ---------- */
+
+  React.useEffect(() => {
+    if (!isSignedIn) {
+      setMatches([]);
+      return;
+    }
+    let cancelled = false;
+    async function load() {
+      setLoadingMatches(true);
+      try {
+        const list = await onlineApi.listMatches(50);
+        if (!cancelled) {
+          setMatches(list || []);
+        }
+      } catch (e) {
+        console.warn("[online] listMatches failed", e);
+        if (!cancelled) setMatches([]);
+      } finally {
+        if (!cancelled) setLoadingMatches(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn]);
+
+  function handleClearOnlineHistory() {
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(LS_ONLINE_MATCHES_KEY);
+      } catch {
+        // ignore
+      }
+    }
+    setMatches([]);
+  }
+
+  function getMatchTitle(m: OnlineMatch): string {
+    const isTraining =
+      (m as any).isTraining === true ||
+      (m.payload as any)?.kind === "training_x01";
+    if (m.mode === "x01") {
+      return isTraining ? "X01 Training" : "X01 (match)";
+    }
+    // fallback générique
+    return m.mode || "Match";
+  }
+
+  function formatMatchDate(m: OnlineMatch): string {
+    const ts = m.finishedAt || m.startedAt;
+    const d = new Date(ts);
+    return d.toLocaleString(undefined, {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  /* ---------- Actions AUTH ---------- */
 
   async function handleSignup() {
     const nick = nickname.trim();
@@ -131,47 +318,6 @@ export default function FriendsPage({ store, update }: Props) {
     }
   }
 
-  const statusLabel =
-    store.selfStatus === "away"
-      ? "Absent"
-      : store.selfStatus === "online"
-      ? "En ligne"
-      : "Hors ligne";
-
-  const statusColor =
-    store.selfStatus === "away"
-      ? "#ffb347"
-      : store.selfStatus === "online"
-      ? "#7fe2a9"
-      : "#cccccc";
-
-  const displayName =
-    profile?.displayName ||
-    user?.nickname ||
-    activeProfile?.name ||
-    "Profil online";
-
-  const isChecking = status === "checking";
-
-  /* ------ Online matches list (mock) ------ */
-  const [onlineMatches, setOnlineMatches] = React.useState<any[]>([]);
-
-  React.useEffect(() => {
-    try {
-      if (typeof window === "undefined") return;
-      const raw = window.localStorage.getItem("dc_online_matches_v1");
-      if (!raw) {
-        setOnlineMatches([]);
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) setOnlineMatches(parsed);
-      else setOnlineMatches([]);
-    } catch {
-      setOnlineMatches([]);
-    }
-  }, [status]); // on rafraîchit quand la session online change
-
   return (
     <div
       className="container"
@@ -223,6 +369,17 @@ export default function FriendsPage({ store, update }: Props) {
           {isSignedIn ? "Connecté en mode démo." : "Non connecté."}{" "}
           {isMock && "(mock local)"}
         </div>
+        {lastSeenLabel && (
+          <div
+            style={{
+              marginTop: 2,
+              opacity: 0.8,
+              fontSize: 11,
+            }}
+          >
+            Dernière activité : {lastSeenLabel}
+          </div>
+        )}
       </div>
 
       {/* --------- BLOC CONNEXION / COMPTE --------- */}
@@ -481,7 +638,7 @@ export default function FriendsPage({ store, update }: Props) {
                       height: 8,
                       borderRadius: "50%",
                       background: statusColor,
-                      boxShadow: `0 0 6px ${statusColor}`,
+                      boxShadow: `0 0 6px ${statusColor}`, // halo néon
                     }}
                   />
                   <span>{statusLabel}</span>
@@ -497,6 +654,17 @@ export default function FriendsPage({ store, update }: Props) {
                   </span>
                 )}
               </div>
+              {lastSeenLabel && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    opacity: 0.8,
+                    marginTop: 3,
+                  }}
+                >
+                  Dernière activité : {lastSeenLabel}
+                </div>
+              )}
             </div>
           </div>
 
@@ -574,7 +742,7 @@ export default function FriendsPage({ store, update }: Props) {
         </div>
       )}
 
-      {/* --------- PLACEHOLDER FUTUR : Amis / lobbys --------- */}
+      {/* --------- PLACEHOLDER FUTUR : Amis / présence détaillée --------- */}
       <div
         style={{
           marginTop: 4,
@@ -598,6 +766,134 @@ export default function FriendsPage({ store, update }: Props) {
           Liste d&apos;amis, invitations, présence en ligne détaillée, lobbys
           de parties online (X01, Cricket, etc.) seront ajoutés ici.
         </div>
+      </div>
+
+      {/* --------- HISTORIQUE ONLINE (MOCK) --------- */}
+      <div
+        style={{
+          marginTop: 10,
+          fontSize: 11.5,
+          padding: 10,
+          borderRadius: 12,
+          border: "1px solid rgba(255,255,255,.10)",
+          background:
+            "linear-gradient(180deg, rgba(26,26,34,.96), rgba(8,8,12,.98))",
+        }}
+      >
+        <div
+          style={{
+            fontWeight: 700,
+            marginBottom: 4,
+          }}
+        >
+          Historique Online (mock)
+        </div>
+
+        {loadingMatches ? (
+          <div style={{ opacity: 0.85 }}>Chargement…</div>
+        ) : matches.length === 0 ? (
+          <div style={{ opacity: 0.85 }}>
+            Aucun match online enregistré pour le moment.
+          </div>
+        ) : (
+          <>
+            {matches.map((m) => {
+              const title = getMatchTitle(m);
+              const isTraining =
+                (m as any).isTraining === true ||
+                (m.payload as any)?.kind === "training_x01";
+
+              return (
+                <div
+                  key={m.id}
+                  style={{
+                    marginTop: 8,
+                    padding: 8,
+                    borderRadius: 10,
+                    background:
+                      "linear-gradient(180deg,#181820,#0c0c12)",
+                    border: "1px solid rgba(255,255,255,.12)",
+                    boxShadow: "0 8px 18px rgba(0,0,0,.55)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 12,
+                      }}
+                    >
+                      {title}
+                    </div>
+                    <span
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: 999,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        background: isTraining
+                          ? "linear-gradient(180deg,#35c86d,#23a958)"
+                          : "linear-gradient(180deg,#ffc63a,#ffaf00)",
+                        color: isTraining ? "#031509" : "#221600",
+                      }}
+                    >
+                      {isTraining ? "Training" : "Match"}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 10.5,
+                      opacity: 0.8,
+                      marginBottom: 4,
+                    }}
+                  >
+                    {formatMatchDate(m)}
+                  </div>
+                  <pre
+                    style={{
+                      margin: 0,
+                      padding: 6,
+                      borderRadius: 8,
+                      background: "rgba(0,0,0,0.85)",
+                      fontSize: 10,
+                      maxHeight: 120,
+                      overflow: "auto",
+                      border: "1px solid rgba(255,255,255,.08)",
+                    }}
+                  >
+{JSON.stringify(m.payload, null, 2)}
+                  </pre>
+                </div>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={handleClearOnlineHistory}
+              style={{
+                marginTop: 8,
+                width: "100%",
+                borderRadius: 999,
+                padding: "6px 10px",
+                border: "none",
+                fontWeight: 800,
+                fontSize: 12,
+                background: "linear-gradient(180deg,#ff5a5a,#e01f1f)",
+                color: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              Effacer l&apos;historique local
+            </button>
+          </>
+        )}
       </div>
 
       {/* --------- NOUVEAU BLOC : Salons online (bientôt) --------- */}
@@ -672,49 +968,6 @@ export default function FriendsPage({ store, update }: Props) {
           Rejoindre avec un code (à venir)
         </button>
       </div>
-
-      {/* --------- Historique online (mock) --------- */}
-      {onlineMatches.length > 0 && (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 12,
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,.10)",
-            background:
-              "linear-gradient(180deg, rgba(30,30,34,.96), rgba(12,12,14,.98))",
-          }}
-        >
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>
-            Historique Online (mock)
-          </div>
-
-          {onlineMatches
-            .slice()
-            .reverse()
-            .map((m: any, i: number) => {
-              const ts = m.finishedAt || m.startedAt || Date.now();
-              const label = new Date(ts).toLocaleString();
-              return (
-                <div
-                  key={i}
-                  style={{
-                    padding: "6px 8px",
-                    borderRadius: 8,
-                    marginBottom: 6,
-                    background: "rgba(255,255,255,.04)",
-                  }}
-                >
-                  <div style={{ fontSize: 12 }}>
-                    <b>{(m.mode || "x01").toUpperCase()}</b>{" "}
-                    {m.isTraining ? "(training)" : "(match)"}
-                  </div>
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>{label}</div>
-                </div>
-              );
-            })}
-        </div>
-      )}
     </div>
   );
 }

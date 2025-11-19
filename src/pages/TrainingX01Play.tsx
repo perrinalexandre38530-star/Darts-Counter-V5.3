@@ -9,6 +9,7 @@ import type { Dart as UIDart, Profile } from "../lib/types";
 import { playSound } from "../lib/sound";
 import { useCurrentProfile } from "../hooks/useCurrentProfile";
 import { TrainingStore } from "../lib/TrainingStore";
+import { onlineApi } from "../lib/onlineApi";
 
 const NAV_HEIGHT = 64; // hauteur du BottomNav (approx)
 
@@ -121,6 +122,36 @@ export const SEGMENTS: number[] = [
   20, 1, 18, 4, 13, 6, 10, 15, 2, 17,
   3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 25,
 ];
+
+// --------------------------------------------
+// Upload online (mock ou vrai backend)
+// --------------------------------------------
+async function uploadTrainingX01Online(opts: {
+  profile: Profile | null;
+  stats: TrainingFinishStats;
+  darts: UIDart[];
+}) {
+  const { profile, stats, darts } = opts;
+
+  try {
+    await onlineApi.uploadMatch({
+      mode: "x01",
+      isTraining: true,
+      payload: {
+        kind: "training_x01",
+        profileId: profile?.id ?? null,
+        profileName: profile?.name ?? null,
+        stats,
+        darts,
+      },
+      startedAt: stats.date ?? Date.now(),
+      finishedAt: Date.now(),
+    });
+    console.log("[online] training_x01 uploaded");
+  } catch (e) {
+    console.warn("[online] upload training_x01 failed:", e);
+  }
+}
 
 // --------------------------------------------------
 // HELPERS — DARTS
@@ -1039,6 +1070,7 @@ export default function TrainingX01Play({
 
   const sessionIdRef = React.useRef<string | null>(null);
   const visitCountRef = React.useRef<number>(0);
+  const allDartsRef = React.useRef<UIDart[]>([]);
 
   // Helper : démarrer / redémarrer proprement une session Training
   function startNewSession() {
@@ -1080,6 +1112,8 @@ export default function TrainingX01Play({
     setStarted(false);
     setShowEndModal(false);
     setBustLocked(false);
+
+    allDartsRef.current = []; // 🔁 on vide le buffer de fléchettes
   }
 
   React.useEffect(() => {
@@ -1197,6 +1231,9 @@ export default function TrainingX01Play({
 
   function handleValidate() {
     if (!currentThrow.length || remaining <= 0 || !sessionIdRef.current) return;
+
+    // on empile toutes les fléchettes de la session
+    allDartsRef.current = [...allDartsRef.current, ...currentThrow];
 
     const volleyTotal = throwTotal(currentThrow);
     const after = remaining - volleyTotal;
@@ -1343,7 +1380,16 @@ setHitMapT(nextT);
 
         setFinishedSessions((arr) => {
           const next = [...arr, stat];
+          // 1) localStorage pour l’onglet Stats › Training
           saveTrainingStatsToStorage(next);
+
+          // 2) Upload online (mock ou backend réel)
+          uploadTrainingX01Online({
+            profile: currentProfile,
+            stats: stat,
+            darts: allDartsRef.current,
+          });
+
           return next;
         });
 
