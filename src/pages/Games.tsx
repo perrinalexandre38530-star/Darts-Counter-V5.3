@@ -319,19 +319,39 @@ function InfoOverlay({ game, onClose }: { game: GameId; onClose: () => void }) {
     lines = [
       "Modes 301 / 501 / 701 / 901, en Multi local.",
       "Gestion des sets / legs selon tes paramètres.",
+      "Statistiques complètes en fin de match.",
     ];
   } else if (game === "cricket") {
     title = "Cricket";
     lines = [
       "Objectif : fermer les zones 15 à 20 + Bull.",
       "Une fois ta zone fermée, tu marques des points tant que l’adversaire ne l’a pas fermée.",
+      "Le joueur qui a le meilleur score une fois toutes les zones fermées gagne.",
     ];
-  } else if (game === "killer" || game === "shanghai" || game === "battle") {
-    if (game === "killer") title = "Killer";
-    else if (game === "shanghai") title = "Shanghai";
-    else title = "Battle Royale";
-
-    lines = ["En développement"];
+  } else if (game === "killer") {
+    title = "Killer";
+    lines = [
+      "En développement",
+      "Chaque joueur choisit un numéro.",
+      "Devient Killer en touchant son numéro en double.",
+      "Une fois Killer, vise les numéros des autres joueurs pour réduire leurs vies et les éliminer.",
+    ];
+  } else if (game === "shanghai") {
+    title = "Shanghai";
+    lines = [
+      "En développement",
+      "Chaque tour correspond à une cible (1, 2, 3, …).",
+      "Tu marques sur la cible du tour seulement : Simple, Double ou Triple.",
+      "Shanghai = Simple + Double + Triple sur la même cible → victoire immédiate.",
+    ];
+  } else if (game === "battle") {
+    title = "Battle Royale";
+    lines = [
+      "En développement",
+      "Mode fun à plusieurs avec éliminations successives.",
+      "Chaque joueur dispose d’un capital de points ou de vies.",
+      "Les mauvaises volées font perdre des points, les bonnes volées te permettent de faire tomber les adversaires.",
+    ];
   }
 
   return (
