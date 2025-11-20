@@ -7,6 +7,7 @@
 import React from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang, type Lang } from "../contexts/LangContext";
+import { THEMES, type AppTheme } from "../theme/themePresets";
 
 type ThemeId =
   | "gold"
@@ -47,9 +48,116 @@ const LANG_CHOICES: { id: Lang; label: string }[] = [
   { id: "nl", label: "Nederlands" },
 ];
 
+// --------------------------------------------------
+// Helpers pour les thèmes (couleurs propres à chaque carte)
+// --------------------------------------------------
+function injectSettingsAnimationsOnce() {
+  if (typeof document === "undefined") return;
+
+  const STYLE_ID = "dc-settings-theme-animations";
+  if (document.getElementById(STYLE_ID)) return;
+
+  const style = document.createElement("style");
+  style.id = STYLE_ID;
+  style.innerHTML = `
+    @keyframes dcSettingsHaloPulse {
+      0%   { box-shadow: 0 0 0px rgba(255,255,255,0.0); }
+      40%  { box-shadow: 0 0 12px currentColor, 0 0 26px currentColor; }
+      100% { box-shadow: 0 0 0px rgba(255,255,255,0.0); }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function getThemePreset(id: ThemeId): AppTheme {
+  const found = THEMES.find((t) => t.id === id);
+  return found ?? THEMES[0];
+}
+
+type ThemeChoiceButtonProps = {
+  opt: { id: ThemeId; label: string; desc: string };
+  active: boolean;
+  onClick: () => void;
+};
+
+// Carte individuelle pour un thème
+function ThemeChoiceButton({ opt, active, onClick }: ThemeChoiceButtonProps) {
+  const preset = getThemePreset(opt.id);
+  const neonColor = preset.primary;
+
+  const [hovered, setHovered] = React.useState(false);
+
+  const cardBoxShadow =
+    active || hovered ? `0 0 18px ${neonColor}66` : "0 0 0 rgba(0,0,0,0)";
+  const scale = hovered ? 1.02 : 1.0;
+  const borderColor = active ? neonColor : "rgba(255,255,255,0.12)";
+  const titleColor = active ? neonColor : "#FFFFFF";
+  const descColor = active ? neonColor : "rgba(255,255,255,0.6)";
+
+  return (
+    <button
+      key={opt.id}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        textAlign: "left",
+        borderRadius: 14,
+        padding: 12,
+        background: active
+          ? "rgba(255,255,255,0.05)"
+          : "rgba(255,255,255,0.02)",
+        border: `1px solid ${borderColor}`,
+        boxShadow: cardBoxShadow,
+        color: "#FFFFFF",
+        cursor: "pointer",
+        transform: `scale(${scale})`,
+        transition:
+          "transform 0.18s ease-out, box-shadow 0.18s ease-out, border-color 0.18s ease-out, background 0.18s ease-out",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          fontWeight: 700,
+          fontSize: 14,
+          marginBottom: 4,
+        }}
+      >
+        {/* Cercle transparent + halo néon animé */}
+        <span
+          style={{
+            width: 16,
+            height: 16,
+            borderRadius: "50%",
+            border: `2px solid ${neonColor}`,
+            background: "transparent",
+            color: neonColor, // pour currentColor dans l'animation
+            boxShadow: active
+              ? `0 0 10px ${neonColor}, 0 0 22px ${neonColor}`
+              : hovered
+              ? `0 0 6px ${neonColor}`
+              : "none",
+            animation: active ? "dcSettingsHaloPulse 2.1s ease-in-out infinite" : "",
+            flexShrink: 0,
+          }}
+        />
+        <span style={{ color: titleColor }}>{opt.label}</span>
+      </div>
+      <div style={{ fontSize: 12, color: descColor }}>{opt.desc}</div>
+    </button>
+  );
+}
+
 export default function Settings({ go }: Props) {
   const { theme, themeId, setThemeId } = useTheme();
   const { lang, setLang, t } = useLang();
+
+  React.useEffect(() => {
+    injectSettingsAnimationsOnce();
+  }, []);
 
   // 🎨 Fond dark fixe pour toute la page
   const PAGE_BG = "#050712";
@@ -111,7 +219,12 @@ export default function Settings({ go }: Props) {
         }}
       >
         <h2
-          style={{ margin: 0, marginBottom: 6, fontSize: 18, color: theme.primary }}
+          style={{
+            margin: 0,
+            marginBottom: 6,
+            fontSize: 18,
+            color: theme.primary,
+          }}
         >
           {t("settings.theme", "Thème")}
         </h2>
@@ -124,55 +237,14 @@ export default function Settings({ go }: Props) {
             marginTop: 12,
           }}
         >
-          {THEME_CHOICES.map((opt) => {
-            const active = opt.id === themeId;
-            return (
-              <button
-                key={opt.id}
-                onClick={() => setThemeId(opt.id)}
-                style={{
-                  textAlign: "left",
-                  borderRadius: 14,
-                  padding: 12,
-                  background: active
-                    ? "rgba(255,255,255,0.04)"
-                    : "rgba(255,255,255,0.02)",
-                  border: active
-                    ? `1px solid ${theme.primary}`
-                    : `1px solid ${theme.borderSoft}`,
-                  boxShadow: active
-                    ? `0 0 18px ${theme.primary}88`
-                    : "none",
-                  color: theme.text,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontWeight: 700,
-                    fontSize: 14,
-                    marginBottom: 4,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      background: theme.primary,
-                      boxShadow: `0 0 6px ${theme.primary}`,
-                    }}
-                  />
-                  {opt.label}
-                </div>
-                <div style={{ fontSize: 12, color: theme.textSoft }}>
-                  {opt.desc}
-                </div>
-              </button>
-            );
-          })}
+          {THEME_CHOICES.map((opt) => (
+            <ThemeChoiceButton
+              key={opt.id}
+              opt={opt}
+              active={opt.id === themeId}
+              onClick={() => setThemeId(opt.id)}
+            />
+          ))}
         </div>
       </section>
 
@@ -188,7 +260,12 @@ export default function Settings({ go }: Props) {
         }}
       >
         <h2
-          style={{ margin: 0, marginBottom: 6, fontSize: 18, color: theme.primary }}
+          style={{
+            margin: 0,
+            marginBottom: 6,
+            fontSize: 18,
+            color: theme.primary,
+          }}
         >
           {t("settings.lang", "Langue")}
         </h2>
