@@ -4,9 +4,9 @@
 // - Médaillon avatar centré & zoom anti-bords (cover + scale)
 // - Layout mobile sans scroll + variante ultra-compacte
 // - Grille 2 colonnes sur tablette
-// - [NEW] Couronne d’étoiles EXTERNE autour du médaillon (ProfileStarRing)
-// - [NEW] Lecture instantanée des stats via statsLiteIDB (mini-cache sync)
-// - [THEME] Couleurs pilotées par ThemeContext
+// - Couronne d’étoiles EXTERNE autour du médaillon (ProfileStarRing)
+// - Lecture instantanée des stats via statsLiteIDB (mini-cache sync)
+// - Thème piloté par ThemeContext (bg / card / primary / text)
 // ============================================
 
 import React from "react";
@@ -169,8 +169,8 @@ export default function Home({
             fontSize: "clamp(var(--title-min), var(--title-ideal), var(--title-max))",
             lineHeight: 1.05,
             margin: "4px 0 6px",
-            color: "var(--gold-2)",
-            textShadow: "0 6px 18px rgba(240,177,42,.35)",
+            color: theme.primary,
+            textShadow: `0 6px 18px ${theme.primary}55`,
             whiteSpace: "normal",
             wordBreak: "break-word",
             paddingInline: 8,
@@ -187,7 +187,11 @@ export default function Home({
               fontSize: 15,
               padding: "10px 22px",
               borderRadius: 14,
-              boxShadow: "0 0 18px rgba(240,177,42,.22)",
+              boxShadow: `0 0 18px ${theme.primary}55`,
+              border: "none",
+              background: theme.primary,
+              color: "#000",
+              fontWeight: 700,
             }}
             onClick={onConnect ?? (() => go("profiles"))}
           >
@@ -199,6 +203,7 @@ export default function Home({
             status={mergedStatus}
             onNameClick={() => go("stats")}
             basicStats={basicStats}
+            theme={theme}
           />
         ) : null}
       </div>
@@ -295,17 +300,19 @@ function useBasicStats(playerId: string) {
   return state; // { games, darts, avg3, bestVisit, bestCheckout, wins, winRate? }
 }
 
-/* ---------- Carte dorée du profil connecté + RING ÉTOILES ---------- */
+/* ---------- Carte profil + RING ÉTOILES, thématisée ---------- */
 function ActiveProfileCard({
   profile,
   status,
   onNameClick,
   basicStats,
+  theme,
 }: {
   profile: Profile;
   status: "online" | "away" | "offline";
   onNameClick: () => void;
   basicStats?: BasicProfileStats;
+  theme: any;
 }) {
   // Fallback legacy si jamais des anciennes cartes poussent encore des valeurs
   const legacy = (profile as any).stats || {};
@@ -354,10 +361,10 @@ function ActiveProfileCard({
 
   const statusColor =
     status === "away"
-      ? "var(--gold-2)"
+      ? theme.textSoft
       : status === "offline"
       ? "#9aa"
-      : "var(--ok)";
+      : theme.primary;
 
   // === Paramètres ring externe (alignés avec Profiles.tsx) ===
   const AVA = getCssNumber("--avatar-size", 92); // diamètre avatar réel en px
@@ -371,9 +378,8 @@ function ActiveProfileCard({
         width: "100%",
         maxWidth: 420,
         margin: "0 auto",
-        background:
-          "linear-gradient(180deg, rgba(240,177,42,.25), rgba(240,177,42,.10))",
-        borderColor: "rgba(240,177,42,.45)",
+        background: `linear-gradient(180deg, ${theme.primary}40, ${theme.primary}20)`,
+        borderColor: theme.primary,
         borderWidth: 1,
         borderStyle: "solid",
         borderRadius: 18,
@@ -383,7 +389,7 @@ function ActiveProfileCard({
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        boxShadow: "0 8px 25px rgba(240,177,42,.15)",
+        boxShadow: `0 8px 25px ${theme.primary}33`,
         gap: 6,
       }}
     >
@@ -424,8 +430,8 @@ function ActiveProfileCard({
             position: "absolute",
             inset: 0,
             borderRadius: "50%",
-            border: "2px solid rgba(240,177,42,.5)",
-            boxShadow: "0 0 20px rgba(240,177,42,.25)",
+            border: `2px solid ${theme.primary}88`,
+            boxShadow: `0 0 20px ${theme.primary}55`,
             overflow: "hidden",
             background: "#000",
           }}
@@ -464,7 +470,7 @@ function ActiveProfileCard({
               position: "absolute",
               inset: 0,
               borderRadius: "50%",
-              boxShadow: "inset 0 0 0 3px rgba(240,177,42,.25)",
+              boxShadow: `inset 0 0 0 3px ${theme.primary}40`,
               pointerEvents: "none",
             }}
           />
@@ -478,10 +484,10 @@ function ActiveProfileCard({
         style={{
           padding: 0,
           margin: 0,
-          color: "var(--gold-2)",
+          color: theme.primary,
           fontWeight: 900,
           fontSize: 20,
-          textShadow: "0 0 12px rgba(240,177,42,.35)",
+          textShadow: `0 0 12px ${theme.primary}55`,
         }}
         title="Voir mes statistiques"
       >
@@ -534,19 +540,28 @@ function ActiveProfileCard({
           flexWrap: "wrap",
         }}
       >
-        <StatMini label="Moy/3" value={avg3} />
-        <StatMini label="Best" value={best} />
-        <StatMini label="CO" value={co} />
+        <StatMini label="Moy/3" value={avg3} theme={theme} />
+        <StatMini label="Best" value={best} theme={theme} />
+        <StatMini label="CO" value={co} theme={theme} />
         <StatMini
           label="Win%"
           value={winRate !== null ? `${Math.round(Number(winRate))}%` : "—"}
+          theme={theme}
         />
       </div>
     </div>
   );
 }
 
-function StatMini({ label, value }: { label: string; value: string }) {
+function StatMini({
+  label,
+  value,
+  theme,
+}: {
+  label: string;
+  value: string;
+  theme: any;
+}) {
   return (
     <div style={{ textAlign: "center" }}>
       <div
@@ -558,8 +573,8 @@ function StatMini({ label, value }: { label: string; value: string }) {
       <div
         style={{
           fontWeight: 800,
-          color: "var(--gold-2)",
-          textShadow: "0 0 8px rgba(240,177,42,.3)",
+          color: theme.primary,
+          textShadow: `0 0 8px ${theme.primary}55`,
         }}
       >
         {value}
@@ -606,7 +621,7 @@ function HomeCard({
       onMouseEnter={(e) => {
         if (disabled) return;
         e.currentTarget.style.boxShadow =
-          "0 0 18px rgba(240,177,42,.18), 0 8px 18px rgba(0,0,0,.38)";
+          "0 0 18px rgba(0,0,0,.45), 0 8px 18px rgba(0,0,0,.65)";
       }}
       onMouseLeave={(e) => {
         if (disabled) return;
@@ -631,11 +646,11 @@ function HomeCard({
 
       <div
         style={{
-          color: "var(--gold-2)",
+          color: theme.primary,
           fontWeight: 900,
           letterSpacing: 0.6,
           fontSize: "var(--menu-title)",
-          textShadow: "0 0 12px rgba(240,177,42,.4)",
+          textShadow: `0 0 12px ${theme.primary}55`,
         }}
       >
         {title}
