@@ -1,9 +1,9 @@
 // ============================================
 // src/pages/Games.tsx — Sélecteur de modes de jeu
-// Style harmonisé avec TrainingMenu & Accueil
-// - Cartes sombres, titre doré néon centré
-// - Pastille "i" à droite, blanche
-// - Pas de bouton "Jouer" (le bloc entier est cliquable)
+// Style harmonisé avec TrainingMenu
+// - Cartes sombres, titre doré néon
+// - Modes grisés : titre + sous-titre gris, non cliquables
+// - Pastille "i" blanche à droite (overlay d'aide)
 // ============================================
 
 import React from "react";
@@ -54,7 +54,7 @@ const GAMES: GameDef[] = [
   {
     id: "shanghai",
     title: "SHANGHAI",
-    subtitle: "Cible du tour, S/D/T — Shanghai = win.",
+    subtitle: "Cible du tour, SDT — Shanghai = win.",
     tab: "shanghai",
     enabled: false,
   },
@@ -168,8 +168,11 @@ function GameCard({
   onInfo,
   disabled,
 }: GameCardProps) {
+  const isDisabled = !!disabled;
+
   const handleClick: React.MouseEventHandler<HTMLButtonElement> = (e) => {
-    if (disabled) {
+    if (isDisabled) {
+      // on ne navigue pas, mais on laisse le clic atteindre le bouton "i" si besoin
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -179,8 +182,8 @@ function GameCard({
 
   return (
     <button
-      aria-disabled={disabled ? true : undefined}
-      disabled={disabled}
+      aria-disabled={isDisabled ? true : undefined}
+      // ⚠️ surtout PAS de disabled ici, sinon le "i" ne reçoit plus les clics
       onClick={handleClick}
       style={{
         position: "relative",
@@ -191,25 +194,24 @@ function GameCard({
         border: "1px solid rgba(255,255,255,.08)",
         background:
           "linear-gradient(180deg, rgba(15,15,20,.92), rgba(5,5,10,.96))",
-        opacity: disabled ? 0.55 : 1,
-        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: isDisabled ? 0.55 : 1,
+        cursor: isDisabled ? "default" : "pointer",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         transition: "transform 0.15s ease, box-shadow 0.15s ease",
         pointerEvents: "auto",
-        boxShadow: disabled ? "none" : "0 0 12px rgba(0,0,0,0.8)",
+        boxShadow: isDisabled ? "none" : "0 0 12px rgba(0,0,0,0.8)",
       }}
       onMouseEnter={(e) => {
-        if (disabled) return;
+        if (isDisabled) return;
         e.currentTarget.style.transform = "scale(1.02)";
         e.currentTarget.style.boxShadow = "0 0 18px rgba(240,177,42,.3)";
       }}
       onMouseLeave={(e) => {
+        if (isDisabled) return;
         e.currentTarget.style.transform = "scale(1)";
-        e.currentTarget.style.boxShadow = disabled
-          ? "none"
-          : "0 0 12px rgba(0,0,0,0.8)";
+        e.currentTarget.style.boxShadow = "0 0 12px rgba(0,0,0,0.8)";
       }}
     >
       {/* Texte centré */}
@@ -217,12 +219,13 @@ function GameCard({
         <div
           style={{
             fontWeight: 800,
-            fontSize: 16, // même esprit que les menus Accueil
+            fontSize: 16,
             textTransform: "uppercase",
             letterSpacing: 0.9,
-            color: "#FDE68A",
-            textShadow:
-              "0 0 6px rgba(250,204,21,0.9), 0 0 14px rgba(250,204,21,0.5)",
+            color: isDisabled ? "#9CA3AF" : "#FDE68A",
+            textShadow: isDisabled
+              ? "none"
+              : "0 0 6px rgba(250,204,21,0.9), 0 0 14px rgba(250,204,21,0.5)",
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -235,8 +238,8 @@ function GameCard({
           <div
             style={{
               fontSize: 12,
-              opacity: 0.78,
-              color: "#E5E7EB",
+              opacity: 0.9,
+              color: isDisabled ? "#6B7280" : "#E5E7EB",
               marginTop: 3,
               whiteSpace: "nowrap",
               overflow: "hidden",
@@ -248,7 +251,7 @@ function GameCard({
         )}
       </div>
 
-      {/* Pastille "i" à droite (blanche) */}
+      {/* Pastille "i" blanche à droite */}
       <div
         style={{
           position: "absolute",
@@ -310,43 +313,25 @@ function InfoOverlay({ game, onClose }: { game: GameId; onClose: () => void }) {
     lines = [
       "Accède au menu Training dédié.",
       "Retrouve le Training X01 solo, le Tour de l’horloge, et l’Evolution de tes stats.",
-      "Idéal pour travailler ton niveau en détail.",
     ];
   } else if (game === "x01") {
     title = "X01";
     lines = [
       "Modes 301 / 501 / 701 / 901, en Multi local.",
       "Gestion des sets / legs selon tes paramètres.",
-      "Double out, simple out, statistiques complètes en fin de match.",
     ];
   } else if (game === "cricket") {
     title = "Cricket";
     lines = [
       "Objectif : fermer les zones 15 à 20 + Bull.",
       "Une fois ta zone fermée, tu marques des points tant que l’adversaire ne l’a pas fermée.",
-      "Le premier à atteindre le meilleur total une fois tout fermé gagne la manche.",
     ];
-  } else if (game === "killer") {
-    title = "Killer";
-    lines = [
-      "Chaque joueur choisit un numéro.",
-      "Devient Killer en touchant ton numéro en double.",
-      "Ensuite, vise les numéros des autres pour les éliminer.",
-    ];
-  } else if (game === "shanghai") {
-    title = "Shanghai";
-    lines = [
-      "Chaque tour, une cible est définie (1, 2, 3, …).",
-      "Simple / Double / Triple sur la cible du tour pour marquer.",
-      "Shanghai = S + D + T sur la même cible → victoire instantanée.",
-    ];
-  } else {
-    title = "Battle Royale";
-    lines = [
-      "Mode fun à plusieurs avec éliminations successives.",
-      "Chaque joueur a un capital de points / vies.",
-      "Perds des points si tu rates, élimine les autres en marquant.",
-    ];
+  } else if (game === "killer" || game === "shanghai" || game === "battle") {
+    if (game === "killer") title = "Killer";
+    else if (game === "shanghai") title = "Shanghai";
+    else title = "Battle Royale";
+
+    lines = ["En développement"];
   }
 
   return (
