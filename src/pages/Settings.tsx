@@ -1,6 +1,9 @@
 // ============================================
 // src/pages/Settings.tsx
-// Menu Réglages — Thème global + Langue
+// Page Réglages — Thème global + Langue
+// - Sélection du thème (couleurs néon)
+// - Sélection de la langue (i18n)
+// - Appliqué à TOUTE l’application via ThemeProvider / LangProvider
 // ============================================
 
 import React from "react";
@@ -13,311 +16,231 @@ type Props = {
 
 export default function Settings({ go }: Props) {
   const { theme, themeId, setThemeId, themes } = useTheme();
-  const { lang, setLang, t, availableLangs } = useLang();
-
-  function handleBackHome() {
-    if (!go) return;
-    // adapte la valeur du tab selon ton App.tsx ("home", "menu", etc.)
-    go("home");
-  }
+  const { lang, setLang, availableLangs } = useLang();
 
   return (
     <div
+      className="container"
       style={{
         minHeight: "100vh",
-        padding: "16px",
-        paddingBottom: 80,
-        background: `radial-gradient(circle at top, rgba(255,255,255,0.08) 0, transparent 55%), ${theme.bg}`,
-        color: theme.text,
+        padding: 16,
+        paddingBottom: 90,
         boxSizing: "border-box",
+        background: theme.bg,
+        color: theme.text,
       }}
     >
-      {/* HEADER */}
+      {/* Header */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
           marginBottom: 16,
+          gap: 8,
         }}
       >
-        <button
-          onClick={handleBackHome}
+        {go && (
+          <button
+            onClick={() => go("home")}
+            style={{
+              border: "none",
+              background: "transparent",
+              color: theme.textSoft,
+              fontSize: 18,
+              padding: 4,
+            }}
+          >
+            ←
+          </button>
+        )}
+        <h1
           style={{
-            border: "none",
-            background: "transparent",
-            color: theme.textSoft,
-            fontSize: 18,
-            marginRight: 12,
-            cursor: "pointer",
+            fontSize: 20,
+            margin: 0,
+            textTransform: "uppercase",
+            letterSpacing: 1.5,
+            color: theme.text,
           }}
         >
-          ←
-        </button>
-        <div>
-          <div
-            style={{
-              fontSize: 13,
-              textTransform: "uppercase",
-              letterSpacing: 2,
-              color: theme.textSoft,
-            }}
-          >
-            Darts Counter
-          </div>
-          <div
-            style={{
-              fontSize: 24,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: 1.8,
-            }}
-          >
-            {t("settings_title")}
-          </div>
-        </div>
+          Réglages
+        </h1>
       </div>
 
-      {/* CARTE THEME */}
-      <div
+      {/* Bloc THÈME */}
+      <section
         style={{
-          background: theme.card,
-          borderRadius: 18,
+          marginBottom: 20,
           padding: 16,
-          marginBottom: 16,
+          borderRadius: 16,
+          background: theme.card,
           border: `1px solid ${theme.borderSoft}`,
-          boxShadow: `0 0 40px rgba(0,0,0,0.55)`,
+          boxShadow: "0 12px 30px rgba(0,0,0,.45)",
         }}
       >
-        <div
+        <h2
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 10,
+            fontSize: 15,
+            margin: 0,
+            marginBottom: 6,
+            textTransform: "uppercase",
+            letterSpacing: 1.2,
+            color: theme.text,
           }}
         >
-          <div>
-            <div
-              style={{
-                fontSize: 14,
-                textTransform: "uppercase",
-                letterSpacing: 1.4,
-                color: theme.textSoft,
-              }}
-            >
-              {t("settings_theme_section")}
-            </div>
-          </div>
-          <div
-            style={{
-              width: 12,
-              height: 12,
-              borderRadius: "999px",
-              background: theme.primary,
-              boxShadow: `0 0 12px ${theme.primary}`,
-            }}
-          />
-        </div>
-
+          Thème de l'application
+        </h2>
         <p
           style={{
+            margin: 0,
+            marginBottom: 10,
             fontSize: 12,
             color: theme.textSoft,
-            marginBottom: 12,
           }}
         >
-          {t("settings_theme_hint")}
+          Choisis le style de couleurs néon pour toute l’interface.
         </p>
 
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-            gap: 10,
-            marginTop: 8,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 8,
+            marginTop: 6,
           }}
         >
-          {themes.map((th) => {
-            const active = th.id === themeId;
+          {themes.map((t) => {
+            const selected = t.id === themeId;
+            const displayName =
+              (t as any).label || (t as any).name || t.id.toUpperCase();
+
             return (
               <button
-                key={th.id}
-                onClick={() => setThemeId(th.id)}
+                key={t.id}
+                onClick={() => setThemeId(t.id)}
                 style={{
-                  position: "relative",
-                  padding: "10px 12px",
-                  borderRadius: 14,
-                  border: active
-                    ? `1px solid ${th.primary}`
+                  flexGrow: 0,
+                  padding: "8px 12px",
+                  borderRadius: 999,
+                  border: selected
+                    ? `1px solid ${theme.primary}`
                     : `1px solid ${theme.borderSoft}`,
-                  background: `linear-gradient(135deg, ${th.card} 0%, ${th.bg} 100%)`,
-                  cursor: "pointer",
+                  background: selected
+                    ? "rgba(255,255,255,0.08)"
+                    : "rgba(0,0,0,0.3)",
+                  color: theme.text,
+                  fontSize: 12,
+                  fontWeight: selected ? 700 : 500,
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "space-between",
-                  boxShadow: active
-                    ? `0 0 12px ${th.primary}`
-                    : "0 0 0 rgba(0,0,0,0)",
+                  gap: 6,
                 }}
               >
                 <span
+                  aria-hidden
                   style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: th.text,
+                    width: 14,
+                    height: 14,
+                    borderRadius: "50%",
+                    background: (t as any).primary || theme.primary,
+                    boxShadow: selected
+                      ? `0 0 10px ${(t as any).primary || theme.primary}`
+                      : "none",
                   }}
-                >
-                  {th.name}
-                </span>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 4,
-                    alignItems: "center",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 16,
-                      height: 16,
-                      borderRadius: "999px",
-                      background: th.primary,
-                    }}
-                  />
-                  <div
-                    style={{
-                      width: 16,
-                      height: 16,
-                      borderRadius: "999px",
-                      background: th.accent1,
-                    }}
-                  />
-                </div>
+                />
+                <span>{displayName}</span>
               </button>
             );
           })}
         </div>
-      </div>
+      </section>
 
-      {/* CARTE LANGUE */}
-      <div
+      {/* Bloc LANGUE */}
+      <section
         style={{
-          background: theme.card,
-          borderRadius: 18,
+          marginBottom: 20,
           padding: 16,
-          marginBottom: 16,
+          borderRadius: 16,
+          background: theme.card,
           border: `1px solid ${theme.borderSoft}`,
-          boxShadow: `0 0 40px rgba(0,0,0,0.55)`,
+          boxShadow: "0 12px 30px rgba(0,0,0,.45)",
         }}
       >
-        <div
+        <h2
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 10,
+            fontSize: 15,
+            margin: 0,
+            marginBottom: 6,
+            textTransform: "uppercase",
+            letterSpacing: 1.2,
+            color: theme.text,
           }}
         >
-          <div>
-            <div
-              style={{
-                fontSize: 14,
-                textTransform: "uppercase",
-                letterSpacing: 1.4,
-                color: theme.textSoft,
-              }}
-            >
-              {t("settings_language_section")}
-            </div>
-          </div>
-          <div
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              border: `1px solid ${theme.borderSoft}`,
-              fontSize: 11,
-              textTransform: "uppercase",
-              letterSpacing: 1,
-              color: theme.textSoft,
-            }}
-          >
-            {lang.toUpperCase()}
-          </div>
-        </div>
-
+          Langue
+        </h2>
         <p
           style={{
+            margin: 0,
+            marginBottom: 10,
             fontSize: 12,
             color: theme.textSoft,
-            marginBottom: 12,
           }}
         >
-          {t("settings_language_hint")}
+          Choisis la langue d’affichage de l’application.
         </p>
 
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+            display: "flex",
+            flexWrap: "wrap",
             gap: 8,
+            marginTop: 6,
           }}
         >
           {availableLangs.map((l) => {
-            const active = l.code === lang;
+            const selected = l.code === lang;
+            const label = (l as any).label || l.code.toUpperCase();
+
             return (
               <button
                 key={l.code}
                 onClick={() => setLang(l.code)}
                 style={{
-                  padding: "8px 10px",
+                  padding: "7px 12px",
                   borderRadius: 999,
-                  border: active
+                  border: selected
                     ? `1px solid ${theme.primary}`
                     : `1px solid ${theme.borderSoft}`,
-                  background: active
-                    ? "rgba(255,255,255,0.04)"
-                    : "rgba(0,0,0,0.25)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  cursor: "pointer",
-                  fontSize: 13,
+                  background: selected
+                    ? "rgba(255,255,255,0.08)"
+                    : "rgba(0,0,0,0.3)",
                   color: theme.text,
-                  boxShadow: active
-                    ? `0 0 10px ${theme.primary}`
-                    : "0 0 0 rgba(0,0,0,0)",
+                  fontSize: 12,
+                  fontWeight: selected ? 700 : 500,
                 }}
               >
-                <span>{l.flag}</span>
-                <span>{l.label}</span>
+                {label}
               </button>
             );
           })}
         </div>
-      </div>
+      </section>
 
-      {/* BOUTON RETOUR ACCUEIL */}
-      <button
-        onClick={handleBackHome}
+      {/* Bloc info / version (optionnel) */}
+      <section
         style={{
-          width: "100%",
-          marginTop: 8,
-          padding: "10px 14px",
-          borderRadius: 999,
-          border: "none",
-          cursor: "pointer",
-          fontSize: 14,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: 1.4,
-          background: `linear-gradient(90deg, ${theme.primary}, ${theme.accent1})`,
-          color: "#000",
-          boxShadow: `0 0 16px ${theme.primary}`,
+          padding: 14,
+          borderRadius: 14,
+          background: "rgba(0,0,0,0.45)",
+          border: `1px dashed ${theme.borderSoft}`,
+          fontSize: 11,
+          color: theme.textSoft,
         }}
       >
-        {t("settings_back_home")}
-      </button>
+        <div style={{ marginBottom: 4 }}>
+          Darts Counter — Réglages globaux (thème &amp; langue).
+        </div>
+        <div>Les changements sont sauvegardés automatiquement.</div>
+      </section>
     </div>
   );
 }
