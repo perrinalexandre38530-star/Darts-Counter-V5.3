@@ -25,7 +25,9 @@ import Home from "./pages/Home";
 import Games from "./pages/Games";
 import Profiles from "./pages/Profiles";
 import FriendsPage from "./pages/FriendsPage";
-import SettingsPage from "./pages/SettingsPage";
+// ⛔ Ancienne page réglages supprimée
+// import SettingsPage from "./pages/SettingsPage";
+import Settings from "./pages/Settings";
 import X01Setup from "./pages/X01Setup";
 import X01Play from "./pages/X01Play";
 import CricketPlay from "./pages/CricketPlay";
@@ -44,6 +46,10 @@ import TrainingClock from "./pages/TrainingClock";
 
 // Historique (pour StatsDetail / upsert / get)
 import { History } from "./lib/history";
+
+// ✅ Contexts Thème + Langue
+import { ThemeProvider } from "./contexts/ThemeContext";
+import { LangProvider } from "./contexts/LangContext";
 
 // DEV uniquement
 import { installHistoryProbe } from "./dev/devHistoryProbe";
@@ -209,7 +215,7 @@ function SWUpdateBanner() {
 // ===== fin SW update prompt =====
 
 // --------------------------------------------
-export default function App() {
+function App() {
   const [store, setStore] = React.useState<Store>(initialStore);
   const [tab, setTab] = React.useState<Tab>("home");
   const [routeParams, setRouteParams] = React.useState<any>(null);
@@ -439,12 +445,8 @@ export default function App() {
       }
 
       case "settings": {
-        page = (
-          <SettingsPage
-            value={store.settings}
-            onChange={(s) => update((st) => ({ ...st, settings: s }))}
-          />
-        );
+        // ✅ Nouvelle page Settings (thème + langue)
+        page = <Settings go={go} />;
         break;
       }
 
@@ -683,5 +685,16 @@ export default function App() {
       {/* Bannière de mise à jour PWA */}
       <SWUpdateBanner />
     </>
+  );
+}
+
+// ✅ Wrapper global avec Thème + Langue
+export default function AppRoot() {
+  return (
+    <ThemeProvider>
+      <LangProvider>
+        <App />
+      </LangProvider>
+    </ThemeProvider>
   );
 }

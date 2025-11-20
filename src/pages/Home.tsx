@@ -17,6 +17,7 @@ import {
   type BasicProfileStats,
 } from "../lib/statsLiteIDB";
 import { useAuthOnline } from "../hooks/useAuthOnline";
+import { useTheme } from "../contexts/ThemeContext";
 
 type Tab =
   | "home"
@@ -66,6 +67,9 @@ export default function Home({
   } else {
     mergedStatus = "online";
   }
+
+  // 🎨 Thème global
+  const { theme } = useTheme();
 
   return (
     <div
@@ -226,6 +230,53 @@ export default function Home({
           icon={<Icon name="stats" size={24} />}
           onClick={() => go("stats")}
         />
+
+        {/* ===== CARTE RÉGLAGES (thème + langue) ===== */}
+        <div
+          onClick={() => go("settings")}
+          style={{
+            cursor: "pointer",
+            background: theme.card,
+            borderRadius: 18,
+            padding: 16,
+            border: `1px solid ${theme.borderSoft}`,
+            boxShadow: `0 0 24px rgba(0,0,0,0.6)`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 12,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 14,
+                textTransform: "uppercase",
+                letterSpacing: 1.6,
+                color: theme.textSoft,
+              }}
+            >
+              Réglages
+            </div>
+            <div style={{ fontSize: 12, color: theme.textSoft }}>
+              Thème &amp; langue de l'application
+            </div>
+          </div>
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              border: `1px solid ${theme.borderSoft}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: `0 0 10px ${theme.primary}`,
+            }}
+          >
+            ⚙️
+          </div>
+        </div>
       </div>
 
       {/* Spacer bas = hauteur BottomNav */}
