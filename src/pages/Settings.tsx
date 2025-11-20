@@ -66,6 +66,10 @@ const LANG_CHOICES: { id: Lang; defaultLabel: string }[] = [
   { id: "it", defaultLabel: "Italiano" },
   { id: "pt", defaultLabel: "Português" },
   { id: "nl", defaultLabel: "Nederlands" },
+  { id: "ru", defaultLabel: "Русский" },
+  { id: "zh", defaultLabel: "中文" },
+  { id: "ja", defaultLabel: "日本語" },
+  { id: "ar", defaultLabel: "العربية" },
 ];
 
 const LANG_FLAGS: Record<Lang, string> = {
@@ -76,6 +80,10 @@ const LANG_FLAGS: Record<Lang, string> = {
   it: "🇮🇹",
   pt: "🇵🇹",
   nl: "🇳🇱",
+  ru: "🇷🇺",
+  zh: "🇨🇳",
+  ja: "🇯🇵",
+  ar: "🇸🇦",
 };
 
 // ---------------- Animation halo une seule fois ----------------
