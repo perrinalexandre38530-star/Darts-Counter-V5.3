@@ -1,12 +1,9 @@
 // ============================================
 // src/pages/Home.tsx
 // Accueil + Carte profil (stats unifiées)
-// - Médaillon avatar centré & zoom anti-bords (cover + scale)
-// - Layout mobile sans scroll + variante ultra-compacte
-// - Grille 2 colonnes sur tablette
-// - Couronne d’étoiles EXTERNE autour du médaillon (ProfileStarRing)
-// - Lecture instantanée des stats via statsLiteIDB (mini-cache sync)
-// - Thème piloté par ThemeContext (bg / card / primary / text)
+// - Médaillon avatar + ring d’étoiles
+// - Thème piloté par ThemeContext
+// - Textes pilotés par LangContext (t())
 // ============================================
 
 import React from "react";
@@ -19,6 +16,7 @@ import {
 } from "../lib/statsLiteIDB";
 import { useAuthOnline } from "../hooks/useAuthOnline";
 import { useTheme } from "../contexts/ThemeContext";
+import { useLang } from "../contexts/LangContext";
 
 type Tab =
   | "home"
@@ -37,12 +35,14 @@ type Tab =
 
 export default function Home({
   store,
+  update, // reçu depuis App, pas utilisé ici mais gardé pour compat
   go,
   showConnect = true,
   onConnect,
 }: {
   store: Store;
-  go: (tab: Tab) => void;
+  update?: (fn: any) => void;
+  go: (tab: Tab, params?: any) => void;
   showConnect?: boolean;
   onConnect?: () => void;
 }) {
@@ -52,25 +52,18 @@ export default function Home({
 
   const basicStats = active?.id ? useBasicStats(active.id) : undefined;
 
-  // 🌐 Auth online (mock ou futur backend)
+  // 🌐 Auth online
   const { status: onlineStatus } = useAuthOnline();
   const isSignedIn = onlineStatus === "signed_in";
-
-  // statut local (selfStatus dans le store : "online" | "away" | "offline")
   const localStatus = (store?.selfStatus as any) || "offline";
 
-  // statut combiné (session + selfStatus)
   let mergedStatus: "online" | "away" | "offline" = "offline";
-  if (!isSignedIn) {
-    mergedStatus = "offline";
-  } else if (localStatus === "away") {
-    mergedStatus = "away";
-  } else {
-    mergedStatus = "online";
-  }
+  if (!isSignedIn) mergedStatus = "offline";
+  else if (localStatus === "away") mergedStatus = "away";
+  else mergedStatus = "online";
 
-  // 🎨 Thème global
   const { theme } = useTheme();
+  const { t } = useLang();
 
   return (
     <div
@@ -90,7 +83,6 @@ export default function Home({
         color: theme.text,
       }}
     >
-      {/* ---- Styles responsives & variables ---- */}
       <style>{`
         .home-page {
           --title-min: 28px;
@@ -99,14 +91,13 @@ export default function Home({
           --card-pad: 16px;
           --menu-gap: 10px;
           --avatar-size: 92px;
-          --avatar-scale: 1.06; /* léger zoom pour manger les bords transparents */
-          --avatar-dx: 0px;     /* micro-réglage optionnel horizontal */
-          --avatar-dy: 0px;     /* micro-réglage optionnel vertical */
+          --avatar-scale: 1.06;
+          --avatar-dx: 0px;
+          --avatar-dy: 0px;
           --bottomnav-h: 70px;
           --menu-title: 16px;
           --menu-sub: 12.5px;
         }
-        /* Ultra-compact: petits téléphones / faible hauteur */
         @media (max-height: 680px), (max-width: 360px) {
           .home-page {
             --title-min: 24px;
@@ -120,12 +111,9 @@ export default function Home({
             --bottomnav-h: 64px;
           }
         }
-        /* Tablette: élargir et basculer les cartes en 2 colonnes */
         @media (min-width: 640px) {
           .home-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--menu-gap); }
         }
-
-        /* Petit scintillement néon du point de statut */
         @keyframes homeStatusFlicker {
           0%, 100% {
             transform: scale(1);
@@ -160,7 +148,7 @@ export default function Home({
           className="title-accent"
           style={{ marginBottom: 0, color: theme.textSoft }}
         >
-          Bienvenue
+          {t("home.welcome", "Bienvenue")}
         </div>
 
         <h1
@@ -177,7 +165,7 @@ export default function Home({
             maxWidth: "100%",
           }}
         >
-          DARTS COUNTER
+          {t("home.title", "DARTS COUNTER")}
         </h1>
 
         {!active && showConnect ? (
@@ -195,7 +183,7 @@ export default function Home({
             }}
             onClick={onConnect ?? (() => go("profiles"))}
           >
-            SE CONNECTER
+            {t("home.connect", "SE CONNECTER")}
           </button>
         ) : active ? (
           <ActiveProfileCard
@@ -203,56 +191,67 @@ export default function Home({
             status={mergedStatus}
             onNameClick={() => go("stats")}
             basicStats={basicStats}
-            theme={theme}
           />
         ) : null}
       </div>
 
-      {/* ===== ACCÈS RAPIDES (SANS bloc Réglages) ===== */}
+      {/* ===== ACCÈS RAPIDES ===== */}
       <div
         className="list home-grid"
         style={{
           width: "100%",
           maxWidth: 520,
           gap: "var(--menu-gap)",
-          display: "flex", // remplacé par grid >=640px via .home-grid
+          display: "flex",
           flexDirection: "column",
           paddingInline: 12,
         }}
       >
         <HomeCard
-          title="PROFILS"
-          subtitle="Création et gestion de profils"
+          title={t("home.card.profiles.title", "PROFILS")}
+          subtitle={t(
+            "home.card.profiles.subtitle",
+            "Création et gestion de profils"
+          )}
           icon={<Icon name="profiles" size={24} />}
           onClick={() => go("profiles")}
         />
         <HomeCard
-          title="JEU LOCAL"
-          subtitle="Accède à tous les modes de jeu"
+          title={t("home.card.local.title", "JEU LOCAL")}
+          subtitle={t(
+            "home.card.local.subtitle",
+            "Accède à tous les modes de jeu"
+          )}
           icon={<Icon name="target" size={24} />}
           onClick={() => go("games")}
         />
         <HomeCard
-          title="JEU ONLINE"
-          subtitle="Parties à distance (mode à venir)"
+          title={t("home.card.online.title", "JEU ONLINE")}
+          subtitle={t(
+            "home.card.online.subtitle",
+            "Parties à distance (mode à venir)"
+          )}
           icon={<Icon name="online" size={24} />}
           onClick={() => go("friends")}
         />
         <HomeCard
-          title="STATS"
-          subtitle="Statistiques et historiques"
+          title={t("home.card.stats.title", "STATS")}
+          subtitle={t(
+            "home.card.stats.subtitle",
+            "Statistiques et historiques"
+          )}
           icon={<Icon name="stats" size={24} />}
           onClick={() => go("stats")}
         />
       </div>
 
-      {/* Spacer bas = hauteur BottomNav */}
+      {/* Espace pour la BottomNav */}
       <div style={{ height: "var(--bottomnav-h)" }} />
     </div>
   );
 }
 
-/* ---------- PATCH: lecture réactive depuis statsLiteIDB ---------- */
+/* ---------- Stats lite ---------- */
 function useBasicStats(playerId: string) {
   const getSnap = React.useCallback(
     () => (playerId ? getBasicProfileStatsSync(playerId) : undefined),
@@ -262,10 +261,8 @@ function useBasicStats(playerId: string) {
   const [state, setState] = React.useState(getSnap);
 
   React.useEffect(() => {
-    // maj immédiate (ex: après avoir changé de profil actif)
     setState(getSnap());
 
-    // 1) écoute un évent custom (émis par statsLiteIDB lors d’un upsert)
     const onLiteChanged = (e: any) => {
       const pid = e?.detail?.playerId;
       if (!playerId || !pid || pid === playerId || pid === "*") {
@@ -274,7 +271,6 @@ function useBasicStats(playerId: string) {
     };
     window.addEventListener("stats-lite:changed", onLiteChanged as any);
 
-    // 2) fallback navigateur (storage event entre onglets / PWA SW)
     const onStorage = (ev: StorageEvent) => {
       if (ev.key && ev.key.startsWith("dc:statslite:")) {
         setState(getSnap());
@@ -282,12 +278,11 @@ function useBasicStats(playerId: string) {
     };
     window.addEventListener("storage", onStorage);
 
-    // 3) ultime filet de sécu: petit polling court (si aucun event ne part)
     let ticks = 0;
     const id = window.setInterval(() => {
       ticks++;
       setState(getSnap());
-      if (ticks > 10) window.clearInterval(id); // ~20s max
+      if (ticks > 10) window.clearInterval(id);
     }, 2000);
 
     return () => {
@@ -297,24 +292,24 @@ function useBasicStats(playerId: string) {
     };
   }, [playerId, getSnap]);
 
-  return state; // { games, darts, avg3, bestVisit, bestCheckout, wins, winRate? }
+  return state;
 }
 
-/* ---------- Carte profil + RING ÉTOILES, thématisée ---------- */
+/* ---------- Carte profil + ring étoiles ---------- */
 function ActiveProfileCard({
   profile,
   status,
   onNameClick,
   basicStats,
-  theme,
 }: {
   profile: Profile;
   status: "online" | "away" | "offline";
   onNameClick: () => void;
   basicStats?: BasicProfileStats;
-  theme: any;
 }) {
-  // Fallback legacy si jamais des anciennes cartes poussent encore des valeurs
+  const { theme } = useTheme();
+  const { t } = useLang();
+
   const legacy = (profile as any).stats || {};
   const avg3n = isNum(basicStats?.avg3)
     ? basicStats!.avg3
@@ -340,7 +335,6 @@ function ActiveProfileCard({
   const games = isNum(basicStats?.games)
     ? basicStats!.games
     : isNum(legacy.games)
-    ? legacy.games
     : 0;
   const winRate = isNum(basicStats?.winRate)
     ? basicStats!.winRate
@@ -354,22 +348,22 @@ function ActiveProfileCard({
 
   const statusLabel =
     status === "away"
-      ? "Absent"
+      ? t("status.away", "Absent")
       : status === "offline"
-      ? "Hors ligne"
-      : "En ligne";
+      ? t("status.offline", "Hors ligne")
+      : t("status.online", "En ligne");
 
+  // ✅ Couleurs statut comme avant
   const statusColor =
     status === "away"
-      ? theme.textSoft
+      ? "var(--gold-2)" // jaune / orangé
       : status === "offline"
-      ? "#9aa"
-      : theme.primary;
+      ? "#9aa" // gris
+      : "var(--ok)"; // vert (en ligne)
 
-  // === Paramètres ring externe (alignés avec Profiles.tsx) ===
-  const AVA = getCssNumber("--avatar-size", 92); // diamètre avatar réel en px
-  const PAD = 10; // marge externe pour laisser respirer les étoiles
-  const STAR = 14; // taille d’une étoile
+  const AVA = getCssNumber("--avatar-size", 92);
+  const PAD = 10;
+  const STAR = 14;
 
   return (
     <div
@@ -393,7 +387,6 @@ function ActiveProfileCard({
         gap: 6,
       }}
     >
-      {/* ===== Médaillon + RING EXTERNE (non-clippé) ===== */}
       <div
         style={{
           position: "relative",
@@ -402,7 +395,6 @@ function ActiveProfileCard({
           marginBottom: 6,
         }}
       >
-        {/* RING d’étoiles placé DANS le wrapper (pas clipé par overflow) */}
         <div
           aria-hidden
           style={{
@@ -416,7 +408,7 @@ function ActiveProfileCard({
         >
           <ProfileStarRing
             anchorSize={AVA}
-            gapPx={-2} // proche du bord du médaillon
+            gapPx={-2}
             starSize={STAR}
             stepDeg={10}
             rotationDeg={0}
@@ -424,7 +416,6 @@ function ActiveProfileCard({
           />
         </div>
 
-        {/* CERCLE AVATAR — c’est lui qui clippe l’image */}
         <div
           style={{
             position: "absolute",
@@ -464,7 +455,6 @@ function ActiveProfileCard({
             />
           )}
 
-          {/* anneau décoratif interne */}
           <div
             style={{
               position: "absolute",
@@ -477,7 +467,6 @@ function ActiveProfileCard({
         </div>
       </div>
 
-      {/* Nom cliquable */}
       <button
         className="btn ghost"
         onClick={onNameClick}
@@ -494,7 +483,6 @@ function ActiveProfileCard({
         {profile.name}
       </button>
 
-      {/* Statut avec point néon */}
       <div
         className="subtitle"
         style={{
@@ -528,7 +516,6 @@ function ActiveProfileCard({
         </span>
       </div>
 
-      {/* Stats */}
       <div
         style={{
           display: "flex",
@@ -540,28 +527,20 @@ function ActiveProfileCard({
           flexWrap: "wrap",
         }}
       >
-        <StatMini label="Moy/3" value={avg3} theme={theme} />
-        <StatMini label="Best" value={best} theme={theme} />
-        <StatMini label="CO" value={co} theme={theme} />
+        <StatMini label="Moy/3" value={avg3} />
+        <StatMini label="Best" value={best} />
+        <StatMini label="CO" value={co} />
         <StatMini
           label="Win%"
           value={winRate !== null ? `${Math.round(Number(winRate))}%` : "—"}
-          theme={theme}
         />
       </div>
     </div>
   );
 }
 
-function StatMini({
-  label,
-  value,
-  theme,
-}: {
-  label: string;
-  value: string;
-  theme: any;
-}) {
+function StatMini({ label, value }: { label: string; value: string }) {
+  const { theme } = useTheme();
   return (
     <div style={{ textAlign: "center" }}>
       <div
@@ -583,6 +562,7 @@ function StatMini({
   );
 }
 
+/* ---------- Card menu ---------- */
 function HomeCard({
   title,
   subtitle,
@@ -618,15 +598,6 @@ function HomeCard({
         transition: "all .2s ease",
       }}
       onClick={!disabled ? onClick : undefined}
-      onMouseEnter={(e) => {
-        if (disabled) return;
-        e.currentTarget.style.boxShadow =
-          "0 0 18px rgba(0,0,0,.45), 0 8px 18px rgba(0,0,0,.65)";
-      }}
-      onMouseLeave={(e) => {
-        if (disabled) return;
-        e.currentTarget.style.boxShadow = "none";
-      }}
     >
       <div
         className="badge"
