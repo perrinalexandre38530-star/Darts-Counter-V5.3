@@ -51,9 +51,6 @@ import { History } from "./lib/history";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { LangProvider } from "./contexts/LangContext";
 
-// ✅ ErrorBoundary global (crashs React / JS)
-import AppErrorBoundary from "./components/AppErrorBoundary";
-
 // DEV uniquement
 import { installHistoryProbe } from "./dev/devHistoryProbe";
 if (import.meta.env.DEV) installHistoryProbe();
@@ -691,14 +688,12 @@ function App() {
   );
 }
 
-// ✅ Wrapper global avec Thème + Langue + ErrorBoundary
+// ✅ Wrapper global avec Thème + Langue
 export default function AppRoot() {
   return (
     <ThemeProvider>
       <LangProvider>
-        <AppErrorBoundary>
-          <App />
-        </AppErrorBoundary>
+        <App />
       </LangProvider>
     </ThemeProvider>
   );

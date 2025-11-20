@@ -339,7 +339,7 @@ function ActiveProfileCard({
     ? basicStats!.games
     : isNum(legacy.games)
     ? legacy.games
-    : 0; // ✅ ternary corrigé
+    : 0;
 
   const winRate = isNum(basicStats?.winRate)
     ? basicStats!.winRate
@@ -351,22 +351,21 @@ function ActiveProfileCard({
   const best = String(bestVisit || 0);
   const co = String(bestCheckout || 0);
 
-  // mapping statut -> label + couleur FIXE (indépendante du thème)
   const statusConfig: Record<
     "online" | "away" | "offline",
     { label: string; color: string }
   > = {
     online: {
       label: t("status.online", "En ligne"),
-      color: "#3DFF9C", // vert néon
+      color: "#3DFF9C",
     },
     away: {
       label: t("status.away", "Absent"),
-      color: "#F6C256", // jaune / orangé
+      color: "#F6C256",
     },
     offline: {
       label: t("status.offline", "Hors ligne"),
-      color: "#9AA0AA", // gris
+      color: "#9AA0AA",
     },
   };
 

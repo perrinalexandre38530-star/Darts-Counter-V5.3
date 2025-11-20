@@ -7,53 +7,57 @@
 import React from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang, type Lang } from "../contexts/LangContext";
-import { THEMES, type AppTheme } from "../theme/themePresets";
-
-type ThemeId =
-  | "gold"
-  | "pink"
-  | "petrol"
-  | "green"
-  | "magenta"
-  | "red"
-  | "orange"
-  | "white";
+import { THEMES, type ThemeId, type AppTheme } from "../theme/themePresets";
 
 type Props = { go?: (tab: any, params?: any) => void };
 
-// Options de thèmes (id + valeurs par défaut FR)
-const THEME_CHOICES: {
-  id: ThemeId;
-  defaultLabel: string;
-  defaultDesc: string;
-}[] = [
-  { id: "gold", defaultLabel: "Gold néon", defaultDesc: "Thème premium doré" },
-  { id: "pink", defaultLabel: "Rose fluo", defaultDesc: "Ambiance arcade rose" },
-  {
-    id: "petrol",
+// --------------------------------------------------
+// META statique pour l'ordre + descriptions des thèmes
+// --------------------------------------------------
+
+const THEME_ORDER: ThemeId[] = [
+  "gold",
+  "pink",
+  "petrol",
+  "green",
+  "magenta",
+  "red",
+  "orange",
+  "white",
+];
+
+const THEME_META: Record<
+  ThemeId,
+  { defaultLabel: string; defaultDesc: string }
+> = {
+  gold: { defaultLabel: "Gold néon", defaultDesc: "Thème premium doré" },
+  pink: { defaultLabel: "Rose fluo", defaultDesc: "Ambiance arcade rose" },
+  petrol: {
     defaultLabel: "Bleu pétrole",
     defaultDesc: "Bleu profond néon",
   },
-  {
-    id: "green",
+  green: {
     defaultLabel: "Vert néon",
     defaultDesc: "Style practice lumineux",
   },
-  {
-    id: "magenta",
+  magenta: {
     defaultLabel: "Magenta",
     defaultDesc: "Violet / magenta intense",
   },
-  { id: "red", defaultLabel: "Rouge", defaultDesc: "Rouge arcade agressif" },
-  {
-    id: "orange",
+  red: { defaultLabel: "Rouge", defaultDesc: "Rouge arcade agressif" },
+  orange: {
     defaultLabel: "Orange",
     defaultDesc: "Orange chaud énergique",
   },
-  { id: "white", defaultLabel: "Blanc", defaultDesc: "Fond clair moderne" },
-];
+  white: { defaultLabel: "Blanc", defaultDesc: "Fond clair moderne" },
+};
 
-// Options langues (id + valeur par défaut)
+function getPreset(id: ThemeId): AppTheme {
+  const found = THEMES.find((t) => t.id === id);
+  return found ?? THEMES[0];
+}
+
+// Options langues (ordre + fallback label)
 const LANG_CHOICES: { id: Lang; defaultLabel: string }[] = [
   { id: "fr", defaultLabel: "Français" },
   { id: "en", defaultLabel: "English" },
@@ -64,7 +68,7 @@ const LANG_CHOICES: { id: Lang; defaultLabel: string }[] = [
   { id: "nl", defaultLabel: "Nederlands" },
 ];
 
-// Drapeaux (emoji) associés aux langues
+// Drapeaux emoji
 const LANG_FLAGS: Record<Lang, string> = {
   fr: "🇫🇷",
   en: "🇬🇧",
@@ -76,8 +80,7 @@ const LANG_FLAGS: Record<Lang, string> = {
 };
 
 // --------------------------------------------------
-// Helpers pour les thèmes (couleurs propres à chaque carte)
-// + injection de l'animation halo
+// Injection de l'animation halo (une seule fois)
 // --------------------------------------------------
 function injectSettingsAnimationsOnce() {
   if (typeof document === "undefined") return;
@@ -97,13 +100,9 @@ function injectSettingsAnimationsOnce() {
   document.head.appendChild(style);
 }
 
-function getThemePreset(id: ThemeId): AppTheme {
-  const found = THEMES.find((t) => t.id === id);
-  return found ?? THEMES[0];
-}
-
-// ---------- Carte individuelle de thème ----------
-
+// --------------------------------------------------
+// Bouton de thème individuel
+// --------------------------------------------------
 type ThemeChoiceButtonProps = {
   id: ThemeId;
   label: string;
@@ -119,9 +118,8 @@ function ThemeChoiceButton({
   active,
   onClick,
 }: ThemeChoiceButtonProps) {
-  const preset = getThemePreset(id);
+  const preset = getPreset(id);
   const neonColor = preset.primary;
-
   const [hovered, setHovered] = React.useState(false);
 
   const cardBoxShadow =
@@ -162,7 +160,7 @@ function ThemeChoiceButton({
           marginBottom: 4,
         }}
       >
-        {/* Cercle transparent + halo néon animé */}
+        {/* Cercle transparent + halo néon */}
         <span
           style={{
             width: 16,
@@ -170,7 +168,7 @@ function ThemeChoiceButton({
             borderRadius: "50%",
             border: `2px solid ${neonColor}`,
             background: "transparent",
-            color: neonColor, // pour currentColor dans l'animation
+            color: neonColor,
             boxShadow: active
               ? `0 0 10px ${neonColor}, 0 0 22px ${neonColor}`
               : hovered
@@ -187,8 +185,9 @@ function ThemeChoiceButton({
   );
 }
 
-// ---------- Bouton individuel de langue ----------
-
+// --------------------------------------------------
+// Bouton de langue individuel
+// --------------------------------------------------
 type LanguageChoiceButtonProps = {
   id: Lang;
   label: string;
@@ -243,8 +242,9 @@ function LanguageChoiceButton({
   );
 }
 
-// ---------- Composant principal Settings ----------
-
+// --------------------------------------------------
+// Composant principal Settings
+// --------------------------------------------------
 export default function Settings({ go }: Props) {
   const { theme, themeId, setThemeId } = useTheme();
   const { lang, setLang, t } = useLang();
@@ -253,7 +253,6 @@ export default function Settings({ go }: Props) {
     injectSettingsAnimationsOnce();
   }, []);
 
-  // 🎨 Fond dark fixe pour toute la page
   const PAGE_BG = "#050712";
   const CARD_BG = "rgba(8, 10, 20, 0.98)";
 
@@ -302,7 +301,6 @@ export default function Settings({ go }: Props) {
       </div>
 
       {/* ---------- BLOC THEME ---------- */}
-
       <section
         style={{
           background: CARD_BG,
@@ -331,23 +329,24 @@ export default function Settings({ go }: Props) {
             marginTop: 12,
           }}
         >
-          {THEME_CHOICES.map((opt) => {
+          {THEME_ORDER.map((id) => {
+            const meta = THEME_META[id];
             const label = t(
-              `settings.theme.${opt.id}.label`,
-              opt.defaultLabel
+              `settings.theme.${id}.label`,
+              meta.defaultLabel
             );
             const desc = t(
-              `settings.theme.${opt.id}.desc`,
-              opt.defaultDesc
+              `settings.theme.${id}.desc`,
+              meta.defaultDesc
             );
             return (
               <ThemeChoiceButton
-                key={opt.id}
-                id={opt.id}
+                key={id}
+                id={id}
                 label={label}
                 desc={desc}
-                active={opt.id === themeId}
-                onClick={() => setThemeId(opt.id)}
+                active={id === themeId}
+                onClick={() => setThemeId(id)}
               />
             );
           })}
@@ -355,7 +354,6 @@ export default function Settings({ go }: Props) {
       </section>
 
       {/* ---------- BLOC LANGUE ---------- */}
-
       <section
         style={{
           background: CARD_BG,
