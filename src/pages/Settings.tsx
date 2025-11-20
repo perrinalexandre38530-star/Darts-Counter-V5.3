@@ -48,8 +48,20 @@ const LANG_CHOICES: { id: Lang; label: string }[] = [
   { id: "nl", label: "Nederlands" },
 ];
 
+// Drapeaux (emoji) associés aux langues
+const LANG_FLAGS: Record<Lang, string> = {
+  fr: "🇫🇷",
+  en: "🇬🇧",
+  es: "🇪🇸",
+  de: "🇩🇪",
+  it: "🇮🇹",
+  pt: "🇵🇹",
+  nl: "🇳🇱",
+};
+
 // --------------------------------------------------
 // Helpers pour les thèmes (couleurs propres à chaque carte)
+// + injection de l'animation halo
 // --------------------------------------------------
 function injectSettingsAnimationsOnce() {
   if (typeof document === "undefined") return;
@@ -74,13 +86,14 @@ function getThemePreset(id: ThemeId): AppTheme {
   return found ?? THEMES[0];
 }
 
+// ---------- Carte individuelle de thème ----------
+
 type ThemeChoiceButtonProps = {
   opt: { id: ThemeId; label: string; desc: string };
   active: boolean;
   onClick: () => void;
 };
 
-// Carte individuelle pour un thème
 function ThemeChoiceButton({ opt, active, onClick }: ThemeChoiceButtonProps) {
   const preset = getThemePreset(opt.id);
   const neonColor = preset.primary;
@@ -150,6 +163,63 @@ function ThemeChoiceButton({ opt, active, onClick }: ThemeChoiceButtonProps) {
     </button>
   );
 }
+
+// ---------- Bouton individuel de langue ----------
+
+type LanguageChoiceButtonProps = {
+  opt: { id: Lang; label: string };
+  active: boolean;
+  onClick: () => void;
+  primary: string;
+};
+
+function LanguageChoiceButton({
+  opt,
+  active,
+  onClick,
+  primary,
+}: LanguageChoiceButtonProps) {
+  const [hovered, setHovered] = React.useState(false);
+  const flag = LANG_FLAGS[opt.id];
+
+  const borderColor = active ? primary : "rgba(255,255,255,0.18)";
+  const textColor = active ? primary : "rgba(255,255,255,0.8)";
+  const bg = active ? "rgba(0,0,0,0.9)" : "rgba(255,255,255,0.04)";
+  const boxShadow =
+    active || hovered ? `0 0 12px ${primary}66` : "0 0 0 rgba(0,0,0,0)";
+  const scale = hovered ? 1.03 : 1.0;
+
+  return (
+    <button
+      key={opt.id}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        padding: "8px 14px",
+        borderRadius: 999,
+        border: `1px solid ${borderColor}`,
+        background: bg,
+        color: textColor,
+        fontWeight: active ? 700 : 500,
+        fontSize: 13,
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        cursor: "pointer",
+        boxShadow,
+        transform: `scale(${scale})`,
+        transition:
+          "transform 0.18s ease-out, box-shadow 0.18s ease-out, border-color 0.18s ease-out, background 0.18s ease-out, color 0.18s ease-out",
+      }}
+    >
+      <span style={{ fontSize: 16 }}>{flag}</span>
+      <span>{opt.label}</span>
+    </button>
+  );
+}
+
+// ---------- Composant principal Settings ----------
 
 export default function Settings({ go }: Props) {
   const { theme, themeId, setThemeId } = useTheme();
@@ -270,31 +340,23 @@ export default function Settings({ go }: Props) {
           {t("settings.lang", "Langue")}
         </h2>
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
-          {LANG_CHOICES.map((opt) => {
-            const active = opt.id === lang;
-            return (
-              <button
-                key={opt.id}
-                onClick={() => setLang(opt.id)}
-                style={{
-                  padding: "8px 14px",
-                  borderRadius: 999,
-                  border: active
-                    ? `1px solid ${theme.primary}`
-                    : `1px solid ${theme.borderSoft}`,
-                  background: active
-                    ? "rgba(0,0,0,0.85)"
-                    : "rgba(255,255,255,0.04)",
-                  color: active ? theme.primary : theme.textSoft,
-                  fontWeight: active ? 700 : 500,
-                  fontSize: 13,
-                }}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 10,
+            marginTop: 12,
+          }}
+        >
+          {LANG_CHOICES.map((opt) => (
+            <LanguageChoiceButton
+              key={opt.id}
+              opt={opt}
+              active={opt.id === lang}
+              onClick={() => setLang(opt.id)}
+              primary={theme.primary}
+            />
+          ))}
         </div>
       </section>
     </div>
