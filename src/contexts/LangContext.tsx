@@ -389,52 +389,80 @@ es: {
   "settings.theme": "Tema",
   "settings.lang": "Idioma",
 
-  "settings.theme.gold.label": "Oro neón",
+  // THÈMES (VERSION PREMIUM CORRIGÉE)
+  "settings.theme.gold.label": "GOLD NEON",
   "settings.theme.gold.desc": "Tema dorado premium",
 
-  "settings.theme.pink.label": "Rosa neón",
+  "settings.theme.pink.label": "ROSA FLUO",
   "settings.theme.pink.desc": "Ambiente arcade rosa",
 
-  "settings.theme.petrol.label": "Azul petróleo",
+  "settings.theme.petrol.label": "AZUL PETRÓLEO",
   "settings.theme.petrol.desc": "Azul neón profundo",
 
-  "settings.theme.green.label": "Verde neón",
+  "settings.theme.green.label": "VEGETAL",
   "settings.theme.green.desc": "Estilo de práctica brillante",
 
-  "settings.theme.magenta.label": "Magenta",
-  "settings.theme.magenta.desc": "Violeta / magenta intenso",
+  "settings.theme.magenta.label": "MAGENTA",
+  "settings.theme.magenta.desc": "Magenta / violeta intenso",
 
-  "settings.theme.red.label": "Rojo",
+  "settings.theme.red.label": "ROJO VIVO",
   "settings.theme.red.desc": "Rojo arcade agresivo",
 
-  "settings.theme.orange.label": "Naranja",
+  "settings.theme.orange.label": "NARANJA FUEGO",
   "settings.theme.orange.desc": "Naranja cálido y enérgico",
 
-  "settings.theme.white.label": "Blanco",
-  "settings.theme.white.desc": "Fondo claro moderno",
+  "settings.theme.white.label": "BLANCO NIEVE",
+  "settings.theme.white.desc": "Fondo moderno y claro",
 
-  // --- HOME (CORREGIDO) ---
+  // --- HOME ---
   "home.greeting": "Bienvenido",
   "home.titleApp": "DARTS COUNTER",
-  "home.subtitle": "Elige una sección",
+  "home.connect": "INICIAR SESIÓN",
 
-  "home.quickplay": "Juego rápido",
-  "home.training": "Entrenamiento",
-  "home.stats": "Estadísticas",
-  "home.profiles": "Perfiles",
-  "home.friends": "Amigos",
-  "home.settings": "Ajustes",
-  "home.lastSessions": "Sesiones recientes",
-  "home.noSessions": "No hay sesiones guardadas.",
-  "home.resume": "Continuar",
-  "home.view": "Ver",
-  "home.delete": "Eliminar",
-  "home.confirmDeleteTitle": "¿Eliminar sesión?",
-  "home.confirmDeleteBody": "Esta sesión se eliminará permanentemente.",
-  "home.confirmDeleteYes": "Eliminar",
-  "home.confirmDeleteNo": "Cancelar",
+  "home.card.profiles.title": "PERFILES",
+  "home.card.profiles.subtitle": "Crear y gestionar perfiles",
 
-  // --- GAMES PAGE ---
+  "home.card.local.title": "JUEGO LOCAL",
+  "home.card.local.subtitle": "Acceso a todos los modos de juego",
+
+  "home.card.online.title": "JUEGO ONLINE",
+  "home.card.online.subtitle": "Partidas remotas (próximamente)",
+
+  "home.card.stats.title": "ESTADÍSTICAS",
+  "home.card.stats.subtitle": "Estadísticas e historial",
+
+  "home.seeStats": "Ver mis estadísticas",
+
+  "home.stats.avg3": "Prom/3",
+  "home.stats.best": "Mejor",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Win%",
+
+  // STATUS
+  "status.online": "En línea",
+  "status.away": "Ausente",
+  "status.offline": "Desconectado",
+
+  // --- PROFILES ---
+  "profiles.title": "PERFILES",
+  "profiles.create": "Crear perfil",
+  "profiles.edit": "Editar perfil",
+  "profiles.delete": "Eliminar perfil",
+
+  "profiles.confirmDeleteTitle": "¿Eliminar perfil?",
+  "profiles.confirmDeleteBody":
+    "Este perfil y todas sus estadísticas se borrarán de forma permanente.",
+  "profiles.confirmDeleteYes": "Eliminar",
+  "profiles.confirmDeleteNo": "Cancelar",
+
+  "profiles.name": "Nombre",
+  "profiles.avatar": "Avatar",
+  "profiles.stats": "Estadísticas",
+  "profiles.noProfiles": "Aún no hay perfiles.",
+  "profiles.pickOne": "Selecciona un perfil",
+  "profiles.active": "Perfil activo",
+
+  // --- GAMES ---
   "games.title": "TODOS LOS JUEGOS",
   "games.subtitle": "Selecciona un modo de juego",
 
@@ -448,36 +476,58 @@ es: {
   "games.x01.subtitle": "301 / 501 / 701 / 901.",
   "games.x01.infoTitle": "X01",
   "games.x01.infoBody":
-    "Clásicos 301/501/701/901 con estadísticas, historial y varias opciones de reglas.",
+    "Clásicos X01 con estadísticas, historial y múltiples opciones de reglas.",
 
   "games.cricket.title": "CRICKET",
   "games.cricket.subtitle": "Cierra 15–20 + Bull.",
   "games.cricket.infoTitle": "Cricket",
   "games.cricket.infoBody":
-    "Cierra los números 15 a 20 y el Bull antes que tu oponente mientras anotas el máximo posible.",
+    "Cierra los números 15 a 20 y el Bull antes que tu oponente, anotando tantos puntos como sea posible.",
 
   "games.killer.title": "KILLER",
-  "games.killer.subtitle": "Dobla tu número… conviértete en Killer.",
+  "games.killer.subtitle": "Duplica tu número… conviértete en Killer.",
   "games.killer.infoTitle": "Killer",
   "games.killer.infoBody":
-    "Cada jugador tiene un número. Conviértete en Killer acertando el tuyo y luego elimina a los demás jugadores.",
+    "Cada jugador recibe un número. Duplica el tuyo para ser Killer y elimina a los demás jugadores.",
 
   "games.shanghai.title": "SHANGHAI",
   "games.shanghai.subtitle": "Objetivo de la ronda, S-D-T = Shanghai.",
   "games.shanghai.infoTitle": "Shanghai",
   "games.shanghai.infoBody":
-    "Cada ronda tiene un objetivo diferente. Acierta simple, doble y triple en la misma visita.",
+    "Cada ronda tiene un objetivo distinto. Consigue simple + doble + triple en el mismo número para lograr un Shanghai.",
 
   "games.battle.title": "BATTLE ROYALE",
-  "games.battle.subtitle": "Modo multijugador divertido — eliminaciones.",
+  "games.battle.subtitle": "Modo divertido — eliminaciones.",
   "games.battle.infoTitle": "Battle Royale",
   "games.battle.infoBody":
-    "Modo multijugador con eliminaciones sucesivas. Gana el último jugador en pie.",
+    "Modo multijugador con eliminaciones sucesivas. El último jugador en pie gana.",
 
   "games.status.comingSoon": "En desarrollo",
   "games.info.close": "Cerrar",
 
-  // --- LANGS ---
+  // --- TRAINING MENU ---
+  "training.menu.title": "ENTRENAMIENTO",
+  "training.menu.subtitle": "Elige un modo de entrenamiento",
+
+  "training.menu.x01.title": "Entrenamiento X01",
+  "training.menu.x01.subtitle": "Mejora puntuación y cierres",
+  "training.menu.x01.info":
+    "Entrenamiento X01 centrado en progresión: regularidad, scoring, cierres, estadísticas avanzadas.",
+
+  "training.menu.clock.title": "Ronda del Reloj",
+  "training.menu.clock.subtitle": "Simple / Doble / Triple",
+  "training.menu.clock.info":
+    "Golpea del 1 al 20 y Bull. Elige modo Simple, Doble o Triple.",
+
+  "training.menu.evolution.title": "Evolución",
+  "training.menu.evolution.subtitle": "Próximamente",
+  "training.menu.evolution.info":
+    "Un nuevo modo de entrenamiento estará disponible próximamente.",
+
+  "training.menu.comingSoon": "Próximamente",
+  "training.menu.info.close": "Cerrar",
+
+  // --- LANGUAGE NAMES ---
   "lang.fr": "Francés",
   "lang.en": "Inglés",
   "lang.es": "Español",
