@@ -4,9 +4,12 @@
 // - Cartes sombres, titre doré néon
 // - Modes grisés : titre + sous-titre gris, non cliquables
 // - Pastille "i" blanche à droite (overlay d'aide)
+// - [NEW] Carte "Réglages" (thème + langue) en bas
+// - [THEME] Couleurs pilotées par ThemeContext (titres inclus)
 // ============================================
 
 import React from "react";
+import { useTheme } from "../contexts/ThemeContext";
 
 type Props = {
   setTab: (tab: any) => void;
@@ -71,6 +74,7 @@ type InfoGame = GameId | null;
 
 export default function Games({ setTab }: Props) {
   const [infoGame, setInfoGame] = React.useState<InfoGame>(null);
+  const { theme } = useTheme();
 
   function openInfo(id: GameId) {
     setInfoGame(id);
@@ -90,6 +94,9 @@ export default function Games({ setTab }: Props) {
           flexDirection: "column",
           alignItems: "center",
           gap: 16,
+          minHeight: "100vh",
+          background: theme.bg,
+          color: theme.text,
         }}
       >
         {/* -------- Titre principal -------- */}
@@ -101,9 +108,8 @@ export default function Games({ setTab }: Props) {
             marginTop: 8,
             marginBottom: 4,
             textTransform: "uppercase",
-            color: "#F6C256",
-            textShadow:
-              "0 0 8px rgba(246,194,86,0.85), 0 0 18px rgba(246,194,86,0.5)",
+            color: theme.primary,
+            textShadow: `0 0 8px ${theme.primary}, 0 0 18px ${theme.primary}`,
           }}
         >
           TOUS LES JEUX
@@ -115,6 +121,7 @@ export default function Games({ setTab }: Props) {
             fontSize: 12,
             marginBottom: 8,
             textAlign: "center",
+            color: theme.textSoft,
           }}
         >
           Sélectionne un mode de jeu :
@@ -144,6 +151,55 @@ export default function Games({ setTab }: Props) {
             />
           ))}
         </div>
+
+        {/* -------- Carte Réglages (thème + langue) -------- */}
+        <div
+          onClick={() => setTab("settings")}
+          style={{
+            width: "100%",
+            maxWidth: 520,
+            cursor: "pointer",
+            background: theme.card,
+            borderRadius: 18,
+            padding: 16,
+            border: `1px solid ${theme.borderSoft}`,
+            boxShadow: `0 0 24px rgba(0,0,0,0.6)`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 4,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 14,
+                textTransform: "uppercase",
+                letterSpacing: 1.6,
+                color: theme.textSoft,
+              }}
+            >
+              Réglages
+            </div>
+            <div style={{ fontSize: 12, color: theme.textSoft }}>
+              Thème &amp; langue de l'application
+            </div>
+          </div>
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              border: `1px solid ${theme.borderSoft}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: `0 0 10px ${theme.primary}`,
+            }}
+          >
+            ⚙️
+          </div>
+        </div>
       </div>
 
       {infoGame && <InfoOverlay game={infoGame} onClose={closeInfo} />}
@@ -169,6 +225,7 @@ function GameCard({
   disabled,
 }: GameCardProps) {
   const isDisabled = !!disabled;
+  const { theme } = useTheme();
 
   const handleClick: React.MouseEventHandler<HTMLButtonElement> = (e) => {
     if (isDisabled) {
@@ -179,6 +236,11 @@ function GameCard({
     }
     onClick();
   };
+
+  const titleColor = isDisabled ? theme.textSoft : theme.primary;
+  const titleShadow = isDisabled
+    ? "none"
+    : `0 0 6px ${theme.primary}, 0 0 14px ${theme.primary}`;
 
   return (
     <button
@@ -191,9 +253,8 @@ function GameCard({
         textAlign: "center",
         padding: "14px 16px",
         borderRadius: 16,
-        border: "1px solid rgba(255,255,255,.08)",
-        background:
-          "linear-gradient(180deg, rgba(15,15,20,.92), rgba(5,5,10,.96))",
+        border: `1px solid ${theme.borderSoft}`,
+        background: theme.card,
         opacity: isDisabled ? 0.55 : 1,
         cursor: isDisabled ? "default" : "pointer",
         display: "flex",
@@ -222,10 +283,8 @@ function GameCard({
             fontSize: 16,
             textTransform: "uppercase",
             letterSpacing: 0.9,
-            color: isDisabled ? "#9CA3AF" : "#FDE68A",
-            textShadow: isDisabled
-              ? "none"
-              : "0 0 6px rgba(250,204,21,0.9), 0 0 14px rgba(250,204,21,0.5)",
+            color: titleColor,
+            textShadow: titleShadow,
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -239,7 +298,7 @@ function GameCard({
             style={{
               fontSize: 12,
               opacity: 0.9,
-              color: isDisabled ? "#6B7280" : "#E5E7EB",
+              color: isDisabled ? theme.textSoft : theme.textSoft,
               marginTop: 3,
               whiteSpace: "nowrap",
               overflow: "hidden",
