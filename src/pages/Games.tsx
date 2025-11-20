@@ -12,7 +12,7 @@ import { useLang } from "../contexts/LangContext";
 
 type Tab =
   | "games"
-  | "training_menu"
+  | "training"        // 👈 corrigé : correspond à App.tsx
   | "training_x01"
   | "x01setup"
   | "cricket"
@@ -55,7 +55,7 @@ const GAMES: GameDef[] = [
     infoKey: "games.training.info",
     infoDefault:
       "Accède à tous les modes d’entraînement : X01 solo, tour de l’horloge et d’autres outils pour progresser.",
-    tab: "training_menu",
+    tab: "training",   // 👈 corrigé
     enabled: true,
   },
   {
@@ -91,7 +91,7 @@ const GAMES: GameDef[] = [
     infoKey: "games.killer.info",
     infoDefault:
       "Chaque joueur reçoit un numéro. Deviens Killer en le doublant, puis élimine les autres en touchant leur numéro.",
-    tab: null, // mode à venir
+    tab: null,
     enabled: false,
   },
   {
@@ -103,7 +103,7 @@ const GAMES: GameDef[] = [
     infoKey: "games.shanghai.info",
     infoDefault:
       "À chaque manche, une nouvelle valeur de cible. Le combo simple + double + triple sur la même valeur = Shanghai.",
-    tab: null, // mode à venir
+    tab: null,
     enabled: false,
   },
   {
@@ -115,7 +115,7 @@ const GAMES: GameDef[] = [
     infoKey: "games.battle.info",
     infoDefault:
       "Mode multijoueurs fun avec éliminations progressives et règles spéciales. Arrive dans une prochaine version.",
-    tab: null, // mode à venir
+    tab: null,
     enabled: false,
   },
 ];
@@ -159,6 +159,7 @@ export default function Games(props: Props) {
       >
         {t("games.title", "TOUS LES JEUX")}
       </h1>
+
       <div
         style={{
           fontSize: 13,
@@ -211,6 +212,7 @@ export default function Games(props: Props) {
               >
                 {title}
               </div>
+
               <div
                 style={{
                   marginTop: 4,
@@ -295,6 +297,7 @@ export default function Games(props: Props) {
             >
               {t(infoGame.titleKey, infoGame.titleDefault)}
             </div>
+
             <div
               style={{
                 fontSize: 13,
@@ -305,6 +308,7 @@ export default function Games(props: Props) {
             >
               {t(infoGame.infoKey, infoGame.infoDefault)}
             </div>
+
             <button
               type="button"
               onClick={() => setInfoGame(null)}

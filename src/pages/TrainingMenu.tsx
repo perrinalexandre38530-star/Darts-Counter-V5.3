@@ -1,399 +1,308 @@
 // ============================================
 // src/pages/TrainingMenu.tsx
-// Menu Training (solo) — style identique au menu Jeux
-// - Cartes sombres, titre doré, bouton "Jouer" / "Bientôt"
-// - Pastille "i" à gauche qui ouvre une popup d'aide
+// Menu Training — style harmonisé avec Games.tsx
+// - Cartes sombres néon
+// - Pastille "i" à droite => panneau d'aide
+// - Modes grisés : non cliquables (si enabled = false)
+// - Textes pilotés par LangContext (t())
 // ============================================
 
 import React from "react";
+import { useTheme } from "../contexts/ThemeContext";
+import { useLang } from "../contexts/LangContext";
+
+type Tab =
+  | "training"
+  | "training_x01"
+  | "training_clock"
+  | "training_stats";
 
 type Props = {
-  go?: (tab: any, params?: any) => void;
+  go?: (tab: Tab, params?: any) => void;
 };
 
-type InfoMode = "x01" | "clock" | "evolution";
+type TrainingId = "x01" | "clock" | "evolution";
+
+type ModeDef = {
+  id: TrainingId;
+  titleKey: string;
+  titleDefault: string;
+  subtitleKey: string;
+  subtitleDefault: string;
+  infoKey: string;
+  infoDefault: string;
+  tab: Tab | null; // null = à venir
+  enabled: boolean;
+};
+
+const MODES: ModeDef[] = [
+  {
+    id: "x01",
+    titleKey: "training.menu.x01.title",
+    titleDefault: "Training X01",
+    subtitleKey: "training.menu.x01.subtitle",
+    subtitleDefault: "Travaille ton scoring et tes fins",
+    infoKey: "training.menu.x01.info",
+    infoDefault:
+      "Entraînement X01 dédié à la progression : scoring, régularité, finitions, stats détaillées.",
+    tab: "training_x01",
+    enabled: true,
+  },
+  {
+    id: "clock",
+    titleKey: "training.menu.clock.title",
+    titleDefault: "Tour de l’horloge",
+    subtitleKey: "training.menu.clock.subtitle",
+    subtitleDefault: "Simple / Double / Triple",
+    infoKey: "training.menu.clock.info",
+    infoDefault:
+      "Atteins chaque segment du 1 au 20 puis Bull. Mode simple, double ou triple.",
+    tab: "training_clock",
+    enabled: true,
+  },
+  {
+    id: "evolution",
+    titleKey: "training.menu.evolution.title",
+    titleDefault: "Évolution",
+    subtitleKey: "training.menu.evolution.subtitle",
+    subtitleDefault: "Accès direct aux stats Training X01",
+    infoKey: "training.menu.evolution.info",
+    infoDefault:
+      "Accède directement aux statistiques détaillées de tes sessions Training X01 dans l’onglet Stats.",
+    tab: "training_stats", // redirige vers StatsHub onglet Training
+    enabled: true,
+  },
+];
 
 export default function TrainingMenu({ go }: Props) {
-  const [infoMode, setInfoMode] = React.useState<InfoMode | null>(null);
+  const { theme } = useTheme();
+  const { t } = useLang();
+  const [infoMode, setInfoMode] = React.useState<ModeDef | null>(null);
 
-  function startX01Training() {
+  const PAGE_BG = theme.bg;
+  const CARD_BG = theme.card;
+
+  function navigate(tab: Tab | null) {
+    if (!tab) return;
     if (!go) {
       console.warn("[TrainingMenu] go() manquant");
       return;
     }
-    go("training_x01");
-  }
-
-  function startClockTraining() {
-    if (!go) {
-      console.warn("[TrainingMenu] go() manquant");
-      return;
-    }
-    go("training_clock");
-  }
-
-  function openStats() {
-    if (!go) {
-      console.warn("[TrainingMenu] go() manquant");
-      return;
-    }
-    go("training_stats");
-  }
-
-  function openInfo(mode: InfoMode) {
-    setInfoMode(mode);
-  }
-
-  function closeInfo() {
-    setInfoMode(null);
-  }
-
-  return (
-    <>
-      <div
-        className="container"
-        style={{
-          padding: 16,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 16,
-        }}
-      >
-        {/* -------- Titre principal -------- */}
-        <div
-          style={{
-            fontSize: 22,
-            fontWeight: 900,
-            letterSpacing: 1.5,
-            marginTop: 8,
-            marginBottom: 4,
-            textTransform: "uppercase",
-            color: "#F6C256",
-            textShadow:
-              "0 0 8px rgba(246,194,86,0.85), 0 0 18px rgba(246,194,86,0.5)",
-          }}
-        >
-          TRAINING
-        </div>
-
-        <div
-          style={{
-            opacity: 0.75,
-            fontSize: 12,
-            marginBottom: 8,
-            textAlign: "center",
-          }}
-        >
-          Améliorez votre progression dans différents modes
-          d&apos;entraînement et suivez votre évolution en statistiques.
-        </div>
-
-        {/* -------- Liste des cartes Training -------- */}
-        <div
-          style={{
-            width: "100%",
-            maxWidth: 520,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}
-        >
-          <TrainingCard
-            title="TRAINING X01 SOLO"
-            subtitle="Séances X01 en solo avec stats détaillées."
-            onClick={startX01Training}
-            onInfo={() => openInfo("x01")}
-            disabled={false}
-          />
-
-          <TrainingCard
-            title="TOUR DE L'HORLOGE"
-            subtitle="1 → 20 + Bull en simple / double / triple."
-            onClick={startClockTraining}
-            onInfo={() => openInfo("clock")}
-            disabled={false}
-          />
-
-          <TrainingCard
-            title="EVOLUTION"
-            subtitle="Accès direct aux statistiques Training X01."
-            onClick={openStats}
-            onInfo={() => openInfo("evolution")}
-            disabled={false}
-          />
-        </div>
-      </div>
-
-      {infoMode && <InfoOverlay mode={infoMode} onClose={closeInfo} />}
-    </>
-  );
-}
-
-/* ---------- Carte Training ---------- */
-
-type TrainingCardProps = {
-  title: string;
-  subtitle?: string;
-  onClick: () => void;
-  onInfo?: () => void;
-  disabled?: boolean;
-};
-
-function TrainingCard({
-  title,
-  subtitle,
-  onClick,
-  onInfo,
-  disabled,
-}: TrainingCardProps) {
-  const handleClick: React.MouseEventHandler<HTMLButtonElement> = (e) => {
-    if (disabled) {
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-    onClick();
-  };
-
-  return (
-    <button
-      aria-disabled={disabled ? true : undefined}
-      disabled={disabled}
-      onClick={handleClick}
-      style={{
-        width: "100%",
-        textAlign: "left",
-        padding: "10px 14px",
-        borderRadius: 16,
-        border: "1px solid rgba(255,255,255,.08)",
-        background:
-          "linear-gradient(180deg, rgba(15,15,20,.92), rgba(5,5,10,.96))",
-        opacity: disabled ? 0.55 : 1,
-        cursor: disabled ? "not-allowed" : "pointer",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        transition: "transform 0.15s ease, box-shadow 0.15s ease",
-        pointerEvents: "auto",
-        boxShadow: disabled ? "none" : "0 0 12px rgba(0,0,0,0.8)",
-      }}
-      onMouseEnter={(e) => {
-        if (disabled) return;
-        e.currentTarget.style.transform = "scale(1.02)";
-        e.currentTarget.style.boxShadow = "0 0 18px rgba(240,177,42,.3)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = "scale(1)";
-        e.currentTarget.style.boxShadow = disabled
-          ? "none"
-          : "0 0 12px rgba(0,0,0,0.8)";
-      }}
-    >
-      {/* Pastille "i" */}
-      <div style={{ marginRight: 10, display: "flex", alignItems: "center" }}>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onInfo) onInfo();
-          }}
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: "999px",
-            border: "1px solid rgba(252,211,77,0.8)",
-            background:
-              "radial-gradient(circle at 30% 20%, #fffde7 0, #fde68a 30%, #facc15 60%, #78350f 100%)",
-            boxShadow:
-              "0 0 10px rgba(250,204,21,0.9), 0 0 20px rgba(250,204,21,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 13,
-            fontWeight: 800,
-            color: "#111827",
-            cursor: "pointer",
-          }}
-        >
-          i
-        </button>
-      </div>
-
-      {/* Texte / titre */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-        <div
-          style={{
-            fontWeight: 800,
-            fontSize: 12,            // ▼ réduit
-            textTransform: "uppercase",
-            letterSpacing: 0.7,      // ▼ réduit
-            color: "#FDE68A",
-            textShadow:
-              "0 0 6px rgba(250,204,21,0.9), 0 0 14px rgba(250,204,21,0.5)",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {title}
-        </div>
-
-        {subtitle && (
-          <div
-            style={{
-              fontSize: 11,
-              opacity: 0.78,
-              color: "#E5E7EB",
-              marginTop: 2,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {subtitle}
-          </div>
-        )}
-      </div>
-
-      {/* Bouton JOUER */}
-      <span
-        style={{
-          marginLeft: 10,
-          background: disabled
-            ? "linear-gradient(180deg, #6b7280, #4b5563)"
-            : "linear-gradient(180deg, #ffc63a, #ffaf00)",
-          color: disabled ? "#e5e7eb" : "#111827",
-          borderRadius: 999,
-          padding: "4px 10px",        // ▼ réduit
-          fontWeight: 800,
-          fontSize: 10.5,             // ▼ réduit
-          textTransform: "uppercase",
-          letterSpacing: 0.7,         // ▼ réduit
-          border: disabled
-            ? "1px solid rgba(148,163,184,.35)"
-            : "1px solid rgba(255,180,0,.45)",
-          boxShadow: disabled
-            ? "none"
-            : "0 0 10px rgba(240,177,42,.3)",
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          minWidth: 56,               // ▼ réduit
-        }}
-      >
-        {disabled ? "Bientôt" : "Jouer"}
-      </span>
-    </button>
-  );
-}
-
-/* ---------- Overlay d'informations ---------- */
-
-function InfoOverlay({
-  mode,
-  onClose,
-}: {
-  mode: InfoMode;
-  onClose: () => void;
-}) {
-  let title = "";
-  let lines: string[] = [];
-
-  if (mode === "x01") {
-    title = "Training X01 solo";
-    lines = [
-      "Joue en 301 / 501 / 701 / 901 selon les paramètres choisis.",
-      "Chaque volée et chaque fléchette est enregistrée.",
-      "Retrouve toutes les stats détaillées dans la section Evolution.",
-    ];
-  } else if (mode === "clock") {
-    title = "Tour de l'horloge";
-    lines = [
-      "Objectif : toucher 1 → 20 puis Bull, dans l’ordre.",
-      "Choisis le mode : Simple, Double, Triple ou S-D-T.",
-      "Chaque cible réussie est mémorisée pour suivre ton pourcentage de réussite.",
-    ];
-  } else {
-    title = "Evolution";
-    lines = [
-      "Accès direct aux statistiques de Training X01.",
-      "Moyennes, meilleurs finishes, volume de fléchettes, progression dans le temps.",
-      "Idéal pour suivre précisément ton niveau et tes progrès.",
-    ];
+    go(tab);
   }
 
   return (
     <div
+      className="container"
       style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 999,
+        minHeight: "100vh",
+        padding: 16,
+        paddingBottom: 90,
+        background: PAGE_BG,
+        color: theme.text,
       }}
-      onClick={onClose}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
+      {/* Titre */}
+      <h1
         style={{
-          width: "82%",
-          maxWidth: 380,
-          borderRadius: 18,
-          padding: 18,
-          background:
-            "linear-gradient(180deg, rgba(22,22,28,.98), rgba(8,8,12,.98))",
-          border: "1px solid rgba(255,255,255,.12)",
-          boxShadow: "0 18px 40px rgba(0,0,0,.75)",
+          margin: 0,
+          marginBottom: 6,
+          fontSize: 24,
+          color: theme.primary,
+          textAlign: "center",
+          textShadow: `0 0 12px ${theme.primary}66`,
         }}
       >
-        <div
-          style={{
-            fontSize: 17,
-            fontWeight: 800,
-            marginBottom: 10,
-          }}
-        >
-          {title}
-        </div>
+        {t("training.menu.title", "TRAINING")}
+      </h1>
 
-        <ul
-          style={{
-            margin: 0,
-            paddingLeft: 18,
-            fontSize: 13,
-            lineHeight: 1.5,
-            opacity: 0.9,
-            marginBottom: 14,
-          }}
-        >
-          {lines.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
-
-        <button
-          onClick={onClose}
-          style={{
-            width: "100%",
-            borderRadius: 999,
-            border: "none",
-            padding: "8px 0",
-            fontWeight: 700,
-            fontSize: 13,
-            textTransform: "uppercase",
-            letterSpacing: 1,
-            background: "linear-gradient(180deg, #ffc63a, #ffaf00)",
-            color: "#111827",
-            boxShadow: "0 0 12px rgba(240,177,42,.6)",
-            cursor: "pointer",
-          }}
-        >
-          Fermer
-        </button>
+      <div
+        style={{
+          fontSize: 13,
+          color: theme.textSoft,
+          marginBottom: 18,
+          textAlign: "center",
+        }}
+      >
+        {t(
+          "training.menu.subtitle",
+          "Améliore ta progression dans différents modes d’entraînement."
+        )}
       </div>
+
+      {/* Liste des modes */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {MODES.map((m) => {
+          const title = t(m.titleKey, m.titleDefault);
+          const subtitle = t(m.subtitleKey, m.subtitleDefault);
+          const disabled = !m.enabled;
+          const comingSoonLabel = !m.enabled
+            ? t("training.menu.comingSoon", "En développement")
+            : null;
+
+          return (
+            <button
+              key={m.id}
+              onClick={() => !disabled && navigate(m.tab)}
+              style={{
+                position: "relative",
+                width: "100%",
+                padding: 14,
+                paddingRight: 46,
+                textAlign: "left",
+                borderRadius: 16,
+                border: `1px solid ${theme.borderSoft}`,
+                background: CARD_BG,
+                cursor: disabled ? "default" : "pointer",
+                opacity: disabled ? 0.55 : 1,
+                boxShadow: disabled ? "none" : `0 10px 24px rgba(0,0,0,0.55)`,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 800,
+                  letterSpacing: 0.8,
+                  color: disabled ? theme.textSoft : theme.primary,
+                  textTransform: "uppercase",
+                  textShadow: disabled
+                    ? "none"
+                    : `0 0 12px ${theme.primary}55`,
+                }}
+              >
+                {title}
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 12,
+                  color: theme.textSoft,
+                  opacity: 0.9,
+                }}
+              >
+                {subtitle}
+                {comingSoonLabel && (
+                  <span
+                    style={{
+                      marginLeft: 6,
+                      fontSize: 11,
+                      fontStyle: "italic",
+                      opacity: 0.9,
+                    }}
+                  >
+                    • {comingSoonLabel}
+                  </span>
+                )}
+              </div>
+
+              {/* Pastille "i" */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setInfoMode(m);
+                }}
+                style={{
+                  position: "absolute",
+                  right: 10,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  width: 30,
+                  height: 30,
+                  borderRadius: "50%",
+                  border: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "rgba(0,0,0,0.9)",
+                  boxShadow: `0 0 10px ${theme.primary}44`,
+                  color: "#FFFFFF",
+                  fontWeight: 800,
+                  fontSize: 15,
+                  cursor: "pointer",
+                }}
+              >
+                i
+              </button>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Overlay d'information */}
+      {infoMode && (
+        <div
+          onClick={() => setInfoMode(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.72)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 420,
+              margin: 16,
+              padding: 18,
+              borderRadius: 18,
+              background: theme.card,
+              border: `1px solid ${theme.primary}55`,
+              boxShadow: `0 18px 40px rgba(0,0,0,.7)`,
+              color: theme.text,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 800,
+                marginBottom: 8,
+                color: theme.primary,
+                textTransform: "uppercase",
+                textShadow: `0 0 10px ${theme.primary}55`,
+              }}
+            >
+              {t(infoMode.titleKey, infoMode.titleDefault)}
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                lineHeight: 1.4,
+                color: theme.textSoft,
+                marginBottom: 12,
+              }}
+            >
+              {t(infoMode.infoKey, infoMode.infoDefault)}
+            </div>
+            <button
+              type="button"
+              onClick={() => setInfoMode(null)}
+              style={{
+                display: "block",
+                marginLeft: "auto",
+                padding: "6px 14px",
+                borderRadius: 999,
+                border: "none",
+                background: theme.primary,
+                color: "#000",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              {t(
+                "training.menu.info.close",
+                t("games.info.close", "Fermer")
+              )}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
