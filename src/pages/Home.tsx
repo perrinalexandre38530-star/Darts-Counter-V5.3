@@ -1,7 +1,8 @@
 // ============================================
 // src/pages/Home.tsx
 // Accueil + Carte profil (stats unifiées)
-// - Médaillon avatar + ring d’étoiles
+// - Médaillon avatar centré & ring d’étoiles
+// - Lecture instantanée des stats via statsLiteIDB
 // - Thème piloté par ThemeContext
 // - Textes pilotés par LangContext (t())
 // ============================================
@@ -35,7 +36,7 @@ type Tab =
 
 export default function Home({
   store,
-  update, // pour compat avec App, pas utilisé ici
+  update, // gardé pour compat avec App, même si pas utilisé ici
   go,
   showConnect = true,
   onConnect,
@@ -83,6 +84,7 @@ export default function Home({
         color: theme.text,
       }}
     >
+      {/* Styles responsives & petites variables */}
       <style>{`
         .home-page {
           --title-min: 28px;
@@ -126,7 +128,7 @@ export default function Home({
         }
       `}</style>
 
-      {/* ===== HERO ===== */}
+      {/* ===== HERO / CARTE PROFIL ===== */}
       <div
         className="card"
         style={{
@@ -195,7 +197,7 @@ export default function Home({
         ) : null}
       </div>
 
-      {/* ===== ACCÈS RAPIDES ===== */}
+      {/* ===== ACCÈS RAPIDES (4 cartes) ===== */}
       <div
         className="list home-grid"
         style={{
@@ -332,10 +334,13 @@ function ActiveProfileCard({
     : isNum(legacy.wins)
     ? legacy.wins
     : 0;
+
   const games = isNum(basicStats?.games)
     ? basicStats!.games
     : isNum(legacy.games)
-    : 0;
+    ? legacy.games
+    : 0; // ✅ ternary corrigé
+
   const winRate = isNum(basicStats?.winRate)
     ? basicStats!.winRate
     : games > 0
@@ -346,7 +351,7 @@ function ActiveProfileCard({
   const best = String(bestVisit || 0);
   const co = String(bestCheckout || 0);
 
-  // ✅ mapping statut -> label + couleur FIXE (ne dépend pas du thème)
+  // mapping statut -> label + couleur FIXE (indépendante du thème)
   const statusConfig: Record<
     "online" | "away" | "offline",
     { label: string; color: string }
@@ -393,6 +398,7 @@ function ActiveProfileCard({
         gap: 6,
       }}
     >
+      {/* Médaillon avatar + ring étoiles */}
       <div
         style={{
           position: "relative",
@@ -473,6 +479,7 @@ function ActiveProfileCard({
         </div>
       </div>
 
+      {/* Nom cliquable */}
       <button
         className="btn ghost"
         onClick={onNameClick}
@@ -484,12 +491,12 @@ function ActiveProfileCard({
           fontSize: 20,
           textShadow: `0 0 12px ${theme.primary}55`,
         }}
-        title="Voir mes statistiques"
+        title={t("home.seeStats", "Voir mes statistiques")}
       >
         {profile.name}
       </button>
 
-      {/* ⚠️ Pas de className="subtitle" ici pour éviter le CSS global */}
+      {/* Statut */}
       <div
         style={{
           marginTop: 0,
@@ -522,6 +529,7 @@ function ActiveProfileCard({
         </span>
       </div>
 
+      {/* Stats du joueur */}
       <div
         style={{
           display: "flex",
@@ -533,11 +541,11 @@ function ActiveProfileCard({
           flexWrap: "wrap",
         }}
       >
-        <StatMini label="Moy/3" value={avg3} />
-        <StatMini label="Best" value={best} />
-        <StatMini label="CO" value={co} />
+        <StatMini label={t("home.stats.avg3", "Moy/3")} value={avg3} />
+        <StatMini label={t("home.stats.best", "Best")} value={best} />
+        <StatMini label={t("home.stats.co", "CO")} value={co} />
         <StatMini
-          label="Win%"
+          label={t("home.stats.winPct", "Win%")}
           value={winRate !== null ? `${Math.round(Number(winRate))}%` : "—"}
         />
       </div>
@@ -568,7 +576,7 @@ function StatMini({ label, value }: { label: string; value: string }) {
   );
 }
 
-/* ---------- Card menu ---------- */
+/* ---------- Carte menu ---------- */
 function HomeCard({
   title,
   subtitle,
