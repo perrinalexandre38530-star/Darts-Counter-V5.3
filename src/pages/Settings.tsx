@@ -2,6 +2,7 @@
 // src/pages/Settings.tsx — Thème + Langue
 // Fond toujours sombre (ne varie pas avec le thème)
 // Les thèmes ne changent que les néons / accents / textes
+// + Drapeaux pour les langues
 // ============================================
 
 import React from "react";
@@ -11,9 +12,7 @@ import { THEMES, type ThemeId, type AppTheme } from "../theme/themePresets";
 
 type Props = { go?: (tab: any, params?: any) => void };
 
-// --------------------------------------------------
-// META statique pour l'ordre + descriptions des thèmes
-// --------------------------------------------------
+// ---------------- Thèmes dispo + descriptions fallback ----------------
 
 const THEME_ORDER: ThemeId[] = [
   "gold",
@@ -57,7 +56,8 @@ function getPreset(id: ThemeId): AppTheme {
   return found ?? THEMES[0];
 }
 
-// Options langues (ordre + fallback label)
+// ---------------- Langues + libellés fallback ----------------
+
 const LANG_CHOICES: { id: Lang; defaultLabel: string }[] = [
   { id: "fr", defaultLabel: "Français" },
   { id: "en", defaultLabel: "English" },
@@ -68,7 +68,6 @@ const LANG_CHOICES: { id: Lang; defaultLabel: string }[] = [
   { id: "nl", defaultLabel: "Nederlands" },
 ];
 
-// Drapeaux emoji
 const LANG_FLAGS: Record<Lang, string> = {
   fr: "🇫🇷",
   en: "🇬🇧",
@@ -79,12 +78,10 @@ const LANG_FLAGS: Record<Lang, string> = {
   nl: "🇳🇱",
 };
 
-// --------------------------------------------------
-// Injection de l'animation halo (une seule fois)
-// --------------------------------------------------
+// ---------------- Animation halo une seule fois ----------------
+
 function injectSettingsAnimationsOnce() {
   if (typeof document === "undefined") return;
-
   const STYLE_ID = "dc-settings-theme-animations";
   if (document.getElementById(STYLE_ID)) return;
 
@@ -100,9 +97,8 @@ function injectSettingsAnimationsOnce() {
   document.head.appendChild(style);
 }
 
-// --------------------------------------------------
-// Bouton de thème individuel
-// --------------------------------------------------
+// ---------------- Bouton de thème ----------------
+
 type ThemeChoiceButtonProps = {
   id: ThemeId;
   label: string;
@@ -160,7 +156,6 @@ function ThemeChoiceButton({
           marginBottom: 4,
         }}
       >
-        {/* Cercle transparent + halo néon */}
         <span
           style={{
             width: 16,
@@ -185,9 +180,8 @@ function ThemeChoiceButton({
   );
 }
 
-// --------------------------------------------------
-// Bouton de langue individuel
-// --------------------------------------------------
+// ---------------- Bouton de langue ----------------
+
 type LanguageChoiceButtonProps = {
   id: Lang;
   label: string;
@@ -204,7 +198,7 @@ function LanguageChoiceButton({
   primary,
 }: LanguageChoiceButtonProps) {
   const [hovered, setHovered] = React.useState(false);
-  const flag = LANG_FLAGS[id];
+  const flag = LANG_FLAGS[id] ?? id.toUpperCase();
 
   const borderColor = active ? primary : "rgba(255,255,255,0.18)";
   const textColor = active ? primary : "rgba(255,255,255,0.8)";
@@ -236,15 +230,22 @@ function LanguageChoiceButton({
           "transform 0.18s ease-out, box-shadow 0.18s ease-out, border-color 0.18s ease-out, background 0.18s ease-out, color 0.18s ease-out",
       }}
     >
-      <span style={{ fontSize: 16 }}>{flag}</span>
+      <span
+        style={{
+          fontSize: 16,
+          minWidth: 24,
+          textAlign: "center",
+        }}
+      >
+        {flag}
+      </span>
       <span>{label}</span>
     </button>
   );
 }
 
-// --------------------------------------------------
-// Composant principal Settings
-// --------------------------------------------------
+// ---------------- Composant principal ----------------
+
 export default function Settings({ go }: Props) {
   const { theme, themeId, setThemeId } = useTheme();
   const { lang, setLang, t } = useLang();
