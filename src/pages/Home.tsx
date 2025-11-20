@@ -35,7 +35,7 @@ type Tab =
 
 export default function Home({
   store,
-  update, // reçu depuis App, pas utilisé ici mais gardé pour compat
+  update, // pour compat avec App, pas utilisé ici
   go,
   showConnect = true,
   onConnect,
@@ -346,20 +346,26 @@ function ActiveProfileCard({
   const best = String(bestVisit || 0);
   const co = String(bestCheckout || 0);
 
-  const statusLabel =
-    status === "away"
-      ? t("status.away", "Absent")
-      : status === "offline"
-      ? t("status.offline", "Hors ligne")
-      : t("status.online", "En ligne");
+  // ✅ mapping statut -> label + couleur FIXE (ne dépend pas du thème)
+  const statusConfig: Record<
+    "online" | "away" | "offline",
+    { label: string; color: string }
+  > = {
+    online: {
+      label: t("status.online", "En ligne"),
+      color: "#3DFF9C", // vert néon
+    },
+    away: {
+      label: t("status.away", "Absent"),
+      color: "#F6C256", // jaune / orangé
+    },
+    offline: {
+      label: t("status.offline", "Hors ligne"),
+      color: "#9AA0AA", // gris
+    },
+  };
 
-  // ✅ Couleurs statut FIXES (indépendantes du thème)
-  const statusColor =
-    status === "away"
-      ? "#F6C256" // jaune / orangé
-      : status === "offline"
-      ? "#9AA0AA" // gris
-      : "#3DFF9C"; // vert néon pour "En ligne"
+  const { label: statusLabel, color: statusColor } = statusConfig[status];
 
   const AVA = getCssNumber("--avatar-size", 92);
   const PAD = 10;
@@ -483,8 +489,8 @@ function ActiveProfileCard({
         {profile.name}
       </button>
 
+      {/* ⚠️ Pas de className="subtitle" ici pour éviter le CSS global */}
       <div
-        className="subtitle"
         style={{
           marginTop: 0,
           fontSize: 13,
