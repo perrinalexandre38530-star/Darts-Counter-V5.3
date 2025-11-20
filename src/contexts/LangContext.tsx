@@ -2184,713 +2184,1034 @@ hi: {
   "lang.cs": "चेक",
 },
 
-  // ---------- TURKISH ----------
-  tr: {
-    "nav.home": "Ana sayfa",
-    "nav.games": "Oyunlar",
-    "nav.profiles": "Profiller",
-    "nav.friends": "Arkadaşlar",
-    "nav.stats": "İstatistikler",
-    "nav.settings": "Ayarlar",
-
-    "settings.back": "Geri",
-    "settings.title": "Ayarlar",
-    "settings.subtitle":
-      "Uygulamanın temasını ve dilini özelleştir",
-    "settings.theme": "Tema",
-    "settings.lang": "Dil",
-
-    "settings.theme.gold.label": "Altın neon",
-    "settings.theme.gold.desc": "Premium altın tema",
-    "settings.theme.pink.label": "Pembe neon",
-    "settings.theme.pink.desc": "Atari tarzı pembe ortam",
-    "settings.theme.petrol.label": "Petrol mavisi",
-    "settings.theme.petrol.desc": "Derin neon mavi",
-    "settings.theme.green.label": "Yeşil neon",
-    "settings.theme.green.desc": "Parlak antrenman stili",
-    "settings.theme.magenta.label": "Macenta",
-    "settings.theme.magenta.desc": "Yoğun mor / macenta",
-    "settings.theme.red.label": "Kırmızı",
-    "settings.theme.red.desc": "Agresif atari kırmızısı",
-    "settings.theme.orange.label": "Turuncu",
-    "settings.theme.orange.desc": "Sıcak ve enerjik turuncu",
-    "settings.theme.white.label": "Beyaz",
-    "settings.theme.white.desc": "Modern açık arka plan",
-
-    // GAMES PAGE
-"games.title": "TÜM OYUNLAR",
-"games.subtitle": "Bir oyun modu seçin",
-
-"games.training.title": "EĞİTİM",
-"games.training.subtitle": "Gelişiminizi artırın.",
-"games.training.infoTitle": "Eğitim",
-"games.training.infoBody":
-  "Stabilite, skor ve bitiriş pratiği yapmak için antrenman modu.",
-
-"games.x01.title": "X01",
-"games.x01.subtitle": "301 / 501 / 701 / 901.",
-"games.x01.infoTitle": "X01",
-"games.x01.infoBody":
-  "İstatistikler, geçmiş ve çeşitli kural seçenekleriyle klasik 301/501/701/901 oyunları.",
-
-"games.cricket.title": "CRICKET",
-"games.cricket.subtitle": "15–20 + Bull’u kapat.",
-"games.cricket.infoTitle": "Cricket",
-"games.cricket.infoBody":
-  "15–20 ve Bull’u rakibinizden önce kapatırken mümkün olduğunca çok puan kazanın.",
-
-"games.killer.title": "KILLER",
-"games.killer.subtitle": "Numaranı vur… Killer ol.",
-"games.killer.infoTitle": "Killer",
-"games.killer.infoBody":
-  "Her oyuncunun bir numarası vardır. Kendi numaranızı vurarak Killer olun ve diğer oyuncuları eleyin.",
-
-"games.shanghai.title": "SHANGHAI",
-"games.shanghai.subtitle":
-  "Bu turun hedefi, S-D-T = Shanghai.",
-"games.shanghai.infoTitle": "Shanghai",
-"games.shanghai.infoBody":
-  "Her turun farklı bir hedefi vardır. Aynı turda tek, çift ve üçlüye isabet ederek Shanghai yapın.",
-
-"games.battle.title": "BATTLE ROYALE",
-"games.battle.subtitle": "Eğlenceli çok oyunculu mod — eleme.",
-"games.battle.infoTitle": "Battle Royale",
-"games.battle.infoBody":
-  "Ardışık elemeli çok oyunculu bir mod. Ayakta kalan son oyuncu kazanır.",
-
-"games.status.comingSoon": "Yakında",
-"games.info.close": "Kapat",
-
-    "lang.fr": "Fransızca",
-    "lang.en": "İngilizce",
-    "lang.es": "İspanyolca",
-    "lang.de": "Almanca",
-    "lang.it": "İtalyanca",
-    "lang.pt": "Portekizce",
-    "lang.nl": "Felemenkçe",
-    "lang.ru": "Rusça",
-    "lang.zh": "Çince",
-    "lang.ja": "Japonca",
-    "lang.ar": "Arapça",
-    "lang.hi": "Hintçe",
-    "lang.tr": "Türkçe",
-    "lang.da": "Danca",
-    "lang.no": "Norveççe",
-    "lang.sv": "İsveççe",
-    "lang.is": "İzlandaca",
-    "lang.pl": "Lehçe",
-    "lang.ro": "Romence",
-    "lang.at": "Avusturya",
-    "lang.sr": "Sırpça",
-    "lang.hr": "Hırvatça",
-    "lang.cs": "Çekçe",
-  },
-
-  // ---------- DANISH ----------
-  da: {
-    "nav.home": "Hjem",
-    "nav.games": "Spil",
-    "nav.profiles": "Profiler",
-    "nav.friends": "Venner",
-    "nav.stats": "Statistik",
-    "nav.settings": "Indstillinger",
-
-    "settings.back": "Tilbage",
-    "settings.title": "Indstillinger",
-    "settings.subtitle":
-      "Tilpas appens tema og sprog",
-    "settings.theme": "Tema",
-    "settings.lang": "Sprog",
-
-    "settings.theme.gold.label": "Guld neon",
-    "settings.theme.gold.desc": "Premium guldt tema",
-    "settings.theme.pink.label": "Pink neon",
-    "settings.theme.pink.desc": "Arkade-pink stemning",
-    "settings.theme.petrol.label": "Petrolblå",
-    "settings.theme.petrol.desc": "Dybt neonblåt",
-    "settings.theme.green.label": "Grøn neon",
-    "settings.theme.green.desc": "Lyst trænings-look",
-    "settings.theme.magenta.label": "Magenta",
-    "settings.theme.magenta.desc": "Intens violet / magenta",
-    "settings.theme.red.label": "Rød",
-    "settings.theme.red.desc": "Aggressiv arkade-rød",
-    "settings.theme.orange.label": "Orange",
-    "settings.theme.orange.desc": "Varm energisk orange",
-    "settings.theme.white.label": "Hvid",
-    "settings.theme.white.desc": "Moderne lyst tema",
-
-    // GAMES PAGE
-"games.title": "ALLE SPIL",
-"games.subtitle": "Vælg en spiltilstand",
-
-"games.training.title": "TRÆNING",
-"games.training.subtitle": "Forbedr din udvikling.",
-"games.training.infoTitle": "Træning",
-"games.training.infoBody":
-  "Practice mode to work on consistency, scoring and finishing.",
-
-"games.x01.title": "X01",
-"games.x01.subtitle": "301 / 501 / 701 / 901.",
-"games.x01.infoTitle": "X01",
-"games.x01.infoBody":
-  "Classic 301/501/701/901 games with stats, history and several rule options.",
-
-"games.cricket.title": "CRICKET",
-"games.cricket.subtitle": "Luk 15–20 + Bull.",
-"games.cricket.infoTitle": "Cricket",
-"games.cricket.infoBody":
-  "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
-
-"games.killer.title": "KILLER",
-"games.killer.subtitle": "Ramt dit nummer… bliv Killer.",
-"games.killer.infoTitle": "Killer",
-"games.killer.infoBody":
-  "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
-
-"games.shanghai.title": "SHANGHAI",
-"games.shanghai.subtitle": "Rundens mål, S-D-T = Shanghai.",
-"games.shanghai.infoTitle": "Shanghai",
-"games.shanghai.infoBody":
-  "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
-
-"games.battle.title": "BATTLE ROYALE",
-"games.battle.subtitle": "Sjov multiplayer — eliminering.",
-"games.battle.infoTitle": "Battle Royale",
-"games.battle.infoBody":
-  "Fun multiplayer mode with successive eliminations. Last player standing wins.",
-
-"games.status.comingSoon": "Kommer snart",
-"games.info.close": "Luk",
-
-    "lang.fr": "Fransk",
-    "lang.en": "Engelsk",
-    "lang.es": "Spansk",
-    "lang.de": "Tysk",
-    "lang.it": "Italiensk",
-    "lang.pt": "Portugisisk",
-    "lang.nl": "Hollandsk",
-    "lang.ru": "Russisk",
-    "lang.zh": "Kinesisk",
-    "lang.ja": "Japansk",
-    "lang.ar": "Arabisk",
-    "lang.hi": "Hindi",
-    "lang.tr": "Tyrkisk",
-    "lang.da": "Dansk",
-    "lang.no": "Norsk",
-    "lang.sv": "Svensk",
-    "lang.is": "Islandsk",
-    "lang.pl": "Polsk",
-    "lang.ro": "Rumænsk",
-    "lang.at": "østrigsk",
-    "lang.sr": "Serbisk",
-    "lang.hr": "Kroatisk",
-    "lang.cs": "Tjekkisk",
-  },
-
-  // ---------- NORWEGIAN ----------
-  no: {
-    "nav.home": "Hjem",
-    "nav.games": "Spill",
-    "nav.profiles": "Profiler",
-    "nav.friends": "Venner",
-    "nav.stats": "Statistikk",
-    "nav.settings": "Innstillinger",
-
-    "settings.back": "Tilbake",
-    "settings.title": "Innstillinger",
-    "settings.subtitle":
-      "Tilpass appens tema og språk",
-    "settings.theme": "Tema",
-    "settings.lang": "Språk",
-
-    "settings.theme.gold.label": "Gull-neon",
-    "settings.theme.gold.desc": "Premium gulltema",
-    "settings.theme.pink.label": "Rosa neon",
-    "settings.theme.pink.desc": "Arkade-rosa stemning",
-    "settings.theme.petrol.label": "Petrolblå",
-    "settings.theme.petrol.desc": "Dyp neonlys blå",
-    "settings.theme.green.label": "Grønn neon",
-    "settings.theme.green.desc": "Lyst treningsdesign",
-    "settings.theme.magenta.label": "Magenta",
-    "settings.theme.magenta.desc": "Kraftig fiolett / magenta",
-    "settings.theme.red.label": "Rød",
-    "settings.theme.red.desc": "Aggressiv arkade-rød",
-    "settings.theme.orange.label": "Oransje",
-    "settings.theme.orange.desc": "Varm og energisk oransje",
-    "settings.theme.white.label": "Hvit",
-    "settings.theme.white.desc": "Moderne lyst tema",
-
-    // GAMES PAGE
-"games.title": "ALLE SPILL",
-"games.subtitle": "Velg en spillmodus",
-
-"games.training.title": "TRENING",
-"games.training.subtitle": "Forbedre utviklingen din.",
-"games.training.infoTitle": "Trening",
-"games.training.infoBody":
-  "Practice mode to work on consistency, scoring and finishing.",
-
-"games.x01.title": "X01",
-"games.x01.subtitle": "301 / 501 / 701 / 901.",
-"games.x01.infoTitle": "X01",
-"games.x01.infoBody":
-  "Classic 301/501/701/901 games with stats, history and several rule options.",
-
-"games.cricket.title": "CRICKET",
-"games.cricket.subtitle": "Lukk 15–20 + Bull.",
-"games.cricket.infoTitle": "Cricket",
-"games.cricket.infoBody":
-  "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
-
-"games.killer.title": "KILLER",
-"games.killer.subtitle": "Treff tallet ditt… bli Killer.",
-"games.killer.infoTitle": "Killer",
-"games.killer.infoBody":
-  "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
-
-"games.shanghai.title": "SHANGHAI",
-"games.shanghai.subtitle": "Rundens mål, S-D-T = Shanghai.",
-"games.shanghai.infoTitle": "Shanghai",
-"games.shanghai.infoBody":
-  "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
-
-"games.battle.title": "BATTLE ROYALE",
-"games.battle.subtitle": "Morsom flerspiller — eliminering.",
-"games.battle.infoTitle": "Battle Royale",
-"games.battle.infoBody":
-  "Fun multiplayer mode with successive eliminations. Last player standing wins.",
-
-"games.status.comingSoon": "Kommer snart",
-"games.info.close": "Lukk",
-
-    "lang.fr": "Fransk",
-    "lang.en": "Engelsk",
-    "lang.es": "Spansk",
-    "lang.de": "Tysk",
-    "lang.it": "Italiensk",
-    "lang.pt": "Portugisisk",
-    "lang.nl": "Nederlandsk",
-    "lang.ru": "Russisk",
-    "lang.zh": "Kinesisk",
-    "lang.ja": "Japansk",
-    "lang.ar": "Arabisk",
-    "lang.hi": "Hindi",
-    "lang.tr": "Tyrkisk",
-    "lang.da": "Dansk",
-    "lang.no": "Norsk",
-    "lang.sv": "Svensk",
-    "lang.is": "Islandsk",
-    "lang.pl": "Polsk",
-    "lang.ro": "Rumensk",
-    "lang.at": "østerriksk",
-    "lang.sr": "Serbisk",
-    "lang.hr": "Kroatisk",
-    "lang.cs": "Tsjekkisk",
-  },
-
-  // ---------- SWEDISH ----------
-  sv: {
-    "nav.home": "Hem",
-    "nav.games": "Spel",
-    "nav.profiles": "Profiler",
-    "nav.friends": "Vänner",
-    "nav.stats": "Statistik",
-    "nav.settings": "Inställningar",
-
-    "settings.back": "Tillbaka",
-    "settings.title": "Inställningar",
-    "settings.subtitle":
-      "Anpassa appens tema och språk",
-    "settings.theme": "Tema",
-    "settings.lang": "Språk",
-
-    "settings.theme.gold.label": "Guldneon",
-    "settings.theme.gold.desc": "Premium guldtema",
-    "settings.theme.pink.label": "Rosa neon",
-    "settings.theme.pink.desc": "Arkadinspirerad rosa stil",
-    "settings.theme.petrol.label": "Petrolblå",
-    "settings.theme.petrol.desc": "Djup neonsblå",
-    "settings.theme.green.label": "Grön neon",
-    "settings.theme.green.desc": "Ljus träningsstil",
-    "settings.theme.magenta.label": "Magenta",
-    "settings.theme.magenta.desc": "Intensiv violett / magenta",
-    "settings.theme.red.label": "Röd",
-    "settings.theme.red.desc": "Aggressiv arkadröd",
-    "settings.theme.orange.label": "Orange",
-    "settings.theme.orange.desc": "Varm energisk orange",
-    "settings.theme.white.label": "Vit",
-    "settings.theme.white.desc": "Modernt ljust tema",
-
-    // GAMES PAGE
-"games.title": "ALLA SPEL",
-"games.subtitle": "Välj ett spelläge",
-
-"games.training.title": "TRÄNING",
-"games.training.subtitle": "Förbättra din utveckling.",
-"games.training.infoTitle": "Träning",
-"games.training.infoBody":
-  "Practice mode to work on consistency, scoring and finishing.",
-
-"games.x01.title": "X01",
-"games.x01.subtitle": "301 / 501 / 701 / 901.",
-"games.x01.infoTitle": "X01",
-"games.x01.infoBody":
-  "Classic 301/501/701/901 games with stats, history and several rule options.",
-
-"games.cricket.title": "CRICKET",
-"games.cricket.subtitle": "Stäng 15–20 + Bull.",
-"games.cricket.infoTitle": "Cricket",
-"games.cricket.infoBody":
-  "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
-
-"games.killer.title": "KILLER",
-"games.killer.subtitle": "Träffa ditt nummer… bli Killer.",
-"games.killer.infoTitle": "Killer",
-"games.killer.infoBody":
-  "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
-
-"games.shanghai.title": "SHANGHAI",
-"games.shanghai.subtitle": "Rundans mål, S-D-T = Shanghai.",
-"games.shanghai.infoTitle": "Shanghai",
-"games.shanghai.infoBody":
-  "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
-
-"games.battle.title": "BATTLE ROYALE",
-"games.battle.subtitle": "Roligt flerspelarläge — eliminering.",
-"games.battle.infoTitle": "Battle Royale",
-"games.battle.infoBody":
-  "Fun multiplayer mode with successive eliminations. Last player standing wins.",
-
-"games.status.comingSoon": "Kommer snart",
-"games.info.close": "Stäng",
-
-    "lang.fr": "Franska",
-    "lang.en": "Engelska",
-    "lang.es": "Spanska",
-    "lang.de": "Tyska",
-    "lang.it": "Italienska",
-    "lang.pt": "Portugisiska",
-    "lang.nl": "Nederländska",
-    "lang.ru": "Ryska",
-    "lang.zh": "Kinesiska",
-    "lang.ja": "Japanska",
-    "lang.ar": "Arabiska",
-    "lang.hi": "Hindi",
-    "lang.tr": "Turkiska",
-    "lang.da": "Danska",
-    "lang.no": "Norska",
-    "lang.sv": "Svenska",
-    "lang.is": "Isländska",
-    "lang.pl": "Polska",
-    "lang.ro": "Rumänska",
-    "lang.at": "österrikisk",
-    "lang.sr": "Serbiska",
-    "lang.hr": "Kroatiska",
-    "lang.cs": "Tjeckiska",
-  },
-
-  // ---------- ICELANDIC ----------
-  is: {
-    "nav.home": "Heim",
-    "nav.games": "Leikir",
-    "nav.profiles": "Prófílar",
-    "nav.friends": "Vinir",
-    "nav.stats": "Tölfræði",
-    "nav.settings": "Stillingar",
-
-    "settings.back": "Til baka",
-    "settings.title": "Stillingar",
-    "settings.subtitle":
-      "Sérstilltu þema og tungumál forritsins",
-    "settings.theme": "Þema",
-    "settings.lang": "Tungumál",
-
-    "settings.theme.gold.label": "Gull-neon",
-    "settings.theme.gold.desc": "Gæðagullþema",
-    "settings.theme.pink.label": "Bleikt neon",
-    "settings.theme.pink.desc": "Spilasalastemning í bleiku",
-    "settings.theme.petrol.label": "Petrolblár",
-    "settings.theme.petrol.desc": "Djúp neonblá",
-    "settings.theme.green.label": "Grænt neon",
-    "settings.theme.green.desc": "Björt æfingahönnun",
-    "settings.theme.magenta.label": "Magenta",
-    "settings.theme.magenta.desc": "Sterkur fjólublár / magenta",
-    "settings.theme.red.label": "Rautt",
-    "settings.theme.red.desc": "Árásargjarnt spilasalarautt",
-    "settings.theme.orange.label": "Appelsínugult",
-    "settings.theme.orange.desc": "Hlýtt og kraftmikið appelsínugult",
-    "settings.theme.white.label": "Hvítt",
-    "settings.theme.white.desc": "Nútímalegt ljós þema",
-
-    // GAMES PAGE
-"games.title": "ALLIR LEIKIR",
-"games.subtitle": "Veldu leikham",
-
-"games.training.title": "ÞJÁLFUN",
-"games.training.subtitle": "Bættu frammistöðu þína.",
-"games.training.infoTitle": "Þjálfun",
-"games.training.infoBody":
-  "Practice mode to work on consistency, scoring and finishing.",
-
-"games.x01.title": "X01",
-"games.x01.subtitle": "301 / 501 / 701 / 901.",
-"games.x01.infoTitle": "X01",
-"games.x01.infoBody":
-  "Classic 301/501/701/901 games with stats, history and several rule options.",
-
-"games.cricket.title": "CRICKET",
-"games.cricket.subtitle": "Lokaðu 15–20 + Bull.",
-"games.cricket.infoTitle": "Cricket",
-"games.cricket.infoBody":
-  "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
-
-"games.killer.title": "KILLER",
-"games.killer.subtitle": "Hittu númerið þitt… vertu Killer.",
-"games.killer.infoTitle": "Killer",
-"games.killer.infoBody":
-  "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
-
-"games.shanghai.title": "SHANGHAI",
-"games.shanghai.subtitle": "Mark raundar, S-D-T = Shanghai.",
-"games.shanghai.infoTitle": "Shanghai",
-"games.shanghai.infoBody":
-  "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
-
-"games.battle.title": "BATTLE ROYALE",
-"games.battle.subtitle": "Skemmtilegur fjölspilunarhamur — brottfall.",
-"games.battle.infoTitle": "Battle Royale",
-"games.battle.infoBody":
-  "Fun multiplayer mode with successive eliminations. Last player standing wins.",
-
-"games.status.comingSoon": "Væntanlegt",
-"games.info.close": "Loka",
-
-    "lang.fr": "Franska",
-    "lang.en": "Enska",
-    "lang.es": "Spænska",
-    "lang.de": "Þýska",
-    "lang.it": "Ítalska",
-    "lang.pt": "Portúgalska",
-    "lang.nl": "Hollenska",
-    "lang.ru": "Rússneska",
-    "lang.zh": "Kínverska",
-    "lang.ja": "Japanska",
-    "lang.ar": "Arabíska",
-    "lang.hi": "Hindí",
-    "lang.tr": "Tyrkneska",
-    "lang.da": "Danska",
-    "lang.no": "Norska",
-    "lang.sv": "Sænska",
-    "lang.is": "Íslenska",
-    "lang.pl": "Pólska",
-    "lang.ro": "Rúmenska",
-    "lang.at": "austurrískur",
-    "lang.sr": "Serbneska",
-    "lang.hr": "Króatíska",
-    "lang.cs": "Tékkneska",
-  },
-
-  // ---------- POLISH ----------
-  pl: {
-    "nav.home": "Start",
-    "nav.games": "Gry",
-    "nav.profiles": "Profile",
-    "nav.friends": "Znajomi",
-    "nav.stats": "Statystyki",
-    "nav.settings": "Ustawienia",
-
-    "settings.back": "Wstecz",
-    "settings.title": "Ustawienia",
-    "settings.subtitle":
-      "Dostosuj motyw i język aplikacji",
-    "settings.theme": "Motyw",
-    "settings.lang": "Język",
-
-    "settings.theme.gold.label": "Złoty neon",
-    "settings.theme.gold.desc": "Premium złoty motyw",
-    "settings.theme.pink.label": "Różowy neon",
-    "settings.theme.pink.desc": "Różowa atmosfera arcade",
-    "settings.theme.petrol.label": "Petrolowy niebieski",
-    "settings.theme.petrol.desc": "Głęboki neonowy niebieski",
-    "settings.theme.green.label": "Zielony neon",
-    "settings.theme.green.desc": "Jasny styl treningowy",
-    "settings.theme.magenta.label": "Magenta",
-    "settings.theme.magenta.desc": "Intensywny fiolet / magenta",
-    "settings.theme.red.label": "Czerwony",
-    "settings.theme.red.desc": "Agresywna czerwień arcade",
-    "settings.theme.orange.label": "Pomarańczowy",
-    "settings.theme.orange.desc": "Ciepły, energetyczny pomarańcz",
-    "settings.theme.white.label": "Biały",
-    "settings.theme.white.desc": "Nowoczesne jasne tło",
-
-    // GAMES PAGE
-"games.title": "WSZYSTKIE GRY",
-"games.subtitle": "Wybierz tryb gry",
-
-"games.training.title": "TRENING",
-"games.training.subtitle": "Popraw swoje umiejętności.",
-"games.training.infoTitle": "Trening",
-"games.training.infoBody":
-  "Practice mode to work on consistency, scoring and finishing.",
-
-"games.x01.title": "X01",
-"games.x01.subtitle": "301 / 501 / 701 / 901.",
-"games.x01.infoTitle": "X01",
-"games.x01.infoBody":
-  "Classic 301/501/701/901 games with stats, history and several rule options.",
-
-"games.cricket.title": "CRICKET",
-"games.cricket.subtitle": "Zamknij 15–20 + Bull.",
-"games.cricket.infoTitle": "Cricket",
-"games.cricket.infoBody":
-  "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
-
-"games.killer.title": "KILLER",
-"games.killer.subtitle": "Traf swój numer… zostań Killerem.",
-"games.killer.infoTitle": "Killer",
-"games.killer.infoBody":
-  "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
-
-"games.shanghai.title": "SHANGHAI",
-"games.shanghai.subtitle": "Cel rundy, S-D-T = Shanghai.",
-"games.shanghai.infoTitle": "Shanghai",
-"games.shanghai.infoBody":
-  "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
-
-"games.battle.title": "BATTLE ROYALE",
-"games.battle.subtitle": "Zabawa multiplayer — eliminacje.",
-"games.battle.infoTitle": "Battle Royale",
-"games.battle.infoBody":
-  "Fun multiplayer mode with successive eliminations. Last player standing wins.",
-
-"games.status.comingSoon": "Wkrótce",
-"games.info.close": "Zamknij",
-
-    "lang.fr": "Francuski",
-    "lang.en": "Angielski",
-    "lang.es": "Hiszpański",
-    "lang.de": "Niemiecki",
-    "lang.it": "Włoski",
-    "lang.pt": "Portugalski",
-    "lang.nl": "Holenderski",
-    "lang.ru": "Rosyjski",
-    "lang.zh": "Chiński",
-    "lang.ja": "Japoński",
-    "lang.ar": "Arabski",
-    "lang.hi": "Hindi",
-    "lang.tr": "Turecki",
-    "lang.da": "Duński",
-    "lang.no": "Norweski",
-    "lang.sv": "Szwedzki",
-    "lang.is": "Islandzki",
-    "lang.pl": "Polski",
-    "lang.ro": "Rumuński",
-    "lang.at": "austriacki",
-    "lang.sr": "Serbski",
-    "lang.hr": "Chorwacki",
-    "lang.cs": "Czeski",
-  },
-
-  // ---------- ROMANIAN ----------
-  ro: {
-    "nav.home": "Acasă",
-    "nav.games": "Jocuri",
-    "nav.profiles": "Profiluri",
-    "nav.friends": "Prieteni",
-    "nav.stats": "Statistici",
-    "nav.settings": "Setări",
-
-    "settings.back": "Înapoi",
-    "settings.title": "Setări",
-    "settings.subtitle":
-      "Personalizează tema și limba aplicației",
-    "settings.theme": "Temă",
-    "settings.lang": "Limbă",
-
-    "settings.theme.gold.label": "Neon auriu",
-    "settings.theme.gold.desc": "Temă premium aurie",
-    "settings.theme.pink.label": "Neon roz",
-    "settings.theme.pink.desc": "Ambianță arcade roz",
-    "settings.theme.petrol.label": "Albastru petrol",
-    "settings.theme.petrol.desc": "Albastru neon profund",
-    "settings.theme.green.label": "Neon verde",
-    "settings.theme.green.desc": "Stil de antrenament luminos",
-    "settings.theme.magenta.label": "Magenta",
-    "settings.theme.magenta.desc": "Violet / magenta intens",
-    "settings.theme.red.label": "Roșu",
-    "settings.theme.red.desc": "Roșu arcade agresiv",
-    "settings.theme.orange.label": "Portocaliu",
-    "settings.theme.orange.desc": "Portocaliu cald și energic",
-    "settings.theme.white.label": "Alb",
-    "settings.theme.white.desc": "Fundal modern, deschis",
-
-    // GAMES PAGE
-"games.title": "TOATE JOCURILE",
-"games.subtitle": "Selectează un mod de joc",
-
-"games.training.title": "ANTRENAMENT",
-"games.training.subtitle": "Îmbunătățește-ți progresul.",
-"games.training.infoTitle": "Antrenament",
-"games.training.infoBody":
-  "Practice mode to work on consistency, scoring and finishing.",
-
-"games.x01.title": "X01",
-"games.x01.subtitle": "301 / 501 / 701 / 901.",
-"games.x01.infoTitle": "X01",
-"games.x01.infoBody":
-  "Classic 301/501/701/901 games with stats, history and several rule options.",
-
-"games.cricket.title": "CRICKET",
-"games.cricket.subtitle": "Închide 15–20 + Bull.",
-"games.cricket.infoTitle": "Cricket",
-"games.cricket.infoBody":
-  "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
-
-"games.killer.title": "KILLER",
-"games.killer.subtitle": "Lovește numărul tău… devino Killer.",
-"games.killer.infoTitle": "Killer",
-"games.killer.infoBody":
-  "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
-
-"games.shanghai.title": "SHANGHAI",
-"games.shanghai.subtitle": "Ținta rundei, S-D-T = Shanghai.",
-"games.shanghai.infoTitle": "Shanghai",
-"games.shanghai.infoBody":
-  "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
-
-"games.battle.title": "BATTLE ROYALE",
-"games.battle.subtitle": "Mod distractiv — eliminări.",
-"games.battle.infoTitle": "Battle Royale",
-"games.battle.infoBody":
-  "Fun multiplayer mode with successive eliminations. Last player standing wins.",
-
-"games.status.comingSoon": "În curând",
-"games.info.close": "Închide",
-
-    "lang.fr": "Franceză",
-    "lang.en": "Engleză",
-    "lang.es": "Spaniolă",
-    "lang.de": "Germană",
-    "lang.it": "Italiană",
-    "lang.pt": "Portugheză",
-    "lang.nl": "Olandeză",
-    "lang.ru": "Rusă",
-    "lang.zh": "Chineză",
-    "lang.ja": "Japoneză",
-    "lang.ar": "Arabă",
-    "lang.hi": "Hindi",
-    "lang.tr": "Turcă",
-    "lang.da": "Daneză",
-    "lang.no": "Norvegiană",
-    "lang.sv": "Suedeză",
-    "lang.is": "Islandeză",
-    "lang.pl": "Poloneză",
-    "lang.ro": "Română",
-    "lang.at": "austriac",
-    "lang.sr": "Sârbă",
-    "lang.hr": "Croată",
-    "lang.cs": "Cehă",
-  },
+ // ---------- TÜRKÇE ----------
+tr: {
+  // --- NAV ---
+  "nav.home": "Ana Sayfa",
+  "nav.games": "Oyunlar",
+  "nav.profiles": "Profiller",
+  "nav.friends": "Arkadaşlar",
+  "nav.stats": "İstatistikler",
+  "nav.settings": "Ayarlar",
+
+  // --- SETTINGS ---
+  "settings.back": "Geri",
+  "settings.title": "Ayarlar",
+  "settings.subtitle": "Uygulama temasını ve dilini özelleştir",
+  "settings.theme": "Tema",
+  "settings.lang": "Dil",
+
+  // THEMES (PREMIUM – tümü MAJUSCULES korunur)
+  "settings.theme.gold.label": "GOLD NEON",
+  "settings.theme.gold.desc": "Premium altın neon tema",
+
+  "settings.theme.pink.label": "ROSE FLUO",
+  "settings.theme.pink.desc": "Pembe arcade atmosferi",
+
+  "settings.theme.petrol.label": "PETROL BLUE",
+  "settings.theme.petrol.desc": "Derin neon mavisi",
+
+  "settings.theme.green.label": "VEGETAL",
+  "settings.theme.green.desc": "Aydınlık antrenman stili",
+
+  "settings.theme.magenta.label": "MAGENTA",
+  "settings.theme.magenta.desc": "Yoğun mor / magenta",
+
+  "settings.theme.red.label": "BRIGHT RED",
+  "settings.theme.red.desc": "Agresif arcade kırmızısı",
+
+  "settings.theme.orange.label": "FIRE ORANGE",
+  "settings.theme.orange.desc": "Sıcak ve enerjik turuncu",
+
+  "settings.theme.white.label": "SNOW WHITE",
+  "settings.theme.white.desc": "Modern açık arka plan",
+
+  // --- HOME ---
+  "home.greeting": "Hoş geldin",
+  "home.titleApp": "DARTS COUNTER",
+  "home.connect": "GİRİŞ YAP",
+
+  "home.card.profiles.title": "PROFİLLER",
+  "home.card.profiles.subtitle": "Profil oluştur ve yönet",
+
+  "home.card.local.title": "YEREL OYUN",
+  "home.card.local.subtitle": "Tüm oyun modlarına eriş",
+
+  "home.card.online.title": "ÇEVRİMİÇİ OYUN",
+  "home.card.online.subtitle": "Uzaktan maçlar (yakında)",
+
+  "home.card.stats.title": "İSTATİSTİKLER",
+  "home.card.stats.subtitle": "İstatistikler ve geçmiş",
+
+  "home.seeStats": "İstatistiklerimi görüntüle",
+
+  "home.stats.avg3": "Ort/3",
+  "home.stats.best": "En iyi",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Kazanma%",
+
+  // STATUS
+  "status.online": "Çevrimiçi",
+  "status.away": "Uzakta",
+  "status.offline": "Çevrimdışı",
+
+  // --- PROFILES ---
+  "profiles.title": "Profiller",
+  "profiles.create": "Profil oluştur",
+  "profiles.edit": "Profili düzenle",
+  "profiles.delete": "Profili sil",
+
+  "profiles.confirmDeleteTitle": "Profil silinsin mi?",
+  "profiles.confirmDeleteBody":
+    "Bu profil ve tüm istatistikler kalıcı olarak silinecek.",
+  "profiles.confirmDeleteYes": "Sil",
+  "profiles.confirmDeleteNo": "İptal",
+
+  "profiles.name": "İsim",
+  "profiles.avatar": "Avatar",
+  "profiles.stats": "İstatistikler",
+  "profiles.noProfiles": "Henüz profil yok.",
+  "profiles.pickOne": "Bir profil seç",
+  "profiles.active": "Aktif profil",
+
+  // --- GAMES ---
+  "games.title": "TÜM OYUNLAR",
+  "games.subtitle": "Bir oyun modu seç",
+
+  "games.training.title": "ANTRENMAN",
+  "games.training.subtitle": "Gelişimini artır.",
+  "games.training.infoTitle": "Antrenman",
+  "games.training.infoBody":
+    "Düzenlilik, skor ve bitiriş becerilerini geliştirmek için antrenman modu.",
+
+  "games.x01.title": "X01",
+  "games.x01.subtitle": "301 / 501 / 701 / 901.",
+  "games.x01.infoTitle": "X01",
+  "games.x01.infoBody":
+    "Klasik 301/501/701/901 modları; istatistikler, geçmiş ve çeşitli kural seçenekleriyle.",
+
+  "games.cricket.title": "CRICKET",
+  "games.cricket.subtitle": "15–20 + Bull kapat.",
+  "games.cricket.infoTitle": "Cricket",
+  "games.cricket.infoBody":
+    "Rakibinden önce 15–20 ve Bull’u kapatırken mümkün olduğunca çok puan topla.",
+
+  "games.killer.title": "KILLER",
+  "games.killer.subtitle": "Numaranı vur… Killer ol.",
+  "games.killer.infoTitle": "Killer",
+  "games.killer.infoBody":
+    "Her oyuncunun bir numarası vardır. Kendi numaranı vur, Killer ol ve rakipleri ele.",
+  
+  "games.shanghai.title": "SHANGHAI",
+  "games.shanghai.subtitle": "Raund hedefi, S-D-T = Shanghai.",
+  "games.shanghai.infoTitle": "Shanghai",
+  "games.shanghai.infoBody":
+    "Aynı hedefte tek, çift ve üçlü vuruş yaparak Shanghai kazan.",
+
+  "games.battle.title": "BATTLE ROYALE",
+  "games.battle.subtitle": "Eğlenceli mod — eleme sistemi.",
+  "games.battle.infoTitle": "Battle Royale",
+  "games.battle.infoBody":
+    "Eleme tabanlı çok oyunculu mod. Ayakta kalan son oyuncu kazanır.",
+
+  "games.status.comingSoon": "Yakında",
+  "games.info.close": "Kapat",
+
+  // --- TRAINING MENU ---
+  "training.menu.title": "ANTRENMAN",
+  "training.menu.subtitle": "Bir antrenman modu seç",
+
+  "training.menu.x01.title": "Training X01",
+  "training.menu.x01.subtitle": "Skor ve bitiriş gelişimi",
+  "training.menu.x01.info":
+    "Düzenlilik, skor ve bitiriş becerilerini geliştirmeye yönelik X01 antrenmanı.",
+
+  "training.menu.clock.title": "Around the Clock",
+  "training.menu.clock.subtitle": "Single / Double / Triple",
+  "training.menu.clock.info":
+    "1’den 20’ye ve Bull’a sırayla atış yap.",
+
+  "training.menu.evolution.title": "Evrim",
+  "training.menu.evolution.subtitle": "Yakında",
+  "training.menu.evolution.info":
+    "Yeni bir antrenman modu yakında geliyor.",
+
+  "training.menu.comingSoon": "Yakında",
+  "training.menu.info.close": "Kapat",
+
+  // --- LANGUAGE NAMES ---
+  "lang.fr": "Fransızca",
+  "lang.en": "İngilizce",
+  "lang.es": "İspanyolca",
+  "lang.de": "Almanca",
+  "lang.it": "İtalyanca",
+  "lang.pt": "Portekizce",
+  "lang.nl": "Felemenkçe",
+  "lang.ru": "Rusça",
+  "lang.zh": "Çince",
+  "lang.ja": "Japonca",
+  "lang.ar": "Arapça",
+  "lang.hi": "Hintçe",
+  "lang.tr": "Türkçe",
+  "lang.da": "Danca",
+  "lang.no": "Norveççe",
+  "lang.sv": "İsveççe",
+  "lang.is": "İzlandaca",
+  "lang.pl": "Lehçe",
+  "lang.ro": "Romence",
+  "lang.at": "Avusturya Almancası",
+  "lang.sr": "Sırpça",
+  "lang.hr": "Hırvatça",
+  "lang.cs": "Çekçe",
+},
+
+  // ---------- DANSK ----------
+da: {
+  // --- NAV ---
+  "nav.home": "Hjem",
+  "nav.games": "Spil",
+  "nav.profiles": "Profiler",
+  "nav.friends": "Venner",
+  "nav.stats": "Statistikker",
+  "nav.settings": "Indstillinger",
+
+  // --- SETTINGS ---
+  "settings.back": "Tilbage",
+  "settings.title": "Indstillinger",
+  "settings.subtitle": "Tilpas tema og app-sprog",
+  "settings.theme": "Tema",
+  "settings.lang": "Sprog",
+
+  // THEMES (PREMIUM)
+  "settings.theme.gold.label": "GOLD NEON",
+  "settings.theme.gold.desc": "Premium gyldent tema",
+
+  "settings.theme.pink.label": "ROSE FLUO",
+  "settings.theme.pink.desc": "Pink arcade-stemning",
+
+  "settings.theme.petrol.label": "PETROL BLUE",
+  "settings.theme.petrol.desc": "Dyb neonblå",
+
+  "settings.theme.green.label": "VEGETAL",
+  "settings.theme.green.desc": "Lyst træningsdesign",
+
+  "settings.theme.magenta.label": "MAGENTA",
+  "settings.theme.magenta.desc": "Intens violet / magenta",
+
+  "settings.theme.red.label": "BRIGHT RED",
+  "settings.theme.red.desc": "Aggressiv arcade-rød",
+
+  "settings.theme.orange.label": "FIRE ORANGE",
+  "settings.theme.orange.desc": "Varm og energisk orange",
+
+  "settings.theme.white.label": "SNOW WHITE",
+  "settings.theme.white.desc": "Moderne lyst tema",
+
+  // --- HOME ---
+  "home.greeting": "Velkommen",
+  "home.titleApp": "DARTS COUNTER",
+  "home.connect": "LOG IND",
+
+  "home.card.profiles.title": "PROFILER",
+  "home.card.profiles.subtitle": "Opret og administrér profiler",
+
+  "home.card.local.title": "LOKALT SPIL",
+  "home.card.local.subtitle": "Adgang til alle spiltilstande",
+
+  "home.card.online.title": "ONLINE SPIL",
+  "home.card.online.subtitle": "Fjernkampe (kommer snart)",
+
+  "home.card.stats.title": "STATISTIKKER",
+  "home.card.stats.subtitle": "Statistikker og historik",
+
+  "home.seeStats": "Se mine statistikker",
+
+  "home.stats.avg3": "Gns/3",
+  "home.stats.best": "Bedste",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Sejr%",
+
+  // STATUS
+  "status.online": "Online",
+  "status.away": "Væk",
+  "status.offline": "Offline",
+
+  // --- PROFILES ---
+  "profiles.title": "Profiler",
+  "profiles.create": "Opret profil",
+  "profiles.edit": "Rediger profil",
+  "profiles.delete": "Slet profil",
+
+  "profiles.confirmDeleteTitle": "Slet profil?",
+  "profiles.confirmDeleteBody":
+    "Denne profil og alle tilknyttede statistikker bliver slettet permanent.",
+  "profiles.confirmDeleteYes": "Slet",
+  "profiles.confirmDeleteNo": "Annullér",
+
+  "profiles.name": "Navn",
+  "profiles.avatar": "Avatar",
+  "profiles.stats": "Statistikker",
+  "profiles.noProfiles": "Ingen profiler endnu.",
+  "profiles.pickOne": "Vælg en profil",
+  "profiles.active": "Aktiv profil",
+
+  // --- GAMES ---
+  "games.title": "ALLE SPIL",
+  "games.subtitle": "Vælg en spiltilstand",
+
+  "games.training.title": "TRÆNING",
+  "games.training.subtitle": "Forbedr din udvikling.",
+  "games.training.infoTitle": "Træning",
+  "games.training.infoBody":
+    "Træningstilstand til præcision, scoring og afslutninger.",
+
+  "games.x01.title": "X01",
+  "games.x01.subtitle": "301 / 501 / 701 / 901.",
+  "games.x01.infoTitle": "X01",
+  "games.x01.infoBody":
+    "Klassiske X01-spil med statistik, historik og regelmuligheder.",
+
+  "games.cricket.title": "CRICKET",
+  "games.cricket.subtitle": "Luk 15–20 + Bull.",
+  "games.cricket.infoTitle": "Cricket",
+  "games.cricket.infoBody":
+    "Luk 15 til 20 og Bull før din modstander, og scor flest mulige point.",
+
+  "games.killer.title": "KILLER",
+  "games.killer.subtitle": "Dublér dit nummer… bliv Killer.",
+  "games.killer.infoTitle": "Killer",
+  "games.killer.infoBody":
+    "Hver spiller har et nummer. Dublér dit eget for at blive Killer og eliminer de andre.",
+
+  "games.shanghai.title": "SHANGHAI",
+  "games.shanghai.subtitle": "Rundeværdi, S-D-T = Shanghai.",
+  "games.shanghai.infoTitle": "Shanghai",
+  "games.shanghai.infoBody":
+    "Ram single, double og triple på samme nummer for at lave Shanghai.",
+
+  "games.battle.title": "BATTLE ROYALE",
+  "games.battle.subtitle": "Flerspillersjov — elimineringer.",
+  "games.battle.infoTitle": "Battle Royale",
+  "games.battle.infoBody":
+    "Flerspillertilstand med løbende elimineringer. Sidste spiller vinder.",
+
+  "games.status.comingSoon": "Kommer snart",
+  "games.info.close": "Luk",
+
+  // --- TRAINING MENU ---
+  "training.menu.title": "TRÆNING",
+  "training.menu.subtitle": "Vælg en træningstilstand",
+
+  "training.menu.x01.title": "X01 Træning",
+  "training.menu.x01.subtitle": "Bedre scoring & afslutninger",
+  "training.menu.x01.info":
+    "X01-træning med fokus på regularitet, præcision og statistikker.",
+
+  "training.menu.clock.title": "Around the Clock",
+  "training.menu.clock.subtitle": "Single / Double / Triple",
+  "training.menu.clock.info":
+    "Ram tallene 1–20 og Bull i rækkefølge.",
+
+  "training.menu.evolution.title": "Evolution",
+  "training.menu.evolution.subtitle": "Kommer snart",
+  "training.menu.evolution.info":
+    "En ny træningstilstand kommer snart.",
+
+  "training.menu.comingSoon": "Kommer snart",
+  "training.menu.info.close": "Luk",
+
+  // --- LANGUAGE NAMES ---
+  "lang.fr": "Fransk",
+  "lang.en": "Engelsk",
+  "lang.es": "Spansk",
+  "lang.de": "Tysk",
+  "lang.it": "Italiensk",
+  "lang.pt": "Portugisisk",
+  "lang.nl": "Hollandsk",
+  "lang.ru": "Russisk",
+  "lang.zh": "Kinesisk",
+  "lang.ja": "Japansk",
+  "lang.ar": "Arabisk",
+  "lang.hi": "Hindi",
+  "lang.tr": "Tyrkisk",
+  "lang.da": "Dansk",
+  "lang.no": "Norsk",
+  "lang.sv": "Svensk",
+  "lang.is": "Islandsk",
+  "lang.pl": "Polsk",
+  "lang.ro": "Rumænsk",
+  "lang.at": "Østrigsk",
+  "lang.sr": "Serbisk",
+  "lang.hr": "Kroatisk",
+  "lang.cs": "Tjekkisk",
+},
+
+ // ---------- NORSK ----------
+no: {
+  // --- NAV ---
+  "nav.home": "Hjem",
+  "nav.games": "Spill",
+  "nav.profiles": "Profiler",
+  "nav.friends": "Venner",
+  "nav.stats": "Statistikk",
+  "nav.settings": "Innstillinger",
+
+  // --- SETTINGS ---
+  "settings.back": "Tilbake",
+  "settings.title": "Innstillinger",
+  "settings.subtitle": "Tilpass appens tema og språk",
+  "settings.theme": "Tema",
+  "settings.lang": "Språk",
+
+  // THEMES PREMIUM
+  "settings.theme.gold.label": "GOLD NEON",
+  "settings.theme.gold.desc": "Premium gyldent tema",
+
+  "settings.theme.pink.label": "ROSE FLUO",
+  "settings.theme.pink.desc": "Rosa arcade-stemning",
+
+  "settings.theme.petrol.label": "PETROL BLUE",
+  "settings.theme.petrol.desc": "Dyp neonblå",
+
+  "settings.theme.green.label": "VEGETAL",
+  "settings.theme.green.desc": "Lys treningsstil",
+
+  "settings.theme.magenta.label": "MAGENTA",
+  "settings.theme.magenta.desc": "Intens lilla / magenta",
+
+  "settings.theme.red.label": "BRIGHT RED",
+  "settings.theme.red.desc": "Aggressiv arcade-rød",
+
+  "settings.theme.orange.label": "FIRE ORANGE",
+  "settings.theme.orange.desc": "Varm og energisk oransje",
+
+  "settings.theme.white.label": "SNOW WHITE",
+  "settings.theme.white.desc": "Moderne lyst tema",
+
+  // --- HOME ---
+  "home.greeting": "Velkommen",
+  "home.titleApp": "DARTS COUNTER",
+  "home.connect": "LOGG INN",
+
+  "home.card.profiles.title": "PROFILER",
+  "home.card.profiles.subtitle": "Opprett og administrer profiler",
+
+  "home.card.local.title": "LOKALT SPILL",
+  "home.card.local.subtitle": "Tilgang til alle spillmoduser",
+
+  "home.card.online.title": "ONLINE SPILL",
+  "home.card.online.subtitle": "Fjernkamper (kommer snart)",
+
+  "home.card.stats.title": "STATISTIKK",
+  "home.card.stats.subtitle": "Statistikk og historikk",
+
+  "home.seeStats": "Se mine statistikker",
+
+  "home.stats.avg3": "Snitt/3",
+  "home.stats.best": "Beste",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Sjanse%",
+
+  // STATUS
+  "status.online": "Online",
+  "status.away": "Borte",
+  "status.offline": "Offline",
+
+  // --- PROFILES ---
+  "profiles.title": "Profiler",
+  "profiles.create": "Opprett profil",
+  "profiles.edit": "Rediger profil",
+  "profiles.delete": "Slett profil",
+
+  "profiles.confirmDeleteTitle": "Slette profil?",
+  "profiles.confirmDeleteBody":
+    "Denne profilen og alle statistikker blir slettet permanent.",
+  "profiles.confirmDeleteYes": "Slett",
+  "profiles.confirmDeleteNo": "Avbryt",
+
+  "profiles.name": "Navn",
+  "profiles.avatar": "Avatar",
+  "profiles.stats": "Statistikk",
+  "profiles.noProfiles": "Ingen profiler ennå.",
+  "profiles.pickOne": "Velg en profil",
+  "profiles.active": "Aktiv profil",
+
+  // --- GAMES ---
+  "games.title": "ALLE SPILL",
+  "games.subtitle": "Velg en spillmodus",
+
+  "games.training.title": "TRENING",
+  "games.training.subtitle": "Forbedre ferdighetene dine.",
+  "games.training.infoTitle": "Trening",
+  "games.training.infoBody":
+    "Treningsmodus for presisjon, poeng og avslutninger.",
+
+  "games.x01.title": "X01",
+  "games.x01.subtitle": "301 / 501 / 701 / 901.",
+  "games.x01.infoTitle": "X01",
+  "games.x01.infoBody":
+    "Klassiske X01-spill med statistikk, historikk og flere regelvalg.",
+
+  "games.cricket.title": "CRICKET",
+  "games.cricket.subtitle": "Lukk 15–20 + Bull.",
+  "games.cricket.infoTitle": "Cricket",
+  "games.cricket.infoBody":
+    "Lukk feltene 15 til 20 og Bull før motstanderen og få flere poeng.",
+
+  "games.killer.title": "KILLER",
+  "games.killer.subtitle": "Doble tallet ditt… bli Killer.",
+  "games.killer.infoTitle": "Killer",
+  "games.killer.infoBody":
+    "Doble nummeret ditt for å bli Killer, og eliminer de andre spillerne.",
+
+  "games.shanghai.title": "SHANGHAI",
+  "games.shanghai.subtitle": "Rundetall, S-D-T = Shanghai.",
+  "games.shanghai.infoTitle": "Shanghai",
+  "games.shanghai.infoBody":
+    "Treff singel, dobbel og trippel på samme verdi for Shanghai.",
+
+  "games.battle.title": "BATTLE ROYALE",
+  "games.battle.subtitle": "Morsom modus — elimineringer.",
+  "games.battle.infoTitle": "Battle Royale",
+  "games.battle.infoBody":
+    "Flerspiller med elimineringer. Siste spiller vinner.",
+
+  "games.status.comingSoon": "Kommer snart",
+  "games.info.close": "Lukk",
+
+  // --- TRAINING MENU ---
+  "training.menu.title": "TRENING",
+  "training.menu.subtitle": "Velg en treningsmodus",
+
+  "training.menu.x01.title": "X01 Trening",
+  "training.menu.x01.subtitle": "Bedre poeng og avslutninger",
+  "training.menu.x01.info":
+    "X01-trening for presisjon, stabilitet og statistikk.",
+
+  "training.menu.clock.title": "Around the Clock",
+  "training.menu.clock.subtitle": "Single / Double / Triple",
+  "training.menu.clock.info":
+    "Treff tallene fra 1 til 20 og Bull.",
+
+  "training.menu.evolution.title": "Evolusjon",
+  "training.menu.evolution.subtitle": "Kommer snart",
+  "training.menu.evolution.info":
+    "En ny treningsmodus kommer snart.",
+
+  "training.menu.comingSoon": "Kommer snart",
+  "training.menu.info.close": "Lukk",
+
+  // LANG NAMES
+  "lang.no": "Norsk",
+},
+
+ // ---------- SVENSKA ----------
+sv: {
+  "nav.home": "Hem",
+  "nav.games": "Spel",
+  "nav.profiles": "Profiler",
+  "nav.friends": "Vänner",
+  "nav.stats": "Statistik",
+  "nav.settings": "Inställningar",
+
+  "settings.back": "Tillbaka",
+  "settings.title": "Inställningar",
+  "settings.subtitle": "Anpassa appens tema och språk",
+  "settings.theme": "Tema",
+  "settings.lang": "Språk",
+
+  "settings.theme.gold.label": "GOLD NEON",
+  "settings.theme.gold.desc": "Exklusivt guldtema",
+
+  "settings.theme.pink.label": "ROSE FLUO",
+  "settings.theme.pink.desc": "Rosa arcade-stämning",
+
+  "settings.theme.petrol.label": "PETROL BLUE",
+  "settings.theme.petrol.desc": "Djup neonblå",
+
+  "settings.theme.green.label": "VEGETAL",
+  "settings.theme.green.desc": "Ljust träningsstil",
+
+  "settings.theme.magenta.label": "MAGENTA",
+  "settings.theme.magenta.desc": "Intensiv lila/magenta",
+
+  "settings.theme.red.label": "BRIGHT RED",
+  "settings.theme.red.desc": "Aggressiv arcade-röd",
+
+  "settings.theme.orange.label": "FIRE ORANGE",
+  "settings.theme.orange.desc": "Varm och energisk orange",
+
+  "settings.theme.white.label": "SNOW WHITE",
+  "settings.theme.white.desc": "Modern ljus bakgrund",
+
+  "home.greeting": "Välkommen",
+  "home.titleApp": "DARTS COUNTER",
+  "home.connect": "LOGGA IN",
+
+  "home.card.profiles.title": "PROFILER",
+  "home.card.profiles.subtitle": "Skapa och hantera profiler",
+
+  "home.card.local.title": "LOKALT SPEL",
+  "home.card.local.subtitle": "Tillgång till alla spellägen",
+
+  "home.card.online.title": "ONLINE-SPEL",
+  "home.card.online.subtitle": "Fjärrmatcher (kommer snart)",
+
+  "home.card.stats.title": "STATISTIK",
+  "home.card.stats.subtitle": "Statistik och historik",
+
+  "home.seeStats": "Visa min statistik",
+
+  "home.stats.avg3": "Snitt/3",
+  "home.stats.best": "Bästa",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Vinst%",
+
+  "status.online": "Online",
+  "status.away": "Borta",
+  "status.offline": "Offline",
+
+  "profiles.title": "Profiler",
+  "profiles.create": "Skapa profil",
+  "profiles.edit": "Redigera profil",
+  "profiles.delete": "Radera profil",
+
+  "profiles.confirmDeleteTitle": "Radera profil?",
+  "profiles.confirmDeleteBody":
+    "Denna profil och all statistik kommer att raderas permanent.",
+  "profiles.confirmDeleteYes": "Radera",
+  "profiles.confirmDeleteNo": "Avbryt",
+
+  "profiles.name": "Namn",
+  "profiles.avatar": "Avatar",
+  "profiles.stats": "Statistik",
+  "profiles.noProfiles": "Inga profiler ännu.",
+  "profiles.pickOne": "Välj en profil",
+  "profiles.active": "Aktiv profil",
+
+  "games.title": "ALLA SPEL",
+  "games.subtitle": "Välj ett spelläge",
+
+  "games.training.title": "TRÄNING",
+  "games.training.subtitle": "Förbättra din utveckling.",
+  "games.training.infoTitle": "Träning",
+  "games.training.infoBody":
+    "Träningsläge för träffsäkerhet, scoring och avslut.",
+
+  "games.x01.title": "X01",
+  "games.x01.subtitle": "301 / 501 / 701 / 901.",
+  "games.x01.infoTitle": "X01",
+  "games.x01.infoBody":
+    "Klassiska X01-spel med statistik, historik och regelval.",
+
+  "games.cricket.title": "CRICKET",
+  "games.cricket.subtitle": "Stäng 15–20 + Bull.",
+  "games.cricket.infoTitle": "Cricket",
+  "games.cricket.infoBody":
+    "Stäng 15–20 och Bull innan motståndaren och få poäng.",
+
+  "games.killer.title": "KILLER",
+  "games.killer.subtitle": "Dubbla din siffra… bli Killer.",
+  "games.killer.infoTitle": "Killer",
+  "games.killer.infoBody":
+    "Dubbla ditt nummer för att bli Killer och slå ut andra spelare.",
+
+  "games.shanghai.title": "SHANGHAI",
+  "games.shanghai.subtitle": "Rundvärde, S-D-T = Shanghai.",
+  "games.shanghai.infoTitle": "Shanghai",
+  "games.shanghai.infoBody":
+    "Träffa singel, dubbel och trippel på samma värde för Shanghai.",
+
+  "games.battle.title": "BATTLE ROYALE",
+  "games.battle.subtitle": "Roligt läge — elimineringar.",
+  "games.battle.infoTitle": "Battle Royale",
+  "games.battle.infoBody":
+    "Fler spelare med elimineringar. Sista spelaren vinner.",
+
+  "games.status.comingSoon": "Kommer snart",
+  "games.info.close": "Stäng",
+
+  "training.menu.title": "TRÄNING",
+  "training.menu.subtitle": "Välj ett träningsläge",
+
+  "training.menu.x01.title": "X01 Träning",
+  "training.menu.x01.subtitle": "Bättre scoring och avslut",
+  "training.menu.x01.info":
+    "X01-träning med fokus på precision och statistik.",
+
+  "training.menu.clock.title": "Around the Clock",
+  "training.menu.clock.subtitle": "Single / Double / Triple",
+  "training.menu.clock.info":
+    "Träffa siffrorna 1–20 och Bull.",
+
+  "training.menu.evolution.title": "Evolution",
+  "training.menu.evolution.subtitle": "Kommer snart",
+  "training.menu.evolution.info":
+    "Ett nytt träningsläge kommer snart.",
+
+  "training.menu.comingSoon": "Kommer snart",
+  "training.menu.info.close": "Stäng",
+
+  "lang.sv": "Svenska",
+},
+
+ // ---------- ÍSLENSKA ----------
+is: {
+  // --- NAV ---
+  "nav.home": "Heim",
+  "nav.games": "Leikir",
+  "nav.profiles": "Prófílar",
+  "nav.friends": "Vinir",
+  "nav.stats": "Tölfræði",
+  "nav.settings": "Stillingar",
+
+  // --- SETTINGS ---
+  "settings.back": "Til baka",
+  "settings.title": "Stillingar",
+  "settings.subtitle": "Sérsníddu útlit og tungumál appsins",
+  "settings.theme": "Þema",
+  "settings.lang": "Tungumál",
+
+  // THEMES
+  "settings.theme.gold.label": "GOLD NEON",
+  "settings.theme.gold.desc": "Gullið premium þema",
+
+  "settings.theme.pink.label": "ROSE FLUO",
+  "settings.theme.pink.desc": "Bleik arcade stemning",
+
+  "settings.theme.petrol.label": "PETROL BLUE",
+  "settings.theme.petrol.desc": "Djúpur neonblár",
+
+  "settings.theme.green.label": "VEGETAL",
+  "settings.theme.green.desc": "Bjart æfingaþema",
+
+  "settings.theme.magenta.label": "MAGENTA",
+  "settings.theme.magenta.desc": "Sterkt fjólublátt / magenta",
+
+  "settings.theme.red.label": "BRIGHT RED",
+  "settings.theme.red.desc": "Árásargjarnt arcade-rautt",
+
+  "settings.theme.orange.label": "FIRE ORANGE",
+  "settings.theme.orange.desc": "Hlý og kraftmikil appelsínugul",
+
+  "settings.theme.white.label": "SNOW WHITE",
+  "settings.theme.white.desc": "Ljóst og nútímalegt yfirbragð",
+
+  // HOME
+  "home.greeting": "Velkomin",
+  "home.titleApp": "DARTS COUNTER",
+  "home.connect": "SKRÁ INN",
+
+  "home.card.profiles.title": "PRÓFÍLAR",
+  "home.card.profiles.subtitle": "Búa til og stjórna prófílum",
+
+  "home.card.local.title": "STAÐBUNDINN LEIKUR",
+  "home.card.local.subtitle": "Aðgangur að öllum leikjamátum",
+
+  "home.card.online.title": "NETLEIKUR",
+  "home.card.online.subtitle": "Fjartengdir leikir (fljótlega)",
+
+  "home.card.stats.title": "TÖLFRÆÐI",
+  "home.card.stats.subtitle": "Tölfræði og saga",
+
+  "home.seeStats": "Skoða mína tölfræði",
+
+  "home.stats.avg3": "Með/3",
+  "home.stats.best": "Best",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Sigur%",
+
+  // STATUS
+  "status.online": "Á neti",
+  "status.away": "Fjarverandi",
+  "status.offline": "Ótengdur",
+
+  // PROFILES
+  "profiles.title": "Prófílar",
+  "profiles.create": "Búa til prófíl",
+  "profiles.edit": "Breyta prófíl",
+  "profiles.delete": "Eyða prófíl",
+
+  "profiles.confirmDeleteTitle": "Eyða prófíl?",
+  "profiles.confirmDeleteBody":
+    "Þessum prófíl og allri tengdri tölfræði verður eytt varanlega.",
+  "profiles.confirmDeleteYes": "Eyða",
+  "profiles.confirmDeleteNo": "Hætta við",
+
+  "profiles.name": "Nafn",
+  "profiles.avatar": "Avatar",
+  "profiles.stats": "Tölfræði",
+  "profiles.noProfiles": "Engir prófílar enn.",
+  "profiles.pickOne": "Veldu prófíl",
+  "profiles.active": "Virkur prófíl",
+
+  // GAMES
+  "games.title": "ALLIR LEIKIR",
+  "games.subtitle": "Veldu leikjamáta",
+
+  "games.training.title": "ÆFING",
+  "games.training.subtitle": "Bættu frammistöðu þína.",
+  "games.training.infoTitle": "Æfing",
+  "games.training.infoBody":
+    "Æfingahamur til að bæta nákvæmni, stig og lokahögg.",
+
+  "games.x01.title": "X01",
+  "games.x01.subtitle": "301 / 501 / 701 / 901.",
+  "games.x01.infoBody":
+    "Klassískir X01 leikir með tölfræði, sögu og reglur valfrjálsar.",
+
+  "games.cricket.title": "CRICKET",
+  "games.cricket.subtitle": "Loka 15–20 + Bull.",
+  "games.cricket.infoBody":
+    "Lokaðu 15 til 20 og Bull á undan andstæðingi og náðu stigum.",
+
+  "games.killer.title": "KILLER",
+  "games.killer.subtitle": "Tvíefldu töluna þína… vertu Killer.",
+  "games.killer.infoBody":
+    "Tvíefldu númerið til að verða Killer og útrýma mótherjum.",
+
+  "games.shanghai.title": "SHANGHAI",
+  "games.shanghai.subtitle": "Einfalt/dúbbult/þríeyri = Shanghai.",
+  "games.shanghai.infoBody":
+    "Hittaðu einfalt, dúbbult og þríeyri á sömu tölu fyrir Shanghai.",
+
+  "games.battle.title": "BATTLE ROYALE",
+  "games.battle.subtitle": "Fjölspilun — útrýming.",
+  "games.battle.infoBody":
+    "Síðasti leikmaðurinn sem lifir vinnur.",
+
+  "games.status.comingSoon": "Kemur fljótlega",
+  "games.info.close": "Loka",
+
+  // TRAINING MENU
+  "training.menu.title": "ÆFING",
+  "training.menu.subtitle": "Veldu æfingarmáta",
+
+  "training.menu.x01.title": "X01 Æfing",
+  "training.menu.x01.subtitle": "Betri stig & lokahögg",
+  "training.menu.x01.info":
+    "X01 æfing með nákvæmni og tölfræði í fyrirrúmi.",
+
+  "training.menu.clock.title": "Around the Clock",
+  "training.menu.clock.subtitle": "Einfalt / Dúbbult / Þríeyri",
+  "training.menu.clock.info":
+    "Hittaðu tölur 1–20 og Bull í röð.",
+
+  "training.menu.evolution.title": "Framþróun",
+  "training.menu.evolution.subtitle": "Kemur fljótlega",
+  "training.menu.evolution.info":
+    "Nýr æfingarmáti kemur fljótlega.",
+
+  "training.menu.comingSoon": "Kemur fljótlega",
+  "training.menu.info.close": "Loka",
+
+  // LANG
+  "lang.is": "Íslenska",
+},
+
+ // ---------- POLSKI ----------
+pl: {
+  "nav.home": "Strona główna",
+  "nav.games": "Gry",
+  "nav.profiles": "Profile",
+  "nav.friends": "Znajomi",
+  "nav.stats": "Statystyki",
+  "nav.settings": "Ustawienia",
+
+  "settings.back": "Wróć",
+  "settings.title": "Ustawienia",
+  "settings.subtitle": "Dostosuj motyw i język aplikacji",
+  "settings.theme": "Motyw",
+  "settings.lang": "Język",
+
+  "settings.theme.gold.label": "GOLD NEON",
+  "settings.theme.gold.desc": "Złoty motyw premium",
+
+  "settings.theme.pink.label": "ROSE FLUO",
+  "settings.theme.pink.desc": "Różowa atmosfera arcade",
+
+  "settings.theme.petrol.label": "PETROL BLUE",
+  "settings.theme.petrol.desc": "Głęboki neonowy niebieski",
+
+  "settings.theme.green.label": "VEGETAL",
+  "settings.theme.green.desc": "Jasny styl treningowy",
+
+  "settings.theme.magenta.label": "MAGENTA",
+  "settings.theme.magenta.desc": "Intensywna purpura / magenta",
+
+  "settings.theme.red.label": "BRIGHT RED",
+  "settings.theme.red.desc": "Agresywna czerwień arcade",
+
+  "settings.theme.orange.label": "FIRE ORANGE",
+  "settings.theme.orange.desc": "Ciepła i energetyczna pomarańcz",
+
+  "settings.theme.white.label": "SNOW WHITE",
+  "settings.theme.white.desc": "Nowoczesne jasne tło",
+
+  "home.greeting": "Witaj",
+  "home.titleApp": "DARTS COUNTER",
+  "home.connect": "ZALOGUJ SIĘ",
+
+  "home.card.profiles.title": "PROFILE",
+  "home.card.profiles.subtitle": "Tworzenie i zarządzanie profilami",
+
+  "home.card.local.title": "GRA LOKALNA",
+  "home.card.local.subtitle": "Dostęp do wszystkich trybów gry",
+
+  "home.card.online.title": "GRA ONLINE",
+  "home.card.online.subtitle": "Zdalne mecze (wkrótce)",
+
+  "home.card.stats.title": "STATYSTYKI",
+  "home.card.stats.subtitle": "Statystyki i historia",
+
+  "home.seeStats": "Zobacz moje statystyki",
+
+  "home.stats.avg3": "Śr/3",
+  "home.stats.best": "Najlepszy",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Wygrane%",
+
+  "status.online": "Online",
+  "status.away": "Zaraz wracam",
+  "status.offline": "Offline",
+
+  "profiles.title": "Profile",
+  "profiles.create": "Utwórz profil",
+  "profiles.edit": "Edytuj profil",
+  "profiles.delete": "Usuń profil",
+
+  "profiles.confirmDeleteTitle": "Usunąć profil?",
+  "profiles.confirmDeleteBody":
+    "Ten profil i wszystkie statystyki zostaną trwale usunięte.",
+  "profiles.confirmDeleteYes": "Usuń",
+  "profiles.confirmDeleteNo": "Anuluj",
+
+  "profiles.name": "Nazwa",
+  "profiles.avatar": "Avatar",
+  "profiles.stats": "Statystyki",
+  "profiles.noProfiles": "Brak profili.",
+  "profiles.pickOne": "Wybierz profil",
+  "profiles.active": "Aktywny profil",
+
+  "games.title": "WSZYSTKIE GRY",
+  "games.subtitle": "Wybierz tryb gry",
+
+  "games.training.title": "TRENING",
+  "games.training.subtitle": "Popraw swoje umiejętności.",
+  "games.training.infoBody":
+    "Tryb treningowy dla precyzji, punktacji i wykończeń.",
+
+  "games.x01.title": "X01",
+  "games.x01.subtitle": "301 / 501 / 701 / 901.",
+
+  "games.cricket.title": "CRICKET",
+  "games.cricket.subtitle": "Zamknij 15–20 + Bull.",
+
+  "games.killer.title": "KILLER",
+  "games.killer.subtitle": "Podwój swoją liczbę… zostań Killerem.",
+
+  "games.shanghai.title": "SHANGHAI",
+  "games.shanghai.subtitle": "Cel rundy, S-D-T = Shanghai.",
+
+  "games.battle.title": "BATTLE ROYALE",
+  "games.battle.subtitle": "Tryb zabawy — eliminacje.",
+
+  "games.status.comingSoon": "Wkrótce",
+  "games.info.close": "Zamknij",
+
+  "training.menu.title": "TRENING",
+  "training.menu.subtitle": "Wybierz tryb treningowy",
+
+  "training.menu.x01.title": "Trening X01",
+  "training.menu.x01.subtitle": "Ulepsz scoring i wykończenia",
+
+  "training.menu.clock.title": "Around the Clock",
+  "training.menu.clock.subtitle": "Single / Double / Triple",
+
+  "training.menu.evolution.title": "Ewolucja",
+
+  "lang.pl": "Polski",
+},
+
+ // ---------- ROMÂNĂ ----------
+ro: {
+  "nav.home": "Acasă",
+  "nav.games": "Jocuri",
+  "nav.profiles": "Profiluri",
+  "nav.friends": "Prieteni",
+  "nav.stats": "Statistici",
+  "nav.settings": "Setări",
+
+  "settings.back": "Înapoi",
+  "settings.title": "Setări",
+  "settings.subtitle": "Personalizează tema și limba aplicației",
+  "settings.theme": "Temă",
+  "settings.lang": "Limbă",
+
+  "settings.theme.gold.label": "GOLD NEON",
+  "settings.theme.gold.desc": "Temă premium aurie",
+
+  "settings.theme.pink.label": "ROSE FLUO",
+  "settings.theme.pink.desc": "Atmosferă arcade roz",
+
+  "settings.theme.petrol.label": "PETROL BLUE",
+  "settings.theme.petrol.desc": "Albastru neon profund",
+
+  "settings.theme.green.label": "VEGETAL",
+  "settings.theme.green.desc": "Stil luminos de antrenament",
+
+  "settings.theme.magenta.label": "MAGENTA",
+  "settings.theme.magenta.desc": "Violet / magenta intens",
+
+  "settings.theme.red.label": "BRIGHT RED",
+  "settings.theme.red.desc": "Roșu arcade agresiv",
+
+  "settings.theme.orange.label": "FIRE ORANGE",
+  "settings.theme.orange.desc": "Portocaliu cald și energic",
+
+  "settings.theme.white.label": "SNOW WHITE",
+  "settings.theme.white.desc": "Fundal modern și luminos",
+
+  "home.greeting": "Bun venit",
+  "home.titleApp": "DARTS COUNTER",
+  "home.connect": "AUTENTIFICARE",
+
+  "home.card.profiles.title": "PROFILURI",
+  "home.card.profiles.subtitle": "Creează și gestionează profiluri",
+
+  "home.card.local.title": "JOC LOCAL",
+  "home.card.local.subtitle": "Acces la toate modurile de joc",
+
+  "home.card.online.title": "JOC ONLINE",
+  "home.card.online.subtitle": "Meciuri la distanță (în curând)",
+
+  "home.card.stats.title": "STATISTICI",
+  "home.card.stats.subtitle": "Statistici și istoric",
+
+  "home.seeStats": "Vezi statisticile mele",
+
+  "home.stats.avg3": "Med/3",
+  "home.stats.best": "Cel mai bun",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Win%",
+
+  "status.online": "Online",
+  "status.away": "Plecat",
+  "status.offline": "Offline",
+
+  "profiles.title": "Profiluri",
+  "profiles.create": "Creează profil",
+  "profiles.edit": "Editează profil",
+  "profiles.delete": "Șterge profil",
+
+  "games.title": "TOATE JOCURILE",
+  "games.subtitle": "Selectează un mod de joc",
+
+  "training.menu.title": "ANTRENAMENT",
+  "training.menu.subtitle": "Alege un mod de antrenament",
+
+  "lang.ro": "Română",
+},
 
 // ---------- ÖSTERREICHISCHES DEUTSCH ----------
 at: {
@@ -3072,308 +3393,545 @@ at: {
   "lang.cs": "Tschechisch",
 },
 
-  // ---------- SERBIAN ----------
-  sr: {
-    "nav.home": "Početna",
-    "nav.games": "Igre",
-    "nav.profiles": "Profili",
-    "nav.friends": "Prijatelji",
-    "nav.stats": "Statistika",
-    "nav.settings": "Podešavanja",
+ // ---------- СРПСКИ ----------
+sr: {
+  // --- NAV ---
+  "nav.home": "Почетна",
+  "nav.games": "Игре",
+  "nav.profiles": "Профили",
+  "nav.friends": "Пријатељи",
+  "nav.stats": "Статистика",
+  "nav.settings": "Подешавања",
 
-    "settings.back": "Nazad",
-    "settings.title": "Podešavanja",
-    "settings.subtitle":
-      "Prilagodi temu i jezik aplikacije",
-    "settings.theme": "Tema",
-    "settings.lang": "Jezik",
+  // --- SETTINGS ---
+  "settings.back": "Назад",
+  "settings.title": "Подешавања",
+  "settings.subtitle": "Прилагоди тему и језик апликације",
+  "settings.theme": "Тема",
+  "settings.lang": "Језик",
 
-    "settings.theme.gold.label": "Zlatni neon",
-    "settings.theme.gold.desc": "Premium zlatna tema",
-    "settings.theme.pink.label": "Roze neon",
-    "settings.theme.pink.desc": "Arkada roze atmosfera",
-    "settings.theme.petrol.label": "Petrol plava",
-    "settings.theme.petrol.desc": "Duboka neonska plava",
-    "settings.theme.green.label": "Zeleni neon",
-    "settings.theme.green.desc": "Svetao trening stil",
-    "settings.theme.magenta.label": "Magenta",
-    "settings.theme.magenta.desc": "Intenzivna ljubičasta / magenta",
-    "settings.theme.red.label": "Crvena",
-    "settings.theme.red.desc": "Agresivna arkada crvena",
-    "settings.theme.orange.label": "Narandžasta",
-    "settings.theme.orange.desc": "Topla energična narandžasta",
-    "settings.theme.white.label": "Bela",
-    "settings.theme.white.desc": "Moderan svetao pozadinski dizajn",
+  // THEMES (labels MAJUSCULES, EN inchangé)
+  "settings.theme.gold.label": "GOLD NEON",
+  "settings.theme.gold.desc": "Премијум златна неон тема",
 
-    // GAMES PAGE
-"games.title": "SVE IGRE",
-"games.subtitle": "Izaberite način igre",
+  "settings.theme.pink.label": "ROSE FLUO",
+  "settings.theme.pink.desc": "Розe аркад атмосфера",
 
-"games.training.title": "TRENING",
-"games.training.subtitle": "Poboljšajte svoj napredak.",
-"games.training.infoTitle": "Trening",
-"games.training.infoBody":
-  "Practice mode to work on consistency, scoring and finishing.",
+  "settings.theme.petrol.label": "PETROL BLUE",
+  "settings.theme.petrol.desc": "Дубока неон плава",
 
-"games.x01.title": "X01",
-"games.x01.subtitle": "301 / 501 / 701 / 901.",
-"games.x01.infoTitle": "X01",
-"games.x01.infoBody":
-  "Classic 301/501/701/901 games with stats, history and several rule options.",
+  "settings.theme.green.label": "VEGETAL",
+  "settings.theme.green.desc": "Светао тренинг стил",
 
-"games.cricket.title": "CRICKET",
-"games.cricket.subtitle": "Zatvori 15–20 + Bull.",
-"games.cricket.infoTitle": "Cricket",
-"games.cricket.infoBody":
-  "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
+  "settings.theme.magenta.label": "MAGENTA",
+  "settings.theme.magenta.desc": "Интензивна љубичаста / магента",
 
-"games.killer.title": "KILLER",
-"games.killer.subtitle": "Pogodi svoj broj… postani Killer.",
-"games.killer.infoTitle": "Killer",
-"games.killer.infoBody":
-  "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
+  "settings.theme.red.label": "BRIGHT RED",
+  "settings.theme.red.desc": "Агресивна аркад црвена",
 
-"games.shanghai.title": "SHANGHAI",
-"games.shanghai.subtitle": "Cilj runde, S-D-T = Shanghai.",
-"games.shanghai.infoTitle": "Shanghai",
-"games.shanghai.infoBody":
-  "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
+  "settings.theme.orange.label": "FIRE ORANGE",
+  "settings.theme.orange.desc": "Топла и енергична наранџаста",
 
-"games.battle.title": "BATTLE ROYALE",
-"games.battle.subtitle": "Zabavan režim — eliminacije.",
-"games.battle.infoTitle": "Battle Royale",
-"games.battle.infoBody":
-  "Fun multiplayer mode with successive eliminations. Last player standing wins.",
+  "settings.theme.white.label": "SNOW WHITE",
+  "settings.theme.white.desc": "Модерна светла позадина",
 
-"games.status.comingSoon": "Uskoro",
-"games.info.close": "Zatvori",
+  // --- HOME ---
+  "home.greeting": "Добродошли",
+  "home.titleApp": "DARTS COUNTER",
+  "home.connect": "ПРИЈАВИ СЕ",
 
-    "lang.fr": "Francuski",
-    "lang.en": "Engleski",
-    "lang.es": "Španski",
-    "lang.de": "Nemački",
-    "lang.it": "Italijanski",
-    "lang.pt": "Portugalski",
-    "lang.nl": "Holandski",
-    "lang.ru": "Ruski",
-    "lang.zh": "Kineski",
-    "lang.ja": "Japanski",
-    "lang.ar": "Arapski",
-    "lang.hi": "Hindi",
-    "lang.tr": "Turski",
-    "lang.da": "Danski",
-    "lang.no": "Norveški",
-    "lang.sv": "Švedski",
-    "lang.is": "Islandski",
-    "lang.pl": "Poljski",
-    "lang.ro": "Rumunski",
-    "lang.at": "аустријски",
-    "lang.sr": "Srpski",
-    "lang.hr": "Hrvatski",
-    "lang.cs": "Češki",
-  },
+  "home.card.profiles.title": "ПРОФИЛИ",
+  "home.card.profiles.subtitle": "Креирање и управљање профилима",
 
-  // ---------- CROATIAN ----------
-  hr: {
-    "nav.home": "Početna",
-    "nav.games": "Igre",
-    "nav.profiles": "Profili",
-    "nav.friends": "Prijatelji",
-    "nav.stats": "Statistika",
-    "nav.settings": "Postavke",
+  "home.card.local.title": "ЛОКАЛНА ИГРА",
+  "home.card.local.subtitle": "Приступ свим режимима игре",
 
-    "settings.back": "Natrag",
-    "settings.title": "Postavke",
-    "settings.subtitle":
-      "Prilagodi temu i jezik aplikacije",
-    "settings.theme": "Tema",
-    "settings.lang": "Jezik",
+  "home.card.online.title": "ОНЛАЈН ИГРА",
+  "home.card.online.subtitle": "Удаљене партије (ускоро)",
 
-    "settings.theme.gold.label": "Zlatni neon",
-    "settings.theme.gold.desc": "Premium zlatna tema",
-    "settings.theme.pink.label": "Rozi neon",
-    "settings.theme.pink.desc": "Arkada roza atmosfera",
-    "settings.theme.petrol.label": "Petrol plava",
-    "settings.theme.petrol.desc": "Duboka neonska plava",
-    "settings.theme.green.label": "Zeleni neon",
-    "settings.theme.green.desc": "Svijetli trening stil",
-    "settings.theme.magenta.label": "Magenta",
-    "settings.theme.magenta.desc": "Intenzivna ljubičasta / magenta",
-    "settings.theme.red.label": "Crvena",
-    "settings.theme.red.desc": "Agresivna arkada crvena",
-    "settings.theme.orange.label": "Narančasta",
-    "settings.theme.orange.desc": "Topla energična narančasta",
-    "settings.theme.white.label": "Bijela",
-    "settings.theme.white.desc": "Moderan svijetli izgled",
+  "home.card.stats.title": "СТАТИСТИКА",
+  "home.card.stats.subtitle": "Статистика и историја",
 
-    // GAMES PAGE
-"games.title": "SVE IGRE",
-"games.subtitle": "Odaberite način igre",
+  "home.seeStats": "Погледај моју статистику",
 
-"games.training.title": "TRENING",
-"games.training.subtitle": "Poboljšajte svoj napredak.",
-"games.training.infoTitle": "Trening",
-"games.training.infoBody":
-  "Practice mode to work on consistency, scoring and finishing.",
+  "home.stats.avg3": "Прос/3",
+  "home.stats.best": "Најбоље",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Win%",
 
-"games.x01.title": "X01",
-"games.x01.subtitle": "301 / 501 / 701 / 901.",
-"games.x01.infoTitle": "X01",
-"games.x01.infoBody":
-  "Classic 301/501/701/901 games with stats, history and several rule options.",
+  // STATUS
+  "status.online": "На мрежи",
+  "status.away": "Одсутан",
+  "status.offline": "Ван мреже",
 
-"games.cricket.title": "CRICKET",
-"games.cricket.subtitle": "Zatvori 15–20 + Bull.",
-"games.cricket.infoTitle": "Cricket",
-"games.cricket.infoBody":
-  "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
+  // --- PROFILES ---
+  "profiles.title": "Профили",
+  "profiles.create": "Креирај профил",
+  "profiles.edit": "Уреди профил",
+  "profiles.delete": "Обриши профил",
 
-"games.killer.title": "KILLER",
-"games.killer.subtitle": "Pogodi svoj broj… postani Killer.",
-"games.killer.infoTitle": "Killer",
-"games.killer.infoBody":
-  "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
+  "profiles.confirmDeleteTitle": "Обрисати профил?",
+  "profiles.confirmDeleteBody":
+    "Овај профил и сва повезана статистика биће трајно обрисани.",
+  "profiles.confirmDeleteYes": "Обриши",
+  "profiles.confirmDeleteNo": "Откажи",
 
-"games.shanghai.title": "SHANGHAI",
-"games.shanghai.subtitle": "Cilj runde, S-D-T = Shanghai.",
-"games.shanghai.infoTitle": "Shanghai",
-"games.shanghai.infoBody":
-  "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
+  "profiles.name": "Име",
+  "profiles.avatar": "Аватар",
+  "profiles.stats": "Статистика",
+  "profiles.noProfiles": "Још увек нема профила.",
+  "profiles.pickOne": "Изабери профил",
+  "profiles.active": "Активни профил",
 
-"games.battle.title": "BATTLE ROYALE",
-"games.battle.subtitle": "Zabavan način — eliminacije.",
-"games.battle.infoTitle": "Battle Royale",
-"games.battle.infoBody":
-  "Fun multiplayer mode with successive eliminations. Last player standing wins.",
+  // --- GAMES ---
+  "games.title": "СВЕ ИГРЕ",
+  "games.subtitle": "Изабери режим игре",
 
-"games.status.comingSoon": "Uskoro",
-"games.info.close": "Zatvori",
+  "games.training.title": "ТРЕНИНГ",
+  "games.training.subtitle": "Побољшај свој напредак.",
+  "games.training.infoTitle": "Тренинг",
+  "games.training.infoBody":
+    "Режим тренинга за рад на прецизности, скорингу и завршницама.",
 
+  "games.x01.title": "X01",
+  "games.x01.subtitle": "301 / 501 / 701 / 901.",
+  "games.x01.infoTitle": "X01",
+  "games.x01.infoBody":
+    "Класичне X01 партије са статистиком, историјом и различитим правилима.",
 
-    "lang.fr": "Francuski",
-    "lang.en": "Engleski",
-    "lang.es": "Španjolski",
-    "lang.de": "Njemački",
-    "lang.it": "Talijanski",
-    "lang.pt": "Portugalski",
-    "lang.nl": "Nizozemski",
-    "lang.ru": "Ruski",
-    "lang.zh": "Kineski",
-    "lang.ja": "Japanski",
-    "lang.ar": "Arapski",
-    "lang.hi": "Hindski",
-    "lang.tr": "Turski",
-    "lang.da": "Danski",
-    "lang.no": "Norveški",
-    "lang.sv": "Švedski",
-    "lang.is": "Islandski",
-    "lang.pl": "Poljski",
-    "lang.ro": "Rumunjski",
-    "lang.at": "austrijski",
-    "lang.sr": "Srpski",
-    "lang.hr": "Hrvatski",
-    "lang.cs": "Češki",
-  },
+  "games.cricket.title": "CRICKET",
+  "games.cricket.subtitle": "Затвори 15–20 + Bull.",
+  "games.cricket.infoTitle": "Cricket",
+  "games.cricket.infoBody":
+    "Затвори бројеве 15 до 20 и Bull пре противника и сакупи што више поена.",
 
-  // ---------- CZECH ----------
-  cs: {
-    "nav.home": "Domů",
-    "nav.games": "Hry",
-    "nav.profiles": "Profily",
-    "nav.friends": "Přátelé",
-    "nav.stats": "Statistiky",
-    "nav.settings": "Nastavení",
+  "games.killer.title": "KILLER",
+  "games.killer.subtitle": "Погоди свој број… постани Killer.",
+  "games.killer.infoTitle": "Killer",
+  "games.killer.infoBody":
+    "Сваки играч има број. Погоди свој број да постанеш Killer, затим елиминиши остале.",
 
-    "settings.back": "Zpět",
-    "settings.title": "Nastavení",
-    "settings.subtitle":
-      "Upravte vzhled a jazyk aplikace",
-    "settings.theme": "Motiv",
-    "settings.lang": "Jazyk",
+  "games.shanghai.title": "SHANGHAI",
+  "games.shanghai.subtitle": "Вредност рунде, S-D-T = Shanghai.",
+  "games.shanghai.infoTitle": "Shanghai",
+  "games.shanghai.infoBody":
+    "Погоди single, double и triple на истој вредности у једној посети за Shanghai.",
 
-    "settings.theme.gold.label": "Zlatý neon",
-    "settings.theme.gold.desc": "Prémiový zlatý motiv",
-    "settings.theme.pink.label": "Růžový neon",
-    "settings.theme.pink.desc": "Arkádová růžová atmosféra",
-    "settings.theme.petrol.label": "Petrolejová modrá",
-    "settings.theme.petrol.desc": "Hluboká neonová modrá",
-    "settings.theme.green.label": "Zelený neon",
-    "settings.theme.green.desc": "Světlý tréninkový styl",
-    "settings.theme.magenta.label": "Magenta",
-    "settings.theme.magenta.desc": "Intenzivní fialová / magenta",
-    "settings.theme.red.label": "Červená",
-    "settings.theme.red.desc": "Agresivní arkádová červená",
-    "settings.theme.orange.label": "Oranžová",
-    "settings.theme.orange.desc": "Teplá energická oranžová",
-    "settings.theme.white.label": "Bílá",
-    "settings.theme.white.desc": "Moderní světlé pozadí",
+  "games.battle.title": "BATTLE ROYALE",
+  "games.battle.subtitle": "Забаван режим — елиминације.",
+  "games.battle.infoTitle": "Battle Royale",
+  "games.battle.infoBody":
+    "Забаван вишекориснички режим са постепеним елиминацијама. Последњи играч побеђује.",
 
-    // GAMES PAGE
-"games.title": "VŠECHNY HRY",
-"games.subtitle": "Vyberte herní režim",
+  "games.status.comingSoon": "Ускоро",
+  "games.info.close": "Затвори",
 
-"games.training.title": "TRÉNINK",
-"games.training.subtitle": "Zlepšete svůj pokrok.",
-"games.training.infoTitle": "Trénink",
-"games.training.infoBody":
-  "Practice mode to work on consistency, scoring and finishing.",
+  // --- TRAINING MENU ---
+  "training.menu.title": "ТРЕНИНГ",
+  "training.menu.subtitle": "Изабери режим тренинга",
 
-"games.x01.title": "X01",
-"games.x01.subtitle": "301 / 501 / 701 / 901.",
-"games.x01.infoTitle": "X01",
-"games.x01.infoBody":
-  "Classic 301/501/701/901 games with stats, history and several rule options.",
+  "training.menu.x01.title": "Training X01",
+  "training.menu.x01.subtitle": "Побољшај скоринг и завршнице",
+  "training.menu.x01.info":
+    "X01 тренинг посвећен прецизности, стабилности и напредним статистикама.",
 
-"games.cricket.title": "CRICKET",
-"games.cricket.subtitle": "Uzavřete 15–20 + Bull.",
-"games.cricket.infoTitle": "Cricket",
-"games.cricket.infoBody":
-  "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
+  "training.menu.clock.title": "Around the Clock",
+  "training.menu.clock.subtitle": "Single / Double / Triple",
+  "training.menu.clock.info":
+    "Гађај бројеве 1 до 20 и Bull редом. Одабери Single, Double или Triple режим.",
 
-"games.killer.title": "KILLER",
-"games.killer.subtitle": "Trefte své číslo… staňte se Killerem.",
-"games.killer.infoTitle": "Killer",
-"games.killer.infoBody":
-  "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
+  "training.menu.evolution.title": "Еволуција",
+  "training.menu.evolution.subtitle": "Ускоро",
+  "training.menu.evolution.info":
+    "Нови тренинг режим долази ускоро.",
 
-"games.shanghai.title": "SHANGHAI",
-"games.shanghai.subtitle": "Cíl kola, S-D-T = Shanghai.",
-"games.shanghai.infoTitle": "Shanghai",
-"games.shanghai.infoBody":
-  "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
+  "training.menu.comingSoon": "Ускоро",
+  "training.menu.info.close": "Затвори",
 
-"games.battle.title": "BATTLE ROYALE",
-"games.battle.subtitle": "Zábavný režim — eliminace.",
-"games.battle.infoTitle": "Battle Royale",
-"games.battle.infoBody":
-  "Fun multiplayer mode with successive eliminations. Last player standing wins.",
+  // --- LANG NAMES (liste complète) ---
+  "lang.fr": "Француски",
+  "lang.en": "Енглески",
+  "lang.es": "Шпански",
+  "lang.de": "Немачки",
+  "lang.it": "Италијански",
+  "lang.pt": "Португалски",
+  "lang.nl": "Холандски",
+  "lang.ru": "Руски",
+  "lang.zh": "Кинески",
+  "lang.ja": "Јапански",
+  "lang.ar": "Арапски",
+  "lang.hi": "Хинди",
+  "lang.tr": "Турски",
+  "lang.da": "Дански",
+  "lang.no": "Норвешки",
+  "lang.sv": "Шведски",
+  "lang.is": "Исландски",
+  "lang.pl": "Пољски",
+  "lang.ro": "Румунски",
+  "lang.at": "Аустријски",
+  "lang.sr": "Српски",
+  "lang.hr": "Хрватски",
+  "lang.cs": "Чешки",
+},
 
-"games.status.comingSoon": "Brzy",
-"games.info.close": "Zavřít",
+  // ---------- HRVATSKI ----------
+hr: {
+  // --- NAV ---
+  "nav.home": "Početna",
+  "nav.games": "Igre",
+  "nav.profiles": "Profili",
+  "nav.friends": "Prijatelji",
+  "nav.stats": "Statistike",
+  "nav.settings": "Postavke",
 
-    "lang.fr": "Francouzština",
-    "lang.en": "Angličtina",
-    "lang.es": "Španělština",
-    "lang.de": "Němčina",
-    "lang.it": "Italština",
-    "lang.pt": "Portugalština",
-    "lang.nl": "Nizozemština",
-    "lang.ru": "Ruština",
-    "lang.zh": "Čínština",
-    "lang.ja": "Japonština",
-    "lang.ar": "Arabština",
-    "lang.hi": "Hindština",
-    "lang.tr": "Turečtina",
-    "lang.da": "Dánština",
-    "lang.no": "Norština",
-    "lang.sv": "Švédština",
-    "lang.is": "Islandština",
-    "lang.pl": "Polština",
-    "lang.ro": "Rumunština",
-    "lang.at": "rakouský",
-    "lang.sr": "Srbština",
-    "lang.hr": "Chorvatština",
-    "lang.cs": "Čeština",
+  // --- SETTINGS ---
+  "settings.back": "Natrag",
+  "settings.title": "Postavke",
+  "settings.subtitle": "Prilagodi temu i jezik aplikacije",
+  "settings.theme": "Tema",
+  "settings.lang": "Jezik",
+
+  "settings.theme.gold.label": "GOLD NEON",
+  "settings.theme.gold.desc": "Premium zlatna neon tema",
+
+  "settings.theme.pink.label": "ROSE FLUO",
+  "settings.theme.pink.desc": "Roza arkadna atmosfera",
+
+  "settings.theme.petrol.label": "PETROL BLUE",
+  "settings.theme.petrol.desc": "Duboka neonsko plava",
+
+  "settings.theme.green.label": "VEGETAL",
+  "settings.theme.green.desc": "Svijetli trening stil",
+
+  "settings.theme.magenta.label": "MAGENTA",
+  "settings.theme.magenta.desc": "Intenzivna ljubičasta / magenta",
+
+  "settings.theme.red.label": "BRIGHT RED",
+  "settings.theme.red.desc": "Agresivna arkadna crvena",
+
+  "settings.theme.orange.label": "FIRE ORANGE",
+  "settings.theme.orange.desc": "Topla i energična narančasta",
+
+  "settings.theme.white.label": "SNOW WHITE",
+  "settings.theme.white.desc": "Moderan svijetli background",
+
+  // --- HOME ---
+  "home.greeting": "Dobrodošli",
+  "home.titleApp": "DARTS COUNTER",
+  "home.connect": "PRIJAVA",
+
+  "home.card.profiles.title": "PROFILI",
+  "home.card.profiles.subtitle": "Kreiranje i upravljanje profilima",
+
+  "home.card.local.title": "LOKALNA IGRA",
+  "home.card.local.subtitle": "Pristup svim načinima igre",
+
+  "home.card.online.title": "ONLINE IGRA",
+  "home.card.online.subtitle": "Udaljene partije (uskoro)",
+
+  "home.card.stats.title": "STATISTIKE",
+  "home.card.stats.subtitle": "Statistike i povijest",
+
+  "home.seeStats": "Pogledaj moje statistike",
+
+  "home.stats.avg3": "Pros/3",
+  "home.stats.best": "Najbolji",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Win%",
+
+  // STATUS
+  "status.online": "Online",
+  "status.away": "Odsutan",
+  "status.offline": "Offline",
+
+  // --- PROFILES ---
+  "profiles.title": "Profili",
+  "profiles.create": "Kreiraj profil",
+  "profiles.edit": "Uredi profil",
+  "profiles.delete": "Obriši profil",
+
+  "profiles.confirmDeleteTitle": "Obrisati profil?",
+  "profiles.confirmDeleteBody":
+    "Ovaj profil i sve povezane statistike bit će trajno obrisani.",
+  "profiles.confirmDeleteYes": "Obriši",
+  "profiles.confirmDeleteNo": "Odustani",
+
+  "profiles.name": "Ime",
+  "profiles.avatar": "Avatar",
+  "profiles.stats": "Statistike",
+  "profiles.noProfiles": "Još nema profila.",
+  "profiles.pickOne": "Odaberi profil",
+  "profiles.active": "Aktivni profil",
+
+  // --- GAMES ---
+  "games.title": "SVE IGRE",
+  "games.subtitle": "Odaberi način igre",
+
+  "games.training.title": "TRENING",
+  "games.training.subtitle": "Poboljšaj svoj napredak.",
+  "games.training.infoTitle": "Trening",
+  "games.training.infoBody":
+    "Trening način za rad na preciznosti, bodovima i završnicama.",
+
+  "games.x01.title": "X01",
+  "games.x01.subtitle": "301 / 501 / 701 / 901.",
+  "games.x01.infoTitle": "X01",
+  "games.x01.infoBody":
+    "Klasične X01 partije sa statistikama, poviješću i opcijama pravila.",
+
+  "games.cricket.title": "CRICKET",
+  "games.cricket.subtitle": "Zatvori 15–20 + Bull.",
+  "games.cricket.infoTitle": "Cricket",
+  "games.cricket.infoBody":
+    "Zatvori brojeve 15 do 20 i Bull prije protivnika, uz što više bodova.",
+
+  "games.killer.title": "KILLER",
+  "games.killer.subtitle": "Pogodi svoj broj… postani Killer.",
+  "games.killer.infoTitle": "Killer",
+  "games.killer.infoBody":
+    "Svaki igrač ima broj. Pogodi svoj broj da postaneš Killer, zatim eliminiraj ostale.",
+
+  "games.shanghai.title": "SHANGHAI",
+  "games.shanghai.subtitle": "Vrijednost runde, S-D-T = Shanghai.",
+  "games.shanghai.infoTitle": "Shanghai",
+  "games.shanghai.infoBody":
+    "Pogodi single, double i triple na istoj vrijednosti u jednoj rundi za Shanghai.",
+
+  "games.battle.title": "BATTLE ROYALE",
+  "games.battle.subtitle": "Zabavan način — eliminacije.",
+  "games.battle.infoTitle": "Battle Royale",
+  "games.battle.infoBody":
+    "Zabavan multiplayer s postupnim eliminacijama. Posljednji igrač pobjeđuje.",
+
+  "games.status.comingSoon": "Uskoro",
+  "games.info.close": "Zatvori",
+
+  // --- TRAINING MENU ---
+  "training.menu.title": "TRENING",
+  "training.menu.subtitle": "Odaberi trening način",
+
+  "training.menu.x01.title": "Training X01",
+  "training.menu.x01.subtitle": "Poboljšaj scoring i završnice",
+  "training.menu.x01.info":
+    "X01 trening namijenjen preciznosti, konzistentnosti i naprednim statistikama.",
+
+  "training.menu.clock.title": "Around the Clock",
+  "training.menu.clock.subtitle": "Single / Double / Triple",
+  "training.menu.clock.info":
+    "Gađaj brojeve od 1 do 20 i Bull redom. Odaberi Single, Double ili Triple način.",
+
+  "training.menu.evolution.title": "Evolucija",
+  "training.menu.evolution.subtitle": "Uskoro",
+  "training.menu.evolution.info":
+    "Novi trening način dolazi uskoro.",
+
+  "training.menu.comingSoon": "Uskoro",
+  "training.menu.info.close": "Zatvori",
+
+  // --- LANG NAMES ---
+  "lang.fr": "Francuski",
+  "lang.en": "Engleski",
+  "lang.es": "Španjolski",
+  "lang.de": "Njemački",
+  "lang.it": "Talijanski",
+  "lang.pt": "Portugalski",
+  "lang.nl": "Nizozemski",
+  "lang.ru": "Ruski",
+  "lang.zh": "Kineski",
+  "lang.ja": "Japanski",
+  "lang.ar": "Arapski",
+  "lang.hi": "Hindski",
+  "lang.tr": "Turski",
+  "lang.da": "Danski",
+  "lang.no": "Norveški",
+  "lang.sv": "Švedski",
+  "lang.is": "Islandski",
+  "lang.pl": "Poljski",
+  "lang.ro": "Rumunjski",
+  "lang.at": "Austrijski",
+  "lang.sr": "Srpski",
+  "lang.hr": "Hrvatski",
+  "lang.cs": "Češki",
+},
+
+// ---------- ČEŠTINA ----------
+cs: {
+  // --- NAV ---
+  "nav.home": "Domů",
+  "nav.games": "Hry",
+  "nav.profiles": "Profily",
+  "nav.friends": "Přátelé",
+  "nav.stats": "Statistiky",
+  "nav.settings": "Nastavení",
+
+  // --- SETTINGS ---
+  "settings.back": "Zpět",
+  "settings.title": "Nastavení",
+  "settings.subtitle": "Přizpůsob vzhled aplikace a jazyk",
+  "settings.theme": "Motiv",
+  "settings.lang": "Jazyk",
+
+  "settings.theme.gold.label": "GOLD NEON",
+  "settings.theme.gold.desc": "Prémiový zlatý neonový motiv",
+
+  "settings.theme.pink.label": "ROSE FLUO",
+  "settings.theme.pink.desc": "Růžová arcade atmosféra",
+
+  "settings.theme.petrol.label": "PETROL BLUE",
+  "settings.theme.petrol.desc": "Hluboká neonová modrá",
+
+  "settings.theme.green.label": "VEGETAL",
+  "settings.theme.green.desc": "Světlý tréninkový styl",
+
+  "settings.theme.magenta.label": "MAGENTA",
+  "settings.theme.magenta.desc": "Intenzivní fialová / magenta",
+
+  "settings.theme.red.label": "BRIGHT RED",
+  "settings.theme.red.desc": "Agresivní arcade červená",
+
+  "settings.theme.orange.label": "FIRE ORANGE",
+  "settings.theme.orange.desc": "Teplá a energická oranžová",
+
+  "settings.theme.white.label": "SNOW WHITE",
+  "settings.theme.white.desc": "Moderní světlé pozadí",
+
+  // --- HOME ---
+  "home.greeting": "Vítejte",
+  "home.titleApp": "DARTS COUNTER",
+  "home.connect": "PŘIHLÁSIT SE",
+
+  "home.card.profiles.title": "PROFILY",
+  "home.card.profiles.subtitle": "Vytvářej a spravuj profily",
+
+  "home.card.local.title": "LOKÁLNÍ HRA",
+  "home.card.local.subtitle": "Přístup ke všem herním módům",
+
+  "home.card.online.title": "ONLINE HRA",
+  "home.card.online.subtitle": "Vzdálené zápasy (již brzy)",
+
+  "home.card.stats.title": "STATISTIKY",
+  "home.card.stats.subtitle": "Statistiky a historie",
+
+  "home.seeStats": "Zobrazit moje statistiky",
+
+  "home.stats.avg3": "Prům/3",
+  "home.stats.best": "Nejlepší",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Výher%",
+
+  // STATUS
+  "status.online": "Online",
+  "status.away": "Nepřítomen",
+  "status.offline": "Offline",
+
+  // --- PROFILES ---
+  "profiles.title": "Profily",
+  "profiles.create": "Vytvořit profil",
+  "profiles.edit": "Upravit profil",
+  "profiles.delete": "Smazat profil",
+
+  "profiles.confirmDeleteTitle": "Smazat profil?",
+  "profiles.confirmDeleteBody":
+    "Tento profil a všechny související statistiky budou trvale odstraněny.",
+  "profiles.confirmDeleteYes": "Smazat",
+  "profiles.confirmDeleteNo": "Zrušit",
+
+  "profiles.name": "Jméno",
+  "profiles.avatar": "Avatar",
+  "profiles.stats": "Statistiky",
+  "profiles.noProfiles": "Zatím žádné profily.",
+  "profiles.pickOne": "Vyber profil",
+  "profiles.active": "Aktivní profil",
+
+  // --- GAMES ---
+  "games.title": "VŠECHNY HRY",
+  "games.subtitle": "Vyber herní mód",
+
+  "games.training.title": "TRÉNINK",
+  "games.training.subtitle": "Zlepši svůj výkon.",
+  "games.training.infoTitle": "Trénink",
+  "games.training.infoBody":
+    "Tréninkový režim pro přesnost, skórování a zakončení.",
+
+  "games.x01.title": "X01",
+  "games.x01.subtitle": "301 / 501 / 701 / 901.",
+  "games.x01.infoTitle": "X01",
+  "games.x01.infoBody":
+    "Klasické X01 hry se statistikami, historií a různými pravidly.",
+
+  "games.cricket.title": "CRICKET",
+  "games.cricket.subtitle": "Uzavři 15–20 + Bull.",
+  "games.cricket.infoTitle": "Cricket",
+  "games.cricket.infoBody":
+    "Uzavři čísla 15 až 20 a Bull dříve než soupeř a nasbírej co nejvíce bodů.",
+
+  "games.killer.title": "KILLER",
+  "games.killer.subtitle": "Zasáhni své číslo… staň se Killerem.",
+  "games.killer.infoTitle": "Killer",
+  "games.killer.infoBody":
+    "Každý hráč má své číslo. Zasáhni ho, staň se Killerem a vyřaď ostatní.",
+
+  "games.shanghai.title": "SHANGHAI",
+  "games.shanghai.subtitle": "Cíl kola, S-D-T = Shanghai.",
+  "games.shanghai.infoTitle": "Shanghai",
+  "games.shanghai.infoBody":
+    "Zasáhni single, double a triple na stejné hodnotě v jedné návštěvě pro Shanghai.",
+
+  "games.battle.title": "BATTLE ROYALE",
+  "games.battle.subtitle": "Zábavný mód — eliminace.",
+  "games.battle.infoTitle": "Battle Royale",
+  "games.battle.infoBody":
+    "Zábavný multiplayer s postupnými eliminacemi. Poslední hráč vyhrává.",
+
+  "games.status.comingSoon": "Již brzy",
+  "games.info.close": "Zavřít",
+
+  // --- TRAINING MENU ---
+  "training.menu.title": "TRÉNINK",
+  "training.menu.subtitle": "Vyber tréninkový mód",
+
+  "training.menu.x01.title": "Training X01",
+  "training.menu.x01.subtitle": "Zlepši skórování a zakončení",
+  "training.menu.x01.info":
+    "X01 trénink zaměřený na přesnost, konzistenci a pokročilé statistiky.",
+
+  "training.menu.clock.title": "Around the Clock",
+  "training.menu.clock.subtitle": "Single / Double / Triple",
+  "training.menu.clock.info":
+    "Zasahuj čísla 1 až 20 a Bull postupně. Vyber si Single, Double nebo Triple mód.",
+
+  "training.menu.evolution.title": "Evoluce",
+  "training.menu.evolution.subtitle": "Již brzy",
+  "training.menu.evolution.info":
+    "Nový tréninkový mód bude brzy dostupný.",
+
+  "training.menu.comingSoon": "Již brzy",
+  "training.menu.info.close": "Zavřít",
+
+  // --- LANG NAMES ---
+  "lang.fr": "Francouzština",
+  "lang.en": "Angličtina",
+  "lang.es": "Španělština",
+  "lang.de": "Němčina",
+  "lang.it": "Italština",
+  "lang.pt": "Portugalština",
+  "lang.nl": "Nizozemština",
+  "lang.ru": "Ruština",
+  "lang.zh": "Čínština",
+  "lang.ja": "Japonština",
+  "lang.ar": "Arabština",
+  "lang.hi": "Hindština",
+  "lang.tr": "Turečtina",
+  "lang.da": "Dánština",
+  "lang.no": "Norština",
+  "lang.sv": "Švédština",
+  "lang.is": "Islandština",
+  "lang.pl": "Polština",
+  "lang.ro": "Rumunština",
+  "lang.at": "Rakušanská němčina",
+  "lang.sr": "Srbština",
+  "lang.hr": "Chorvatština",
+  "lang.cs": "Čeština",
   },
 };
 
