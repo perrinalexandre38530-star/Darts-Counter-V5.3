@@ -58,43 +58,35 @@ function getPreset(id: ThemeId): AppTheme {
 
 // ---------------- Langues + libellés fallback ----------------
 
-const LANG_CHOICES: { id: Lang; defaultLabel: string }[] = [
-  { id: "fr", defaultLabel: "Français" },
-  { id: "en", defaultLabel: "English" },
-  { id: "es", defaultLabel: "Español" },
-  { id: "de", defaultLabel: "Deutsch" },
-  { id: "it", defaultLabel: "Italiano" },
-  { id: "pt", defaultLabel: "Português" },
-  { id: "nl", defaultLabel: "Nederlands" },
-  { id: "ru", defaultLabel: "Русский" },
-  { id: "zh", defaultLabel: "中文" },
-  { id: "ja", defaultLabel: "日本語" },
-  { id: "ar", defaultLabel: "العربية" },
-  { id: "fr", defaultLabel: "Français" },
-  { id: "en", defaultLabel: "English" },
-  { id: "es", defaultLabel: "Español" },
-  { id: "de", defaultLabel: "Deutsch" },
-  { id: "it", defaultLabel: "Italiano" },
-  { id: "pt", defaultLabel: "Português" },
-  { id: "nl", defaultLabel: "Nederlands" },
-  { id: "ru", defaultLabel: "Русский" },
-  { id: "zh", defaultLabel: "中文" },
-  { id: "ja", defaultLabel: "日本語" },
-  { id: "ar", defaultLabel: "العربية" },
-  { id: "hi", defaultLabel: "हिन्दी" },
-  { id: "tr", defaultLabel: "Türkçe" },
-  { id: "da", defaultLabel: "Dansk" },
-  { id: "no", defaultLabel: "Norsk" },
-  { id: "sv", defaultLabel: "Svenska" },
-  { id: "is", defaultLabel: "Íslenska" },
-  { id: "pl", defaultLabel: "Polski" },
-  { id: "ro", defaultLabel: "Română" },
-  { id: "at", defaultLabel: "Deutsch (AT)" },
-  { id: "sr", defaultLabel: "Српски" },
-  { id: "hr", defaultLabel: "Hrvatski" },
-  { id: "cs", defaultLabel: "Čeština" },
-];
+const LANG_CHOICES: { id: Lang; defaultLabel: string; short: string }[] = [
+  { id: "fr", defaultLabel: "Français", short: "FR" },
+  { id: "en", defaultLabel: "English", short: "GB" },
+  { id: "es", defaultLabel: "Español", short: "ES" },
+  { id: "de", defaultLabel: "Deutsch", short: "DE" },
+  { id: "it", defaultLabel: "Italiano", short: "IT" },
+  { id: "pt", defaultLabel: "Português", short: "PT" },
+  { id: "nl", defaultLabel: "Nederlands", short: "NL" },
 
+  { id: "ru", defaultLabel: "Русский", short: "RU" },
+  { id: "zh", defaultLabel: "中文", short: "CN" },
+  { id: "ja", defaultLabel: "日本語", short: "JP" },
+  { id: "ar", defaultLabel: "العربية", short: "AR" },
+
+  { id: "hi", defaultLabel: "हिन्दी", short: "HI" },
+  { id: "tr", defaultLabel: "Türkçe", short: "TR" },
+
+  { id: "da", defaultLabel: "Dansk", short: "DK" },
+  { id: "no", defaultLabel: "Norsk", short: "NO" },
+  { id: "sv", defaultLabel: "Svenska", short: "SE" },
+  { id: "is", defaultLabel: "Íslenska", short: "IS" },
+
+  { id: "pl", defaultLabel: "Polski", short: "PL" },
+  { id: "ro", defaultLabel: "Română", short: "RO" },
+  { id: "at", defaultLabel: "Österreichisch", short: "AT" }, // (variante DE)
+  { id: "sr", defaultLabel: "Српски", short: "RS" },
+  { id: "hr", defaultLabel: "Hrvatski", short: "HR" },
+  { id: "cs", defaultLabel: "Čeština", short: "CZ" },
+];
 const LANG_FLAGS: Record<Lang, string> = {
   fr: "🇫🇷",
   en: "🇬🇧",
@@ -427,18 +419,18 @@ export default function Settings({ go }: Props) {
           }}
         >
           {LANG_CHOICES.map((opt) => {
-            const label = t(`lang.${opt.id}`, opt.defaultLabel);
-            return (
-              <LanguageChoiceButton
-                key={opt.id}
-                id={opt.id}
-                label={label}
-                active={opt.id === lang}
-                onClick={() => setLang(opt.id)}
-                primary={theme.primary}
-              />
-            );
-          })}
+  const label = t(`lang.${opt.id}`, opt.defaultLabel);
+  return (
+    <LanguageChoiceButton
+      key={opt.id}              // ✅ chaque id est unique
+      id={opt.id}
+      label={label}
+      active={opt.id === lang}
+      onClick={() => setLang(opt.id)}
+      primary={theme.primary}
+    />
+  );
+})}
         </div>
       </section>
     </div>

@@ -1,489 +1,331 @@
 // ============================================
 // src/pages/Games.tsx — Sélecteur de modes de jeu
-// Style harmonisé avec TrainingMenu
-// - Cartes sombres, titre doré néon
-// - Modes grisés : titre + sous-titre gris, non cliquables
-// - Pastille "i" blanche à droite (overlay d'aide)
-// - [NEW] Carte "Réglages" (thème + langue) en bas
-// - [THEME] Couleurs pilotées par ThemeContext (titres inclus)
+// - Style cartes néon, cohérent avec TrainingMenu
+// - Modes grisés : non cliquables
+// - Pastille "i" à droite => panneau d'aide
+// - Textes pilotés par LangContext (t())
 // ============================================
 
 import React from "react";
 import { useTheme } from "../contexts/ThemeContext";
+import { useLang } from "../contexts/LangContext";
+
+type Tab =
+  | "games"
+  | "training_menu"
+  | "training_x01"
+  | "x01setup"
+  | "cricket"
+  | "killer"
+  | "shanghai"
+  | "battle";
 
 type Props = {
-  setTab: (tab: any) => void;
+  go?: (tab: Tab, params?: any) => void;
+  setTab?: (tab: Tab) => void; // compat anciennes versions
 };
 
-type GameId = "training" | "x01" | "cricket" | "killer" | "shanghai" | "battle";
+type GameId =
+  | "training"
+  | "x01"
+  | "cricket"
+  | "killer"
+  | "shanghai"
+  | "battle";
 
 type GameDef = {
   id: GameId;
-  title: string;
-  subtitle: string;
-  tab: string;
+  titleKey: string;
+  titleDefault: string;
+  subtitleKey: string;
+  subtitleDefault: string;
+  infoKey: string;
+  infoDefault: string;
+  tab: Tab | null; // null = mode à venir
   enabled: boolean;
 };
 
 const GAMES: GameDef[] = [
   {
     id: "training",
-    title: "TRAINING",
-    subtitle: "Améliorez votre progression.",
-    tab: "training",
+    titleKey: "games.training.title",
+    titleDefault: "TRAINING",
+    subtitleKey: "games.training.subtitle",
+    subtitleDefault: "Améliore ta progression.",
+    infoKey: "games.training.info",
+    infoDefault:
+      "Accède à tous les modes d’entraînement : X01 solo, tour de l’horloge et d’autres outils pour progresser.",
+    tab: "training_menu",
     enabled: true,
   },
   {
     id: "x01",
-    title: "X01",
-    subtitle: "301 / 501 / 701 / 901.",
+    titleKey: "games.x01.title",
+    titleDefault: "X01",
+    subtitleKey: "games.x01.subtitle",
+    subtitleDefault: "301 / 501 / 701 / 901.",
+    infoKey: "games.x01.info",
+    infoDefault:
+      "Joue les classiques 301, 501, 701, 901 avec gestion des sets / legs, double-out et stats complètes.",
     tab: "x01setup",
     enabled: true,
   },
   {
     id: "cricket",
-    title: "CRICKET",
-    subtitle: "Fermez les zones 15…20 + Bull.",
+    titleKey: "games.cricket.title",
+    titleDefault: "CRICKET",
+    subtitleKey: "games.cricket.subtitle",
+    subtitleDefault: "Ferme les zones 15…20 + Bull.",
+    infoKey: "games.cricket.info",
+    infoDefault:
+      "Mode Cricket classique : tu dois fermer les cases 15 à 20 + Bull tout en marquant plus de points que l’adversaire.",
     tab: "cricket",
     enabled: true,
   },
   {
     id: "killer",
-    title: "KILLER",
-    subtitle: "Double ton numéro — deviens Killer.",
-    tab: "killer",
+    titleKey: "games.killer.title",
+    titleDefault: "KILLER",
+    subtitleKey: "games.killer.subtitle",
+    subtitleDefault: "Double ton numéro… deviens Killer.",
+    infoKey: "games.killer.info",
+    infoDefault:
+      "Chaque joueur reçoit un numéro. Deviens Killer en le doublant, puis élimine les autres en touchant leur numéro.",
+    tab: null, // mode à venir
     enabled: false,
   },
   {
     id: "shanghai",
-    title: "SHANGHAI",
-    subtitle: "Cible du tour, SDT — Shanghai = win.",
-    tab: "shanghai",
+    titleKey: "games.shanghai.title",
+    titleDefault: "SHANGHAI",
+    subtitleKey: "games.shanghai.subtitle",
+    subtitleDefault: "Cible du tour, S+D+T = Shanghai à win.",
+    infoKey: "games.shanghai.info",
+    infoDefault:
+      "À chaque manche, une nouvelle valeur de cible. Le combo simple + double + triple sur la même valeur = Shanghai.",
+    tab: null, // mode à venir
     enabled: false,
   },
   {
     id: "battle",
-    title: "BATTLE ROYALE",
-    subtitle: "Mode fun à plusieurs — éliminations.",
-    tab: "battle",
+    titleKey: "games.battle.title",
+    titleDefault: "BATTLE ROYALE",
+    subtitleKey: "games.battle.subtitle",
+    subtitleDefault: "Mode fun à plusieurs — éliminations.",
+    infoKey: "games.battle.info",
+    infoDefault:
+      "Mode multijoueurs fun avec éliminations progressives et règles spéciales. Arrive dans une prochaine version.",
+    tab: null, // mode à venir
     enabled: false,
   },
 ];
 
-type InfoGame = GameId | null;
-
-export default function Games({ setTab }: Props) {
-  const [infoGame, setInfoGame] = React.useState<InfoGame>(null);
+export default function Games(props: Props) {
+  const { go, setTab } = props;
   const { theme } = useTheme();
+  const { t } = useLang();
+  const [infoGame, setInfoGame] = React.useState<GameDef | null>(null);
 
-  function openInfo(id: GameId) {
-    setInfoGame(id);
-  }
+  const PAGE_BG = theme.bg;
+  const CARD_BG = theme.card;
 
-  function closeInfo() {
-    setInfoGame(null);
-  }
-
-  return (
-    <>
-      <div
-        className="container"
-        style={{
-          padding: 16,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 16,
-          minHeight: "100vh",
-          background: theme.bg,
-          color: theme.text,
-        }}
-      >
-        {/* -------- Titre principal -------- */}
-        <div
-          style={{
-            fontSize: 22,
-            fontWeight: 900,
-            letterSpacing: 1.5,
-            marginTop: 8,
-            marginBottom: 4,
-            textTransform: "uppercase",
-            color: theme.primary,
-            textShadow: `0 0 8px ${theme.primary}, 0 0 18px ${theme.primary}`,
-          }}
-        >
-          TOUS LES JEUX
-        </div>
-
-        <div
-          style={{
-            opacity: 0.75,
-            fontSize: 12,
-            marginBottom: 8,
-            textAlign: "center",
-            color: theme.textSoft,
-          }}
-        >
-          Sélectionne un mode de jeu :
-        </div>
-
-        {/* -------- Liste des cartes Jeux -------- */}
-        <div
-          style={{
-            width: "100%",
-            maxWidth: 520,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}
-        >
-          {GAMES.map((g) => (
-            <GameCard
-              key={g.id}
-              title={g.title}
-              subtitle={g.subtitle}
-              disabled={!g.enabled}
-              onClick={() => {
-                if (!g.enabled) return;
-                setTab(g.tab);
-              }}
-              onInfo={() => openInfo(g.id)}
-            />
-          ))}
-        </div>
-
-        {/* -------- Carte Réglages (thème + langue) -------- */}
-        <div
-          onClick={() => setTab("settings")}
-          style={{
-            width: "100%",
-            maxWidth: 520,
-            cursor: "pointer",
-            background: theme.card,
-            borderRadius: 18,
-            padding: 16,
-            border: `1px solid ${theme.borderSoft}`,
-            boxShadow: `0 0 24px rgba(0,0,0,0.6)`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 4,
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: 14,
-                textTransform: "uppercase",
-                letterSpacing: 1.6,
-                color: theme.textSoft,
-              }}
-            >
-              Réglages
-            </div>
-            <div style={{ fontSize: 12, color: theme.textSoft }}>
-              Thème &amp; langue de l'application
-            </div>
-          </div>
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: "50%",
-              border: `1px solid ${theme.borderSoft}`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: `0 0 10px ${theme.primary}`,
-            }}
-          >
-            ⚙️
-          </div>
-        </div>
-      </div>
-
-      {infoGame && <InfoOverlay game={infoGame} onClose={closeInfo} />}
-    </>
-  );
-}
-
-/* ---------- Carte de jeu ---------- */
-
-type GameCardProps = {
-  title: string;
-  subtitle?: string;
-  onClick: () => void;
-  onInfo?: () => void;
-  disabled?: boolean;
-};
-
-function GameCard({
-  title,
-  subtitle,
-  onClick,
-  onInfo,
-  disabled,
-}: GameCardProps) {
-  const isDisabled = !!disabled;
-  const { theme } = useTheme();
-
-  const handleClick: React.MouseEventHandler<HTMLButtonElement> = (e) => {
-    if (isDisabled) {
-      // on ne navigue pas, mais on laisse le clic atteindre le bouton "i" si besoin
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-    onClick();
-  };
-
-  const titleColor = isDisabled ? theme.textSoft : theme.primary;
-  const titleShadow = isDisabled
-    ? "none"
-    : `0 0 6px ${theme.primary}, 0 0 14px ${theme.primary}`;
-
-  return (
-    <button
-      aria-disabled={isDisabled ? true : undefined}
-      // ⚠️ surtout PAS de disabled ici, sinon le "i" ne reçoit plus les clics
-      onClick={handleClick}
-      style={{
-        position: "relative",
-        width: "100%",
-        textAlign: "center",
-        padding: "14px 16px",
-        borderRadius: 16,
-        border: `1px solid ${theme.borderSoft}`,
-        background: theme.card,
-        opacity: isDisabled ? 0.55 : 1,
-        cursor: isDisabled ? "default" : "pointer",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        transition: "transform 0.15s ease, box-shadow 0.15s ease",
-        pointerEvents: "auto",
-        boxShadow: isDisabled ? "none" : "0 0 12px rgba(0,0,0,0.8)",
-      }}
-      onMouseEnter={(e) => {
-        if (isDisabled) return;
-        e.currentTarget.style.transform = "scale(1.02)";
-        e.currentTarget.style.boxShadow = "0 0 18px rgba(240,177,42,.3)";
-      }}
-      onMouseLeave={(e) => {
-        if (isDisabled) return;
-        e.currentTarget.style.transform = "scale(1)";
-        e.currentTarget.style.boxShadow = "0 0 12px rgba(0,0,0,0.8)";
-      }}
-    >
-      {/* Texte centré */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-        <div
-          style={{
-            fontWeight: 800,
-            fontSize: 16,
-            textTransform: "uppercase",
-            letterSpacing: 0.9,
-            color: titleColor,
-            textShadow: titleShadow,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {title}
-        </div>
-
-        {subtitle && (
-          <div
-            style={{
-              fontSize: 12,
-              opacity: 0.9,
-              color: isDisabled ? theme.textSoft : theme.textSoft,
-              marginTop: 3,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {subtitle}
-          </div>
-        )}
-      </div>
-
-      {/* Pastille "i" blanche à droite */}
-      <div
-        style={{
-          position: "absolute",
-          right: 14,
-          top: "50%",
-          transform: "translateY(-50%)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onInfo) onInfo();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              e.stopPropagation();
-              if (onInfo) onInfo();
-            }
-          }}
-          style={{
-            width: 24,
-            height: 24,
-            borderRadius: "999px",
-            border: "1px solid rgba(255,255,255,0.8)",
-            background:
-              "radial-gradient(circle at 30% 20%, #ffffff 0, #e5e7eb 40%, #9ca3af 100%)",
-            boxShadow:
-              "0 0 8px rgba(255,255,255,0.8), 0 0 16px rgba(148,163,184,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 13,
-            fontWeight: 800,
-            color: "#111827",
-            cursor: "pointer",
-          }}
-        >
-          i
-        </div>
-      </div>
-    </button>
-  );
-}
-
-/* ---------- Overlay d'infos par jeu ---------- */
-
-function InfoOverlay({ game, onClose }: { game: GameId; onClose: () => void }) {
-  let title = "";
-  let lines: string[] = [];
-
-  if (game === "training") {
-    title = "Training";
-    lines = [
-      "Accède au menu Training dédié.",
-      "Retrouve le Training X01 solo, le Tour de l’horloge, et l’Evolution de tes stats.",
-    ];
-  } else if (game === "x01") {
-    title = "X01";
-    lines = [
-      "Modes 301 / 501 / 701 / 901, en Multi local.",
-      "Gestion des sets / legs selon tes paramètres.",
-      "Statistiques complètes en fin de match.",
-    ];
-  } else if (game === "cricket") {
-    title = "Cricket";
-    lines = [
-      "Objectif : fermer les zones 15 à 20 + Bull.",
-      "Une fois ta zone fermée, tu marques des points tant que l’adversaire ne l’a pas fermée.",
-      "Le joueur qui a le meilleur score une fois toutes les zones fermées gagne.",
-    ];
-  } else if (game === "killer") {
-    title = "Killer";
-    lines = [
-      "En développement",
-      "Chaque joueur choisit un numéro.",
-      "Devient Killer en touchant son numéro en double.",
-      "Une fois Killer, vise les numéros des autres joueurs pour réduire leurs vies et les éliminer.",
-    ];
-  } else if (game === "shanghai") {
-    title = "Shanghai";
-    lines = [
-      "En développement",
-      "Chaque tour correspond à une cible (1, 2, 3, …).",
-      "Tu marques sur la cible du tour seulement : Simple, Double ou Triple.",
-      "Shanghai = Simple + Double + Triple sur la même cible → victoire immédiate.",
-    ];
-  } else if (game === "battle") {
-    title = "Battle Royale";
-    lines = [
-      "En développement",
-      "Mode fun à plusieurs avec éliminations successives.",
-      "Chaque joueur dispose d’un capital de points ou de vies.",
-      "Les mauvaises volées font perdre des points, les bonnes volées te permettent de faire tomber les adversaires.",
-    ];
+  function navigate(tab: Tab | null) {
+    if (!tab) return;
+    if (go) go(tab);
+    else if (setTab) setTab(tab);
   }
 
   return (
     <div
+      className="container"
       style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 999,
+        minHeight: "100vh",
+        padding: 16,
+        paddingBottom: 90,
+        background: PAGE_BG,
+        color: theme.text,
       }}
-      onClick={onClose}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
+      {/* Titre */}
+      <h1
         style={{
-          width: "82%",
-          maxWidth: 380,
-          borderRadius: 18,
-          padding: 18,
-          background:
-            "linear-gradient(180deg, rgba(22,22,28,.98), rgba(8,8,12,.98))",
-          border: "1px solid rgba(255,255,255,.12)",
-          boxShadow: "0 18px 40px rgba(0,0,0,.75)",
+          margin: 0,
+          marginBottom: 6,
+          fontSize: 24,
+          color: theme.primary,
+          textAlign: "center",
+          textShadow: `0 0 12px ${theme.primary}66`,
         }}
       >
-        <div
-          style={{
-            fontSize: 17,
-            fontWeight: 800,
-            marginBottom: 10,
-          }}
-        >
-          {title}
-        </div>
-
-        <ul
-          style={{
-            margin: 0,
-            paddingLeft: 18,
-            fontSize: 13,
-            lineHeight: 1.5,
-            opacity: 0.9,
-            marginBottom: 14,
-          }}
-        >
-          {lines.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
-
-        <button
-          onClick={onClose}
-          style={{
-            width: "100%",
-            borderRadius: 999,
-            border: "none",
-            padding: "8px 0",
-            fontWeight: 700,
-            fontSize: 13,
-            textTransform: "uppercase",
-            letterSpacing: 1,
-            background: "linear-gradient(180deg, #ffc63a, #ffaf00)",
-            color: "#111827",
-            boxShadow: "0 0 12px rgba(240,177,42,.6)",
-            cursor: "pointer",
-          }}
-        >
-          Fermer
-        </button>
+        {t("games.title", "TOUS LES JEUX")}
+      </h1>
+      <div
+        style={{
+          fontSize: 13,
+          color: theme.textSoft,
+          marginBottom: 18,
+          textAlign: "center",
+        }}
+      >
+        {t("games.subtitle", "Sélectionne un mode de jeu")}
       </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {GAMES.map((g) => {
+          const title = t(g.titleKey, g.titleDefault);
+          const subtitle = t(g.subtitleKey, g.subtitleDefault);
+          const disabled = !g.enabled;
+
+          return (
+            <button
+              key={g.id}
+              onClick={() => !disabled && navigate(g.tab)}
+              style={{
+                position: "relative",
+                width: "100%",
+                padding: 14,
+                paddingRight: 46,
+                textAlign: "left",
+                borderRadius: 16,
+                border: `1px solid ${theme.borderSoft}`,
+                background: CARD_BG,
+                cursor: disabled ? "default" : "pointer",
+                opacity: disabled ? 0.55 : 1,
+                boxShadow: disabled
+                  ? "none"
+                  : `0 10px 24px rgba(0,0,0,0.55)`,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 800,
+                  letterSpacing: 0.8,
+                  color: disabled ? theme.textSoft : theme.primary,
+                  textTransform: "uppercase",
+                  textShadow: disabled
+                    ? "none"
+                    : `0 0 12px ${theme.primary}55`,
+                }}
+              >
+                {title}
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 12,
+                  color: disabled ? theme.textSoft : theme.textSoft,
+                  opacity: 0.9,
+                }}
+              >
+                {subtitle}
+              </div>
+
+              {/* Pastille "i" */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setInfoGame(g);
+                }}
+                style={{
+                  position: "absolute",
+                  right: 10,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  width: 30,
+                  height: 30,
+                  borderRadius: "50%",
+                  border: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "rgba(0,0,0,0.9)",
+                  boxShadow: `0 0 10px ${theme.primary}44`,
+                  color: "#FFFFFF",
+                  fontWeight: 800,
+                  fontSize: 15,
+                  cursor: "pointer",
+                }}
+              >
+                i
+              </button>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Overlay d'information */}
+      {infoGame && (
+        <div
+          onClick={() => setInfoGame(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.72)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 420,
+              margin: 16,
+              padding: 18,
+              borderRadius: 18,
+              background: theme.card,
+              border: `1px solid ${theme.primary}55`,
+              boxShadow: `0 18px 40px rgba(0,0,0,.7)`,
+              color: theme.text,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 800,
+                marginBottom: 8,
+                color: theme.primary,
+                textTransform: "uppercase",
+                textShadow: `0 0 10px ${theme.primary}55`,
+              }}
+            >
+              {t(infoGame.titleKey, infoGame.titleDefault)}
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                lineHeight: 1.4,
+                color: theme.textSoft,
+                marginBottom: 12,
+              }}
+            >
+              {t(infoGame.infoKey, infoGame.infoDefault)}
+            </div>
+            <button
+              type="button"
+              onClick={() => setInfoGame(null)}
+              style={{
+                display: "block",
+                marginLeft: "auto",
+                padding: "6px 14px",
+                borderRadius: 999,
+                border: "none",
+                background: theme.primary,
+                color: "#000",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              {t("games.info.close", "Fermer")}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
