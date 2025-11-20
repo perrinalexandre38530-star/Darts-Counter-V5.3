@@ -21,31 +21,47 @@ type ThemeId =
 
 type Props = { go?: (tab: any, params?: any) => void };
 
-// Options de thèmes affichés
+// Options de thèmes (id + valeurs par défaut FR)
 const THEME_CHOICES: {
   id: ThemeId;
-  label: string;
-  desc: string;
+  defaultLabel: string;
+  defaultDesc: string;
 }[] = [
-  { id: "gold", label: "Gold néon", desc: "Thème premium doré" },
-  { id: "pink", label: "Rose fluo", desc: "Ambiance arcade rose" },
-  { id: "petrol", label: "Bleu pétrole", desc: "Bleu profond néon" },
-  { id: "green", label: "Vert néon", desc: "Style practice lumineux" },
-  { id: "magenta", label: "Magenta", desc: "Violet / magenta intense" },
-  { id: "red", label: "Rouge", desc: "Rouge arcade agressif" },
-  { id: "orange", label: "Orange", desc: "Orange chaud énergique" },
-  { id: "white", label: "Blanc", desc: "Fond clair moderne" },
+  { id: "gold", defaultLabel: "Gold néon", defaultDesc: "Thème premium doré" },
+  { id: "pink", defaultLabel: "Rose fluo", defaultDesc: "Ambiance arcade rose" },
+  {
+    id: "petrol",
+    defaultLabel: "Bleu pétrole",
+    defaultDesc: "Bleu profond néon",
+  },
+  {
+    id: "green",
+    defaultLabel: "Vert néon",
+    defaultDesc: "Style practice lumineux",
+  },
+  {
+    id: "magenta",
+    defaultLabel: "Magenta",
+    defaultDesc: "Violet / magenta intense",
+  },
+  { id: "red", defaultLabel: "Rouge", defaultDesc: "Rouge arcade agressif" },
+  {
+    id: "orange",
+    defaultLabel: "Orange",
+    defaultDesc: "Orange chaud énergique",
+  },
+  { id: "white", defaultLabel: "Blanc", defaultDesc: "Fond clair moderne" },
 ];
 
-// Options langues
-const LANG_CHOICES: { id: Lang; label: string }[] = [
-  { id: "fr", label: "Français" },
-  { id: "en", label: "English" },
-  { id: "es", label: "Español" },
-  { id: "de", label: "Deutsch" },
-  { id: "it", label: "Italiano" },
-  { id: "pt", label: "Português" },
-  { id: "nl", label: "Nederlands" },
+// Options langues (id + valeur par défaut)
+const LANG_CHOICES: { id: Lang; defaultLabel: string }[] = [
+  { id: "fr", defaultLabel: "Français" },
+  { id: "en", defaultLabel: "English" },
+  { id: "es", defaultLabel: "Español" },
+  { id: "de", defaultLabel: "Deutsch" },
+  { id: "it", defaultLabel: "Italiano" },
+  { id: "pt", defaultLabel: "Português" },
+  { id: "nl", defaultLabel: "Nederlands" },
 ];
 
 // Drapeaux (emoji) associés aux langues
@@ -89,13 +105,21 @@ function getThemePreset(id: ThemeId): AppTheme {
 // ---------- Carte individuelle de thème ----------
 
 type ThemeChoiceButtonProps = {
-  opt: { id: ThemeId; label: string; desc: string };
+  id: ThemeId;
+  label: string;
+  desc: string;
   active: boolean;
   onClick: () => void;
 };
 
-function ThemeChoiceButton({ opt, active, onClick }: ThemeChoiceButtonProps) {
-  const preset = getThemePreset(opt.id);
+function ThemeChoiceButton({
+  id,
+  label,
+  desc,
+  active,
+  onClick,
+}: ThemeChoiceButtonProps) {
+  const preset = getThemePreset(id);
   const neonColor = preset.primary;
 
   const [hovered, setHovered] = React.useState(false);
@@ -109,7 +133,6 @@ function ThemeChoiceButton({ opt, active, onClick }: ThemeChoiceButtonProps) {
 
   return (
     <button
-      key={opt.id}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -157,9 +180,9 @@ function ThemeChoiceButton({ opt, active, onClick }: ThemeChoiceButtonProps) {
             flexShrink: 0,
           }}
         />
-        <span style={{ color: titleColor }}>{opt.label}</span>
+        <span style={{ color: titleColor }}>{label}</span>
       </div>
-      <div style={{ fontSize: 12, color: descColor }}>{opt.desc}</div>
+      <div style={{ fontSize: 12, color: descColor }}>{desc}</div>
     </button>
   );
 }
@@ -167,20 +190,22 @@ function ThemeChoiceButton({ opt, active, onClick }: ThemeChoiceButtonProps) {
 // ---------- Bouton individuel de langue ----------
 
 type LanguageChoiceButtonProps = {
-  opt: { id: Lang; label: string };
+  id: Lang;
+  label: string;
   active: boolean;
   onClick: () => void;
   primary: string;
 };
 
 function LanguageChoiceButton({
-  opt,
+  id,
+  label,
   active,
   onClick,
   primary,
 }: LanguageChoiceButtonProps) {
   const [hovered, setHovered] = React.useState(false);
-  const flag = LANG_FLAGS[opt.id];
+  const flag = LANG_FLAGS[id];
 
   const borderColor = active ? primary : "rgba(255,255,255,0.18)";
   const textColor = active ? primary : "rgba(255,255,255,0.8)";
@@ -191,7 +216,6 @@ function LanguageChoiceButton({
 
   return (
     <button
-      key={opt.id}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -214,7 +238,7 @@ function LanguageChoiceButton({
       }}
     >
       <span style={{ fontSize: 16 }}>{flag}</span>
-      <span>{opt.label}</span>
+      <span>{label}</span>
     </button>
   );
 }
@@ -240,7 +264,7 @@ export default function Settings({ go }: Props) {
         minHeight: "100vh",
         padding: 16,
         paddingBottom: 90,
-        background: PAGE_BG, // <-- ne dépend plus du thème
+        background: PAGE_BG,
         color: theme.text,
       }}
     >
@@ -281,7 +305,7 @@ export default function Settings({ go }: Props) {
 
       <section
         style={{
-          background: CARD_BG, // <-- fond de carte fixe sombre
+          background: CARD_BG,
           borderRadius: 18,
           border: `1px solid ${theme.borderSoft}`,
           padding: 16,
@@ -307,14 +331,26 @@ export default function Settings({ go }: Props) {
             marginTop: 12,
           }}
         >
-          {THEME_CHOICES.map((opt) => (
-            <ThemeChoiceButton
-              key={opt.id}
-              opt={opt}
-              active={opt.id === themeId}
-              onClick={() => setThemeId(opt.id)}
-            />
-          ))}
+          {THEME_CHOICES.map((opt) => {
+            const label = t(
+              `settings.theme.${opt.id}.label`,
+              opt.defaultLabel
+            );
+            const desc = t(
+              `settings.theme.${opt.id}.desc`,
+              opt.defaultDesc
+            );
+            return (
+              <ThemeChoiceButton
+                key={opt.id}
+                id={opt.id}
+                label={label}
+                desc={desc}
+                active={opt.id === themeId}
+                onClick={() => setThemeId(opt.id)}
+              />
+            );
+          })}
         </div>
       </section>
 
@@ -322,7 +358,7 @@ export default function Settings({ go }: Props) {
 
       <section
         style={{
-          background: CARD_BG, // <-- idem bloc thème
+          background: CARD_BG,
           borderRadius: 18,
           border: `1px solid ${theme.borderSoft}`,
           padding: 16,
@@ -348,15 +384,19 @@ export default function Settings({ go }: Props) {
             marginTop: 12,
           }}
         >
-          {LANG_CHOICES.map((opt) => (
-            <LanguageChoiceButton
-              key={opt.id}
-              opt={opt}
-              active={opt.id === lang}
-              onClick={() => setLang(opt.id)}
-              primary={theme.primary}
-            />
-          ))}
+          {LANG_CHOICES.map((opt) => {
+            const label = t(`lang.${opt.id}`, opt.defaultLabel);
+            return (
+              <LanguageChoiceButton
+                key={opt.id}
+                id={opt.id}
+                label={label}
+                active={opt.id === lang}
+                onClick={() => setLang(opt.id)}
+                primary={theme.primary}
+              />
+            );
+          })}
         </div>
       </section>
     </div>
