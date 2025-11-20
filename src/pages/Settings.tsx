@@ -1,6 +1,7 @@
 // ============================================
 // src/pages/Settings.tsx — Thème + Langue
-// Utilise setThemeId du ThemeContext
+// Fond toujours sombre (ne varie pas avec le thème)
+// Les thèmes ne changent que les néons / accents / textes
 // ============================================
 
 import React from "react";
@@ -50,6 +51,10 @@ export default function Settings({ go }: Props) {
   const { theme, themeId, setThemeId } = useTheme();
   const { lang, setLang, t } = useLang();
 
+  // 🎨 Fond dark fixe pour toute la page
+  const PAGE_BG = "#050712";
+  const CARD_BG = "rgba(8, 10, 20, 0.98)";
+
   return (
     <div
       className="container"
@@ -57,7 +62,7 @@ export default function Settings({ go }: Props) {
         minHeight: "100vh",
         padding: 16,
         paddingBottom: 90,
-        background: theme.bg,
+        background: PAGE_BG, // <-- ne dépend plus du thème
         color: theme.text,
       }}
     >
@@ -98,7 +103,7 @@ export default function Settings({ go }: Props) {
 
       <section
         style={{
-          background: theme.card,
+          background: CARD_BG, // <-- fond de carte fixe sombre
           borderRadius: 18,
           border: `1px solid ${theme.borderSoft}`,
           padding: 16,
@@ -130,13 +135,13 @@ export default function Settings({ go }: Props) {
                   borderRadius: 14,
                   padding: 12,
                   background: active
-                    ? "rgba(255,255,255,0.06)"
-                    : "rgba(255,255,255,0.03)",
+                    ? "rgba(255,255,255,0.04)"
+                    : "rgba(255,255,255,0.02)",
                   border: active
                     ? `1px solid ${theme.primary}`
                     : `1px solid ${theme.borderSoft}`,
                   boxShadow: active
-                    ? `0 0 14px ${theme.primary}88`
+                    ? `0 0 18px ${theme.primary}88`
                     : "none",
                   color: theme.text,
                 }}
@@ -175,7 +180,7 @@ export default function Settings({ go }: Props) {
 
       <section
         style={{
-          background: theme.card,
+          background: CARD_BG, // <-- idem bloc thème
           borderRadius: 18,
           border: `1px solid ${theme.borderSoft}`,
           padding: 16,
