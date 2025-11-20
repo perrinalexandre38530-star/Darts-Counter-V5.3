@@ -1,9 +1,6 @@
 // ============================================
-// src/pages/Settings.tsx
-// Page Réglages — Thème + Langue globaux
-// - Choix du thème (gold / rose / pétrole / …)
-// - Choix de la langue (FR / EN / ES / …)
-// - Utilise ThemeContext + LangContext
+// src/pages/Settings.tsx — Thème + Langue
+// Utilise setThemeId du ThemeContext
 // ============================================
 
 import React from "react";
@@ -20,13 +17,10 @@ type ThemeId =
   | "orange"
   | "white";
 
-type Props = {
-  go?: (tab: any, params?: any) => void;
-};
+type Props = { go?: (tab: any, params?: any) => void };
 
-/* ---------- Options locales ---------- */
-
-const THEME_OPTIONS: {
+// Options de thèmes affichés
+const THEME_CHOICES: {
   id: ThemeId;
   label: string;
   desc: string;
@@ -38,10 +32,11 @@ const THEME_OPTIONS: {
   { id: "magenta", label: "Magenta", desc: "Violet / magenta intense" },
   { id: "red", label: "Rouge", desc: "Rouge arcade agressif" },
   { id: "orange", label: "Orange", desc: "Orange chaud énergique" },
-  { id: "white", label: "Blanc", desc: "Fond clair / tokens foncés" },
+  { id: "white", label: "Blanc", desc: "Fond clair moderne" },
 ];
 
-const LANG_OPTIONS: { id: Lang; label: string }[] = [
+// Options langues
+const LANG_CHOICES: { id: Lang; label: string }[] = [
   { id: "fr", label: "Français" },
   { id: "en", label: "English" },
   { id: "es", label: "Español" },
@@ -51,14 +46,9 @@ const LANG_OPTIONS: { id: Lang; label: string }[] = [
   { id: "nl", label: "Nederlands" },
 ];
 
-/* ---------- Composant principal ---------- */
-
 export default function Settings({ go }: Props) {
-  // on cast en any pour être compatible avec la version actuelle du ThemeContext
-  const { theme, themeName, setThemeName } = useTheme() as any;
+  const { theme, themeId, setThemeId } = useTheme();
   const { lang, setLang, t } = useLang();
-
-  const currentThemeId: ThemeId = (themeName as ThemeId) || "gold";
 
   return (
     <div
@@ -67,43 +57,45 @@ export default function Settings({ go }: Props) {
         minHeight: "100vh",
         padding: 16,
         paddingBottom: 90,
-        background: theme?.bg ?? "#050712",
-        color: theme?.text ?? "#ffffff",
+        background: theme.bg,
+        color: theme.text,
       }}
     >
-      {/* Header */}
-      <div style={{ marginBottom: 16 }}>
-        <button
-          onClick={() => go && go("home")}
-          style={{
-            border: "none",
-            background: "transparent",
-            color: theme.textSoft,
-            marginBottom: 8,
-            fontSize: 14,
-          }}
-        >
-          ← {t("settings.back", "Retour")}
-        </button>
-        <h1
-          style={{
-            margin: 0,
-            fontSize: 24,
-            color: theme.primary,
-            textShadow: `0 0 12px ${theme.primary}55`,
-          }}
-        >
-          {t("settings.title", "Réglages")}
-        </h1>
-        <div style={{ fontSize: 13, color: theme.textSoft, marginTop: 4 }}>
-          {t(
-            "settings.subtitle",
-            "Personnalise le thème et la langue de l'application"
-          )}
-        </div>
+      {/* Retour */}
+      <button
+        onClick={() => go && go("home")}
+        style={{
+          border: "none",
+          background: "transparent",
+          color: theme.textSoft,
+          marginBottom: 8,
+          fontSize: 15,
+        }}
+      >
+        ← {t("settings.back", "Retour")}
+      </button>
+
+      {/* Titre */}
+      <h1
+        style={{
+          margin: 0,
+          fontSize: 26,
+          color: theme.primary,
+          textShadow: `0 0 12px ${theme.primary}66`,
+        }}
+      >
+        {t("settings.title", "Réglages")}
+      </h1>
+
+      <div style={{ fontSize: 14, color: theme.textSoft, marginBottom: 16 }}>
+        {t(
+          "settings.subtitle",
+          "Personnalise le thème et la langue de l'application"
+        )}
       </div>
 
-      {/* Carte Thème */}
+      {/* ---------- BLOC THEME ---------- */}
+
       <section
         style={{
           background: theme.card,
@@ -111,62 +103,42 @@ export default function Settings({ go }: Props) {
           border: `1px solid ${theme.borderSoft}`,
           padding: 16,
           marginBottom: 16,
-          boxShadow: "0 14px 30px rgba(0,0,0,.45)",
         }}
       >
         <h2
-          style={{
-            fontSize: 16,
-            margin: 0,
-            marginBottom: 4,
-            color: theme.primary,
-          }}
+          style={{ margin: 0, marginBottom: 6, fontSize: 18, color: theme.primary }}
         >
-          {t("settings.theme.title", "Thème")}
+          {t("settings.theme", "Thème")}
         </h2>
-        <p
-          style={{
-            margin: 0,
-            marginBottom: 12,
-            fontSize: 13,
-            color: theme.textSoft,
-          }}
-        >
-          {t(
-            "settings.theme.subtitle",
-            "Choisis les couleurs principales de l'application."
-          )}
-        </p>
 
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))",
-            gap: 10,
+            gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))",
+            gap: 12,
+            marginTop: 12,
           }}
         >
-          {THEME_OPTIONS.map((opt) => {
-            const active = opt.id === currentThemeId;
+          {THEME_CHOICES.map((opt) => {
+            const active = opt.id === themeId;
             return (
               <button
                 key={opt.id}
-                onClick={() => setThemeName && setThemeName(opt.id)}
+                onClick={() => setThemeId(opt.id)}
                 style={{
-                  position: "relative",
                   textAlign: "left",
                   borderRadius: 14,
-                  padding: 10,
+                  padding: 12,
+                  background: active
+                    ? "rgba(255,255,255,0.06)"
+                    : "rgba(255,255,255,0.03)",
                   border: active
                     ? `1px solid ${theme.primary}`
                     : `1px solid ${theme.borderSoft}`,
-                  background: active
-                    ? "rgba(0,0,0,0.8)"
-                    : "rgba(255,255,255,0.02)",
-                  color: theme.text,
                   boxShadow: active
-                    ? `0 0 14px ${theme.primary}77`
+                    ? `0 0 14px ${theme.primary}88`
                     : "none",
-                  overflow: "hidden",
+                  color: theme.text,
                 }}
               >
                 <div
@@ -174,56 +146,33 @@ export default function Settings({ go }: Props) {
                     display: "flex",
                     alignItems: "center",
                     gap: 8,
+                    fontWeight: 700,
+                    fontSize: 14,
                     marginBottom: 4,
                   }}
                 >
                   <span
                     style={{
-                      width: 16,
-                      height: 16,
+                      width: 14,
+                      height: 14,
                       borderRadius: "50%",
                       background: theme.primary,
-                      boxShadow: `0 0 10px ${theme.primary}aa`,
+                      boxShadow: `0 0 6px ${theme.primary}`,
                     }}
                   />
-                  <span
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {opt.label}
-                  </span>
+                  {opt.label}
                 </div>
-                <div
-                  style={{
-                    fontSize: 11.5,
-                    color: theme.textSoft,
-                    lineHeight: 1.3,
-                  }}
-                >
+                <div style={{ fontSize: 12, color: theme.textSoft }}>
                   {opt.desc}
                 </div>
-                {active && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 8,
-                      right: 10,
-                      fontSize: 11,
-                      color: theme.primary,
-                    }}
-                  >
-                    ✓
-                  </div>
-                )}
               </button>
             );
           })}
         </div>
       </section>
 
-      {/* Carte Langue */}
+      {/* ---------- BLOC LANGUE ---------- */}
+
       <section
         style={{
           background: theme.card,
@@ -231,61 +180,33 @@ export default function Settings({ go }: Props) {
           border: `1px solid ${theme.borderSoft}`,
           padding: 16,
           marginBottom: 16,
-          boxShadow: "0 14px 30px rgba(0,0,0,.45)",
         }}
       >
         <h2
-          style={{
-            fontSize: 16,
-            margin: 0,
-            marginBottom: 4,
-            color: theme.primary,
-          }}
+          style={{ margin: 0, marginBottom: 6, fontSize: 18, color: theme.primary }}
         >
-          {t("settings.lang.title", "Langue")}
+          {t("settings.lang", "Langue")}
         </h2>
-        <p
-          style={{
-            margin: 0,
-            marginBottom: 12,
-            fontSize: 13,
-            color: theme.textSoft,
-          }}
-        >
-          {t(
-            "settings.lang.subtitle",
-            "Sélectionne la langue de l'interface."
-          )}
-        </p>
 
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 8,
-          }}
-        >
-          {LANG_OPTIONS.map((opt) => {
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
+          {LANG_CHOICES.map((opt) => {
             const active = opt.id === lang;
             return (
               <button
                 key={opt.id}
                 onClick={() => setLang(opt.id)}
                 style={{
-                  padding: "6px 12px",
+                  padding: "8px 14px",
                   borderRadius: 999,
                   border: active
                     ? `1px solid ${theme.primary}`
                     : `1px solid ${theme.borderSoft}`,
                   background: active
                     ? "rgba(0,0,0,0.85)"
-                    : "rgba(255,255,255,0.03)",
+                    : "rgba(255,255,255,0.04)",
                   color: active ? theme.primary : theme.textSoft,
-                  fontSize: 13,
                   fontWeight: active ? 700 : 500,
-                  boxShadow: active
-                    ? `0 0 10px ${theme.primary}66`
-                    : "none",
+                  fontSize: 13,
                 }}
               >
                 {opt.label}
