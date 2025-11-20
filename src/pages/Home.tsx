@@ -150,7 +150,7 @@ export default function Home({
           className="title-accent"
           style={{ marginBottom: 0, color: theme.textSoft }}
         >
-          {t("home.welcome", "Bienvenue")}
+          {t("home.greeting", "Bienvenue")}
         </div>
 
         <h1
@@ -167,7 +167,7 @@ export default function Home({
             maxWidth: "100%",
           }}
         >
-          {t("home.title", "DARTS COUNTER")}
+          {t("home.titleApp", "DARTS COUNTER")}
         </h1>
 
         {!active && showConnect ? (

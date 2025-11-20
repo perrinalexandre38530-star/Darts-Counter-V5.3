@@ -46,7 +46,7 @@ type Dict = Record<string, string>;
 type LangDict = Record<Lang, Dict>;
 
 const DICT: LangDict = {
-// ---------- FRANÇAIS ----------
+ // ---------- FRANÇAIS ----------
 fr: {
   // --- NAV ---
   "nav.home": "Accueil",
@@ -65,69 +65,51 @@ fr: {
 
   "settings.theme.gold.label": "GOLD NEON",
   "settings.theme.gold.desc": "Thème premium doré",
-
   "settings.theme.pink.label": "ROSE FLUO",
   "settings.theme.pink.desc": "Ambiance arcade rose",
-
   "settings.theme.petrol.label": "BLEU PETROLE",
   "settings.theme.petrol.desc": "Bleu profond néon",
-
   "settings.theme.green.label": "VEGETAL",
   "settings.theme.green.desc": "Style practice lumineux",
-
   "settings.theme.magenta.label": "MAGENTA",
   "settings.theme.magenta.desc": "Violet / magenta intense",
-
   "settings.theme.red.label": "ROUGE VIF",
   "settings.theme.red.desc": "Rouge arcade agressif",
-
   "settings.theme.orange.label": "ORANGE FEU",
   "settings.theme.orange.desc": "Orange chaud énergique",
-
   "settings.theme.white.label": "BLANC NEIGE",
   "settings.theme.white.desc": "Fond clair moderne",
 
-  // --- HOME PAGE ---
-  "home.title": "Bienvenue",
-  "home.subtitle": "Choisis une section",
-  "home.quickplay": "Jeu rapide",
-  "home.training": "Training",
-  "home.stats": "Stats",
-  "home.profiles": "Profils",
-  "home.friends": "Amis",
-  "home.settings": "Réglages",
-  "home.lastSessions": "Dernières sessions",
-  "home.noSessions": "Aucune session enregistrée.",
-  "home.resume": "Continuer",
-  "home.view": "Voir",
-  "home.delete": "Supprimer",
-  "home.confirmDeleteTitle": "Supprimer la session ?",
-  "home.confirmDeleteBody": "Cette session sera définitivement supprimée.",
-  "home.confirmDeleteYes": "Supprimer",
-  "home.confirmDeleteNo": "Annuler",
+  // --- HOME ---
+  "home.greeting": "Bienvenue",
+  "home.titleApp": "DARTS COUNTER",
+  "home.connect": "SE CONNECTER",
 
-  // --- TRAINING MENU ---
-  "training.menu.title": "TRAINING",
-  "training.menu.subtitle": "Choisis un mode d’entraînement",
+  "home.card.profiles.title": "PROFILS",
+  "home.card.profiles.subtitle": "Création et gestion de profils",
 
-  "training.menu.x01.title": "Training X01",
-  "training.menu.x01.subtitle": "Travaille ton scoring et tes fins",
-  "training.menu.x01.info":
-    "Entraînement X01 dédié à la progression : scoring, régularité, finitions, stats détaillées.",
+  "home.card.local.title": "JEU LOCAL",
+  "home.card.local.subtitle": "Accède à tous les modes de jeu",
 
-  "training.menu.clock.title": "Tour de l’horloge",
-  "training.menu.clock.subtitle": "Simple / Double / Triple",
-  "training.menu.clock.info":
-    "Atteins chaque segment du 1 au 20 puis Bull. Mode simple, double ou triple.",
+  "home.card.online.title": "JEU ONLINE",
+  "home.card.online.subtitle": "Parties à distance (mode à venir)",
 
-  "training.menu.evolution.title": "Évolution",
-  "training.menu.evolution.subtitle": "Bientôt disponible",
-  "training.menu.evolution.info": "Un nouveau mode d’entraînement arrive bientôt.",
+  "home.card.stats.title": "STATS",
+  "home.card.stats.subtitle": "Statistiques et historiques",
 
-  "training.menu.comingSoon": "En développement",
-  "training.menu.info.close": "Fermer",
+  "home.seeStats": "Voir mes statistiques",
 
-  // --- GAMES PAGE ---
+  "home.stats.avg3": "Moy/3",
+  "home.stats.best": "Best",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Win%",
+
+  // --- STATUS ---
+  "status.online": "En ligne",
+  "status.away": "Absent",
+  "status.offline": "Hors ligne",
+
+  // --- GAMES ---
   "games.title": "TOUS LES JEUX",
   "games.subtitle": "Sélectionne un mode de jeu",
 
@@ -141,36 +123,76 @@ fr: {
   "games.x01.subtitle": "301 / 501 / 701 / 901.",
   "games.x01.infoTitle": "X01",
   "games.x01.infoBody":
-    "Classique 301/501/701/901 avec statistiques, historique et plusieurs options de règles.",
+    "Classique X01 avec statistiques, historique et options de règles.",
 
   "games.cricket.title": "CRICKET",
   "games.cricket.subtitle": "Ferme les zones 15…20 + Bull.",
   "games.cricket.infoTitle": "Cricket",
   "games.cricket.infoBody":
-    "Ferme les numéros 15 à 20 et le Bull avant ton adversaire tout en marquant un maximum de points.",
+    "Ferme les zones 15 à 20 et le Bull avant ton adversaire.",
 
   "games.killer.title": "KILLER",
   "games.killer.subtitle": "Double ton numéro… deviens Killer.",
   "games.killer.infoTitle": "Killer",
   "games.killer.infoBody":
-    "Chaque joueur a un numéro. Deviens Killer en touchant ton chiffre puis élimine les autres joueurs.",
+    "Devient Killer en touchant ton numéro puis élimine les autres joueurs.",
 
   "games.shanghai.title": "SHANGHAI",
-  "games.shanghai.subtitle": "Cible du tour, S-D-T = Shanghai à win.",
+  "games.shanghai.subtitle": "Cible du tour, S-D-T = Shanghai.",
   "games.shanghai.infoTitle": "Shanghai",
   "games.shanghai.infoBody":
-    "Chaque manche a une cible différente. Vise simple, double et triple sur la même visite pour réaliser un Shanghai.",
+    "Atteins Simple+Double+Triple sur le même numéro : Shanghai.",
 
   "games.battle.title": "BATTLE ROYALE",
-  "games.battle.subtitle": "Mode fun à plusieurs — éliminations.",
+  "games.battle.subtitle": "Mode fun — éliminations.",
   "games.battle.infoTitle": "Battle Royale",
   "games.battle.infoBody":
-    "Mode fun à plusieurs avec éliminations successives. Le dernier joueur en lice gagne la partie.",
+    "Mode fun multijoueur avec éliminations successives.",
 
   "games.status.comingSoon": "En développement",
   "games.info.close": "Fermer",
 
-  // --- LANGUAGES ---
+  // --- TRAINING MENU ---
+  "training.menu.title": "TRAINING",
+  "training.menu.subtitle": "Sélectionne un mode d'entraînement",
+
+  "training.menu.x01.title": "Training X01",
+  "training.menu.x01.subtitle": "Travaille scoring et finishing",
+  "training.menu.x01.info":
+    "Entraînement X01 complet : scoring, régularité, stats avancées.",
+
+  "training.menu.clock.title": "Tour de l’horloge",
+  "training.menu.clock.subtitle": "Simple / Double / Triple",
+  "training.menu.clock.info":
+    "Touches 1 → 20 + Bull. Choisis mode simple, double ou triple.",
+
+  "training.menu.evolution.title": "Évolution",
+  "training.menu.evolution.subtitle": "Bientôt disponible",
+  "training.menu.evolution.info":
+    "Un nouveau mode d'entraînement arrive bientôt.",
+
+  "training.menu.comingSoon": "En développement",
+  "training.menu.info.close": "Fermer",
+
+  // --- PAGE PROFILS (ajoutée) ---
+  "profiles.title": "PROFILS",
+  "profiles.create": "Créer un profil",
+  "profiles.edit": "Modifier le profil",
+  "profiles.delete": "Supprimer le profil",
+  "profiles.confirmDeleteTitle": "Supprimer ce profil ?",
+  "profiles.confirmDeleteBody":
+    "Ce profil et toutes ses statistiques seront définitivement supprimés.",
+  "profiles.confirmDeleteYes": "Supprimer",
+  "profiles.confirmDeleteNo": "Annuler",
+
+  "profiles.name": "Nom",
+  "profiles.avatar": "Avatar",
+  "profiles.stats": "Statistiques",
+  "profiles.noProfiles": "Aucun profil existant.",
+  "profiles.pickOne": "Choisis un profil",
+  "profiles.active": "Profil actif",
+
+  // --- LANGUES ---
   "lang.fr": "Français",
   "lang.en": "English",
   "lang.es": "Español",
@@ -196,69 +218,114 @@ fr: {
   "lang.cs": "Tchèque",
 },
 
-// ---------- ENGLISH ----------
-en: {
-  // --- NAV ---
-  "nav.home": "Home",
-  "nav.games": "Games",
-  "nav.profiles": "Profiles",
-  "nav.friends": "Friends",
-  "nav.stats": "Stats",
-  "nav.settings": "Settings",
+  // ---------- ENGLISH ----------
+  en: {
+    // --- NAV ---
+    "nav.home": "Home",
+    "nav.games": "Games",
+    "nav.profiles": "Profiles",
+    "nav.friends": "Friends",
+    "nav.stats": "Stats",
+    "nav.settings": "Settings",
 
-  // --- SETTINGS ---
-  "settings.back": "Back",
-  "settings.title": "Settings",
-  "settings.subtitle": "Customize the app theme and language",
-  "settings.theme": "Theme",
-  "settings.lang": "Language",
+    // --- SETTINGS ---
+    "settings.back": "Back",
+    "settings.title": "Settings",
+    "settings.subtitle": "Customize the app theme and language",
+    "settings.theme": "Theme",
+    "settings.lang": "Language",
 
-  "settings.theme.gold.label": "Gold neon",
-  "settings.theme.gold.desc": "Premium gold theme",
+    "settings.theme.gold.label": "GOLD NEON",
+"settings.theme.gold.desc": "Premium golden theme",
 
-  "settings.theme.pink.label": "Pink neon",
-  "settings.theme.pink.desc": "Arcade pink ambience",
+"settings.theme.pink.label": "PINK FLUO",
+"settings.theme.pink.desc": "Arcade pink ambience",
 
-  "settings.theme.petrol.label": "Petrol blue",
-  "settings.theme.petrol.desc": "Deep neon blue",
+"settings.theme.petrol.label": "PETROL BLUE",
+"settings.theme.petrol.desc": "Deep neon blue",
 
-  "settings.theme.green.label": "Green neon",
-  "settings.theme.green.desc": "Bright practice style",
+"settings.theme.green.label": "VEGETAL",
+"settings.theme.green.desc": "Bright practice style",
 
-  "settings.theme.magenta.label": "Magenta",
-  "settings.theme.magenta.desc": "Intense violet / magenta",
+"settings.theme.magenta.label": "MAGENTA",
+"settings.theme.magenta.desc": "Intense violet / magenta",
 
-  "settings.theme.red.label": "Red",
-  "settings.theme.red.desc": "Aggressive arcade red",
+"settings.theme.red.label": "BRIGHT RED",
+"settings.theme.red.desc": "Aggressive arcade red",
 
-  "settings.theme.orange.label": "Orange",
-  "settings.theme.orange.desc": "Energetic warm orange",
+"settings.theme.orange.label": "FIRE ORANGE",
+"settings.theme.orange.desc": "Warm energetic orange",
 
-  "settings.theme.white.label": "White",
-  "settings.theme.white.desc": "Modern light background",
+"settings.theme.white.label": "SNOW WHITE",
+"settings.theme.white.desc": "Modern light background",
 
-  // --- HOME (CORRIGÉ) ---
-  "home.greeting": "Welcome",      // ← traduit
-  "home.titleApp": "DARTS COUNTER", // ← invariable
-  "home.subtitle": "Choose a section",
+    // --- HOME ---
+    "home.greeting": "Welcome",
+    "home.titleApp": "DARTS COUNTER",
+    "home.connect": "SIGN IN",
 
-  "home.quickplay": "Quick Play",
-  "home.training": "Training",
-  "home.stats": "Stats",
-  "home.profiles": "Profiles",
-  "home.friends": "Friends",
-  "home.settings": "Settings",
-  "home.lastSessions": "Last sessions",
-  "home.noSessions": "No sessions saved yet.",
-  "home.resume": "Resume",
-  "home.view": "View",
-  "home.delete": "Delete",
-  "home.confirmDeleteTitle": "Delete session?",
-  "home.confirmDeleteBody": "This session will be permanently deleted.",
-  "home.confirmDeleteYes": "Delete",
-  "home.confirmDeleteNo": "Cancel",
+    "home.card.profiles.title": "PROFILES",
+    "home.card.profiles.subtitle": "Create and manage profiles",
 
-  // --- TRAINING MENU ---
+    "home.card.local.title": "LOCAL PLAY",
+    "home.card.local.subtitle": "Access all game modes",
+
+    "home.card.online.title": "ONLINE PLAY",
+    "home.card.online.subtitle": "Remote matches (coming soon)",
+
+    "home.card.stats.title": "STATS",
+    "home.card.stats.subtitle": "Statistics and history",
+
+    "home.seeStats": "View my statistics",
+
+    "home.stats.avg3": "Avg/3",
+    "home.stats.best": "Best",
+    "home.stats.co": "CO",
+    "home.stats.winPct": "Win%",
+
+    // STATUS
+    "status.online": "Online",
+    "status.away": "Away",
+    "status.offline": "Offline",
+
+    // --- GAMES PAGE ---
+    "games.title": "ALL GAMES",
+    "games.subtitle": "Select a game mode",
+    "games.training.title": "TRAINING",
+    "games.training.subtitle": "Improve your progression.",
+    "games.training.infoTitle": "Training",
+    "games.training.infoBody":
+      "Practice mode to work on consistency, scoring and finishing.",
+    "games.x01.title": "X01",
+    "games.x01.subtitle": "301 / 501 / 701 / 901.",
+    "games.x01.infoTitle": "X01",
+    "games.x01.infoBody":
+      "Classic 301/501/701/901 games with stats, history and several rule options.",
+    "games.cricket.title": "CRICKET",
+    "games.cricket.subtitle": "Close 15–20 + Bull.",
+    "games.cricket.infoTitle": "Cricket",
+    "games.cricket.infoBody":
+      "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
+    "games.killer.title": "KILLER",
+    "games.killer.subtitle": "Hit your number… become Killer.",
+    "games.killer.infoTitle": "Killer",
+    "games.killer.infoBody":
+      "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
+    "games.shanghai.title": "SHANGHAI",
+    "games.shanghai.subtitle":
+      "Target of the round, S-D-T = Shanghai to win.",
+    "games.shanghai.infoTitle": "Shanghai",
+    "games.shanghai.infoBody":
+      "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
+    "games.battle.title": "BATTLE ROYALE",
+    "games.battle.subtitle": "Fun multiplayer mode — eliminations.",
+    "games.battle.infoTitle": "Battle Royale",
+    "games.battle.infoBody":
+      "Fun multiplayer mode with successive eliminations. Last player standing wins.",
+    "games.status.comingSoon": "Coming soon",
+    "games.info.close": "Close",
+
+      // --- TRAINING MENU ---
   "training.menu.title": "TRAINING",
   "training.menu.subtitle": "Choose a training mode",
 
@@ -279,74 +346,31 @@ en: {
   "training.menu.comingSoon": "Coming soon",
   "training.menu.info.close": "Close",
 
-  // --- GAMES PAGE ---
-  "games.title": "ALL GAMES",
-  "games.subtitle": "Select a game mode",
-
-  "games.training.title": "TRAINING",
-  "games.training.subtitle": "Improve your progression.",
-  "games.training.infoTitle": "Training",
-  "games.training.infoBody":
-    "Practice mode to work on consistency, scoring and finishing.",
-
-  "games.x01.title": "X01",
-  "games.x01.subtitle": "301 / 501 / 701 / 901.",
-  "games.x01.infoTitle": "X01",
-  "games.x01.infoBody":
-    "Classic 301/501/701/901 games with stats, history and several rule options.",
-
-  "games.cricket.title": "CRICKET",
-  "games.cricket.subtitle": "Close 15–20 + Bull.",
-  "games.cricket.infoTitle": "Cricket",
-  "games.cricket.infoBody":
-    "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
-
-  "games.killer.title": "KILLER",
-  "games.killer.subtitle": "Hit your number… become Killer.",
-  "games.killer.infoTitle": "Killer",
-  "games.killer.infoBody":
-    "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
-
-  "games.shanghai.title": "SHANGHAI",
-  "games.shanghai.subtitle": "Target of the round, S-D-T = Shanghai to win.",
-  "games.shanghai.infoTitle": "Shanghai",
-  "games.shanghai.infoBody":
-    "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
-
-  "games.battle.title": "BATTLE ROYALE",
-  "games.battle.subtitle": "Fun multiplayer mode — eliminations.",
-  "games.battle.infoTitle": "Battle Royale",
-  "games.battle.infoBody":
-    "Fun multiplayer mode with successive eliminations. Last player standing wins.",
-
-  "games.status.comingSoon": "Coming soon",
-  "games.info.close": "Close",
-
-  // --- LANG LIST ---
-  "lang.fr": "French",
-  "lang.en": "English",
-  "lang.es": "Spanish",
-  "lang.de": "German",
-  "lang.it": "Italian",
-  "lang.pt": "Portuguese",
-  "lang.nl": "Dutch",
-  "lang.ru": "Russian",
-  "lang.zh": "Chinese",
-  "lang.ja": "Japanese",
-  "lang.ar": "Arabic",
-  "lang.hi": "Hindi",
-  "lang.tr": "Turkish",
-  "lang.da": "Danish",
-  "lang.no": "Norwegian",
-  "lang.sv": "Swedish",
-  "lang.is": "Icelandic",
-  "lang.pl": "Polish",
-  "lang.ro": "Romanian",
-  "lang.at": "Austrian",
-  "lang.sr": "Serbian",
-  "lang.hr": "Croatian",
-  "lang.cs": "Czech",
-},
+    // Language names
+    "lang.fr": "French",
+    "lang.en": "English",
+    "lang.es": "Spanish",
+    "lang.de": "German",
+    "lang.it": "Italian",
+    "lang.pt": "Portuguese",
+    "lang.nl": "Dutch",
+    "lang.ru": "Russian",
+    "lang.zh": "Chinese",
+    "lang.ja": "Japanese",
+    "lang.ar": "Arabic",
+    "lang.hi": "Hindi",
+    "lang.tr": "Turkish",
+    "lang.da": "Danish",
+    "lang.no": "Norwegian",
+    "lang.sv": "Swedish",
+    "lang.is": "Icelandic",
+    "lang.pl": "Polish",
+    "lang.ro": "Romanian",
+    "lang.at": "Austrian",
+    "lang.sr": "Serbian",
+    "lang.hr": "Croatian",
+    "lang.cs": "Czech",
+  },
 
 // ---------- ESPAÑOL ----------
 es: {
@@ -2123,9 +2147,9 @@ es: {
     "lang.cs": "Cehă",
   },
 
- // ---------- AUSTRIAN GERMAN ----------
+// ---------- ÖSTERREICHISCHES DEUTSCH ----------
 at: {
-  // NAVIGATION
+  // --- NAV ---
   "nav.home": "Startseite",
   "nav.games": "Spiele",
   "nav.profiles": "Profile",
@@ -2133,75 +2157,151 @@ at: {
   "nav.stats": "Statistiken",
   "nav.settings": "Einstellungen",
 
-  // SETTINGS
+  // --- SETTINGS ---
   "settings.back": "Zurück",
   "settings.title": "Einstellungen",
-  "settings.subtitle":
-    "Passe das Design und die Sprache der App an",
+  "settings.subtitle": "Passe Design und Sprache der App an",
   "settings.theme": "Design",
   "settings.lang": "Sprache",
 
-  "settings.theme.gold.label": "Neon Gold",
-  "settings.theme.gold.desc": "Premium goldener Neonstil",
-  "settings.theme.pink.label": "Neon Pink",
-  "settings.theme.pink.desc": "Pinkes Arcade-Leuchten",
+  "settings.theme.gold.label": "Gold-Neon",
+  "settings.theme.gold.desc": "Edles goldfarbenes Premium-Design",
+
+  "settings.theme.pink.label": "Pink-Neon",
+  "settings.theme.pink.desc": "Arcade-Pink Look",
+
   "settings.theme.petrol.label": "Petrolblau",
-  "settings.theme.petrol.desc": "Tiefes petrol-neon Blau",
-  "settings.theme.green.label": "Neon Grün",
-  "settings.theme.green.desc": "Helles, frisches Trainingsdesign",
+  "settings.theme.petrol.desc": "Tiefes Neon-Blau",
+
+  "settings.theme.green.label": "Grün-Neon",
+  "settings.theme.green.desc": "Helles Trainings-Design",
+
   "settings.theme.magenta.label": "Magenta",
-  "settings.theme.magenta.desc": "Kräftiges Violett/Magenta",
+  "settings.theme.magenta.desc": "Intensives Magenta/Violett",
+
   "settings.theme.red.label": "Rot",
-  "settings.theme.red.desc": "Intensives Arcade-Rot",
+  "settings.theme.red.desc": "Kräftiges Arcade-Rot",
+
   "settings.theme.orange.label": "Orange",
   "settings.theme.orange.desc": "Warm und energiegeladen",
+
   "settings.theme.white.label": "Weiß",
   "settings.theme.white.desc": "Modernes helles Layout",
 
-  // GAMES PAGE
+  // --- HOME ---
+  "home.greeting": "Willkommen",
+  "home.titleApp": "DARTS COUNTER",
+  "home.connect": "ANMELDEN",
+
+  "home.card.profiles.title": "PROFILE",
+  "home.card.profiles.subtitle": "Profile erstellen und verwalten",
+
+  "home.card.local.title": "LOKALES SPIEL",
+  "home.card.local.subtitle": "Zugriff auf alle Spielmodi",
+
+  "home.card.online.title": "ONLINE-SPIEL",
+  "home.card.online.subtitle": "Online-Partien (bald verfügbar)",
+
+  "home.card.stats.title": "STATISTIKEN",
+  "home.card.stats.subtitle": "Statistiken und Verlauf",
+
+  "home.seeStats": "Meine Statistiken ansehen",
+
+  "home.stats.avg3": "Schnitt/3",
+  "home.stats.best": "Best",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Win%",
+
+  // STATUS
+  "status.online": "Online",
+  "status.away": "Abwesend",
+  "status.offline": "Offline",
+
+  // --- GAMES ---
   "games.title": "ALLE SPIELE",
   "games.subtitle": "Wähle einen Spielmodus",
 
   "games.training.title": "TRAINING",
-  "games.training.subtitle": "Verbessere deine Entwicklung.",
+  "games.training.subtitle": "Verbessere deinen Fortschritt.",
   "games.training.infoTitle": "Training",
   "games.training.infoBody":
-    "Practice mode to work on consistency, scoring and finishing.",
+    "Trainingsmodus zur Verbesserung von Konstanz, Scoring und Finishing.",
 
   "games.x01.title": "X01",
   "games.x01.subtitle": "301 / 501 / 701 / 901.",
   "games.x01.infoTitle": "X01",
   "games.x01.infoBody":
-    "Classic 301/501/701/901 games with stats, history and several rule options.",
+    "Klassische X01-Varianten mit Statistiken, Verlauf und mehreren Regeloptionen.",
 
   "games.cricket.title": "CRICKET",
   "games.cricket.subtitle": "Schließe 15–20 + Bull.",
   "games.cricket.infoTitle": "Cricket",
   "games.cricket.infoBody":
-    "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
+    "Schließe die Zahlen 15–20 und Bull vor deinem Gegner und sammle Punkte.",
 
   "games.killer.title": "KILLER",
   "games.killer.subtitle": "Triff deine Zahl… werde Killer.",
   "games.killer.infoTitle": "Killer",
   "games.killer.infoBody":
-    "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
+    "Werde zum Killer, indem du deine Zahl triffst — eliminiere danach die anderen Spieler.",
 
   "games.shanghai.title": "SHANGHAI",
-  "games.shanghai.subtitle": "Ziel der Runde, S-D-T = Shanghai.",
+  "games.shanghai.subtitle":
+    "Rundenziel, E-D-T = Shanghai.",
   "games.shanghai.infoTitle": "Shanghai",
   "games.shanghai.infoBody":
-    "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
+    "Ziel ändert sich jede Runde. Einfach/Doppel/Triple auf dieselbe Zahl ergibt ein Shanghai.",
 
   "games.battle.title": "BATTLE ROYALE",
-  "games.battle.subtitle": "Mehrspieler-Spaß — Eliminierungen.",
+  "games.battle.subtitle": "Multiplayer-Spaß — Eliminierungen.",
   "games.battle.infoTitle": "Battle Royale",
   "games.battle.infoBody":
-    "Fun multiplayer mode with successive eliminations. Last player standing wins.",
+    "Mehrspieler-Modus mit fortlaufenden Eliminierungen. Wer zuletzt steht, gewinnt.",
 
-  "games.status.comingSoon": "In Arbeit",
+  "games.status.comingSoon": "Bald verfügbar",
   "games.info.close": "Schließen",
 
-  // LANGUAGES LIST
+  // --- TRAINING MENU (COMPLET) ---
+  "training.menu.title": "TRAINING",
+  "training.menu.subtitle": "Wähle einen Trainingsmodus",
+
+  "training.menu.x01.title": "Training X01",
+  "training.menu.x01.subtitle": "Scoring & Finishing verbessern",
+  "training.menu.x01.info":
+    "Verbessere Konstanz, Scoring und Finishing im speziellen X01-Training.",
+
+  "training.menu.clock.title": "Around the Clock",
+  "training.menu.clock.subtitle": "Einfach / Doppel / Triple",
+  "training.menu.clock.info":
+    "Treffe die Zahlen 1–20 und Bull. Wähle Einfach, Doppel oder Triple.",
+
+  "training.menu.evolution.title": "Evolution",
+  "training.menu.evolution.subtitle": "Bald verfügbar",
+  "training.menu.evolution.info":
+    "Ein neuer Trainingsmodus wird bald freigeschaltet.",
+
+  "training.menu.comingSoon": "Bald verfügbar",
+  "training.menu.info.close": "Schließen",
+
+  // --- PROFILE PAGE (NOUVEAU) ---
+  "profiles.title": "PROFILE",
+  "profiles.create": "Profil erstellen",
+  "profiles.edit": "Profil bearbeiten",
+  "profiles.delete": "Profil löschen",
+  "profiles.confirmDeleteTitle": "Profil wirklich löschen?",
+  "profiles.confirmDeleteBody":
+    "Dieses Profil und alle zugehörigen Statistiken werden dauerhaft gelöscht.",
+  "profiles.confirmDeleteYes": "Löschen",
+  "profiles.confirmDeleteNo": "Abbrechen",
+
+  "profiles.name": "Name",
+  "profiles.avatar": "Avatar",
+  "profiles.stats": "Statistiken",
+  "profiles.noProfiles": "Noch keine Profile vorhanden.",
+  "profiles.pickOne": "Wähle ein Profil",
+  "profiles.active": "Aktives Profil",
+
+  // --- LANG NAMES ---
   "lang.fr": "Französisch",
   "lang.en": "Englisch",
   "lang.es": "Spanisch",
@@ -2221,7 +2321,7 @@ at: {
   "lang.is": "Isländisch",
   "lang.pl": "Polnisch",
   "lang.ro": "Rumänisch",
-  "lang.at": "österreichisch",
+  "lang.at": "Österreichisch",
   "lang.sr": "Serbisch",
   "lang.hr": "Kroatisch",
   "lang.cs": "Tschechisch",
