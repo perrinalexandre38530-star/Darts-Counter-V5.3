@@ -353,13 +353,13 @@ function ActiveProfileCard({
       ? t("status.offline", "Hors ligne")
       : t("status.online", "En ligne");
 
-  // ✅ Couleurs statut comme avant
+  // ✅ Couleurs statut FIXES (indépendantes du thème)
   const statusColor =
     status === "away"
-      ? "var(--gold-2)" // jaune / orangé
+      ? "#F6C256" // jaune / orangé
       : status === "offline"
-      ? "#9aa" // gris
-      : "var(--ok)"; // vert (en ligne)
+      ? "#9AA0AA" // gris
+      : "#3DFF9C"; // vert néon pour "En ligne"
 
   const AVA = getCssNumber("--avatar-size", 92);
   const PAD = 10;
