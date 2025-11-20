@@ -154,6 +154,50 @@ const DICT: LangDict = {
     "settings.theme.white.label": "White",
     "settings.theme.white.desc": "Modern light background",
 
+    // GAMES PAGE
+"games.title": "ALL GAMES",
+"games.subtitle": "Select a game mode",
+
+"games.training.title": "TRAINING",
+"games.training.subtitle": "Improve your progression.",
+"games.training.infoTitle": "Training",
+"games.training.infoBody":
+  "Practice mode to work on consistency, scoring and finishing.",
+
+"games.x01.title": "X01",
+"games.x01.subtitle": "301 / 501 / 701 / 901.",
+"games.x01.infoTitle": "X01",
+"games.x01.infoBody":
+  "Classic 301/501/701/901 games with stats, history and several rule options.",
+
+"games.cricket.title": "CRICKET",
+"games.cricket.subtitle": "Close 15–20 + Bull.",
+"games.cricket.infoTitle": "Cricket",
+"games.cricket.infoBody":
+  "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
+
+"games.killer.title": "KILLER",
+"games.killer.subtitle": "Hit your number… become Killer.",
+"games.killer.infoTitle": "Killer",
+"games.killer.infoBody":
+  "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
+
+"games.shanghai.title": "SHANGHAI",
+"games.shanghai.subtitle":
+  "Target of the round, S-D-T = Shanghai to win.",
+"games.shanghai.infoTitle": "Shanghai",
+"games.shanghai.infoBody":
+  "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
+
+"games.battle.title": "BATTLE ROYALE",
+"games.battle.subtitle": "Fun multiplayer mode — eliminations.",
+"games.battle.infoTitle": "Battle Royale",
+"games.battle.infoBody":
+  "Fun multiplayer mode with successive eliminations. Last player standing wins.",
+
+"games.status.comingSoon": "Coming soon",
+"games.info.close": "Close",
+
     "lang.fr": "French",
     "lang.en": "English",
     "lang.es": "Spanish",
@@ -218,6 +262,50 @@ const DICT: LangDict = {
     "settings.theme.white.label": "Blanco",
     "settings.theme.white.desc": "Fondo claro moderno",
 
+    // GAMES PAGE
+"games.title": "TODOS LOS JUEGOS",
+"games.subtitle": "Selecciona un modo de juego",
+
+"games.training.title": "ENTRENAMIENTO",
+"games.training.subtitle": "Mejora tu progresión.",
+"games.training.infoTitle": "Entrenamiento",
+"games.training.infoBody":
+  "Modo de práctica para trabajar tu regularidad, tu puntuación y tus cierres.",
+
+"games.x01.title": "X01",
+"games.x01.subtitle": "301 / 501 / 701 / 901.",
+"games.x01.infoTitle": "X01",
+"games.x01.infoBody":
+  "Clásicos 301/501/701/901 con estadísticas, historial y varias opciones de reglas.",
+
+"games.cricket.title": "CRICKET",
+"games.cricket.subtitle": "Cierra 15–20 + Bull.",
+"games.cricket.infoTitle": "Cricket",
+"games.cricket.infoBody":
+  "Cierra los números 15 a 20 y el Bull antes que tu oponente mientras anotas el máximo de puntos posible.",
+
+"games.killer.title": "KILLER",
+"games.killer.subtitle": "Dobla tu número… conviértete en Killer.",
+"games.killer.infoTitle": "Killer",
+"games.killer.infoBody":
+  "Cada jugador tiene un número. Conviértete en Killer acertando el tuyo y luego elimina a los demás jugadores.",
+
+"games.shanghai.title": "SHANGHAI",
+"games.shanghai.subtitle":
+  "Objetivo de la ronda, S-D-T = Shanghai para ganar.",
+"games.shanghai.infoTitle": "Shanghai",
+"games.shanghai.infoBody":
+  "Cada ronda tiene un objetivo diferente. Acerta simple, doble y triple en la misma visita para lograr un Shanghai.",
+
+"games.battle.title": "BATTLE ROYALE",
+"games.battle.subtitle": "Modo divertido multijugador — eliminaciones.",
+"games.battle.infoTitle": "Battle Royale",
+"games.battle.infoBody":
+  "Modo divertido para varios jugadores con eliminaciones sucesivas. El último jugador en pie gana.",
+
+"games.status.comingSoon": "En desarrollo",
+"games.info.close": "Cerrar",
+
     "lang.fr": "Francés",
     "lang.en": "Inglés",
     "lang.es": "Español",
@@ -281,6 +369,50 @@ const DICT: LangDict = {
 
     "settings.theme.white.label": "Weiß",
     "settings.theme.white.desc": "Modernes helles Layout",
+    
+    // GAMES PAGE
+"games.title": "ALLE SPIELE",
+"games.subtitle": "Wähle einen Spielmodus",
+
+"games.training.title": "TRAINING",
+"games.training.subtitle": "Verbessere deine Entwicklung.",
+"games.training.infoTitle": "Training",
+"games.training.infoBody":
+  "Trainingsmodus, um Konstanz, Scoring und Finishes zu üben.",
+
+"games.x01.title": "X01",
+"games.x01.subtitle": "301 / 501 / 701 / 901.",
+"games.x01.infoTitle": "X01",
+"games.x01.infoBody":
+  "Klassische 301/501/701/901-Spiele mit Statistiken, Verlauf und mehreren Regeloptionen.",
+
+"games.cricket.title": "CRICKET",
+"games.cricket.subtitle": "Schließe 15–20 + Bull.",
+"games.cricket.infoTitle": "Cricket",
+"games.cricket.infoBody":
+  "Schließe die Zahlen 15 bis 20 und das Bull vor deinem Gegner, während du möglichst viele Punkte sammelst.",
+
+"games.killer.title": "KILLER",
+"games.killer.subtitle": "Triff deine Zahl… werde Killer.",
+"games.killer.infoTitle": "Killer",
+"games.killer.infoBody":
+  "Jeder Spieler hat eine Zahl. Werde Killer, indem du deine Zahl triffst, und eliminiere dann die anderen Spieler.",
+
+"games.shanghai.title": "SHANGHAI",
+"games.shanghai.subtitle":
+  "Ziel der Runde, S-D-T = Shanghai zum Sieg.",
+"games.shanghai.infoTitle": "Shanghai",
+"games.shanghai.infoBody":
+  "Jede Runde hat ein anderes Ziel. Triff Single, Double und Triple im selben Besuch, um ein Shanghai zu erzielen.",
+
+"games.battle.title": "BATTLE ROYALE",
+"games.battle.subtitle": "Spaßiger Mehrspielermodus — Eliminierungen.",
+"games.battle.infoTitle": "Battle Royale",
+"games.battle.infoBody":
+  "Spaßiger Mehrspielermodus mit aufeinanderfolgenden Eliminierungen. Der letzte verbleibende Spieler gewinnt.",
+
+"games.status.comingSoon": "In Entwicklung",
+"games.info.close": "Schließen",
 
     "lang.fr": "Französisch",
     "lang.en": "Englisch",
@@ -346,6 +478,50 @@ const DICT: LangDict = {
     "settings.theme.white.label": "Bianco",
     "settings.theme.white.desc": "Sfondo chiaro moderno",
 
+    // GAMES PAGE
+"games.title": "TUTTI I GIOCHI",
+"games.subtitle": "Seleziona una modalità di gioco",
+
+"games.training.title": "TRAINING",
+"games.training.subtitle": "Migliora la tua progressione.",
+"games.training.infoTitle": "Training",
+"games.training.infoBody":
+  "Modalità di allenamento per lavorare su costanza, punteggio e chiusure.",
+
+"games.x01.title": "X01",
+"games.x01.subtitle": "301 / 501 / 701 / 901.",
+"games.x01.infoTitle": "X01",
+"games.x01.infoBody":
+  "Classici 301/501/701/901 con statistiche, storico e varie opzioni di regole.",
+
+"games.cricket.title": "CRICKET",
+"games.cricket.subtitle": "Chiudi 15–20 + Bull.",
+"games.cricket.infoTitle": "Cricket",
+"games.cricket.infoBody":
+  "Chiudi i numeri dal 15 al 20 e il Bull prima dell'avversario, segnando il maggior numero possibile di punti.",
+
+"games.killer.title": "KILLER",
+"games.killer.subtitle": "Raddoppia il tuo numero… diventa Killer.",
+"games.killer.infoTitle": "Killer",
+"games.killer.infoBody":
+  "Ogni giocatore ha un numero. Diventa Killer colpendo il tuo numero e poi elimina gli altri giocatori.",
+
+"games.shanghai.title": "SHANGHAI",
+"games.shanghai.subtitle":
+  "Bersaglio del turno, S-D-T = Shanghai per vincere.",
+"games.shanghai.infoTitle": "Shanghai",
+"games.shanghai.infoBody":
+  "Ogni turno ha un bersaglio diverso. Colpisci singolo, doppio e triplo nella stessa visita per realizzare uno Shanghai.",
+
+"games.battle.title": "BATTLE ROYALE",
+"games.battle.subtitle": "Modalità divertente multi-giocatore — eliminazioni.",
+"games.battle.infoTitle": "Battle Royale",
+"games.battle.infoBody":
+  "Modalità divertente con eliminazioni successive. Vince l’ultimo giocatore rimasto.",
+
+"games.status.comingSoon": "In sviluppo",
+"games.info.close": "Chiudi",
+
     "lang.fr": "Francese",
     "lang.en": "Inglese",
     "lang.es": "Spagnolo",
@@ -409,6 +585,50 @@ const DICT: LangDict = {
 
     "settings.theme.white.label": "Branco",
     "settings.theme.white.desc": "Fundo claro moderno",
+
+    // GAMES PAGE
+"games.title": "TODOS OS JOGOS",
+"games.subtitle": "Selecione um modo de jogo",
+
+"games.training.title": "TREINO",
+"games.training.subtitle": "Melhore a sua evolução.",
+"games.training.infoTitle": "Treino",
+"games.training.infoBody":
+  "Modo de treino para trabalhar consistência, pontuação e fechamentos.",
+
+"games.x01.title": "X01",
+"games.x01.subtitle": "301 / 501 / 701 / 901.",
+"games.x01.infoTitle": "X01",
+"games.x01.infoBody":
+  "Clássicos 301/501/701/901 com estatísticas, histórico e várias opções de regras.",
+
+"games.cricket.title": "CRICKET",
+"games.cricket.subtitle": "Feche 15–20 + Bull.",
+"games.cricket.infoTitle": "Cricket",
+"games.cricket.infoBody":
+  "Feche os números de 15 a 20 e o Bull antes do adversário enquanto marca o máximo de pontos possível.",
+
+"games.killer.title": "KILLER",
+"games.killer.subtitle": "Duplique o seu número… torne-se Killer.",
+"games.killer.infoTitle": "Killer",
+"games.killer.infoBody":
+  "Cada jogador tem um número. Torne-se Killer acertando o seu e depois elimine os outros jogadores.",
+
+"games.shanghai.title": "SHANGHAI",
+"games.shanghai.subtitle":
+  "Alvo da rodada, S-D-T = Shanghai para vencer.",
+"games.shanghai.infoTitle": "Shanghai",
+"games.shanghai.infoBody":
+  "Cada rodada tem um alvo diferente. Acerte simples, dupla e tripla na mesma visita para conseguir um Shanghai.",
+
+"games.battle.title": "BATTLE ROYALE",
+"games.battle.subtitle": "Modo divertido multijogador — eliminações.",
+"games.battle.infoTitle": "Battle Royale",
+"games.battle.infoBody":
+  "Modo divertido com eliminações sucessivas. O último jogador em jogo vence.",
+
+"games.status.comingSoon": "Em desenvolvimento",
+"games.info.close": "Fechar",
 
     "lang.fr": "Francês",
     "lang.en": "Inglês",
@@ -474,6 +694,50 @@ const DICT: LangDict = {
     "settings.theme.white.label": "Wit",
     "settings.theme.white.desc": "Modern licht thema",
 
+    // GAMES PAGE
+"games.title": "ALLE SPELLEN",
+"games.subtitle": "Kies een spelmodus",
+
+"games.training.title": "TRAINING",
+"games.training.subtitle": "Verbeter je vooruitgang.",
+"games.training.infoTitle": "Training",
+"games.training.infoBody":
+  "Trainingsmodus om aan consistentie, scoring en finishes te werken.",
+
+"games.x01.title": "X01",
+"games.x01.subtitle": "301 / 501 / 701 / 901.",
+"games.x01.infoTitle": "X01",
+"games.x01.infoBody":
+  "Klassieke 301/501/701/901-spellen met statistieken, geschiedenis en meerdere regelopties.",
+
+"games.cricket.title": "CRICKET",
+"games.cricket.subtitle": "Sluit 15–20 + Bull.",
+"games.cricket.infoTitle": "Cricket",
+"games.cricket.infoBody":
+  "Sluit de nummers 15 tot en met 20 en de Bull eerder dan je tegenstander terwijl je zoveel mogelijk punten scoort.",
+
+"games.killer.title": "KILLER",
+"games.killer.subtitle": "Raak je nummer… word Killer.",
+"games.killer.infoTitle": "Killer",
+"games.killer.infoBody":
+  "Elke speler heeft een nummer. Word Killer door je eigen nummer te raken en elimineer daarna de andere spelers.",
+
+"games.shanghai.title": "SHANGHAI",
+"games.shanghai.subtitle":
+  "Doel van de beurt, S-D-T = Shanghai om te winnen.",
+"games.shanghai.infoTitle": "Shanghai",
+"games.shanghai.infoBody":
+  "Elke beurt heeft een ander doel. Raak single, double en triple in dezelfde beurt om een Shanghai te scoren.",
+
+"games.battle.title": "BATTLE ROYALE",
+"games.battle.subtitle": "Leuke multiplayer-modus — eliminaties.",
+"games.battle.infoTitle": "Battle Royale",
+"games.battle.infoBody":
+  "Leuke multiplayer-modus met opeenvolgende eliminaties. De laatste overgebleven speler wint.",
+
+"games.status.comingSoon": "In ontwikkeling",
+"games.info.close": "Sluiten",
+
     "lang.fr": "Frans",
     "lang.en": "Engels",
     "lang.es": "Spaans",
@@ -531,6 +795,49 @@ const DICT: LangDict = {
     "settings.theme.white.label": "Белый",
     "settings.theme.white.desc": "Современный светлый фон",
 
+    // GAMES PAGE
+"games.title": "ВСЕ ИГРЫ",
+"games.subtitle": "Выберите режим игры",
+
+"games.training.title": "ТРЕНИРОВКА",
+"games.training.subtitle": "Улучшайте своё мастерство.",
+"games.training.infoTitle": "Тренировка",
+"games.training.infoBody":
+  "Режим практики для работы над стабильностью, набором очков и завершением легов.",
+
+"games.x01.title": "X01",
+"games.x01.subtitle": "301 / 501 / 701 / 901.",
+"games.x01.infoTitle": "X01",
+"games.x01.infoBody":
+  "Классические игры 301/501/701/901 со статистикой, историей и различными параметрами правил.",
+
+"games.cricket.title": "CRICKET",
+"games.cricket.subtitle": "Закройте 15–20 + Bull.",
+"games.cricket.infoTitle": "Cricket",
+"games.cricket.infoBody":
+  "Закройте номера от 15 до 20 и Bull раньше соперника, набирая как можно больше очков.",
+
+"games.killer.title": "KILLER",
+"games.killer.subtitle": "Попадите в своё число… станьте Killer.",
+"games.killer.infoTitle": "Killer",
+"games.killer.infoBody":
+  "У каждого игрока есть число. Станьте Killer, попав в своё, а затем выбивайте других игроков.",
+
+"games.shanghai.title": "SHANGHAI",
+"games.shanghai.subtitle": "Цель раунда, S-D-T = Shanghai для победы.",
+"games.shanghai.infoTitle": "Shanghai",
+"games.shanghai.infoBody":
+  "В каждом раунде своя цель. Попадите single, double и triple за один визит, чтобы сделать Shanghai.",
+
+"games.battle.title": "BATTLE ROYALE",
+"games.battle.subtitle": "Весёлый режим — выбывания.",
+"games.battle.infoTitle": "Battle Royale",
+"games.battle.infoBody":
+  "Весёлый многопользовательский режим с последовательными выбываниями. Последний выживший игрок выигрывает.",
+
+"games.status.comingSoon": "В разработке",
+"games.info.close": "Закрыть",
+
     "lang.fr": "Французский",
     "lang.en": "Английский",
     "lang.es": "Испанский",
@@ -586,6 +893,49 @@ const DICT: LangDict = {
     "settings.theme.orange.desc": "温暖有活力的橙色",
     "settings.theme.white.label": "白色",
     "settings.theme.white.desc": "现代浅色背景",
+
+    // GAMES PAGE
+"games.title": "全部游戏",
+"games.subtitle": "选择一种游戏模式",
+
+"games.training.title": "训练",
+"games.training.subtitle": "提升你的进步。",
+"games.training.infoTitle": "训练",
+"games.training.infoBody":
+  "练习模式，用于提高稳定性、得分能力和收尾能力。",
+
+"games.x01.title": "X01",
+"games.x01.subtitle": "301 / 501 / 701 / 901。",
+"games.x01.infoTitle": "X01",
+"games.x01.infoBody":
+  "经典的301/501/701/901游戏，包含统计、历史记录和多种规则设置。",
+
+"games.cricket.title": "CRICKET",
+"games.cricket.subtitle": "关闭 15–20 + Bull。",
+"games.cricket.infoTitle": "Cricket",
+"games.cricket.infoBody":
+  "在对手之前关闭15到20号和Bull，并尽可能多得分。",
+
+"games.killer.title": "KILLER",
+"games.killer.subtitle": "击中你的号码…成为Killer。",
+"games.killer.infoTitle": "Killer",
+"games.killer.infoBody":
+  "每位玩家都有一个号码。击中自己的号码成为Killer，然后淘汰其他玩家。",
+
+"games.shanghai.title": "SHANGHAI",
+"games.shanghai.subtitle": "本轮目标，S-D-T = 上海赢。",
+"games.shanghai.infoTitle": "Shanghai",
+"games.shanghai.infoBody":
+  "每一轮都有不同的目标。在同一轮中击中单倍、双倍和三倍即可完成上海。",
+
+"games.battle.title": "BATTLE ROYALE",
+"games.battle.subtitle": "多人欢乐模式 — 淘汰赛。",
+"games.battle.infoTitle": "Battle Royale",
+"games.battle.infoBody":
+  "多人欢乐模式，连续淘汰。最后留下的玩家获胜。",
+
+"games.status.comingSoon": "开发中",
+"games.info.close": "关闭",
 
     "lang.fr": "法语",
     "lang.en": "英语",
@@ -643,6 +993,49 @@ const DICT: LangDict = {
     "settings.theme.white.label": "ホワイト",
     "settings.theme.white.desc": "モダンなライト背景",
 
+    // GAMES PAGE
+"games.title": "すべてのゲーム",
+"games.subtitle": "ゲームモードを選択",
+
+"games.training.title": "トレーニング",
+"games.training.subtitle": "上達をサポート。",
+"games.training.infoTitle": "トレーニング",
+"games.training.infoBody":
+  "安定性、スコアリング、フィニッシュ力を向上させるための練習モード。",
+
+"games.x01.title": "X01",
+"games.x01.subtitle": "301 / 501 / 701 / 901.",
+"games.x01.infoTitle": "X01",
+"games.x01.infoBody":
+  "統計、履歴、ルール設定を備えたクラシックな301/501/701/901ゲーム。",
+
+"games.cricket.title": "CRICKET",
+"games.cricket.subtitle": "15〜20 + Bull をクローズ。",
+"games.cricket.infoTitle": "Cricket",
+"games.cricket.infoBody":
+  "対戦相手より先に15〜20とBullをクローズし、できるだけ多く得点を稼ぎます。",
+
+"games.killer.title": "KILLER",
+"games.killer.subtitle": "自分の番号をヒットして…Killerに。",
+"games.killer.infoTitle": "Killer",
+"games.killer.infoBody":
+  "各プレイヤーには番号があります。自分の番号を当ててKillerになり、他のプレイヤーを排除します。",
+
+"games.shanghai.title": "SHANGHAI",
+"games.shanghai.subtitle": "このラウンドのターゲット、S-D-Tで勝利。",
+"games.shanghai.infoTitle": "Shanghai",
+"games.shanghai.infoBody":
+  "各ラウンドには異なるターゲットがあります。シングル、ダブル、トリプルを同一ラウンドで当てると上海達成。",
+
+"games.battle.title": "BATTLE ROYALE",
+"games.battle.subtitle": "楽しいマルチプレイヤー — 脱落形式。",
+"games.battle.infoTitle": "Battle Royale",
+"games.battle.infoBody":
+  "連続脱落方式のマルチプレイヤーモード。最後に残ったプレイヤーが勝者です。",
+
+"games.status.comingSoon": "開発中",
+"games.info.close": "閉じる",
+
     "lang.fr": "フランス語",
     "lang.en": "英語",
     "lang.es": "スペイン語",
@@ -698,6 +1091,49 @@ const DICT: LangDict = {
     "settings.theme.orange.desc": "برتقالي دافئ وحيوي",
     "settings.theme.white.label": "أبيض",
     "settings.theme.white.desc": "خلفية فاتحة عصرية",
+
+    // GAMES PAGE
+"games.title": "جميع الألعاب",
+"games.subtitle": "اختر وضع اللعب",
+
+"games.training.title": "التدريب",
+"games.training.subtitle": "حسّن تقدمك.",
+"games.training.infoTitle": "التدريب",
+"games.training.infoBody":
+  "وضع تدريب للعمل على الثبات، التسجيل، وإنهاء الرميات.",
+
+"games.x01.title": "X01",
+"games.x01.subtitle": "301 / 501 / 701 / 901.",
+"games.x01.infoTitle": "X01",
+"games.x01.infoBody":
+  "ألعاب كلاسيكية 301/501/701/901 مع إحصائيات وسجلّ وخيارات قواعد متعددة.",
+
+"games.cricket.title": "CRICKET",
+"games.cricket.subtitle": "أغلق 15–20 + Bull.",
+"games.cricket.infoTitle": "Cricket",
+"games.cricket.infoBody":
+  "أغلق الأرقام 15 إلى 20 وBull قبل خصمك بينما تسجل أكبر عدد ممكن من النقاط.",
+
+"games.killer.title": "KILLER",
+"games.killer.subtitle": "أصب رقمك… واصبح Killer.",
+"games.killer.infoTitle": "Killer",
+"games.killer.infoBody":
+  "لكل لاعب رقم. يصبح اللاعب Killer عند إصابة رقمه، ثم يمكنه إقصاء اللاعبين الآخرين.",
+
+"games.shanghai.title": "SHANGHAI",
+"games.shanghai.subtitle": "هدف الجولة، S-D-T للفوز.",
+"games.shanghai.infoTitle": "Shanghai",
+"games.shanghai.infoBody":
+  "لكل جولة هدف مختلف. أصب الفردي والمزدوج والثلاثي في نفس الزيارة لتحقق Shanghai.",
+
+"games.battle.title": "BATTLE ROYALE",
+"games.battle.subtitle": "وضع ممتع متعدد اللاعبين — إقصاءات.",
+"games.battle.infoTitle": "Battle Royale",
+"games.battle.infoBody":
+  "وضع ممتع متعدد اللاعبين مع إقصاءات متتالية. آخر لاعب يبقى هو الفائز.",
+
+"games.status.comingSoon": "قيد التطوير",
+"games.info.close": "إغلاق",
 
     "lang.fr": "الفرنسية",
     "lang.en": "الإنجليزية",
@@ -755,6 +1191,49 @@ const DICT: LangDict = {
     "settings.theme.white.label": "व्हाइट",
     "settings.theme.white.desc": "आधुनिक हल्का बैकग्राउंड",
 
+    // GAMES PAGE
+"games.title": "सभी खेल",
+"games.subtitle": "एक खेल मोड चुनें",
+
+"games.training.title": "ट्रेनिंग",
+"games.training.subtitle": "अपनी प्रगति सुधारें.",
+"games.training.infoTitle": "ट्रेनिंग",
+"games.training.infoBody":
+  "अभ्यास मोड जो स्थिरता, स्कोरिंग और फिनिशिंग में सुधार करता है।",
+
+"games.x01.title": "X01",
+"games.x01.subtitle": "301 / 501 / 701 / 901.",
+"games.x01.infoTitle": "X01",
+"games.x01.infoBody":
+  "क्लासिक 301/501/701/901 गेम, आँकड़ों, इतिहास और कई नियम विकल्पों के साथ।",
+
+"games.cricket.title": "CRICKET",
+"games.cricket.subtitle": "15–20 + Bull बंद करें.",
+"games.cricket.infoTitle": "Cricket",
+"games.cricket.infoBody":
+  "अपने प्रतिद्वंद्वी से पहले 15 से 20 और Bull बंद करें, और अधिकतम अंक प्राप्त करें।",
+
+"games.killer.title": "KILLER",
+"games.killer.subtitle": "अपना नंबर हिट करें… Killer बनें.",
+"games.killer.infoTitle": "Killer",
+"games.killer.infoBody":
+  "हर खिलाड़ी का एक नंबर होता है। अपना नंबर हिट करके Killer बनें, फिर दूसरों को बाहर करें।",
+
+"games.shanghai.title": "SHANGHAI",
+"games.shanghai.subtitle": "इस राउंड का लक्ष्य, S-D-T = Shanghai.",
+"games.shanghai.infoTitle": "Shanghai",
+"games.shanghai.infoBody":
+  "हर राउंड का अपना लक्ष्य होता है। एक ही विज़िट में सिंगल, डबल और ट्रिपल हिट करें ताकि Shanghai मिल सके।",
+
+"games.battle.title": "BATTLE ROYALE",
+"games.battle.subtitle": "मज़ेदार मल्टीप्लेयर मोड — एलिमिनेशन.",
+"games.battle.infoTitle": "Battle Royale",
+"games.battle.infoBody":
+  "लगातार एलिमिनेशन वाले मल्टीप्लेयर मोड में अंतिम बचा खिलाड़ी जीतता है।",
+
+"games.status.comingSoon": "जल्द आ रहा है",
+"games.info.close": "बंद करें",
+
     "lang.fr": "फ़्रेंच",
     "lang.en": "अंग्रेज़ी",
     "lang.es": "स्पैनिश",
@@ -811,6 +1290,50 @@ const DICT: LangDict = {
     "settings.theme.orange.desc": "Sıcak ve enerjik turuncu",
     "settings.theme.white.label": "Beyaz",
     "settings.theme.white.desc": "Modern açık arka plan",
+
+    // GAMES PAGE
+"games.title": "TÜM OYUNLAR",
+"games.subtitle": "Bir oyun modu seçin",
+
+"games.training.title": "EĞİTİM",
+"games.training.subtitle": "Gelişiminizi artırın.",
+"games.training.infoTitle": "Eğitim",
+"games.training.infoBody":
+  "Stabilite, skor ve bitiriş pratiği yapmak için antrenman modu.",
+
+"games.x01.title": "X01",
+"games.x01.subtitle": "301 / 501 / 701 / 901.",
+"games.x01.infoTitle": "X01",
+"games.x01.infoBody":
+  "İstatistikler, geçmiş ve çeşitli kural seçenekleriyle klasik 301/501/701/901 oyunları.",
+
+"games.cricket.title": "CRICKET",
+"games.cricket.subtitle": "15–20 + Bull’u kapat.",
+"games.cricket.infoTitle": "Cricket",
+"games.cricket.infoBody":
+  "15–20 ve Bull’u rakibinizden önce kapatırken mümkün olduğunca çok puan kazanın.",
+
+"games.killer.title": "KILLER",
+"games.killer.subtitle": "Numaranı vur… Killer ol.",
+"games.killer.infoTitle": "Killer",
+"games.killer.infoBody":
+  "Her oyuncunun bir numarası vardır. Kendi numaranızı vurarak Killer olun ve diğer oyuncuları eleyin.",
+
+"games.shanghai.title": "SHANGHAI",
+"games.shanghai.subtitle":
+  "Bu turun hedefi, S-D-T = Shanghai.",
+"games.shanghai.infoTitle": "Shanghai",
+"games.shanghai.infoBody":
+  "Her turun farklı bir hedefi vardır. Aynı turda tek, çift ve üçlüye isabet ederek Shanghai yapın.",
+
+"games.battle.title": "BATTLE ROYALE",
+"games.battle.subtitle": "Eğlenceli çok oyunculu mod — eleme.",
+"games.battle.infoTitle": "Battle Royale",
+"games.battle.infoBody":
+  "Ardışık elemeli çok oyunculu bir mod. Ayakta kalan son oyuncu kazanır.",
+
+"games.status.comingSoon": "Yakında",
+"games.info.close": "Kapat",
 
     "lang.fr": "Fransızca",
     "lang.en": "İngilizce",
@@ -1387,18 +1910,25 @@ export function LangProvider({ children }: { children: React.ReactNode }) {
 
   const t = React.useCallback(
     (key: string, fallback?: string): string => {
+      // 1) langue courante
       const dict = DICT[lang] || {};
       if (Object.prototype.hasOwnProperty.call(dict, key)) {
         return dict[key];
       }
 
-      // fallback FR si dispo
-      const frDict = DICT.fr;
-      if (Object.prototype.hasOwnProperty.call(frDict, key)) {
-        return frDict[key];
+      // 2) fallback EN par défaut pour toutes les autres langues
+      const enDict = DICT.en;
+      if (enDict && Object.prototype.hasOwnProperty.call(enDict, key)) {
+        return enDict[key];
       }
 
-      return fallback ?? key;
+      // 3) fallback passé au composant
+      if (fallback !== undefined) {
+        return fallback;
+      }
+
+      // 4) dernier recours : la clé elle-même
+      return key;
     },
     [lang]
   );
