@@ -1,9 +1,8 @@
 // ============================================
 // src/pages/TrainingMenu.tsx
 // Menu Training (solo) — style identique au menu Jeux
-// - Cartes sombres, titre doré centré
-// - Pastille "i" blanche à droite (overlay d'aide)
-// - Le bloc entier est cliquable (pas de bouton "Jouer")
+// - Cartes sombres, titre doré, bouton "Jouer" / "Bientôt"
+// - Pastille "i" à gauche qui ouvre une popup d'aide
 // ============================================
 
 import React from "react";
@@ -38,7 +37,6 @@ export default function TrainingMenu({ go }: Props) {
       console.warn("[TrainingMenu] go() manquant");
       return;
     }
-    // 👉 Stats Training X01
     go("training_stats");
   }
 
@@ -78,6 +76,7 @@ export default function TrainingMenu({ go }: Props) {
         >
           TRAINING
         </div>
+
         <div
           style={{
             opacity: 0.75,
@@ -126,13 +125,12 @@ export default function TrainingMenu({ go }: Props) {
         </div>
       </div>
 
-      {/* -------- Popup d'info -------- */}
       {infoMode && <InfoOverlay mode={infoMode} onClose={closeInfo} />}
     </>
   );
 }
 
-/* ---------- Carte Training : même visuel que Games ---------- */
+/* ---------- Carte Training ---------- */
 
 type TrainingCardProps = {
   title: string;
@@ -163,17 +161,10 @@ function TrainingCard({
       aria-disabled={disabled ? true : undefined}
       disabled={disabled}
       onClick={handleClick}
-      onKeyDown={(e) => {
-        if (disabled && (e.key === "Enter" || e.key === " ")) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-      }}
       style={{
-        position: "relative",
         width: "100%",
-        textAlign: "center",
-        padding: "14px 16px",
+        textAlign: "left",
+        padding: "10px 14px",
         borderRadius: 16,
         border: "1px solid rgba(255,255,255,.08)",
         background:
@@ -182,7 +173,7 @@ function TrainingCard({
         cursor: disabled ? "not-allowed" : "pointer",
         display: "flex",
         alignItems: "center",
-        justifyContent: "center",
+        justifyContent: "space-between",
         transition: "transform 0.15s ease, box-shadow 0.15s ease",
         pointerEvents: "auto",
         boxShadow: disabled ? "none" : "0 0 12px rgba(0,0,0,0.8)",
@@ -199,76 +190,23 @@ function TrainingCard({
           : "0 0 12px rgba(0,0,0,0.8)";
       }}
     >
-      {/* Texte centré */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-        <div
-          style={{
-            fontWeight: 800,
-            fontSize: 16, // même style que Games / Accueil
-            textTransform: "uppercase",
-            letterSpacing: 0.9,
-            color: "#FDE68A",
-            textShadow:
-              "0 0 6px rgba(250,204,21,0.9), 0 0 14px rgba(250,204,21,0.5)",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {title}
-        </div>
-        {subtitle && (
-          <div
-            style={{
-              fontSize: 12,
-              opacity: 0.78,
-              color: "#E5E7EB",
-              marginTop: 3,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {subtitle}
-          </div>
-        )}
-      </div>
-
-      {/* Pastille "i" blanche à droite */}
-      <div
-        style={{
-          position: "absolute",
-          right: 14,
-          top: "50%",
-          transform: "translateY(-50%)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <div
-          role="button"
-          tabIndex={0}
+      {/* Pastille "i" */}
+      <div style={{ marginRight: 10, display: "flex", alignItems: "center" }}>
+        <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             if (onInfo) onInfo();
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              e.stopPropagation();
-              if (onInfo) onInfo();
-            }
-          }}
           style={{
-            width: 24,
-            height: 24,
+            width: 26,
+            height: 26,
             borderRadius: "999px",
-            border: "1px solid rgba(255,255,255,0.8)",
+            border: "1px solid rgba(252,211,77,0.8)",
             background:
-              "radial-gradient(circle at 30% 20%, #ffffff 0, #e5e7eb 40%, #9ca3af 100%)",
+              "radial-gradient(circle at 30% 20%, #fffde7 0, #fde68a 30%, #facc15 60%, #78350f 100%)",
             boxShadow:
-              "0 0 8px rgba(255,255,255,0.8), 0 0 16px rgba(148,163,184,0.5)",
+              "0 0 10px rgba(250,204,21,0.9), 0 0 20px rgba(250,204,21,0.45)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -279,8 +217,73 @@ function TrainingCard({
           }}
         >
           i
-        </div>
+        </button>
       </div>
+
+      {/* Texte / titre */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+        <div
+          style={{
+            fontWeight: 800,
+            fontSize: 12,            // ▼ réduit
+            textTransform: "uppercase",
+            letterSpacing: 0.7,      // ▼ réduit
+            color: "#FDE68A",
+            textShadow:
+              "0 0 6px rgba(250,204,21,0.9), 0 0 14px rgba(250,204,21,0.5)",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {title}
+        </div>
+
+        {subtitle && (
+          <div
+            style={{
+              fontSize: 11,
+              opacity: 0.78,
+              color: "#E5E7EB",
+              marginTop: 2,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {subtitle}
+          </div>
+        )}
+      </div>
+
+      {/* Bouton JOUER */}
+      <span
+        style={{
+          marginLeft: 10,
+          background: disabled
+            ? "linear-gradient(180deg, #6b7280, #4b5563)"
+            : "linear-gradient(180deg, #ffc63a, #ffaf00)",
+          color: disabled ? "#e5e7eb" : "#111827",
+          borderRadius: 999,
+          padding: "4px 10px",        // ▼ réduit
+          fontWeight: 800,
+          fontSize: 10.5,             // ▼ réduit
+          textTransform: "uppercase",
+          letterSpacing: 0.7,         // ▼ réduit
+          border: disabled
+            ? "1px solid rgba(148,163,184,.35)"
+            : "1px solid rgba(255,180,0,.45)",
+          boxShadow: disabled
+            ? "none"
+            : "0 0 10px rgba(240,177,42,.3)",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minWidth: 56,               // ▼ réduit
+        }}
+      >
+        {disabled ? "Bientôt" : "Jouer"}
+      </span>
     </button>
   );
 }
