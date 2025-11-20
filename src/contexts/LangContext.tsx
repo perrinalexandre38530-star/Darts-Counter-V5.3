@@ -46,289 +46,438 @@ type Dict = Record<string, string>;
 type LangDict = Record<Lang, Dict>;
 
 const DICT: LangDict = {
-  // ---------- FRANÇAIS ----------
-  fr: {
-    // --- NAV ---
-    "nav.home": "Accueil",
-    "nav.games": "Jeux",
-    "nav.profiles": "Profils",
-    "nav.friends": "Amis",
-    "nav.stats": "Stats",
-    "nav.settings": "Réglages",
+// ---------- FRANÇAIS ----------
+fr: {
+  // --- NAV ---
+  "nav.home": "Accueil",
+  "nav.games": "Jeux",
+  "nav.profiles": "Profils",
+  "nav.friends": "Amis",
+  "nav.stats": "Stats",
+  "nav.settings": "Réglages",
 
-    // --- SETTINGS ---
-    "settings.back": "Retour",
-    "settings.title": "Réglages",
-    "settings.subtitle":
-      "Personnalise le thème et la langue de l'application",
-    "settings.theme": "Thème",
-    "settings.lang": "Langue",
+  // --- SETTINGS ---
+  "settings.back": "Retour",
+  "settings.title": "Réglages",
+  "settings.subtitle": "Personnalise le thème et la langue de l'application",
+  "settings.theme": "Thème",
+  "settings.lang": "Langue",
 
-    "settings.theme.gold.label": "GOLD NEON",
-    "settings.theme.gold.desc": "Thème premium doré",
+  "settings.theme.gold.label": "GOLD NEON",
+  "settings.theme.gold.desc": "Thème premium doré",
 
-    "settings.theme.pink.label": "ROSE FLUO",
-    "settings.theme.pink.desc": "Ambiance arcade rose",
+  "settings.theme.pink.label": "ROSE FLUO",
+  "settings.theme.pink.desc": "Ambiance arcade rose",
 
-    "settings.theme.petrol.label": "BLEU PETROLE",
-    "settings.theme.petrol.desc": "Bleu profond néon",
+  "settings.theme.petrol.label": "BLEU PETROLE",
+  "settings.theme.petrol.desc": "Bleu profond néon",
 
-    "settings.theme.green.label": "VEGETAL",
-    "settings.theme.green.desc": "Style practice lumineux",
+  "settings.theme.green.label": "VEGETAL",
+  "settings.theme.green.desc": "Style practice lumineux",
 
-    "settings.theme.magenta.label": "MAGENTA",
-    "settings.theme.magenta.desc": "Violet / magenta intense",
+  "settings.theme.magenta.label": "MAGENTA",
+  "settings.theme.magenta.desc": "Violet / magenta intense",
 
-    "settings.theme.red.label": "ROUGE VIF",
-    "settings.theme.red.desc": "Rouge arcade agressif",
+  "settings.theme.red.label": "ROUGE VIF",
+  "settings.theme.red.desc": "Rouge arcade agressif",
 
-    "settings.theme.orange.label": "ORANGE FEU",
-    "settings.theme.orange.desc": "Orange chaud énergique",
+  "settings.theme.orange.label": "ORANGE FEU",
+  "settings.theme.orange.desc": "Orange chaud énergique",
 
-    "settings.theme.white.label": "BLANC NEIGE",
-    "settings.theme.white.desc": "Fond clair moderne",
+  "settings.theme.white.label": "BLANC NEIGE",
+  "settings.theme.white.desc": "Fond clair moderne",
 
-    // Noms de langues
-    "lang.fr": "Français",
-    "lang.en": "English",
-    "lang.es": "Español",
-    "lang.de": "Deutsch",
-    "lang.it": "Italiano",
-    "lang.pt": "Português",
-    "lang.nl": "Nederlands",
-    "lang.ru": "Russe",
-    "lang.zh": "Chinois",
-    "lang.ja": "Japonais",
-    "lang.ar": "Arabe",
-    "lang.hi": "Hindi",
-    "lang.tr": "Turc",
-    "lang.da": "Danois",
-    "lang.no": "Norvégien",
-    "lang.sv": "Suédois",
-    "lang.is": "Islandais",
-    "lang.pl": "Polonais",
-    "lang.ro": "Roumain",
-    "lang.sr": "Serbe",
-    "lang.hr": "Croate",
-    "lang.cs": "Tchèque",
-  },
+  // --- HOME PAGE ---
+  "home.title": "Bienvenue",
+  "home.subtitle": "Choisis une section",
+  "home.quickplay": "Jeu rapide",
+  "home.training": "Training",
+  "home.stats": "Stats",
+  "home.profiles": "Profils",
+  "home.friends": "Amis",
+  "home.settings": "Réglages",
+  "home.lastSessions": "Dernières sessions",
+  "home.noSessions": "Aucune session enregistrée.",
+  "home.resume": "Continuer",
+  "home.view": "Voir",
+  "home.delete": "Supprimer",
+  "home.confirmDeleteTitle": "Supprimer la session ?",
+  "home.confirmDeleteBody": "Cette session sera définitivement supprimée.",
+  "home.confirmDeleteYes": "Supprimer",
+  "home.confirmDeleteNo": "Annuler",
 
-  // ---------- ENGLISH ----------
-  en: {
-    // --- NAV ---
-    "nav.home": "Home",
-    "nav.games": "Games",
-    "nav.profiles": "Profiles",
-    "nav.friends": "Friends",
-    "nav.stats": "Stats",
-    "nav.settings": "Settings",
+  // --- TRAINING MENU ---
+  "training.menu.title": "TRAINING",
+  "training.menu.subtitle": "Choisis un mode d’entraînement",
 
-    // --- SETTINGS ---
-    "settings.back": "Back",
-    "settings.title": "Settings",
-    "settings.subtitle": "Customize the app theme and language",
-    "settings.theme": "Theme",
-    "settings.lang": "Language",
+  "training.menu.x01.title": "Training X01",
+  "training.menu.x01.subtitle": "Travaille ton scoring et tes fins",
+  "training.menu.x01.info":
+    "Entraînement X01 dédié à la progression : scoring, régularité, finitions, stats détaillées.",
 
-    "settings.theme.gold.label": "Gold neon",
-    "settings.theme.gold.desc": "Premium gold theme",
+  "training.menu.clock.title": "Tour de l’horloge",
+  "training.menu.clock.subtitle": "Simple / Double / Triple",
+  "training.menu.clock.info":
+    "Atteins chaque segment du 1 au 20 puis Bull. Mode simple, double ou triple.",
 
-    "settings.theme.pink.label": "Pink neon",
-    "settings.theme.pink.desc": "Arcade pink ambience",
+  "training.menu.evolution.title": "Évolution",
+  "training.menu.evolution.subtitle": "Bientôt disponible",
+  "training.menu.evolution.info": "Un nouveau mode d’entraînement arrive bientôt.",
 
-    "settings.theme.petrol.label": "Petrol blue",
-    "settings.theme.petrol.desc": "Deep neon blue",
+  "training.menu.comingSoon": "En développement",
+  "training.menu.info.close": "Fermer",
 
-    "settings.theme.green.label": "Green neon",
-    "settings.theme.green.desc": "Bright practice style",
+  // --- GAMES PAGE ---
+  "games.title": "TOUS LES JEUX",
+  "games.subtitle": "Sélectionne un mode de jeu",
 
-    "settings.theme.magenta.label": "Magenta",
-    "settings.theme.magenta.desc": "Intense violet / magenta",
+  "games.training.title": "TRAINING",
+  "games.training.subtitle": "Améliore ta progression.",
+  "games.training.infoTitle": "Training",
+  "games.training.infoBody":
+    "Mode d'entraînement pour travailler ta régularité, ton scoring et tes fins de partie.",
 
-    "settings.theme.red.label": "Red",
-    "settings.theme.red.desc": "Aggressive arcade red",
+  "games.x01.title": "X01",
+  "games.x01.subtitle": "301 / 501 / 701 / 901.",
+  "games.x01.infoTitle": "X01",
+  "games.x01.infoBody":
+    "Classique 301/501/701/901 avec statistiques, historique et plusieurs options de règles.",
 
-    "settings.theme.orange.label": "Orange",
-    "settings.theme.orange.desc": "Energetic warm orange",
+  "games.cricket.title": "CRICKET",
+  "games.cricket.subtitle": "Ferme les zones 15…20 + Bull.",
+  "games.cricket.infoTitle": "Cricket",
+  "games.cricket.infoBody":
+    "Ferme les numéros 15 à 20 et le Bull avant ton adversaire tout en marquant un maximum de points.",
 
-    "settings.theme.white.label": "White",
-    "settings.theme.white.desc": "Modern light background",
+  "games.killer.title": "KILLER",
+  "games.killer.subtitle": "Double ton numéro… deviens Killer.",
+  "games.killer.infoTitle": "Killer",
+  "games.killer.infoBody":
+    "Chaque joueur a un numéro. Deviens Killer en touchant ton chiffre puis élimine les autres joueurs.",
 
-    // GAMES PAGE
-"games.title": "ALL GAMES",
-"games.subtitle": "Select a game mode",
+  "games.shanghai.title": "SHANGHAI",
+  "games.shanghai.subtitle": "Cible du tour, S-D-T = Shanghai à win.",
+  "games.shanghai.infoTitle": "Shanghai",
+  "games.shanghai.infoBody":
+    "Chaque manche a une cible différente. Vise simple, double et triple sur la même visite pour réaliser un Shanghai.",
 
-"games.training.title": "TRAINING",
-"games.training.subtitle": "Improve your progression.",
-"games.training.infoTitle": "Training",
-"games.training.infoBody":
-  "Practice mode to work on consistency, scoring and finishing.",
+  "games.battle.title": "BATTLE ROYALE",
+  "games.battle.subtitle": "Mode fun à plusieurs — éliminations.",
+  "games.battle.infoTitle": "Battle Royale",
+  "games.battle.infoBody":
+    "Mode fun à plusieurs avec éliminations successives. Le dernier joueur en lice gagne la partie.",
 
-"games.x01.title": "X01",
-"games.x01.subtitle": "301 / 501 / 701 / 901.",
-"games.x01.infoTitle": "X01",
-"games.x01.infoBody":
-  "Classic 301/501/701/901 games with stats, history and several rule options.",
+  "games.status.comingSoon": "En développement",
+  "games.info.close": "Fermer",
 
-"games.cricket.title": "CRICKET",
-"games.cricket.subtitle": "Close 15–20 + Bull.",
-"games.cricket.infoTitle": "Cricket",
-"games.cricket.infoBody":
-  "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
+  // --- LANGUAGES ---
+  "lang.fr": "Français",
+  "lang.en": "English",
+  "lang.es": "Español",
+  "lang.de": "Deutsch",
+  "lang.it": "Italiano",
+  "lang.pt": "Português",
+  "lang.nl": "Nederlands",
+  "lang.ru": "Russe",
+  "lang.zh": "Chinois",
+  "lang.ja": "Japonais",
+  "lang.ar": "Arabe",
+  "lang.hi": "Hindi",
+  "lang.tr": "Turc",
+  "lang.da": "Danois",
+  "lang.no": "Norvégien",
+  "lang.sv": "Suédois",
+  "lang.is": "Islandais",
+  "lang.pl": "Polonais",
+  "lang.ro": "Roumain",
+  "lang.at": "Autrichien",
+  "lang.sr": "Serbe",
+  "lang.hr": "Croate",
+  "lang.cs": "Tchèque",
+},
 
-"games.killer.title": "KILLER",
-"games.killer.subtitle": "Hit your number… become Killer.",
-"games.killer.infoTitle": "Killer",
-"games.killer.infoBody":
-  "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
+// ---------- ENGLISH ----------
+en: {
+  // --- NAV ---
+  "nav.home": "Home",
+  "nav.games": "Games",
+  "nav.profiles": "Profiles",
+  "nav.friends": "Friends",
+  "nav.stats": "Stats",
+  "nav.settings": "Settings",
 
-"games.shanghai.title": "SHANGHAI",
-"games.shanghai.subtitle":
-  "Target of the round, S-D-T = Shanghai to win.",
-"games.shanghai.infoTitle": "Shanghai",
-"games.shanghai.infoBody":
-  "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
+  // --- SETTINGS ---
+  "settings.back": "Back",
+  "settings.title": "Settings",
+  "settings.subtitle": "Customize the app theme and language",
+  "settings.theme": "Theme",
+  "settings.lang": "Language",
 
-"games.battle.title": "BATTLE ROYALE",
-"games.battle.subtitle": "Fun multiplayer mode — eliminations.",
-"games.battle.infoTitle": "Battle Royale",
-"games.battle.infoBody":
-  "Fun multiplayer mode with successive eliminations. Last player standing wins.",
+  "settings.theme.gold.label": "Gold neon",
+  "settings.theme.gold.desc": "Premium gold theme",
 
-"games.status.comingSoon": "Coming soon",
-"games.info.close": "Close",
+  "settings.theme.pink.label": "Pink neon",
+  "settings.theme.pink.desc": "Arcade pink ambience",
 
-    "lang.fr": "French",
-    "lang.en": "English",
-    "lang.es": "Spanish",
-    "lang.de": "German",
-    "lang.it": "Italian",
-    "lang.pt": "Portuguese",
-    "lang.nl": "Dutch",
-    "lang.ru": "Russian",
-    "lang.zh": "Chinese",
-    "lang.ja": "Japanese",
-    "lang.ar": "Arabic",
-    "lang.hi": "Hindi",
-    "lang.tr": "Turkish",
-    "lang.da": "Danish",
-    "lang.no": "Norwegian",
-    "lang.sv": "Swedish",
-    "lang.is": "Icelandic",
-    "lang.pl": "Polish",
-    "lang.ro": "Romanian",
-    "lang.sr": "Serbian",
-    "lang.hr": "Croatian",
-    "lang.cs": "Czech",
-  },
+  "settings.theme.petrol.label": "Petrol blue",
+  "settings.theme.petrol.desc": "Deep neon blue",
 
-  // ---------- ESPAÑOL ----------
-  es: {
-    "nav.home": "Inicio",
-    "nav.games": "Juegos",
-    "nav.profiles": "Perfiles",
-    "nav.friends": "Amigos",
-    "nav.stats": "Estadísticas",
-    "nav.settings": "Ajustes",
+  "settings.theme.green.label": "Green neon",
+  "settings.theme.green.desc": "Bright practice style",
 
-    "settings.back": "Volver",
-    "settings.title": "Ajustes",
-    "settings.subtitle":
-      "Personaliza el tema y el idioma de la aplicación",
-    "settings.theme": "Tema",
-    "settings.lang": "Idioma",
+  "settings.theme.magenta.label": "Magenta",
+  "settings.theme.magenta.desc": "Intense violet / magenta",
 
-    "settings.theme.gold.label": "Oro neón",
-    "settings.theme.gold.desc": "Tema dorado premium",
+  "settings.theme.red.label": "Red",
+  "settings.theme.red.desc": "Aggressive arcade red",
 
-    "settings.theme.pink.label": "Rosa neón",
-    "settings.theme.pink.desc": "Ambiente arcade rosa",
+  "settings.theme.orange.label": "Orange",
+  "settings.theme.orange.desc": "Energetic warm orange",
 
-    "settings.theme.petrol.label": "Azul petróleo",
-    "settings.theme.petrol.desc": "Azul neón profundo",
+  "settings.theme.white.label": "White",
+  "settings.theme.white.desc": "Modern light background",
 
-    "settings.theme.green.label": "Verde neón",
-    "settings.theme.green.desc": "Estilo de práctica brillante",
+  // --- HOME (CORRIGÉ) ---
+  "home.greeting": "Welcome",      // ← traduit
+  "home.titleApp": "DARTS COUNTER", // ← invariable
+  "home.subtitle": "Choose a section",
 
-    "settings.theme.magenta.label": "Magenta",
-    "settings.theme.magenta.desc": "Violeta / magenta intenso",
+  "home.quickplay": "Quick Play",
+  "home.training": "Training",
+  "home.stats": "Stats",
+  "home.profiles": "Profiles",
+  "home.friends": "Friends",
+  "home.settings": "Settings",
+  "home.lastSessions": "Last sessions",
+  "home.noSessions": "No sessions saved yet.",
+  "home.resume": "Resume",
+  "home.view": "View",
+  "home.delete": "Delete",
+  "home.confirmDeleteTitle": "Delete session?",
+  "home.confirmDeleteBody": "This session will be permanently deleted.",
+  "home.confirmDeleteYes": "Delete",
+  "home.confirmDeleteNo": "Cancel",
 
-    "settings.theme.red.label": "Rojo",
-    "settings.theme.red.desc": "Rojo arcade agresivo",
+  // --- TRAINING MENU ---
+  "training.menu.title": "TRAINING",
+  "training.menu.subtitle": "Choose a training mode",
 
-    "settings.theme.orange.label": "Naranja",
-    "settings.theme.orange.desc": "Naranja cálido y enérgico",
+  "training.menu.x01.title": "Training X01",
+  "training.menu.x01.subtitle": "Improve scoring and finishing",
+  "training.menu.x01.info":
+    "X01 training dedicated to progression: scoring, consistency, finishing, advanced stats.",
 
-    "settings.theme.white.label": "Blanco",
-    "settings.theme.white.desc": "Fondo claro moderno",
+  "training.menu.clock.title": "Around the Clock",
+  "training.menu.clock.subtitle": "Single / Double / Triple",
+  "training.menu.clock.info":
+    "Hit numbers from 1 to 20 and Bull. Choose Single, Double or Triple mode.",
 
-    // GAMES PAGE
-"games.title": "TODOS LOS JUEGOS",
-"games.subtitle": "Selecciona un modo de juego",
+  "training.menu.evolution.title": "Evolution",
+  "training.menu.evolution.subtitle": "Coming soon",
+  "training.menu.evolution.info": "A new training mode is coming soon.",
 
-"games.training.title": "ENTRENAMIENTO",
-"games.training.subtitle": "Mejora tu progresión.",
-"games.training.infoTitle": "Entrenamiento",
-"games.training.infoBody":
-  "Modo de práctica para trabajar tu regularidad, tu puntuación y tus cierres.",
+  "training.menu.comingSoon": "Coming soon",
+  "training.menu.info.close": "Close",
 
-"games.x01.title": "X01",
-"games.x01.subtitle": "301 / 501 / 701 / 901.",
-"games.x01.infoTitle": "X01",
-"games.x01.infoBody":
-  "Clásicos 301/501/701/901 con estadísticas, historial y varias opciones de reglas.",
+  // --- GAMES PAGE ---
+  "games.title": "ALL GAMES",
+  "games.subtitle": "Select a game mode",
 
-"games.cricket.title": "CRICKET",
-"games.cricket.subtitle": "Cierra 15–20 + Bull.",
-"games.cricket.infoTitle": "Cricket",
-"games.cricket.infoBody":
-  "Cierra los números 15 a 20 y el Bull antes que tu oponente mientras anotas el máximo de puntos posible.",
+  "games.training.title": "TRAINING",
+  "games.training.subtitle": "Improve your progression.",
+  "games.training.infoTitle": "Training",
+  "games.training.infoBody":
+    "Practice mode to work on consistency, scoring and finishing.",
 
-"games.killer.title": "KILLER",
-"games.killer.subtitle": "Dobla tu número… conviértete en Killer.",
-"games.killer.infoTitle": "Killer",
-"games.killer.infoBody":
-  "Cada jugador tiene un número. Conviértete en Killer acertando el tuyo y luego elimina a los demás jugadores.",
+  "games.x01.title": "X01",
+  "games.x01.subtitle": "301 / 501 / 701 / 901.",
+  "games.x01.infoTitle": "X01",
+  "games.x01.infoBody":
+    "Classic 301/501/701/901 games with stats, history and several rule options.",
 
-"games.shanghai.title": "SHANGHAI",
-"games.shanghai.subtitle":
-  "Objetivo de la ronda, S-D-T = Shanghai para ganar.",
-"games.shanghai.infoTitle": "Shanghai",
-"games.shanghai.infoBody":
-  "Cada ronda tiene un objetivo diferente. Acerta simple, doble y triple en la misma visita para lograr un Shanghai.",
+  "games.cricket.title": "CRICKET",
+  "games.cricket.subtitle": "Close 15–20 + Bull.",
+  "games.cricket.infoTitle": "Cricket",
+  "games.cricket.infoBody":
+    "Close numbers 15 to 20 and the Bull before your opponent while scoring as many points as possible.",
 
-"games.battle.title": "BATTLE ROYALE",
-"games.battle.subtitle": "Modo divertido multijugador — eliminaciones.",
-"games.battle.infoTitle": "Battle Royale",
-"games.battle.infoBody":
-  "Modo divertido para varios jugadores con eliminaciones sucesivas. El último jugador en pie gana.",
+  "games.killer.title": "KILLER",
+  "games.killer.subtitle": "Hit your number… become Killer.",
+  "games.killer.infoTitle": "Killer",
+  "games.killer.infoBody":
+    "Each player has a number. Become Killer by hitting yours, then eliminate the other players.",
 
-"games.status.comingSoon": "En desarrollo",
-"games.info.close": "Cerrar",
+  "games.shanghai.title": "SHANGHAI",
+  "games.shanghai.subtitle": "Target of the round, S-D-T = Shanghai to win.",
+  "games.shanghai.infoTitle": "Shanghai",
+  "games.shanghai.infoBody":
+    "Each round has a different target. Hit single, double and triple on the same visit to score a Shanghai.",
 
-    "lang.fr": "Francés",
-    "lang.en": "Inglés",
-    "lang.es": "Español",
-    "lang.de": "Alemán",
-    "lang.it": "Italiano",
-    "lang.pt": "Portugués",
-    "lang.nl": "Neerlandés",
-    "lang.ru": "Ruso",
-    "lang.zh": "Chino",
-    "lang.ja": "Japonés",
-    "lang.ar": "Árabe",
-    "lang.hi": "Hindi",
-    "lang.tr": "Turco",
-    "lang.da": "Danés",
-    "lang.no": "Noruego",
-    "lang.sv": "Sueco",
-    "lang.is": "Islandés",
-    "lang.pl": "Polaco",
-    "lang.ro": "Rumano",
-    "lang.sr": "Serbio",
-    "lang.hr": "Croata",
-    "lang.cs": "Checo",
-  },
+  "games.battle.title": "BATTLE ROYALE",
+  "games.battle.subtitle": "Fun multiplayer mode — eliminations.",
+  "games.battle.infoTitle": "Battle Royale",
+  "games.battle.infoBody":
+    "Fun multiplayer mode with successive eliminations. Last player standing wins.",
+
+  "games.status.comingSoon": "Coming soon",
+  "games.info.close": "Close",
+
+  // --- LANG LIST ---
+  "lang.fr": "French",
+  "lang.en": "English",
+  "lang.es": "Spanish",
+  "lang.de": "German",
+  "lang.it": "Italian",
+  "lang.pt": "Portuguese",
+  "lang.nl": "Dutch",
+  "lang.ru": "Russian",
+  "lang.zh": "Chinese",
+  "lang.ja": "Japanese",
+  "lang.ar": "Arabic",
+  "lang.hi": "Hindi",
+  "lang.tr": "Turkish",
+  "lang.da": "Danish",
+  "lang.no": "Norwegian",
+  "lang.sv": "Swedish",
+  "lang.is": "Icelandic",
+  "lang.pl": "Polish",
+  "lang.ro": "Romanian",
+  "lang.at": "Austrian",
+  "lang.sr": "Serbian",
+  "lang.hr": "Croatian",
+  "lang.cs": "Czech",
+},
+
+// ---------- ESPAÑOL ----------
+es: {
+  // --- NAV ---
+  "nav.home": "Inicio",
+  "nav.games": "Juegos",
+  "nav.profiles": "Perfiles",
+  "nav.friends": "Amigos",
+  "nav.stats": "Estadísticas",
+  "nav.settings": "Ajustes",
+
+  // --- SETTINGS ---
+  "settings.back": "Volver",
+  "settings.title": "Ajustes",
+  "settings.subtitle": "Personaliza el tema y el idioma de la aplicación",
+  "settings.theme": "Tema",
+  "settings.lang": "Idioma",
+
+  "settings.theme.gold.label": "Oro neón",
+  "settings.theme.gold.desc": "Tema dorado premium",
+
+  "settings.theme.pink.label": "Rosa neón",
+  "settings.theme.pink.desc": "Ambiente arcade rosa",
+
+  "settings.theme.petrol.label": "Azul petróleo",
+  "settings.theme.petrol.desc": "Azul neón profundo",
+
+  "settings.theme.green.label": "Verde neón",
+  "settings.theme.green.desc": "Estilo de práctica brillante",
+
+  "settings.theme.magenta.label": "Magenta",
+  "settings.theme.magenta.desc": "Violeta / magenta intenso",
+
+  "settings.theme.red.label": "Rojo",
+  "settings.theme.red.desc": "Rojo arcade agresivo",
+
+  "settings.theme.orange.label": "Naranja",
+  "settings.theme.orange.desc": "Naranja cálido y enérgico",
+
+  "settings.theme.white.label": "Blanco",
+  "settings.theme.white.desc": "Fondo claro moderno",
+
+  // --- HOME (CORREGIDO) ---
+  "home.greeting": "Bienvenido",
+  "home.titleApp": "DARTS COUNTER",
+  "home.subtitle": "Elige una sección",
+
+  "home.quickplay": "Juego rápido",
+  "home.training": "Entrenamiento",
+  "home.stats": "Estadísticas",
+  "home.profiles": "Perfiles",
+  "home.friends": "Amigos",
+  "home.settings": "Ajustes",
+  "home.lastSessions": "Sesiones recientes",
+  "home.noSessions": "No hay sesiones guardadas.",
+  "home.resume": "Continuar",
+  "home.view": "Ver",
+  "home.delete": "Eliminar",
+  "home.confirmDeleteTitle": "¿Eliminar sesión?",
+  "home.confirmDeleteBody": "Esta sesión se eliminará permanentemente.",
+  "home.confirmDeleteYes": "Eliminar",
+  "home.confirmDeleteNo": "Cancelar",
+
+  // --- GAMES PAGE ---
+  "games.title": "TODOS LOS JUEGOS",
+  "games.subtitle": "Selecciona un modo de juego",
+
+  "games.training.title": "ENTRENAMIENTO",
+  "games.training.subtitle": "Mejora tu progresión.",
+  "games.training.infoTitle": "Entrenamiento",
+  "games.training.infoBody":
+    "Modo de práctica para trabajar tu regularidad, tu puntuación y tus cierres.",
+
+  "games.x01.title": "X01",
+  "games.x01.subtitle": "301 / 501 / 701 / 901.",
+  "games.x01.infoTitle": "X01",
+  "games.x01.infoBody":
+    "Clásicos 301/501/701/901 con estadísticas, historial y varias opciones de reglas.",
+
+  "games.cricket.title": "CRICKET",
+  "games.cricket.subtitle": "Cierra 15–20 + Bull.",
+  "games.cricket.infoTitle": "Cricket",
+  "games.cricket.infoBody":
+    "Cierra los números 15 a 20 y el Bull antes que tu oponente mientras anotas el máximo posible.",
+
+  "games.killer.title": "KILLER",
+  "games.killer.subtitle": "Dobla tu número… conviértete en Killer.",
+  "games.killer.infoTitle": "Killer",
+  "games.killer.infoBody":
+    "Cada jugador tiene un número. Conviértete en Killer acertando el tuyo y luego elimina a los demás jugadores.",
+
+  "games.shanghai.title": "SHANGHAI",
+  "games.shanghai.subtitle": "Objetivo de la ronda, S-D-T = Shanghai.",
+  "games.shanghai.infoTitle": "Shanghai",
+  "games.shanghai.infoBody":
+    "Cada ronda tiene un objetivo diferente. Acierta simple, doble y triple en la misma visita.",
+
+  "games.battle.title": "BATTLE ROYALE",
+  "games.battle.subtitle": "Modo multijugador divertido — eliminaciones.",
+  "games.battle.infoTitle": "Battle Royale",
+  "games.battle.infoBody":
+    "Modo multijugador con eliminaciones sucesivas. Gana el último jugador en pie.",
+
+  "games.status.comingSoon": "En desarrollo",
+  "games.info.close": "Cerrar",
+
+  // --- LANGS ---
+  "lang.fr": "Francés",
+  "lang.en": "Inglés",
+  "lang.es": "Español",
+  "lang.de": "Alemán",
+  "lang.it": "Italiano",
+  "lang.pt": "Portugués",
+  "lang.nl": "Neerlandés",
+  "lang.ru": "Ruso",
+  "lang.zh": "Chino",
+  "lang.ja": "Japonés",
+  "lang.ar": "Árabe",
+  "lang.hi": "Hindi",
+  "lang.tr": "Turco",
+  "lang.da": "Danés",
+  "lang.no": "Noruego",
+  "lang.sv": "Sueco",
+  "lang.is": "Islandés",
+  "lang.pl": "Polaco",
+  "lang.ro": "Rumano",
+  "lang.at": "Austriaco",
+  "lang.sr": "Serbio",
+  "lang.hr": "Croata",
+  "lang.cs": "Checo",
+},
 
   // ---------- DEUTSCH ----------
   de: {
@@ -433,6 +582,7 @@ const DICT: LangDict = {
     "lang.is": "Isländisch",
     "lang.pl": "Polnisch",
     "lang.ro": "Rumänisch",
+    "lang.at": "österreichisch",
     "lang.sr": "Serbisch",
     "lang.hr": "Kroatisch",
     "lang.cs": "Tschechisch",
@@ -541,6 +691,7 @@ const DICT: LangDict = {
     "lang.is": "Islandese",
     "lang.pl": "Polacco",
     "lang.ro": "Rumeno",
+    "lang.at": "Austriaco",
     "lang.sr": "Serbo",
     "lang.hr": "Croato",
     "lang.cs": "Ceco",
@@ -649,6 +800,7 @@ const DICT: LangDict = {
     "lang.is": "Islandês",
     "lang.pl": "Polaco",
     "lang.ro": "Romeno",
+    "lang.at": "Austríaco",
     "lang.sr": "Sérvio",
     "lang.hr": "Croata",
     "lang.cs": "Checo",
@@ -857,6 +1009,7 @@ const DICT: LangDict = {
     "lang.is": "Исландский",
     "lang.pl": "Польский",
     "lang.ro": "Румынский",
+    "lang.at": "австрийский",
     "lang.sr": "Сербский",
     "lang.hr": "Хорватский",
     "lang.cs": "Чешский",
@@ -956,6 +1109,7 @@ const DICT: LangDict = {
     "lang.is": "冰岛语",
     "lang.pl": "波兰语",
     "lang.ro": "罗马尼亚语",
+    "lang.at": "奥地利人",
     "lang.sr": "塞尔维亚语",
     "lang.hr": "克罗地亚语",
     "lang.cs": "捷克语",
@@ -1055,6 +1209,7 @@ const DICT: LangDict = {
     "lang.is": "アイスランド語",
     "lang.pl": "ポーランド語",
     "lang.ro": "ルーマニア語",
+    "lang.at": "オーストリア人",
     "lang.sr": "セルビア語",
     "lang.hr": "クロアチア語",
     "lang.cs": "チェコ語",
@@ -1154,6 +1309,7 @@ const DICT: LangDict = {
     "lang.is": "الآيسلندية",
     "lang.pl": "البولندية",
     "lang.ro": "الرومانية",
+    "lang.at": "النمساوي",
     "lang.sr": "الصربية",
     "lang.hr": "الكرواتية",
     "lang.cs": "التشيكية",
@@ -1253,6 +1409,7 @@ const DICT: LangDict = {
     "lang.is": "आइसलैंडिक",
     "lang.pl": "पोलिश",
     "lang.ro": "रोमानियाई",
+    "lang.at": "ऑस्ट्रिया",
     "lang.sr": "सर्बियाई",
     "lang.hr": "क्रोएशियाई",
     "lang.cs": "चेक",
@@ -1354,6 +1511,7 @@ const DICT: LangDict = {
     "lang.is": "İzlandaca",
     "lang.pl": "Lehçe",
     "lang.ro": "Romence",
+    "lang.at": "Avusturya",
     "lang.sr": "Sırpça",
     "lang.hr": "Hırvatça",
     "lang.cs": "Çekçe",
@@ -1454,6 +1612,7 @@ const DICT: LangDict = {
     "lang.is": "Islandsk",
     "lang.pl": "Polsk",
     "lang.ro": "Rumænsk",
+    "lang.at": "østrigsk",
     "lang.sr": "Serbisk",
     "lang.hr": "Kroatisk",
     "lang.cs": "Tjekkisk",
@@ -1554,6 +1713,7 @@ const DICT: LangDict = {
     "lang.is": "Islandsk",
     "lang.pl": "Polsk",
     "lang.ro": "Rumensk",
+    "lang.at": "østerriksk",
     "lang.sr": "Serbisk",
     "lang.hr": "Kroatisk",
     "lang.cs": "Tsjekkisk",
@@ -1654,6 +1814,7 @@ const DICT: LangDict = {
     "lang.is": "Isländska",
     "lang.pl": "Polska",
     "lang.ro": "Rumänska",
+    "lang.at": "österrikisk",
     "lang.sr": "Serbiska",
     "lang.hr": "Kroatiska",
     "lang.cs": "Tjeckiska",
@@ -1754,6 +1915,7 @@ const DICT: LangDict = {
     "lang.is": "Íslenska",
     "lang.pl": "Pólska",
     "lang.ro": "Rúmenska",
+    "lang.at": "austurrískur",
     "lang.sr": "Serbneska",
     "lang.hr": "Króatíska",
     "lang.cs": "Tékkneska",
@@ -1854,6 +2016,7 @@ const DICT: LangDict = {
     "lang.is": "Islandzki",
     "lang.pl": "Polski",
     "lang.ro": "Rumuński",
+    "lang.at": "austriacki",
     "lang.sr": "Serbski",
     "lang.hr": "Chorwacki",
     "lang.cs": "Czeski",
@@ -1954,6 +2117,7 @@ const DICT: LangDict = {
     "lang.is": "Islandeză",
     "lang.pl": "Poloneză",
     "lang.ro": "Română",
+    "lang.at": "austriac",
     "lang.sr": "Sârbă",
     "lang.hr": "Croată",
     "lang.cs": "Cehă",
@@ -2057,6 +2221,7 @@ at: {
   "lang.is": "Isländisch",
   "lang.pl": "Polnisch",
   "lang.ro": "Rumänisch",
+  "lang.at": "österreichisch",
   "lang.sr": "Serbisch",
   "lang.hr": "Kroatisch",
   "lang.cs": "Tschechisch",
@@ -2157,6 +2322,7 @@ at: {
     "lang.is": "Islandski",
     "lang.pl": "Poljski",
     "lang.ro": "Rumunski",
+    "lang.at": "аустријски",
     "lang.sr": "Srpski",
     "lang.hr": "Hrvatski",
     "lang.cs": "Češki",
@@ -2258,6 +2424,7 @@ at: {
     "lang.is": "Islandski",
     "lang.pl": "Poljski",
     "lang.ro": "Rumunjski",
+    "lang.at": "austrijski",
     "lang.sr": "Srpski",
     "lang.hr": "Hrvatski",
     "lang.cs": "Češki",
@@ -2358,6 +2525,7 @@ at: {
     "lang.is": "Islandština",
     "lang.pl": "Polština",
     "lang.ro": "Rumunština",
+    "lang.at": "rakouský",
     "lang.sr": "Srbština",
     "lang.hr": "Chorvatština",
     "lang.cs": "Čeština",
