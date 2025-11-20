@@ -1,9 +1,9 @@
 // ============================================
 // src/pages/Games.tsx — Sélecteur de modes de jeu
-// Style harmonisé avec TrainingMenu
-// - Cartes sombres, titre doré néon
-// - Pastille "i" à gauche par jeu
-// - Bouton "Jouer" / "Bientôt" à droite
+// Style harmonisé avec TrainingMenu & Accueil
+// - Cartes sombres, titre doré néon centré
+// - Pastille "i" à droite, blanche
+// - Pas de bouton "Jouer" (le bloc entier est cliquable)
 // ============================================
 
 import React from "react";
@@ -151,7 +151,7 @@ export default function Games({ setTab }: Props) {
   );
 }
 
-/* ---------- Carte de jeu : même style que TrainingCard ---------- */
+/* ---------- Carte de jeu ---------- */
 
 type GameCardProps = {
   title: string;
@@ -183,9 +183,10 @@ function GameCard({
       disabled={disabled}
       onClick={handleClick}
       style={{
+        position: "relative",
         width: "100%",
-        textAlign: "left",
-        padding: "10px 14px",
+        textAlign: "center",
+        padding: "14px 16px",
         borderRadius: 16,
         border: "1px solid rgba(255,255,255,.08)",
         background:
@@ -194,7 +195,7 @@ function GameCard({
         cursor: disabled ? "not-allowed" : "pointer",
         display: "flex",
         alignItems: "center",
-        justifyContent: "space-between",
+        justifyContent: "center",
         transition: "transform 0.15s ease, box-shadow 0.15s ease",
         pointerEvents: "auto",
         boxShadow: disabled ? "none" : "0 0 12px rgba(0,0,0,0.8)",
@@ -211,44 +212,14 @@ function GameCard({
           : "0 0 12px rgba(0,0,0,0.8)";
       }}
     >
-      {/* Pastille "i" */}
-      <div style={{ marginRight: 10, display: "flex", alignItems: "center" }}>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onInfo) onInfo();
-          }}
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: "999px",
-            border: "1px solid rgba(252,211,77,0.8)",
-            background:
-              "radial-gradient(circle at 30% 20%, #fffde7 0, #fde68a 30%, #facc15 60%, #78350f 100%)",
-            boxShadow:
-              "0 0 10px rgba(250,204,21,0.9), 0 0 20px rgba(250,204,21,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 13,
-            fontWeight: 800,
-            color: "#111827",
-            cursor: "pointer",
-          }}
-        >
-          i
-        </button>
-      </div>
-
-      {/* Texte */}
+      {/* Texte centré */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
         <div
           style={{
             fontWeight: 800,
-            fontSize: 12,
+            fontSize: 16, // même esprit que les menus Accueil
             textTransform: "uppercase",
-            letterSpacing: 0.7,
+            letterSpacing: 0.9,
             color: "#FDE68A",
             textShadow:
               "0 0 6px rgba(250,204,21,0.9), 0 0 14px rgba(250,204,21,0.5)",
@@ -263,10 +234,10 @@ function GameCard({
         {subtitle && (
           <div
             style={{
-              fontSize: 11,
+              fontSize: 12,
               opacity: 0.78,
               color: "#E5E7EB",
-              marginTop: 2,
+              marginTop: 3,
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -277,34 +248,53 @@ function GameCard({
         )}
       </div>
 
-      {/* Bouton Jouer / Bientôt */}
-      <span
+      {/* Pastille "i" à droite (blanche) */}
+      <div
         style={{
-          marginLeft: 10,
-          background: disabled
-            ? "linear-gradient(180deg, #6b7280, #4b5563)"
-            : "linear-gradient(180deg, #ffc63a, #ffaf00)",
-          color: disabled ? "#e5e7eb" : "#111827",
-          borderRadius: 999,
-          padding: "4px 10px",
-          fontWeight: 800,
-          fontSize: 10.5,
-          textTransform: "uppercase",
-          letterSpacing: 0.7,
-          border: disabled
-            ? "1px solid rgba(148,163,184,.35)"
-            : "1px solid rgba(255,180,0,.45)",
-          boxShadow: disabled
-            ? "none"
-            : "0 0 10px rgba(240,177,42,.3)",
-          display: "inline-flex",
+          position: "absolute",
+          right: 14,
+          top: "50%",
+          transform: "translateY(-50%)",
+          display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          minWidth: 56,
         }}
       >
-        {disabled ? "Bientôt" : "Jouer"}
-      </span>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onInfo) onInfo();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              if (onInfo) onInfo();
+            }
+          }}
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: "999px",
+            border: "1px solid rgba(255,255,255,0.8)",
+            background:
+              "radial-gradient(circle at 30% 20%, #ffffff 0, #e5e7eb 40%, #9ca3af 100%)",
+            boxShadow:
+              "0 0 8px rgba(255,255,255,0.8), 0 0 16px rgba(148,163,184,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 13,
+            fontWeight: 800,
+            color: "#111827",
+            cursor: "pointer",
+          }}
+        >
+          i
+        </div>
+      </div>
     </button>
   );
 }

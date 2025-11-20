@@ -1,8 +1,9 @@
 // ============================================
 // src/pages/TrainingMenu.tsx
 // Menu Training (solo) — style identique au menu Jeux
-// - Cartes sombres, titre doré, bouton "Jouer" / "Bientôt"
-// - Pastille "i" à gauche qui ouvre une popup d'aide
+// - Cartes sombres, titre doré centré
+// - Pastille "i" blanche à droite (overlay d'aide)
+// - Le bloc entier est cliquable (pas de bouton "Jouer")
 // ============================================
 
 import React from "react";
@@ -120,7 +121,7 @@ export default function TrainingMenu({ go }: Props) {
             subtitle="Accès direct aux statistiques Training X01."
             onClick={openStats}
             onInfo={() => openInfo("evolution")}
-            disabled={false} // ✅ actif
+            disabled={false}
           />
         </div>
       </div>
@@ -131,7 +132,7 @@ export default function TrainingMenu({ go }: Props) {
   );
 }
 
-/* ---------- Carte Training : style identique à Games + pastille "i" ---------- */
+/* ---------- Carte Training : même visuel que Games ---------- */
 
 type TrainingCardProps = {
   title: string;
@@ -169,9 +170,10 @@ function TrainingCard({
         }
       }}
       style={{
+        position: "relative",
         width: "100%",
-        textAlign: "left",
-        padding: "10px 14px",
+        textAlign: "center",
+        padding: "14px 16px",
         borderRadius: 16,
         border: "1px solid rgba(255,255,255,.08)",
         background:
@@ -180,7 +182,7 @@ function TrainingCard({
         cursor: disabled ? "not-allowed" : "pointer",
         display: "flex",
         alignItems: "center",
-        justifyContent: "space-between",
+        justifyContent: "center",
         transition: "transform 0.15s ease, box-shadow 0.15s ease",
         pointerEvents: "auto",
         boxShadow: disabled ? "none" : "0 0 12px rgba(0,0,0,0.8)",
@@ -197,60 +199,14 @@ function TrainingCard({
           : "0 0 12px rgba(0,0,0,0.8)";
       }}
     >
-      {/* Colonne gauche : pastille info */}
-      <div
-        style={{
-          marginRight: 10,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onInfo) onInfo();
-          }}
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: "999px",
-            border: "1px solid rgba(252,211,77,0.8)",
-            background:
-              "radial-gradient(circle at 30% 20%, #fffde7 0, #fde68a 30%, #facc15 60%, #78350f 100%)",
-            boxShadow:
-              "0 0 10px rgba(250,204,21,0.9), 0 0 20px rgba(250,204,21,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 13,
-            fontWeight: 800,
-            color: "#111827",
-            padding: 0,
-            cursor: "pointer",
-          }}
-        >
-          i
-        </button>
-      </div>
-
-      {/* Centre : titres */}
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          minWidth: 0,
-        }}
-      >
+      {/* Texte centré */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
         <div
           style={{
             fontWeight: 800,
-            fontSize: 12,            // ▼ réduit
+            fontSize: 16, // même style que Games / Accueil
             textTransform: "uppercase",
-            letterSpacing: 0.7,      // ▼ réduit
+            letterSpacing: 0.9,
             color: "#FDE68A",
             textShadow:
               "0 0 6px rgba(250,204,21,0.9), 0 0 14px rgba(250,204,21,0.5)",
@@ -264,10 +220,10 @@ function TrainingCard({
         {subtitle && (
           <div
             style={{
-              fontSize: 11,
+              fontSize: 12,
               opacity: 0.78,
               color: "#E5E7EB",
-              marginTop: 2,
+              marginTop: 3,
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -278,34 +234,53 @@ function TrainingCard({
         )}
       </div>
 
-      {/* Droite : bouton Jouer / Bientôt (toujours Jouer ici) */}
-      <span
+      {/* Pastille "i" blanche à droite */}
+      <div
         style={{
-          marginLeft: 10,
-          background: disabled
-            ? "linear-gradient(180deg, #6b7280, #4b5563)"
-            : "linear-gradient(180deg, #ffc63a, #ffaf00)",
-          color: disabled ? "#e5e7eb" : "#111827",
-          borderRadius: 999,
-          padding: "4px 10px",        // ▼ réduit
-          fontWeight: 800,
-          fontSize: 10.5,             // ▼ réduit
-          textTransform: "uppercase",
-          letterSpacing: 0.7,         // ▼ cohérent
-          border: disabled
-            ? "1px solid rgba(148,163,184,.35)"
-            : "1px solid rgba(255,180,0,.45)",
-          boxShadow: disabled
-            ? "none"
-            : "0 0 10px rgba(240,177,42,.3)",
-          display: "inline-flex",
+          position: "absolute",
+          right: 14,
+          top: "50%",
+          transform: "translateY(-50%)",
+          display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          minWidth: 56,               // ▼ réduit
         }}
       >
-        {disabled ? "Bientôt" : "Jouer"}
-      </span>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onInfo) onInfo();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              if (onInfo) onInfo();
+            }
+          }}
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: "999px",
+            border: "1px solid rgba(255,255,255,0.8)",
+            background:
+              "radial-gradient(circle at 30% 20%, #ffffff 0, #e5e7eb 40%, #9ca3af 100%)",
+            boxShadow:
+              "0 0 8px rgba(255,255,255,0.8), 0 0 16px rgba(148,163,184,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 13,
+            fontWeight: 800,
+            color: "#111827",
+            cursor: "pointer",
+          }}
+        >
+          i
+        </div>
+      </div>
     </button>
   );
 }
