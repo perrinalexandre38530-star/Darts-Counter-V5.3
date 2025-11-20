@@ -1,77 +1,149 @@
 // ============================================
 // src/contexts/LangContext.tsx
-// Contexte global pour la langue / i18n
+// Contexte Langue + petites traductions
+// - lang: langue courante
+// - setLang: changer de langue
+// - t(key, fallback): traduction avec fallback
 // ============================================
 
 import React from "react";
-import {
-  AVAILABLE_LANGS,
-  I18N_STRINGS,
-  type LangCode,
-  type I18nKey,
-} from "../i18n/i18n";
 
-export const LANG_STORAGE_KEY = "dc_app_lang_v1";
-const DEFAULT_LANG: LangCode = "fr";
+export type Lang = "fr" | "en" | "es" | "de" | "it" | "pt" | "nl";
 
 type LangContextValue = {
-  lang: LangCode;
-  setLang: (code: LangCode) => void;
-  t: (key: I18nKey) => string;
-  availableLangs: typeof AVAILABLE_LANGS;
+  lang: Lang;
+  setLang: (lang: Lang) => void;
+  t: (key: string, fallback?: string) => string;
 };
 
 const LangContext = React.createContext<LangContextValue | undefined>(
   undefined
 );
 
-function loadInitialLang(): LangCode {
-  if (typeof window === "undefined") return DEFAULT_LANG;
-  try {
-    const raw = window.localStorage.getItem(LANG_STORAGE_KEY);
-    if (!raw) return DEFAULT_LANG;
-    const code = raw as LangCode;
-    const exists = AVAILABLE_LANGS.some((l) => l.code === code);
-    return exists ? code : DEFAULT_LANG;
-  } catch {
-    return DEFAULT_LANG;
-  }
-}
+const STORAGE_KEY = "dc_lang_v1";
+
+/* --------- Dictionnaires de base --------- */
+
+const fr: Record<string, string> = {
+  // Home — titres
+  "home.welcome": "Bienvenue",
+  "home.title": "DARTS COUNTER",
+  "home.connect": "SE CONNECTER",
+  "home.seeStats": "Voir mes statistiques",
+
+  // Home — stats mini
+  "home.stats.avg3": "Moy/3",
+  "home.stats.best": "Best",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Win%",
+
+  // Home — cartes menu
+  "home.card.profiles.title": "PROFILS",
+  "home.card.profiles.subtitle": "Création et gestion de profils",
+
+  "home.card.local.title": "JEU LOCAL",
+  "home.card.local.subtitle": "Accède à tous les modes de jeu",
+
+  "home.card.online.title": "JEU ONLINE",
+  "home.card.online.subtitle": "Parties à distance (mode à venir)",
+
+  "home.card.stats.title": "STATS",
+  "home.card.stats.subtitle": "Statistiques et historiques",
+
+  // Statuts
+  "status.online": "En ligne",
+  "status.away": "Absent",
+  "status.offline": "Hors ligne",
+};
+
+const en: Record<string, string> = {
+  // Home — titles
+  "home.welcome": "Welcome",
+  "home.title": "DARTS COUNTER",
+  "home.connect": "SIGN IN",
+  "home.seeStats": "View my stats",
+
+  // Home — stats
+  "home.stats.avg3": "Avg/3",
+  "home.stats.best": "Best",
+  "home.stats.co": "CO",
+  "home.stats.winPct": "Win%",
+
+  // Home — cards
+  "home.card.profiles.title": "PROFILES",
+  "home.card.profiles.subtitle": "Create and manage profiles",
+
+  "home.card.local.title": "LOCAL GAME",
+  "home.card.local.subtitle": "Access all game modes",
+
+  "home.card.online.title": "ONLINE GAME",
+  "home.card.online.subtitle": "Remote matches (coming soon)",
+
+  "home.card.stats.title": "STATS",
+  "home.card.stats.subtitle": "Statistics and history",
+
+  // Status
+  "status.online": "Online",
+  "status.away": "Away",
+  "status.offline": "Offline",
+};
+
+// Pour les autres langues, on laissera retomber sur le FR par défaut
+const messages: Record<Lang, Record<string, string>> = {
+  fr,
+  en,
+  es: {},
+  de: {},
+  it: {},
+  pt: {},
+  nl: {},
+};
+
+/* --------- Provider --------- */
 
 export function LangProvider({ children }: { children: React.ReactNode }) {
-  const [lang, setLangState] = React.useState<LangCode>(() => loadInitialLang());
+  const [lang, setLangState] = React.useState<Lang>(() => {
+    if (typeof window === "undefined") return "fr";
+    const stored = window.localStorage.getItem(STORAGE_KEY) as Lang | null;
+    return stored || "fr";
+  });
 
-  const setLang = React.useCallback((code: LangCode) => {
-    setLangState(code);
-    try {
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(LANG_STORAGE_KEY, code);
-      }
-    } catch {
-      // ignore
+  const setLang = React.useCallback((next: Lang) => {
+    setLangState(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(STORAGE_KEY, next);
     }
   }, []);
 
   const t = React.useCallback(
-    (key: I18nKey): string => {
-      const table = I18N_STRINGS[lang] ?? I18N_STRINGS[DEFAULT_LANG];
-      return table[key] ?? key;
+    (key: string, fallback?: string) => {
+      const dictLang = messages[lang] || {};
+      const dictFr = messages["fr"] || {};
+      // 1) traduction dans la langue courante
+      // 2) fallback FR
+      // 3) fallback passé en paramètre
+      // 4) à défaut, la clé (cas extrême)
+      return dictLang[key] ?? dictFr[key] ?? fallback ?? key;
     },
     [lang]
   );
 
-  const value: LangContextValue = React.useMemo(
-    () => ({ lang, setLang, t, availableLangs: AVAILABLE_LANGS }),
+  const value = React.useMemo(
+    () => ({ lang, setLang, t }),
     [lang, setLang, t]
   );
 
-  return <LangContext.Provider value={value}>{children}</LangContext.Provider>;
+  return (
+    <LangContext.Provider value={value}>{children}</LangContext.Provider>
+  );
 }
 
-export function useLang(): LangContextValue {
+/* --------- Hook --------- */
+
+export function useLang() {
   const ctx = React.useContext(LangContext);
   if (!ctx) {
-    throw new Error("useLang must be used within a LangProvider");
+    throw new Error("useLang must be used within LangProvider");
   }
   return ctx;
 }
