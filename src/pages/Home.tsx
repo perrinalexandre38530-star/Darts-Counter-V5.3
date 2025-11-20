@@ -6,6 +6,7 @@
 // - Grille 2 colonnes sur tablette
 // - [NEW] Couronne d’étoiles EXTERNE autour du médaillon (ProfileStarRing)
 // - [NEW] Lecture instantanée des stats via statsLiteIDB (mini-cache sync)
+// - [THEME] Couleurs pilotées par ThemeContext
 // ============================================
 
 import React from "react";
@@ -85,6 +86,8 @@ export default function Home({
         gap: 12,
         textAlign: "center",
         overflow: "hidden",
+        background: theme.bg,
+        color: theme.text,
       }}
     >
       {/* ---- Styles responsives & variables ---- */}
@@ -148,9 +151,15 @@ export default function Home({
           alignItems: "center",
           boxShadow: "0 18px 36px rgba(0,0,0,.40)",
           gap: 8,
+          background: theme.card,
+          borderRadius: 18,
+          border: `1px solid ${theme.borderSoft}`,
         }}
       >
-        <div className="title-accent" style={{ marginBottom: 0 }}>
+        <div
+          className="title-accent"
+          style={{ marginBottom: 0, color: theme.textSoft }}
+        >
           Bienvenue
         </div>
 
@@ -194,7 +203,7 @@ export default function Home({
         ) : null}
       </div>
 
-      {/* ===== ACCÈS RAPIDES ===== */}
+      {/* ===== ACCÈS RAPIDES (SANS bloc Réglages) ===== */}
       <div
         className="list home-grid"
         style={{
@@ -230,53 +239,6 @@ export default function Home({
           icon={<Icon name="stats" size={24} />}
           onClick={() => go("stats")}
         />
-
-        {/* ===== CARTE RÉGLAGES (thème + langue) ===== */}
-        <div
-          onClick={() => go("settings")}
-          style={{
-            cursor: "pointer",
-            background: theme.card,
-            borderRadius: 18,
-            padding: 16,
-            border: `1px solid ${theme.borderSoft}`,
-            boxShadow: `0 0 24px rgba(0,0,0,0.6)`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 12,
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: 14,
-                textTransform: "uppercase",
-                letterSpacing: 1.6,
-                color: theme.textSoft,
-              }}
-            >
-              Réglages
-            </div>
-            <div style={{ fontSize: 12, color: theme.textSoft }}>
-              Thème &amp; langue de l'application
-            </div>
-          </div>
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: "50%",
-              border: `1px solid ${theme.borderSoft}`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: `0 0 10px ${theme.primary}`,
-            }}
-          >
-            ⚙️
-          </div>
-        </div>
       </div>
 
       {/* Spacer bas = hauteur BottomNav */}
@@ -619,6 +581,8 @@ function HomeCard({
   onClick?: () => void;
   disabled?: boolean;
 }) {
+  const { theme } = useTheme();
+
   return (
     <button
       className="item"
@@ -630,20 +594,24 @@ function HomeCard({
         paddingTop: 14,
         paddingBottom: 14,
         paddingInline: 10,
-        background:
-          "linear-gradient(180deg, rgba(20,20,26,.55), rgba(14,14,18,.75))",
+        background: theme.card,
+        borderRadius: 14,
+        border: `1px solid ${theme.borderSoft}`,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.75 : 1,
         textAlign: "center",
         transition: "all .2s ease",
-        borderRadius: 14,
       }}
       onClick={!disabled ? onClick : undefined}
-      onMouseEnter={(e) =>
-        (e.currentTarget.style.boxShadow =
-          "0 0 18px rgba(240,177,42,.18), 0 8px 18px rgba(0,0,0,.38)")
-      }
-      onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "none")}
+      onMouseEnter={(e) => {
+        if (disabled) return;
+        e.currentTarget.style.boxShadow =
+          "0 0 18px rgba(240,177,42,.18), 0 8px 18px rgba(0,0,0,.38)";
+      }}
+      onMouseLeave={(e) => {
+        if (disabled) return;
+        e.currentTarget.style.boxShadow = "none";
+      }}
     >
       <div
         className="badge"
@@ -655,6 +623,7 @@ function HomeCard({
           display: "grid",
           placeItems: "center",
           background: "rgba(255,255,255,.05)",
+          color: theme.text,
         }}
       >
         {icon}
@@ -679,7 +648,7 @@ function HomeCard({
           maxWidth: 420,
           fontSize: "var(--menu-sub)",
           lineHeight: 1.3,
-          color: "var(--muted)",
+          color: theme.textSoft,
         }}
       >
         {subtitle}
