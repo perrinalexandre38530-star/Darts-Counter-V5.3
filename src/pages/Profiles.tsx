@@ -19,7 +19,7 @@ import { getBasicProfileStatsSync } from "../lib/statsLiteIDB";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 
-type View = "menu" | "me" | "locals";
+type View = "menu" | "me" | "locals" | "friends";
 
 /* ===== Helper lecture instantanée (mini-cache IDB) ===== */
 function useBasicStats(playerId: string | undefined | null) {
@@ -97,7 +97,13 @@ export default function Profiles({
   const { t } = useLang();
 
   const [view, setView] = React.useState<View>(
-    params?.view === "me" ? "me" : "menu"
+    params?.view === "me"
+      ? "me"
+      : params?.view === "locals"
+      ? "locals"
+      : params?.view === "friends"
+      ? "friends"
+      : "menu"
   );
 
   const [statsMap, setStatsMap] = React.useState<
@@ -256,6 +262,7 @@ export default function Profiles({
             go={go}
             onSelectMe={() => setView("me")}
             onSelectLocals={() => setView("locals")}
+            onSelectFriends={() => setView("friends")}
           />
         ) : (
           <>
@@ -322,16 +329,6 @@ export default function Profiles({
                     onPatch={patchActivePrivateInfo}
                   />
                 </Card>
-
-                {/* Bloc AMIS sous le profil */}
-                <Card
-                  title={t("profiles.section.friends", "Amis ({count})").replace(
-                    "{count}",
-                    String((store as any).friends?.length ?? 0)
-                  )}
-                >
-                  <FriendsMergedBlock friends={friends} />
-                </Card>
               </>
             )}
 
@@ -367,6 +364,17 @@ export default function Profiles({
                 </div>
               </Card>
             )}
+
+            {view === "friends" && (
+              <Card
+                title={t("profiles.section.friends", "Amis ({count})").replace(
+                  "{count}",
+                  String((store as any).friends?.length ?? 0)
+                )}
+              >
+                <FriendsMergedBlock friends={friends} />
+              </Card>
+            )}
           </>
         )}
       </div>
@@ -382,10 +390,12 @@ function ProfilesMenuView({
   go,
   onSelectMe,
   onSelectLocals,
+  onSelectFriends,
 }: {
   go?: (tab: any, params?: any) => void;
   onSelectMe: () => void;
   onSelectLocals: () => void;
+  onSelectFriends: () => void;
 }) {
   const { theme } = useTheme();
   const { t } = useLang();
@@ -526,7 +536,7 @@ function ProfilesMenuView({
           "profiles.menu.friends.subtitle",
           "Gère tes amis et tes profils en ligne."
         )}
-        onClick={() => go?.("friends")}
+        onClick={onSelectFriends}
       />
 
       <CardBtn
