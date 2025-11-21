@@ -181,6 +181,62 @@ fr: {
   "training.menu.comingSoon": "En développement",
   "training.menu.info.close": "Fermer",
 
+     // --- PAGE PROFILS ---
+  "profiles.connected.title": "Profil connecté",
+  "profiles.friends.title": "Amis",
+  "profiles.locals.title": "Profils locaux",
+
+  "profiles.connected.seeStats": "Voir les statistiques",
+
+  // Statuts spécifiques
+  "profiles.status.online": "En ligne",
+  "profiles.status.away": "Absent",
+  "profiles.status.offline": "Hors ligne",
+
+  // Profil actif — boutons
+  "profiles.connected.btn.avatar": "Créer / Mettre à jour l’avatar",
+  "profiles.connected.btn.avatar.tooltip": "Ouvrir le créateur d’avatar",
+  "profiles.connected.btn.away.tooltip": "Basculer le statut en absent / en ligne",
+  "profiles.connected.btn.online": "EN LIGNE",
+  "profiles.connected.btn.away": "ABSENT",
+  "profiles.connected.btn.quit": "QUITTER",
+  "profiles.connected.btn.quit.tooltip": "Quitter la session",
+  "profiles.connected.btn.edit": "MODIFIER LE PROFIL",
+  "profiles.connected.edit.avatarPlaceholder": "Cliquer",
+
+  // Bloc connexion / création
+  "profiles.auth.select.none": "Aucun profil enregistré",
+  "profiles.auth.select.btnConnect": "Connexion",
+  "profiles.auth.create.placeholder": "Nom du profil",
+  "profiles.auth.create.btn": "Ajouter",
+
+  // Amis
+  "profiles.friends.none": "Aucun ami pour l’instant",
+
+  // Profils locaux — ajout
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Nom du profil",
+  "profiles.locals.add.btnAdd": "Ajouter",
+  "profiles.locals.add.btnCancel": "Annuler",
+
+  // Profils locaux — édition
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "Voir les statistiques",
+
+  // Profils locaux — boutons
+  "profiles.locals.btn.avatarCreator": "Créer avatar",
+  "profiles.locals.btn.avatarCreator.tooltip": "Ouvrir le créateur d’avatar",
+  "profiles.locals.btn.save": "Enregistrer",
+  "profiles.locals.btn.cancel": "Annuler",
+  "profiles.locals.btn.edit": "Éditer",
+  "profiles.locals.btn.delete": "Suppr.",
+
+  // Commun
+  "common.save": "Enregistrer",
+  "common.cancel": "Annuler",
+  "common.edit": "Éditer",
+  "common.deleteShort": "Suppr.",
+
   // --- LANGUAGES ---
   "lang.fr": "Français",
   "lang.en": "Anglais",
@@ -341,6 +397,62 @@ en: {
 
   "training.menu.comingSoon": "In development",
   "training.menu.info.close": "Close",
+
+     // --- PROFILES PAGE ---
+  "profiles.connected.title": "Connected profile",
+  "profiles.friends.title": "Friends",
+  "profiles.locals.title": "Local profiles",
+
+  "profiles.connected.seeStats": "View statistics",
+
+  // Profile status
+  "profiles.status.online": "Online",
+  "profiles.status.away": "Away",
+  "profiles.status.offline": "Offline",
+
+  // Connected profile — buttons
+  "profiles.connected.btn.avatar": "Create / Update avatar",
+  "profiles.connected.btn.avatar.tooltip": "Open the avatar creator",
+  "profiles.connected.btn.away.tooltip": "Toggle status",
+  "profiles.connected.btn.online": "ONLINE",
+  "profiles.connected.btn.away": "AWAY",
+  "profiles.connected.btn.quit": "QUIT",
+  "profiles.connected.btn.quit.tooltip": "Quit session",
+  "profiles.connected.btn.edit": "EDIT PROFILE",
+  "profiles.connected.edit.avatarPlaceholder": "Click",
+
+  // Connection / creation block
+  "profiles.auth.select.none": "No profile saved",
+  "profiles.auth.select.btnConnect": "Sign in",
+  "profiles.auth.create.placeholder": "Profile name",
+  "profiles.auth.create.btn": "Add",
+
+  // Friends
+  "profiles.friends.none": "No friends yet",
+
+  // Local profiles — add panel
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Profile name",
+  "profiles.locals.add.btnAdd": "Add",
+  "profiles.locals.add.btnCancel": "Cancel",
+
+  // Local profiles — edit
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "View statistics",
+
+  // Local profiles — buttons
+  "profiles.locals.btn.avatarCreator": "Create avatar",
+  "profiles.locals.btn.avatarCreator.tooltip": "Open the avatar creator",
+  "profiles.locals.btn.save": "Save",
+  "profiles.locals.btn.cancel": "Cancel",
+  "profiles.locals.btn.edit": "Edit",
+  "profiles.locals.btn.delete": "Delete",
+
+  // Common actions
+  "common.save": "Save",
+  "common.cancel": "Cancel",
+  "common.edit": "Edit",
+  "common.deleteShort": "Delete",  
 
   // Language names
   "lang.fr": "French",
