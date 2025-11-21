@@ -2,7 +2,7 @@
 // src/pages/Profiles.tsx
 // Espace Profils avec menu interne
 // - Vue MENU : "Créer avatar" / "Mon Profil" / "Amis" / "Profils locaux" / "BOAT"
-// - Vue "Mon Profil" : profil connecté + mini-stats + infos personnelles
+// - Vue "Mon Profil" : profil connecté + mini-stats + infos personnelles + Amis
 // - Vue "Profils locaux" : formulaire + liste des profils locaux
 // - Thème via ThemeContext + textes via LangContext
 // ============================================
@@ -48,6 +48,24 @@ function useBasicStats(playerId: string | undefined | null) {
   };
 }
 
+/* ----------------- Types Friends ----------------- */
+
+type FriendLike = {
+  id: string;
+  name?: string;
+  avatarDataUrl?: string;
+  status?: "online" | "away" | "offline" | string;
+  stats?: {
+    avg3?: number;
+    bestVisit?: number;
+    bestCheckout?: number;
+    winRate?: number;
+    wins?: number;
+    games?: number;
+    legs?: number;
+  };
+};
+
 /* ================================
    Page — Profils (router interne)
 ================================ */
@@ -57,12 +75,14 @@ export default function Profiles({
   setProfiles,
   autoCreate = false,
   go,
+  params,
 }: {
   store: Store;
   update: (mut: (s: Store) => Store) => void;
   setProfiles: (fn: (p: Profile[]) => Profile[]) => void;
   autoCreate?: boolean;
   go?: (tab: any, params?: any) => void;
+  params?: any;
 }) {
   const {
     profiles = [],
@@ -70,10 +90,15 @@ export default function Profiles({
     selfStatus = "online",
   } = store;
 
+  // amis online (on passe par any pour ne pas casser le type Store)
+  const friends: FriendLike[] = (store as any).friends ?? [];
+
   const { theme } = useTheme();
   const { t } = useLang();
 
-  const [view, setView] = React.useState<View>("menu");
+  const [view, setView] = React.useState<View>(
+    params?.view === "me" ? "me" : "menu"
+  );
 
   const [statsMap, setStatsMap] = React.useState<
     Record<string, BasicProfileStats | undefined>
@@ -104,14 +129,29 @@ export default function Profiles({
     });
   }
 
-  async function addProfile(name: string, file?: File | null) {
+  async function addProfile(
+    name: string,
+    file?: File | null,
+    privateInfo?: Partial<PrivateInfo>
+  ) {
     if (!name.trim()) return;
     const url = file ? await read(file) : undefined;
-    const p: Profile = {
+
+    const base: any = {
       id: crypto.randomUUID(),
       name: name.trim(),
       avatarDataUrl: url,
     };
+
+    if (privateInfo && Object.keys(privateInfo).length > 0) {
+      base.privateInfo = {
+        ...(base.privateInfo || {}),
+        ...privateInfo,
+      };
+    }
+
+    const p: Profile = base;
+
     setProfiles((arr) => [...arr, p]);
     update((s) => ({ ...s, activeProfileId: s.activeProfileId ?? p.id }));
   }
@@ -171,7 +211,7 @@ export default function Profiles({
     go?.("avatar");
   }, [go]);
 
-  // Patch infos privées du profil actif
+  // Patch infos privées du profil actif (stockées dans profile.privateInfo)
   function patchActivePrivateInfo(patch: Record<string, any>) {
     if (!active) return;
     const id = active.id;
@@ -233,17 +273,13 @@ export default function Profiles({
               }}
             >
               ←{" "}
-              {t(
-                "profiles.menu.back",
-                "Retour au menu Profils"
-              )}
+              {t("profiles.menu.back", "Retour au menu Profils")}
             </button>
 
             {view === "me" && (
               <>
-                <Card
-                  title={t("profiles.connected.title", "Profil connecté")}
-                >
+                {/* Card profil actif : SANS titre "Profil connecté" */}
+                <Card>
                   {active ? (
                     <ActiveProfileBlock
                       selfStatus={selfStatus as any}
@@ -285,6 +321,16 @@ export default function Profiles({
                     active={active}
                     onPatch={patchActivePrivateInfo}
                   />
+                </Card>
+
+                {/* Bloc AMIS sous le profil */}
+                <Card
+                  title={t("profiles.section.friends", "Amis ({count})").replace(
+                    "{count}",
+                    String((store as any).friends?.length ?? 0)
+                  )}
+                >
+                  <FriendsMergedBlock friends={friends} />
                 </Card>
               </>
             )}
@@ -513,7 +559,7 @@ function Card({
   title,
   children,
 }: {
-  title: string;
+  title?: string;
   children: React.ReactNode;
 }) {
   const { theme } = useTheme();
@@ -529,17 +575,19 @@ function Card({
         boxShadow: "0 18px 36px rgba(0,0,0,.35)",
       }}
     >
-      <div className="row-between" style={{ marginBottom: 10 }}>
-        <h2
-          style={{
-            fontSize: 16,
-            fontWeight: 800,
-            color: theme.primary,
-          }}
-        >
-          {title}
-        </h2>
-      </div>
+      {title && (
+        <div className="row-between" style={{ marginBottom: 10 }}>
+          <h2
+            style={{
+              fontSize: 16,
+              fontWeight: 800,
+              color: theme.primary,
+            }}
+          >
+            {title}
+          </h2>
+        </div>
+      )}
       {children}
     </section>
   );
@@ -706,34 +754,27 @@ function ActiveProfileBlock({
             flexWrap: "wrap",
           }}
         >
-          <EditInline
-            initialName={active?.name || ""}
-            onSave={onEdit}
-            compact
-          />
+          <EditInline initialName={active?.name || ""} onSave={onEdit} compact />
 
           <button
             className="btn sm"
             onClick={onToggleAway}
             title={t(
-              "profiles.connected.btn.away.tooltip",
-              "Basculer le statut en absent / en ligne"
+              "profiles.btn.toggleStatus.tooltip",
+              "Basculer le statut"
             )}
           >
             {selfStatus === "away"
-              ? t("profiles.connected.btn.online", "EN LIGNE")
-              : t("profiles.connected.btn.away", "ABSENT")}
+              ? t("profiles.btn.status.backOnline", "EN LIGNE")
+              : t("profiles.btn.status.away", "ABSENT")}
           </button>
 
           <button
             className="btn danger sm"
             onClick={onQuit}
-            title={t(
-              "profiles.connected.btn.quit.tooltip",
-              "Quitter la session"
-            )}
+            title={t("profiles.btn.quit.tooltip", "Quitter la session")}
           >
-            {t("profiles.connected.btn.quit", "QUITTER")}
+            {t("profiles.btn.quit", "QUITTER")}
           </button>
         </div>
       </div>
@@ -752,6 +793,7 @@ type PrivateInfo = {
   city?: string;
   email?: string;
   phone?: string;
+  password?: string;
 };
 
 function PrivateInfoBlock({
@@ -776,6 +818,7 @@ function PrivateInfoBlock({
       city: pi.city || "",
       email: pi.email || "",
       phone: pi.phone || "",
+      password: pi.password || "",
     };
   }, [active]);
 
@@ -785,10 +828,7 @@ function PrivateInfoBlock({
     setFields(initial);
   }, [initial]);
 
-  function handleChange<K extends keyof PrivateInfo>(
-    key: K,
-    value: string
-  ) {
+  function handleChange<K extends keyof PrivateInfo>(key: K, value: string) {
     setFields((f) => ({ ...f, [key]: value }));
   }
 
@@ -877,6 +917,23 @@ function PrivateInfoBlock({
           onBlur={() => handleBlur("phone")}
           type="tel"
         />
+        <PrivateField
+          label={t("profiles.private.password", "Mot de passe")}
+          value={fields.password || ""}
+          onChange={(v) => handleChange("password", v)}
+          onBlur={() => handleBlur("password")}
+          type="password"
+        />
+      </div>
+
+      <div
+        className="subtitle"
+        style={{ fontSize: 11, color: theme.textSoft }}
+      >
+        {t(
+          "profiles.private.passwordHint",
+          "En cas d’oubli, tu pourras redéfinir un mot de passe depuis cette page (stocké uniquement sur cet appareil)."
+        )}
       </div>
     </div>
   );
@@ -918,7 +975,176 @@ function PrivateField({
   );
 }
 
-/* ------ Bloc connexion + création (pas changé) ------ */
+/* ------ Bloc AMIS FUSIONNÉ ------ */
+
+function FriendsMergedBlock({ friends }: { friends: FriendLike[] }) {
+  const { theme } = useTheme();
+  const { t } = useLang();
+
+  const [open, setOpen] = React.useState(true);
+
+  const order: Record<string, number> = { online: 0, away: 1, offline: 2 };
+  const merged = [...friends].sort((a, b) => {
+    const sa = order[(a.status as string) ?? "offline"] ?? 2;
+    const sb = order[(b.status as string) ?? "offline"] ?? 2;
+    if (sa !== sb) return sa - sb;
+    return (a.name || "").localeCompare(b.name || "");
+  });
+
+  return (
+    <div>
+      <button
+        className="row-between"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        style={{
+          width: "100%",
+          background: "transparent",
+          color: theme.text,
+          border: 0,
+          padding: "4px 0",
+          cursor: "pointer",
+          fontWeight: 700,
+          fontSize: 14,
+        }}
+      >
+        <span>
+          {t("profiles.friends.header", "Amis ({count})").replace(
+            "{count}",
+            String(merged.length)
+          )}
+        </span>
+        <span
+          className="subtitle"
+          aria-hidden
+          style={{
+            display: "inline-block",
+            transform: `rotate(${open ? 0 : -90}deg)`,
+            transition: "transform .15s ease",
+          }}
+        >
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <div className="list" style={{ marginTop: 6 }}>
+          {merged.length === 0 ? (
+            <div className="subtitle">
+              {t("profiles.friends.empty", "Aucun ami pour l’instant")}
+            </div>
+          ) : (
+            merged.map((f) => {
+              const AVA = 44;
+              const MEDALLION = AVA;
+              const STAR = 8;
+
+              const stats: any = f.stats || {};
+              const avg = Number(stats.avg3 ?? 0);
+              const best = Number(stats.bestVisit ?? 0);
+              const winRate = (() => {
+                if (Number.isFinite(stats.winRate)) return Math.round(stats.winRate);
+                const wins = Number(stats.wins ?? 0);
+                const games = Number(stats.games ?? 0);
+                if (games > 0) return Math.round((wins / games) * 100);
+                return 0;
+              })();
+
+              return (
+                <div
+                  className="item"
+                  key={f.id}
+                  style={{
+                    background: theme.bg,
+                    alignItems: "center",
+                    gap: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div className="row" style={{ gap: 10, minWidth: 0, flex: 1 }}>
+                    <div
+                      style={{
+                        position: "relative",
+                        width: AVA,
+                        height: AVA,
+                        flex: "0 0 auto",
+                      }}
+                    >
+                      {/* anneau externe */}
+                      <div
+                        aria-hidden
+                        style={{
+                          position: "absolute",
+                          left: -(STAR / 2),
+                          top: -(STAR / 2),
+                          width: MEDALLION + STAR,
+                          height: MEDALLION + STAR,
+                          pointerEvents: "none",
+                        }}
+                      >
+                        <ProfileStarRing
+                          anchorSize={MEDALLION}
+                          gapPx={2}
+                          starSize={STAR}
+                          stepDeg={10}
+                          avg3d={avg}
+                        />
+                      </div>
+
+                      <ProfileAvatar
+                        size={AVA}
+                        dataUrl={f.avatarDataUrl}
+                        label={f.name?.[0]?.toUpperCase() || "?"}
+                        showStars={false}
+                      />
+                    </div>
+
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          whiteSpace: "nowrap",
+                          textAlign: "left",
+                        }}
+                      >
+                        {f.name || "—"}
+                      </div>
+                      <div
+                        className="subtitle"
+                        style={{ fontSize: 11, whiteSpace: "nowrap" }}
+                      >
+                        {t(
+                          "profiles.friends.stats",
+                          "Moy/3 : {avg} · Best : {best} · Win : {win}%"
+                        )
+                          .replace("{avg}", (Math.round(avg * 10) / 10).toFixed(1))
+                          .replace("{best}", String(best))
+                          .replace("{win}", String(winRate))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <span
+                    className="subtitle"
+                    style={{ whiteSpace: "nowrap", fontSize: 11 }}
+                  >
+                    {f.status === "online"
+                      ? t("status.online", "En ligne")
+                      : f.status === "away"
+                      ? t("status.away", "Absent")
+                      : t("status.offline", "Hors ligne")}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------ Bloc connexion + création de compte (email + mot de passe) ------ */
 
 function UnifiedAuthBlock({
   profiles,
@@ -926,20 +1152,36 @@ function UnifiedAuthBlock({
   onCreate,
   autoFocusCreate = false,
 }: {
-  profiles: { id: string; name: string }[];
+  profiles: Profile[];
   onConnect: (id: string) => void;
-  onCreate: (name: string, file?: File | null) => void;
+  onCreate: (
+    name: string,
+    file?: File | null,
+    privateInfo?: Partial<PrivateInfo>
+  ) => void;
   autoFocusCreate?: boolean;
 }) {
-  const [chosen, setChosen] = React.useState<string>(profiles[0]?.id ?? "");
-  const [name, setName] = React.useState("");
-  const [file, setFile] = React.useState<File | null>(null);
-  const [preview, setPreview] = React.useState<string | null>(null);
-  const createRef = React.useRef<HTMLInputElement>(null);
-
   const { t } = useLang();
   const { theme } = useTheme();
   const primary = theme.primary;
+
+  // Connexion
+  const [loginEmail, setLoginEmail] = React.useState("");
+  const [loginPassword, setLoginPassword] = React.useState("");
+  const [loginError, setLoginError] = React.useState<string | null>(null);
+
+  // Création
+  const [name, setName] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [password2, setPassword2] = React.useState("");
+  const [firstName, setFirstName] = React.useState("");
+  const [lastName, setLastName] = React.useState("");
+  const [birthDate, setBirthDate] = React.useState("");
+  const [file, setFile] = React.useState<File | null>(null);
+  const [preview, setPreview] = React.useState<string | null>(null);
+
+  const createRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (autoFocusCreate) createRef.current?.focus();
@@ -955,118 +1197,342 @@ function UnifiedAuthBlock({
     r.readAsDataURL(file);
   }, [file]);
 
+  function submitLogin() {
+    const emailNorm = loginEmail.trim().toLowerCase();
+    const pass = loginPassword;
+
+    if (!emailNorm || !pass) {
+      setLoginError(
+        t(
+          "profiles.auth.login.missing",
+          "Merci de renseigner l’email et le mot de passe."
+        )
+      );
+      return;
+    }
+
+    const match = profiles.find((p) => {
+      const pi = ((p as any).privateInfo || {}) as PrivateInfo;
+      const pe = (pi.email || "").trim().toLowerCase();
+      const pw = pi.password || "";
+      return pe === emailNorm && pw === pass;
+    });
+
+    if (!match) {
+      setLoginError(
+        t(
+          "profiles.auth.login.error",
+          "Email ou mot de passe incorrect."
+        )
+      );
+      return;
+    }
+
+    setLoginError(null);
+    onConnect(match.id);
+  }
+
   function submitCreate() {
-    if (!name.trim()) return;
-    onCreate(name.trim(), file);
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedPass = password;
+    const trimmedPass2 = password2;
+
+    if (!trimmedName || !trimmedEmail || !trimmedPass) {
+      alert(
+        t(
+          "profiles.auth.create.missing",
+          "Merci de renseigner au minimum le nom du profil, l’email et le mot de passe."
+        )
+      );
+      return;
+    }
+
+    if (trimmedPass !== trimmedPass2) {
+      alert(
+        t(
+          "profiles.auth.create.passwordMismatch",
+          "Les mots de passe ne correspondent pas."
+        )
+      );
+      return;
+    }
+
+    const already = profiles.find((p) => {
+      const pi = ((p as any).privateInfo || {}) as PrivateInfo;
+      const pe = (pi.email || "").trim().toLowerCase();
+      return pe === trimmedEmail;
+    });
+
+    if (already) {
+      alert(
+        t(
+          "profiles.auth.create.emailExists",
+          "Un compte existe déjà avec cet email."
+        )
+      );
+      return;
+    }
+
+    const privateInfo: Partial<PrivateInfo> = {
+      email: trimmedEmail,
+      password: trimmedPass,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      birthDate: birthDate || "",
+    };
+
+    onCreate(trimmedName, file, privateInfo);
+
     setName("");
+    setEmail("");
+    setPassword("");
+    setPassword2("");
+    setFirstName("");
+    setLastName("");
+    setBirthDate("");
     setFile(null);
     setPreview(null);
   }
 
   return (
-    <div style={{ display: "grid", gap: 10 }}>
-      {/* Connexion existante */}
-      <div className="row" style={{ gap: 8 }}>
-        <select
-          className="input"
-          value={chosen}
-          onChange={(e) => setChosen(e.target.value)}
-          style={{ flex: 1 }}
-        >
-          {profiles.length === 0 && (
-            <option value="">
-              {t(
-                "profiles.auth.select.none",
-                "Aucun profil enregistré"
-              )}
-            </option>
-          )}
-          {profiles.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <button
-          className="btn primary sm"
-          onClick={() => chosen && onConnect(chosen)}
+    <div style={{ display: "grid", gap: 14 }}>
+      {/* Connexion */}
+      <div
+        style={{
+          padding: 12,
+          borderRadius: 14,
+          border: `1px solid ${theme.borderSoft}`,
+          background: theme.card,
+        }}
+      >
+        <div
           style={{
-            background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
-            color: "#000",
-            fontWeight: 700,
+            fontWeight: 800,
+            fontSize: 14,
+            marginBottom: 6,
+            color: primary,
           }}
         >
-          {t("profiles.auth.select.btnConnect", "Connexion")}
-        </button>
+          {t("profiles.auth.login.title", "Se connecter")}
+        </div>
+        <div
+          className="subtitle"
+          style={{ fontSize: 12, color: theme.textSoft, marginBottom: 8 }}
+        >
+          {t(
+            "profiles.auth.login.subtitle",
+            "Entre l’email et le mot de passe de ton compte existant."
+          )}
+        </div>
+
+        <div style={{ display: "grid", gap: 8 }}>
+          <input
+            className="input"
+            type="email"
+            placeholder={t(
+              "profiles.private.email",
+              "Adresse mail"
+            )}
+            value={loginEmail}
+            onChange={(e) => setLoginEmail(e.target.value)}
+          />
+          <input
+            className="input"
+            type="password"
+            placeholder={t(
+              "profiles.private.password",
+              "Mot de passe"
+            )}
+            value={loginPassword}
+            onChange={(e) => setLoginPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submitLogin()}
+          />
+          {loginError && (
+            <div
+              className="subtitle"
+              style={{ color: "#ff6666", fontSize: 11 }}
+            >
+              {loginError}
+            </div>
+          )}
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button
+              className="btn primary sm"
+              onClick={submitLogin}
+              style={{
+                background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
+                color: "#000",
+                fontWeight: 700,
+              }}
+            >
+              {t("profiles.auth.login.btn", "Connexion")}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Création */}
       <div
-        className="row"
-        style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}
+        style={{
+          padding: 12,
+          borderRadius: 14,
+          border: `1px solid ${theme.borderSoft}`,
+          background: theme.card,
+        }}
       >
-        <label
-          title={t("profiles.locals.add.avatar", "Avatar")}
+        <div
           style={{
-            width: 44,
-            height: 44,
-            borderRadius: "50%",
-            overflow: "hidden",
-            border: `1px solid ${theme.borderSoft}`,
-            display: "grid",
-            placeItems: "center",
-            background: theme.card,
-            cursor: "pointer",
-            flex: "0 0 auto",
+            fontWeight: 800,
+            fontSize: 14,
+            marginBottom: 6,
+            color: primary,
           }}
         >
-          <input
-            type="file"
-            accept="image/*"
-            style={{ display: "none" }}
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-          {preview ? (
-            <img
-              src={preview}
-              alt=""
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-              }}
+          {t("profiles.auth.create.title", "Créer un compte")}
+        </div>
+        <div
+          className="subtitle"
+          style={{ fontSize: 12, color: theme.textSoft, marginBottom: 8 }}
+        >
+          {t(
+            "profiles.auth.create.subtitle",
+            "Un compte est lié à un profil local et à toutes ses statistiques."
+          )}
+        </div>
+
+        <div
+          className="row"
+          style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}
+        >
+          <label
+            title={t("profiles.locals.add.avatar", "Avatar")}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              overflow: "hidden",
+              border: `1px solid ${theme.borderSoft}`,
+              display: "grid",
+              placeItems: "center",
+              background: theme.card,
+              cursor: "pointer",
+              flex: "0 0 auto",
+            }}
+          >
+            <input
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
-          ) : (
-            <span className="subtitle" style={{ fontSize: 11 }}>
-              {t("profiles.locals.add.avatar", "Avatar")}
-            </span>
-          )}
-        </label>
+            {preview ? (
+              <img
+                src={preview}
+                alt=""
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                }}
+              />
+            ) : (
+              <span className="subtitle" style={{ fontSize: 11 }}>
+                {t("profiles.locals.add.avatar", "Avatar")}
+              </span>
+            )}
+          </label>
 
-        <input
-          ref={createRef}
-          className="input"
-          placeholder={t(
-            "profiles.auth.create.placeholder",
-            "Nom du profil"
-          )}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submitCreate()}
-          style={{ flex: 1, minWidth: 160 }}
-        />
+          <input
+            ref={createRef}
+            className="input"
+            placeholder={t(
+              "profiles.auth.create.placeholderName",
+              "Nom du profil (pseudo affiché)"
+            )}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            style={{ flex: 1, minWidth: 140 }}
+          />
+        </div>
 
-        <button
-          className="btn primary sm"
-          onClick={submitCreate}
-          style={{
-            background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
-            color: "#000",
-            fontWeight: 700,
-          }}
-        >
-          {t("profiles.auth.create.btn", "Ajouter")}
-        </button>
+        <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+          <input
+            className="input"
+            type="email"
+            placeholder={t(
+              "profiles.private.email",
+              "Adresse mail"
+            )}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <div className="row" style={{ gap: 8 }}>
+            <input
+              className="input"
+              type="password"
+              placeholder={t(
+                "profiles.private.password",
+                "Mot de passe"
+              )}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <input
+              className="input"
+              type="password"
+              placeholder={t(
+                "profiles.auth.create.passwordConfirm",
+                "Confirmer"
+              )}
+              value={password2}
+              onChange={(e) => setPassword2(e.target.value)}
+            />
+          </div>
+
+          <div className="row" style={{ gap: 8 }}>
+            <input
+              className="input"
+              placeholder={t(
+                "profiles.private.firstName",
+                "Prénom"
+              )}
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+            />
+            <input
+              className="input"
+              placeholder={t("profiles.private.lastName", "Nom")}
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+            />
+          </div>
+
+          <input
+            className="input"
+            type="date"
+            placeholder={t(
+              "profiles.private.birthDate",
+              "Date de naissance"
+            )}
+            value={birthDate}
+            onChange={(e) => setBirthDate(e.target.value)}
+          />
+
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button
+              className="btn primary sm"
+              onClick={submitCreate}
+              style={{
+                background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
+                color: "#000",
+                fontWeight: 700,
+              }}
+            >
+              {t("profiles.auth.create.btn", "Créer le compte")}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1077,7 +1543,7 @@ function UnifiedAuthBlock({
 function AddLocalProfile({
   onCreate,
 }: {
-  onCreate: (name: string, file?: File | null) => void;
+  onCreate: (name: string, file?: File | null, privateInfo?: Partial<PrivateInfo>) => void;
 }) {
   const [name, setName] = React.useState("");
   const [file, setFile] = React.useState<File | null>(null);
@@ -1391,10 +1857,7 @@ function LocalProfiles({
                   fontWeight: 800,
                 }}
               >
-                {t(
-                  "profiles.locals.btn.avatarCreator",
-                  "Créer avatar"
-                )}
+                {t("profiles.locals.btn.avatarCreator", "Créer avatar")}
               </button>
 
               {isEdit ? (
@@ -1403,19 +1866,13 @@ function LocalProfiles({
                     className="btn ok sm"
                     onClick={() => saveEdit(p.id)}
                   >
-                    {t(
-                      "profiles.locals.btn.save",
-                      "Enregistrer"
-                    )}
+                    {t("profiles.locals.btn.save", "Enregistrer")}
                   </button>
                   <button
                     className="btn sm"
                     onClick={() => setEditing(null)}
                   >
-                    {t(
-                      "profiles.locals.btn.cancel",
-                      "Annuler"
-                    )}
+                    {t("profiles.locals.btn.cancel", "Annuler")}
                   </button>
                 </>
               ) : (
@@ -1430,10 +1887,7 @@ function LocalProfiles({
                     className="btn danger sm"
                     onClick={() => onDelete(p.id)}
                   >
-                    {t(
-                      "profiles.locals.btn.delete",
-                      "Suppr."
-                    )}
+                    {t("profiles.locals.btn.delete", "Suppr.")}
                   </button>
                 </>
               )}
@@ -1461,9 +1915,7 @@ function EditInline({
   const [edit, setEdit] = React.useState(false);
   const [name, setName] = React.useState(initialName);
   const [file, setFile] = React.useState<File | null>(null);
-  const [avatarUrl, setAvatarUrl] = React.useState<string | null>(
-    null
-  );
+  const [avatarUrl, setAvatarUrl] = React.useState<string | null>(null);
 
   const { t } = useLang();
   const { theme } = useTheme();
@@ -1472,8 +1924,7 @@ function EditInline({
   React.useEffect(() => {
     if (file) {
       const reader = new FileReader();
-      reader.onload = () =>
-        setAvatarUrl(String(reader.result));
+      reader.onload = () => setAvatarUrl(String(reader.result));
       reader.readAsDataURL(file);
     } else {
       setAvatarUrl(null);
@@ -1485,15 +1936,9 @@ function EditInline({
       <button
         className="btn sm"
         onClick={() => setEdit(true)}
-        title={t(
-          "profiles.connected.btn.edit",
-          "MODIFIER LE PROFIL"
-        )}
+        title={t("profiles.btn.edit.tooltip", "Éditer le profil")}
       >
-        {t(
-          "profiles.connected.btn.edit",
-          "MODIFIER LE PROFIL"
-        )}
+        {t("profiles.connected.btn.edit", "MODIFIER")}
       </button>
     );
   }
@@ -1540,10 +1985,7 @@ function EditInline({
           />
         ) : (
           <span style={{ color: "#999", fontSize: 12 }}>
-            {t(
-              "profiles.connected.edit.avatarPlaceholder",
-              "Cliquer"
-            )}
+            {t("profiles.edit.click", "Cliquer")}
           </span>
         )}
       </label>
@@ -1564,7 +2006,7 @@ function EditInline({
           setAvatarUrl(null);
         }}
       >
-        {t("profiles.locals.btn.save", "Enregistrer")}
+        {t("common.save", "Enregistrer")}
       </button>
       <button
         className="btn sm"
@@ -1574,14 +2016,11 @@ function EditInline({
           setAvatarUrl(null);
         }}
       >
-        {t("profiles.locals.btn.cancel", "Annuler")}
+        {t("common.cancel", "Annuler")}
       </button>
       {onDisconnect && (
-        <button
-          className="btn danger sm"
-          onClick={onDisconnect}
-        >
-          {t("profiles.connected.btn.quit", "QUITTER")}
+        <button className="btn danger sm" onClick={onDisconnect}>
+          {t("profiles.btn.quit", "QUITTER")}
         </button>
       )}
     </div>
@@ -1766,9 +2205,7 @@ function read(f: File) {
 async function warmProfileStats(
   id: string,
   setStatsMap: React.Dispatch<
-    React.SetStateAction<
-      Record<string, BasicProfileStats | undefined>
-    >
+    React.SetStateAction<Record<string, BasicProfileStats | undefined>>
   >
 ) {
   if (!id) return;

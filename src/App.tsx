@@ -2,6 +2,7 @@
 // src/App.tsx — Navigation + wiring propre (v5 sécurisé)
 // Fix: "Lancer partie" n'affiche plus la dernière reprise
 // + Intégration pages Training (menu / play / stats)
+// + X01Play V2 en parallèle du X01 actuel
 // ============================================
 import React from "react";
 import BottomNav from "./components/BottomNav";
@@ -30,6 +31,7 @@ import FriendsPage from "./pages/FriendsPage";
 import Settings from "./pages/Settings";
 import X01Setup from "./pages/X01Setup";
 import X01Play from "./pages/X01Play";
+import X01PlayV2 from "./pages/X01PlayV2"; // 👈 V2
 import CricketPlay from "./pages/CricketPlay";
 import KillerPlay from "./pages/KillerPlay";
 import ShanghaiPlay from "./pages/ShanghaiPlay";
@@ -88,6 +90,7 @@ type Tab =
   | "settings"
   | "x01setup"
   | "x01"
+  | "x01_play_v2" // 👈 NOUVEL ONGLET V2
   | "x01_end"
   | "cricket"
   | "killer"
@@ -435,7 +438,14 @@ function App() {
       }
 
       case "profiles": {
-        page = <Profiles store={store} update={update} setProfiles={setProfiles} />;
+        page = (
+          <Profiles
+            store={store}
+            update={update}
+            setProfiles={setProfiles}
+            go={go} // ✅ navigation injectée ici
+          />
+        );
         break;
       }
 
@@ -598,6 +608,43 @@ function App() {
         break;
       }
 
+      // ---------- X01 V2 (parallèle, même config, même navigation) ----------
+      case "x01_play_v2": {
+        const isResume = !!routeParams?.resumeId;
+
+        // 👇 première fois / pas de config : on envoie direct vers l'écran de setup
+        if (!x01Config && !isResume) {
+          go("x01setup");
+          page = null;
+          break;
+        }
+
+        const rawStart = x01Config?.start ?? store.settings.defaultX01;
+        const startClamped: 301 | 501 | 701 | 901 =
+          rawStart >= 901 ? 901 : (rawStart as 301 | 501 | 701 | 901);
+        const outMode = (x01Config?.doubleOut ?? store.settings.doubleOut) ? "double" : "simple";
+
+        const key = isResume
+          ? `v2-resume-${routeParams.resumeId}`
+          : `v2-fresh-${routeParams?.fresh ?? (x01Config?.playerIds || []).join("-")}`;
+
+        page = (
+          <X01PlayV2
+            key={key}
+            profiles={store.profiles ?? []}
+            playerIds={x01Config?.playerIds ?? []}
+            start={startClamped}
+            outMode={outMode}
+            inMode="simple"
+            // reprise éventuelle
+            params={isResume ? ({ resumeId: routeParams.resumeId } as any) : (undefined as any)}
+            onFinish={(m) => pushHistory(m)}
+            onExit={() => go("x01setup")}
+          />
+        );
+        break;
+      }
+
       case "x01_end": {
         page = <X01End go={go} params={routeParams} />;
         break;
@@ -651,12 +698,43 @@ function App() {
 
       // ✅ Nouvelle page : Créateur d'avatar
       case "avatar": {
+        // Profil actif (si aucun, on laisse la page mais le bouton Save ne fera rien)
+        const activeProfile =
+          (store.profiles || []).find((p) => p.id === store.activeProfileId) || null;
+
+        function handleSaveAvatar({
+          pngDataUrl,
+          name,
+        }: {
+          pngDataUrl: string;
+          name: string;
+        }) {
+          if (!activeProfile) {
+            console.warn("[AvatarCreator] Aucun profil actif");
+            return;
+          }
+
+          // Mise à jour du profil actif (nom + avatarDataUrl)
+          setProfiles((list) =>
+            list.map((p) =>
+              p.id === activeProfile.id ? { ...p, name, avatarDataUrl: pngDataUrl } : p
+            )
+          );
+
+          // Retour automatique vers Profils
+          go("profiles");
+        }
+
         page = (
           <div style={{ padding: 16 }}>
             <button onClick={() => go("profiles")} style={{ marginBottom: 12 }}>
               ← Retour
             </button>
-            <AvatarCreator size={512} overlaySrc="/assets/medallion.svg" />
+            <AvatarCreator
+              size={512}
+              defaultName={activeProfile?.name || ""}
+              onSave={handleSaveAvatar}
+            />
           </div>
         );
         break;

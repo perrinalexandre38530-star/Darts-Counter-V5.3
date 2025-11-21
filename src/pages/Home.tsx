@@ -5,6 +5,11 @@
 // - Lecture instantanée des stats via statsLiteIDB
 // - Thème piloté par ThemeContext
 // - Textes pilotés par LangContext (t())
+// - Si aucun compte actif :
+//   * bouton "SE CONNECTER" ouvre un modal flottant
+//   * accès aux cartes Jeux/Online/Stats BLOQUÉ
+//   * ouverture auto du modal au premier lancement
+// - Médaillon : petit drapeau du pays (si renseigné)
 // ============================================
 
 import React from "react";
@@ -36,13 +41,13 @@ type Tab =
 
 export default function Home({
   store,
-  update, // gardé pour compat avec App, même si pas utilisé ici
+  update, // gardé pour compat avec App
   go,
   showConnect = true,
   onConnect,
 }: {
   store: Store;
-  update?: (fn: any) => void;
+  update?: (fn: (s: Store) => Store) => void;
   go: (tab: Tab, params?: any) => void;
   showConnect?: boolean;
   onConnect?: () => void;
@@ -65,6 +70,22 @@ export default function Home({
 
   const { theme } = useTheme();
   const { t } = useLang();
+
+  // Y a-t-il au moins un compte créé (email) ?
+  const hasAccount = profiles.some(
+    (p) => !!((p as any).privateInfo?.email && (p as any).privateInfo?.password)
+  );
+  const isLocked = !active; // tant qu’il n’y a pas de profil connecté, on verrouille
+
+  // Modal d’auth
+  const [showAuthModal, setShowAuthModal] = React.useState(false);
+
+  // Au premier lancement / si aucun compte & aucun actif -> on ouvre direct le modal
+  React.useEffect(() => {
+    if (!active && !hasAccount) {
+      setShowAuthModal(true);
+    }
+  }, [active, hasAccount]);
 
   return (
     <div
@@ -183,7 +204,7 @@ export default function Home({
               color: "#000",
               fontWeight: 700,
             }}
-            onClick={onConnect ?? (() => go("profiles"))}
+            onClick={() => setShowAuthModal(true)}
           >
             {t("home.connect", "SE CONNECTER")}
           </button>
@@ -217,38 +238,76 @@ export default function Home({
           )}
           icon={<Icon name="profiles" size={24} />}
           onClick={() => go("profiles")}
+          locked={false} // toujours accessible
         />
         <HomeCard
           title={t("home.card.local.title", "JEU LOCAL")}
-          subtitle={t(
-            "home.card.local.subtitle",
-            "Accède à tous les modes de jeu"
-          )}
+          subtitle={
+            isLocked
+              ? t(
+                  "home.card.local.locked",
+                  "Connecte-toi pour accéder aux modes de jeu."
+                )
+              : t(
+                  "home.card.local.subtitle",
+                  "Accède à tous les modes de jeu"
+                )
+          }
           icon={<Icon name="target" size={24} />}
-          onClick={() => go("games")}
+          onClick={() => !isLocked && go("games")}
+          locked={isLocked}
         />
         <HomeCard
           title={t("home.card.online.title", "JEU ONLINE")}
-          subtitle={t(
-            "home.card.online.subtitle",
-            "Parties à distance (mode à venir)"
-          )}
+          subtitle={
+            isLocked
+              ? t(
+                  "home.card.online.locked",
+                  "Connecte-toi pour jouer en ligne."
+                )
+              : t(
+                  "home.card.online.subtitle",
+                  "Parties à distance (mode à venir)"
+                )
+          }
           icon={<Icon name="online" size={24} />}
-          onClick={() => go("friends")}
+          onClick={() => !isLocked && go("friends")}
+          locked={isLocked}
         />
         <HomeCard
           title={t("home.card.stats.title", "STATS")}
-          subtitle={t(
-            "home.card.stats.subtitle",
-            "Statistiques et historiques"
-          )}
+          subtitle={
+            isLocked
+              ? t(
+                  "home.card.stats.locked",
+                  "Connecte-toi pour voir tes statistiques."
+                )
+              : t(
+                  "home.card.stats.subtitle",
+                  "Statistiques et historiques"
+                )
+          }
           icon={<Icon name="stats" size={24} />}
-          onClick={() => go("stats")}
+          onClick={() => !isLocked && go("stats")}
+          locked={isLocked}
         />
       </div>
 
       {/* Espace pour la BottomNav */}
       <div style={{ height: "var(--bottomnav-h)" }} />
+
+      {/* ===== MODAL AUTH ===== */}
+      {showAuthModal && (
+        <AuthModal
+          store={store}
+          update={update}
+          onClose={() => setShowAuthModal(false)}
+          onConnected={() => {
+            setShowAuthModal(false);
+            onConnect?.();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -375,6 +434,10 @@ function ActiveProfileCard({
   const PAD = 10;
   const STAR = 14;
 
+  const privateInfo = ((profile as any).privateInfo || {}) as any;
+  const countryRaw = privateInfo.country || "";
+  const countryFlag = getCountryFlag(countryRaw);
+
   return (
     <div
       className="card"
@@ -476,6 +539,36 @@ function ActiveProfileCard({
             }}
           />
         </div>
+
+        {/* Petit drapeau pays CENTRÉ EN BAS */}
+        {countryFlag && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: -15,
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: 23,
+              height: 23,
+              borderRadius: "50%",
+              border: "2px solid #000",
+              overflow: "hidden",
+              boxShadow: `0 0 10px ${theme.primary}66`,
+              background: "#111",
+              display: "grid",
+              placeItems: "center",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 18,
+                lineHeight: 1,
+              }}
+            >
+              {countryFlag}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Nom cliquable */}
@@ -581,15 +674,17 @@ function HomeCard({
   subtitle,
   icon,
   onClick,
-  disabled,
+  locked,
 }: {
   title: string;
   subtitle: string;
   icon: React.ReactNode;
   onClick?: () => void;
-  disabled?: boolean;
+  locked?: boolean;
 }) {
   const { theme } = useTheme();
+
+  const disabled = !!locked;
 
   return (
     <button
@@ -606,7 +701,7 @@ function HomeCard({
         borderRadius: 14,
         border: `1px solid ${theme.borderSoft}`,
         cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.75 : 1,
+        opacity: disabled ? 0.55 : 1,
         textAlign: "center",
         transition: "all .2s ease",
       }}
@@ -711,18 +806,658 @@ function Icon({
   return null;
 }
 
+/* ---------- MODAL AUTH ---------- */
+
+function AuthModal({
+  store,
+  update,
+  onClose,
+  onConnected,
+}: {
+  store: Store;
+  update?: (fn: (s: Store) => Store) => void;
+  onClose: () => void;
+  onConnected?: () => void;
+}) {
+  const { theme } = useTheme();
+  const { t } = useLang();
+
+  // Login existant
+  const [loginEmail, setLoginEmail] = React.useState("");
+  const [loginPassword, setLoginPassword] = React.useState("");
+  const [loginError, setLoginError] = React.useState<string | null>(null);
+
+  // Création de compte
+  const [avatarFile, setAvatarFile] = React.useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = React.useState<string | null>(null);
+  const [profileName, setProfileName] = React.useState("");
+  const [createEmail, setCreateEmail] = React.useState("");
+  const [createPassword, setCreatePassword] = React.useState("");
+  const [createPassword2, setCreatePassword2] = React.useState("");
+  const [firstName, setFirstName] = React.useState("");
+  const [lastName, setLastName] = React.useState("");
+  const [birthDate, setBirthDate] = React.useState("");
+  const [country, setCountry] = React.useState("");
+  const [createError, setCreateError] = React.useState<string | null>(null);
+  const [isBusy, setIsBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview(null);
+      return;
+    }
+    readFileAsDataUrl(avatarFile).then((url) => setAvatarPreview(url));
+  }, [avatarFile]);
+
+  const profiles = store?.profiles ?? [];
+
+  function handleLogin() {
+    setLoginError(null);
+    if (!loginEmail.trim() || !loginPassword.trim()) {
+      setLoginError(
+        t(
+          "auth.error.required",
+          "Merci de renseigner l’email et le mot de passe."
+        )
+      );
+      return;
+    }
+
+    const emailNorm = loginEmail.trim().toLowerCase();
+    const found =
+      profiles.find((p) => {
+        const pi = ((p as any).privateInfo || {}) as any;
+        const pe = (pi.email || "").toLowerCase();
+        return pe === emailNorm;
+      }) || null;
+
+    const passOk =
+      found && ((found as any).privateInfo?.password || "") === loginPassword;
+
+    if (!found || !passOk) {
+      setLoginError(
+        t(
+          "auth.error.invalid",
+          "Email ou mot de passe incorrect."
+        )
+      );
+      return;
+    }
+
+    if (!update) {
+      onConnected?.();
+      onClose();
+      return;
+    }
+
+    update((s) => ({
+      ...s,
+      activeProfileId: found.id,
+    }));
+
+    onConnected?.();
+    onClose();
+  }
+
+  async function handleCreate() {
+    setCreateError(null);
+    if (
+      !profileName.trim() ||
+      !createEmail.trim() ||
+      !createPassword.trim() ||
+      !createPassword2.trim() ||
+      !country.trim()
+    ) {
+      setCreateError(
+        t(
+          "auth.error.requiredAll",
+          "Merci de renseigner tous les champs obligatoires, y compris le pays."
+        )
+      );
+      return;
+    }
+    if (createPassword !== createPassword2) {
+      setCreateError(
+        t(
+          "auth.error.passwordMismatch",
+          "Les mots de passe ne correspondent pas."
+        )
+      );
+      return;
+    }
+
+    const emailNorm = createEmail.trim().toLowerCase();
+    const exists = profiles.some((p) => {
+      const pi = ((p as any).privateInfo || {}) as any;
+      return (pi.email || "").toLowerCase() === emailNorm;
+    });
+    if (exists) {
+      setCreateError(
+        t(
+          "auth.error.emailExists",
+          "Un compte existe déjà avec cet email."
+        )
+      );
+      return;
+    }
+
+    if (!update) {
+      onConnected?.();
+      onClose();
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      let avatarDataUrl: string | undefined;
+      if (avatarFile) {
+        avatarDataUrl = await readFileAsDataUrl(avatarFile);
+      }
+
+      const id = crypto.randomUUID();
+
+      update((s) => {
+        const baseProfiles = s.profiles ?? [];
+        const newProfile: any = {
+          id,
+          name: profileName.trim(),
+          avatarDataUrl,
+          privateInfo: {
+            email: createEmail.trim(),
+            password: createPassword,
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            birthDate: birthDate.trim(),
+            country: country.trim(),
+          },
+        };
+        return {
+          ...s,
+          profiles: [...baseProfiles, newProfile as Profile],
+          activeProfileId: id,
+        };
+      });
+
+      onConnected?.();
+      onClose();
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.70)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        zIndex: 999,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          maxWidth: 480,
+          width: "100%",
+          maxHeight: "90vh",
+          overflowY: "auto",
+          borderRadius: 22,
+          background: theme.bg,
+          border: `1px solid ${theme.borderSoft}`,
+          boxShadow: "0 24px 64px rgba(0,0,0,.80)",
+          padding: 16,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div
+          className="row-between"
+          style={{
+            marginBottom: 8,
+            alignItems: "center",
+          }}
+        >
+          <div
+            style={{
+              fontWeight: 800,
+              fontSize: 16,
+              letterSpacing: 0.8,
+              textTransform: "uppercase",
+              color: theme.primary,
+            }}
+          >
+            {t("auth.title", "Connexion / Compte")}
+          </div>
+          <button
+            className="btn sm"
+            onClick={onClose}
+            style={{ borderRadius: 999 }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Bloc : Se connecter */}
+        <section
+          style={{
+            borderRadius: 18,
+            padding: 14,
+            marginBottom: 14,
+            background: theme.card,
+            border: `1px solid ${theme.borderSoft}`,
+          }}
+        >
+          <h2
+            style={{
+              fontSize: 15,
+              fontWeight: 800,
+              color: theme.primary,
+              marginBottom: 4,
+            }}
+          >
+            {t("auth.login.title", "Se connecter")}
+          </h2>
+          <p
+            className="subtitle"
+            style={{ fontSize: 12, color: theme.textSoft, marginBottom: 10 }}
+          >
+            {t(
+              "auth.login.subtitle",
+              "Entre l’email et le mot de passe de ton compte existant."
+            )}
+          </p>
+
+          <div style={{ display: "grid", gap: 8 }}>
+            <AuthField
+              placeholder={t(
+                "auth.login.email",
+                "Adresse mail"
+              )}
+              value={loginEmail}
+              onChange={setLoginEmail}
+              type="email"
+            />
+            <AuthField
+              placeholder={t(
+                "auth.login.password",
+                "Mot de passe"
+              )}
+              value={loginPassword}
+              onChange={setLoginPassword}
+              type="password"
+            />
+          </div>
+
+          {loginError && (
+            <div
+              className="subtitle"
+              style={{
+                marginTop: 6,
+                fontSize: 11,
+                color: "#ff6b6b",
+              }}
+            >
+              {loginError}
+            </div>
+          )}
+
+          <div style={{ marginTop: 12, textAlign: "right" }}>
+            <button
+              className="btn primary sm"
+              onClick={handleLogin}
+              style={{
+                paddingInline: 18,
+                borderRadius: 14,
+                background: theme.primary,
+                color: "#000",
+                fontWeight: 700,
+              }}
+            >
+              {t("auth.login.submit", "Connexion")}
+            </button>
+          </div>
+        </section>
+
+        {/* Bloc : Créer un compte */}
+        <section
+          style={{
+            borderRadius: 18,
+            padding: 14,
+            background: theme.card,
+            border: `1px solid ${theme.borderSoft}`,
+          }}
+        >
+          <h2
+            style={{
+              fontSize: 15,
+              fontWeight: 800,
+              color: theme.primary,
+              marginBottom: 4,
+            }}
+          >
+            {t("auth.create.title", "Créer un compte")}
+          </h2>
+          <p
+            className="subtitle"
+            style={{ fontSize: 12, color: theme.textSoft, marginBottom: 10 }}
+          >
+            {t(
+              "auth.create.subtitle",
+              "Un compte est lié à un profil local et à toutes ses statistiques."
+            )}
+          </p>
+
+          {/* Ligne avatar + pseudo */}
+          <div
+            className="row"
+            style={{
+              gap: 8,
+              alignItems: "center",
+              marginBottom: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <label
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: "50%",
+                border: `1px solid ${theme.borderSoft}`,
+                display: "grid",
+                placeItems: "center",
+                background: "#080910",
+                cursor: "pointer",
+                flex: "0 0 auto",
+              }}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) =>
+                  setAvatarFile(e.target.files?.[0] ?? null)
+                }
+              />
+              {avatarPreview ? (
+                <img
+                  src={avatarPreview}
+                  alt=""
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    borderRadius: "50%",
+                  }}
+                />
+              ) : (
+                <span
+                  className="subtitle"
+                  style={{ fontSize: 11, color: theme.textSoft }}
+                >
+                  {t("auth.create.avatar", "Avatar")}
+                </span>
+              )}
+            </label>
+
+            <div style={{ flex: 1, minWidth: 160 }}>
+              <AuthField
+                placeholder={t(
+                  "auth.create.profileName",
+                  "Nom du profil (pseudo affiché)"
+                )}
+                value={profileName}
+                onChange={setProfileName}
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr",
+              gap: 8,
+            }}
+          >
+            <AuthField
+              placeholder={t(
+                "auth.create.email",
+                "Adresse mail"
+              )}
+              value={createEmail}
+              onChange={setCreateEmail}
+              type="email"
+            />
+
+            <div
+              className="row"
+              style={{ gap: 8, flexWrap: "wrap" }}
+            >
+              <AuthField
+                placeholder={t(
+                  "auth.create.password",
+                  "Mot de passe"
+                )}
+                value={createPassword}
+                onChange={setCreatePassword}
+                type="password"
+              />
+              <AuthField
+                placeholder={t(
+                  "auth.create.passwordConfirm",
+                  "Confirmer"
+                )}
+                value={createPassword2}
+                onChange={setCreatePassword2}
+                type="password"
+              />
+            </div>
+
+            {/* Pays obligatoire */}
+            <AuthField
+              placeholder={t(
+                "auth.create.country",
+                "Pays (FR, BE, UK, ... ou nom du pays)"
+              )}
+              value={country}
+              onChange={setCountry}
+            />
+
+            <div
+              className="row"
+              style={{ gap: 8, flexWrap: "wrap" }}
+            >
+              <AuthField
+                placeholder={t("auth.create.firstName", "Prénom")}
+                value={firstName}
+                onChange={setFirstName}
+              />
+              <AuthField
+                placeholder={t("auth.create.lastName", "Nom")}
+                value={lastName}
+                onChange={setLastName}
+              />
+            </div>
+
+            <AuthField
+              placeholder={t(
+                "auth.create.birthDate",
+                "Date de naissance"
+              )}
+              value={birthDate}
+              onChange={setBirthDate}
+              type="date"
+            />
+          </div>
+
+          {createError && (
+            <div
+              className="subtitle"
+              style={{
+                marginTop: 6,
+                fontSize: 11,
+                color: "#ff6b6b",
+              }}
+            >
+              {createError}
+            </div>
+          )}
+
+          <div style={{ marginTop: 12, textAlign: "right" }}>
+            <button
+              className="btn primary sm"
+              onClick={handleCreate}
+              disabled={isBusy}
+              style={{
+                paddingInline: 18,
+                borderRadius: 14,
+                background: theme.primary,
+                color: "#000",
+                fontWeight: 700,
+                opacity: isBusy ? 0.7 : 1,
+              }}
+            >
+              {t("auth.create.submit", "Ajouter")}
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function AuthField({
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  type?: string;
+}) {
+  return (
+    <input
+      className="input"
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      style={{
+        fontSize: 13,
+      }}
+    />
+  );
+}
+
 /* ---------- Utils ---------- */
 function isNum(v: any): v is number {
   return typeof v === "number" && !Number.isNaN(v);
 }
+
 function getCssNumber(varName: string, fallback = 0): number {
   try {
     const v = getComputedStyle(
       document.documentElement
-    ).getPropertyValue(varName).trim();
+    )
+      .getPropertyValue(varName)
+      .trim();
     const n = parseFloat(v.replace("px", ""));
     return Number.isFinite(n) ? n : fallback;
   } catch {
     return fallback;
   }
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.readAsDataURL(file);
+  });
+}
+
+/** Conversion "FR" -> 🇫🇷, "France" -> 🇫🇷, etc. */
+function getCountryFlag(country: string): string {
+  if (!country) return "";
+  const trimmed = country.trim();
+
+  // Si l'utilisateur met déjà un drapeau, on le garde tel quel (sans regex exotique)
+  const hasFlagEmoji = Array.from(trimmed).some((ch) => {
+    const cp = ch.codePointAt(0) ?? 0;
+    // Plage des "Regional Indicator Symbols"
+    return cp >= 0x1f1e6 && cp <= 0x1f1ff;
+  });
+  if (hasFlagEmoji) return trimmed;
+
+  // correspondances texte -> code pays à 2 lettres
+  const names: Record<string, string> = {
+    france: "FR",
+    fr: "FR",
+
+    belgique: "BE",
+    belgium: "BE",
+    be: "BE",
+
+    suisse: "CH",
+    switzerland: "CH",
+    ch: "CH",
+
+    espagne: "ES",
+    spain: "ES",
+    es: "ES",
+
+    italie: "IT",
+    italy: "IT",
+    it: "IT",
+
+    allemagne: "DE",
+    germany: "DE",
+    de: "DE",
+
+    royaumeuni: "GB",
+    "royaume-uni": "GB",
+    uk: "GB",
+    angleterre: "GB",
+    gb: "GB",
+
+    paysbas: "NL",
+    "pays-bas": "NL",
+    netherlands: "NL",
+    nl: "NL",
+
+    usa: "US",
+    etatsunis: "US",
+    "etats-unis": "US",
+    unitedstates: "US",
+    us: "US",
+
+    portugal: "PT",
+    pt: "PT",
+  };
+
+  let code: string | undefined;
+
+  // Si l'utilisateur tape déjà un code ISO2 (FR, BE, ...)
+  if (trimmed.length === 2 && /^[a-zA-Z]{2}$/.test(trimmed)) {
+    code = trimmed.toUpperCase();
+  } else {
+    // clé normalisée : minuscules, sans espaces ni tirets/apostrophes
+    const key = trimmed
+      .toLowerCase()
+      .replace(/\s+/g, "")
+      .replace(/[-']/g, "");
+    code = names[key];
+  }
+
+  if (!code || code.length !== 2) return "";
+
+  const base = 0x1f1e6; // 'A'
+  const first = code.toUpperCase().charCodeAt(0) - 65;
+  const second = code.toUpperCase().charCodeAt(1) - 65;
+  return String.fromCodePoint(base + first, base + second);
 }

@@ -1,11 +1,14 @@
 // ============================================
 // src/pages/FriendsPage.tsx
 // Mode Online & Amis — v1 (mock + futur backend)
-// - Compte online (pseudo) synchronisé avec le profil local actif
+// - Compte online synchronisé avec le profil local actif
 // - Connexion / création rapide
-// - Statut en ligne (online / absent) lié à store.selfStatus
+// - Statut en ligne (online / away / offline) + halo néon
 // - Historique Online (mock) : Training + Matches
-// - Présence locale (lastSeen) pingée toutes les 30s
+// - Présence locale lastSeen + ping toutes les 30s
+// - Salons online mock : création + join par code
+// - Affiche le DRAPEAU du pays du profil actif (privateInfo.country)
+//   en bas à droite du médaillon, y compris sur mobile
 // ============================================
 
 import React from "react";
@@ -14,13 +17,15 @@ import { useAuthOnline } from "../hooks/useAuthOnline";
 import { onlineApi } from "../lib/onlineApi";
 import type { OnlineMatch } from "../lib/onlineTypes";
 
-type Props = {
-  store: Store;
-  update: (mut: (s: Store) => Store) => void;
-};
+import {
+  createLobby,
+  joinLobbyByCode,
+  type OnlineLobby,
+} from "../lib/onlineLobbiesMock";
 
-/* ---------- Constantes localStorage ---------- */
-
+/* -------------------------------------------------
+   Constantes localStorage
+--------------------------------------------------*/
 const LS_PRESENCE_KEY = "dc_online_presence_v1";
 const LS_ONLINE_MATCHES_KEY = "dc_online_matches_v1";
 
@@ -69,14 +74,25 @@ function formatLastSeenAgo(lastSeen: number | null): string | null {
   if (!lastSeen) return null;
   const diffMs = Date.now() - lastSeen;
   if (diffMs < 0) return null;
+
   const diffMin = Math.floor(diffMs / 60000);
   if (diffMin <= 0) return "À l’instant";
   if (diffMin === 1) return "Il y a 1 min";
   if (diffMin < 60) return `Il y a ${diffMin} min`;
+
   const diffH = Math.floor(diffMin / 60);
   if (diffH === 1) return "Il y a 1 h";
   return `Il y a ${diffH} h`;
 }
+
+/* -------------------------------------------------
+   Composant principal
+--------------------------------------------------*/
+
+type Props = {
+  store: Store;
+  update: (mut: (s: Store) => Store) => void;
+};
 
 export default function FriendsPage({ store, update }: Props) {
   const {
@@ -93,7 +109,7 @@ export default function FriendsPage({ store, update }: Props) {
 
   const isSignedIn = status === "signed_in" && !!user;
 
-  // Profil local actif = référence pour le pseudo par défaut
+  // --- Profil local actif (fallback nickname)
   const activeProfile =
     (store.profiles || []).find((p) => p.id === store.activeProfileId) ||
     (store.profiles || [])[0] ||
@@ -102,41 +118,53 @@ export default function FriendsPage({ store, update }: Props) {
   const [nickname, setNickname] = React.useState(
     user?.nickname || activeProfile?.name || ""
   );
+
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [info, setInfo] = React.useState<string | null>(null);
 
-  // Historique Online (mock)
+  // --- Historique online (mock)
   const [matches, setMatches] = React.useState<OnlineMatch[]>([]);
   const [loadingMatches, setLoadingMatches] = React.useState(false);
 
-  // Présence locale (lastSeen)
+  // Salons online (mock) - création
+  const [creatingLobby, setCreatingLobby] = React.useState(false);
+  const [lastCreatedLobby, setLastCreatedLobby] =
+    React.useState<OnlineLobby | null>(null);
+  const [showLobbyModal, setShowLobbyModal] = React.useState(false);
+
+  // JOIN salon (mock)
+  const [joinCode, setJoinCode] = React.useState("");
+  const [joiningLobby, setJoiningLobby] = React.useState(false);
+  const [joinedLobby, setJoinedLobby] = React.useState<OnlineLobby | null>(
+    null
+  );
+  const [joinError, setJoinError] = React.useState<string | null>(null);
+  const [joinInfo, setJoinInfo] = React.useState<string | null>(null);
+
+  // --- lastSeen (présence locale)
   const initialPresence = React.useMemo(() => loadPresenceFromLS(), []);
   const [lastSeen, setLastSeen] = React.useState<number | null>(
     initialPresence?.lastSeen ?? null
   );
 
-  // Met à jour le pseudo quand la session change
+  // Sync nickname si session change
   React.useEffect(() => {
-    if (user?.nickname) {
-      setNickname(user.nickname);
-    }
+    if (user?.nickname) setNickname(user.nickname);
   }, [user?.nickname]);
 
   const isChecking = status === "checking";
 
-  /* ---------- Présence : set + ping périodique ---------- */
+  /* -------------------------------------------------
+      Gestion présence locale (set + ping 30s)
+  --------------------------------------------------*/
 
-  function setPresence(status: PresenceStatus) {
-    update((s) => ({
-      ...s,
-      selfStatus: status as any,
-    }));
-    savePresenceToLS(status);
+  function setPresence(s: PresenceStatus) {
+    update((st) => ({ ...st, selfStatus: s as any }));
+    savePresenceToLS(s);
     setLastSeen(Date.now());
   }
 
-  // Ping périodique toutes les 30s quand on est en ligne
   React.useEffect(() => {
     if (!isSignedIn || store.selfStatus !== "online") return;
     if (typeof window === "undefined") return;
@@ -144,16 +172,15 @@ export default function FriendsPage({ store, update }: Props) {
     const id = window.setInterval(() => {
       savePresenceToLS("online");
       setLastSeen(Date.now());
-    }, 30000); // 30s
+    }, 30000);
 
     return () => window.clearInterval(id);
   }, [isSignedIn, store.selfStatus]);
 
-  // Auto-ajustement si la dernière activité est très ancienne (ex > 10 min)
   React.useEffect(() => {
     if (!initialPresence) return;
-    const diffMs = Date.now() - initialPresence.lastSeen;
-    if (diffMs > 10 * 60 * 1000 && store.selfStatus === "online") {
+    const diff = Date.now() - initialPresence.lastSeen;
+    if (diff > 10 * 60000 && store.selfStatus === "online") {
       setPresence("away");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,21 +208,28 @@ export default function FriendsPage({ store, update }: Props) {
 
   const lastSeenLabel = formatLastSeenAgo(lastSeen);
 
-  /* ---------- Historique Online (mock) ---------- */
+  // --- Drapeau pays du profil actif (privateInfo.country)
+  const privateInfo = ((activeProfile as any)?.privateInfo || {}) as any;
+  const countryRaw = privateInfo.country || "";
+  const countryFlag = getCountryFlag(countryRaw);
+
+  /* -------------------------------------------------
+      Historique Online (mock)
+  --------------------------------------------------*/
 
   React.useEffect(() => {
     if (!isSignedIn) {
       setMatches([]);
       return;
     }
+
     let cancelled = false;
+
     async function load() {
       setLoadingMatches(true);
       try {
         const list = await onlineApi.listMatches(50);
-        if (!cancelled) {
-          setMatches(list || []);
-        }
+        if (!cancelled) setMatches(list || []);
       } catch (e) {
         console.warn("[online] listMatches failed", e);
         if (!cancelled) setMatches([]);
@@ -203,6 +237,7 @@ export default function FriendsPage({ store, update }: Props) {
         if (!cancelled) setLoadingMatches(false);
       }
     }
+
     load();
     return () => {
       cancelled = true;
@@ -224,10 +259,11 @@ export default function FriendsPage({ store, update }: Props) {
     const isTraining =
       (m as any).isTraining === true ||
       (m.payload as any)?.kind === "training_x01";
+
     if (m.mode === "x01") {
       return isTraining ? "X01 Training" : "X01 (match)";
     }
-    // fallback générique
+
     return m.mode || "Match";
   }
 
@@ -242,7 +278,9 @@ export default function FriendsPage({ store, update }: Props) {
     });
   }
 
-  /* ---------- Actions AUTH ---------- */
+  /* -------------------------------------------------
+      Actions AUTH (signup / login / logout)
+  --------------------------------------------------*/
 
   async function handleSignup() {
     const nick = nickname.trim();
@@ -251,13 +289,15 @@ export default function FriendsPage({ store, update }: Props) {
       setInfo(null);
       return;
     }
+
     setBusy(true);
     setError(null);
     setInfo(null);
+
     try {
       await signup({ nickname: nick });
 
-      // Option : aligner le displayName sur le profil local actif
+      // Synchronisation du displayName sur le profil local
       if (activeProfile) {
         await updateProfile({
           displayName: activeProfile.name,
@@ -267,7 +307,6 @@ export default function FriendsPage({ store, update }: Props) {
 
       setPresence("online");
       setInfo("Compte online créé et connecté.");
-      console.log("[online] signup ok");
     } catch (e: any) {
       console.warn(e);
       setError(
@@ -285,14 +324,15 @@ export default function FriendsPage({ store, update }: Props) {
       setInfo(null);
       return;
     }
+
     setBusy(true);
     setError(null);
     setInfo(null);
+
     try {
       await login({ nickname: nick });
       setPresence("online");
       setInfo("Connexion réussie.");
-      console.log("[online] login ok");
     } catch (e: any) {
       console.warn(e);
       setError(
@@ -310,13 +350,90 @@ export default function FriendsPage({ store, update }: Props) {
     try {
       await logout();
     } catch {
-      // on ignore l'erreur
+      // ignore
+    }
+    setPresence("offline");
+    setInfo("Déconnecté du mode online.");
+    setBusy(false);
+  }
+
+  // ---------- Création d'un salon X01 (mock local) ----------
+
+  async function handleCreateLobby() {
+    if (!isSignedIn) {
+      setError("Tu dois être connecté en mode online pour créer un salon.");
+      setInfo(null);
+      return;
+    }
+    if (creatingLobby) return;
+
+    setCreatingLobby(true);
+    setError(null);
+    setInfo(null);
+
+    try {
+      const lobby = await createLobby({
+        hostProfileId: activeProfile?.id ?? null,
+        hostName:
+          activeProfile?.name ||
+          profile?.displayName ||
+          user?.nickname ||
+          "Joueur",
+      });
+
+      setLastCreatedLobby(lobby);
+      setShowLobbyModal(true);
+      console.log("[online] lobby créé", lobby);
+    } catch (e: any) {
+      console.warn(e);
+      setError(e?.message || "Impossible de créer un salon pour le moment.");
     } finally {
-      setPresence("offline");
-      setInfo("Déconnecté du mode online.");
-      setBusy(false);
+      setCreatingLobby(false);
     }
   }
+
+  // ---------- Join d'un salon X01 par code (mock local) ----------
+
+  async function handleJoinLobby() {
+    const code = joinCode.trim().toUpperCase();
+
+    setJoinError(null);
+    setJoinInfo(null);
+    setJoinedLobby(null);
+
+    if (!code) {
+      setJoinError("Entre un code de salon.");
+      return;
+    }
+    if (!isSignedIn) {
+      setJoinError("Tu dois être connecté en mode online pour rejoindre un salon.");
+      return;
+    }
+
+    setJoiningLobby(true);
+
+    try {
+      const lobby = await joinLobbyByCode(code);
+      if (!lobby) {
+        setJoinError("Aucun salon trouvé avec ce code.");
+        return;
+      }
+      setJoinedLobby(lobby);
+      setJoinInfo("Salon trouvé (mock). La vraie connexion viendra plus tard.");
+      console.log("[online] join lobby ok", lobby);
+    } catch (e: any) {
+      console.warn(e);
+      setJoinError(
+        e?.message || "Impossible de rejoindre ce salon pour le moment."
+      );
+    } finally {
+      setJoiningLobby(false);
+    }
+  }
+
+  /* -------------------------------------------------
+      RENDER
+  --------------------------------------------------*/
 
   return (
     <div
@@ -336,6 +453,7 @@ export default function FriendsPage({ store, update }: Props) {
       >
         Mode Online & Amis
       </h2>
+
       <p
         style={{
           fontSize: 13,
@@ -347,7 +465,7 @@ export default function FriendsPage({ store, update }: Props) {
         préparer les parties en ligne avec tes amis.
       </p>
 
-      {/* --------- BLOC INFO MODE (démo / réel) --------- */}
+      {/* --------- BLOC INFO MODE DEMO --------- */}
       <div
         style={{
           fontSize: 11.5,
@@ -360,15 +478,17 @@ export default function FriendsPage({ store, update }: Props) {
         }}
       >
         <div style={{ fontWeight: 700, marginBottom: 2 }}>Mode démo</div>
+
         <div style={{ opacity: 0.9 }}>
           Pour l’instant, les données online sont stockées uniquement sur cet
-          appareil (localStorage). Plus tard, un vrai serveur permettra de
-          partager ton profil entre plusieurs appareils.
+          appareil. Plus tard, un vrai serveur permettra de partager ton profil.
         </div>
+
         <div style={{ marginTop: 4, color: "#ffcf57" }}>
           {isSignedIn ? "Connecté en mode démo." : "Non connecté."}{" "}
           {isMock && "(mock local)"}
         </div>
+
         {lastSeenLabel && (
           <div
             style={{
@@ -382,7 +502,7 @@ export default function FriendsPage({ store, update }: Props) {
         )}
       </div>
 
-      {/* --------- BLOC CONNEXION / COMPTE --------- */}
+      {/* --------- BLOC CONNEXION / CRÉATION --------- */}
       {!isSignedIn ? (
         <div
           style={{
@@ -413,12 +533,12 @@ export default function FriendsPage({ store, update }: Props) {
                 marginBottom: 6,
               }}
             >
-              Profil local actif :{" "}
-              <b>{activeProfile.name || "Profil local"}</b>. Ton compte online
-              utilisera ce pseudo par défaut.
+              Profil local actif : <b>{activeProfile.name}</b> — utilisé comme
+              pseudo par défaut.
             </div>
           )}
 
+          {/* Champ PSEUDO */}
           <label
             style={{
               fontSize: 11.5,
@@ -429,6 +549,7 @@ export default function FriendsPage({ store, update }: Props) {
           >
             Pseudo online
           </label>
+
           <input
             type="text"
             value={nickname}
@@ -447,6 +568,7 @@ export default function FriendsPage({ store, update }: Props) {
             }}
           />
 
+          {/* Messages d'erreur / info */}
           {error && (
             <div
               style={{
@@ -471,6 +593,7 @@ export default function FriendsPage({ store, update }: Props) {
             </div>
           )}
 
+          {/* BOUTONS */}
           <div
             style={{
               display: "flex",
@@ -493,11 +616,12 @@ export default function FriendsPage({ store, update }: Props) {
                 background: "linear-gradient(180deg,#35c86d,#23a958)",
                 color: "#08130c",
                 boxShadow: "0 8px 18px rgba(0,0,0,.55)",
-                opacity: busy || loading || isChecking ? 0.6 : 1,
+                opacity: busy || loading || isChecking ? 0.5 : 1,
               }}
             >
               Créer un compte
             </button>
+
             <button
               type="button"
               onClick={handleLogin}
@@ -513,7 +637,7 @@ export default function FriendsPage({ store, update }: Props) {
                 background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
                 color: "#1b1508",
                 boxShadow: "0 8px 18px rgba(0,0,0,.55)",
-                opacity: busy || loading || isChecking ? 0.6 : 1,
+                opacity: busy || loading || isChecking ? 0.5 : 1,
               }}
             >
               Se connecter
@@ -555,7 +679,8 @@ export default function FriendsPage({ store, update }: Props) {
             Profil online connecté
           </div>
 
-          <div
+                    {/* Avatar + Nom + Statut */}
+                    <div
             style={{
               display: "flex",
               alignItems: "center",
@@ -563,41 +688,83 @@ export default function FriendsPage({ store, update }: Props) {
               marginBottom: 8,
             }}
           >
+            {/* Wrapper externe pour pouvoir faire déborder le drapeau */}
             <div
               style={{
+                position: "relative",
                 width: 52,
                 height: 52,
-                borderRadius: "50%",
-                overflow: "hidden",
-                background:
-                  "radial-gradient(circle at 30% 0%, #ffde75, #c2871f)",
                 flexShrink: 0,
               }}
             >
-              {activeProfile?.avatarDataUrl ? (
-                <img
-                  src={activeProfile.avatarDataUrl}
-                  alt={activeProfile.name}
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                  }}
-                />
-              ) : (
+              {/* Cercle avatar avec overflow hidden */}
+              <div
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  borderRadius: "50%",
+                  overflow: "hidden",
+                  background:
+                    "radial-gradient(circle at 30% 0%, #ffde75, #c2871f)",
+                }}
+              >
+                {activeProfile?.avatarDataUrl ? (
+                  <img
+                    src={activeProfile.avatarDataUrl}
+                    alt=""
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: 900,
+                      color: "#1a1a1a",
+                      fontSize: 20,
+                    }}
+                  >
+                    {(user?.nickname || "??").slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+              </div>
+
+              {/* Petit drapeau pays centré en bas, qui dépasse du cercle */}
+              {countryFlag && (
                 <div
                   style={{
-                    width: "100%",
-                    height: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: 900,
-                    color: "#1a1a1a",
-                    fontSize: 20,
+                    position: "absolute",
+                    bottom: -6,              // fait dépasser sous le cercle
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    width: 22,
+                    height: 22,
+                    borderRadius: "50%",
+                    border: "2px solid #000",
+                    overflow: "hidden",
+                    boxShadow: "0 0 8px rgba(0,0,0,.8)",
+                    background: "#111",
+                    display: "grid",
+                    placeItems: "center",
+                    zIndex: 2,
                   }}
+                  title={countryRaw}
                 >
-                  {(user?.nickname || "??").slice(0, 2).toUpperCase()}
+                  <span
+                    style={{
+                      fontSize: 14,
+                      lineHeight: 1,
+                    }}
+                  >
+                    {countryFlag}
+                  </span>
                 </div>
               )}
             </div>
@@ -612,10 +779,25 @@ export default function FriendsPage({ store, update }: Props) {
               >
                 {displayName}
               </div>
+
+              {/* éventuel texte de pays sous le pseudo */}
+              {countryRaw && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    opacity: 0.8,
+                    marginTop: 1,
+                  }}
+                >
+                  {countryRaw}
+                </div>
+              )}
+
+              {/* Status + point lumineux */}
               <div
                 style={{
                   fontSize: 12,
-                  marginTop: 2,
+                  marginTop: 4,
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
@@ -638,11 +820,12 @@ export default function FriendsPage({ store, update }: Props) {
                       height: 8,
                       borderRadius: "50%",
                       background: statusColor,
-                      boxShadow: `0 0 6px ${statusColor}`, // halo néon
+                      boxShadow: `0 0 6px ${statusColor}`,
                     }}
                   />
                   <span>{statusLabel}</span>
                 </span>
+
                 {isMock && (
                   <span
                     style={{
@@ -654,6 +837,7 @@ export default function FriendsPage({ store, update }: Props) {
                   </span>
                 )}
               </div>
+
               {lastSeenLabel && (
                 <div
                   style={{
@@ -668,30 +852,7 @@ export default function FriendsPage({ store, update }: Props) {
             </div>
           </div>
 
-          {info && !error && (
-            <div
-              style={{
-                marginBottom: 8,
-                fontSize: 11.5,
-                color: "#8fe6aa",
-              }}
-            >
-              {info}
-            </div>
-          )}
-
-          {error && (
-            <div
-              style={{
-                marginBottom: 8,
-                fontSize: 11.5,
-                color: "#ff8a8a",
-              }}
-            >
-              {error}
-            </div>
-          )}
-
+          {/* Boutons état + logout */}
           <div
             style={{
               display: "flex",
@@ -702,9 +863,7 @@ export default function FriendsPage({ store, update }: Props) {
             <button
               type="button"
               onClick={() =>
-                setPresence(
-                  store.selfStatus === "away" ? "online" : "away"
-                )
+                setPresence(store.selfStatus === "away" ? "online" : "away")
               }
               disabled={busy || loading || isChecking}
               style={{
@@ -714,13 +873,13 @@ export default function FriendsPage({ store, update }: Props) {
                 border: "none",
                 fontWeight: 700,
                 fontSize: 12,
-                cursor: busy || loading || isChecking ? "default" : "pointer",
                 background: "linear-gradient(180deg,#444,#262626)",
                 color: "#f5f5f7",
               }}
             >
               {store.selfStatus === "away" ? "Revenir en ligne" : "Absent"}
             </button>
+
             <button
               type="button"
               onClick={handleLogout}
@@ -731,7 +890,6 @@ export default function FriendsPage({ store, update }: Props) {
                 border: "none",
                 fontWeight: 800,
                 fontSize: 12,
-                cursor: busy || loading || isChecking ? "default" : "pointer",
                 background: "linear-gradient(180deg,#ff5a5a,#e01f1f)",
                 color: "#fff",
               }}
@@ -763,8 +921,8 @@ export default function FriendsPage({ store, update }: Props) {
           À venir
         </div>
         <div style={{ opacity: 0.85 }}>
-          Liste d&apos;amis, invitations, présence en ligne détaillée, lobbys
-          de parties online (X01, Cricket, etc.) seront ajoutés ici.
+          Liste d’amis, invitations, présence en ligne détaillée, lobbys de
+          parties online seront ajoutés ici.
         </div>
       </div>
 
@@ -810,8 +968,7 @@ export default function FriendsPage({ store, update }: Props) {
                     marginTop: 8,
                     padding: 8,
                     borderRadius: 10,
-                    background:
-                      "linear-gradient(180deg,#181820,#0c0c12)",
+                    background: "linear-gradient(180deg,#181820,#0c0c12)",
                     border: "1px solid rgba(255,255,255,.12)",
                     boxShadow: "0 8px 18px rgba(0,0,0,.55)",
                   }}
@@ -832,6 +989,7 @@ export default function FriendsPage({ store, update }: Props) {
                     >
                       {title}
                     </div>
+
                     <span
                       style={{
                         padding: "2px 8px",
@@ -847,6 +1005,7 @@ export default function FriendsPage({ store, update }: Props) {
                       {isTraining ? "Training" : "Match"}
                     </span>
                   </div>
+
                   <div
                     style={{
                       fontSize: 10.5,
@@ -856,6 +1015,7 @@ export default function FriendsPage({ store, update }: Props) {
                   >
                     {formatMatchDate(m)}
                   </div>
+
                   <pre
                     style={{
                       margin: 0,
@@ -890,84 +1050,308 @@ export default function FriendsPage({ store, update }: Props) {
                 cursor: "pointer",
               }}
             >
-              Effacer l&apos;historique local
+              Effacer l’historique local
             </button>
           </>
         )}
       </div>
 
-      {/* --------- NOUVEAU BLOC : Salons online (bientôt) --------- */}
+      {/* --------- BLOC : Salons online (mock) --------- */}
       <div
         style={{
-          marginTop: 10,
-          fontSize: 11.5,
-          padding: 12,
+          marginTop: 16,
+          padding: 14,
           borderRadius: 14,
           border: "1px solid rgba(255,255,255,.12)",
           background:
-            "linear-gradient(180deg, rgba(30,30,38,.96), rgba(8,8,12,.98))",
-          boxShadow: "0 12px 26px rgba(0,0,0,.55)",
+            "linear-gradient(180deg, rgba(32,32,40,.95), rgba(10,10,14,.98))",
+          boxShadow: "0 10px 24px rgba(0,0,0,.55)",
+          fontSize: 12,
         }}
       >
         <div
           style={{
             fontWeight: 700,
             marginBottom: 6,
-            fontSize: 13,
-            color: "#ffcf57",
-            textShadow: "0 0 10px rgba(255,215,80,.35)",
+            fontSize: 14,
+            color: "#ffd56a",
+            textShadow: "0 0 10px rgba(255,215,80,.4)",
           }}
         >
-          Salons online (bientôt)
+          Salons online (mock)
         </div>
+
         <div
           style={{
-            opacity: 0.9,
+            opacity: 0.85,
             marginBottom: 10,
-            fontSize: 12,
           }}
         >
-          Crée un salon X01 ou rejoins celui d’un ami avec un code pour jouer
-          en ligne. Cette section sera activée dans une prochaine version.
+          Crée un salon X01 local (mock) ou rejoins celui d’un ami avec un code.
         </div>
+
+        {/* Bouton CREATE */}
         <button
           type="button"
-          disabled
+          onClick={handleCreateLobby}
+          disabled={creatingLobby}
           style={{
             width: "100%",
             borderRadius: 12,
-            padding: "9px 12px",
+            padding: "10px 12px",
             border: "1px solid rgba(255,255,255,.16)",
-            background:
-              "linear-gradient(180deg, rgba(60,60,70,.32), rgba(25,25,32,.6))",
-            color: "rgba(255,255,255,.65)",
-            fontWeight: 700,
+            background: creatingLobby
+              ? "linear-gradient(180deg,#666,#444)"
+              : "linear-gradient(180deg,#ffd56a,#e9a93d)",
+            color: "#1c1304",
+            fontWeight: 800,
             fontSize: 13,
-            cursor: "not-allowed",
-            marginBottom: 6,
+            cursor: creatingLobby ? "default" : "pointer",
+            marginBottom: 10,
+            opacity: creatingLobby ? 0.6 : 1,
           }}
         >
-          Créer un salon X01 (à venir)
+          {creatingLobby ? "Création…" : "Créer un salon X01"}
         </button>
-        <button
-          type="button"
-          disabled
+
+        {/* Champ CODE + bouton JOIN */}
+        <div
           style={{
-            width: "100%",
-            borderRadius: 12,
-            padding: "9px 12px",
-            border: "1px solid rgba(255,255,255,.16)",
-            background:
-              "linear-gradient(180deg, rgba(60,60,70,.32), rgba(25,25,32,.6))",
-            color: "rgba(255,255,255,.65)",
-            fontWeight: 700,
-            fontSize: 13,
-            cursor: "not-allowed",
+            marginTop: 2,
+            marginBottom: 8,
           }}
         >
-          Rejoindre avec un code (à venir)
-        </button>
+          <label
+            style={{
+              fontSize: 11,
+              opacity: 0.9,
+              display: "block",
+              marginBottom: 4,
+            }}
+          >
+            Code de salon
+          </label>
+          <input
+            type="text"
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+            maxLength={8}
+            placeholder="Ex : 4F9Q"
+            style={{
+              width: "100%",
+              borderRadius: 10,
+              border: "1px solid rgba(255,255,255,.2)",
+              background: "rgba(5,5,8,.95)",
+              color: "#f5f5f7",
+              padding: "7px 10px",
+              fontSize: 13,
+              letterSpacing: 2,
+              textTransform: "uppercase",
+              marginBottom: 6,
+            }}
+          />
+          <button
+            type="button"
+            onClick={handleJoinLobby}
+            disabled={joiningLobby}
+            style={{
+              width: "100%",
+              borderRadius: 12,
+              padding: "9px 12px",
+              border: "1px solid rgba(255,255,255,.16)",
+              background: joiningLobby
+                ? "linear-gradient(180deg,#555,#333)"
+                : "linear-gradient(180deg,#4fb4ff,#1c78d5)",
+              color: "#04101f",
+              fontWeight: 800,
+              fontSize: 13,
+              cursor: joiningLobby ? "default" : "pointer",
+              opacity: joiningLobby ? 0.65 : 1,
+            }}
+          >
+            {joiningLobby ? "Recherche…" : "Rejoindre avec ce code"}
+          </button>
+
+          {/* Messages spécifiques JOIN (erreur / info) */}
+          {(joinError || joinInfo) && (
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: 11.5,
+              }}
+            >
+              {joinError && (
+                <div style={{ color: "#ff8a8a" }}>{joinError}</div>
+              )}
+              {joinInfo && !joinError && (
+                <div style={{ color: "#8fe6aa" }}>{joinInfo}</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* MODAL LOBBY CRÉÉ */}
+        {showLobbyModal && lastCreatedLobby && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 12,
+              borderRadius: 12,
+              background: "rgba(0,0,0,0.65)",
+              border: "1px solid rgba(255,255,255,.15)",
+              boxShadow: "0 8px 20px rgba(0,0,0,.5)",
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 700,
+                marginBottom: 6,
+                fontSize: 13,
+                color: "#7fe2a9",
+              }}
+            >
+              Salon créé !
+            </div>
+
+            <div style={{ fontSize: 11.5, opacity: 0.85, marginBottom: 8 }}>
+              Code du salon :
+            </div>
+
+            <div
+              style={{
+                padding: "8px 10px",
+                borderRadius: 8,
+                background: "#111",
+                border: "1px solid rgba(255,255,255,.15)",
+                fontSize: 16,
+                fontWeight: 800,
+                textAlign: "center",
+                letterSpacing: 2,
+                color: "#ffd56a",
+                marginBottom: 12,
+              }}
+            >
+              {lastCreatedLobby.code}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowLobbyModal(false)}
+              style={{
+                width: "100%",
+                borderRadius: 999,
+                padding: "8px 14px",
+                border: "none",
+                background: "linear-gradient(180deg,#444,#222)",
+                color: "#fff",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Fermer
+            </button>
+          </div>
+        )}
+
+        {/* PETIT RÉSUMÉ SI JOIN OK */}
+        {joinedLobby && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: 10,
+              borderRadius: 10,
+              background: "rgba(0,0,0,0.6)",
+              border: "1px solid rgba(127,226,169,.45)",
+              fontSize: 11.5,
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 700,
+                marginBottom: 4,
+                color: "#7fe2a9",
+              }}
+            >
+              Salon trouvé
+            </div>
+            <div>Code : {joinedLobby.code}</div>
+            <div>Hôte : {joinedLobby.hostName}</div>
+          </div>
+        )}
       </div>
     </div>
   );
+}
+
+/* ---------- Utils : drapeau pays ---------- */
+
+/**
+ * Conversion "FR" -> 🇫🇷, "France" -> 🇫🇷, etc.
+ * Même logique que sur Home.tsx, MAIS sans regex \p{} pour éviter
+ * les erreurs "Invalid regular expression" dans certains navigateurs.
+ */
+function getCountryFlag(country: string): string {
+  if (!country) return "";
+  const trimmed = country.trim();
+
+  // Si l'utilisateur met directement un drapeau emoji, on renvoie tel quel
+  const cps = Array.from(trimmed);
+  if (cps.length === 2) {
+    const cp0 = cps[0].codePointAt(0) ?? 0;
+    const cp1 = cps[1].codePointAt(0) ?? 0;
+    if (
+      cp0 >= 0x1f1e6 &&
+      cp0 <= 0x1f1ff &&
+      cp1 >= 0x1f1e6 &&
+      cp1 <= 0x1f1ff
+    ) {
+      return trimmed;
+    }
+  }
+
+  const names: Record<string, string> = {
+    france: "FR",
+    belgique: "BE",
+    belgium: "BE",
+    suisse: "CH",
+    switzerland: "CH",
+    espagne: "ES",
+    spain: "ES",
+    italie: "IT",
+    italy: "IT",
+    allemagne: "DE",
+    germany: "DE",
+    royaumeuni: "GB",
+    "royaume-uni": "GB",
+    uk: "GB",
+    angleterre: "GB",
+    paysbas: "NL",
+    "pays-bas": "NL",
+    netherlands: "NL",
+    usa: "US",
+    étatsunis: "US",
+    "états-unis": "US",
+    unitedstates: "US",
+    portugal: "PT",
+  };
+
+  let code: string | undefined;
+
+  if (trimmed.length === 2) {
+    code = trimmed.toUpperCase();
+  } else {
+    const key = trimmed
+      .toLowerCase()
+      .replace(/\s+/g, "")
+      .replace(/[-']/g, "");
+    code = names[key];
+  }
+
+  if (!code || code.length !== 2) return "";
+
+  const A = 0x1f1e6;
+  const chars = Array.from(code.toUpperCase()).map((c) =>
+    String.fromCodePoint(A + (c.charCodeAt(0) - 65))
+  );
+  return chars.join("");
 }

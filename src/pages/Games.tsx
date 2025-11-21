@@ -14,7 +14,15 @@ type Props = {
   setTab: (tab: any) => void;
 };
 
-type GameId = "training" | "x01" | "cricket" | "killer" | "shanghai" | "battle";
+// 👇 AJOUT : x01v2
+type GameId =
+  | "training"
+  | "x01"
+  | "x01v2"
+  | "cricket"
+  | "killer"
+  | "shanghai"
+  | "battle";
 
 type GameDef = {
   id: GameId;
@@ -42,7 +50,7 @@ const GAMES: GameDef[] = [
     infoBodyKey: "games.training.infoBody",
     infoBodyDefault:
       "Mode entraînement pour travailler la régularité, le scoring et les finitions.",
-    tab: "training", // ou ton onglet training exact dans App.tsx
+    tab: "training",
     enabled: true,
   },
   {
@@ -56,7 +64,21 @@ const GAMES: GameDef[] = [
     infoBodyKey: "games.x01.infoBody",
     infoBodyDefault:
       "Parties classiques de 301/501/701/901 avec statistiques, historique et options avancées.",
-    tab: "x01", // adapte si ton tab s'appelle autrement
+    tab: "x01setup", // 👈 on repasse par l'écran de setup
+    enabled: true,
+  },
+  {
+    id: "x01v2",
+    titleKey: "games.x01v2.title",
+    titleDefault: "X01 V2",
+    subtitleKey: "games.x01v2.subtitle",
+    subtitleDefault: "Version V2 (base Training).",
+    infoTitleKey: "games.x01v2.infoTitle",
+    infoTitleDefault: "X01 V2",
+    infoBodyKey: "games.x01v2.infoBody",
+    infoBodyDefault:
+      "Version expérimentale de X01 basée sur le moteur Training : statistiques avancées, préparation du jeu en équipe et nouveaux réglages.",
+    tab: "x01_play_v2", // 👈 X01PlayV2
     enabled: true,
   },
   {
@@ -84,7 +106,7 @@ const GAMES: GameDef[] = [
     infoBodyKey: "games.killer.infoBody",
     infoBodyDefault:
       "Chaque joueur possède un numéro. Deviens Killer en touchant le tien, puis élimine les autres joueurs.",
-    tab: null, // pas encore dispo
+    tab: null,
     enabled: false,
   },
   {
