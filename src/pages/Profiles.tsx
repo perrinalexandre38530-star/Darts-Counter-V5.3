@@ -3,11 +3,10 @@
 // Profils (profil actif, amis fusionnés, profils locaux)
 // - Bloc unique Connexion/Création (sans mot de passe)
 // - Amis: un seul panneau repliable "Amis (N)" trié par statut
-// - Profils locaux: compteur, mini-stats ruban doré, Éditer au-dessus de Suppr.
-// - [RESPONSIVE] Avatar centré au-dessus du nom sur mobile
-// - [RESPONSIVE] Mini-stats incassables : auto-fit/minmax + clamp()
-// - [NEW] Ring d’étoiles EXTERNE (outside) autour du médaillon
-// - [NEW] Bouton “Créer / Mettre à jour l’avatar” -> go("avatar")
+// - Profils locaux: compteur, mini-stats ruban, Éditer au-dessus de Suppr.
+// - Responsive + ring d’étoiles externe
+// - Bouton “Créer / Mettre à jour l’avatar” -> go("avatar")
+// - Thème via ThemeContext + textes via LangContext
 // ============================================
 
 import React from "react";
@@ -16,6 +15,8 @@ import ProfileStarRing from "../components/ProfileStarRing";
 import type { Store, Profile, Friend } from "../lib/types";
 import { getBasicProfileStats, type BasicProfileStats } from "../lib/statsBridge";
 import { getBasicProfileStatsSync } from "../lib/statsLiteIDB";
+import { useTheme } from "../contexts/ThemeContext";
+import { useLang } from "../contexts/LangContext";
 
 /* ===== Helper lecture instantanée (mini-cache IDB) ===== */
 function useBasicStats(playerId: string | undefined | null) {
@@ -52,7 +53,6 @@ export default function Profiles({
   update,
   setProfiles,
   autoCreate = false,
-  // ✅ Optionnel: si fourni, permettra d’ouvrir le créateur d’avatar
   go,
 }: {
   store: Store;
@@ -67,6 +67,9 @@ export default function Profiles({
     friends = [],
     selfStatus = "online",
   } = store;
+
+  const { theme } = useTheme();
+  const { t } = useLang();
 
   const [statsMap, setStatsMap] = React.useState<
     Record<string, BasicProfileStats | undefined>
@@ -105,7 +108,7 @@ export default function Profiles({
 
   const active = profiles.find((p) => p.id === activeProfileId) || null;
 
-  // Précharge les stats du profil actif si absentes (asynchrone, pour hydrater statsMap)
+  // Précharge les stats du profil actif si absentes
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -141,7 +144,7 @@ export default function Profiles({
     };
   }, [profiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ✅ Moyenne 3-darts du profil actif (priorité au cache sync)
+  // Moyenne 3-darts du profil actif (priorité au cache sync)
   const activeAvg3D = React.useMemo<number | null>(() => {
     if (!active?.id) return null;
     const bs = getBasicProfileStatsSync(active.id);
@@ -152,7 +155,7 @@ export default function Profiles({
     return null;
   }, [active?.id, statsMap]);
 
-  // ✅ Helper navigation avatar (optionnelle)
+  // Helper navigation avatar
   const openAvatarCreator = React.useCallback(() => {
     go?.("avatar");
   }, [go]);
@@ -174,11 +177,14 @@ export default function Profiles({
         }}
       />
 
-      <div className="container" style={{ maxWidth: 760 }}>
-        <Card title="Profil connecté">
+      <div
+        className="container"
+        style={{ maxWidth: 760, background: theme.bg, color: theme.text }}
+      >
+        <Card title={t("profiles.connected.title", "Profil connecté")}>
           {active ? (
             <ActiveProfileBlock
-              selfStatus={selfStatus}
+              selfStatus={selfStatus as any}
               active={active}
               activeAvg3D={activeAvg3D}
               onToggleAway={() =>
@@ -192,7 +198,6 @@ export default function Profiles({
                 if (n && n !== active.name) renameProfile(active.id, n);
                 if (f) changeAvatar(active.id, f);
               }}
-              // ✅ nouveau: ouvre le créateur d’avatar
               onOpenAvatarCreator={openAvatarCreator}
             />
           ) : (
@@ -205,11 +210,15 @@ export default function Profiles({
           )}
         </Card>
 
-        <Card title={`Amis (${friends?.length ?? 0})`}>
+        <Card
+          title={`${t("profiles.friends.title", "Amis")} (${friends?.length ?? 0})`}
+        >
           <FriendsMergedBlock friends={friends} />
         </Card>
 
-        <Card title={`Profils locaux (${profiles.length})`}>
+        <Card
+          title={`${t("profiles.locals.title", "Profils locaux")} (${profiles.length})`}
+        >
           <AddLocalProfile onCreate={addProfile} />
           <div
             style={{
@@ -219,8 +228,8 @@ export default function Profiles({
               paddingRight: 6,
               marginTop: 6,
               borderRadius: 12,
-              border: "1px solid rgba(255,255,255,.06)",
-              background: "linear-gradient(180deg, rgba(15,15,20,.55), rgba(12,12,16,.55))",
+              border: `1px solid ${theme.borderSoft}`,
+              background: theme.card,
             }}
           >
             <LocalProfiles
@@ -230,7 +239,6 @@ export default function Profiles({
               onDelete={delProfile}
               statsMap={statsMap}
               warmup={(id) => warmProfileStats(id, setStatsMap)}
-              // ✅ pass navigation aux items locaux aussi
               onOpenAvatarCreator={openAvatarCreator}
             />
           </div>
@@ -245,10 +253,21 @@ export default function Profiles({
 ================================ */
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
+  const { theme } = useTheme();
   return (
-    <section className="card" style={{ padding: 16, marginBottom: 14 }}>
+    <section
+      className="card"
+      style={{
+        padding: 16,
+        marginBottom: 14,
+        borderRadius: 18,
+        background: theme.card,
+        border: `1px solid ${theme.borderSoft}`,
+        boxShadow: "0 18px 36px rgba(0,0,0,.35)",
+      }}
+    >
       <div className="row-between" style={{ marginBottom: 10 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 800 }}>{title}</h2>
+        <h2 style={{ fontSize: 16, fontWeight: 800, color: theme.primary }}>{title}</h2>
       </div>
       {children}
     </section>
@@ -263,7 +282,7 @@ function ActiveProfileBlock({
   onToggleAway,
   onQuit,
   onEdit,
-  onOpenAvatarCreator, // ✅
+  onOpenAvatarCreator,
 }: {
   active: Profile;
   activeAvg3D: number | null;
@@ -271,12 +290,40 @@ function ActiveProfileBlock({
   onToggleAway: () => void;
   onQuit: () => void;
   onEdit: (name: string, avatar?: File | null) => void;
-  onOpenAvatarCreator?: () => void; // ✅ optionnel
+  onOpenAvatarCreator?: () => void;
 }) {
   const AVATAR = 96;
   const BORDER = 8;
   const MEDALLION = AVATAR + BORDER;
   const STAR = 14;
+
+  const { theme } = useTheme();
+  const { t } = useLang();
+
+  const primary = theme.primary;
+
+  const statusLabelKey =
+    selfStatus === "away"
+      ? "profiles.status.away"
+      : selfStatus === "offline"
+      ? "profiles.status.offline"
+      : "profiles.status.online";
+
+  const statusLabel = t(
+    statusLabelKey,
+    selfStatus === "away"
+      ? "Absent"
+      : selfStatus === "offline"
+      ? "Hors ligne"
+      : "En ligne"
+  );
+
+  const statusColor =
+    selfStatus === "away"
+      ? "#F6C256"
+      : selfStatus === "offline"
+      ? "#9AA0AA"
+      : "#1FB46A";
 
   return (
     <div className="apb">
@@ -287,8 +334,8 @@ function ActiveProfileBlock({
           height: MEDALLION,
           borderRadius: "50%",
           padding: BORDER / 2,
-          background: "linear-gradient(135deg, rgba(240,177,42,.9), rgba(120,80,10,.7))",
-          boxShadow: "0 0 26px rgba(240,177,42,.35), inset 0 0 12px rgba(0,0,0,.55)",
+          background: `linear-gradient(135deg, ${primary}, ${primary}55)`,
+          boxShadow: `0 0 26px ${primary}55, inset 0 0 12px rgba(0,0,0,.55)`,
           position: "relative",
           flex: "0 0 auto",
         }}
@@ -332,13 +379,14 @@ function ActiveProfileBlock({
               e.preventDefault();
               if (active?.id) location.hash = `#/stats?pid=${active.id}`;
             }}
-            style={{ color: "#f0b12a", textDecoration: "none" }}
-            title="Voir les statistiques"
+            style={{ color: primary, textDecoration: "none" }}
+            title={t("profiles.connected.seeStats", "Voir les statistiques")}
           >
             {active?.name || "—"}
           </a>
         </div>
 
+        {/* Statut */}
         <div className="row" style={{ gap: 8, alignItems: "center", marginTop: 4 }}>
           <StatusDot
             kind={
@@ -352,19 +400,11 @@ function ActiveProfileBlock({
           <span
             style={{
               fontWeight: 700,
-              color:
-                selfStatus === "away"
-                  ? "#f0b12a"
-                  : selfStatus === "offline"
-                  ? "#9aa0a6"
-                  : "#1fb46a",
+              color: statusColor,
+              textShadow: `0 0 6px ${statusColor}, 0 0 12px ${statusColor}`,
             }}
           >
-            {selfStatus === "away"
-              ? "Absent"
-              : selfStatus === "offline"
-              ? "Hors ligne"
-              : "En ligne"}
+            {statusLabel}
           </span>
         </div>
 
@@ -377,25 +417,45 @@ function ActiveProfileBlock({
         <div className="row apb__actions" style={{ gap: 8, marginTop: 10, flexWrap: "wrap" }}>
           <EditInline initialName={active?.name || ""} onSave={onEdit} compact />
 
-          {/* ✅ Nouveau bouton “Créer / Mettre à jour l’avatar” */}
+          {/* Bouton avatar creator */}
           <button
             className="btn sm"
             onClick={() => onOpenAvatarCreator?.()}
-            title="Ouvrir le créateur d’avatar"
+            title={t(
+              "profiles.connected.btn.avatar.tooltip",
+              "Ouvrir le créateur d’avatar"
+            )}
             style={{
-              background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
+              background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
               color: "#000",
               fontWeight: 800,
             }}
           >
-            Créer / Mettre à jour l’avatar
+            {t(
+              "profiles.connected.btn.avatar",
+              "Créer / Mettre à jour l’avatar"
+            )}
           </button>
 
-          <button className="btn sm" onClick={onToggleAway} title="Basculer le statut">
-            {selfStatus === "away" ? "EN LIGNE" : "ABSENT"}
+          <button
+            className="btn sm"
+            onClick={onToggleAway}
+            title={t(
+              "profiles.connected.btn.away.tooltip",
+              "Basculer le statut en absent / en ligne"
+            )}
+          >
+            {selfStatus === "away"
+              ? t("profiles.connected.btn.online", "EN LIGNE")
+              : t("profiles.connected.btn.away", "ABSENT")}
           </button>
-          <button className="btn danger sm" onClick={onQuit} title="Quitter la session">
-            QUITTER
+
+          <button
+            className="btn danger sm"
+            onClick={onQuit}
+            title={t("profiles.connected.btn.quit.tooltip", "Quitter la session")}
+          >
+            {t("profiles.connected.btn.quit", "QUITTER")}
           </button>
         </div>
       </div>
@@ -420,6 +480,10 @@ function UnifiedAuthBlock({
   const [file, setFile] = React.useState<File | null>(null);
   const [preview, setPreview] = React.useState<string | null>(null);
   const createRef = React.useRef<HTMLInputElement>(null);
+
+  const { t } = useLang();
+  const { theme } = useTheme();
+  const primary = theme.primary;
 
   React.useEffect(() => {
     if (autoFocusCreate) createRef.current?.focus();
@@ -453,31 +517,43 @@ function UnifiedAuthBlock({
           onChange={(e) => setChosen(e.target.value)}
           style={{ flex: 1 }}
         >
-          {profiles.length === 0 && <option value="">Aucun profil enregistré</option>}
+          {profiles.length === 0 && (
+            <option value="">
+              {t("profiles.auth.select.none", "Aucun profil enregistré")}
+            </option>
+          )}
           {profiles.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
             </option>
           ))}
         </select>
-        <button className="btn primary sm" onClick={() => chosen && onConnect(chosen)}>
-          Connexion
+        <button
+          className="btn primary sm"
+          onClick={() => chosen && onConnect(chosen)}
+          style={{
+            background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
+            color: "#000",
+            fontWeight: 700,
+          }}
+        >
+          {t("profiles.auth.select.btnConnect", "Connexion")}
         </button>
       </div>
 
       {/* Création */}
       <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <label
-          title="Choisir un avatar"
+          title={t("profiles.locals.add.avatar", "Avatar")}
           style={{
             width: 44,
             height: 44,
             borderRadius: "50%",
             overflow: "hidden",
-            border: "1px solid var(--stroke)",
+            border: `1px solid ${theme.borderSoft}`,
             display: "grid",
             placeItems: "center",
-            background: "#0f0f14",
+            background: theme.card,
             cursor: "pointer",
             flex: "0 0 auto",
           }}
@@ -492,7 +568,7 @@ function UnifiedAuthBlock({
             <img src={preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           ) : (
             <span className="subtitle" style={{ fontSize: 11 }}>
-              Avatar
+              {t("profiles.locals.add.avatar", "Avatar")}
             </span>
           )}
         </label>
@@ -500,15 +576,23 @@ function UnifiedAuthBlock({
         <input
           ref={createRef}
           className="input"
-          placeholder="Nom du profil"
+          placeholder={t("profiles.auth.create.placeholder", "Nom du profil")}
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submitCreate()}
           style={{ flex: 1, minWidth: 160 }}
         />
 
-        <button className="btn primary sm" onClick={submitCreate}>
-          Ajouter
+        <button
+          className="btn primary sm"
+          onClick={submitCreate}
+          style={{
+            background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
+            color: "#000",
+            fontWeight: 700,
+          }}
+        >
+          {t("profiles.auth.create.btn", "Ajouter")}
         </button>
       </div>
     </div>
@@ -527,8 +611,11 @@ function FriendsMergedBlock({ friends }: { friends?: Friend[] }) {
     return (a.name || "").localeCompare(b.name || "");
   });
 
+  const { theme } = useTheme();
+  const { t } = useLang();
+
   return (
-    <div className="card" style={{ background: "#111118" }}>
+    <div className="card" style={{ background: theme.card, borderRadius: 12, padding: 10 }}>
       <button
         className="row-between"
         onClick={() => setOpen((v) => !v)}
@@ -536,18 +623,24 @@ function FriendsMergedBlock({ friends }: { friends?: Friend[] }) {
         style={{
           width: "100%",
           background: "transparent",
-          color: "inherit",
+          color: theme.text,
           border: 0,
           padding: "6px 2px",
           cursor: "pointer",
           fontWeight: 700,
         }}
       >
-        <span>Amis ({merged.length})</span>
+        <span>
+          {t("profiles.friends.title", "Amis")} ({merged.length})
+        </span>
         <span
           className="subtitle"
           aria-hidden
-          style={{ display: "inline-block", transform: `rotate(${open ? 0 : -90}deg)`, transition: "transform .15s ease" }}
+          style={{
+            display: "inline-block",
+            transform: `rotate(${open ? 0 : -90}deg)`,
+            transition: "transform .15s ease",
+          }}
         >
           ▾
         </span>
@@ -556,27 +649,28 @@ function FriendsMergedBlock({ friends }: { friends?: Friend[] }) {
       {open && (
         <div className="list" style={{ marginTop: 6 }}>
           {merged.length === 0 ? (
-            <div className="subtitle">Aucun ami pour l’instant</div>
+            <div className="subtitle">
+              {t("profiles.friends.none", "Aucun ami pour l’instant")}
+            </div>
           ) : (
             merged.map((f) => {
               const AVA = 44;
               const MEDALLION = AVA;
               const STAR = 8;
 
-              // Win% robuste (winRate direct si dispo, sinon fallback)
               const friendWinPct = (() => {
                 const wr = Number((f as any)?.stats?.winRate);
                 if (Number.isFinite(wr)) return Math.round(wr);
                 const wins = Number((f as any)?.stats?.wins ?? 0);
                 const legs = Number((f as any)?.stats?.legs ?? 0);
                 const games = Number((f as any)?.stats?.games ?? 0);
-                if (legs > 0)  return Math.round((wins / legs) * 100);
+                if (legs > 0) return Math.round((wins / legs) * 100);
                 if (games > 0) return Math.round((wins / games) * 100);
                 return 0;
               })();
 
               return (
-                <div className="item" key={f.id} style={{ background: "#0f0f14" }}>
+                <div className="item" key={f.id} style={{ background: theme.bg }}>
                   <div className="row" style={{ gap: 10, minWidth: 0 }}>
                     <div style={{ position: "relative", width: AVA, height: AVA, flex: "0 0 auto" }}>
                       <div
@@ -608,20 +702,25 @@ function FriendsMergedBlock({ friends }: { friends?: Friend[] }) {
                     </div>
 
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{f.name || "—"}</div>
+                      <div style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+                        {f.name || "—"}
+                      </div>
                       {f.stats && (
                         <div className="subtitle" style={{ whiteSpace: "nowrap" }}>
-                          Moy/3: {fmt(Number((f as any)?.stats?.avg3 ?? 0))} · Best: {Number((f as any)?.stats?.bestVisit ?? 0)} · Win: {friendWinPct}%
+                          {t("home.stats.avg3", "Moy/3")}: {fmt(Number((f as any)?.stats?.avg3 ?? 0))} ·{" "}
+                          {t("home.stats.best", "Best")}:{" "}
+                          {Number((f as any)?.stats?.bestVisit ?? 0)} ·{" "}
+                          {t("home.stats.winPct", "Win%")}: {friendWinPct}%
                         </div>
                       )}
                     </div>
                   </div>
                   <span className="subtitle" style={{ whiteSpace: "nowrap" }}>
                     {f.status === "online"
-                      ? "En ligne"
+                      ? t("status.online", "En ligne")
                       : f.status === "away"
-                      ? "Absent"
-                      : "Hors-ligne"}
+                      ? t("status.away", "Absent")
+                      : t("status.offline", "Hors ligne")}
                   </span>
                 </div>
               );
@@ -638,6 +737,10 @@ function AddLocalProfile({ onCreate }: { onCreate: (name: string, file?: File | 
   const [name, setName] = React.useState("");
   const [file, setFile] = React.useState<File | null>(null);
   const [preview, setPreview] = React.useState<string | null>(null);
+
+  const { theme } = useTheme();
+  const { t } = useLang();
+  const primary = theme.primary;
 
   React.useEffect(() => {
     if (!file) {
@@ -660,16 +763,16 @@ function AddLocalProfile({ onCreate }: { onCreate: (name: string, file?: File | 
   return (
     <div className="item" style={{ gap: 10, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
       <label
-        title="Choisir un avatar"
+        title={t("profiles.locals.add.avatar", "Avatar")}
         style={{
           width: 44,
           height: 44,
           borderRadius: "50%",
           overflow: "hidden",
-          border: "1px solid var(--stroke)",
+          border: `1px solid ${theme.borderSoft}`,
           display: "grid",
           placeItems: "center",
-          background: "#0f0f14",
+          background: theme.bg,
           cursor: "pointer",
           flex: "0 0 auto",
         }}
@@ -684,14 +787,14 @@ function AddLocalProfile({ onCreate }: { onCreate: (name: string, file?: File | 
           <img src={preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
           <span className="subtitle" style={{ fontSize: 11 }}>
-            Avatar
+            {t("profiles.locals.add.avatar", "Avatar")}
           </span>
         )}
       </label>
 
       <input
         className="input"
-        placeholder="Nom du profil"
+        placeholder={t("profiles.locals.add.placeholder", "Nom du profil")}
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && submit()}
@@ -699,19 +802,24 @@ function AddLocalProfile({ onCreate }: { onCreate: (name: string, file?: File | 
       />
 
       <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-        <button className="btn primary sm" onClick={submit}>
-          Ajouter
+        <button
+          className="btn primary sm"
+          onClick={submit}
+          style={{
+            background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
+            color: "#000",
+            fontWeight: 700,
+          }}
+        >
+          {t("profiles.locals.add.btnAdd", "Ajouter")}
         </button>
         {(name || file) && (
-          <button
-            className="btn sm"
-            onClick={() => {
-              setName("");
-              setFile(null);
-              setPreview(null);
-            }}
-          >
-            Annuler
+          <button className="btn sm" onClick={() => {
+            setName("");
+            setFile(null);
+            setPreview(null);
+          }}>
+            {t("profiles.locals.add.btnCancel", "Annuler")}
           </button>
         )}
       </div>
@@ -727,7 +835,7 @@ function LocalProfiles({
   onDelete,
   statsMap,
   warmup,
-  onOpenAvatarCreator, // ✅
+  onOpenAvatarCreator,
 }: {
   profiles: Profile[];
   onRename: (id: string, name: string) => void;
@@ -735,11 +843,15 @@ function LocalProfiles({
   onDelete: (id: string) => void;
   statsMap: Record<string, BasicProfileStats | undefined>;
   warmup: (id: string) => void;
-  onOpenAvatarCreator?: () => void; // ✅ optionnel
+  onOpenAvatarCreator?: () => void;
 }) {
   const [editing, setEditing] = React.useState<string | null>(null);
   const [tmpName, setTmpName] = React.useState<string>("");
   const [tmpFile, setTmpFile] = React.useState<File | null>(null);
+
+  const { theme } = useTheme();
+  const { t } = useLang();
+  const primary = theme.primary;
 
   function startEdit(p: Profile) {
     setEditing(p.id);
@@ -767,7 +879,7 @@ function LocalProfiles({
           <div
             className="item"
             key={p.id}
-            style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}
+            style={{ gap: 10, alignItems: "center", flexWrap: "wrap", background: theme.bg }}
           >
             {/* gauche */}
             <div className="row" style={{ gap: 10, minWidth: 0, flex: 1 }}>
@@ -811,7 +923,7 @@ function LocalProfiles({
                       style={{ width: 200 }}
                     />
                     <label className="btn sm">
-                      Avatar
+                      {t("profiles.locals.edit.avatarBtn", "Avatar")}
                       <input
                         type="file"
                         accept="image/*"
@@ -836,14 +948,17 @@ function LocalProfiles({
                           location.hash = `#/stats?pid=${p.id}`;
                         }}
                         onMouseEnter={() => warmup(p.id)}
-                        style={{ color: "#f0b12a", textDecoration: "none" }}
-                        title="Voir les statistiques"
+                        style={{ color: primary, textDecoration: "none" }}
+                        title={t(
+                          "profiles.locals.seeStats",
+                          "Voir les statistiques"
+                        )}
                       >
                         {p.name || "—"}
                       </a>
                     </div>
 
-                    {/* ruban doré — responsive */}
+                    {/* ruban stats */}
                     <div style={{ marginTop: 6 }}>
                       <GoldMiniStats profileId={p.id} />
                     </div>
@@ -863,36 +978,38 @@ function LocalProfiles({
                 minWidth: 122,
               }}
             >
-              {/* ✅ Bouton Avatar Creator (toujours visible) */}
               <button
                 className="btn sm"
                 onClick={() => onOpenAvatarCreator?.()}
-                title="Ouvrir le créateur d’avatar"
+                title={t(
+                  "profiles.locals.btn.avatarCreator.tooltip",
+                  "Ouvrir le créateur d’avatar"
+                )}
                 style={{
-                  background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
+                  background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
                   color: "#000",
                   fontWeight: 800,
                 }}
               >
-                Créer avatar
+                {t("profiles.locals.btn.avatarCreator", "Créer avatar")}
               </button>
 
               {isEdit ? (
                 <>
                   <button className="btn ok sm" onClick={() => saveEdit(p.id)}>
-                    Enregistrer
+                    {t("profiles.locals.btn.save", "Enregistrer")}
                   </button>
                   <button className="btn sm" onClick={() => setEditing(null)}>
-                    Annuler
+                    {t("profiles.locals.btn.cancel", "Annuler")}
                   </button>
                 </>
               ) : (
                 <>
                   <button className="btn sm" onClick={() => startEdit(p)}>
-                    Éditer
+                    {t("profiles.locals.btn.edit", "Éditer")}
                   </button>
                   <button className="btn danger sm" onClick={() => onDelete(p.id)}>
-                    Suppr.
+                    {t("profiles.locals.btn.delete", "Suppr.")}
                   </button>
                 </>
               )}
@@ -904,7 +1021,7 @@ function LocalProfiles({
   );
 }
 
-/* ----- Edition inline ----- */
+/* ----- Edition inline du profil actif ----- */
 function EditInline({
   initialName,
   onSave,
@@ -921,6 +1038,10 @@ function EditInline({
   const [file, setFile] = React.useState<File | null>(null);
   const [avatarUrl, setAvatarUrl] = React.useState<string | null>(null);
 
+  const { t } = useLang();
+  const { theme } = useTheme();
+  const primary = theme.primary;
+
   React.useEffect(() => {
     if (file) {
       const reader = new FileReader();
@@ -933,8 +1054,12 @@ function EditInline({
 
   if (!edit) {
     return (
-      <button className="btn sm" onClick={() => setEdit(true)} title="Éditer le profil">
-        ÉDITER
+      <button
+        className="btn sm"
+        onClick={() => setEdit(true)}
+        title={t("profiles.connected.btn.edit", "MODIFIER LE PROFIL")}
+      >
+        {t("profiles.connected.btn.edit", "MODIFIER LE PROFIL")}
       </button>
     );
   }
@@ -947,7 +1072,7 @@ function EditInline({
           height: 56,
           borderRadius: "50%",
           overflow: "hidden",
-          border: "2px solid rgba(240,177,42,.4)",
+          border: `2px solid ${primary}66`,
           cursor: "pointer",
           display: "grid",
           placeItems: "center",
@@ -968,11 +1093,18 @@ function EditInline({
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
         ) : (
-          <span style={{ color: "#999", fontSize: 12 }}>Cliquer</span>
+          <span style={{ color: "#999", fontSize: 12 }}>
+            {t("profiles.connected.edit.avatarPlaceholder", "Cliquer")}
+          </span>
         )}
       </label>
 
-      <input className="input" value={name} onChange={(e) => setName(e.target.value)} style={{ width: (compact ? 160 : 200) }} />
+      <input
+        className="input"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        style={{ width: compact ? 160 : 200 }}
+      />
 
       <button
         className="btn ok sm"
@@ -983,7 +1115,7 @@ function EditInline({
           setAvatarUrl(null);
         }}
       >
-        Enregistrer
+        {t("profiles.locals.btn.save", "Enregistrer")}
       </button>
       <button
         className="btn sm"
@@ -993,11 +1125,11 @@ function EditInline({
           setAvatarUrl(null);
         }}
       >
-        Annuler
+        {t("profiles.locals.btn.cancel", "Annuler")}
       </button>
       {onDisconnect && (
         <button className="btn danger sm" onClick={onDisconnect}>
-          QUITTER
+          {t("profiles.connected.btn.quit", "QUITTER")}
         </button>
       )}
     </div>
@@ -1007,8 +1139,11 @@ function EditInline({
 /* ------ Gold mini-stats (lecture SYNC cache) ------ */
 function GoldMiniStats({ profileId }: { profileId: string }) {
   const bs = useBasicStats(profileId);
+  const { theme } = useTheme();
+  const { t } = useLang();
 
-  // champs robustes
+  const primary = theme.primary;
+
   const avg3 = Number.isFinite(bs.avg3) ? bs.avg3 : 0;
   const best = Number(bs.bestVisit ?? 0);
   const co = Number(bs.bestCheckout ?? 0);
@@ -1022,8 +1157,8 @@ function GoldMiniStats({ profileId }: { profileId: string }) {
         borderRadius: 10,
         padding: "5px 6px",
         boxSizing: "border-box",
-        background: "linear-gradient(180deg, rgba(60,42,15,.9), rgba(38,28,12,.9))",
-        border: "1px solid rgba(240,177,42,.25)",
+        background: `linear-gradient(180deg, ${primary}33, ${primary}11)`,
+        border: `1px solid ${primary}55`,
         boxShadow: "0 6px 16px rgba(0,0,0,.35), inset 0 0 0 1px rgba(0,0,0,.35)",
         width: "100%",
         maxWidth: "100%",
@@ -1031,22 +1166,47 @@ function GoldMiniStats({ profileId }: { profileId: string }) {
       }}
     >
       <div style={{ display: "flex", flexWrap: "nowrap", alignItems: "stretch", gap: 0, width: "100%" }}>
-        <GoldStatItem label="Moy/3" value={(Math.round(avg3 * 10) / 10).toFixed(1)} width={pillW} />
+        <GoldStatItem
+          label={t("home.stats.avg3", "Moy/3")}
+          value={(Math.round(avg3 * 10) / 10).toFixed(1)}
+          width={pillW}
+        />
         <GoldSep />
-        <GoldStatItem label="Best" value={String(best)} width={pillW} />
+        <GoldStatItem
+          label={t("home.stats.best", "Best")}
+          value={String(best)}
+          width={pillW}
+        />
         <GoldSep />
-        <GoldStatItem label="CO" value={String(co)} width={pillW} />
+        <GoldStatItem
+          label={t("home.stats.co", "CO")}
+          value={String(co)}
+          width={pillW}
+        />
         <GoldSep />
-        <GoldStatItem label="Win%" value={`${winPct}`} width={pillW} />
+        <GoldStatItem
+          label={t("home.stats.winPct", "Win%")}
+          value={`${winPct}`}
+          width={pillW}
+        />
       </div>
     </div>
   );
 }
 
 function GoldSep() {
+  const { theme } = useTheme();
+  const primary = theme.primary;
   return (
     <div aria-hidden style={{ width: 4, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ width: 1, height: "64%", background: "rgba(240,177,42,.18)", borderRadius: 1 }} />
+      <div
+        style={{
+          width: 1,
+          height: "64%",
+          background: `${primary}33`,
+          borderRadius: 1,
+        }}
+      />
     </div>
   );
 }
@@ -1060,6 +1220,9 @@ function GoldStatItem({
   value: string;
   width: string;
 }) {
+  const { theme } = useTheme();
+  const primary = theme.primary;
+
   return (
     <div
       style={{
@@ -1086,8 +1249,8 @@ function GoldStatItem({
         style={{
           fontWeight: 800,
           letterSpacing: 0.1,
-          color: "#f0b12a",
-          textShadow: "0 0 4px rgba(240,177,42,.16)",
+          color: primary,
+          textShadow: `0 0 4px ${primary}33`,
           fontSize: "clamp(9.5px, 2.4vw, 12px)",
           lineHeight: 1.05,
           whiteSpace: "nowrap",
