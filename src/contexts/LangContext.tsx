@@ -615,6 +615,62 @@ es: {
   "training.menu.comingSoon": "En desarrollo",
   "training.menu.info.close": "Cerrar",
 
+    // --- PERFIL (PÁGINA DE PERFILES) ---
+    "profiles.connected.title": "Perfil conectado",
+    "profiles.friends.title": "Amigos",
+    "profiles.locals.title": "Perfiles locales",
+  
+    "profiles.connected.seeStats": "Ver estadísticas",
+  
+    // Estado del perfil
+    "profiles.status.online": "En línea",
+    "profiles.status.away": "Ausente",
+    "profiles.status.offline": "Desconectado",
+  
+    // Perfil conectado — botones
+    "profiles.connected.btn.avatar": "Crear / Actualizar avatar",
+    "profiles.connected.btn.avatar.tooltip": "Abrir el creador de avatar",
+    "profiles.connected.btn.away.tooltip": "Cambiar estado",
+    "profiles.connected.btn.online": "EN LÍNEA",
+    "profiles.connected.btn.away": "AUSENTE",
+    "profiles.connected.btn.quit": "SALIR",
+    "profiles.connected.btn.quit.tooltip": "Cerrar sesión",
+    "profiles.connected.btn.edit": "EDITAR PERFIL",
+    "profiles.connected.edit.avatarPlaceholder": "Clic",
+  
+    // Conexión / creación
+    "profiles.auth.select.none": "Ningún perfil registrado",
+    "profiles.auth.select.btnConnect": "Conectar",
+    "profiles.auth.create.placeholder": "Nombre del perfil",
+    "profiles.auth.create.btn": "Añadir",
+  
+    // Amigos
+    "profiles.friends.none": "No hay amigos por ahora",
+  
+    // Perfiles locales — añadir
+    "profiles.locals.add.avatar": "Avatar",
+    "profiles.locals.add.placeholder": "Nombre del perfil",
+    "profiles.locals.add.btnAdd": "Añadir",
+    "profiles.locals.add.btnCancel": "Cancelar",
+  
+    // Perfiles locales — edición
+    "profiles.locals.edit.avatarBtn": "Avatar",
+    "profiles.locals.seeStats": "Ver estadísticas",
+  
+    // Perfiles locales — botones
+    "profiles.locals.btn.avatarCreator": "Crear avatar",
+    "profiles.locals.btn.avatarCreator.tooltip": "Abrir el creador de avatar",
+    "profiles.locals.btn.save": "Guardar",
+    "profiles.locals.btn.cancel": "Cancelar",
+    "profiles.locals.btn.edit": "Editar",
+    "profiles.locals.btn.delete": "Eliminar",
+  
+    // Común
+    "common.save": "Guardar",
+    "common.cancel": "Cancelar",
+    "common.edit": "Editar",
+    "common.deleteShort": "Elim.",  
+
   // --- LANGUAGES ---
   "lang.fr": "Francés",
   "lang.en": "Inglés",
@@ -795,6 +851,53 @@ de: {
 
   "training.menu.comingSoon": "Kommt bald",
   "training.menu.info.close": "Schließen",
+
+  "profiles.connected.title": "Verbundenes Profil",
+  "profiles.friends.title": "Freunde",
+  "profiles.locals.title": "Lokale Profile",
+
+  "profiles.connected.seeStats": "Statistiken anzeigen",
+
+  "profiles.status.online": "Online",
+  "profiles.status.away": "Abwesend",
+  "profiles.status.offline": "Offline",
+
+  "profiles.connected.btn.avatar": "Avatar erstellen / aktualisieren",
+  "profiles.connected.btn.avatar.tooltip": "Avatar-Editor öffnen",
+  "profiles.connected.btn.away.tooltip": "Status umschalten",
+  "profiles.connected.btn.online": "ONLINE",
+  "profiles.connected.btn.away": "ABWESEND",
+  "profiles.connected.btn.quit": "ABMELDEN",
+  "profiles.connected.btn.quit.tooltip": "Sitzung beenden",
+  "profiles.connected.btn.edit": "PROFIL BEARBEITEN",
+  "profiles.connected.edit.avatarPlaceholder": "Klicken",
+
+  "profiles.auth.select.none": "Kein Profil gespeichert",
+  "profiles.auth.select.btnConnect": "Verbinden",
+  "profiles.auth.create.placeholder": "Profilname",
+  "profiles.auth.create.btn": "Hinzufügen",
+
+  "profiles.friends.none": "Noch keine Freunde",
+
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Profilname",
+  "profiles.locals.add.btnAdd": "Hinzufügen",
+  "profiles.locals.add.btnCancel": "Abbrechen",
+
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "Statistiken anzeigen",
+
+  "profiles.locals.btn.avatarCreator": "Avatar erstellen",
+  "profiles.locals.btn.avatarCreator.tooltip": "Avatar-Editor öffnen",
+  "profiles.locals.btn.save": "Speichern",
+  "profiles.locals.btn.cancel": "Abbrechen",
+  "profiles.locals.btn.edit": "Bearbeiten",
+  "profiles.locals.btn.delete": "Löschen",
+
+  "common.save": "Speichern",
+  "common.cancel": "Abbrechen",
+  "common.edit": "Bearbeiten",
+  "common.deleteShort": "Löschen",
 
   // --- LANGUAGE NAMES ---
   "lang.fr": "Französisch",
@@ -978,6 +1081,53 @@ it: {
   "training.menu.comingSoon": "In arrivo",
   "training.menu.info.close": "Chiudi",
 
+  "profiles.connected.title": "Profilo collegato",
+  "profiles.friends.title": "Amici",
+  "profiles.locals.title": "Profili locali",
+
+  "profiles.connected.seeStats": "Vedi statistiche",
+
+  "profiles.status.online": "Online",
+  "profiles.status.away": "Assente",
+  "profiles.status.offline": "Offline",
+
+  "profiles.connected.btn.avatar": "Crea / Aggiorna avatar",
+  "profiles.connected.btn.avatar.tooltip": "Apri il creatore di avatar",
+  "profiles.connected.btn.away.tooltip": "Cambia stato",
+  "profiles.connected.btn.online": "ONLINE",
+  "profiles.connected.btn.away": "ASSENTE",
+  "profiles.connected.btn.quit": "ESCI",
+  "profiles.connected.btn.quit.tooltip": "Chiudi sessione",
+  "profiles.connected.btn.edit": "MODIFICA PROFILO",
+  "profiles.connected.edit.avatarPlaceholder": "Clic",
+
+  "profiles.auth.select.none": "Nessun profilo salvato",
+  "profiles.auth.select.btnConnect": "Accedi",
+  "profiles.auth.create.placeholder": "Nome profilo",
+  "profiles.auth.create.btn": "Aggiungi",
+
+  "profiles.friends.none": "Nessun amico al momento",
+
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Nome profilo",
+  "profiles.locals.add.btnAdd": "Aggiungi",
+  "profiles.locals.add.btnCancel": "Annulla",
+
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "Vedi statistiche",
+
+  "profiles.locals.btn.avatarCreator": "Crea avatar",
+  "profiles.locals.btn.avatarCreator.tooltip": "Apri il creatore di avatar",
+  "profiles.locals.btn.save": "Salva",
+  "profiles.locals.btn.cancel": "Annulla",
+  "profiles.locals.btn.edit": "Modifica",
+  "profiles.locals.btn.delete": "Elimina",
+
+  "common.save": "Salva",
+  "common.cancel": "Annulla",
+  "common.edit": "Modifica",
+  "common.deleteShort": "Canc.",
+
   // --- LANGUAGE NAMES ---
   "lang.fr": "Francese",
   "lang.en": "Inglese",
@@ -1159,6 +1309,53 @@ pt: {
   "training.menu.comingSoon": "Em breve",
   "training.menu.info.close": "Fechar",
 
+  "profiles.connected.title": "Perfil conectado",
+  "profiles.friends.title": "Amigos",
+  "profiles.locals.title": "Perfis locais",
+
+  "profiles.connected.seeStats": "Ver estatísticas",
+
+  "profiles.status.online": "Online",
+  "profiles.status.away": "Ausente",
+  "profiles.status.offline": "Offline",
+
+  "profiles.connected.btn.avatar": "Criar / Atualizar avatar",
+  "profiles.connected.btn.avatar.tooltip": "Abrir criador de avatar",
+  "profiles.connected.btn.away.tooltip": "Alternar estado",
+  "profiles.connected.btn.online": "ONLINE",
+  "profiles.connected.btn.away": "AUSENTE",
+  "profiles.connected.btn.quit": "SAIR",
+  "profiles.connected.btn.quit.tooltip": "Encerrar sessão",
+  "profiles.connected.btn.edit": "EDITAR PERFIL",
+  "profiles.connected.edit.avatarPlaceholder": "Clique",
+
+  "profiles.auth.select.none": "Nenhum perfil salvo",
+  "profiles.auth.select.btnConnect": "Entrar",
+  "profiles.auth.create.placeholder": "Nome do perfil",
+  "profiles.auth.create.btn": "Adicionar",
+
+  "profiles.friends.none": "Nenhum amigo por enquanto",
+
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Nome do perfil",
+  "profiles.locals.add.btnAdd": "Adicionar",
+  "profiles.locals.add.btnCancel": "Cancelar",
+
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "Ver estatísticas",
+
+  "profiles.locals.btn.avatarCreator": "Criar avatar",
+  "profiles.locals.btn.avatarCreator.tooltip": "Abrir criador de avatar",
+  "profiles.locals.btn.save": "Salvar",
+  "profiles.locals.btn.cancel": "Cancelar",
+  "profiles.locals.btn.edit": "Editar",
+  "profiles.locals.btn.delete": "Excluir",
+
+  "common.save": "Salvar",
+  "common.cancel": "Cancelar",
+  "common.edit": "Editar",
+  "common.deleteShort": "Excluir",
+
   // --- LANGUAGE NAMES ---
   "lang.fr": "Francês",
   "lang.en": "Inglês",
@@ -1339,6 +1536,53 @@ nl: {
 
   "training.menu.comingSoon": "Binnenkort",
   "training.menu.info.close": "Sluiten",
+
+  "profiles.connected.title": "Verbonden profiel",
+  "profiles.friends.title": "Vrienden",
+  "profiles.locals.title": "Lokale profielen",
+
+  "profiles.connected.seeStats": "Statistieken bekijken",
+
+  "profiles.status.online": "Online",
+  "profiles.status.away": "Afwezig",
+  "profiles.status.offline": "Offline",
+
+  "profiles.connected.btn.avatar": "Avatar maken / bijwerken",
+  "profiles.connected.btn.avatar.tooltip": "Avatar-editor openen",
+  "profiles.connected.btn.away.tooltip": "Status wisselen",
+  "profiles.connected.btn.online": "ONLINE",
+  "profiles.connected.btn.away": "AFWEZIG",
+  "profiles.connected.btn.quit": "AFMELDEN",
+  "profiles.connected.btn.quit.tooltip": "Sessie beëindigen",
+  "profiles.connected.btn.edit": "PROFIEL BEWERKEN",
+  "profiles.connected.edit.avatarPlaceholder": "Klik",
+
+  "profiles.auth.select.none": "Geen profiel opgeslagen",
+  "profiles.auth.select.btnConnect": "Verbinden",
+  "profiles.auth.create.placeholder": "Profielfnaam",
+  "profiles.auth.create.btn": "Toevoegen",
+
+  "profiles.friends.none": "Nog geen vrienden",
+
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Profielfnaam",
+  "profiles.locals.add.btnAdd": "Toevoegen",
+  "profiles.locals.add.btnCancel": "Annuleren",
+
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "Statistieken bekijken",
+
+  "profiles.locals.btn.avatarCreator": "Avatar maken",
+  "profiles.locals.btn.avatarCreator.tooltip": "Avatar-editor openen",
+  "profiles.locals.btn.save": "Opslaan",
+  "profiles.locals.btn.cancel": "Annuleren",
+  "profiles.locals.btn.edit": "Bewerken",
+  "profiles.locals.btn.delete": "Verwijderen",
+
+  "common.save": "Opslaan",
+  "common.cancel": "Annuleren",
+  "common.edit": "Bewerken",
+  "common.deleteShort": "Verw.",
 
   // --- LANGUAGE NAMES ---
   "lang.fr": "Frans",
@@ -1522,6 +1766,53 @@ ru: {
   "training.menu.comingSoon": "Скоро",
   "training.menu.info.close": "Закрыть",
 
+  "profiles.connected.title": "Активный профиль",
+  "profiles.friends.title": "Друзья",
+  "profiles.locals.title": "Локальные профили",
+
+  "profiles.connected.seeStats": "Просмотр статистики",
+
+  "profiles.status.online": "Онлайн",
+  "profiles.status.away": "Нет на месте",
+  "profiles.status.offline": "Оффлайн",
+
+  "profiles.connected.btn.avatar": "Создать / обновить аватар",
+  "profiles.connected.btn.avatar.tooltip": "Открыть редактор аватара",
+  "profiles.connected.btn.away.tooltip": "Переключить статус",
+  "profiles.connected.btn.online": "ОНЛАЙН",
+  "profiles.connected.btn.away": "НЕТ НА МЕСТЕ",
+  "profiles.connected.btn.quit": "ВЫЙТИ",
+  "profiles.connected.btn.quit.tooltip": "Завершить сеанс",
+  "profiles.connected.btn.edit": "ИЗМЕНИТЬ ПРОФИЛЬ",
+  "profiles.connected.edit.avatarPlaceholder": "Нажмите",
+
+  "profiles.auth.select.none": "Нет сохранённых профилей",
+  "profiles.auth.select.btnConnect": "Войти",
+  "profiles.auth.create.placeholder": "Имя профиля",
+  "profiles.auth.create.btn": "Добавить",
+
+  "profiles.friends.none": "Пока нет друзей",
+
+  "profiles.locals.add.avatar": "Аватар",
+  "profiles.locals.add.placeholder": "Имя профиля",
+  "profiles.locals.add.btnAdd": "Добавить",
+  "profiles.locals.add.btnCancel": "Отмена",
+
+  "profiles.locals.edit.avatarBtn": "Аватар",
+  "profiles.locals.seeStats": "Просмотр статистики",
+
+  "profiles.locals.btn.avatarCreator": "Создать аватар",
+  "profiles.locals.btn.avatarCreator.tooltip": "Открыть редактор аватара",
+  "profiles.locals.btn.save": "Сохранить",
+  "profiles.locals.btn.cancel": "Отмена",
+  "profiles.locals.btn.edit": "Изменить",
+  "profiles.locals.btn.delete": "Удалить",
+
+  "common.save": "Сохранить",
+  "common.cancel": "Отмена",
+  "common.edit": "Изменить",
+  "common.deleteShort": "Удал.",
+
   // --- LANGUAGE NAMES ---
   "lang.fr": "Французский",
   "lang.en": "Английский",
@@ -1703,6 +1994,53 @@ zh: {
   "training.menu.comingSoon": "即将推出",
   "training.menu.info.close": "关闭",
 
+  "profiles.connected.title": "当前资料",
+  "profiles.friends.title": "好友",
+  "profiles.locals.title": "本地资料",
+
+  "profiles.connected.seeStats": "查看统计数据",
+
+  "profiles.status.online": "在线",
+  "profiles.status.away": "离开",
+  "profiles.status.offline": "离线",
+
+  "profiles.connected.btn.avatar": "创建 / 更新头像",
+  "profiles.connected.btn.avatar.tooltip": "打开头像编辑器",
+  "profiles.connected.btn.away.tooltip": "切换状态",
+  "profiles.connected.btn.online": "在线",
+  "profiles.connected.btn.away": "离开",
+  "profiles.connected.btn.quit": "退出",
+  "profiles.connected.btn.quit.tooltip": "结束会话",
+  "profiles.connected.btn.edit": "编辑资料",
+  "profiles.connected.edit.avatarPlaceholder": "点击",
+
+  "profiles.auth.select.none": "未保存任何资料",
+  "profiles.auth.select.btnConnect": "连接",
+  "profiles.auth.create.placeholder": "资料名称",
+  "profiles.auth.create.btn": "添加",
+
+  "profiles.friends.none": "暂无好友",
+
+  "profiles.locals.add.avatar": "头像",
+  "profiles.locals.add.placeholder": "资料名称",
+  "profiles.locals.add.btnAdd": "添加",
+  "profiles.locals.add.btnCancel": "取消",
+
+  "profiles.locals.edit.avatarBtn": "头像",
+  "profiles.locals.seeStats": "查看统计",
+
+  "profiles.locals.btn.avatarCreator": "创建头像",
+  "profiles.locals.btn.avatarCreator.tooltip": "打开头像编辑器",
+  "profiles.locals.btn.save": "保存",
+  "profiles.locals.btn.cancel": "取消",
+  "profiles.locals.btn.edit": "编辑",
+  "profiles.locals.btn.delete": "删除",
+
+  "common.save": "保存",
+  "common.cancel": "取消",
+  "common.edit": "编辑",
+  "common.deleteShort": "删",
+
   // --- LANGUAGE NAMES ---
   "lang.fr": "法语",
   "lang.en": "英语",
@@ -1861,6 +2199,53 @@ ja: {
 
   "games.status.comingSoon": "近日公開",
   "games.info.close": "閉じる",
+
+  "profiles.connected.title": "接続中のプロフィール",
+  "profiles.friends.title": "フレンド",
+  "profiles.locals.title": "ローカルプロフィール",
+
+  "profiles.connected.seeStats": "統計を見る",
+
+  "profiles.status.online": "オンライン",
+  "profiles.status.away": "離席中",
+  "profiles.status.offline": "オフライン",
+
+  "profiles.connected.btn.avatar": "アバター作成 / 更新",
+  "profiles.connected.btn.avatar.tooltip": "アバターエディターを開く",
+  "profiles.connected.btn.away.tooltip": "ステータスを切り替える",
+  "profiles.connected.btn.online": "オンライン",
+  "profiles.connected.btn.away": "離席中",
+  "profiles.connected.btn.quit": "ログアウト",
+  "profiles.connected.btn.quit.tooltip": "セッションを終了",
+  "profiles.connected.btn.edit": "プロフィール編集",
+  "profiles.connected.edit.avatarPlaceholder": "クリック",
+
+  "profiles.auth.select.none": "保存されたプロフィールがありません",
+  "profiles.auth.select.btnConnect": "接続",
+  "profiles.auth.create.placeholder": "プロフィール名",
+  "profiles.auth.create.btn": "追加",
+
+  "profiles.friends.none": "フレンドはいません",
+
+  "profiles.locals.add.avatar": "アバター",
+  "profiles.locals.add.placeholder": "プロフィール名",
+  "profiles.locals.add.btnAdd": "追加",
+  "profiles.locals.add.btnCancel": "キャンセル",
+
+  "profiles.locals.edit.avatarBtn": "アバター",
+  "profiles.locals.seeStats": "統計を見る",
+
+  "profiles.locals.btn.avatarCreator": "アバター作成",
+  "profiles.locals.btn.avatarCreator.tooltip": "アバターエディターを開く",
+  "profiles.locals.btn.save": "保存",
+  "profiles.locals.btn.cancel": "キャンセル",
+  "profiles.locals.btn.edit": "編集",
+  "profiles.locals.btn.delete": "削除",
+
+  "common.save": "保存",
+  "common.cancel": "キャンセル",
+  "common.edit": "編集",
+  "common.deleteShort": "削除",
 
   // --- TRAINING MENU ---
   "training.menu.title": "トレーニング",
@@ -2065,6 +2450,53 @@ ar: {
   "training.menu.comingSoon": "قريباً",
   "training.menu.info.close": "إغلاق",
 
+  "profiles.connected.title": "الملف المتصل",
+  "profiles.friends.title": "الأصدقاء",
+  "profiles.locals.title": "الملفات المحلية",
+
+  "profiles.connected.seeStats": "عرض الإحصائيات",
+
+  "profiles.status.online": "متصل",
+  "profiles.status.away": "بعيد",
+  "profiles.status.offline": "غير متصل",
+
+  "profiles.connected.btn.avatar": "إنشاء / تحديث الصورة",
+  "profiles.connected.btn.avatar.tooltip": "فتح مُنشئ الصورة",
+  "profiles.connected.btn.away.tooltip": "تغيير الحالة",
+  "profiles.connected.btn.online": "متصل",
+  "profiles.connected.btn.away": "بعيد",
+  "profiles.connected.btn.quit": "خروج",
+  "profiles.connected.btn.quit.tooltip": "إنهاء الجلسة",
+  "profiles.connected.btn.edit": "تعديل الملف",
+  "profiles.connected.edit.avatarPlaceholder": "اضغط",
+
+  "profiles.auth.select.none": "لا يوجد أي ملف محفوظ",
+  "profiles.auth.select.btnConnect": "اتصال",
+  "profiles.auth.create.placeholder": "اسم الملف",
+  "profiles.auth.create.btn": "إضافة",
+
+  "profiles.friends.none": "لا يوجد أصدقاء حالياً",
+
+  "profiles.locals.add.avatar": "صورة",
+  "profiles.locals.add.placeholder": "اسم الملف",
+  "profiles.locals.add.btnAdd": "إضافة",
+  "profiles.locals.add.btnCancel": "إلغاء",
+
+  "profiles.locals.edit.avatarBtn": "صورة",
+  "profiles.locals.seeStats": "عرض الإحصائيات",
+
+  "profiles.locals.btn.avatarCreator": "إنشاء صورة",
+  "profiles.locals.btn.avatarCreator.tooltip": "فتح مُنشئ الصورة",
+  "profiles.locals.btn.save": "حفظ",
+  "profiles.locals.btn.cancel": "إلغاء",
+  "profiles.locals.btn.edit": "تعديل",
+  "profiles.locals.btn.delete": "حذف",
+
+  "common.save": "حفظ",
+  "common.cancel": "إلغاء",
+  "common.edit": "تعديل",
+  "common.deleteShort": "حذف",
+
   // --- LANG NAMES ---
   "lang.fr": "الفرنسية",
   "lang.en": "الإنجليزية",
@@ -2245,6 +2677,53 @@ hi: {
 
   "training.menu.comingSoon": "जल्द ही",
   "training.menu.info.close": "बंद करें",
+
+  "profiles.connected.title": "कनेक्टेड प्रोफ़ाइल",
+  "profiles.friends.title": "दोस्त",
+  "profiles.locals.title": "लोकल प्रोफ़ाइल",
+
+  "profiles.connected.seeStats": "आँकड़े देखें",
+
+  "profiles.status.online": "ऑनलाइन",
+  "profiles.status.away": "दूर",
+  "profiles.status.offline": "ऑफ़लाइन",
+
+  "profiles.connected.btn.avatar": "अवतार बनाएँ / अपडेट करें",
+  "profiles.connected.btn.avatar.tooltip": "अवतार क्रिएटर खोलें",
+  "profiles.connected.btn.away.tooltip": "स्थिति बदलें",
+  "profiles.connected.btn.online": "ऑनलाइन",
+  "profiles.connected.btn.away": "दूर",
+  "profiles.connected.btn.quit": "बाहर निकलें",
+  "profiles.connected.btn.quit.tooltip": "सेशन समाप्त करें",
+  "profiles.connected.btn.edit": "प्रोफ़ाइल संपादित करें",
+  "profiles.connected.edit.avatarPlaceholder": "क्लिक करें",
+
+  "profiles.auth.select.none": "कोई प्रोफ़ाइल सहेजी नहीं गई",
+  "profiles.auth.select.btnConnect": "कनेक्ट",
+  "profiles.auth.create.placeholder": "प्रोफ़ाइल नाम",
+  "profiles.auth.create.btn": "जोड़ें",
+
+  "profiles.friends.none": "अभी कोई दोस्त नहीं",
+
+  "profiles.locals.add.avatar": "अवतार",
+  "profiles.locals.add.placeholder": "प्रोफ़ाइल नाम",
+  "profiles.locals.add.btnAdd": "जोड़ें",
+  "profiles.locals.add.btnCancel": "रद्द करें",
+
+  "profiles.locals.edit.avatarBtn": "अवतार",
+  "profiles.locals.seeStats": "आँकड़े देखें",
+
+  "profiles.locals.btn.avatarCreator": "अवतार बनाएँ",
+  "profiles.locals.btn.avatarCreator.tooltip": "अवतार क्रिएटर खोलें",
+  "profiles.locals.btn.save": "सहेजें",
+  "profiles.locals.btn.cancel": "रद्द करें",
+  "profiles.locals.btn.edit": "संपादित करें",
+  "profiles.locals.btn.delete": "हटाएँ",
+
+  "common.save": "सहेजें",
+  "common.cancel": "रद्द करें",
+  "common.edit": "संपादित करें",
+  "common.deleteShort": "हटाएँ",
 
   // --- LANGUAGE NAMES ---
   "lang.fr": "फ़्रेंच",
@@ -2427,6 +2906,53 @@ tr: {
   "training.menu.comingSoon": "Yakında",
   "training.menu.info.close": "Kapat",
 
+  "profiles.connected.title": "Bağlı profil",
+  "profiles.friends.title": "Arkadaşlar",
+  "profiles.locals.title": "Yerel profiller",
+
+  "profiles.connected.seeStats": "İstatistikleri görüntüle",
+
+  "profiles.status.online": "Çevrimiçi",
+  "profiles.status.away": "Uzakta",
+  "profiles.status.offline": "Çevrimdışı",
+
+  "profiles.connected.btn.avatar": "Avatar oluştur / güncelle",
+  "profiles.connected.btn.avatar.tooltip": "Avatar oluşturucuyu aç",
+  "profiles.connected.btn.away.tooltip": "Durumu değiştir",
+  "profiles.connected.btn.online": "ÇEVRİMİÇİ",
+  "profiles.connected.btn.away": "UZAKTA",
+  "profiles.connected.btn.quit": "ÇIKIŞ",
+  "profiles.connected.btn.quit.tooltip": "Oturumu kapat",
+  "profiles.connected.btn.edit": "PROFİLİ DÜZENLE",
+  "profiles.connected.edit.avatarPlaceholder": "Tıkla",
+
+  "profiles.auth.select.none": "Kayıtlı profil yok",
+  "profiles.auth.select.btnConnect": "Bağlan",
+  "profiles.auth.create.placeholder": "Profil adı",
+  "profiles.auth.create.btn": "Ekle",
+
+  "profiles.friends.none": "Henüz arkadaş yok",
+
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Profil adı",
+  "profiles.locals.add.btnAdd": "Ekle",
+  "profiles.locals.add.btnCancel": "İptal",
+
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "İstatistikleri görüntüle",
+
+  "profiles.locals.btn.avatarCreator": "Avatar oluştur",
+  "profiles.locals.btn.avatarCreator.tooltip": "Avatar oluşturucuyu aç",
+  "profiles.locals.btn.save": "Kaydet",
+  "profiles.locals.btn.cancel": "İptal",
+  "profiles.locals.btn.edit": "Düzenle",
+  "profiles.locals.btn.delete": "Sil",
+
+  "common.save": "Kaydet",
+  "common.cancel": "İptal",
+  "common.edit": "Düzenle",
+  "common.deleteShort": "Sil",
+
   // --- LANGUAGE NAMES ---
   "lang.fr": "Fransızca",
   "lang.en": "İngilizce",
@@ -2608,6 +3134,53 @@ da: {
   "training.menu.comingSoon": "Kommer snart",
   "training.menu.info.close": "Luk",
 
+  "profiles.connected.title": "Forbundet profil",
+  "profiles.friends.title": "Venner",
+  "profiles.locals.title": "Lokale profiler",
+
+  "profiles.connected.seeStats": "Se statistik",
+
+  "profiles.status.online": "Online",
+  "profiles.status.away": "Væk",
+  "profiles.status.offline": "Offline",
+
+  "profiles.connected.btn.avatar": "Opret / Opdater avatar",
+  "profiles.connected.btn.avatar.tooltip": "Åbn avatarværktøj",
+  "profiles.connected.btn.away.tooltip": "Skift status",
+  "profiles.connected.btn.online": "ONLINE",
+  "profiles.connected.btn.away": "VÆK",
+  "profiles.connected.btn.quit": "LOG UD",
+  "profiles.connected.btn.quit.tooltip": "Afslut session",
+  "profiles.connected.btn.edit": "REDIGÉR PROFIL",
+  "profiles.connected.edit.avatarPlaceholder": "Klik",
+
+  "profiles.auth.select.none": "Ingen gemte profiler",
+  "profiles.auth.select.btnConnect": "Forbind",
+  "profiles.auth.create.placeholder": "Profilnavn",
+  "profiles.auth.create.btn": "Tilføj",
+
+  "profiles.friends.none": "Ingen venner endnu",
+
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Profilnavn",
+  "profiles.locals.add.btnAdd": "Tilføj",
+  "profiles.locals.add.btnCancel": "Annuller",
+
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "Se statistik",
+
+  "profiles.locals.btn.avatarCreator": "Opret avatar",
+  "profiles.locals.btn.avatarCreator.tooltip": "Åbn avatarværktøj",
+  "profiles.locals.btn.save": "Gem",
+  "profiles.locals.btn.cancel": "Annuller",
+  "profiles.locals.btn.edit": "Redigér",
+  "profiles.locals.btn.delete": "Slet",
+
+  "common.save": "Gem",
+  "common.cancel": "Annuller",
+  "common.edit": "Redigér",
+  "common.deleteShort": "Slet",
+
   // --- LANGUAGE NAMES ---
   "lang.fr": "Fransk",
   "lang.en": "Engelsk",
@@ -2653,22 +3226,22 @@ no: {
 
   // THEMES PREMIUM
   "settings.theme.gold.label": "GOLD NEON",
-  "settings.theme.gold.desc": "Premium gyldent tema",
+  "settings.theme.gold.desc": "Premium gyllent tema",
 
-  "settings.theme.pink.label": "ROSE FLUO",
+  "settings.theme.pink.label": "ROSA FLUO",
   "settings.theme.pink.desc": "Rosa arcade-stemning",
 
   "settings.theme.petrol.label": "PETROL BLUE",
   "settings.theme.petrol.desc": "Dyp neonblå",
 
   "settings.theme.green.label": "VEGETAL",
-  "settings.theme.green.desc": "Lys treningsstil",
+  "settings.theme.green.desc": "Lyst treningsutseende",
 
   "settings.theme.magenta.label": "MAGENTA",
   "settings.theme.magenta.desc": "Intens lilla / magenta",
 
   "settings.theme.red.label": "BRIGHT RED",
-  "settings.theme.red.desc": "Aggressiv arcade-rød",
+  "settings.theme.red.desc": "Sterk arcade-rød",
 
   "settings.theme.orange.label": "FIRE ORANGE",
   "settings.theme.orange.desc": "Varm og energisk oransje",
@@ -2732,7 +3305,7 @@ no: {
   "games.training.subtitle": "Forbedre ferdighetene dine.",
   "games.training.infoTitle": "Trening",
   "games.training.infoBody":
-    "Treningsmodus for presisjon, poeng og avslutninger.",
+    "Treningsmodus for presisjon, stabilitet og avslutninger.",
 
   "games.x01.title": "X01",
   "games.x01.subtitle": "301 / 501 / 701 / 901.",
@@ -2744,13 +3317,13 @@ no: {
   "games.cricket.subtitle": "Lukk 15–20 + Bull.",
   "games.cricket.infoTitle": "Cricket",
   "games.cricket.infoBody":
-    "Lukk feltene 15 til 20 og Bull før motstanderen og få flere poeng.",
+    "Lukk feltene 15 til 20 og Bull før motstanderen og få mest mulig poeng.",
 
   "games.killer.title": "KILLER",
-  "games.killer.subtitle": "Doble tallet ditt… bli Killer.",
+  "games.killer.subtitle": "Treff ditt tall… bli Killer.",
   "games.killer.infoTitle": "Killer",
   "games.killer.infoBody":
-    "Doble nummeret ditt for å bli Killer, og eliminer de andre spillerne.",
+    "Treff tallet ditt for å bli Killer, og eliminer de andre spillerne.",
 
   "games.shanghai.title": "SHANGHAI",
   "games.shanghai.subtitle": "Rundetall, S-D-T = Shanghai.",
@@ -2771,30 +3344,97 @@ no: {
   "training.menu.title": "TRENING",
   "training.menu.subtitle": "Velg en treningsmodus",
 
-  "training.menu.x01.title": "X01 Trening",
+  "training.menu.x01.title": "X01-trening",
   "training.menu.x01.subtitle": "Bedre poeng og avslutninger",
   "training.menu.x01.info":
-    "X01-trening for presisjon, stabilitet og statistikk.",
+    "X01-trening for presisjon, stabilitet og detaljert statistikk.",
 
   "training.menu.clock.title": "Around the Clock",
   "training.menu.clock.subtitle": "Single / Double / Triple",
   "training.menu.clock.info":
-    "Treff tallene fra 1 til 20 og Bull.",
+    "Treff tallene fra 1 til 20 og Bull i valgt modus.",
 
   "training.menu.evolution.title": "Evolusjon",
-  "training.menu.evolution.subtitle": "Kommer snart",
+  "training.menu.evolution.subtitle": "Direkte tilgang til X01-statistikk",
   "training.menu.evolution.info":
-    "En ny treningsmodus kommer snart.",
+    "Se detaljert X01-treningsstatistikk direkte i statistikkmenyen.",
 
   "training.menu.comingSoon": "Kommer snart",
   "training.menu.info.close": "Lukk",
 
-  // LANG NAMES
+  // --- PROFILES PAGE (full from unified structure) ---
+  "profiles.connected.title": "Tilkoblet profil",
+  "profiles.friends.title": "Venner",
+  "profiles.locals.title": "Lokale profiler",
+
+  "profiles.connected.seeStats": "Se statistikk",
+
+  "profiles.connected.btn.avatar": "Lag / oppdater avatar",
+  "profiles.connected.btn.avatar.tooltip": "Åpne avatar-verktøy",
+  "profiles.connected.btn.away.tooltip": "Bytt status",
+  "profiles.connected.btn.online": "ONLINE",
+  "profiles.connected.btn.away": "BORTE",
+  "profiles.connected.btn.quit": "LOGG UT",
+  "profiles.connected.btn.quit.tooltip": "Avslutt sesjonen",
+  "profiles.connected.btn.edit": "REDIGER PROFIL",
+  "profiles.connected.edit.avatarPlaceholder": "Klikk",
+
+  "profiles.auth.select.none": "Ingen lagrede profiler",
+  "profiles.auth.select.btnConnect": "Koble til",
+  "profiles.auth.create.placeholder": "Profilnavn",
+  "profiles.auth.create.btn": "Legg til",
+
+  "profiles.friends.none": "Ingen venner ennå",
+
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Profilnavn",
+  "profiles.locals.add.btnAdd": "Legg til",
+  "profiles.locals.add.btnCancel": "Avbryt",
+
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "Se statistikk",
+
+  "profiles.locals.btn.avatarCreator": "Lag avatar",
+  "profiles.locals.btn.avatarCreator.tooltip": "Åpne avatar-verktøy",
+  "profiles.locals.btn.save": "Lagre",
+  "profiles.locals.btn.cancel": "Avbryt",
+  "profiles.locals.btn.edit": "Rediger",
+  "profiles.locals.btn.delete": "Slett",
+
+  "common.save": "Lagre",
+  "common.cancel": "Avbryt",
+  "common.edit": "Rediger",
+  "common.deleteShort": "Slett",
+
+  // --- LANGUAGES ---
+  "lang.fr": "Fransk",
+  "lang.en": "Engelsk",
+  "lang.es": "Spansk",
+  "lang.de": "Tysk",
+  "lang.it": "Italiensk",
+  "lang.pt": "Portugisisk",
+  "lang.nl": "Nederlandsk",
+  "lang.ru": "Russisk",
+  "lang.zh": "Kinesisk",
+  "lang.ja": "Japansk",
+  "lang.ar": "Arabisk",
+  "lang.hi": "Hindi",
+  "lang.tr": "Tyrkisk",
+  "lang.da": "Dansk",
   "lang.no": "Norsk",
+  "lang.sv": "Svensk",
+  "lang.is": "Islandsk",
+  "lang.pl": "Polsk",
+  "lang.ro": "Rumensk",
+  "lang.at": "Østerriksk",
+  "lang.sr": "Serbisk",
+  "lang.hr": "Kroatisk",
+  "lang.cs": "Tsjekkisk",
 },
 
- // ---------- SVENSKA ----------
+// ---------- SVENSKA ----------
 sv: {
+  // --- NAV ---
   "nav.home": "Hem",
   "nav.games": "Spel",
   "nav.profiles": "Profiler",
@@ -2802,6 +3442,7 @@ sv: {
   "nav.stats": "Statistik",
   "nav.settings": "Inställningar",
 
+  // --- SETTINGS ---
   "settings.back": "Tillbaka",
   "settings.title": "Inställningar",
   "settings.subtitle": "Anpassa appens tema och språk",
@@ -2811,17 +3452,17 @@ sv: {
   "settings.theme.gold.label": "GOLD NEON",
   "settings.theme.gold.desc": "Exklusivt guldtema",
 
-  "settings.theme.pink.label": "ROSE FLUO",
-  "settings.theme.pink.desc": "Rosa arcade-stämning",
+  "settings.theme.pink.label": "ROSA FLUO",
+  "settings.theme.pink.desc": "Rosa arcade-känsla",
 
   "settings.theme.petrol.label": "PETROL BLUE",
   "settings.theme.petrol.desc": "Djup neonblå",
 
   "settings.theme.green.label": "VEGETAL",
-  "settings.theme.green.desc": "Ljust träningsstil",
+  "settings.theme.green.desc": "Ljus träningsstil",
 
   "settings.theme.magenta.label": "MAGENTA",
-  "settings.theme.magenta.desc": "Intensiv lila/magenta",
+  "settings.theme.magenta.desc": "Intensiv lila / magenta",
 
   "settings.theme.red.label": "BRIGHT RED",
   "settings.theme.red.desc": "Aggressiv arcade-röd",
@@ -2830,8 +3471,9 @@ sv: {
   "settings.theme.orange.desc": "Varm och energisk orange",
 
   "settings.theme.white.label": "SNOW WHITE",
-  "settings.theme.white.desc": "Modern ljus bakgrund",
+  "settings.theme.white.desc": "Modern ljus design",
 
+  // --- HOME ---
   "home.greeting": "Välkommen",
   "home.titleApp": "DARTS COUNTER",
   "home.connect": "LOGGA IN",
@@ -2855,28 +3497,60 @@ sv: {
   "home.stats.co": "CO",
   "home.stats.winPct": "Vinst%",
 
+  // STATUS
   "status.online": "Online",
   "status.away": "Borta",
   "status.offline": "Offline",
 
-  "profiles.title": "Profiler",
-  "profiles.create": "Skapa profil",
-  "profiles.edit": "Redigera profil",
-  "profiles.delete": "Radera profil",
+  // --- PROFILES PAGE ---
+  "profiles.connected.title": "Ansluten profil",
+  "profiles.friends.title": "Vänner",
+  "profiles.locals.title": "Lokala profiler",
 
-  "profiles.confirmDeleteTitle": "Radera profil?",
-  "profiles.confirmDeleteBody":
-    "Denna profil och all statistik kommer att raderas permanent.",
-  "profiles.confirmDeleteYes": "Radera",
-  "profiles.confirmDeleteNo": "Avbryt",
+  "profiles.connected.seeStats": "Visa statistik",
 
-  "profiles.name": "Namn",
-  "profiles.avatar": "Avatar",
-  "profiles.stats": "Statistik",
-  "profiles.noProfiles": "Inga profiler ännu.",
-  "profiles.pickOne": "Välj en profil",
-  "profiles.active": "Aktiv profil",
+  "profiles.status.online": "Online",
+  "profiles.status.away": "Frånvarande",
+  "profiles.status.offline": "Offline",
 
+  "profiles.connected.btn.avatar": "Skapa / uppdatera avatar",
+  "profiles.connected.btn.avatar.tooltip": "Öppna avatarverktyget",
+  "profiles.connected.btn.away.tooltip": "Byt status",
+  "profiles.connected.btn.online": "ONLINE",
+  "profiles.connected.btn.away": "FRÅNVARANDE",
+  "profiles.connected.btn.quit": "LOGGA UT",
+  "profiles.connected.btn.quit.tooltip": "Avsluta sessionen",
+  "profiles.connected.btn.edit": "REDIGERA PROFIL",
+  "profiles.connected.edit.avatarPlaceholder": "Klicka",
+
+  "profiles.auth.select.none": "Inga sparade profiler",
+  "profiles.auth.select.btnConnect": "Anslut",
+  "profiles.auth.create.placeholder": "Profilnamn",
+  "profiles.auth.create.btn": "Lägg till",
+
+  "profiles.friends.none": "Inga vänner ännu",
+
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Profilnamn",
+  "profiles.locals.add.btnAdd": "Lägg till",
+  "profiles.locals.add.btnCancel": "Avbryt",
+
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "Visa statistik",
+
+  "profiles.locals.btn.avatarCreator": "Skapa avatar",
+  "profiles.locals.btn.avatarCreator.tooltip": "Öppna avatarverktyget",
+  "profiles.locals.btn.save": "Spara",
+  "profiles.locals.btn.cancel": "Avbryt",
+  "profiles.locals.btn.edit": "Redigera",
+  "profiles.locals.btn.delete": "Radera",
+
+  "common.save": "Spara",
+  "common.cancel": "Avbryt",
+  "common.edit": "Redigera",
+  "common.deleteShort": "Radera",
+
+  // --- GAMES PAGE ---
   "games.title": "ALLA SPEL",
   "games.subtitle": "Välj ett spelläge",
 
@@ -2884,25 +3558,25 @@ sv: {
   "games.training.subtitle": "Förbättra din utveckling.",
   "games.training.infoTitle": "Träning",
   "games.training.infoBody":
-    "Träningsläge för träffsäkerhet, scoring och avslut.",
+    "Träningsläge med fokus på precision, scoring och avslut.",
 
   "games.x01.title": "X01",
   "games.x01.subtitle": "301 / 501 / 701 / 901.",
   "games.x01.infoTitle": "X01",
   "games.x01.infoBody":
-    "Klassiska X01-spel med statistik, historik och regelval.",
+    "Klassiska X01-matcher med statistik, historik och regelalternativ.",
 
   "games.cricket.title": "CRICKET",
   "games.cricket.subtitle": "Stäng 15–20 + Bull.",
   "games.cricket.infoTitle": "Cricket",
   "games.cricket.infoBody":
-    "Stäng 15–20 och Bull innan motståndaren och få poäng.",
+    "Stäng 15–20 och Bull före motståndaren samtidigt som du samlar poäng.",
 
   "games.killer.title": "KILLER",
-  "games.killer.subtitle": "Dubbla din siffra… bli Killer.",
+  "games.killer.subtitle": "Träffa ditt nummer… bli Killer.",
   "games.killer.infoTitle": "Killer",
   "games.killer.infoBody":
-    "Dubbla ditt nummer för att bli Killer och slå ut andra spelare.",
+    "Träffa ditt nummer för att bli Killer och slå ut andra spelare.",
 
   "games.shanghai.title": "SHANGHAI",
   "games.shanghai.subtitle": "Rundvärde, S-D-T = Shanghai.",
@@ -2914,33 +3588,57 @@ sv: {
   "games.battle.subtitle": "Roligt läge — elimineringar.",
   "games.battle.infoTitle": "Battle Royale",
   "games.battle.infoBody":
-    "Fler spelare med elimineringar. Sista spelaren vinner.",
+    "Multiplayer med elimineringar. Sista spelaren vinner.",
 
   "games.status.comingSoon": "Kommer snart",
   "games.info.close": "Stäng",
 
+  // --- TRAINING MENU ---
   "training.menu.title": "TRÄNING",
   "training.menu.subtitle": "Välj ett träningsläge",
 
   "training.menu.x01.title": "X01 Träning",
   "training.menu.x01.subtitle": "Bättre scoring och avslut",
   "training.menu.x01.info":
-    "X01-träning med fokus på precision och statistik.",
+    "X01-träning med fokus på precision, stabilitet och detaljerad statistik.",
 
   "training.menu.clock.title": "Around the Clock",
   "training.menu.clock.subtitle": "Single / Double / Triple",
   "training.menu.clock.info":
-    "Träffa siffrorna 1–20 och Bull.",
+    "Träffa numren 1–20 och Bull i valt läge.",
 
   "training.menu.evolution.title": "Evolution",
-  "training.menu.evolution.subtitle": "Kommer snart",
+  "training.menu.evolution.subtitle": "Direkt åtkomst till X01-statistik",
   "training.menu.evolution.info":
-    "Ett nytt träningsläge kommer snart.",
+    "Visa detaljerad X01-träningsstatistik direkt i statistikvyn.",
 
   "training.menu.comingSoon": "Kommer snart",
   "training.menu.info.close": "Stäng",
 
+  // --- LANGS ---
+  "lang.fr": "Franska",
+  "lang.en": "Engelska",
+  "lang.es": "Spanska",
+  "lang.de": "Tyska",
+  "lang.it": "Italienska",
+  "lang.pt": "Portugisiska",
+  "lang.nl": "Nederländska",
+  "lang.ru": "Ryska",
+  "lang.zh": "Kinesiska",
+  "lang.ja": "Japanska",
+  "lang.ar": "Arabiska",
+  "lang.hi": "Hindi",
+  "lang.tr": "Turkiska",
+  "lang.da": "Danska",
+  "lang.no": "Norska",
   "lang.sv": "Svenska",
+  "lang.is": "Isländska",
+  "lang.pl": "Polska",
+  "lang.ro": "Rumänska",
+  "lang.at": "Österrikiska",
+  "lang.sr": "Serbiska",
+  "lang.hr": "Kroatiska",
+  "lang.cs": "Tjeckiska",
 },
 
  // ---------- ÍSLENSKA ----------
@@ -2956,36 +3654,35 @@ is: {
   // --- SETTINGS ---
   "settings.back": "Til baka",
   "settings.title": "Stillingar",
-  "settings.subtitle": "Sérsníddu útlit og tungumál appsins",
+  "settings.subtitle": "Aðlagaðu þema og tungumál appsins",
   "settings.theme": "Þema",
   "settings.lang": "Tungumál",
 
-  // THEMES
   "settings.theme.gold.label": "GOLD NEON",
-  "settings.theme.gold.desc": "Gullið premium þema",
+  "settings.theme.gold.desc": "Gullið lúxusþema",
 
-  "settings.theme.pink.label": "ROSE FLUO",
-  "settings.theme.pink.desc": "Bleik arcade stemning",
+  "settings.theme.pink.label": "ROSA FLUO",
+  "settings.theme.pink.desc": "Bleikur arcade-stíll",
 
   "settings.theme.petrol.label": "PETROL BLUE",
   "settings.theme.petrol.desc": "Djúpur neonblár",
 
   "settings.theme.green.label": "VEGETAL",
-  "settings.theme.green.desc": "Bjart æfingaþema",
+  "settings.theme.green.desc": "Léttur æfingastíll",
 
   "settings.theme.magenta.label": "MAGENTA",
-  "settings.theme.magenta.desc": "Sterkt fjólublátt / magenta",
+  "settings.theme.magenta.desc": "Sterk fjólublá / magenta",
 
   "settings.theme.red.label": "BRIGHT RED",
-  "settings.theme.red.desc": "Árásargjarnt arcade-rautt",
+  "settings.theme.red.desc": "Árásargjarn arcade-rautt",
 
   "settings.theme.orange.label": "FIRE ORANGE",
-  "settings.theme.orange.desc": "Hlý og kraftmikil appelsínugul",
+  "settings.theme.orange.desc": "Hlý og orkumikil appelsínugul",
 
   "settings.theme.white.label": "SNOW WHITE",
-  "settings.theme.white.desc": "Ljóst og nútímalegt yfirbragð",
+  "settings.theme.white.desc": "Nútímalegt ljós viðmót",
 
-  // HOME
+  // --- HOME ---
   "home.greeting": "Velkomin",
   "home.titleApp": "DARTS COUNTER",
   "home.connect": "SKRÁ INN",
@@ -2994,10 +3691,10 @@ is: {
   "home.card.profiles.subtitle": "Búa til og stjórna prófílum",
 
   "home.card.local.title": "STAÐBUNDINN LEIKUR",
-  "home.card.local.subtitle": "Aðgangur að öllum leikjamátum",
+  "home.card.local.subtitle": "Aðgangur að öllum leikjahámum",
 
   "home.card.online.title": "NETLEIKUR",
-  "home.card.online.subtitle": "Fjartengdir leikir (fljótlega)",
+  "home.card.online.subtitle": "Fjartengdir leikir (kemur fljótlega)",
 
   "home.card.stats.title": "TÖLFRÆÐI",
   "home.card.stats.subtitle": "Tölfræði og saga",
@@ -3010,95 +3707,151 @@ is: {
   "home.stats.winPct": "Sigur%",
 
   // STATUS
-  "status.online": "Á neti",
+  "status.online": "Á netinu",
   "status.away": "Fjarverandi",
   "status.offline": "Ótengdur",
 
-  // PROFILES
-  "profiles.title": "Prófílar",
-  "profiles.create": "Búa til prófíl",
-  "profiles.edit": "Breyta prófíl",
-  "profiles.delete": "Eyða prófíl",
+  // --- PROFILES ---
+  "profiles.connected.title": "Tengdur prófíll",
+  "profiles.friends.title": "Vinir",
+  "profiles.locals.title": "Staðbundnir prófílar",
 
-  "profiles.confirmDeleteTitle": "Eyða prófíl?",
-  "profiles.confirmDeleteBody":
-    "Þessum prófíl og allri tengdri tölfræði verður eytt varanlega.",
-  "profiles.confirmDeleteYes": "Eyða",
-  "profiles.confirmDeleteNo": "Hætta við",
+  "profiles.connected.seeStats": "Skoða tölfræði",
+  "profiles.status.online": "Á netinu",
+  "profiles.status.away": "Fjarverandi",
+  "profiles.status.offline": "Ótengdur",
 
-  "profiles.name": "Nafn",
-  "profiles.avatar": "Avatar",
-  "profiles.stats": "Tölfræði",
-  "profiles.noProfiles": "Engir prófílar enn.",
-  "profiles.pickOne": "Veldu prófíl",
-  "profiles.active": "Virkur prófíl",
+  "profiles.connected.btn.avatar": "Búa til / uppfæra avatar",
+  "profiles.connected.btn.avatar.tooltip": "Opna avatar-verkfæri",
+  "profiles.connected.btn.away.tooltip": "Skipta um stöðu",
+  "profiles.connected.btn.online": "Á NETINU",
+  "profiles.connected.btn.away": "FJARVERANDI",
+  "profiles.connected.btn.quit": "SKRÁ ÚT",
+  "profiles.connected.btn.quit.tooltip": "Hætta lotu",
+  "profiles.connected.btn.edit": "BREYTA PRÓFÍL",
+  "profiles.connected.edit.avatarPlaceholder": "Smella",
 
-  // GAMES
+  "profiles.auth.select.none": "Engir vistaðir prófílar",
+  "profiles.auth.select.btnConnect": "Tengjast",
+  "profiles.auth.create.placeholder": "Nafn prófíls",
+  "profiles.auth.create.btn": "Bæta við",
+
+  "profiles.friends.none": "Engir vinir ennþá",
+
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Nafn prófíls",
+  "profiles.locals.add.btnAdd": "Bæta við",
+  "profiles.locals.add.btnCancel": "Hætta við",
+
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "Skoða tölfræði",
+
+  "profiles.locals.btn.avatarCreator": "Búa til avatar",
+  "profiles.locals.btn.avatarCreator.tooltip": "Opna avatar verkfæri",
+  "profiles.locals.btn.save": "Vista",
+  "profiles.locals.btn.cancel": "Hætta við",
+  "profiles.locals.btn.edit": "Breyta",
+  "profiles.locals.btn.delete": "Eyða",
+
+  "common.save": "Vista",
+  "common.cancel": "Hætta við",
+  "common.edit": "Breyta",
+  "common.deleteShort": "Eyða",
+
+  // --- GAMES ---
   "games.title": "ALLIR LEIKIR",
-  "games.subtitle": "Veldu leikjamáta",
+  "games.subtitle": "Veldu leikham",
 
   "games.training.title": "ÆFING",
-  "games.training.subtitle": "Bættu frammistöðu þína.",
+  "games.training.subtitle": "Bættu leikni þína.",
   "games.training.infoTitle": "Æfing",
   "games.training.infoBody":
-    "Æfingahamur til að bæta nákvæmni, stig og lokahögg.",
+    "Æfingarhamur til að bæta nákvæmni, stig og endingar.",
 
   "games.x01.title": "X01",
   "games.x01.subtitle": "301 / 501 / 701 / 901.",
+  "games.x01.infoTitle": "X01",
   "games.x01.infoBody":
-    "Klassískir X01 leikir með tölfræði, sögu og reglur valfrjálsar.",
+    "Hefðbundnir X01 leikir með tölfræði, sögu og regluvalkostum.",
 
   "games.cricket.title": "CRICKET",
   "games.cricket.subtitle": "Loka 15–20 + Bull.",
+  "games.cricket.infoTitle": "Cricket",
   "games.cricket.infoBody":
-    "Lokaðu 15 til 20 og Bull á undan andstæðingi og náðu stigum.",
+    "Lokaðu 15–20 og Bull áður en andstæðingur þinn gerir það og safnaðu stigum.",
 
   "games.killer.title": "KILLER",
-  "games.killer.subtitle": "Tvíefldu töluna þína… vertu Killer.",
+  "games.killer.subtitle": "Hittu þitt númer… vertu Killer.",
+  "games.killer.infoTitle": "Killer",
   "games.killer.infoBody":
-    "Tvíefldu númerið til að verða Killer og útrýma mótherjum.",
+    "Hittu þitt númer til að verða Killer og slá út aðra leikmenn.",
 
   "games.shanghai.title": "SHANGHAI",
-  "games.shanghai.subtitle": "Einfalt/dúbbult/þríeyri = Shanghai.",
+  "games.shanghai.subtitle": "Umferðargildi, E-D-Þ = Shanghai.",
+  "games.shanghai.infoTitle": "Shanghai",
   "games.shanghai.infoBody":
-    "Hittaðu einfalt, dúbbult og þríeyri á sömu tölu fyrir Shanghai.",
+    "Hittu enkel, tvöfaldan og þrefaldan á sama gildi fyrir Shanghai.",
 
   "games.battle.title": "BATTLE ROYALE",
-  "games.battle.subtitle": "Fjölspilun — útrýming.",
+  "games.battle.subtitle": "Skemmtilegur hamur — útsláttur.",
+  "games.battle.infoTitle": "Battle Royale",
   "games.battle.infoBody":
-    "Síðasti leikmaðurinn sem lifir vinnur.",
+    "Fjölspilun með útslætti. Síðasti leikmaður stendur eftir.",
 
-  "games.status.comingSoon": "Kemur fljótlega",
+  "games.status.comingSoon": "Kemur bráðlega",
   "games.info.close": "Loka",
 
-  // TRAINING MENU
+  // --- TRAINING MENU ---
   "training.menu.title": "ÆFING",
-  "training.menu.subtitle": "Veldu æfingarmáta",
+  "training.menu.subtitle": "Veldu æfingaham",
 
   "training.menu.x01.title": "X01 Æfing",
-  "training.menu.x01.subtitle": "Betri stig & lokahögg",
+  "training.menu.x01.subtitle": "Betri stig og endingar",
   "training.menu.x01.info":
-    "X01 æfing með nákvæmni og tölfræði í fyrirrúmi.",
+    "X01 æfingar með áherslu á stöðugleika, stig og nákvæma tölfræði.",
 
   "training.menu.clock.title": "Around the Clock",
-  "training.menu.clock.subtitle": "Einfalt / Dúbbult / Þríeyri",
+  "training.menu.clock.subtitle": "Einfalt / Tvöfalt / Þrefalt",
   "training.menu.clock.info":
-    "Hittaðu tölur 1–20 og Bull í röð.",
+    "Hittu 1–20 og Bull á valinni stillingu.",
 
-  "training.menu.evolution.title": "Framþróun",
-  "training.menu.evolution.subtitle": "Kemur fljótlega",
+  "training.menu.evolution.title": "Þróun",
+  "training.menu.evolution.subtitle": "Beinn aðgangur að X01 tölfræði",
   "training.menu.evolution.info":
-    "Nýr æfingarmáti kemur fljótlega.",
+    "Skoðaðu nákvæma tölfræði úr X01 æfingum.",
 
-  "training.menu.comingSoon": "Kemur fljótlega",
+  "training.menu.comingSoon": "Kemur bráðlega",
   "training.menu.info.close": "Loka",
 
-  // LANG
+  // --- LANGS ---
+  "lang.fr": "Franska",
+  "lang.en": "Enska",
+  "lang.es": "Spænska",
+  "lang.de": "Þýska",
+  "lang.it": "Ítalska",
+  "lang.pt": "Portúgalska",
+  "lang.nl": "Hollenska",
+  "lang.ru": "Rússneska",
+  "lang.zh": "Kínverska",
+  "lang.ja": "Japanska",
+  "lang.ar": "Arabíska",
+  "lang.hi": "Hindí",
+  "lang.tr": "Tyrkneska",
+  "lang.da": "Danska",
+  "lang.no": "Norska",
+  "lang.sv": "Sænska",
   "lang.is": "Íslenska",
+  "lang.pl": "Pólska",
+  "lang.ro": "Rúmenska",
+  "lang.at": "Austurríska",
+  "lang.sr": "Serbneska",
+  "lang.hr": "Króatíska",
+  "lang.cs": "Tékkneska",
 },
 
  // ---------- POLSKI ----------
 pl: {
+  // --- NAV ---
   "nav.home": "Strona główna",
   "nav.games": "Gry",
   "nav.profiles": "Profile",
@@ -3106,17 +3859,18 @@ pl: {
   "nav.stats": "Statystyki",
   "nav.settings": "Ustawienia",
 
-  "settings.back": "Wróć",
+  // --- SETTINGS ---
+  "settings.back": "Wstecz",
   "settings.title": "Ustawienia",
   "settings.subtitle": "Dostosuj motyw i język aplikacji",
   "settings.theme": "Motyw",
   "settings.lang": "Język",
 
   "settings.theme.gold.label": "GOLD NEON",
-  "settings.theme.gold.desc": "Złoty motyw premium",
+  "settings.theme.gold.desc": "Premium złoty motyw",
 
   "settings.theme.pink.label": "ROSE FLUO",
-  "settings.theme.pink.desc": "Różowa atmosfera arcade",
+  "settings.theme.pink.desc": "Różowy klimat arcade",
 
   "settings.theme.petrol.label": "PETROL BLUE",
   "settings.theme.petrol.desc": "Głęboki neonowy niebieski",
@@ -3128,7 +3882,7 @@ pl: {
   "settings.theme.magenta.desc": "Intensywna purpura / magenta",
 
   "settings.theme.red.label": "BRIGHT RED",
-  "settings.theme.red.desc": "Agresywna czerwień arcade",
+  "settings.theme.red.desc": "Mocna czerwień arcade",
 
   "settings.theme.orange.label": "FIRE ORANGE",
   "settings.theme.orange.desc": "Ciepła i energetyczna pomarańcz",
@@ -3136,100 +3890,185 @@ pl: {
   "settings.theme.white.label": "SNOW WHITE",
   "settings.theme.white.desc": "Nowoczesne jasne tło",
 
+  // --- HOME ---
   "home.greeting": "Witaj",
   "home.titleApp": "DARTS COUNTER",
   "home.connect": "ZALOGUJ SIĘ",
 
   "home.card.profiles.title": "PROFILE",
-  "home.card.profiles.subtitle": "Tworzenie i zarządzanie profilami",
+  "home.card.profiles.subtitle": "Twórz i zarządzaj profilami",
 
   "home.card.local.title": "GRA LOKALNA",
   "home.card.local.subtitle": "Dostęp do wszystkich trybów gry",
 
   "home.card.online.title": "GRA ONLINE",
-  "home.card.online.subtitle": "Zdalne mecze (wkrótce)",
+  "home.card.online.subtitle": "Mecze zdalne (wkrótce dostępne)",
 
   "home.card.stats.title": "STATYSTYKI",
   "home.card.stats.subtitle": "Statystyki i historia",
 
   "home.seeStats": "Zobacz moje statystyki",
 
-  "home.stats.avg3": "Śr/3",
+  "home.stats.avg3": "Śr./3",
   "home.stats.best": "Najlepszy",
   "home.stats.co": "CO",
   "home.stats.winPct": "Wygrane%",
 
+  // STATUS
   "status.online": "Online",
-  "status.away": "Zaraz wracam",
+  "status.away": "Nieobecny",
   "status.offline": "Offline",
 
-  "profiles.title": "Profile",
-  "profiles.create": "Utwórz profil",
-  "profiles.edit": "Edytuj profil",
-  "profiles.delete": "Usuń profil",
+  // --- PROFILES PAGE ---
+  "profiles.connected.title": "Połączony profil",
+  "profiles.friends.title": "Znajomi",
+  "profiles.locals.title": "Lokalne profile",
 
-  "profiles.confirmDeleteTitle": "Usunąć profil?",
-  "profiles.confirmDeleteBody":
-    "Ten profil i wszystkie statystyki zostaną trwale usunięte.",
-  "profiles.confirmDeleteYes": "Usuń",
-  "profiles.confirmDeleteNo": "Anuluj",
+  "profiles.connected.seeStats": "Zobacz statystyki",
 
-  "profiles.name": "Nazwa",
-  "profiles.avatar": "Avatar",
-  "profiles.stats": "Statystyki",
-  "profiles.noProfiles": "Brak profili.",
-  "profiles.pickOne": "Wybierz profil",
-  "profiles.active": "Aktywny profil",
+  "profiles.status.online": "Online",
+  "profiles.status.away": "Nieobecny",
+  "profiles.status.offline": "Offline",
 
+  "profiles.connected.btn.avatar": "Utwórz / zaktualizuj avatar",
+  "profiles.connected.btn.avatar.tooltip": "Otwórz edytor avatara",
+  "profiles.connected.btn.away.tooltip": "Zmień status",
+  "profiles.connected.btn.online": "ONLINE",
+  "profiles.connected.btn.away": "NIEOBECNY",
+  "profiles.connected.btn.quit": "WYLOGUJ",
+  "profiles.connected.btn.quit.tooltip": "Zakończ sesję",
+  "profiles.connected.btn.edit": "EDYTUJ PROFIL",
+  "profiles.connected.edit.avatarPlaceholder": "Kliknij",
+
+  "profiles.auth.select.none": "Brak zapisanych profili",
+  "profiles.auth.select.btnConnect": "Połącz",
+  "profiles.auth.create.placeholder": "Nazwa profilu",
+  "profiles.auth.create.btn": "Dodaj",
+
+  "profiles.friends.none": "Brak znajomych",
+
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Nazwa profilu",
+  "profiles.locals.add.btnAdd": "Dodaj",
+  "profiles.locals.add.btnCancel": "Anuluj",
+
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "Zobacz statystyki",
+
+  "profiles.locals.btn.avatarCreator": "Utwórz avatar",
+  "profiles.locals.btn.avatarCreator.tooltip": "Otwórz edytor avatara",
+  "profiles.locals.btn.save": "Zapisz",
+  "profiles.locals.btn.cancel": "Anuluj",
+  "profiles.locals.btn.edit": "Edytuj",
+  "profiles.locals.btn.delete": "Usuń",
+
+  "common.save": "Zapisz",
+  "common.cancel": "Anuluj",
+  "common.edit": "Edytuj",
+  "common.deleteShort": "Usuń",
+
+  // --- GAMES PAGE ---
   "games.title": "WSZYSTKIE GRY",
   "games.subtitle": "Wybierz tryb gry",
 
   "games.training.title": "TRENING",
   "games.training.subtitle": "Popraw swoje umiejętności.",
+  "games.training.infoTitle": "Trening",
   "games.training.infoBody":
-    "Tryb treningowy dla precyzji, punktacji i wykończeń.",
+    "Tryb treningowy do pracy nad regularnością, punktacją i wykończeniami.",
 
   "games.x01.title": "X01",
   "games.x01.subtitle": "301 / 501 / 701 / 901.",
+  "games.x01.infoTitle": "X01",
+  "games.x01.infoBody":
+    "Klasyczne gry X01 ze statystykami, historią i opcjami zasad.",
 
   "games.cricket.title": "CRICKET",
   "games.cricket.subtitle": "Zamknij 15–20 + Bull.",
+  "games.cricket.infoTitle": "Cricket",
+  "games.cricket.infoBody":
+    "Zamykaj pola 15–20 i Bull przed przeciwnikiem, zdobywając jak najwięcej punktów.",
 
   "games.killer.title": "KILLER",
-  "games.killer.subtitle": "Podwój swoją liczbę… zostań Killerem.",
+  "games.killer.subtitle": "Traf swój numer… zostań Killerem.",
+  "games.killer.infoTitle": "Killer",
+  "games.killer.infoBody":
+    "Traf swój numer, aby zostać Killerem, a następnie eliminuj innych graczy.",
 
   "games.shanghai.title": "SHANGHAI",
-  "games.shanghai.subtitle": "Cel rundy, S-D-T = Shanghai.",
+  "games.shanghai.subtitle": "Wartość rundy, S-D-T = Shanghai.",
+  "games.shanghai.infoTitle": "Shanghai",
+  "games.shanghai.infoBody":
+    "Traf singla, dubla i tripla na tej samej wartości, aby zdobyć Shanghai.",
 
   "games.battle.title": "BATTLE ROYALE",
-  "games.battle.subtitle": "Tryb zabawy — eliminacje.",
+  "games.battle.subtitle": "Zabawa — eliminacje.",
+  "games.battle.infoTitle": "Battle Royale",
+  "games.battle.infoBody":
+    "Tryb wieloosobowy z eliminacjami. Wygrywa ostatni gracz.",
 
-  "games.status.comingSoon": "Wkrótce",
+  "games.status.comingSoon": "Wkrótce dostępne",
   "games.info.close": "Zamknij",
 
+  // --- TRAINING MENU ---
   "training.menu.title": "TRENING",
-  "training.menu.subtitle": "Wybierz tryb treningowy",
+  "training.menu.subtitle": "Wybierz tryb treningu",
 
   "training.menu.x01.title": "Trening X01",
-  "training.menu.x01.subtitle": "Ulepsz scoring i wykończenia",
+  "training.menu.x01.subtitle": "Pracuj nad punktacją i wykończeniami",
+  "training.menu.x01.info":
+    "Trening X01 skupiony na progresji: punktacja, regularność, wykończenia i szczegółowe statystyki.",
 
   "training.menu.clock.title": "Around the Clock",
   "training.menu.clock.subtitle": "Single / Double / Triple",
+  "training.menu.clock.info":
+    "Trafiaj pola od 1 do 20 oraz Bull w wybranym trybie.",
 
   "training.menu.evolution.title": "Ewolucja",
+  "training.menu.evolution.subtitle": "Bezpośredni dostęp do statystyk X01",
+  "training.menu.evolution.info":
+    "Przechodź bezpośrednio do szczegółowych statystyk treningu X01.",
 
+  "training.menu.comingSoon": "W przygotowaniu",
+  "training.menu.info.close": "Zamknij",
+
+  // --- LANGS ---
+  "lang.fr": "Francuski",
+  "lang.en": "Angielski",
+  "lang.es": "Hiszpański",
+  "lang.de": "Niemiecki",
+  "lang.it": "Włoski",
+  "lang.pt": "Portugalski",
+  "lang.nl": "Holenderski",
+  "lang.ru": "Rosyjski",
+  "lang.zh": "Chiński",
+  "lang.ja": "Japoński",
+  "lang.ar": "Arabski",
+  "lang.hi": "Hindi",
+  "lang.tr": "Turecki",
+  "lang.da": "Duński",
+  "lang.no": "Norweski",
+  "lang.sv": "Szwedzki",
+  "lang.is": "Islandzki",
   "lang.pl": "Polski",
+  "lang.ro": "Rumuński",
+  "lang.at": "Austriacki",
+  "lang.sr": "Serbski",
+  "lang.hr": "Chorwacki",
+  "lang.cs": "Czeski",
 },
 
- // ---------- ROMÂNĂ ----------
+// ---------- ROMÂNĂ ----------
 ro: {
+  // --- NAV ---
   "nav.home": "Acasă",
   "nav.games": "Jocuri",
-  "nav.profiles": "Profiluri",
+  "nav.profiles": "Profile",
   "nav.friends": "Prieteni",
   "nav.stats": "Statistici",
   "nav.settings": "Setări",
 
+  // --- SETTINGS ---
   "settings.back": "Înapoi",
   "settings.title": "Setări",
   "settings.subtitle": "Personalizează tema și limba aplicației",
@@ -3243,13 +4082,13 @@ ro: {
   "settings.theme.pink.desc": "Atmosferă arcade roz",
 
   "settings.theme.petrol.label": "PETROL BLUE",
-  "settings.theme.petrol.desc": "Albastru neon profund",
+  "settings.theme.petrol.desc": "Albastru neon intens",
 
   "settings.theme.green.label": "VEGETAL",
-  "settings.theme.green.desc": "Stil luminos de antrenament",
+  "settings.theme.green.desc": "Stil luminos pentru antrenament",
 
   "settings.theme.magenta.label": "MAGENTA",
-  "settings.theme.magenta.desc": "Violet / magenta intens",
+  "settings.theme.magenta.desc": "Mov / magenta intens",
 
   "settings.theme.red.label": "BRIGHT RED",
   "settings.theme.red.desc": "Roșu arcade agresiv",
@@ -3258,14 +4097,15 @@ ro: {
   "settings.theme.orange.desc": "Portocaliu cald și energic",
 
   "settings.theme.white.label": "SNOW WHITE",
-  "settings.theme.white.desc": "Fundal modern și luminos",
+  "settings.theme.white.desc": "Interfață modernă deschisă",
 
+  // --- HOME ---
   "home.greeting": "Bun venit",
   "home.titleApp": "DARTS COUNTER",
-  "home.connect": "AUTENTIFICARE",
+  "home.connect": "CONECTARE",
 
-  "home.card.profiles.title": "PROFILURI",
-  "home.card.profiles.subtitle": "Creează și gestionează profiluri",
+  "home.card.profiles.title": "PROFILE",
+  "home.card.profiles.subtitle": "Creează și administrează profile",
 
   "home.card.local.title": "JOC LOCAL",
   "home.card.local.subtitle": "Acces la toate modurile de joc",
@@ -3279,29 +4119,155 @@ ro: {
   "home.seeStats": "Vezi statisticile mele",
 
   "home.stats.avg3": "Med/3",
-  "home.stats.best": "Cel mai bun",
+  "home.stats.best": "Best",
   "home.stats.co": "CO",
-  "home.stats.winPct": "Win%",
+  "home.stats.winPct": "% Victorii",
 
+  // STATUS
   "status.online": "Online",
   "status.away": "Plecat",
   "status.offline": "Offline",
 
-  "profiles.title": "Profiluri",
-  "profiles.create": "Creează profil",
-  "profiles.edit": "Editează profil",
-  "profiles.delete": "Șterge profil",
+  // --- PROFILES PAGE ---
+  "profiles.connected.title": "Profil conectat",
+  "profiles.friends.title": "Prieteni",
+  "profiles.locals.title": "Profile locale",
 
+  "profiles.connected.seeStats": "Vezi statisticile",
+
+  "profiles.status.online": "Online",
+  "profiles.status.away": "Plecat",
+  "profiles.status.offline": "Deconectat",
+
+  "profiles.connected.btn.avatar": "Creează / actualizează avatar",
+  "profiles.connected.btn.avatar.tooltip": "Deschide editorul de avatar",
+  "profiles.connected.btn.away.tooltip": "Schimbă statusul",
+  "profiles.connected.btn.online": "ONLINE",
+  "profiles.connected.btn.away": "PLECAT",
+  "profiles.connected.btn.quit": "DECONECTARE",
+  "profiles.connected.btn.quit.tooltip": "Închide sesiunea",
+  "profiles.connected.btn.edit": "EDITEAZĂ PROFIL",
+  "profiles.connected.edit.avatarPlaceholder": "Click",
+
+  "profiles.auth.select.none": "Niciun profil salvat",
+  "profiles.auth.select.btnConnect": "Conectează",
+  "profiles.auth.create.placeholder": "Nume profil",
+  "profiles.auth.create.btn": "Adaugă",
+
+  "profiles.friends.none": "Încă niciun prieten",
+
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Nume profil",
+  "profiles.locals.add.btnAdd": "Adaugă",
+  "profiles.locals.add.btnCancel": "Anulează",
+
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "Vezi statisticile",
+
+  "profiles.locals.btn.avatarCreator": "Creează avatar",
+  "profiles.locals.btn.avatarCreator.tooltip": "Deschide editorul de avatar",
+  "profiles.locals.btn.save": "Salvează",
+  "profiles.locals.btn.cancel": "Anulează",
+  "profiles.locals.btn.edit": "Editează",
+  "profiles.locals.btn.delete": "Șterge",
+
+  "common.save": "Salvează",
+  "common.cancel": "Anulează",
+  "common.edit": "Editează",
+  "common.deleteShort": "Șterge",
+
+  // --- GAMES PAGE ---
   "games.title": "TOATE JOCURILE",
-  "games.subtitle": "Selectează un mod de joc",
+  "games.subtitle": "Alege un mod de joc",
 
+  "games.training.title": "ANTRENAMENT",
+  "games.training.subtitle": "Îmbunătățește-ți evoluția.",
+  "games.training.infoTitle": "Antrenament",
+  "games.training.infoBody":
+    "Mod de antrenament pentru regularitate, punctaj și finalizări.",
+
+  "games.x01.title": "X01",
+  "games.x01.subtitle": "301 / 501 / 701 / 901.",
+  "games.x01.infoTitle": "X01",
+  "games.x01.infoBody":
+    "Jocuri X01 clasice cu statistici, istoric și opțiuni de reguli.",
+
+  "games.cricket.title": "CRICKET",
+  "games.cricket.subtitle": "Închide 15–20 + Bull.",
+  "games.cricket.infoTitle": "Cricket",
+  "games.cricket.infoBody":
+    "Închide câmpurile 15–20 și Bull înaintea adversarului, acumulând cât mai multe puncte.",
+
+  "games.killer.title": "KILLER",
+  "games.killer.subtitle": "Lovește numărul tău… devino Killer.",
+  "games.killer.infoTitle": "Killer",
+  "games.killer.infoBody":
+    "Lovește numărul tău pentru a deveni Killer, apoi elimină ceilalți jucători.",
+
+  "games.shanghai.title": "SHANGHAI",
+  "games.shanghai.subtitle": "Ținta rundei, S-D-T = Shanghai.",
+  "games.shanghai.infoTitle": "Shanghai",
+  "games.shanghai.infoBody":
+    "Lovește single, double și triple pe aceeași valoare pentru un Shanghai.",
+
+  "games.battle.title": "BATTLE ROYALE",
+  "games.battle.subtitle": "Mod distractiv — eliminări.",
+  "games.battle.infoTitle": "Battle Royale",
+  "games.battle.infoBody":
+    "Mod multiplayer cu eliminări succesive. Ultimul jucător rămas câștigă.",
+
+  "games.status.comingSoon": "În curând",
+  "games.info.close": "Închide",
+
+  // --- TRAINING MENU ---
   "training.menu.title": "ANTRENAMENT",
   "training.menu.subtitle": "Alege un mod de antrenament",
 
+  "training.menu.x01.title": "Training X01",
+  "training.menu.x01.subtitle": "Lucrează la punctaj și finalizări",
+  "training.menu.x01.info":
+    "Antrenament X01 pentru progres: punctaj, regularitate, finalizări și statistici detaliate.",
+
+  "training.menu.clock.title": "Around the Clock",
+  "training.menu.clock.subtitle": "Single / Double / Triple",
+  "training.menu.clock.info":
+    "Lovește segmentele de la 1 la 20 și Bull în modul ales.",
+
+  "training.menu.evolution.title": "Evoluție",
+  "training.menu.evolution.subtitle": "Acces direct la statistici X01",
+  "training.menu.evolution.info":
+    "Acces direct la statisticile detaliate ale sesiunilor tale X01 în fila Stats.",
+
+  "training.menu.comingSoon": "În dezvoltare",
+  "training.menu.info.close": "Închide",
+
+  // --- LANGS ---
+  "lang.fr": "Franceză",
+  "lang.en": "Engleză",
+  "lang.es": "Spaniolă",
+  "lang.de": "Germană",
+  "lang.it": "Italiană",
+  "lang.pt": "Portugheză",
+  "lang.nl": "Olandeză",
+  "lang.ru": "Rusă",
+  "lang.zh": "Chineză",
+  "lang.ja": "Japoneză",
+  "lang.ar": "Arabă",
+  "lang.hi": "Hindi",
+  "lang.tr": "Turcă",
+  "lang.da": "Daneză",
+  "lang.no": "Norvegiană",
+  "lang.sv": "Suedeză",
+  "lang.is": "Islandeză",
+  "lang.pl": "Poloneză",
   "lang.ro": "Română",
+  "lang.at": "Austriacă",
+  "lang.sr": "Sârbă",
+  "lang.hr": "Croată",
+  "lang.cs": "Cehă",
 },
 
-// ---------- ÖSTERREICHISCHES DEUTSCH ----------
+// ---------- DEUTSCH (ÖSTERREICH) ----------
 at: {
   // --- NAV ---
   "nav.home": "Startseite",
@@ -3314,33 +4280,33 @@ at: {
   // --- SETTINGS ---
   "settings.back": "Zurück",
   "settings.title": "Einstellungen",
-  "settings.subtitle": "Passe Design und Sprache der App an",
-  "settings.theme": "Design",
+  "settings.subtitle": "Theme und Sprache der App anpassen",
+  "settings.theme": "Theme",
   "settings.lang": "Sprache",
 
-  "settings.theme.gold.label": "Gold-Neon",
-  "settings.theme.gold.desc": "Edles goldfarbenes Premium-Design",
+  "settings.theme.gold.label": "GOLD NEON",
+  "settings.theme.gold.desc": "Premium-Gold-Theme",
 
-  "settings.theme.pink.label": "Pink-Neon",
-  "settings.theme.pink.desc": "Arcade-Pink Look",
+  "settings.theme.pink.label": "ROSE FLUO",
+  "settings.theme.pink.desc": "Arcade-Feeling in Pink",
 
-  "settings.theme.petrol.label": "Petrolblau",
-  "settings.theme.petrol.desc": "Tiefes Neon-Blau",
+  "settings.theme.petrol.label": "PETROL BLUE",
+  "settings.theme.petrol.desc": "Tiefes Neonblau",
 
-  "settings.theme.green.label": "Grün-Neon",
-  "settings.theme.green.desc": "Helles Trainings-Design",
+  "settings.theme.green.label": "VEGETAL",
+  "settings.theme.green.desc": "Helles Trainings-Theme",
 
-  "settings.theme.magenta.label": "Magenta",
-  "settings.theme.magenta.desc": "Intensives Magenta/Violett",
+  "settings.theme.magenta.label": "MAGENTA",
+  "settings.theme.magenta.desc": "Intensives Violett / Magenta",
 
-  "settings.theme.red.label": "Rot",
+  "settings.theme.red.label": "BRIGHT RED",
   "settings.theme.red.desc": "Kräftiges Arcade-Rot",
 
-  "settings.theme.orange.label": "Orange",
-  "settings.theme.orange.desc": "Warm und energiegeladen",
+  "settings.theme.orange.label": "FIRE ORANGE",
+  "settings.theme.orange.desc": "Warmes, energiegeladenes Orange",
 
-  "settings.theme.white.label": "Weiß",
-  "settings.theme.white.desc": "Modernes helles Layout",
+  "settings.theme.white.label": "SNOW WHITE",
+  "settings.theme.white.desc": "Modernes, helles Layout",
 
   // --- HOME ---
   "home.greeting": "Willkommen",
@@ -3351,111 +4317,140 @@ at: {
   "home.card.profiles.subtitle": "Profile erstellen und verwalten",
 
   "home.card.local.title": "LOKALES SPIEL",
-  "home.card.local.subtitle": "Zugriff auf alle Spielmodi",
+  "home.card.local.subtitle": "Alle Spielmodi lokal spielen",
 
   "home.card.online.title": "ONLINE-SPIEL",
-  "home.card.online.subtitle": "Online-Partien (bald verfügbar)",
+  "home.card.online.subtitle": "Remote-Matches (bald verfügbar)",
 
   "home.card.stats.title": "STATISTIKEN",
-  "home.card.stats.subtitle": "Statistiken und Verlauf",
+  "home.card.stats.subtitle": "Statistiken und Spielhistorie",
 
   "home.seeStats": "Meine Statistiken ansehen",
 
   "home.stats.avg3": "Schnitt/3",
   "home.stats.best": "Best",
   "home.stats.co": "CO",
-  "home.stats.winPct": "Win%",
+  "home.stats.winPct": "Sieg%",
 
   // STATUS
   "status.online": "Online",
   "status.away": "Abwesend",
   "status.offline": "Offline",
 
-  // --- GAMES ---
+  // --- PROFILES PAGE ---
+  "profiles.connected.title": "Aktives Profil",
+  "profiles.friends.title": "Freunde",
+  "profiles.locals.title": "Lokale Profile",
+
+  "profiles.connected.seeStats": "Statistiken ansehen",
+
+  "profiles.status.online": "Online",
+  "profiles.status.away": "Abwesend",
+  "profiles.status.offline": "Offline",
+
+  "profiles.connected.btn.avatar": "Avatar erstellen / aktualisieren",
+  "profiles.connected.btn.avatar.tooltip": "Avatar-Editor öffnen",
+  "profiles.connected.btn.away.tooltip": "Status ändern",
+  "profiles.connected.btn.online": "ONLINE",
+  "profiles.connected.btn.away": "ABWESEND",
+  "profiles.connected.btn.quit": "ABMELDEN",
+  "profiles.connected.btn.quit.tooltip": "Session beenden",
+  "profiles.connected.btn.edit": "PROFIL BEARBEITEN",
+  "profiles.connected.edit.avatarPlaceholder": "Klicken",
+
+  "profiles.auth.select.none": "Keine gespeicherten Profile",
+  "profiles.auth.select.btnConnect": "Verbinden",
+  "profiles.auth.create.placeholder": "Profilname",
+  "profiles.auth.create.btn": "Hinzufügen",
+
+  "profiles.friends.none": "Noch keine Freunde",
+
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Profilname",
+  "profiles.locals.add.btnAdd": "Hinzufügen",
+  "profiles.locals.add.btnCancel": "Abbrechen",
+
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "Statistiken ansehen",
+
+  "profiles.locals.btn.avatarCreator": "Avatar erstellen",
+  "profiles.locals.btn.avatarCreator.tooltip": "Avatar-Editor öffnen",
+  "profiles.locals.btn.save": "Speichern",
+  "profiles.locals.btn.cancel": "Abbrechen",
+  "profiles.locals.btn.edit": "Bearbeiten",
+  "profiles.locals.btn.delete": "Löschen",
+
+  "common.save": "Speichern",
+  "common.cancel": "Abbrechen",
+  "common.edit": "Bearbeiten",
+  "common.deleteShort": "Löschen",
+
+  // --- GAMES PAGE ---
   "games.title": "ALLE SPIELE",
   "games.subtitle": "Wähle einen Spielmodus",
 
   "games.training.title": "TRAINING",
-  "games.training.subtitle": "Verbessere deinen Fortschritt.",
+  "games.training.subtitle": "Verbessere dein Spiel.",
   "games.training.infoTitle": "Training",
   "games.training.infoBody":
-    "Trainingsmodus zur Verbesserung von Konstanz, Scoring und Finishing.",
+    "Trainingsmodus für Wurfkonstanz, Scoring und Checkout.",
 
   "games.x01.title": "X01",
   "games.x01.subtitle": "301 / 501 / 701 / 901.",
   "games.x01.infoTitle": "X01",
   "games.x01.infoBody":
-    "Klassische X01-Varianten mit Statistiken, Verlauf und mehreren Regeloptionen.",
+    "Klassische X01-Partien mit Statistiken, Historie und Regeloptionen.",
 
   "games.cricket.title": "CRICKET",
   "games.cricket.subtitle": "Schließe 15–20 + Bull.",
   "games.cricket.infoTitle": "Cricket",
   "games.cricket.infoBody":
-    "Schließe die Zahlen 15–20 und Bull vor deinem Gegner und sammle Punkte.",
+    "Schließe die Felder 15–20 und Bull vor deinem Gegner und sammle Punkte.",
 
   "games.killer.title": "KILLER",
   "games.killer.subtitle": "Triff deine Zahl… werde Killer.",
   "games.killer.infoTitle": "Killer",
   "games.killer.infoBody":
-    "Werde zum Killer, indem du deine Zahl triffst — eliminiere danach die anderen Spieler.",
+    "Triff deine persönliche Zahl, um Killer zu werden, und schalte andere Spieler aus.",
 
   "games.shanghai.title": "SHANGHAI",
-  "games.shanghai.subtitle":
-    "Rundenziel, E-D-T = Shanghai.",
+  "games.shanghai.subtitle": "Rundenzahl, S-D-T = Shanghai.",
   "games.shanghai.infoTitle": "Shanghai",
   "games.shanghai.infoBody":
-    "Ziel ändert sich jede Runde. Einfach/Doppel/Triple auf dieselbe Zahl ergibt ein Shanghai.",
+    "Triff Single, Double und Triple auf dem gleichen Feld für einen Shanghai.",
 
   "games.battle.title": "BATTLE ROYALE",
-  "games.battle.subtitle": "Multiplayer-Spaß — Eliminierungen.",
+  "games.battle.subtitle": "Fun-Modus — Eliminierungen.",
   "games.battle.infoTitle": "Battle Royale",
   "games.battle.infoBody":
-    "Mehrspieler-Modus mit fortlaufenden Eliminierungen. Wer zuletzt steht, gewinnt.",
+    "Mehrspieler-Modus mit Eliminierungen. Wer zuletzt übrig bleibt, gewinnt.",
 
-  "games.status.comingSoon": "Bald verfügbar",
+  "games.status.comingSoon": "Demnächst verfügbar",
   "games.info.close": "Schließen",
 
-  // --- TRAINING MENU (COMPLET) ---
+  // --- TRAINING MENU ---
   "training.menu.title": "TRAINING",
   "training.menu.subtitle": "Wähle einen Trainingsmodus",
 
-  "training.menu.x01.title": "Training X01",
-  "training.menu.x01.subtitle": "Scoring & Finishing verbessern",
+  "training.menu.x01.title": "X01-Training",
+  "training.menu.x01.subtitle": "Scoring und Checkouts verbessern",
   "training.menu.x01.info":
-    "Verbessere Konstanz, Scoring und Finishing im speziellen X01-Training.",
+    "X01-Training mit Fokus auf Konstanz, Scoring und detaillierte Statistiken.",
 
   "training.menu.clock.title": "Around the Clock",
-  "training.menu.clock.subtitle": "Einfach / Doppel / Triple",
+  "training.menu.clock.subtitle": "Single / Double / Triple",
   "training.menu.clock.info":
-    "Treffe die Zahlen 1–20 und Bull. Wähle Einfach, Doppel oder Triple.",
+    "Triff die Segmente 1–20 und Bull im gewählten Modus.",
 
   "training.menu.evolution.title": "Evolution",
-  "training.menu.evolution.subtitle": "Bald verfügbar",
+  "training.menu.evolution.subtitle": "Direkter Zugriff auf X01-Statistiken",
   "training.menu.evolution.info":
-    "Ein neuer Trainingsmodus wird bald freigeschaltet.",
+    "Greife direkt auf deine detaillierten X01-Trainingsstatistiken im Stats-Tab zu.",
 
-  "training.menu.comingSoon": "Bald verfügbar",
+  "training.menu.comingSoon": "In Entwicklung",
   "training.menu.info.close": "Schließen",
 
-  // --- PROFILE PAGE (NOUVEAU) ---
-  "profiles.title": "PROFILE",
-  "profiles.create": "Profil erstellen",
-  "profiles.edit": "Profil bearbeiten",
-  "profiles.delete": "Profil löschen",
-  "profiles.confirmDeleteTitle": "Profil wirklich löschen?",
-  "profiles.confirmDeleteBody":
-    "Dieses Profil und alle zugehörigen Statistiken werden dauerhaft gelöscht.",
-  "profiles.confirmDeleteYes": "Löschen",
-  "profiles.confirmDeleteNo": "Abbrechen",
-
-  "profiles.name": "Name",
-  "profiles.avatar": "Avatar",
-  "profiles.stats": "Statistiken",
-  "profiles.noProfiles": "Noch keine Profile vorhanden.",
-  "profiles.pickOne": "Wähle ein Profil",
-  "profiles.active": "Aktives Profil",
-
-  // --- LANG NAMES ---
+  // --- LANGS ---
   "lang.fr": "Französisch",
   "lang.en": "Englisch",
   "lang.es": "Spanisch",
@@ -3480,8 +4475,7 @@ at: {
   "lang.hr": "Kroatisch",
   "lang.cs": "Tschechisch",
 },
-
- // ---------- СРПСКИ ----------
+// ---------- СРПСКИ ----------
 sr: {
   // --- NAV ---
   "nav.home": "Почетна",
@@ -3498,12 +4492,12 @@ sr: {
   "settings.theme": "Тема",
   "settings.lang": "Језик",
 
-  // THEMES (labels MAJUSCULES, EN inchangé)
+  // THEMES (labels EN остављени, опис преведен)
   "settings.theme.gold.label": "GOLD NEON",
   "settings.theme.gold.desc": "Премијум златна неон тема",
 
   "settings.theme.pink.label": "ROSE FLUO",
-  "settings.theme.pink.desc": "Розe аркад атмосфера",
+  "settings.theme.pink.desc": "Розе аркад атмосфера",
 
   "settings.theme.petrol.label": "PETROL BLUE",
   "settings.theme.petrol.desc": "Дубока неон плава",
@@ -3529,13 +4523,13 @@ sr: {
   "home.connect": "ПРИЈАВИ СЕ",
 
   "home.card.profiles.title": "ПРОФИЛИ",
-  "home.card.profiles.subtitle": "Креирање и управљање профилима",
+  "home.card.profiles.subtitle": "Креирај и управљај профилима",
 
   "home.card.local.title": "ЛОКАЛНА ИГРА",
   "home.card.local.subtitle": "Приступ свим режимима игре",
 
   "home.card.online.title": "ОНЛАЈН ИГРА",
-  "home.card.online.subtitle": "Удаљене партије (ускоро)",
+  "home.card.online.subtitle": "Удаљени мечеви (ускоро)",
 
   "home.card.stats.title": "СТАТИСТИКА",
   "home.card.stats.subtitle": "Статистика и историја",
@@ -3547,31 +4541,72 @@ sr: {
   "home.stats.co": "CO",
   "home.stats.winPct": "Win%",
 
-  // STATUS
+  // STATUS (генерички)
   "status.online": "На мрежи",
   "status.away": "Одсутан",
   "status.offline": "Ван мреже",
 
-  // --- PROFILES ---
-  "profiles.title": "Профили",
-  "profiles.create": "Креирај профил",
-  "profiles.edit": "Уреди профил",
-  "profiles.delete": "Обриши профил",
+  // --- PROFILES PAGE (нова структура за Profiles.tsx) ---
+  // Наслови секција
+  "profiles.connected.title": "Повезани профил",
+  "profiles.friends.title": "Пријатељи",
+  "profiles.locals.title": "Локални профили",
 
-  "profiles.confirmDeleteTitle": "Обрисати профил?",
-  "profiles.confirmDeleteBody":
-    "Овај профил и сва повезана статистика биће трајно обрисани.",
-  "profiles.confirmDeleteYes": "Обриши",
-  "profiles.confirmDeleteNo": "Откажи",
+  // Линк / tooltip за статистику
+  "profiles.connected.seeStats": "Прикажи статистику",
 
-  "profiles.name": "Име",
-  "profiles.avatar": "Аватар",
-  "profiles.stats": "Статистика",
-  "profiles.noProfiles": "Још увек нема профила.",
-  "profiles.pickOne": "Изабери профил",
-  "profiles.active": "Активни профил",
+  // Статус повезаног профила
+  "profiles.status.online": "На мрежи",
+  "profiles.status.away": "Одсутан",
+  "profiles.status.offline": "Ван мреже",
 
-  // --- GAMES ---
+  // Дуgмад – активни профил
+  "profiles.connected.btn.avatar": "Креирај / ажурирај аватар",
+  "profiles.connected.btn.avatar.tooltip": "Отвори креатор аватара",
+  "profiles.connected.btn.away.tooltip": "Промени статус",
+  "profiles.connected.btn.online": "НА МРЕЖИ",
+  "profiles.connected.btn.away": "ОДСУТАН",
+  "profiles.connected.btn.quit": "ОДЈАВА",
+  "profiles.connected.btn.quit.tooltip": "Заврши сесију",
+  "profiles.connected.btn.edit": "ИЗМЕНИ ПРОФИЛ",
+  "profiles.connected.edit.avatarPlaceholder": "Кликни",
+
+  // Блок избор постојећег профила / креирање
+  "profiles.auth.select.none": "Нема сачуваних профила",
+  "profiles.auth.select.btnConnect": "Повежи",
+  "profiles.auth.create.placeholder": "Назив профила",
+  "profiles.auth.create.btn": "Додај",
+
+  // Пријатељи
+  "profiles.friends.none": "Још увек нема пријатеља",
+
+  // Локални профили – додавање
+  "profiles.locals.add.avatar": "Аватар",
+  "profiles.locals.add.placeholder": "Назив профила",
+  "profiles.locals.add.btnAdd": "Додај",
+  "profiles.locals.add.btnCancel": "Откажи",
+
+  // Локални профили – уређивање / акције
+  "profiles.locals.edit.avatarBtn": "Аватар",
+  "profiles.locals.seeStats": "Прикажи статистику",
+
+  "profiles.locals.btn.avatarCreator": "Креирај аватар",
+  "profiles.locals.btn.avatarCreator.tooltip": "Отвори креатор аватара",
+  "profiles.locals.btn.save": "Сачувај",
+  "profiles.locals.btn.cancel": "Откажи",
+  "profiles.locals.btn.edit": "Уреди",
+  "profiles.locals.btn.delete": "Обриши",
+
+  // За додатни tooltip на дугме за уређивање (EditInline)
+  "profiles.connected.btn.edit.tooltip": "Уреди профил",
+
+  // --- COMMON ---
+  "common.save": "Сачувај",
+  "common.cancel": "Откажи",
+  "common.edit": "Уреди",
+  "common.deleteShort": "Обриши",
+
+  // --- GAMES PAGE ---
   "games.title": "СВЕ ИГРЕ",
   "games.subtitle": "Изабери режим игре",
 
@@ -3585,7 +4620,7 @@ sr: {
   "games.x01.subtitle": "301 / 501 / 701 / 901.",
   "games.x01.infoTitle": "X01",
   "games.x01.infoBody":
-    "Класичне X01 партије са статистиком, историјом и различитим правилима.",
+    "Класичне X01 партије са статистиком, историјом и напредним правилима.",
 
   "games.cricket.title": "CRICKET",
   "games.cricket.subtitle": "Затвори 15–20 + Bull.",
@@ -3597,19 +4632,19 @@ sr: {
   "games.killer.subtitle": "Погоди свој број… постани Killer.",
   "games.killer.infoTitle": "Killer",
   "games.killer.infoBody":
-    "Сваки играч има број. Погоди свој број да постанеш Killer, затим елиминиши остале.",
+    "Сваки играч има свој број. Погоди свој да постанеш Killer, затим елиминиши остале.",
 
   "games.shanghai.title": "SHANGHAI",
   "games.shanghai.subtitle": "Вредност рунде, S-D-T = Shanghai.",
   "games.shanghai.infoTitle": "Shanghai",
   "games.shanghai.infoBody":
-    "Погоди single, double и triple на истој вредности у једној посети за Shanghai.",
+    "Погоди single, double и triple на истој вредности у оквиру једне посете за Shanghai.",
 
   "games.battle.title": "BATTLE ROYALE",
   "games.battle.subtitle": "Забаван режим — елиминације.",
   "games.battle.infoTitle": "Battle Royale",
   "games.battle.infoBody":
-    "Забаван вишекориснички режим са постепеним елиминацијама. Последњи играч побеђује.",
+    "Вишекориснички мод са постепеним елиминацијама. Последњи преостали играч побеђује.",
 
   "games.status.comingSoon": "Ускоро",
   "games.info.close": "Затвори",
@@ -3621,22 +4656,22 @@ sr: {
   "training.menu.x01.title": "Training X01",
   "training.menu.x01.subtitle": "Побољшај скоринг и завршнице",
   "training.menu.x01.info":
-    "X01 тренинг посвећен прецизности, стабилности и напредним статистикама.",
+    "X01 тренинг посвећен напредовању: скоринг, стабилност, завршнице и детаљна статистика.",
 
   "training.menu.clock.title": "Around the Clock",
   "training.menu.clock.subtitle": "Single / Double / Triple",
   "training.menu.clock.info":
-    "Гађај бројеве 1 до 20 и Bull редом. Одабери Single, Double или Triple режим.",
+    "Гађај сегменте од 1 до 20 и Bull. Одабери Single, Double или Triple режим.",
 
   "training.menu.evolution.title": "Еволуција",
-  "training.menu.evolution.subtitle": "Ускоро",
+  "training.menu.evolution.subtitle": "Директан приступ X01 тренинг статистикама",
   "training.menu.evolution.info":
-    "Нови тренинг режим долази ускоро.",
+    "Отвори детаљну статистику својих Training X01 сесија директно у картици Статистика.",
 
-  "training.menu.comingSoon": "Ускоро",
+  "training.menu.comingSoon": "У развоју",
   "training.menu.info.close": "Затвори",
 
-  // --- LANG NAMES (liste complète) ---
+  // --- LANG NAMES (пуна листа) ---
   "lang.fr": "Француски",
   "lang.en": "Енглески",
   "lang.es": "Шпански",
@@ -3662,14 +4697,14 @@ sr: {
   "lang.cs": "Чешки",
 },
 
-  // ---------- HRVATSKI ----------
+// ---------- HRVATSKI ----------
 hr: {
   // --- NAV ---
   "nav.home": "Početna",
   "nav.games": "Igre",
   "nav.profiles": "Profili",
   "nav.friends": "Prijatelji",
-  "nav.stats": "Statistike",
+  "nav.stats": "Statistika",
   "nav.settings": "Postavke",
 
   // --- SETTINGS ---
@@ -3679,11 +4714,12 @@ hr: {
   "settings.theme": "Tema",
   "settings.lang": "Jezik",
 
+  // THEMES (labels EN ostaju, opis preveden)
   "settings.theme.gold.label": "GOLD NEON",
-  "settings.theme.gold.desc": "Premium zlatna neon tema",
+  "settings.theme.gold.desc": "Premium zlatna neonska tema",
 
   "settings.theme.pink.label": "ROSE FLUO",
-  "settings.theme.pink.desc": "Roza arkadna atmosfera",
+  "settings.theme.pink.desc": "Roza arkadni ugođaj",
 
   "settings.theme.petrol.label": "PETROL BLUE",
   "settings.theme.petrol.desc": "Duboka neonsko plava",
@@ -3701,7 +4737,7 @@ hr: {
   "settings.theme.orange.desc": "Topla i energična narančasta",
 
   "settings.theme.white.label": "SNOW WHITE",
-  "settings.theme.white.desc": "Moderan svijetli background",
+  "settings.theme.white.desc": "Moderna svijetla pozadina",
 
   // --- HOME ---
   "home.greeting": "Dobrodošli",
@@ -3709,49 +4745,90 @@ hr: {
   "home.connect": "PRIJAVA",
 
   "home.card.profiles.title": "PROFILI",
-  "home.card.profiles.subtitle": "Kreiranje i upravljanje profilima",
+  "home.card.profiles.subtitle": "Stvori i upravljaj profilima",
 
   "home.card.local.title": "LOKALNA IGRA",
   "home.card.local.subtitle": "Pristup svim načinima igre",
 
   "home.card.online.title": "ONLINE IGRA",
-  "home.card.online.subtitle": "Udaljene partije (uskoro)",
+  "home.card.online.subtitle": "Udaljeni mečevi (uskoro)",
 
-  "home.card.stats.title": "STATISTIKE",
-  "home.card.stats.subtitle": "Statistike i povijest",
+  "home.card.stats.title": "STATISTIKA",
+  "home.card.stats.subtitle": "Statistika i povijest",
 
-  "home.seeStats": "Pogledaj moje statistike",
+  "home.seeStats": "Pogledaj moju statistiku",
 
   "home.stats.avg3": "Pros/3",
-  "home.stats.best": "Najbolji",
+  "home.stats.best": "Najbolje",
   "home.stats.co": "CO",
   "home.stats.winPct": "Win%",
 
-  // STATUS
-  "status.online": "Online",
+  // STATUS (generički)
+  "status.online": "Na mreži",
   "status.away": "Odsutan",
-  "status.offline": "Offline",
+  "status.offline": "Izvan mreže",
 
-  // --- PROFILES ---
-  "profiles.title": "Profili",
-  "profiles.create": "Kreiraj profil",
-  "profiles.edit": "Uredi profil",
-  "profiles.delete": "Obriši profil",
+  // --- PROFILES PAGE (novo za Profiles.tsx) ---
+  // Naslovi sekcija
+  "profiles.connected.title": "Povezani profil",
+  "profiles.friends.title": "Prijatelji",
+  "profiles.locals.title": "Lokalni profili",
 
-  "profiles.confirmDeleteTitle": "Obrisati profil?",
-  "profiles.confirmDeleteBody":
-    "Ovaj profil i sve povezane statistike bit će trajno obrisani.",
-  "profiles.confirmDeleteYes": "Obriši",
-  "profiles.confirmDeleteNo": "Odustani",
+  // Link / tooltip za statistiku
+  "profiles.connected.seeStats": "Prikaži statistiku",
 
-  "profiles.name": "Ime",
-  "profiles.avatar": "Avatar",
-  "profiles.stats": "Statistike",
-  "profiles.noProfiles": "Još nema profila.",
-  "profiles.pickOne": "Odaberi profil",
-  "profiles.active": "Aktivni profil",
+  // Status povezanog profila
+  "profiles.status.online": "Na mreži",
+  "profiles.status.away": "Odsutan",
+  "profiles.status.offline": "Izvan mreže",
 
-  // --- GAMES ---
+  // Gumbi – aktivni profil
+  "profiles.connected.btn.avatar": "Stvori / ažuriraj avatar",
+  "profiles.connected.btn.avatar.tooltip": "Otvori kreator avatara",
+  "profiles.connected.btn.away.tooltip": "Promijeni status",
+  "profiles.connected.btn.online": "ONLINE",
+  "profiles.connected.btn.away": "ODSUTAN",
+  "profiles.connected.btn.quit": "ODJAVA",
+  "profiles.connected.btn.quit.tooltip": "Završi sesiju",
+  "profiles.connected.btn.edit": "UREDI PROFIL",
+  "profiles.connected.edit.avatarPlaceholder": "Klikni",
+
+  // Blok izbor postojećeg profila / kreiranje
+  "profiles.auth.select.none": "Nema spremljenih profila",
+  "profiles.auth.select.btnConnect": "Poveži",
+  "profiles.auth.create.placeholder": "Naziv profila",
+  "profiles.auth.create.btn": "Dodaj",
+
+  // Prijatelji
+  "profiles.friends.none": "Još nema prijatelja",
+
+  // Lokalni profili – dodavanje
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Naziv profila",
+  "profiles.locals.add.btnAdd": "Dodaj",
+  "profiles.locals.add.btnCancel": "Odustani",
+
+  // Lokalni profili – uređivanje / akcije
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "Prikaži statistiku",
+
+  "profiles.locals.btn.avatarCreator": "Stvori avatar",
+  "profiles.locals.btn.avatarCreator.tooltip": "Otvori kreator avatara",
+  "profiles.locals.btn.save": "Spremi",
+  "profiles.locals.btn.cancel": "Odustani",
+  "profiles.locals.btn.edit": "Uredi",
+  "profiles.locals.btn.delete": "Izbriši",
+
+  // Dodatni tooltip za gumb EditInline
+  "profiles.connected.btn.edit.tooltip": "Uredi profil",
+
+  // --- COMMON ---
+  "common.save": "Spremi",
+  "common.cancel": "Odustani",
+  "common.edit": "Uredi",
+  "common.deleteShort": "Izbriši",
+
+  // --- GAMES PAGE ---
   "games.title": "SVE IGRE",
   "games.subtitle": "Odaberi način igre",
 
@@ -3759,64 +4836,64 @@ hr: {
   "games.training.subtitle": "Poboljšaj svoj napredak.",
   "games.training.infoTitle": "Trening",
   "games.training.infoBody":
-    "Trening način za rad na preciznosti, bodovima i završnicama.",
+    "Trening mod za preciznost, scoring i završnice.",
 
   "games.x01.title": "X01",
   "games.x01.subtitle": "301 / 501 / 701 / 901.",
   "games.x01.infoTitle": "X01",
   "games.x01.infoBody":
-    "Klasične X01 partije sa statistikama, poviješću i opcijama pravila.",
+    "Klasične X01 partije sa statistikom, poviješću i naprednim pravilima.",
 
   "games.cricket.title": "CRICKET",
   "games.cricket.subtitle": "Zatvori 15–20 + Bull.",
   "games.cricket.infoTitle": "Cricket",
   "games.cricket.infoBody":
-    "Zatvori brojeve 15 do 20 i Bull prije protivnika, uz što više bodova.",
+    "Zatvori brojeve 15 do 20 i Bull prije protivnika i skupi što više bodova.",
 
   "games.killer.title": "KILLER",
   "games.killer.subtitle": "Pogodi svoj broj… postani Killer.",
   "games.killer.infoTitle": "Killer",
   "games.killer.infoBody":
-    "Svaki igrač ima broj. Pogodi svoj broj da postaneš Killer, zatim eliminiraj ostale.",
+    "Svaki igrač ima svoj broj. Pogodi svoj da postaneš Killer, zatim eliminiraj ostale.",
 
   "games.shanghai.title": "SHANGHAI",
   "games.shanghai.subtitle": "Vrijednost runde, S-D-T = Shanghai.",
   "games.shanghai.infoTitle": "Shanghai",
   "games.shanghai.infoBody":
-    "Pogodi single, double i triple na istoj vrijednosti u jednoj rundi za Shanghai.",
+    "Pogodi single, double i triple na istoj vrijednosti u jednom izlasku za Shanghai.",
 
   "games.battle.title": "BATTLE ROYALE",
-  "games.battle.subtitle": "Zabavan način — eliminacije.",
+  "games.battle.subtitle": "Zabavan mod — eliminacije.",
   "games.battle.infoTitle": "Battle Royale",
   "games.battle.infoBody":
-    "Zabavan multiplayer s postupnim eliminacijama. Posljednji igrač pobjeđuje.",
+    "Višekorisnički mod s postupnim eliminacijama. Posljednji preostali igrač pobjeđuje.",
 
   "games.status.comingSoon": "Uskoro",
   "games.info.close": "Zatvori",
 
   // --- TRAINING MENU ---
   "training.menu.title": "TRENING",
-  "training.menu.subtitle": "Odaberi trening način",
+  "training.menu.subtitle": "Odaberi trening mod",
 
   "training.menu.x01.title": "Training X01",
   "training.menu.x01.subtitle": "Poboljšaj scoring i završnice",
   "training.menu.x01.info":
-    "X01 trening namijenjen preciznosti, konzistentnosti i naprednim statistikama.",
+    "X01 trening usmjeren na napredak: scoring, stabilnost, završnice i detaljna statistika.",
 
   "training.menu.clock.title": "Around the Clock",
   "training.menu.clock.subtitle": "Single / Double / Triple",
   "training.menu.clock.info":
-    "Gađaj brojeve od 1 do 20 i Bull redom. Odaberi Single, Double ili Triple način.",
+    "Gađaj segmente od 1 do 20 i Bull. Odaberi Single, Double ili Triple mod.",
 
   "training.menu.evolution.title": "Evolucija",
-  "training.menu.evolution.subtitle": "Uskoro",
+  "training.menu.evolution.subtitle": "Izravan pristup Training X01 statistikama",
   "training.menu.evolution.info":
-    "Novi trening način dolazi uskoro.",
+    "Otvori detaljnu statistiku svojih Training X01 sesija izravno u kartici Statistika.",
 
-  "training.menu.comingSoon": "Uskoro",
+  "training.menu.comingSoon": "U razvoju",
   "training.menu.info.close": "Zatvori",
 
-  // --- LANG NAMES ---
+  // --- LANG NAMES (puna lista) ---
   "lang.fr": "Francuski",
   "lang.en": "Engleski",
   "lang.es": "Španjolski",
@@ -3855,12 +4932,12 @@ cs: {
   // --- SETTINGS ---
   "settings.back": "Zpět",
   "settings.title": "Nastavení",
-  "settings.subtitle": "Přizpůsob vzhled aplikace a jazyk",
-  "settings.theme": "Motiv",
+  "settings.subtitle": "Přizpůsobte téma a jazyk aplikace",
+  "settings.theme": "Téma",
   "settings.lang": "Jazyk",
 
   "settings.theme.gold.label": "GOLD NEON",
-  "settings.theme.gold.desc": "Prémiový zlatý neonový motiv",
+  "settings.theme.gold.desc": "Prémiové zlaté téma",
 
   "settings.theme.pink.label": "ROSE FLUO",
   "settings.theme.pink.desc": "Růžová arcade atmosféra",
@@ -3889,10 +4966,10 @@ cs: {
   "home.connect": "PŘIHLÁSIT SE",
 
   "home.card.profiles.title": "PROFILY",
-  "home.card.profiles.subtitle": "Vytvářej a spravuj profily",
+  "home.card.profiles.subtitle": "Vytvářejte a spravujte profily",
 
   "home.card.local.title": "LOKÁLNÍ HRA",
-  "home.card.local.subtitle": "Přístup ke všem herním módům",
+  "home.card.local.subtitle": "Přístup ke všem herním režimům",
 
   "home.card.online.title": "ONLINE HRA",
   "home.card.online.subtitle": "Vzdálené zápasy (již brzy)",
@@ -3905,105 +4982,134 @@ cs: {
   "home.stats.avg3": "Prům/3",
   "home.stats.best": "Nejlepší",
   "home.stats.co": "CO",
-  "home.stats.winPct": "Výher%",
+  "home.stats.winPct": "Výhry%",
 
   // STATUS
   "status.online": "Online",
-  "status.away": "Nepřítomen",
+  "status.away": "Pryč",
   "status.offline": "Offline",
 
   // --- PROFILES ---
-  "profiles.title": "Profily",
-  "profiles.create": "Vytvořit profil",
-  "profiles.edit": "Upravit profil",
-  "profiles.delete": "Smazat profil",
+  "profiles.connected.title": "Připojený profil",
+  "profiles.friends.title": "Přátelé",
+  "profiles.locals.title": "Lokální profily",
 
-  "profiles.confirmDeleteTitle": "Smazat profil?",
-  "profiles.confirmDeleteBody":
-    "Tento profil a všechny související statistiky budou trvale odstraněny.",
-  "profiles.confirmDeleteYes": "Smazat",
-  "profiles.confirmDeleteNo": "Zrušit",
+  "profiles.connected.seeStats": "Zobrazit statistiky",
 
-  "profiles.name": "Jméno",
-  "profiles.avatar": "Avatar",
-  "profiles.stats": "Statistiky",
-  "profiles.noProfiles": "Zatím žádné profily.",
-  "profiles.pickOne": "Vyber profil",
-  "profiles.active": "Aktivní profil",
+  "profiles.status.online": "Online",
+  "profiles.status.away": "Pryč",
+  "profiles.status.offline": "Offline",
+
+  "profiles.connected.btn.avatar": "Vytvořit / aktualizovat avatar",
+  "profiles.connected.btn.avatar.tooltip": "Otevřít editor avatara",
+  "profiles.connected.btn.away.tooltip": "Změnit stav",
+  "profiles.connected.btn.online": "ONLINE",
+  "profiles.connected.btn.away": "PRYČ",
+  "profiles.connected.btn.quit": "ODHLÁSIT",
+  "profiles.connected.btn.quit.tooltip": "Ukončit relaci",
+  "profiles.connected.btn.edit": "UPRAVIT PROFIL",
+  "profiles.connected.edit.avatarPlaceholder": "Kliknout",
+
+  "profiles.auth.select.none": "Žádné uložené profily",
+  "profiles.auth.select.btnConnect": "Připojit",
+  "profiles.auth.create.placeholder": "Název profilu",
+  "profiles.auth.create.btn": "Přidat",
+
+  "profiles.friends.none": "Zatím žádní přátelé",
+
+  "profiles.locals.add.avatar": "Avatar",
+  "profiles.locals.add.placeholder": "Název profilu",
+  "profiles.locals.add.btnAdd": "Přidat",
+  "profiles.locals.add.btnCancel": "Zrušit",
+
+  "profiles.locals.edit.avatarBtn": "Avatar",
+  "profiles.locals.seeStats": "Zobrazit statistiky",
+
+  "profiles.locals.btn.avatarCreator": "Vytvořit avatar",
+  "profiles.locals.btn.avatarCreator.tooltip": "Otevřít editor avatara",
+  "profiles.locals.btn.save": "Uložit",
+  "profiles.locals.btn.cancel": "Zrušit",
+  "profiles.locals.btn.edit": "Upravit",
+  "profiles.locals.btn.delete": "Smazat",
+
+  "common.save": "Uložit",
+  "common.cancel": "Zrušit",
+  "common.edit": "Upravit",
+  "common.deleteShort": "Smazat",
 
   // --- GAMES ---
   "games.title": "VŠECHNY HRY",
-  "games.subtitle": "Vyber herní mód",
+  "games.subtitle": "Vyber herní režim",
 
   "games.training.title": "TRÉNINK",
-  "games.training.subtitle": "Zlepši svůj výkon.",
+  "games.training.subtitle": "Zlepšujte své dovednosti.",
   "games.training.infoTitle": "Trénink",
   "games.training.infoBody":
-    "Tréninkový režim pro přesnost, skórování a zakončení.",
+    "Tréninkový režim pro přesnost, skórování a dokončení.",
 
   "games.x01.title": "X01",
   "games.x01.subtitle": "301 / 501 / 701 / 901.",
   "games.x01.infoTitle": "X01",
   "games.x01.infoBody":
-    "Klasické X01 hry se statistikami, historií a různými pravidly.",
+    "Klasické X01 hry se statistikami, historií a volbou pravidel.",
 
   "games.cricket.title": "CRICKET",
-  "games.cricket.subtitle": "Uzavři 15–20 + Bull.",
+  "games.cricket.subtitle": "Zavři 15–20 + Bull.",
   "games.cricket.infoTitle": "Cricket",
   "games.cricket.infoBody":
-    "Uzavři čísla 15 až 20 a Bull dříve než soupeř a nasbírej co nejvíce bodů.",
+    "Zavři segmenty 15–20 a Bull dříve než soupeř a získej body.",
 
   "games.killer.title": "KILLER",
-  "games.killer.subtitle": "Zasáhni své číslo… staň se Killerem.",
+  "games.killer.subtitle": "Tref svůj segment… staň se Killerem.",
   "games.killer.infoTitle": "Killer",
   "games.killer.infoBody":
-    "Každý hráč má své číslo. Zasáhni ho, staň se Killerem a vyřaď ostatní.",
+    "Tref svůj segment, staň se Killerem a vyřaď ostatní hráče.",
 
   "games.shanghai.title": "SHANGHAI",
-  "games.shanghai.subtitle": "Cíl kola, S-D-T = Shanghai.",
+  "games.shanghai.subtitle": "Hodnoty kola, S-D-T = Shanghai.",
   "games.shanghai.infoTitle": "Shanghai",
   "games.shanghai.infoBody":
-    "Zasáhni single, double a triple na stejné hodnotě v jedné návštěvě pro Shanghai.",
+    "Tref single, double a triple na stejné hodnotě pro Shanghai.",
 
   "games.battle.title": "BATTLE ROYALE",
-  "games.battle.subtitle": "Zábavný mód — eliminace.",
+  "games.battle.subtitle": "Zábavný režim — eliminace.",
   "games.battle.infoTitle": "Battle Royale",
   "games.battle.infoBody":
-    "Zábavný multiplayer s postupnými eliminacemi. Poslední hráč vyhrává.",
+    "Multiplayer s eliminacemi. Poslední hráč vítězí.",
 
-  "games.status.comingSoon": "Již brzy",
+  "games.status.comingSoon": "Brzy dostupné",
   "games.info.close": "Zavřít",
 
   // --- TRAINING MENU ---
   "training.menu.title": "TRÉNINK",
-  "training.menu.subtitle": "Vyber tréninkový mód",
+  "training.menu.subtitle": "Vyber tréninkový režim",
 
-  "training.menu.x01.title": "Training X01",
-  "training.menu.x01.subtitle": "Zlepši skórování a zakončení",
+  "training.menu.x01.title": "X01 Trénink",
+  "training.menu.x01.subtitle": "Lepší skóre a dokončení",
   "training.menu.x01.info":
-    "X01 trénink zaměřený na přesnost, konzistenci a pokročilé statistiky.",
+    "X01 trénink zaměřený na konzistenci, skóre a detailní statistiky.",
 
   "training.menu.clock.title": "Around the Clock",
   "training.menu.clock.subtitle": "Single / Double / Triple",
   "training.menu.clock.info":
-    "Zasahuj čísla 1 až 20 a Bull postupně. Vyber si Single, Double nebo Triple mód.",
+    "Tref segmenty 1–20 a Bull v zvoleném režimu.",
 
   "training.menu.evolution.title": "Evoluce",
-  "training.menu.evolution.subtitle": "Již brzy",
+  "training.menu.evolution.subtitle": "Přímý přístup ke statistikám X01",
   "training.menu.evolution.info":
-    "Nový tréninkový mód bude brzy dostupný.",
+    "Rychlý přístup k detailním X01 statistikám v kartě Statistiky.",
 
-  "training.menu.comingSoon": "Již brzy",
+  "training.menu.comingSoon": "Ve vývoji",
   "training.menu.info.close": "Zavřít",
 
-  // --- LANG NAMES ---
+  // --- LANGS ---
   "lang.fr": "Francouzština",
   "lang.en": "Angličtina",
   "lang.es": "Španělština",
   "lang.de": "Němčina",
   "lang.it": "Italština",
   "lang.pt": "Portugalština",
-  "lang.nl": "Nizozemština",
+  "lang.nl": "Holandština",
   "lang.ru": "Ruština",
   "lang.zh": "Čínština",
   "lang.ja": "Japonština",
@@ -4016,7 +5122,7 @@ cs: {
   "lang.is": "Islandština",
   "lang.pl": "Polština",
   "lang.ro": "Rumunština",
-  "lang.at": "Rakušanská němčina",
+  "lang.at": "Rakuština",
   "lang.sr": "Srbština",
   "lang.hr": "Chorvatština",
   "lang.cs": "Čeština",
