@@ -1,37 +1,20 @@
 // ============================================
 // src/pages/Games.tsx — Sélecteur de modes de jeu
-// - Style cartes néon, cohérent avec TrainingMenu
-// - Modes grisés : non cliquables
-// - Pastille "i" à droite => panneau d'aide
-// - Textes pilotés par LangContext (t())
+// Style harmonisé avec TrainingMenu (cartes néon)
+// - Cartes sombres, titre néon
+// - Pastille "i" à droite => panneau d'aide (traductions via t())
+// - Modes grisés : non cliquables (enabled = false) + "Coming soon"
 // ============================================
 
 import React from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 
-type Tab =
-  | "games"
-  | "training"        // 👈 corrigé : correspond à App.tsx
-  | "training_x01"
-  | "x01setup"
-  | "cricket"
-  | "killer"
-  | "shanghai"
-  | "battle";
-
 type Props = {
-  go?: (tab: Tab, params?: any) => void;
-  setTab?: (tab: Tab) => void; // compat anciennes versions
+  setTab: (tab: any) => void;
 };
 
-type GameId =
-  | "training"
-  | "x01"
-  | "cricket"
-  | "killer"
-  | "shanghai"
-  | "battle";
+type GameId = "training" | "x01" | "cricket" | "killer" | "shanghai" | "battle";
 
 type GameDef = {
   id: GameId;
@@ -39,9 +22,11 @@ type GameDef = {
   titleDefault: string;
   subtitleKey: string;
   subtitleDefault: string;
-  infoKey: string;
-  infoDefault: string;
-  tab: Tab | null; // null = mode à venir
+  infoTitleKey: string;
+  infoTitleDefault: string;
+  infoBodyKey: string;
+  infoBodyDefault: string;
+  tab: string | null;
   enabled: boolean;
 };
 
@@ -52,10 +37,12 @@ const GAMES: GameDef[] = [
     titleDefault: "TRAINING",
     subtitleKey: "games.training.subtitle",
     subtitleDefault: "Améliore ta progression.",
-    infoKey: "games.training.info",
-    infoDefault:
-      "Accède à tous les modes d’entraînement : X01 solo, tour de l’horloge et d’autres outils pour progresser.",
-    tab: "training",   // 👈 corrigé
+    infoTitleKey: "games.training.infoTitle",
+    infoTitleDefault: "Training",
+    infoBodyKey: "games.training.infoBody",
+    infoBodyDefault:
+      "Mode entraînement pour travailler la régularité, le scoring et les finitions.",
+    tab: "training", // ou ton onglet training exact dans App.tsx
     enabled: true,
   },
   {
@@ -64,10 +51,12 @@ const GAMES: GameDef[] = [
     titleDefault: "X01",
     subtitleKey: "games.x01.subtitle",
     subtitleDefault: "301 / 501 / 701 / 901.",
-    infoKey: "games.x01.info",
-    infoDefault:
-      "Joue les classiques 301, 501, 701, 901 avec gestion des sets / legs, double-out et stats complètes.",
-    tab: "x01setup",
+    infoTitleKey: "games.x01.infoTitle",
+    infoTitleDefault: "X01",
+    infoBodyKey: "games.x01.infoBody",
+    infoBodyDefault:
+      "Parties classiques de 301/501/701/901 avec statistiques, historique et options avancées.",
+    tab: "x01", // adapte si ton tab s'appelle autrement
     enabled: true,
   },
   {
@@ -75,10 +64,12 @@ const GAMES: GameDef[] = [
     titleKey: "games.cricket.title",
     titleDefault: "CRICKET",
     subtitleKey: "games.cricket.subtitle",
-    subtitleDefault: "Ferme les zones 15…20 + Bull.",
-    infoKey: "games.cricket.info",
-    infoDefault:
-      "Mode Cricket classique : tu dois fermer les cases 15 à 20 + Bull tout en marquant plus de points que l’adversaire.",
+    subtitleDefault: "Ferme 15–20 + Bull.",
+    infoTitleKey: "games.cricket.infoTitle",
+    infoTitleDefault: "Cricket",
+    infoBodyKey: "games.cricket.infoBody",
+    infoBodyDefault:
+      "Ferme les cases 15 à 20 et le Bull avant ton adversaire tout en marquant un maximum de points.",
     tab: "cricket",
     enabled: true,
   },
@@ -87,11 +78,13 @@ const GAMES: GameDef[] = [
     titleKey: "games.killer.title",
     titleDefault: "KILLER",
     subtitleKey: "games.killer.subtitle",
-    subtitleDefault: "Double ton numéro… deviens Killer.",
-    infoKey: "games.killer.info",
-    infoDefault:
-      "Chaque joueur reçoit un numéro. Deviens Killer en le doublant, puis élimine les autres en touchant leur numéro.",
-    tab: null,
+    subtitleDefault: "Touche ton numéro… deviens Killer.",
+    infoTitleKey: "games.killer.infoTitle",
+    infoTitleDefault: "Killer",
+    infoBodyKey: "games.killer.infoBody",
+    infoBodyDefault:
+      "Chaque joueur possède un numéro. Deviens Killer en touchant le tien, puis élimine les autres joueurs.",
+    tab: null, // pas encore dispo
     enabled: false,
   },
   {
@@ -99,10 +92,12 @@ const GAMES: GameDef[] = [
     titleKey: "games.shanghai.title",
     titleDefault: "SHANGHAI",
     subtitleKey: "games.shanghai.subtitle",
-    subtitleDefault: "Cible du tour, S+D+T = Shanghai à win.",
-    infoKey: "games.shanghai.info",
-    infoDefault:
-      "À chaque manche, une nouvelle valeur de cible. Le combo simple + double + triple sur la même valeur = Shanghai.",
+    subtitleDefault: "Cible du round, S-D-T = Shanghai.",
+    infoTitleKey: "games.shanghai.infoTitle",
+    infoTitleDefault: "Shanghai",
+    infoBodyKey: "games.shanghai.infoBody",
+    infoBodyDefault:
+      "Chaque round possède une cible. Touche simple, double et triple sur la même visite pour un Shanghai.",
     tab: null,
     enabled: false,
   },
@@ -111,17 +106,18 @@ const GAMES: GameDef[] = [
     titleKey: "games.battle.title",
     titleDefault: "BATTLE ROYALE",
     subtitleKey: "games.battle.subtitle",
-    subtitleDefault: "Mode fun à plusieurs — éliminations.",
-    infoKey: "games.battle.info",
-    infoDefault:
-      "Mode multijoueurs fun avec éliminations progressives et règles spéciales. Arrive dans une prochaine version.",
+    subtitleDefault: "Mode fun — éliminations.",
+    infoTitleKey: "games.battle.infoTitle",
+    infoTitleDefault: "Battle Royale",
+    infoBodyKey: "games.battle.infoBody",
+    infoBodyDefault:
+      "Mode multijoueur fun avec éliminations successives. Le dernier joueur en vie gagne.",
     tab: null,
     enabled: false,
   },
 ];
 
-export default function Games(props: Props) {
-  const { go, setTab } = props;
+export default function Games({ setTab }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
   const [infoGame, setInfoGame] = React.useState<GameDef | null>(null);
@@ -129,15 +125,13 @@ export default function Games(props: Props) {
   const PAGE_BG = theme.bg;
   const CARD_BG = theme.card;
 
-  function navigate(tab: Tab | null) {
+  function navigate(tab: string | null) {
     if (!tab) return;
-    if (go) go(tab);
-    else if (setTab) setTab(tab);
+    setTab(tab);
   }
 
   return (
     <div
-      className="container"
       style={{
         minHeight: "100vh",
         padding: 16,
@@ -157,7 +151,7 @@ export default function Games(props: Props) {
           textShadow: `0 0 12px ${theme.primary}66`,
         }}
       >
-        {t("games.title", "TOUS LES JEUX")}
+        {t("games.title", "ALL GAMES")}
       </h1>
 
       <div
@@ -168,14 +162,18 @@ export default function Games(props: Props) {
           textAlign: "center",
         }}
       >
-        {t("games.subtitle", "Sélectionne un mode de jeu")}
+        {t("games.subtitle", "Select a game mode")}
       </div>
 
+      {/* Cartes de jeux */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {GAMES.map((g) => {
           const title = t(g.titleKey, g.titleDefault);
           const subtitle = t(g.subtitleKey, g.subtitleDefault);
           const disabled = !g.enabled;
+          const comingSoon = !g.enabled
+            ? t("games.status.comingSoon", "Coming soon")
+            : null;
 
           return (
             <button
@@ -192,9 +190,7 @@ export default function Games(props: Props) {
                 background: CARD_BG,
                 cursor: disabled ? "default" : "pointer",
                 opacity: disabled ? 0.55 : 1,
-                boxShadow: disabled
-                  ? "none"
-                  : `0 10px 24px rgba(0,0,0,0.55)`,
+                boxShadow: disabled ? "none" : `0 10px 24px rgba(0,0,0,0.55)`,
                 overflow: "hidden",
               }}
             >
@@ -212,16 +208,27 @@ export default function Games(props: Props) {
               >
                 {title}
               </div>
-
               <div
                 style={{
                   marginTop: 4,
                   fontSize: 12,
-                  color: disabled ? theme.textSoft : theme.textSoft,
+                  color: theme.textSoft,
                   opacity: 0.9,
                 }}
               >
                 {subtitle}
+                {comingSoon && (
+                  <span
+                    style={{
+                      marginLeft: 6,
+                      fontSize: 11,
+                      fontStyle: "italic",
+                      opacity: 0.9,
+                    }}
+                  >
+                    • {comingSoon}
+                  </span>
+                )}
               </div>
 
               {/* Pastille "i" */}
@@ -295,9 +302,8 @@ export default function Games(props: Props) {
                 textShadow: `0 0 10px ${theme.primary}55`,
               }}
             >
-              {t(infoGame.titleKey, infoGame.titleDefault)}
+              {t(infoGame.infoTitleKey, infoGame.infoTitleDefault)}
             </div>
-
             <div
               style={{
                 fontSize: 13,
@@ -306,8 +312,21 @@ export default function Games(props: Props) {
                 marginBottom: 12,
               }}
             >
-              {t(infoGame.infoKey, infoGame.infoDefault)}
+              {t(infoGame.infoBodyKey, infoGame.infoBodyDefault)}
             </div>
+
+            {!infoGame.enabled && (
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: theme.primary,
+                  marginBottom: 10,
+                }}
+              >
+                {t("games.status.comingSoon", "Coming soon")}
+              </div>
+            )}
 
             <button
               type="button"
@@ -325,7 +344,7 @@ export default function Games(props: Props) {
                 cursor: "pointer",
               }}
             >
-              {t("games.info.close", "Fermer")}
+              {t("games.info.close", "Close")}
             </button>
           </div>
         </div>
