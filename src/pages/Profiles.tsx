@@ -1,11 +1,10 @@
 // ============================================
 // src/pages/Profiles.tsx
-// Profils (profil actif, amis fusionnés, profils locaux)
-// - Bloc unique Connexion/Création (sans mot de passe)
-// - Amis: un seul panneau repliable "Amis (N)" trié par statut
-// - Profils locaux: compteur, mini-stats ruban, Éditer au-dessus de Suppr.
-// - Responsive + ring d’étoiles externe
-// - Bouton “Créer / Mettre à jour l’avatar” -> go("avatar")
+// Menu Profils + sous-pages internes
+// - Page 1 : menu (3 cartes) comme Games / TrainingMenu
+// - "Créer son avatar" -> go("avatar")
+// - "Mon profil"       -> Profil connecté + Amis
+// - "Profils locaux"   -> Liste complète des profils locaux
 // - Thème via ThemeContext + textes via LangContext
 // ============================================
 
@@ -46,7 +45,7 @@ function useBasicStats(playerId: string | undefined | null) {
 }
 
 /* ================================
-   Page — Profils
+   Page — Profils (avec vue menu)
 ================================ */
 export default function Profiles({
   store,
@@ -70,6 +69,9 @@ export default function Profiles({
 
   const { theme } = useTheme();
   const { t } = useLang();
+
+  // vue interne : "menu" | "me" | "locals"
+  const [view, setView] = React.useState<"menu" | "me" | "locals">("menu");
 
   const [statsMap, setStatsMap] = React.useState<
     Record<string, BasicProfileStats | undefined>
@@ -157,67 +159,283 @@ export default function Profiles({
 
   // Helper navigation avatar
   const openAvatarCreator = React.useCallback(() => {
+    // si la page Avatar existe déjà dans App.tsx
     go?.("avatar");
   }, [go]);
 
+  /* ----- Styles globaux responsive pour le bloc actif ----- */
+  React.useEffect(() => {
+    const css = `
+      .apb { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+      .apb__info { display:flex; flex-direction:column; align-items:flex-start; text-align:left; flex:1; min-width:220px; }
+      .apb__actions { justify-content:flex-start; }
+      @media (max-width: 600px){
+        .apb { flex-direction:column; align-items:center; }
+        .apb__info { align-items:center !important; text-align:center !important; }
+        .apb__actions { justify-content:center !important; }
+      }
+    `;
+    const style = document.createElement("style");
+    style.innerHTML = css;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
+  // ---------- Rendu ----------
   return (
-    <>
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-          .apb { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
-          .apb__info { display:flex; flex-direction:column; align-items:flex-start; text-align:left; flex:1; min-width:220px; }
-          .apb__actions { justify-content:flex-start; }
-          @media (max-width: 600px){
-            .apb { flex-direction:column; align-items:center; }
-            .apb__info { align-items:center !important; text-align:center !important; }
-            .apb__actions { justify-content:center !important; }
-          }
-        `,
+    <div
+      className="container"
+      style={{
+        maxWidth: 760,
+        margin: "0 auto",
+        minHeight: "100vh",
+        padding: 16,
+        paddingBottom: 90,
+        background: theme.bg,
+        color: theme.text,
+        boxSizing: "border-box",
+      }}
+    >
+      {/* HEADER commun */}
+      <h1
+        style={{
+          margin: 0,
+          marginBottom: 6,
+          fontSize: 24,
+          textAlign: "center",
+          color: theme.primary,
+          textShadow: `0 0 12px ${theme.primary}66`,
         }}
-      />
-
-      <div
-        className="container"
-        style={{ maxWidth: 760, background: theme.bg, color: theme.text }}
       >
-        <Card title={t("profiles.connected.title", "Profil connecté")}>
-          {active ? (
-            <ActiveProfileBlock
-              selfStatus={selfStatus as any}
-              active={active}
-              activeAvg3D={activeAvg3D}
-              onToggleAway={() =>
-                update((s) => ({
-                  ...s,
-                  selfStatus: s.selfStatus === "away" ? ("online" as const) : ("away" as const),
-                }))
-              }
-              onQuit={() => setActiveProfile(null)}
-              onEdit={(n, f) => {
-                if (n && n !== active.name) renameProfile(active.id, n);
-                if (f) changeAvatar(active.id, f);
+        {t("profiles.menu.title", "PROFILS")}
+      </h1>
+      <div
+        style={{
+          fontSize: 13,
+          color: theme.textSoft,
+          marginBottom: 18,
+          textAlign: "center",
+        }}
+      >
+        {t(
+          "profiles.menu.subtitle",
+          "Gère ton avatar, ton profil connecté et les profils locaux."
+        )}
+      </div>
+
+      {/* Bouton retour (hors vue menu) */}
+      {view !== "menu" && (
+        <div style={{ marginBottom: 12 }}>
+          <button
+            type="button"
+            onClick={() => setView("menu")}
+            style={{
+              borderRadius: 999,
+              border: `1px solid ${theme.borderSoft}`,
+              background: "transparent",
+              padding: "6px 14px",
+              fontSize: 13,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              color: theme.textSoft,
+              cursor: "pointer",
+            }}
+          >
+            <span style={{ fontSize: 12 }}>←</span>
+            {t("profiles.menu.back", "Retour au menu Profils")}
+          </button>
+        </div>
+      )}
+
+      {/* VUE MENU PROFILS */}
+      {view === "menu" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* Carte 1 — Créer son avatar (redirige vers page Avatar) */}
+          <button
+            type="button"
+            onClick={() => openAvatarCreator()}
+            style={{
+              position: "relative",
+              width: "100%",
+              padding: 14,
+              paddingRight: 30,
+              textAlign: "left",
+              borderRadius: 16,
+              border: `1px solid ${theme.borderSoft}`,
+              background: theme.card,
+              cursor: "pointer",
+              boxShadow: "0 10px 24px rgba(0,0,0,0.55)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 800,
+                letterSpacing: 0.8,
+                textTransform: "uppercase",
+                color: theme.primary,
+                textShadow: `0 0 12px ${theme.primary}55`,
               }}
-              onOpenAvatarCreator={openAvatarCreator}
-            />
-          ) : (
-            <UnifiedAuthBlock
-              profiles={profiles}
-              onConnect={(id) => setActiveProfile(id)}
-              onCreate={addProfile}
-              autoFocusCreate={autoCreate}
-            />
-          )}
-        </Card>
+            >
+              {t("profiles.menu.avatar.title", "Créer ton avatar")}
+            </div>
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 12,
+                color: theme.textSoft,
+                opacity: 0.9,
+              }}
+            >
+              {t(
+                "profiles.menu.avatar.subtitle",
+                "Personnalise ton médaillon de joueur avec le créateur d’avatar."
+              )}
+            </div>
+          </button>
 
-        <Card
-          title={`${t("profiles.friends.title", "Amis")} (${friends?.length ?? 0})`}
-        >
-          <FriendsMergedBlock friends={friends} />
-        </Card>
+          {/* Carte 2 — Mon profil */}
+          <button
+            type="button"
+            onClick={() => setView("me")}
+            style={{
+              position: "relative",
+              width: "100%",
+              padding: 14,
+              paddingRight: 30,
+              textAlign: "left",
+              borderRadius: 16,
+              border: `1px solid ${theme.borderSoft}`,
+              background: theme.card,
+              cursor: "pointer",
+              boxShadow: "0 10px 24px rgba(0,0,0,0.55)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 800,
+                letterSpacing: 0.8,
+                textTransform: "uppercase",
+                color: theme.primary,
+                textShadow: `0 0 12px ${theme.primary}55`,
+              }}
+            >
+              {t("profiles.menu.me.title", "Mon profil")}
+            </div>
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 12,
+                color: theme.textSoft,
+                opacity: 0.9,
+              }}
+            >
+              {t(
+                "profiles.menu.me.subtitle",
+                "Profil connecté, statut en ligne et mini-stats dorées."
+              )}
+            </div>
+          </button>
 
+          {/* Carte 3 — Profils locaux */}
+          <button
+            type="button"
+            onClick={() => setView("locals")}
+            style={{
+              position: "relative",
+              width: "100%",
+              padding: 14,
+              paddingRight: 30,
+              textAlign: "left",
+              borderRadius: 16,
+              border: `1px solid ${theme.borderSoft}`,
+              background: theme.card,
+              cursor: "pointer",
+              boxShadow: "0 10px 24px rgba(0,0,0,0.55)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 800,
+                letterSpacing: 0.8,
+                textTransform: "uppercase",
+                color: theme.primary,
+                textShadow: `0 0 12px ${theme.primary}55`,
+              }}
+            >
+              {t("profiles.menu.locals.title", "Profils locaux")}
+            </div>
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 12,
+                color: theme.textSoft,
+                opacity: 0.9,
+              }}
+            >
+              {t(
+                "profiles.menu.locals.subtitle",
+                "Liste complète des profils enregistrés sur cet appareil."
+              )}
+            </div>
+          </button>
+        </div>
+      )}
+
+      {/* VUE "MON PROFIL" : profil connecté + amis */}
+      {view === "me" && (
+        <>
+          <Card title={t("profiles.connected.title", "Profil connecté")}>
+            {active ? (
+              <ActiveProfileBlock
+                selfStatus={selfStatus as any}
+                active={active}
+                activeAvg3D={activeAvg3D}
+                onToggleAway={() =>
+                  update((s) => ({
+                    ...s,
+                    selfStatus:
+                      s.selfStatus === "away" ? ("online" as const) : ("away" as const),
+                  }))
+                }
+                onQuit={() => setActiveProfile(null)}
+                onEdit={(n, f) => {
+                  if (n && n !== active.name) renameProfile(active.id, n);
+                  if (f) changeAvatar(active.id, f);
+                }}
+                onOpenAvatarCreator={openAvatarCreator}
+              />
+            ) : (
+              <UnifiedAuthBlock
+                profiles={profiles}
+                onConnect={(id) => setActiveProfile(id)}
+                onCreate={addProfile}
+                autoFocusCreate={autoCreate}
+              />
+            )}
+          </Card>
+
+          <Card title={t("profiles.friends.title", "Amis")}>
+            <FriendsMergedBlock friends={friends} />
+          </Card>
+        </>
+      )}
+
+      {/* VUE "PROFILS LOCAUX" */}
+      {view === "locals" && (
         <Card
-          title={`${t("profiles.locals.title", "Profils locaux")} (${profiles.length})`}
+          title={t(
+            "profiles.locals.title",
+            `Profils locaux (${profiles.length})`
+          ).replace("{count}", String(profiles.length))}
         >
           <AddLocalProfile onCreate={addProfile} />
           <div
@@ -243,8 +461,8 @@ export default function Profiles({
             />
           </div>
         </Card>
-      </div>
-    </>
+      )}
+    </div>
   );
 }
 
@@ -707,10 +925,19 @@ function FriendsMergedBlock({ friends }: { friends?: Friend[] }) {
                       </div>
                       {f.stats && (
                         <div className="subtitle" style={{ whiteSpace: "nowrap" }}>
-                          {t("home.stats.avg3", "Moy/3")}: {fmt(Number((f as any)?.stats?.avg3 ?? 0))} ·{" "}
-                          {t("home.stats.best", "Best")}:{" "}
-                          {Number((f as any)?.stats?.bestVisit ?? 0)} ·{" "}
-                          {t("home.stats.winPct", "Win%")}: {friendWinPct}%
+                          {t(
+                            "profiles.friends.stats",
+                            "Moy/3 : {avg} · Best : {best} · Win : {win}%"
+                          )
+                            .replace(
+                              "{avg}",
+                              fmt(Number((f as any)?.stats?.avg3 ?? 0))
+                            )
+                            .replace(
+                              "{best}",
+                              String(Number((f as any)?.stats?.bestVisit ?? 0))
+                            )
+                            .replace("{win}", String(friendWinPct))}
                         </div>
                       )}
                     </div>
@@ -814,11 +1041,14 @@ function AddLocalProfile({ onCreate }: { onCreate: (name: string, file?: File | 
           {t("profiles.locals.add.btnAdd", "Ajouter")}
         </button>
         {(name || file) && (
-          <button className="btn sm" onClick={() => {
-            setName("");
-            setFile(null);
-            setPreview(null);
-          }}>
+          <button
+            className="btn sm"
+            onClick={() => {
+              setName("");
+              setFile(null);
+              setPreview(null);
+            }}
+          >
             {t("profiles.locals.add.btnCancel", "Annuler")}
           </button>
         )}
@@ -1057,7 +1287,7 @@ function EditInline({
       <button
         className="btn sm"
         onClick={() => setEdit(true)}
-        title={t("profiles.connected.btn.edit", "MODIFIER LE PROFIL")}
+        title={t("profiles.connected.btn.edit.tooltip", "Éditer le profil")}
       >
         {t("profiles.connected.btn.edit", "MODIFIER LE PROFIL")}
       </button>
