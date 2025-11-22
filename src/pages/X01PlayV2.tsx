@@ -1,6 +1,6 @@
 // ============================================
 // X01PlayV2 — Version CLEAN 100% Training-like
-// UI identique X01Play (structure)
+// UI identique X01Play (header + players + keypad)
 // Moteur useX01Engine
 // Stats = modèle TrainingX01 (darts / avg3D / hits / segments…)
 // Aucun StatsBridge — aucun legacy
@@ -9,11 +9,13 @@
 import React from "react";
 import { useX01Engine } from "../hooks/useX01Engine";
 
-// UI réutilisée
+// UI
 import Keypad from "../components/Keypad";
 import EndOfLegOverlay from "../components/EndOfLegOverlay";
+import trophyCup from "../ui_assets/trophy-cup.png";
+import { playSound } from "../lib/sound";
 
-// Types communs
+// Types
 import type {
   Profile,
   MatchRecord,
@@ -23,20 +25,12 @@ import type {
   FinishPolicy,
 } from "../lib/types";
 
-// History minimal
+// History minimum (pour compatibilité reprise)
 import { History, type SavedMatch } from "../lib/history";
-
-// Audio safe
-const safePlay = (a: any) => {
-  try {
-    const p = a?.play?.();
-    p?.catch?.(() => {});
-  } catch {}
-};
 
 /* ============================================================
    TRAINING-LIKE STATS STRUCTURE
-   (Identique TrainingX01)
+   (Identique à TrainingX01)
 ============================================================ */
 
 type TrainingX01Stats = {
@@ -77,7 +71,9 @@ function loadTrainingX01(): TrainingX01Stats[] {
 function saveTrainingX01(arr: TrainingX01Stats[]) {
   try {
     localStorage.setItem(TRAINING_X01_KEY, JSON.stringify(arr));
-  } catch {}
+  } catch {
+    // quota plein => on ignore
+  }
 }
 
 function addTrainingX01Entry(e: TrainingX01Stats) {
@@ -110,17 +106,21 @@ function saveAutosave(snap: X01Snapshot | null) {
   try {
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(snap));
     __lastAuto = now;
-  } catch {}
+  } catch {
+    // rien
+  }
 }
 
 function clearAutosave() {
   try {
     localStorage.removeItem(AUTOSAVE_KEY);
-  } catch {}
+  } catch {
+    // rien
+  }
 }
 
 /* ============================================================
-   HELPERS
+   HELPERS VISUELS / DART
 ============================================================ */
 
 function dartValue(d: UIDart) {
@@ -181,7 +181,7 @@ function chipStyle(d?: UIDart, red = false): React.CSSProperties {
 }
 
 /* =====================================================================
-   Moteur + STATISTIQUES TRAINING-LIKE
+   VISITS MINIMAL (log pour overlay & stats)
 ===================================================================== */
 
 type VisitLite = {
@@ -195,7 +195,7 @@ type VisitLite = {
 };
 
 /* ============================================================
-   Wrapper principal X01PlayV2
+   WRAPPER PRINCIPAL
 ============================================================ */
 
 export default function X01PlayV2(props: {
@@ -225,13 +225,17 @@ export default function X01PlayV2(props: {
     onExit,
   } = props;
 
-  /* ------------------------ START PARAMS ------------------------ */
-  const resumeId = params?.resumeId;
+  const resumeId: string | undefined = params?.resumeId;
 
-  const mergedPlayerIds =
+  // PlayerIds merges (et sécurise le fait que ce soit bien un tableau)
+  const mergedPlayerIdsRaw =
     params?.startParams?.playerIds ?? playerIds ?? [];
+  const mergedPlayerIds: string[] = Array.isArray(mergedPlayerIdsRaw)
+    ? mergedPlayerIdsRaw
+    : [String(mergedPlayerIdsRaw)];
 
-  const mergedStart = params?.startParams?.start ?? start ?? 501;
+  const mergedStart: number =
+    params?.startParams?.start ?? start ?? 501;
 
   const mergedOut: "simple" | "double" | "master" =
     params?.startParams?.outMode ?? outMode ?? "double";
@@ -239,15 +243,19 @@ export default function X01PlayV2(props: {
   const mergedIn: "simple" | "double" | "master" =
     params?.startParams?.inMode ?? inMode ?? "simple";
 
-  const mergedSets = params?.startParams?.setsToWin ?? setsToWin ?? 1;
-  const mergedLegs = params?.startParams?.legsPerSet ?? legsPerSet ?? 1;
-  const mergedFinishPolicy =
+  const mergedSets: number =
+    params?.startParams?.setsToWin ?? setsToWin ?? 1;
+
+  const mergedLegs: number =
+    params?.startParams?.legsPerSet ?? legsPerSet ?? 1;
+
+  const mergedFinishPolicy: FinishPolicy =
     params?.startParams?.finishPolicy ?? finishPolicy;
 
   const initialResume: X01Snapshot | null =
     params?.startParams?.resume ?? null;
 
-  /* ------------------------ AUTOSAVE LOADING ------------------------ */
+  /* --------- AUTOSAVE LOADING --------- */
 
   const [ready, setReady] = React.useState(false);
   const [resumeSnapshot, setResumeSnapshot] =
@@ -312,24 +320,15 @@ export default function X01PlayV2(props: {
     );
   }
 
-  /* ------------------------ ENGINE KEY ------------------------ */
+  /* --------- ENGINE KEY (SANS .join !) --------- */
 
   const freshNonce = React.useRef(
     !mustResume ? crypto.randomUUID?.() ?? String(Date.now()) : ""
   ).current;
 
-  const engineKey = React.useMemo(() => {
-    if (resumeSnapshot) {
-      const idx = (resumeSnapshot as any)?.currentIndex ?? 0;
-      const s = Array.isArray((resumeSnapshot as any)?.scores)
-        ? (resumeSnapshot as any).scores.join("-")
-        : "no";
-      return `resume:${idx}:${s}`;
-    }
-    return `fresh:${mergedPlayerIds.join("-")}:${mergedStart}:${freshNonce}`;
-  }, [resumeSnapshot, mergedPlayerIds, mergedStart, freshNonce]);
+  const engineKey = resumeSnapshot ? "resume" : `fresh:${freshNonce}`;
 
-  /* ------------------------ RENDER CORE ------------------------ */
+  /* --------- RENDER DU CORE --------- */
 
   return (
     <X01CoreV2
@@ -351,7 +350,7 @@ export default function X01PlayV2(props: {
 }
 
 /* =====================================================================
-   X01CoreV2 — moteur + collecte stats + UI
+   CORE V2 + STATS TRAINING-LIKE
 ===================================================================== */
 
 function X01CoreV2({
@@ -383,6 +382,8 @@ function X01CoreV2({
 }) {
   /* ------------------------ ENGINE ------------------------ */
 
+  const pendingMatchRef = React.useRef<MatchRecord | null>(null);
+
   const {
     state,
     currentPlayer,
@@ -411,8 +412,32 @@ function X01CoreV2({
     outMode,
     inMode,
     finishPolicy,
-    onFinish: (m) => (pendingMatchRef.current = m),
-    onLegEnd: (leg) => handleLegEnd(leg),
+    onFinish: (m: MatchRecord) => {
+      pendingMatchRef.current = m;
+      // Stats training-like pour tous les joueurs
+      saveTrainingLikeStatsForMatch(playerIds, start, {
+        dartsCount,
+        pointsSum,
+        bestVisitByPlayer,
+        checkoutByPlayer,
+        hitsS,
+        hitsD,
+        hitsT,
+        missCount,
+        bustCount,
+        bullCount,
+        dBullCount,
+        segAll,
+        segS,
+        segD,
+        segT,
+        visitsCount,
+      });
+      // On laisse l'appelant gérer la suite (StatsHub / retour écran etc.)
+      onFinish(m);
+      clearAutosave();
+    },
+    onLegEnd: (leg: LegResult) => handleLegEnd(leg),
   });
 
   /* ------------------------ LOG STATS TRAINING-LIKE ------------------------ */
@@ -435,8 +460,7 @@ function X01CoreV2({
   const segT = React.useRef<Record<string, Record<string, number>>>({});
   const visitsCount = React.useRef<Record<string, number>>({});
 
-  /* ------------------------ INIT SEG MAP ------------------------ */
-
+  // Init des maps segments
   React.useEffect(() => {
     for (const p of playerIds) {
       segAll.current[p] = segAll.current[p] || {};
@@ -454,7 +478,7 @@ function X01CoreV2({
   const currentRemaining =
     scoresByPlayer[currentPlayer?.id ?? ""] ?? start;
 
-  /* ------------------------ REGISTER THROW INTO TRAINING-LIKE STATS ------------------------ */
+  /* ------------------------ REGISTER VISIT ------------------------ */
 
   function recordVisit(
     darts: UIDart[],
@@ -481,14 +505,19 @@ function X01CoreV2({
 
     dartsCount.current[pid] = (dartsCount.current[pid] || 0) + darts.length;
     pointsSum.current[pid] = (pointsSum.current[pid] || 0) + pts;
-    visitsCount.current[pid] = (visitsCount.current[pid] || 0) + 1;
+    visitsCount.current[pid] =
+      (visitsCount.current[pid] || 0) + 1;
 
     for (const d of darts) {
-      if (d.v === 0) missCount.current[pid] = (missCount.current[pid] || 0) + 1;
+      if (d.v === 0)
+        missCount.current[pid] =
+          (missCount.current[pid] || 0) + 1;
       if (d.v === 25 && d.mult === 1)
-        bullCount.current[pid] = (bullCount.current[pid] || 0) + 1;
+        bullCount.current[pid] =
+          (bullCount.current[pid] || 0) + 1;
       if (d.v === 25 && d.mult === 2)
-        dBullCount.current[pid] = (dBullCount.current[pid] || 0) + 1;
+        dBullCount.current[pid] =
+          (dBullCount.current[pid] || 0) + 1;
       if (d.mult === 1)
         hitsS.current[pid] = (hitsS.current[pid] || 0) + 1;
       if (d.mult === 2)
@@ -497,13 +526,17 @@ function X01CoreV2({
         hitsT.current[pid] = (hitsT.current[pid] || 0) + 1;
 
       const key = String(d.v);
-      segAll.current[pid][key] = (segAll.current[pid][key] || 0) + 1;
+      segAll.current[pid][key] =
+        (segAll.current[pid][key] || 0) + 1;
       if (d.mult === 1)
-        segS.current[pid][key] = (segS.current[pid][key] || 0) + 1;
+        segS.current[pid][key] =
+          (segS.current[pid][key] || 0) + 1;
       else if (d.mult === 2)
-        segD.current[pid][key] = (segD.current[pid][key] || 0) + 1;
+        segD.current[pid][key] =
+          (segD.current[pid][key] || 0) + 1;
       else if (d.mult === 3)
-        segT.current[pid][key] = (segT.current[pid][key] || 0) + 1;
+        segT.current[pid][key] =
+          (segT.current[pid][key] || 0) + 1;
     }
 
     if (isCheckout) {
@@ -519,14 +552,17 @@ function X01CoreV2({
     );
   }
 
-  /* ------------------------ HANDLE A FULL THROW ------------------------ */
+  /* ------------------------ VALIDATION D'UNE VOLÉE ------------------------ */
 
   function validateThrow() {
     if (!currentThrow.length || !currentPlayer) return;
 
     const pid = currentPlayer.id;
     const curRemaining = scoresByPlayer[pid];
-    const pts = currentThrow.reduce((s, d) => s + dartValue(d), 0);
+    const pts = currentThrow.reduce(
+      (s, d) => s + dartValue(d),
+      0
+    );
     const after = curRemaining - pts;
 
     let bust =
@@ -540,15 +576,25 @@ function X01CoreV2({
 
     const isCheckout = !bust && after === 0;
 
-    if (bust) bustCount.current[pid] = (bustCount.current[pid] || 0) + 1;
+    if (bust)
+      bustCount.current[pid] =
+        (bustCount.current[pid] || 0) + 1;
 
-    recordVisit(currentThrow, bust, isCheckout, bust ? curRemaining : after);
+    recordVisit(
+      currentThrow,
+      bust,
+      isCheckout,
+      bust ? curRemaining : Math.max(after, 0)
+    );
 
     submitThrowUI(currentThrow);
     setCurrentThrow([]);
     setMultiplier(1);
 
-    safePlay(new Audio("/sounds/dart-hit.mp3"));
+    playSound("dart-hit");
+
+    // autosave minimal (état engine exposé dans resumeSnapshot via History)
+    // ici on ne sait pas snapshotter proprement, donc on ignore saveAutosave.
   }
 
   function handleNumber(n: number) {
@@ -577,140 +623,20 @@ function X01CoreV2({
   /* ------------------------ FIN DE MANCHE ------------------------ */
 
   const [overlayOpen, setOverlayOpen] = React.useState(false);
-  const [lastLegResult, setLastLegResult] = React.useState<any>(null);
+  const [lastLegResult, setLastLegResult] =
+    React.useState<any>(null);
 
   function handleLegEnd(res: LegResult) {
-    // Avant reset => on pousse une entrée TrainingX01 pour chaque joueur
-    for (const pid of playerIds) {
-      const darts = dartsCount.current[pid] || 0;
-      const scored = pointsSum.current[pid] || 0;
-      const avg3D = darts > 0 ? (scored / darts) * 3 : 0;
-      const entry: TrainingX01Stats = {
-        date: Date.now(),
-        darts,
-        avg3D,
-        bestVisit: bestVisitByPlayer.current[pid] || 0,
-        checkout: checkoutByPlayer.current[pid] || 0,
-        hitsS: hitsS.current[pid] || 0,
-        hitsD: hitsD.current[pid] || 0,
-        hitsT: hitsT.current[pid] || 0,
-        miss: missCount.current[pid] || 0,
-        bull: bullCount.current[pid] || 0,
-        dBull: dBullCount.current[pid] || 0,
-        bust: bustCount.current[pid] || 0,
-        bySegment: segAll.current[pid] || {},
-        bySegmentS: segS.current[pid] || {},
-        bySegmentD: segD.current[pid] || {},
-        bySegmentT: segT.current[pid] || {},
-        visits: visitsCount.current[pid] || 0,
-        startScore: start,
-        playerId: pid,
-      };
-      addTrainingX01Entry(entry);
-    }
-
     setLastLegResult({
       ...res,
       finishedAt: Date.now(),
     });
     setOverlayOpen(true);
-
-    // Reset stats pour la manche suivante
-    visitsLog.current = [];
-    bestVisitByPlayer.current = {};
-    checkoutByPlayer.current = {};
-    dartsCount.current = {};
-    pointsSum.current = {};
-    visitsCount.current = {};
-    missCount.current = {};
-    bustCount.current = {};
-    bullCount.current = {};
-    dBullCount.current = {};
-    hitsS.current = {};
-    hitsD.current = {};
-    hitsT.current = {};
-    for (const p of playerIds) {
-      segAll.current[p] = {};
-      segS.current[p] = {};
-      segD.current[p] = {};
-      segT.current[p] = {};
-    }
+    // IMPORTANT : on NE reset PAS les compteurs ici
+    // pour garder les stats sur tout le match
   }
 
-  /* ------------------------ FIN DE MATCH PENDING ------------------------ */
-
-  const pendingMatchRef = React.useRef<MatchRecord | null>(null);
-
-  // Quand useX01Engine signale un gagnant de match -> flush onFinish
-  const hasFinishedRef = React.useRef(false);
-  React.useEffect(() => {
-    if (!ruleWinnerId) return;
-    if (hasFinishedRef.current) return;
-    hasFinishedRef.current = true;
-
-    // Si le hook nous a déjà fourni un MatchRecord complet
-    if (pendingMatchRef.current) {
-      onFinish(pendingMatchRef.current);
-      return;
-    }
-
-    // Fallback simple : snapshot dans History + onFinish
-    const now = Date.now();
-    const playersEngine = (state.players as any[]) || [];
-    const scores = playersEngine.map(
-      (p: any) => scoresByPlayer[p.id] ?? start
-    );
-
-    const rec: MatchRecord = {
-      id: resumeId ?? (crypto.randomUUID?.() ?? String(now)),
-      kind: "x01",
-      status: "finished",
-      players: playersEngine.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-      })),
-      winnerId: ruleWinnerId,
-      createdAt: now,
-      updatedAt: now,
-      payload: {
-        state: {
-          rules: {
-            start,
-            outMode,
-            inMode,
-            setsToWin,
-            legsPerSet,
-            doubleOut: outMode !== "simple",
-          },
-          players: playersEngine,
-          scores,
-          currentIndex: 0,
-          dartsThisTurn: [],
-          winnerId: ruleWinnerId,
-        },
-      } as any,
-    };
-
-    try {
-      History.upsert(rec);
-      clearAutosave();
-    } catch {}
-
-    onFinish(rec);
-  }, [
-    ruleWinnerId,
-    scoresByPlayer,
-    state.players,
-    start,
-    outMode,
-    inMode,
-    setsToWin,
-    legsPerSet,
-    resumeId,
-    onFinish,
-  ]);
-
-  /* ------------------------ UI COMPLETE (PATCH 4) ------------------------ */
+  /* ------------------------ UI HELPERS ------------------------ */
 
   const playersById = React.useMemo(
     () =>
@@ -721,17 +647,23 @@ function X01CoreV2({
             id: p.id,
             name: p.name,
             avatarDataUrl:
-              profiles.find((pp) => pp.id === p.id)?.avatarDataUrl ?? null,
+              profiles.find((pp) => pp.id === p.id)
+                ?.avatarDataUrl ?? null,
           },
         ])
       ),
     [state.players, profiles]
   );
 
+  const headerTopHeight = 160; // hauteur approximative du header
+  const keypadHeight = 180; // espace réservé keypad
+
+  /* ------------------------ RENDER COMPLET (PATCH 4) ------------------------ */
+
   return (
     <div
       className="x01play-container"
-      style={{ overflow: "hidden", minHeight: "100vh", color: "white" }}
+      style={{ overflow: "hidden", minHeight: "100vh", color: "#fff" }}
     >
       {/* ================= HEADER ================= */}
       <div
@@ -816,10 +748,11 @@ function X01CoreV2({
           doubleOut={outMode !== "simple"}
           dartsCount={dartsCount.current}
           pointsSum={pointsSum.current}
-          bestVisit={bestVisitByPlayer.current}
+          bestVisitByPlayer={bestVisitByPlayer.current}
           avatar={
             currentPlayer
-              ? profiles.find((p) => p.id === currentPlayer.id)?.avatarDataUrl
+              ? profiles.find((p) => p.id === currentPlayer.id)
+                  ?.avatarDataUrl ?? null
               : null
           }
         />
@@ -829,8 +762,8 @@ function X01CoreV2({
       <div
         style={{
           position: "fixed",
-          top: 160,
-          bottom: 180,
+          top: headerTopHeight,
+          bottom: keypadHeight + 64,
           left: "50%",
           transform: "translateX(-50%)",
           width: "min(100%,520px)",
@@ -894,7 +827,7 @@ function X01CoreV2({
 }
 
 /* =====================================================================
-   Sous-composants UI simples : HeaderBlock & PlayersList
+   SOUS-COMPONENTS UI (HEADER + LISTE JOUEURS)
 ===================================================================== */
 
 function HeaderBlock({
@@ -904,7 +837,7 @@ function HeaderBlock({
   doubleOut,
   dartsCount,
   pointsSum,
-  bestVisit,
+  bestVisitByPlayer,
   avatar,
 }: {
   currentPlayer: any;
@@ -913,14 +846,14 @@ function HeaderBlock({
   doubleOut: boolean;
   dartsCount: Record<string, number>;
   pointsSum: Record<string, number>;
-  bestVisit: Record<string, number>;
-  avatar: string | null | undefined;
+  bestVisitByPlayer: Record<string, number>;
+  avatar: string | null;
 }) {
   const pid = currentPlayer?.id ?? "";
   const darts = dartsCount[pid] || 0;
-  const scored = pointsSum[pid] || 0;
-  const avg3D = darts > 0 ? ((scored / darts) * 3).toFixed(2) : "0.00";
-  const best = bestVisit[pid] || 0;
+  const pts = pointsSum[pid] || 0;
+  const avg3D = darts > 0 ? ((pts / darts) * 3).toFixed(2) : "0.00";
+  const bestVisit = bestVisitByPlayer[pid] || 0;
 
   const remainingAfterThrow = Math.max(
     currentRemaining -
@@ -947,19 +880,19 @@ function HeaderBlock({
           alignItems: "center",
         }}
       >
-        {/* Avatar + nom + mini stats */}
+        {/* AVATAR + INFOS JOUEUR */}
         <div
           style={{
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            gap: 6,
+            gap: 5,
           }}
         >
           <div
             style={{
-              width: 90,
-              height: 90,
+              width: 96,
+              height: 96,
               borderRadius: "50%",
               overflow: "hidden",
               background: "linear-gradient(180deg,#1b1b1f,#111114)",
@@ -969,7 +902,11 @@ function HeaderBlock({
             {avatar ? (
               <img
                 src={avatar}
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                }}
               />
             ) : (
               <div
@@ -1004,7 +941,7 @@ function HeaderBlock({
               color: "#d9dbe3",
             }}
           >
-            Darts : <b>{darts}</b> • Moy/3D : <b>{avg3D}</b>
+            Darts jouées : <b>{darts}</b>
           </div>
 
           <div
@@ -1013,11 +950,20 @@ function HeaderBlock({
               color: "#d9dbe3",
             }}
           >
-            Meilleure volée : <b>{best}</b>
+            Moy/3D : <b>{avg3D}</b>
+          </div>
+
+          <div
+            style={{
+              fontSize: 11.5,
+              color: "#d9dbe3",
+            }}
+          >
+            Meilleure volée : <b>{bestVisit}</b>
           </div>
         </div>
 
-        {/* Score, volée, pastilles */}
+        {/* SCORE + VOLÉE */}
         <div
           style={{
             textAlign: "center",
@@ -1039,8 +985,14 @@ function HeaderBlock({
             {remainingAfterThrow}
           </div>
 
-          {/* Pastilles live */}
-          <div style={{ display: "flex", gap: 5, justifyContent: "center" }}>
+          {/* Pastilles volée */}
+          <div
+            style={{
+              display: "flex",
+              gap: 5,
+              justifyContent: "center",
+            }}
+          >
             {[0, 1, 2].map((i) => {
               const d = currentThrow[i];
               const afterNow =
@@ -1126,18 +1078,17 @@ function PlayersList({
     >
       {players.map((p: any) => {
         const prof = profiles.find((pp) => pp.id === p.id);
-        const avatar = prof?.avatarDataUrl ?? null;
+        const avatarSrc = prof?.avatarDataUrl ?? null;
 
         const dCount = dartsCount[p.id] || 0;
         const pSum = pointsSum[p.id] || 0;
-        const a3d = dCount > 0 ? ((pSum / dCount) * 3).toFixed(2) : "0.00";
+        const a3d =
+          dCount > 0 ? ((pSum / dCount) * 3).toFixed(2) : "0.00";
         const score = scoresByPlayer[p.id] ?? start;
-        const legs = legsWon?.[p.id] ?? 0;
-        const sets = setsWon?.[p.id] ?? 0;
+        const legsWonThisSet = legsWon?.[p.id] ?? 0;
+        const setsWonTotal = setsWon?.[p.id] ?? 0;
 
-        const lastVisit = [...visitsLog].filter(
-          (v) => v.playerId === p.id
-        ).pop();
+        const lastVisit = [...visitsLog].reverse().find((v) => v.playerId === p.id);
 
         return (
           <div
@@ -1164,9 +1115,9 @@ function PlayersList({
                 background: "rgba(255,255,255,.06)",
               }}
             >
-              {avatar ? (
+              {avatarSrc ? (
                 <img
-                  src={avatar}
+                  src={avatarSrc}
                   style={{
                     width: "100%",
                     height: "100%",
@@ -1210,15 +1161,9 @@ function PlayersList({
                   {p.name}
                 </div>
 
+                {/* dernière volée rapide */}
                 {lastVisit && (
-                  <div
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      flexWrap: "wrap",
-                    }}
-                  >
+                  <div style={{ display: "inline-flex", gap: 4 }}>
                     {lastVisit.darts.map((d, i) => {
                       const st = chipStyle(d);
                       return (
@@ -1231,12 +1176,12 @@ function PlayersList({
                             minWidth: 32,
                             height: 22,
                             padding: "0 8px",
-                            borderRadius: 8,
-                            fontSize: 11,
-                            fontWeight: 700,
+                            borderRadius: 9,
+                            border: st.border as string,
                             background: st.background as string,
                             color: st.color as string,
-                            border: st.border as string,
+                            fontWeight: 800,
+                            fontSize: 11,
                           }}
                         >
                           {fmt(d)}
@@ -1252,10 +1197,12 @@ function PlayersList({
                           minWidth: 32,
                           height: 22,
                           padding: "0 8px",
-                          borderRadius: 8,
+                          borderRadius: 9,
+                          border: "1px solid rgba(255,0,0,.45)",
+                          background: "rgba(255,0,0,.25)",
+                          color: "#ffbaba",
+                          fontWeight: 800,
                           fontSize: 11,
-                          fontWeight: 700,
-                          ...chipStyle(undefined, true),
                         }}
                       >
                         Bust
@@ -1283,23 +1230,98 @@ function PlayersList({
                 }}
               >
                 {setsMode
-                  ? `Manches : ${legs} • Sets : ${sets}`
-                  : `Manches : ${legs}`}
+                  ? `Manches : ${legsWonThisSet} • Sets : ${setsWonTotal}`
+                  : `Manches : ${legsWonThisSet}`}
               </div>
             </div>
 
-            {/* Score */}
             <div
               style={{
                 fontWeight: 900,
                 color: score === 0 ? "#7fe2a9" : "#ffcf57",
               }}
             >
-              {score === 0 ? "FINI" : score}
+              {score}
             </div>
           </div>
         );
       })}
     </div>
   );
+}
+
+/* =====================================================================
+   SAUVEGARDE STATS TRAINING-LIKE À LA FIN DU MATCH
+===================================================================== */
+
+function saveTrainingLikeStatsForMatch(
+  playerIds: string[],
+  startScore: number,
+  refs: {
+    dartsCount: React.MutableRefObject<Record<string, number>>;
+    pointsSum: React.MutableRefObject<Record<string, number>>;
+    bestVisitByPlayer: React.MutableRefObject<Record<string, number>>;
+    checkoutByPlayer: React.MutableRefObject<Record<string, number>>;
+    hitsS: React.MutableRefObject<Record<string, number>>;
+    hitsD: React.MutableRefObject<Record<string, number>>;
+    hitsT: React.MutableRefObject<Record<string, number>>;
+    missCount: React.MutableRefObject<Record<string, number>>;
+    bustCount: React.MutableRefObject<Record<string, number>>;
+    bullCount: React.MutableRefObject<Record<string, number>>;
+    dBullCount: React.MutableRefObject<Record<string, number>>;
+    segAll: React.MutableRefObject<Record<string, Record<string, number>>>;
+    segS: React.MutableRefObject<Record<string, Record<string, number>>>;
+    segD: React.MutableRefObject<Record<string, Record<string, number>>>;
+    segT: React.MutableRefObject<Record<string, Record<string, number>>>;
+    visitsCount: React.MutableRefObject<Record<string, number>>;
+  }
+) {
+  const {
+    dartsCount,
+    pointsSum,
+    bestVisitByPlayer,
+    checkoutByPlayer,
+    hitsS,
+    hitsD,
+    hitsT,
+    missCount,
+    bustCount,
+    bullCount,
+    dBullCount,
+    segAll,
+    segS,
+    segD,
+    segT,
+    visitsCount,
+  } = refs;
+
+  for (const pid of playerIds) {
+    const darts = dartsCount.current[pid] || 0;
+    const scored = pointsSum.current[pid] || 0;
+    const avg3D = darts > 0 ? (scored / darts) * 3 : 0;
+
+    const entry: TrainingX01Stats = {
+      date: Date.now(),
+      darts,
+      avg3D,
+      bestVisit: bestVisitByPlayer.current[pid] || 0,
+      checkout: checkoutByPlayer.current[pid] || 0,
+      hitsS: hitsS.current[pid] || 0,
+      hitsD: hitsD.current[pid] || 0,
+      hitsT: hitsT.current[pid] || 0,
+      miss: missCount.current[pid] || 0,
+      bull: bullCount.current[pid] || 0,
+      dBull: dBullCount.current[pid] || 0,
+      bust: bustCount.current[pid] || 0,
+      bySegment: segAll.current[pid] || {},
+      bySegmentS: segS.current[pid] || {},
+      bySegmentD: segD.current[pid] || {},
+      bySegmentT: segT.current[pid] || {},
+      visits: visitsCount.current[pid] || 0,
+      startScore,
+      playerId: pid,
+    };
+
+    addTrainingX01Entry(entry);
+  }
 }

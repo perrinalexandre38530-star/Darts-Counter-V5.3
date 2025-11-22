@@ -1,11 +1,12 @@
 // ===================================================
 // /functions/api/avatar/cartoon.ts
-// IA caricature + cache KV + multi-styles
+// IA caricature + cache KV + multi-styles + CORS
 // Cloudflare Pages Functions
 // ===================================================
 
 type StyleId = "realistic" | "comic" | "flat" | "exaggerated";
 
+// --------- Styles IA (prompts + strength) ---------
 const STYLE_PRESETS: Record<StyleId, { prompt: string; strength: number }> = {
   realistic: {
     prompt: `
@@ -42,6 +43,31 @@ const STYLE_PRESETS: Record<StyleId, { prompt: string; strength: number }> = {
   },
 };
 
+// --------- CORS ORIGINS AUTORISÉS ---------
+// 🔁 Adapte si ton domaine Pages change
+const PAGES_ORIGIN = "https://darts-counter-v5-3.pages.dev";
+
+function isAllowedOrigin(origin: string | null): boolean {
+  if (!origin) return false;
+  if (origin === PAGES_ORIGIN) return true;
+
+  // Dev depuis Stackblitz : sous-domaines *.webcontainer.io
+  if (origin.endsWith(".webcontainer.io")) return true;
+
+  return false;
+}
+
+function makeCorsHeaders(origin: string | null): HeadersInit {
+  if (!origin || !isAllowedOrigin(origin)) return {};
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    Vary: "Origin",
+  };
+}
+
+// --------- Utilitaire hash pour le cache KV ---------
 async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(hash)]
@@ -52,10 +78,34 @@ async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
 // -------------- PAGES FUNCTION --------------
 export const onRequest = async (context: any): Promise<Response> => {
   const { request, env } = context;
+  const origin = request.headers.get("Origin");
+  const corsHeaders = makeCorsHeaders(origin);
+
+  // Préflight CORS
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders,
+    });
+  }
+
+  // CORS strict : uniquement depuis Pages.dev + webcontainer
+  if (!isAllowedOrigin(origin)) {
+    return new Response("CORS blocked", {
+      status: 403,
+      headers: corsHeaders,
+    });
+  }
 
   try {
     if (request.method !== "POST") {
-      return new Response("Only POST allowed", { status: 405 });
+      return new Response("Only POST allowed", {
+        status: 405,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      });
     }
 
     const form = await request.formData();
@@ -63,10 +113,16 @@ export const onRequest = async (context: any): Promise<Response> => {
     let style = (form.get("style") as string) || "realistic";
 
     if (!file) {
-      return new Response(JSON.stringify({ error: "No image provided" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "No image provided" }),
+        {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
     }
 
     if (!["realistic", "comic", "flat", "exaggerated"].includes(style)) {
@@ -77,49 +133,64 @@ export const onRequest = async (context: any): Promise<Response> => {
 
     const bytes = await file.arrayBuffer();
 
-    // ---------------- CACHE ----------------
+    // ---------------- CACHE KV ----------------
     let cacheKey = "";
     if (env.AVATAR_CACHE) {
       const hash = await sha256Hex(bytes);
       cacheKey = `avatar:${styleId}:${hash}`;
       const cached = await env.AVATAR_CACHE.get(cacheKey);
       if (cached) {
-        return new Response(JSON.stringify({ ok: true, cartoonPng: cached }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ ok: true, cartoonPng: cached, cached: true }),
+          {
+            status: 200,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+            },
+          }
+        );
       }
     }
 
-    // ---------------- IA ----------------
+    // ---------------- IA CLOUDFLARE ----------------
     const aiResponse: any = await env.AI.run("@cf/lykon/playground-v2.5", {
       prompt: preset.prompt,
       image: [...new Uint8Array(bytes)],
       strength: preset.strength,
-      seed: Math.floor(Math.random() * 999999),
+      seed: Math.floor(Math.random() * 999_999),
     });
 
     if (!aiResponse || !aiResponse.image) {
-      return new Response(JSON.stringify({ error: "AI generation failed" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "AI generation failed" }),
+        {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
     }
 
     const pngDataUrl = `data:image/png;base64,${aiResponse.image}`;
 
-    // ---------------- STORE CACHE ----------------
+    // ---------------- STOCKAGE CACHE ----------------
     if (env.AVATAR_CACHE && cacheKey) {
       await env.AVATAR_CACHE.put(cacheKey, pngDataUrl, {
-        expirationTtl: 60 * 60 * 24 * 30,
+        expirationTtl: 60 * 60 * 24 * 30, // 30 jours
       });
     }
 
     return new Response(
-      JSON.stringify({ ok: true, cartoonPng: pngDataUrl }),
+      JSON.stringify({ ok: true, cartoonPng: pngDataUrl, cached: false }),
       {
         status: 200,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
       }
     );
   } catch (err: any) {
@@ -129,7 +200,10 @@ export const onRequest = async (context: any): Promise<Response> => {
       }),
       {
         status: 500,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          ...makeCorsHeaders(request.headers.get("Origin")),
+          "Content-Type": "application/json",
+        },
       }
     );
   }
