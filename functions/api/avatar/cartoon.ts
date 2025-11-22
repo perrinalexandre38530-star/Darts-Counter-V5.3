@@ -47,8 +47,8 @@ Plain background, no text, no frame.
 };
 
 // --------- Modèle IA (image-to-image) ---------
-// ⚠️ Ce modèle EXISTE dans Workers AI et fait du img2img
-const MODEL_ID = "@cf/runwayml/stable-diffusion-v1-5-img2img";
+// Nouveau modèle Cloudflare AI 2025 (l'ancien runwayml est déprécié)
+const MODEL_ID = "@cf/hunyuan/hunyuan_diT_img2img";
 
 // --------- CORS ORIGINS AUTORISÉS ---------
 const PAGES_ORIGIN = "https://darts-counter-v5-3.pages.dev";
