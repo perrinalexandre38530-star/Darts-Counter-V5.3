@@ -1,11 +1,10 @@
 // ============================================
 // src/pages/StatsShell.tsx
-// Menu Stats (style Home / Games / Profils)
-// - Carte "STATS — Nom du joueur" -> StatsHub onglet "players"
-// - Carte "TRAINING"              -> StatsHub onglet "training"
-// - Carte "ONLINE"                -> StatsHub onglet "online"  (future)
-// - Carte "AMIS"                  -> StatsHub onglet "friends" (future)
-// - Carte "HISTORIQUE"           -> StatsHub onglet "history"
+// Menu Stats (comme Home / Games / Profils)
+// - Carte "STATS — XXX"      -> StatsHub onglet "stats" (Stats joueurs)
+// - Carte "TRAINING"         -> StatsHub onglet "training"
+// - Carte "ONLINE"           -> FriendsPage (mode Online & Amis)
+// - Carte "HISTORIQUE"       -> StatsHub onglet "history"
 // ============================================
 
 import React from "react";
@@ -27,186 +26,181 @@ export default function StatsShell({ store, go }: Props) {
     (store.profiles || [])[0] ||
     null;
 
-  const playerName = activeProfile?.name || t("stats.player_fallback_name", "joueur");
+  const name = activeProfile?.name || t("stats.defaultName", "Alex");
 
-  function openPlayersStats() {
-    // on envoie "players", maintenant compris par StatsHub comme "Stats joueurs"
-    go("stats", { tab: "players" });
-  }
-
-  function openTrainingStats() {
-    go("statsHub", { tab: "training" });
-  }
-
-  function openOnlineStats() {
-    go("statsHub", { tab: "online" });
-  }
-
-  function openFriendsStats() {
-    go("statsHub", { tab: "friends" });
-  }
-
-  function openHistory() {
-    go("statsHub", { tab: "history" });
-  }
-
-  const cardBase: React.CSSProperties = {
-    width: "100%",
-    textAlign: "left",
-    border: "none",
-    background: theme.card,
-    color: theme.text,
+  const cardStyle: React.CSSProperties = {
     borderRadius: 18,
-    padding: "14px 16px",
-    marginBottom: 12,
+    padding: 14,
+    marginBottom: 10,
+    background:
+      "linear-gradient(180deg,rgba(12,13,18,.94),rgba(6,6,10,.96))",
+    border: `1px solid rgba(255,255,255,.08)`,
+    boxShadow: "0 10px 24px rgba(0,0,0,.55)",
+    display: "flex",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    cursor: "pointer",
+  };
+
+  const leftCol: React.CSSProperties = {
     display: "flex",
     flexDirection: "column",
-    gap: 6,
-    boxShadow: "0 10px 25px rgba(0,0,0,0.55)",
-    position: "relative",
-    overflow: "hidden",
+    gap: 4,
   };
 
   const titleStyle: React.CSSProperties = {
-    fontSize: 13,
-    fontWeight: 700,
-    letterSpacing: 1,
+    fontSize: 14,
+    fontWeight: 800,
     textTransform: "uppercase",
     color: theme.primary,
   };
 
   const subtitleStyle: React.CSSProperties = {
     fontSize: 11,
-    opacity: 0.8,
+    opacity: 0.75,
   };
 
-  const chipsRow: React.CSSProperties = {
+  const chipRow: React.CSSProperties = {
     display: "flex",
     flexWrap: "wrap",
     gap: 6,
-    marginTop: 8,
+    marginTop: 4,
   };
 
   const chip: React.CSSProperties = {
     fontSize: 10,
-    padding: "4px 8px",
+    padding: "3px 8px",
     borderRadius: 999,
-    border: `1px solid rgba(255,255,255,0.12)`,
-    background: "rgba(0,0,0,0.35)",
-    color: theme.text,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    border: "1px solid rgba(255,255,255,.18)",
+    background: "rgba(0,0,0,.45)",
   };
 
   const arrowStyle: React.CSSProperties = {
-    position: "absolute",
-    right: 12,
-    top: "50%",
-    transform: "translateY(-50%)",
     fontSize: 18,
-    color: theme.textSoft,
+    opacity: 0.7,
   };
 
   return (
-    <div style={{ padding: 16 }}>
-      {/* Titre page */}
-      <div style={{ marginBottom: 18 }}>
+    <div className="container" style={{ padding: 12, color: "#fff" }}>
+      {/* Titre global de la page Stats */}
+      <div style={{ marginBottom: 12 }}>
         <div
           style={{
-            fontSize: 20,
-            fontWeight: 800,
-            letterSpacing: 2,
+            fontSize: 18,
+            fontWeight: 900,
             textTransform: "uppercase",
-            color: theme.primary,
+            letterSpacing: 1,
           }}
         >
-          {t("stats.menu_title", "STATS")}
+          {t("stats.title", "Stats")}
         </div>
-        <div
-          style={{
-            fontSize: 11,
-            marginTop: 4,
-            color: theme.textSoft,
-            maxWidth: 260,
-          }}
-        >
+        <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>
           {t(
-            "stats.menu_subtitle",
+            "stats.subtitle",
             "Analyse tes performances, ton training et ton historique."
           )}
         </div>
       </div>
 
-      {/* Carte 1 : Stats joueur */}
-      <button style={cardBase} onClick={openPlayersStats}>
-        <div style={titleStyle}>
-          {t("stats.card_player_title", "STATS — {{name}}").replace(
-            "{{name}}",
-            playerName
-          )}
-        </div>
-        <div style={subtitleStyle}>
-          {t(
-            "stats.card_player_subtitle",
-            "Vue générale, X01 multi, Cricket, Killer…"
-          )}
-        </div>
-        <div style={chipsRow}>
-          <span style={chip}>{t("stats.players.chip_overview", "Vue générale")}</span>
-          <span style={chip}>{t("stats.players.chip_x01", "X01 multi")}</span>
-          <span style={chip}>{t("stats.players.chip_cricket", "Cricket")}</span>
-          <span style={chip}>{t("stats.players.chip_killer", "Killer")}</span>
-        </div>
-        <span style={arrowStyle}>›</span>
-      </button>
+      {/* =========================
+          1) STATS JOUEURS
+          ========================= */}
+      <div
+        style={cardStyle}
+        onClick={() => go("statsHub", { tab: "stats" })}
+      >
+        <div style={leftCol}>
+          <div style={titleStyle}>
+            {t("stats.players.title", "Stats — ") + name}
+          </div>
+          <div style={subtitleStyle}>
+            {t(
+              "stats.players.subtitle",
+              "Vue générale, X01 multi, Cricket, Killer…"
+            )}
+          </div>
 
-      {/* Carte 2 : Training */}
-      <button style={cardBase} onClick={openTrainingStats}>
-        <div style={titleStyle}>{t("stats.card_training_title", "TRAINING")}</div>
-        <div style={subtitleStyle}>
-          {t(
-            "stats.card_training_subtitle",
-            "Stats Training X01 et Tour de l'horloge."
-          )}
+          <div style={chipRow}>
+            <div style={chip}>{t("stats.players.general", "Vue générale")}</div>
+            <div style={chip}>{t("stats.players.x01", "X01 multi")}</div>
+            <div style={chip}>{t("stats.players.cricket", "Cricket")}</div>
+            <div style={chip}>{t("stats.players.killer", "Killer")}</div>
+          </div>
         </div>
-        <div style={chipsRow}>
-          <span style={chip}>{t("stats.training.chip_x01", "Training X01")}</span>
-          <span style={chip}>
-            {t("stats.training.chip_clock", "Tour de l'horloge")}
-          </span>
-        </div>
-        <span style={arrowStyle}>›</span>
-      </button>
+        <div style={arrowStyle}>›</div>
+      </div>
 
-      {/* Carte 3 : Online */}
-      <button style={cardBase} onClick={openOnlineStats}>
-        <div style={titleStyle}>{t("stats.card_online_title", "ONLINE")}</div>
-        <div style={subtitleStyle}>
-          {t("stats.card_online_subtitle", "Stats de tes parties Online (bientôt).")}
-        </div>
-        <span style={arrowStyle}>›</span>
-      </button>
+      {/* =========================
+          2) TRAINING (stats)
+          ========================= */}
+      <div
+        style={cardStyle}
+        onClick={() => go("statsHub", { tab: "training" })}
+      >
+        <div style={leftCol}>
+          <div style={titleStyle}>
+            {t("stats.training.title", "Training")}
+          </div>
+          <div style={subtitleStyle}>
+            {t(
+              "stats.training.subtitle",
+              "Stats Training X01 et Tour de l’horloge."
+            )}
+          </div>
 
-      {/* Carte 4 : Amis */}
-      <button style={cardBase} onClick={openFriendsStats}>
-        <div style={titleStyle}>{t("stats.card_friends_title", "AMIS")}</div>
-        <div style={subtitleStyle}>
-          {t("stats.card_friends_subtitle", "Compare tes stats avec celles de tes amis.")}
+          <div style={chipRow}>
+            <div style={chip}>{t("stats.training.x01", "Training X01")}</div>
+            <div style={chip}>
+              {t("stats.training.clock", "Tour de l’horloge")}
+            </div>
+          </div>
         </div>
-        <span style={arrowStyle}>›</span>
-      </button>
+        <div style={arrowStyle}>›</div>
+      </div>
 
-      {/* Carte 5 : Historique */}
-      <button style={cardBase} onClick={openHistory}>
-        <div style={titleStyle}>{t("stats.card_history_title", "HISTORIQUE")}</div>
-        <div style={subtitleStyle}>
-          {t(
-            "stats.card_history_subtitle",
-            "Toutes tes parties et la reprise des parties en cours."
-          )}
+      {/* =========================
+          3) ONLINE (mock actuel)
+          ========================= */}
+      <div
+        style={cardStyle}
+        onClick={() => go("friends")}
+      >
+        <div style={leftCol}>
+          <div style={titleStyle}>
+            {t("stats.online.title", "Online")}
+          </div>
+          <div style={subtitleStyle}>
+            {t(
+              "stats.online.subtitle",
+              "Stats de tes parties Online (bientôt)."
+            )}
+          </div>
         </div>
-        <span style={arrowStyle}>›</span>
-      </button>
+        <div style={arrowStyle}>›</div>
+      </div>
+
+      {/* =========================
+          4) HISTORIQUE
+          ========================= */}
+      <div
+        style={cardStyle}
+        onClick={() => go("statsHub", { tab: "history" })}
+      >
+        <div style={leftCol}>
+          <div style={titleStyle}>
+            {t("stats.history.title", "Historique")}
+          </div>
+          <div style={subtitleStyle}>
+            {t(
+              "stats.history.subtitle",
+              "Toutes tes parties et la reprise des parties en cours."
+            )}
+          </div>
+        </div>
+        <div style={arrowStyle}>›</div>
+      </div>
     </div>
   );
 }

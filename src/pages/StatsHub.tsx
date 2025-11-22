@@ -14,7 +14,7 @@ import HistoryPage from "./HistoryPage";
 import SparklinePro from "../components/SparklinePro";
 import TrainingRadar from "../components/TrainingRadar";
 import type { Dart as UIDart } from "../lib/types";
-// ❌ supprimé : import type { TrainingX01Session } from "../lib/TrainingStore";
+// ❌ IMPORTANT : plus d'import TrainingX01Session ici
 
 /* ---------- Thème ---------- */
 const T = {
@@ -53,9 +53,12 @@ type SavedMatch = {
   payload?: any;
 };
 
+// Onglet principal demandé par le menu Stats
+type StatsHubMainTab = "history" | "stats" | "training";
+
 type Props = {
   go?: (tab: string, params?: any) => void;
-  tab?: "history" | "stats" | "training";
+  tab?: StatsHubMainTab;        // "stats" = stats joueurs, "history" = historique, "training" = training
   memHistory?: SavedMatch[];
 };
 
@@ -70,7 +73,8 @@ const fmtDate = (ts?: number) =>
 
 type TimeRange = "all" | "day" | "week" | "month" | "year";
 
-type TrainingX01Session = {
+// ✅ on garde NOTRE type local, plus d’import en double
+export type TrainingX01Session = {
   id: string;
   date: number;
   profileId: string;
@@ -3652,25 +3656,12 @@ function extractX01PlayerStats(rec: SavedMatch, pid: string) {
 /* ---------- Page ---------- */
 export default function StatsHub(props: Props) {
   const go = props.go ?? (() => {});
-  const initialTab: "history" | "stats" | "training" =
-    props.tab === "stats"
-      ? "stats"
-      : props.tab === "training"
-      ? "training"
-      : "history";
-  const [tab, setTab] = React.useState<
-    "history" | "stats" | "training"
-  >(initialTab);
 
-   // Sous-onglets dans "Stats joueurs" :
-  // - "dashboard" = vue générale StatsPlayerDashboard
-  // - "x01_multi" = stats X01Play (multijoueurs)
-  const [statsSubTab, setStatsSubTab] =
-  React.useState<"dashboard" | "x01_multi">("dashboard");
+  // Onglet principal piloté par le menu Stats
+  const mainTab: StatsHubMainTab = props.tab ?? "stats";
 
   // 0) Récupère les profils (pour enrichir avatars si manquants)
-  const [storeProfiles, setStoreProfiles] =
-    React.useState<PlayerLite[]>([]);
+  const [storeProfiles, setStoreProfiles] = React.useState<PlayerLite[]>([]);
   React.useEffect(() => {
     (async () => {
       try {
@@ -3687,18 +3678,15 @@ export default function StatsHub(props: Props) {
   const mem = toArr<SavedMatch>(props.memHistory);
   const fromStore = useStoreHistory();
 
-  // 2) Fusion & déduplication (par id)
-  //    → on préfère les records avec un summary riche
+  // 2) Fusion & déduplication (par id) — on garde la version à summary le plus riche
   const records = React.useMemo(() => {
     const byId = new Map<string, SavedMatch>();
 
-    // Score de "qualité" d'un record : plus il a de summary, mieux c'est
     const qualityOf = (rec: SavedMatch | undefined): number => {
       if (!rec) return -1;
       const ss: any = rec.summary ?? rec.payload?.summary ?? {};
       if (!ss) return 0;
 
-      // summary "riche" = perPlayer[] ou avg3ByPlayer / bestVisitByPlayer / bestCheckoutByPlayer
       if (
         Array.isArray(ss.perPlayer) ||
         ss.avg3ByPlayer ||
@@ -3708,9 +3696,7 @@ export default function StatsHub(props: Props) {
         return 2;
       }
 
-      // summary présent mais minimal
       if (Object.keys(ss).length > 0) return 1;
-
       return 0;
     };
 
@@ -3727,27 +3713,23 @@ export default function StatsHub(props: Props) {
       const prevQ = qualityOf(prev);
       const curQ = qualityOf(rec);
 
-      // Si le nouveau a un summary de meilleure qualité → on remplace
       if (curQ > prevQ) {
         byId.set(rec.id, rec);
         return;
       }
-      // Si le nouveau est moins bon → on garde l’ancien
       if (curQ < prevQ) {
         return;
       }
 
-      // Même qualité → on départage à la date
       const curT = N(rec.updatedAt ?? rec.createdAt, 0);
       const prevT = N(prev.updatedAt ?? prev.createdAt, -1);
       if (curT > prevT) byId.set(rec.id, rec);
     };
 
-    persisted.forEach(push); // IndexedDB (History.list) — records complets
-    mem.forEach(push);       // éventuellement passés via props
-    fromStore.forEach(push); // vieux store.history (plus pauvre)
+    persisted.forEach(push);
+    mem.forEach(push);
+    fromStore.forEach(push);
 
-    // Normalise joueurs + avatars et trie par date décroissante
     return Array.from(byId.values())
       .map((r) => normalizeRecordPlayers(r, storeProfiles))
       .sort(
@@ -3776,59 +3758,50 @@ export default function StatsHub(props: Props) {
   }, [records]);
 
   // 4) Sélection du joueur + quick stats
-  const [selectedPlayerId, setSelectedPlayerId] =
-    React.useState<string | null>(players[0]?.id ?? null);
+  const [selectedPlayerId, setSelectedPlayerId] = React.useState<string | null>(
+    players[0]?.id ?? null
+  );
   React.useEffect(() => {
     if (!selectedPlayerId && players[0]?.id)
       setSelectedPlayerId(players[0].id);
   }, [players, selectedPlayerId]);
   const selectedPlayer =
-    players.find((p) => p.id === selectedPlayerId) ||
-    players[0];
+    players.find((p) => p.id === selectedPlayerId) || players[0];
 
   const quick = useQuickStats(selectedPlayer?.id || null);
 
-  // 5) Bloc dépliant (sélecteur joueurs)
-  const [openPlayers, setOpenPlayers] =
-    React.useState(true);
+  // Sous-onglets dans "Stats joueurs" :
+  // - "dashboard" = vue générale StatsPlayerDashboard
+  // - "x01_multi" = stats X01Play (multijoueurs)
+  const [statsSubTab, setStatsSubTab] =
+    React.useState<"dashboard" | "x01_multi">("dashboard");
+
+  // Bloc dépliant (sélecteur joueurs)
+  const [openPlayers, setOpenPlayers] = React.useState(true);
 
   return (
     <div
       className="container"
       style={{ padding: 12, maxWidth: 1100, color: T.text }}
     >
-      {/* Onglets */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <GoldPill
-          active={tab === "history"}
-          onClick={() => setTab("history")}
-        >
-          Historique
-        </GoldPill>
-        <GoldPill
-          active={tab === "stats"}
-          onClick={() => setTab("stats")}
-        >
-          Stats joueurs
-        </GoldPill>
-        <GoldPill
-          active={tab === "training"}
-          onClick={() => setTab("training")}
-        >
-          Training
-        </GoldPill>
-      </div>
-
-      {tab === "history" && (
-        <HistoryPage
-          store={{ history: records } as any}
-          go={go}
-        />
+      {/* ===============================
+          1) MODE "HISTORIQUE" SEUL
+          =============================== */}
+      {mainTab === "history" && (
+        <HistoryPage store={{ history: records } as any} go={go} />
       )}
 
-{tab === "stats" && (
+      {/* ===============================
+          2) MODE "TRAINING" SEUL
+          =============================== */}
+      {mainTab === "training" && <TrainingX01StatsTab />}
+
+      {/* ===============================
+          3) MODE "STATS JOUEURS" SEUL
+          =============================== */}
+      {mainTab === "stats" && (
         <>
-          {/* ===== Bloc dépliant Joueurs (au-dessus du dashboard) ===== */}
+          {/* Bloc dépliant Joueurs */}
           <div style={{ ...card, marginBottom: 12 }}>
             <div
               style={{
@@ -3881,7 +3854,7 @@ export default function StatsHub(props: Props) {
             )}
           </div>
 
-          {/* ===== Sous-onglets de "Stats joueurs" ===== */}
+          {/* Sous-onglets de "Stats joueurs" */}
           <div
             style={{
               display: "flex",
@@ -3903,7 +3876,7 @@ export default function StatsHub(props: Props) {
             </GoldPill>
           </div>
 
-          {/* ===== Contenu selon sous-onglet ===== */}
+          {/* Contenu selon sous-onglet */}
           {statsSubTab === "dashboard" && (
             <>
               {selectedPlayer ? (
@@ -3938,92 +3911,7 @@ export default function StatsHub(props: Props) {
           )}
         </>
       )}
-
-      {tab === "training" && <TrainingX01StatsTab />}
     </div>
   );
 }
 
-/* ---------- Historique (ancien composant) ----------
-   Conservé ci-dessous mais plus utilisé. Tu peux le supprimer plus tard si tu veux.
-*/
-function HistoryList({
-  records,
-  onOpen,
-}: {
-  records: SavedMatch[];
-  onOpen: (r: SavedMatch) => void;
-}) {
-  if (!records.length) {
-    return (
-      <div style={card}>
-        <div style={{ color: T.text70 }}>
-          Aucun enregistrement pour l’instant.
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div style={{ display: "grid", gap: 10 }}>
-      {records.map((rec) => {
-        const players = toArr<PlayerLite>(rec.players);
-        const status = rec.status ?? "finished";
-        const winnerId = rec.winnerId ?? null;
-        const first = players[0]?.name || "—";
-        const sub =
-          players.length > 1
-            ? `${first} + ${
-                players.length - 1
-              } autre(s)`
-            : first;
-        return (
-          <div key={rec.id} style={row}>
-            <div style={{ minWidth: 0 }}>
-              <div
-                style={{
-                  fontWeight: 800,
-                  color: T.gold,
-                }}
-              >
-                {rec.kind?.toUpperCase?.() ?? "MATCH"} ·{" "}
-                {status === "in_progress"
-                  ? "En cours"
-                  : "Terminé"}
-              </div>
-              <div
-                style={{
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  color: T.text70,
-                }}
-              >
-                {sub}
-              </div>
-              <div style={{ color: T.text70 }}>
-                {fmtDate(
-                  rec.updatedAt ?? rec.createdAt
-                )}
-              </div>
-              {winnerId && (
-                <div style={{ marginTop: 4 }}>
-                  Vainqueur :{" "}
-                  <b>
-                    {players.find(
-                      (p) => p.id === winnerId
-                    )?.name ?? "—"}
-                  </b>
-                </div>
-              )}
-            </div>
-            <div>
-              <GoldPill onClick={() => onOpen(rec)}>
-                Voir
-              </GoldPill>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
