@@ -6,15 +6,11 @@
 
 type StyleId = "realistic" | "comic" | "flat" | "exaggerated";
 
-// --------- Modèle Workers AI utilisé ---------
-// (img2img = on part d'une photo existante)
-const MODEL_ID = "@cf/runwayml/stable-diffusion-v1-5-img2img";
-
 // --------- Styles IA (prompts + strength) ---------
 const STYLE_PRESETS: Record<StyleId, { prompt: string; strength: number }> = {
   realistic: {
     prompt: `
-      Hand-drawn caricature portrait.
+      Hand-drawn caricature portrait of the same person.
       Style: realistic cartoon, warm colors, thick outlines, visible brush strokes.
       Emphasize expression and humor without distorting identity.
       High quality. Plain dark background. No frame. No text.
@@ -23,29 +19,32 @@ const STYLE_PRESETS: Record<StyleId, { prompt: string; strength: number }> = {
   },
   comic: {
     prompt: `
-      Comic-book style caricature portrait.
+      Comic-book style caricature portrait of the same person.
       Bold outlines, halftone shadows, vibrant colors.
-      Recognizable face. Plain dark background.
+      Recognizable face. Plain dark background, no text, no frame.
     `,
     strength: 0.6,
   },
   flat: {
     prompt: `
-      Vector flat caricature portrait.
-      Esport mascot style, minimal shading, smooth shapes.
-      No text, no frame, plain background.
+      Vector flat caricature portrait of the same person.
+      Esport mascot style logo, minimal shading, smooth shapes.
+      Plain background, no text, no frame.
     `,
     strength: 0.55,
   },
   exaggerated: {
     prompt: `
-      Highly exaggerated caricature portrait.
-      Oversized facial features, humorous, expressive.
-      Recognizable face. Plain background.
+      Highly exaggerated caricature portrait of the same person.
+      Oversized facial features, humorous, expressive, but recognizable.
+      Plain background, no text, no frame.
     `,
     strength: 0.7,
   },
 };
+
+// --------- Modèle IA (image-to-image) ---------
+const MODEL_ID = "@cf/runwayml/stable-diffusion-v1-5-img2img";
 
 // --------- CORS ORIGINS AUTORISÉS ---------
 const PAGES_ORIGIN = "https://darts-counter-v5-3.pages.dev";
@@ -68,12 +67,20 @@ function makeCorsHeaders(origin: string | null): HeadersInit {
   };
 }
 
-// --------- Utilitaire hash pour le cache KV ---------
+// --------- Utilitaires ---------
 async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(hash)]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
 
 // -------------- PAGES FUNCTION --------------
@@ -90,7 +97,7 @@ export const onRequest = async (context: any): Promise<Response> => {
     });
   }
 
-  // CORS strict : uniquement depuis Pages.dev + webcontainer
+  // CORS strict
   if (!isAllowedOrigin(origin)) {
     return new Response("CORS blocked", {
       status: 403,
@@ -107,6 +114,19 @@ export const onRequest = async (context: any): Promise<Response> => {
           "Content-Type": "application/json",
         },
       });
+    }
+
+    if (!env.AI || typeof env.AI.run !== "function") {
+      return new Response(
+        JSON.stringify({ error: "Workers AI binding 'AI' not configured." }),
+        {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
     }
 
     const form = await request.formData();
@@ -155,22 +175,30 @@ export const onRequest = async (context: any): Promise<Response> => {
     }
 
     // ---------------- IA CLOUDFLARE ----------------
-    let aiResponse: any;
-    try {
-      aiResponse = await env.AI.run(MODEL_ID, {
-        prompt: preset.prompt,
-        image: [...new Uint8Array(bytes)],
-        strength: preset.strength,
-        // tu peux rajouter num_steps, etc. si besoin
-      });
-    } catch (e: any) {
-      console.error("[avatar/cartoon] env.AI.run error:", e);
-      throw new Error(e?.message || "AI.run failed");
+    const input = {
+      prompt: preset.prompt,
+      // image-to-image : on envoie la photo originale
+      image: [...new Uint8Array(bytes)],
+      strength: preset.strength, // entre 0 et 1
+      num_steps: 18,
+    };
+
+    const aiResult: any = await env.AI.run(MODEL_ID, input);
+
+    // aiResult peut être un ArrayBuffer directement ou un objet { image: ArrayBuffer }
+    let rawBytes: Uint8Array | null = null;
+
+    if (aiResult instanceof ArrayBuffer) {
+      rawBytes = new Uint8Array(aiResult);
+    } else if (aiResult && aiResult.image instanceof ArrayBuffer) {
+      rawBytes = new Uint8Array(aiResult.image);
+    } else if (Array.isArray(aiResult)) {
+      rawBytes = new Uint8Array(aiResult);
     }
 
-    if (!aiResponse || !aiResponse.image) {
+    if (!rawBytes || rawBytes.length === 0) {
       return new Response(
-        JSON.stringify({ error: "AI generation failed", details: aiResponse }),
+        JSON.stringify({ error: "AI generation failed (empty result)" }),
         {
           status: 500,
           headers: {
@@ -181,7 +209,8 @@ export const onRequest = async (context: any): Promise<Response> => {
       );
     }
 
-    const pngDataUrl = `data:image/png;base64,${aiResponse.image}`;
+    const base64 = bytesToBase64(rawBytes);
+    const pngDataUrl = `data:image/png;base64,${base64}`;
 
     // ---------------- STOCKAGE CACHE ----------------
     if (env.AVATAR_CACHE && cacheKey) {
@@ -201,7 +230,6 @@ export const onRequest = async (context: any): Promise<Response> => {
       }
     );
   } catch (err: any) {
-    console.error("[avatar/cartoon] global error:", err);
     return new Response(
       JSON.stringify({
         error: err?.message ?? "Unknown error",
