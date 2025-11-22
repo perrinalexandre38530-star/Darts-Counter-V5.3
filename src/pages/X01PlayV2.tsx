@@ -3,7 +3,7 @@
 // UI identique X01Play (header + players + keypad)
 // Moteur useX01Engine
 // Stats = modèle TrainingX01 (darts / avg3D / hits / segments…)
-// Aucun StatsBridge — aucun legacy
+// + EN PLUS : envoi vers StatsBridge pour Stats globales
 // ============================================
 
 import React from "react";
@@ -27,6 +27,13 @@ import type {
 
 // History minimum (pour compatibilité reprise)
 import { History, type SavedMatch } from "../lib/history";
+
+// 🔥 Stats globales (StatsHub / X01End)
+import {
+  StatsBridge,
+  type Visit as BridgeVisit,
+  type PlayerLite as BridgePlayer,
+} from "../lib/statsBridge";
 
 /* ============================================================
    TRAINING-LIKE STATS STRUCTURE
@@ -350,7 +357,7 @@ export default function X01PlayV2(props: {
 }
 
 /* =====================================================================
-   CORE V2 + STATS TRAINING-LIKE
+   CORE V2 + STATS TRAINING-LIKE + StatsBridge
 ===================================================================== */
 
 function X01CoreV2({
@@ -384,6 +391,26 @@ function X01CoreV2({
 
   const pendingMatchRef = React.useRef<MatchRecord | null>(null);
 
+  /* ------------------------ LOG STATS TRAINING-LIKE ------------------------ */
+
+  const visitsLog = React.useRef<VisitLite[]>([]);
+  const bestVisitByPlayer = React.useRef<Record<string, number>>({});
+  const checkoutByPlayer = React.useRef<Record<string, number>>({});
+  const dartsCount = React.useRef<Record<string, number>>({});
+  const pointsSum = React.useRef<Record<string, number>>({});
+  const missCount = React.useRef<Record<string, number>>({});
+  const bustCount = React.useRef<Record<string, number>>({});
+  const bullCount = React.useRef<Record<string, number>>({});
+  const dBullCount = React.useRef<Record<string, number>>({});
+  const hitsS = React.useRef<Record<string, number>>({});
+  const hitsD = React.useRef<Record<string, number>>({});
+  const hitsT = React.useRef<Record<string, number>>({});
+  const segAll = React.useRef<Record<string, Record<string, number>>>({});
+  const segS = React.useRef<Record<string, Record<string, number>>>({});
+  const segD = React.useRef<Record<string, Record<string, number>>>({});
+  const segT = React.useRef<Record<string, Record<string, number>>>({});
+  const visitsCount = React.useRef<Record<string, number>>({});
+
   const {
     state,
     currentPlayer,
@@ -414,7 +441,8 @@ function X01CoreV2({
     finishPolicy,
     onFinish: (m: MatchRecord) => {
       pendingMatchRef.current = m;
-      // Stats training-like pour tous les joueurs
+
+      // Stats training-like pour tous les joueurs (identique avant)
       saveTrainingLikeStatsForMatch(playerIds, start, {
         dartsCount,
         pointsSum,
@@ -433,32 +461,79 @@ function X01CoreV2({
         segT,
         visitsCount,
       });
+
+      // 🔥 EN PLUS : push vers StatsBridge pour Stats globales
+      try {
+        // visits → format StatsBridge.Visit
+        const visitsForBridge: BridgeVisit[] = visitsLog.current.map((v) => ({
+          p: v.playerId,
+          segments: v.darts,
+          score: v.score,
+          bust: v.bust,
+          isCheckout: v.isCheckout,
+          remainingAfter: v.remainingAfter,
+          ts: v.ts,
+        }));
+
+        // joueurs au format PlayerLite
+        const playersLite: BridgePlayer[] = (state.players || []).map(
+          (p: any): BridgePlayer => ({
+            id: p.id,
+            name: p.name,
+            avatarDataUrl:
+              profiles.find((pp) => pp.id === p.id)?.avatarDataUrl ?? null,
+          })
+        );
+
+        const winnerId = (m as any).winnerId ?? ruleWinnerId ?? null;
+
+        if (visitsForBridge.length && playersLite.length) {
+          const { leg, legacy } = StatsBridge.makeLeg(
+            visitsForBridge,
+            playersLite,
+            winnerId
+          );
+
+          // Quick stats (Stats > vue générale)
+          void StatsBridge.commitLegAndAccumulate(leg, legacy);
+
+          // Synthèse match X01 simplifiée (Stats X01 multi)
+          const mid =
+            (m as any).id ??
+            (m as any).matchId ??
+            crypto.randomUUID?.() ??
+            String(Date.now());
+
+          const summary = StatsBridge.makeMatch(
+            [leg],
+            playersLite,
+            mid,
+            "x01"
+          );
+
+          void StatsBridge.commitMatchAndSave(summary, {
+            kind: "x01",
+            startScore: start,
+            outMode,
+            inMode,
+            setsToWin,
+            legsPerSet,
+            finishPolicy,
+          });
+        }
+      } catch (e) {
+        console.warn("[X01PlayV2] StatsBridge error", e);
+      }
+
       // On laisse l'appelant gérer la suite (StatsHub / retour écran etc.)
       onFinish(m);
       clearAutosave();
+
+      // on vide les logs pour la prochaine partie
+      visitsLog.current = [];
     },
     onLegEnd: (leg: LegResult) => handleLegEnd(leg),
   });
-
-  /* ------------------------ LOG STATS TRAINING-LIKE ------------------------ */
-
-  const visitsLog = React.useRef<VisitLite[]>([]);
-  const bestVisitByPlayer = React.useRef<Record<string, number>>({});
-  const checkoutByPlayer = React.useRef<Record<string, number>>({});
-  const dartsCount = React.useRef<Record<string, number>>({});
-  const pointsSum = React.useRef<Record<string, number>>({});
-  const missCount = React.useRef<Record<string, number>>({});
-  const bustCount = React.useRef<Record<string, number>>({});
-  const bullCount = React.useRef<Record<string, number>>({});
-  const dBullCount = React.useRef<Record<string, number>>({});
-  const hitsS = React.useRef<Record<string, number>>({});
-  const hitsD = React.useRef<Record<string, number>>({});
-  const hitsT = React.useRef<Record<string, number>>({});
-  const segAll = React.useRef<Record<string, Record<string, number>>>({});
-  const segS = React.useRef<Record<string, Record<string, number>>>({});
-  const segD = React.useRef<Record<string, Record<string, number>>>({});
-  const segT = React.useRef<Record<string, Record<string, number>>>({});
-  const visitsCount = React.useRef<Record<string, number>>({});
 
   // Init des maps segments
   React.useEffect(() => {
@@ -484,7 +559,7 @@ function X01CoreV2({
     darts: UIDart[],
     bust: boolean,
     isCheckout: boolean,
-    after: number
+    remainingAfter: number
   ) {
     if (!currentPlayer) return;
 
@@ -493,13 +568,14 @@ function X01CoreV2({
       ? 0
       : darts.reduce((s, d) => s + dartValue(d), 0);
 
+    // log interne (UI + StatsBridge)
     visitsLog.current.push({
       playerId: pid,
       darts,
       score: pts,
       bust,
       isCheckout,
-      remainingAfter: after,
+      remainingAfter,
       ts: Date.now(),
     });
 
@@ -580,11 +656,15 @@ function X01CoreV2({
       bustCount.current[pid] =
         (bustCount.current[pid] || 0) + 1;
 
+    const remainingAfter = bust
+      ? curRemaining
+      : Math.max(after, 0);
+
     recordVisit(
       currentThrow,
       bust,
       isCheckout,
-      bust ? curRemaining : Math.max(after, 0)
+      remainingAfter
     );
 
     submitThrowUI(currentThrow);
@@ -658,7 +738,7 @@ function X01CoreV2({
   const headerTopHeight = 160; // hauteur approximative du header
   const keypadHeight = 180; // espace réservé keypad
 
-  /* ------------------------ RENDER COMPLET (PATCH 4) ------------------------ */
+  /* ------------------------ RENDER COMPLET ------------------------ */
 
   return (
     <div
@@ -1088,7 +1168,9 @@ function PlayersList({
         const legsWonThisSet = legsWon?.[p.id] ?? 0;
         const setsWonTotal = setsWon?.[p.id] ?? 0;
 
-        const lastVisit = [...visitsLog].reverse().find((v) => v.playerId === p.id);
+        const lastVisit = [...visitsLog]
+          .reverse()
+          .find((v) => v.playerId === p.id);
 
         return (
           <div

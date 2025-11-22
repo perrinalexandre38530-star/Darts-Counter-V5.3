@@ -1,188 +1,19 @@
 // ============================================
-// src/pages/HistoryPage.tsx — Historique (onglets + sous-onglets temps)
-// (EXTRAIT COMPLET avec correctif "Voir stats" -> x01_end)
-// + FIX 2025-11-14 : ne plus dé-doublonner les parties "En cours"
-// + FIX 2025-11-15 : Reprendre une partie "En cours" = utilise toujours son id d’historique
+// src/pages/HistoryPage.tsx — Historique
+// Version refondue : thèmes + i18n + logique existante
+// - Thèmes via ThemeContext (bg, card, primary, danger...)
+// - Textes via LangContext (history.* / common.delete)
+// - Dé-doublonnage uniquement sur les parties terminées
+// - Reprendre une partie "en cours" avec son id d’historique
+// - "Voir stats" -> overlay x01_end (rec complet)
 // ============================================
+
 import React, { useEffect, useMemo, useState } from "react";
 import type { Store } from "../lib/types";
+import { useTheme } from "../contexts/ThemeContext";
+import { useLang } from "../contexts/LangContext";
 
-const T = {
-  bg: "#0b0b0c",
-  text: "#ffffff",
-  text70: "rgba(255,255,255,.72)",
-  edge: "rgba(255,255,255,.10)",
-  card: "linear-gradient(180deg,rgba(17,18,20,.92),rgba(13,14,17,.90))",
-  gold: "#F6C256",
-  goldSoft: "rgba(246,194,86,.16)",
-  red: "rgba(255,82,82,1)",
-  redSoft: "rgba(255,82,82,.16)",
-};
-const S = {
-  page: {
-    minHeight: "100dvh",
-    background: T.bg,
-    color: T.text,
-    paddingBottom: 96,
-  } as React.CSSProperties,
-  header: {
-    position: "sticky",
-    top: 0,
-    zIndex: 10,
-    backdropFilter: "blur(10px)",
-    background: "rgba(0,0,0,.42)",
-    borderBottom: `1px solid ${T.edge}`,
-  } as React.CSSProperties,
-  headerRow: {
-    display: "grid",
-    gridTemplateColumns: "1fr auto",
-    gap: 10,
-    padding: "14px 16px",
-    alignItems: "center",
-  } as React.CSSProperties,
-  h1: { fontSize: 26, fontWeight: 900, letterSpacing: 0.3 } as React.CSSProperties,
-  tabsRow: {
-    display: "flex",
-    gap: 8,
-    justifySelf: "end",
-  } as React.CSSProperties,
-  tab: (active: boolean): React.CSSProperties => ({
-    display: "inline-flex",
-    alignItems: "center",
-    height: 32,
-    padding: "0 12px",
-    borderRadius: 999,
-    fontWeight: 800,
-    fontSize: 13,
-    letterSpacing: 0.3,
-    border: `1px solid ${active ? "rgba(246,194,86,.55)" : T.edge}`,
-    background: active ? T.goldSoft : "rgba(255,255,255,.06)",
-    color: active ? T.gold : T.text,
-    cursor: "pointer",
-  }),
-  subTabsWrap: {
-    padding: "0 16px 12px 16px",
-    borderBottom: `1px solid ${T.edge}`,
-    background: "rgba(0,0,0,.28)",
-    backdropFilter: "blur(6px)",
-  } as React.CSSProperties,
-  subTabsRow: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 8,
-  } as React.CSSProperties,
-  subTab: (active: boolean): React.CSSProperties => ({
-    display: "inline-flex",
-    alignItems: "center",
-    height: 28,
-    padding: "0 10px",
-    borderRadius: 999,
-    fontWeight: 800,
-    fontSize: 12,
-    letterSpacing: 0.3,
-    border: `1px solid ${active ? "rgba(246,194,86,.45)" : T.edge}`,
-    background: active ? "rgba(246,194,86,.12)" : "rgba(255,255,255,.06)",
-    color: active ? T.gold : T.text,
-    cursor: "pointer",
-  }),
-  list: {
-    padding: 12,
-    display: "grid",
-    gap: 12,
-    maxWidth: 760,
-    margin: "0 auto",
-  } as React.CSSProperties,
-  card: {
-    background: T.card,
-    border: `1px solid ${T.edge}`,
-    borderRadius: 18,
-    padding: 14,
-    boxShadow: "0 16px 40px rgba(0,0,0,.35)",
-    backdropFilter: "blur(12px)",
-  } as React.CSSProperties,
-  rowBetween: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-  } as React.CSSProperties,
-  chip: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    height: 28,
-    padding: "0 10px",
-    borderRadius: 999,
-    border: `1px solid ${T.edge}`,
-    background: "rgba(255,255,255,.06)",
-    fontSize: 12,
-    fontWeight: 800,
-    letterSpacing: 0.4,
-  } as React.CSSProperties,
-  chipGold: {
-    border: `1px solid rgba(246,194,86,.55)`,
-    background: T.goldSoft,
-    color: T.gold,
-  } as React.CSSProperties,
-  chipRed: {
-    border: `1px solid rgba(255,82,82,.35)`,
-    background: T.redSoft,
-    color: T.red,
-  } as React.CSSProperties,
-  date: { fontSize: 12, color: T.gold, fontWeight: 700 } as React.CSSProperties,
-  sub: { fontSize: 12, color: T.text70 } as React.CSSProperties,
-  avatars: {
-    display: "flex",
-    alignItems: "center",
-  } as React.CSSProperties,
-  avWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: "50%",
-    overflow: "hidden",
-    boxShadow: "0 0 0 2px rgba(0,0,0,.45)",
-    marginLeft: -8,
-    background: "rgba(255,255,255,.08)",
-  } as React.CSSProperties,
-  avImg: { width: "100%", height: "100%", objectFit: "cover" } as React.CSSProperties,
-  avFallback: {
-    width: "100%",
-    height: "100%",
-    display: "grid",
-    placeItems: "center",
-    fontWeight: 900,
-    color: T.text70,
-    fontSize: 14,
-  } as React.CSSProperties,
-  pillRow: {
-    display: "flex",
-    gap: 8,
-    justifyContent: "flex-end",
-    marginTop: 12,
-  } as React.CSSProperties,
-  pill: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    padding: "8px 12px",
-    borderRadius: 999,
-    border: `1px solid ${T.edge}`,
-    background: "rgba(255,255,255,.08)",
-    fontSize: 13,
-    fontWeight: 800,
-    cursor: "pointer",
-  } as React.CSSProperties,
-  pillGold: {
-    border: `1px solid rgba(246,194,86,.55)`,
-    background: T.goldSoft,
-    color: T.gold,
-  } as React.CSSProperties,
-  pillDanger: {
-    border: `1px solid rgba(255,82,82,.35)`,
-    background: T.redSoft,
-    color: "rgba(255,170,170,1)",
-  } as React.CSSProperties,
-};
+/* ---------- Icônes inline ---------- */
 
 const Icon = {
   Trophy: (p: any) => (
@@ -215,6 +46,8 @@ const Icon = {
     </svg>
   ),
 };
+
+/* ---------- Types & helpers data ---------- */
 
 export type SavedEntry = {
   id: string;
@@ -286,6 +119,7 @@ function matchLink(e: SavedEntry): string | undefined {
 }
 
 /* --- dé-doublonnage & filtres --- */
+
 function better(a: SavedEntry, b: SavedEntry): SavedEntry {
   const ta = a.updatedAt || a.createdAt || 0;
   const tb = b.updatedAt || b.createdAt || 0;
@@ -345,6 +179,7 @@ function dedupe(list: SavedEntry[]): SavedEntry[] {
 }
 
 type RangeKey = "today" | "week" | "month" | "year" | "archives";
+
 function startOfToday(d = new Date()) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -378,6 +213,8 @@ function inRange(ts: number, key: RangeKey): boolean {
   return true;
 }
 
+/* ---------- API History (store ou window.History) ---------- */
+
 const HistoryAPI = {
   async list(store: Store): Promise<SavedEntry[]> {
     const anyStore = store as any;
@@ -392,6 +229,204 @@ const HistoryAPI = {
   },
 };
 
+/* ---------- Styles dépendants du thème ---------- */
+
+function makeStyles(theme: any) {
+  const text70 = theme.textSoft || "rgba(255,255,255,0.7)";
+  const edge = theme.borderSoft || "rgba(255,255,255,0.12)";
+
+  return {
+    page: {
+      minHeight: "100dvh",
+      background: theme.bg,
+      color: theme.text,
+      paddingBottom: 96,
+      fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+    } as React.CSSProperties,
+    header: {
+      position: "sticky",
+      top: 0,
+      zIndex: 10,
+      backdropFilter: "blur(10px)",
+      background: "rgba(0,0,0,.42)",
+      borderBottom: `1px solid ${edge}`,
+    } as React.CSSProperties,
+    headerRow: {
+      display: "grid",
+      gridTemplateColumns: "1fr auto",
+      gap: 10,
+      padding: "14px 16px",
+      alignItems: "center",
+    } as React.CSSProperties,
+    h1: {
+      fontSize: 24,
+      fontWeight: 800,
+      letterSpacing: "0.08em",
+      textTransform: "uppercase",
+    } as React.CSSProperties,
+    headerSub: {
+      fontSize: 11,
+      color: text70,
+      letterSpacing: "0.04em",
+      textTransform: "uppercase",
+      marginTop: 4,
+    } as React.CSSProperties,
+    tabsRow: {
+      display: "flex",
+      gap: 8,
+      justifySelf: "end",
+    } as React.CSSProperties,
+    tab: (active: boolean): React.CSSProperties => ({
+      display: "inline-flex",
+      alignItems: "center",
+      height: 32,
+      padding: "0 12px",
+      borderRadius: 999,
+      fontWeight: 800,
+      fontSize: 12,
+      letterSpacing: 0.3,
+      border: `1px solid ${active ? theme.primary : edge}`,
+      background: active ? "rgba(0,0,0,0.6)" : "rgba(255,255,255,0.04)",
+      color: active ? theme.primary : theme.text,
+      cursor: "pointer",
+    }),
+    subTabsWrap: {
+      padding: "0 16px 12px 16px",
+      borderBottom: `1px solid ${edge}`,
+      background: "rgba(0,0,0,.28)",
+      backdropFilter: "blur(6px)",
+    } as React.CSSProperties,
+    subTabsRow: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 8,
+    } as React.CSSProperties,
+    subTab: (active: boolean): React.CSSProperties => ({
+      display: "inline-flex",
+      alignItems: "center",
+      height: 28,
+      padding: "0 10px",
+      borderRadius: 999,
+      fontWeight: 800,
+      fontSize: 11,
+      letterSpacing: 0.3,
+      border: `1px solid ${active ? theme.primary : edge}`,
+      background: active ? "rgba(0,0,0,0.6)" : "rgba(255,255,255,0.04)",
+      color: active ? theme.primary : theme.text,
+      cursor: "pointer",
+    }),
+    list: {
+      padding: 12,
+      display: "grid",
+      gap: 12,
+      maxWidth: 760,
+      margin: "0 auto",
+    } as React.CSSProperties,
+    card: {
+      background: theme.card,
+      border: `1px solid ${edge}`,
+      borderRadius: 18,
+      padding: 14,
+      boxShadow: "0 16px 40px rgba(0,0,0,.35)",
+      backdropFilter: "blur(12px)",
+    } as React.CSSProperties,
+    rowBetween: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8,
+    } as React.CSSProperties,
+    chip: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      height: 28,
+      padding: "0 10px",
+      borderRadius: 999,
+      border: `1px solid ${edge}`,
+      background: "rgba(255,255,255,.06)",
+      fontSize: 11,
+      fontWeight: 800,
+      letterSpacing: 0.4,
+    } as React.CSSProperties,
+    chipGold: {
+      border: `1px solid ${theme.primary}`,
+      background: "rgba(0,0,0,0.4)",
+      color: theme.primary,
+    } as React.CSSProperties,
+    chipRed: {
+      border: `1px solid ${theme.danger}`,
+      background: "rgba(0,0,0,0.4)",
+      color: theme.danger,
+    } as React.CSSProperties,
+    date: {
+      fontSize: 11,
+      color: theme.primary,
+      fontWeight: 700,
+    } as React.CSSProperties,
+    sub: { fontSize: 12, color: text70 } as React.CSSProperties,
+    avatars: {
+      display: "flex",
+      alignItems: "center",
+    } as React.CSSProperties,
+    avWrap: {
+      width: 42,
+      height: 42,
+      borderRadius: "50%",
+      overflow: "hidden",
+      boxShadow: "0 0 0 2px rgba(0,0,0,.45)",
+      background: "rgba(255,255,255,.08)",
+    } as React.CSSProperties,
+    avImg: {
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
+    } as React.CSSProperties,
+    avFallback: {
+      width: "100%",
+      height: "100%",
+      display: "grid",
+      placeItems: "center",
+      fontWeight: 900,
+      color: text70,
+      fontSize: 14,
+    } as React.CSSProperties,
+    pillRow: {
+      display: "flex",
+      gap: 8,
+      justifyContent: "flex-end",
+      marginTop: 12,
+      flexWrap: "wrap",
+    } as React.CSSProperties,
+    pill: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      padding: "8px 12px",
+      borderRadius: 999,
+      border: `1px solid ${edge}`,
+      background: "rgba(255,255,255,.08)",
+      fontSize: 13,
+      fontWeight: 800,
+      cursor: "pointer",
+    } as React.CSSProperties,
+    pillGold: {
+      border: `1px solid ${theme.primary}`,
+      background: "rgba(0,0,0,0.5)",
+      color: theme.primary,
+      boxShadow: `0 0 10px ${theme.primary}`,
+    } as React.CSSProperties,
+    pillDanger: {
+      border: `1px solid ${theme.danger}`,
+      background: "rgba(0,0,0,0.5)",
+      color: "#ffd6d6",
+      boxShadow: `0 0 10px ${theme.danger}`,
+    } as React.CSSProperties,
+  };
+}
+
+/* ---------- Composant principal ---------- */
+
 export default function HistoryPage({
   store,
   go,
@@ -399,6 +434,10 @@ export default function HistoryPage({
   store: Store;
   go: (to: string, params?: any) => void;
 }) {
+  const { theme } = useTheme();
+  const { t } = useLang();
+  const S = useMemo(() => makeStyles(theme), [theme]);
+
   const [tab, setTab] = useState<"done" | "running">("done");
   const [sub, setSub] = useState<RangeKey>("today");
   const [items, setItems] = useState<SavedEntry[]>([]);
@@ -407,8 +446,7 @@ export default function HistoryPage({
     (async () => setItems(await HistoryAPI.list(store)))();
   }, [store]);
 
-  // 🔑 FIX : on dé-duplique uniquement les parties TERMINÉES.
-  // Les parties "en cours" sont toutes conservées, triées par date décroissante.
+  // ✅ dé-doublonnage uniquement sur les parties terminées
   const { done, running } = useMemo(() => {
     const finished: SavedEntry[] = [];
     const inprog: SavedEntry[] = [];
@@ -430,97 +468,140 @@ export default function HistoryPage({
     inRange(e.updatedAt || e.createdAt, sub)
   );
 
+  async function handleDelete(e: SavedEntry) {
+    if (
+      !window.confirm(
+        t("history.confirmDelete", "Supprimer cette partie ?")
+      )
+    ) {
+      return;
+    }
+    await HistoryAPI.remove(e.id);
+    setItems(await HistoryAPI.list(store));
+  }
+
   return (
     <div style={S.page}>
+      {/* Header collant */}
       <header style={S.header}>
         <div style={S.headerRow}>
-          <h1 style={S.h1}>Historique</h1>
+          <div>
+            <h1 style={S.h1}>
+              {t("history.title", "Historique").toUpperCase()}
+            </h1>
+            <div style={S.headerSub}>
+              {t(
+                "history.subtitle",
+                "Retrouve toutes tes parties et statistiques."
+              )}
+            </div>
+          </div>
+
           <div style={S.tabsRow}>
             <button
+              type="button"
               style={S.tab(tab === "done")}
               onClick={() => setTab("done")}
             >
-              Terminées
+              {t("history.status.done", "Terminées")}
             </button>
             <button
+              type="button"
               style={S.tab(tab === "running")}
               onClick={() => setTab("running")}
             >
-              En cours
+              {t("history.status.inProgress", "En cours")}
             </button>
           </div>
         </div>
+
+        {/* sous-onglets temps */}
         <div style={S.subTabsWrap}>
           <div style={S.subTabsRow}>
             <button
+              type="button"
               style={S.subTab(sub === "today")}
               onClick={() => setSub("today")}
             >
-              Aujourd’hui
+              {t("history.range.today", "Aujourd'hui")}
             </button>
             <button
+              type="button"
               style={S.subTab(sub === "week")}
               onClick={() => setSub("week")}
             >
-              Cette semaine
+              {t("history.range.week", "Cette semaine")}
             </button>
             <button
+              type="button"
               style={S.subTab(sub === "month")}
               onClick={() => setSub("month")}
             >
-              Ce mois-ci
+              {t("history.range.month", "Ce mois-ci")}
             </button>
             <button
+              type="button"
               style={S.subTab(sub === "year")}
               onClick={() => setSub("year")}
             >
-              Cette année
+              {t("history.range.year", "Cette année")}
             </button>
             <button
+              type="button"
               style={S.subTab(sub === "archives")}
               onClick={() => setSub("archives")}
             >
-              Archives
+              {t("history.range.archives", "Archives")}
             </button>
           </div>
         </div>
       </header>
 
+      {/* Liste des parties */}
       <div style={S.list}>
-        {filtered.map((e) => {
-          const inProg = statusOf(e) === "in_progress";
-          const key = String(matchLink(e) || e.id);
-          return (
-            <div key={key} style={S.card}>
-              <div style={S.rowBetween}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                  }}
-                >
-                  <span style={{ ...S.chip }}>{modeLabel(e)}</span>
-                  <span
+        {filtered.length === 0 ? (
+          <div style={{ ...S.sub, marginTop: 24 }}>
+            {t(
+              "history.empty",
+              "Aucune partie ne correspond à ces filtres pour le moment."
+            )}
+          </div>
+        ) : (
+          filtered.map((e) => {
+            const inProg = statusOf(e) === "in_progress";
+            const key = String(matchLink(e) || e.id);
+
+            return (
+              <div key={key} style={S.card}>
+                {/* Ligne haut : mode + statut + date */}
+                <div style={S.rowBetween}>
+                  <div
                     style={{
-                      ...S.chip,
-                      ...(inProg ? S.chipRed : S.chipGold),
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
                     }}
                   >
-                    {inProg ? "En cours" : "Terminé"}
-                  </span>
+                    <span style={S.chip}>{modeLabel(e)}</span>
+                    <span
+                      style={{
+                        ...S.chip,
+                        ...(inProg ? S.chipRed : S.chipGold),
+                      }}
+                    >
+                      {inProg
+                        ? t("history.badge.inProgress", "En cours")
+                        : t("history.badge.done", "Terminé")}
+                    </span>
+                  </div>
+                  <span style={S.date}>{fmtDate(e.updatedAt || e.createdAt)}</span>
                 </div>
-                <span style={S.date}>
-                  {fmtDate(e.updatedAt || e.createdAt)}
-                </span>
-              </div>
 
-              {/* avatars */}
-              <div style={{ ...S.rowBetween, marginTop: 10 }}>
-                <div style={S.avatars}>
-                  {(e.players || [])
-                    .slice(0, 6)
-                    .map((p, i) => {
+                {/* Avatars + gagnant / état */}
+                <div style={{ ...S.rowBetween, marginTop: 10 }}>
+                  <div style={S.avatars}>
+                    {(e.players || []).slice(0, 6).map((p, i) => {
                       const id = getId(p) || String(i);
                       const nm = getName(p);
                       const url = getAvatarUrl(store, p);
@@ -550,114 +631,121 @@ export default function HistoryPage({
                         </div>
                       );
                     })}
+                  </div>
+
+                  {!inProg ? (
+                    e.winnerName ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          color: theme.primary,
+                          fontWeight: 900,
+                        }}
+                      >
+                        <Icon.Trophy /> <span>{e.winnerName}</span>
+                      </div>
+                    ) : (
+                      <div style={S.sub}>
+                        {t("history.done.noWinner", "Partie terminée")}
+                      </div>
+                    )
+                  ) : (
+                    <div style={S.sub}>
+                      {t("history.running", "Partie non terminée")}
+                    </div>
+                  )}
                 </div>
 
-                {!inProg ? (
-                  e.winnerName ? (
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        color: T.gold,
-                        fontWeight: 900,
-                      }}
-                    >
-                      <Icon.Trophy /> <span>{e.winnerName}</span>
-                    </div>
-                  ) : (
-                    <div style={S.sub}>Partie terminée</div>
-                  )
-                ) : (
-                  <div style={S.sub}>Partie non terminée</div>
-                )}
-              </div>
+                {/* Actions */}
+                <div style={S.pillRow}>
+                  {inProg ? (
+                    <>
+                      <button
+                        type="button"
+                        style={{ ...S.pill, ...S.pillGold }}
+                        onClick={() => {
+                          const resumeId = e.id;
+                          const mode = baseMode(e);
+                          if (mode === "x01")
+                            go("x01", {
+                              resumeId,
+                              players: e.players || [],
+                            });
+                          else
+                            go("game", {
+                              mode,
+                              resumeId,
+                              players: e.players || [],
+                            });
+                        }}
+                      >
+                        <Icon.Play />{" "}
+                        {t("history.btn.resume", "Reprendre")}
+                      </button>
 
-              {/* actions */}
-              <div style={S.pillRow}>
-                {inProg ? (
-                  <>
+                      <button
+                        type="button"
+                        style={S.pill}
+                        onClick={() => {
+                          const resumeId = e.id;
+                          const mode = baseMode(e);
+                          if (mode === "x01")
+                            go("x01", {
+                              resumeId,
+                              players: e.players || [],
+                              preview: true,
+                            });
+                          else
+                            go("game", {
+                              mode,
+                              resumeId,
+                              players: e.players || [],
+                              preview: true,
+                            });
+                        }}
+                      >
+                        <Icon.Eye /> {t("history.btn.view", "Voir")}
+                      </button>
+                    </>
+                  ) : (
                     <button
+                      type="button"
                       style={{ ...S.pill, ...S.pillGold }}
                       onClick={() => {
-                        // 🔑 Pour les parties EN COURS, on reprend toujours par l'id d’historique
-                        const resumeId = e.id;
-                        const mode = baseMode(e);
-                        if (mode === "x01")
-                          go("x01", {
-                            resumeId,
-                            players: e.players || [],
-                          });
-                        else
-                          go("game", {
-                            mode,
-                            resumeId,
-                            players: e.players || [],
-                          });
+                        const resumeId = matchLink(e) || e.id;
+                        go("x01_end", {
+                          rec: e,
+                          resumeId,
+                          showEnd: true,
+                          from: "history",
+                        });
                       }}
                     >
-                      <Icon.Play /> Reprendre
+                      <Icon.Eye />{" "}
+                      {t("history.btn.showStats", "Voir stats")}
                     </button>
-                    <button
-                      style={S.pill}
-                      onClick={() => {
-                        const resumeId = e.id;
-                        const mode = baseMode(e);
-                        if (mode === "x01")
-                          go("x01", {
-                            resumeId,
-                            players: e.players || [],
-                            preview: true,
-                          });
-                        else
-                          go("game", {
-                            mode,
-                            resumeId,
-                            players: e.players || [],
-                            preview: true,
-                          });
-                      }}
-                    >
-                      <Icon.Eye /> Voir
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    style={{ ...S.pill, ...S.pillGold }}
-                    onClick={() => {
-                      // ✅ ENVOI DIRECT DE L’OVERLAY AVEC LE RECORD COMPLET
-                      const resumeId = matchLink(e) || e.id;
-                      go("x01_end", {
-                        rec: e, // record complet (summary/payload/winner/etc.)
-                        resumeId, // pour re-jouer depuis l’overlay (legacy)
-                        showEnd: true, // force l’overlay
-                        from: "history",
-                      });
-                    }}
-                  >
-                    <Icon.Eye /> Voir stats
-                  </button>
-                )}
+                  )}
 
-                <button
-                  style={{ ...S.pill, ...S.pillDanger }}
-                  onClick={async () => {
-                    if (confirm("Supprimer cette partie ?")) {
-                      await HistoryAPI.remove(e.id);
-                      setItems(await HistoryAPI.list(store));
-                    }
-                  }}
-                >
-                  <Icon.Trash /> Supprimer
-                </button>
+                  <button
+                    type="button"
+                    style={{ ...S.pill, ...S.pillDanger }}
+                    onClick={() => handleDelete(e)}
+                  >
+                    <Icon.Trash /> {t("common.delete", "Supprimer")}
+                  </button>
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </div>
   );
 }
+
+/* ---------- Format date ---------- */
 
 function fmtDate(ts: number) {
   try {

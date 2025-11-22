@@ -278,9 +278,16 @@ export const onRequest = async (context: any): Promise<Response> => {
       }
     );
   } catch (err: any) {
+    // 🔥 catch VERBEUX pour voir l'erreur réelle côté Network
+    console.error("Avatar cartoon error:", err);
+
     return new Response(
       JSON.stringify({
         error: err?.message ?? "Unknown error",
+        details:
+          err && typeof err === "object"
+            ? JSON.stringify(err, null, 2)
+            : String(err),
       }),
       {
         status: 500,
