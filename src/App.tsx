@@ -3,6 +3,7 @@
 // Fix: "Lancer partie" n'affiche plus la dernière reprise
 // + Intégration pages Training (menu / play / stats)
 // + X01Play V2 en parallèle du X01 actuel
+// + Nouveau hub Stats (menu + sous-vues via StatsHub)
 // ============================================
 import React from "react";
 import BottomNav from "./components/BottomNav";
@@ -54,8 +55,9 @@ import { History } from "./lib/history";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { LangProvider } from "./contexts/LangContext";
 
-// ✅ Nouveau hub Stats (menu style Home / Games / Profils)
+// ✅ Nouveau hub Stats
 import StatsShell from "./pages/StatsShell";
+import StatsHub from "./pages/StatsHub";
 
 // DEV uniquement
 import { installHistoryProbe } from "./dev/devHistoryProbe";
@@ -108,12 +110,10 @@ type Tab =
   // ✅ nouvelle route par onglet
   | "avatar";
 
-// Petit composant pour rediriger "training_stats" vers le hub Stats
+// Petit composant pour rediriger "training_stats" vers StatsHub onglet Training
 function RedirectToStatsTraining({ go }: { go: (tab: Tab, params?: any) => void }) {
   React.useEffect(() => {
-    // Maintenant on passe par le hub StatsShell (menu Stats),
-    // le joueur cliquera sur la carte "TRAINING"
-    go("stats", { tab: "training" });
+    go("stats", { mode: "hub", tab: "training" });
   }, [go]);
   return null;
 }
@@ -433,9 +433,15 @@ function App() {
       console.warn("[App] onlineApi.uploadMatch failed:", e);
     }
 
-    // 6) route UI → nouveau hub Stats (onglet Historique)
-    go("stats", { tab: "history" });
+    // 6) route UI → hub Stats, onglet Historique
+    go("stats", { mode: "hub", tab: "history" });
   }
+
+  // Historique enrichi pour l'UI (avatars garantis)
+  const historyForUI = React.useMemo(
+    () => (store.history || []).map((r: any) => withAvatars(r, store.profiles || [])),
+    [store.history, store.profiles]
+  );
 
   // --------------------------------------------
   // Routes
@@ -496,9 +502,21 @@ function App() {
       }
 
       case "stats": {
-        // ✅ Nouveau hub Stats (menu + sous-vues),
-        // StatsHub est maintenant appelé depuis StatsShell (vue TRAINING)
-        page = <StatsShell store={store} go={go} />;
+        // 👉 2 modes :
+        // - mode "menu" (par défaut) : StatsShell (cartes)
+        // - mode "hub" : StatsHub (onglet précis)
+        const mode = routeParams?.mode || "menu";
+        if (mode === "hub") {
+          page = (
+            <StatsHub
+              go={go}
+              tab={(routeParams?.tab as any) ?? "history"}
+              memHistory={historyForUI}
+            />
+          );
+        } else {
+          page = <StatsShell store={store} go={go} />;
+        }
         break;
       }
 
@@ -551,7 +569,7 @@ function App() {
 
           page = (
             <div style={{ padding: 16 }}>
-              <button onClick={() => go("stats", { tab: "history" })} style={{ marginBottom: 12 }}>
+              <button onClick={() => go("stats", { mode: "hub", tab: "history" })} style={{ marginBottom: 12 }}>
                 ← Retour
               </button>
               <h2 style={{ margin: 0 }}>
@@ -564,7 +582,7 @@ function App() {
         } else {
           page = (
             <div style={{ padding: 16 }}>
-              <button onClick={() => go("stats", { tab: "history" })} style={{ marginBottom: 12 }}>
+              <button onClick={() => go("stats", { mode: "hub", tab: "history" })} style={{ marginBottom: 12 }}>
                 ← Retour
               </button>
               {matchId ? "Chargement..." : "Aucune donnée"}
@@ -711,7 +729,7 @@ function App() {
       }
 
       case "training_stats": {
-        // Redirection vers hub Stats (StatsShell)
+        // Redirection vers hub Stats (StatsHub onglet Training)
         page = <RedirectToStatsTraining go={go} />;
         break;
       }
