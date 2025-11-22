@@ -47,8 +47,8 @@ const STYLE_PRESETS: Record<StyleId, { prompt: string; strength: number }> = {
 };
 
 // --------- Modèle IA (image-to-image) ---------
+// Modèle officiellement listé dans la doc Workers AI
 const MODEL_ID = "@cf/runwayml/stable-diffusion-v1-5-img2img";
-// Si tu changes de modèle (ex : Dreamshaper), adapte simplement cette ligne.
 
 // --------- CORS ORIGINS AUTORISÉS ---------
 const PAGES_ORIGIN = "https://darts-counter-v5-3.pages.dev";
@@ -93,6 +93,9 @@ export const onRequest = async (context: any): Promise<Response> => {
   const origin = request.headers.get("Origin");
   const corsHeaders = makeCorsHeaders(origin);
 
+  // Petit log pour vérifier que le binding existe bien
+  console.log("[avatar/cartoon] env.AI présent ?", !!env?.AI);
+
   // Préflight CORS
   if (request.method === "OPTIONS") {
     return new Response(null, {
@@ -103,6 +106,7 @@ export const onRequest = async (context: any): Promise<Response> => {
 
   // CORS strict
   if (!isAllowedOrigin(origin)) {
+    console.warn("[avatar/cartoon] CORS blocked for origin:", origin);
     return new Response("CORS blocked", {
       status: 403,
       headers: corsHeaders,
@@ -121,6 +125,10 @@ export const onRequest = async (context: any): Promise<Response> => {
     }
 
     if (!env.AI || typeof env.AI.run !== "function") {
+      console.error(
+        "[avatar/cartoon] Workers AI binding 'AI' absent ou invalide",
+        { hasAI: !!env.AI, type: typeof env.AI }
+      );
       return new Response(
         JSON.stringify({ error: "Workers AI binding 'AI' not configured." }),
         {
@@ -170,6 +178,7 @@ export const onRequest = async (context: any): Promise<Response> => {
 
       const cached = await env.AVATAR_CACHE.get(cacheKey);
       if (cached) {
+        console.log("[avatar/cartoon] Cache hit", cacheKey);
         // ✅ Résultat déjà généré → pas de quota consommé
         return new Response(
           JSON.stringify({ ok: true, cartoonPng: cached, cached: true }),
@@ -190,8 +199,14 @@ export const onRequest = async (context: any): Promise<Response> => {
       const rawQuota = await env.AVATAR_CACHE.get(quotaKey);
       currentQuota = rawQuota ? parseInt(rawQuota, 10) || 0 : 0;
 
+      console.log("[avatar/cartoon] Quota actuel", { today, currentQuota });
+
       if (currentQuota >= DAILY_QUOTA_LIMIT) {
         // ❌ Quota dépassé → on NE fait PAS d'appel IA (donc pas de coût)
+        console.warn(
+          "[avatar/cartoon] Quota quotidien dépassé",
+          currentQuota
+        );
         return new Response(
           JSON.stringify({
             ok: false,
@@ -215,15 +230,34 @@ export const onRequest = async (context: any): Promise<Response> => {
     // ---------------- IA CLOUDFLARE ----------------
     const input = {
       prompt: preset.prompt,
-      // image-to-image : on envoie la photo originale
-      image: [...new Uint8Array(bytes)],
+      image: [...new Uint8Array(bytes)], // image-to-image : on envoie la photo originale
       strength: preset.strength, // entre 0 et 1
       num_steps: 18,
     };
 
+    console.log("[avatar/cartoon] Appel IA", { MODEL_ID, styleId });
+
     const aiResult: any = await env.AI.run(MODEL_ID, input);
 
-    // aiResult peut être un ArrayBuffer directement ou un objet { image: ArrayBuffer }
+    // Si jamais Workers AI renvoie un objet d'erreur "propre"
+    if (aiResult && (aiResult.error || aiResult.message)) {
+      console.error("[avatar/cartoon] IA error payload", aiResult);
+      return new Response(
+        JSON.stringify({
+          error: "AI model error",
+          details: aiResult,
+        }),
+        {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
+
+    // aiResult peut être un ArrayBuffer ou un objet { image: ArrayBuffer }
     let rawBytes: Uint8Array | null = null;
 
     if (aiResult instanceof ArrayBuffer) {
@@ -232,9 +266,29 @@ export const onRequest = async (context: any): Promise<Response> => {
       rawBytes = new Uint8Array(aiResult.image);
     } else if (Array.isArray(aiResult)) {
       rawBytes = new Uint8Array(aiResult);
+    } else {
+      console.error(
+        "[avatar/cartoon] Réponse IA inattendue",
+        typeof aiResult,
+        aiResult
+      );
+      return new Response(
+        JSON.stringify({
+          error: "Unexpected AI response shape",
+          type: typeof aiResult,
+        }),
+        {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
     }
 
     if (!rawBytes || rawBytes.length === 0) {
+      console.error("[avatar/cartoon] IA result vide");
       return new Response(
         JSON.stringify({ error: "AI generation failed (empty result)" }),
         {
@@ -264,6 +318,10 @@ export const onRequest = async (context: any): Promise<Response> => {
           // TTL légèrement > 24h, mais la clé inclut la date donc ça reset tout seul
           expirationTtl: 60 * 60 * 48,
         });
+        console.log("[avatar/cartoon] Quota mis à jour", {
+          quotaKey,
+          newQuota,
+        });
       }
     }
 
@@ -278,16 +336,10 @@ export const onRequest = async (context: any): Promise<Response> => {
       }
     );
   } catch (err: any) {
-    // 🔥 catch VERBEUX pour voir l'erreur réelle côté Network
-    console.error("Avatar cartoon error:", err);
-
+    console.error("[avatar/cartoon] Exception", err);
     return new Response(
       JSON.stringify({
         error: err?.message ?? "Unknown error",
-        details:
-          err && typeof err === "object"
-            ? JSON.stringify(err, null, 2)
-            : String(err),
       }),
       {
         status: 500,
