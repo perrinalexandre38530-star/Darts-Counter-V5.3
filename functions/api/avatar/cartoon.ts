@@ -6,6 +6,10 @@
 
 type StyleId = "realistic" | "comic" | "flat" | "exaggerated";
 
+// --------- Modèle Workers AI utilisé ---------
+// (img2img = on part d'une photo existante)
+const MODEL_ID = "@cf/runwayml/stable-diffusion-v1-5-img2img";
+
 // --------- Styles IA (prompts + strength) ---------
 const STYLE_PRESETS: Record<StyleId, { prompt: string; strength: number }> = {
   realistic: {
@@ -44,16 +48,13 @@ const STYLE_PRESETS: Record<StyleId, { prompt: string; strength: number }> = {
 };
 
 // --------- CORS ORIGINS AUTORISÉS ---------
-// 🔁 Adapte si ton domaine Pages change
 const PAGES_ORIGIN = "https://darts-counter-v5-3.pages.dev";
 
 function isAllowedOrigin(origin: string | null): boolean {
   if (!origin) return false;
   if (origin === PAGES_ORIGIN) return true;
-
   // Dev depuis Stackblitz : sous-domaines *.webcontainer.io
   if (origin.endsWith(".webcontainer.io")) return true;
-
   return false;
 }
 
@@ -154,16 +155,22 @@ export const onRequest = async (context: any): Promise<Response> => {
     }
 
     // ---------------- IA CLOUDFLARE ----------------
-    const aiResponse: any = await env.AI.run("@cf/lykon/playground-v2.5", {
-      prompt: preset.prompt,
-      image: [...new Uint8Array(bytes)],
-      strength: preset.strength,
-      seed: Math.floor(Math.random() * 999_999),
-    });
+    let aiResponse: any;
+    try {
+      aiResponse = await env.AI.run(MODEL_ID, {
+        prompt: preset.prompt,
+        image: [...new Uint8Array(bytes)],
+        strength: preset.strength,
+        // tu peux rajouter num_steps, etc. si besoin
+      });
+    } catch (e: any) {
+      console.error("[avatar/cartoon] env.AI.run error:", e);
+      throw new Error(e?.message || "AI.run failed");
+    }
 
     if (!aiResponse || !aiResponse.image) {
       return new Response(
-        JSON.stringify({ error: "AI generation failed" }),
+        JSON.stringify({ error: "AI generation failed", details: aiResponse }),
         {
           status: 500,
           headers: {
@@ -194,6 +201,7 @@ export const onRequest = async (context: any): Promise<Response> => {
       }
     );
   } catch (err: any) {
+    console.error("[avatar/cartoon] global error:", err);
     return new Response(
       JSON.stringify({
         error: err?.message ?? "Unknown error",
