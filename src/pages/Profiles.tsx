@@ -390,12 +390,10 @@ function ProfilesMenuView({
   go,
   onSelectMe,
   onSelectLocals,
-  onSelectFriends,
 }: {
   go?: (tab: any, params?: any) => void;
   onSelectMe: () => void;
   onSelectLocals: () => void;
-  onSelectFriends: () => void;
 }) {
   const { theme } = useTheme();
   const { t } = useLang();
@@ -507,7 +505,7 @@ function ProfilesMenuView({
         >
           {t(
             "profiles.menu.subtitle",
-            "Gère ton avatar, ton profil connecté, tes amis et les profils locaux."
+            "Gère ton avatar, ton profil connecté, tes amis, les profils locaux et tes BOTS."
           )}
         </div>
       </div>
@@ -536,7 +534,7 @@ function ProfilesMenuView({
           "profiles.menu.friends.subtitle",
           "Gère tes amis et tes profils en ligne."
         )}
-        onClick={onSelectFriends}
+        onClick={() => go?.("friends")}
       />
 
       <CardBtn
@@ -548,14 +546,15 @@ function ProfilesMenuView({
         onClick={onSelectLocals}
       />
 
+      {/* BOAT / BOTS maintenant actif */}
       <CardBtn
-        title={t("profiles.menu.boat.title", "BOAT")}
+        title={t("profiles.menu.boat.title", "BOTS (CPU)")}
         subtitle={t(
           "profiles.menu.boat.subtitle",
-          "Profils ordinateurs gérés par l’IA (bientôt)."
+          "Crée et gère tes joueurs virtuels contrôlés par l’IA."
         )}
-        badge={t("profiles.menu.boat.badge", "À venir")}
-        disabled
+        badge={t("profiles.menu.boat.badge", "NEW")}
+        onClick={() => go?.("profiles_bots")}
       />
     </div>
   );

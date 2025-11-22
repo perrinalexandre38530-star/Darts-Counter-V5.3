@@ -1,6 +1,7 @@
 // ============================================
 // src/pages/X01Setup.tsx
 // Paramètres X01 (pré-match) + Couronne d’étoiles autour des avatars
+// + Intégration BOTS (dc_bots_v1) dans la liste des joueurs
 // ============================================
 import React from "react";
 import type { Profile } from "../lib/types";
@@ -65,6 +66,43 @@ function saveSettings(s: SavedSettings) {
     localStorage.setItem("settings_x01", JSON.stringify(s));
   } catch {}
 }
+
+// ================= BOTS (dc_bots_v1) =================
+
+type BotLevel = "easy" | "medium" | "strong" | "pro" | "legend";
+
+type Bot = {
+  id: string;
+  name: string;
+  level: BotLevel;
+  avatarSeed: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const LS_BOTS_KEY = "dc_bots_v1";
+
+function loadBots(): Bot[] {
+  try {
+    const raw = localStorage.getItem(LS_BOTS_KEY);
+    return raw ? (JSON.parse(raw) as Bot[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+// On fabrique un "Profile" minimal pour X01 (id + name + avatarDataUrl)
+function botToProfile(bot: Bot): Profile {
+  const fake: Profile = {
+    id: bot.id,
+    name: bot.name,
+    // pas d’avatarDataUrl pour l’instant → fallback "?" visuel
+    avatarDataUrl: null,
+  } as any;
+  return fake;
+}
+
+// ====================================================
 
 // pill(on, disabled?) : style pour les chips
 function pill(on: boolean, disabled = false): React.CSSProperties {
@@ -190,8 +228,16 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
     saved.sfxOn ?? DEFAULT_SETTINGS_X01.sfxOn ?? true
   );
 
-  const [available, setAvailable] = React.useState<Profile[]>(() => profiles.slice());
+  // Joueurs dispo / sélectionnés
+  const [available, setAvailable] = React.useState<Profile[]>([]);
   const [selected, setSelected] = React.useState<Profile[]>([]);
+
+  // Initialisation de available = profils locaux + BOTS
+  React.useEffect(() => {
+    const bots = loadBots();
+    const botProfiles = bots.map(botToProfile);
+    setAvailable([...profiles, ...botProfiles]);
+  }, [profiles]);
 
   // Map des stats pour les rings (disponibles + sélectionnés)
   const avgMap = useAvgMap([...available, ...selected]);
@@ -223,7 +269,7 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
 
   function addPlayer(p: Profile) {
     setAvailable((a) => a.filter((x) => x.id !== p.id));
-    setSelected((s) => [...s, p]);
+    setSelected((s) => [...s, p]); // ✅ aucune limite max
   }
   function removePlayer(p: Profile) {
     setSelected((s) => s.filter((x) => x.id !== p.id));
@@ -581,7 +627,7 @@ export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
           )}
         </div>
 
-        {/* Joueurs disponibles */}
+        {/* Joueurs disponibles (profils locaux + BOTS) */}
         <div style={{ fontWeight: 900, color: "#ffcf57", marginBottom: 8 }}>
           Joueurs disponibles
         </div>

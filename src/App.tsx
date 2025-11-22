@@ -40,6 +40,8 @@ import StatsHub from "./pages/StatsHub";
 import X01End from "./pages/X01End";
 // ✅ Nouvelle page
 import AvatarCreator from "./pages/AvatarCreator";
+// ✅ Nouvelle page : gestion des BOTS (CPU)
+import ProfilesBots from "./pages/ProfilesBots";
 
 // ✅ Pages Training (menu / solo X01 / stats)
 import TrainingMenu from "./pages/TrainingMenu";
@@ -84,6 +86,7 @@ type Tab =
   | "home"
   | "games"
   | "profiles"
+  | "profiles_bots"
   | "friends"
   | "stats"
   | "statsDetail"
@@ -446,6 +449,12 @@ function App() {
             go={go} // ✅ navigation injectée ici
           />
         );
+        break;
+      }
+
+      // ✅ Nouvelle page : gestion des BOTS (CPU)
+      case "profiles_bots": {
+        page = <ProfilesBots store={store} go={go} />;
         break;
       }
 
