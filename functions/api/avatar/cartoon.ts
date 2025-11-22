@@ -1,7 +1,7 @@
 // ===================================================
 // /functions/api/avatar/cartoon.ts
 // IA caricature + cache KV + multi-styles + CORS + QUOTA
-// Cloudflare Pages Functions
+// Cloudflare Pages Functions (Workers AI)
 // ===================================================
 
 type StyleId = "realistic" | "comic" | "flat" | "exaggerated";
@@ -9,46 +9,42 @@ type StyleId = "realistic" | "comic" | "flat" | "exaggerated";
 // --------- Limite quotidienne ---------
 const DAILY_QUOTA_LIMIT = 100;
 
-// --------- Styles IA (prompts + strength) ---------
-const STYLE_PRESETS: Record<StyleId, { prompt: string; strength: number }> = {
+// --------- Styles IA (prompts + strength "logique") ---------
+const STYLE_PRESETS: Record<StyleId, { prompt: string }> = {
   realistic: {
     prompt: `
-      Hand-drawn caricature portrait of the same person.
+      Hand-drawn caricature portrait of a person.
       Style: realistic cartoon, warm colors, thick outlines, visible brush strokes.
       Emphasize expression and humor without distorting identity.
       High quality. Plain dark background. No frame. No text.
     `,
-    strength: 0.65,
   },
   comic: {
     prompt: `
-      Comic-book style caricature portrait of the same person.
+      Comic-book style caricature portrait of a person.
       Bold outlines, halftone shadows, vibrant colors.
       Recognizable face. Plain dark background, no text, no frame.
     `,
-    strength: 0.6,
   },
   flat: {
     prompt: `
-      Vector flat caricature portrait of the same person.
-      Esport mascot style logo, minimal shading, smooth shapes.
+      Vector flat caricature portrait of a person.
+      Esport mascot logo style, minimal shading, smooth shapes.
       Plain background, no text, no frame.
     `,
-    strength: 0.55,
   },
   exaggerated: {
     prompt: `
-      Highly exaggerated caricature portrait of the same person.
-      Oversized facial features, humorous, expressive, but recognizable.
+      Highly exaggerated caricature portrait of a person.
+      Oversized facial features, humorous, expressive, but still recognizable.
       Plain background, no text, no frame.
     `,
-    strength: 0.7,
   },
 };
 
-// --------- Modèle IA (image-to-image) ---------
-// Modèle officiellement listé dans la doc Workers AI
-const MODEL_ID = "@cf/runwayml/stable-diffusion-v1-5-img2img";
+// --------- Modèle IA (texte → image) ---------
+// ⚠ Ici on utilise un modèle qui EXISTE vraiment dans Workers AI.
+const MODEL_ID = "@cf/lykon/dreamshaper-8-lcm";
 
 // --------- CORS ORIGINS AUTORISÉS ---------
 const PAGES_ORIGIN = "https://darts-counter-v5-3.pages.dev";
@@ -93,9 +89,6 @@ export const onRequest = async (context: any): Promise<Response> => {
   const origin = request.headers.get("Origin");
   const corsHeaders = makeCorsHeaders(origin);
 
-  // Petit log pour vérifier que le binding existe bien
-  console.log("[avatar/cartoon] env.AI présent ?", !!env?.AI);
-
   // Préflight CORS
   if (request.method === "OPTIONS") {
     return new Response(null, {
@@ -106,7 +99,6 @@ export const onRequest = async (context: any): Promise<Response> => {
 
   // CORS strict
   if (!isAllowedOrigin(origin)) {
-    console.warn("[avatar/cartoon] CORS blocked for origin:", origin);
     return new Response("CORS blocked", {
       status: 403,
       headers: corsHeaders,
@@ -124,13 +116,13 @@ export const onRequest = async (context: any): Promise<Response> => {
       });
     }
 
+    // Vérif binding Workers AI
     if (!env.AI || typeof env.AI.run !== "function") {
-      console.error(
-        "[avatar/cartoon] Workers AI binding 'AI' absent ou invalide",
-        { hasAI: !!env.AI, type: typeof env.AI }
-      );
       return new Response(
-        JSON.stringify({ error: "Workers AI binding 'AI' not configured." }),
+        JSON.stringify({
+          error:
+            "Workers AI binding 'AI' not configured. Vérifie le nom de liaison dans Cloudflare (doit être 'AI').",
+        }),
         {
           status: 500,
           headers: {
@@ -178,7 +170,6 @@ export const onRequest = async (context: any): Promise<Response> => {
 
       const cached = await env.AVATAR_CACHE.get(cacheKey);
       if (cached) {
-        console.log("[avatar/cartoon] Cache hit", cacheKey);
         // ✅ Résultat déjà généré → pas de quota consommé
         return new Response(
           JSON.stringify({ ok: true, cartoonPng: cached, cached: true }),
@@ -199,14 +190,8 @@ export const onRequest = async (context: any): Promise<Response> => {
       const rawQuota = await env.AVATAR_CACHE.get(quotaKey);
       currentQuota = rawQuota ? parseInt(rawQuota, 10) || 0 : 0;
 
-      console.log("[avatar/cartoon] Quota actuel", { today, currentQuota });
-
       if (currentQuota >= DAILY_QUOTA_LIMIT) {
-        // ❌ Quota dépassé → on NE fait PAS d'appel IA (donc pas de coût)
-        console.warn(
-          "[avatar/cartoon] Quota quotidien dépassé",
-          currentQuota
-        );
+        // ❌ Quota dépassé → pas d'appel IA (donc pas de coût)
         return new Response(
           JSON.stringify({
             ok: false,
@@ -224,71 +209,35 @@ export const onRequest = async (context: any): Promise<Response> => {
           }
         );
       }
-      // Sinon, on laisse passer et on incrémentera après génération IA
+      // Sinon on laissera passer puis on incrémente après génération IA
     }
 
-    // ---------------- IA CLOUDFLARE ----------------
-    const input = {
+    // ---------------- IA CLOUDFLARE (texte → image) ----------------
+    // ⚠ Pour l’instant le modèle ne supporte que prompt texte.
+    // On n'utilise donc pas encore la photo comme source (pas de vrai img2img).
+    const input: any = {
       prompt: preset.prompt,
-      image: [...new Uint8Array(bytes)], // image-to-image : on envoie la photo originale
-      strength: preset.strength, // entre 0 et 1
-      num_steps: 18,
+      // Tu peux tester d'ajouter height/width si tu veux :
+      // height: 512,
+      // width: 512,
     };
-
-    console.log("[avatar/cartoon] Appel IA", { MODEL_ID, styleId });
 
     const aiResult: any = await env.AI.run(MODEL_ID, input);
 
-    // Si jamais Workers AI renvoie un objet d'erreur "propre"
-    if (aiResult && (aiResult.error || aiResult.message)) {
-      console.error("[avatar/cartoon] IA error payload", aiResult);
-      return new Response(
-        JSON.stringify({
-          error: "AI model error",
-          details: aiResult,
-        }),
-        {
-          status: 500,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-    }
-
-    // aiResult peut être un ArrayBuffer ou un objet { image: ArrayBuffer }
+    // aiResult est normalement un ArrayBuffer (PNG)
     let rawBytes: Uint8Array | null = null;
 
     if (aiResult instanceof ArrayBuffer) {
       rawBytes = new Uint8Array(aiResult);
+    } else if (Array.isArray(aiResult)) {
+      rawBytes = new Uint8Array(aiResult as number[]);
     } else if (aiResult && aiResult.image instanceof ArrayBuffer) {
       rawBytes = new Uint8Array(aiResult.image);
-    } else if (Array.isArray(aiResult)) {
-      rawBytes = new Uint8Array(aiResult);
     } else {
-      console.error(
-        "[avatar/cartoon] Réponse IA inattendue",
-        typeof aiResult,
-        aiResult
-      );
-      return new Response(
-        JSON.stringify({
-          error: "Unexpected AI response shape",
-          type: typeof aiResult,
-        }),
-        {
-          status: 500,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      console.error("[avatar/cartoon] Unexpected AI result", aiResult);
     }
 
     if (!rawBytes || rawBytes.length === 0) {
-      console.error("[avatar/cartoon] IA result vide");
       return new Response(
         JSON.stringify({ error: "AI generation failed (empty result)" }),
         {
@@ -312,15 +261,10 @@ export const onRequest = async (context: any): Promise<Response> => {
       });
 
       if (quotaKey) {
-        // +1 sur le quota du jour
         const newQuota = currentQuota + 1;
         await env.AVATAR_CACHE.put(quotaKey, String(newQuota), {
-          // TTL légèrement > 24h, mais la clé inclut la date donc ça reset tout seul
+          // TTL un peu > 24h, mais la date est dans la clé donc ça reset tout seul.
           expirationTtl: 60 * 60 * 48,
-        });
-        console.log("[avatar/cartoon] Quota mis à jour", {
-          quotaKey,
-          newQuota,
         });
       }
     }
@@ -336,7 +280,7 @@ export const onRequest = async (context: any): Promise<Response> => {
       }
     );
   } catch (err: any) {
-    console.error("[avatar/cartoon] Exception", err);
+    console.error("[avatar/cartoon] ERROR", err);
     return new Response(
       JSON.stringify({
         error: err?.message ?? "Unknown error",

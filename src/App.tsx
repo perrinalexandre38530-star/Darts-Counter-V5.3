@@ -36,7 +36,6 @@ import CricketPlay from "./pages/CricketPlay";
 import KillerPlay from "./pages/KillerPlay";
 import ShanghaiPlay from "./pages/ShanghaiPlay";
 import LobbyPick from "./pages/LobbyPick";
-import StatsHub from "./pages/StatsHub";
 import X01End from "./pages/X01End";
 // ✅ Nouvelle page
 import AvatarCreator from "./pages/AvatarCreator";
@@ -54,6 +53,9 @@ import { History } from "./lib/history";
 // ✅ Contexts Thème + Langue
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { LangProvider } from "./contexts/LangContext";
+
+// ✅ Nouveau hub Stats (menu style Home / Games / Profils)
+import StatsShell from "./pages/StatsShell";
 
 // DEV uniquement
 import { installHistoryProbe } from "./dev/devHistoryProbe";
@@ -106,9 +108,11 @@ type Tab =
   // ✅ nouvelle route par onglet
   | "avatar";
 
-// Petit composant pour rediriger "training_stats" vers StatsHub onglet Training
+// Petit composant pour rediriger "training_stats" vers le hub Stats
 function RedirectToStatsTraining({ go }: { go: (tab: Tab, params?: any) => void }) {
   React.useEffect(() => {
+    // Maintenant on passe par le hub StatsShell (menu Stats),
+    // le joueur cliquera sur la carte "TRAINING"
     go("stats", { tab: "training" });
   }, [go]);
   return null;
@@ -429,15 +433,9 @@ function App() {
       console.warn("[App] onlineApi.uploadMatch failed:", e);
     }
 
-    // 6) route UI
+    // 6) route UI → nouveau hub Stats (onglet Historique)
     go("stats", { tab: "history" });
   }
-
-  // Historique enrichi pour l'UI (avatars garantis même pour autosave)
-  const historyForUI = React.useMemo(
-    () => (store.history || []).map((r: any) => withAvatars(r, store.profiles || [])),
-    [store.history, store.profiles]
-  );
 
   // --------------------------------------------
   // Routes
@@ -498,13 +496,9 @@ function App() {
       }
 
       case "stats": {
-        page = (
-          <StatsHub
-            go={go}
-            tab={(routeParams?.tab as any) ?? "history"}
-            memHistory={historyForUI} // <-- avatars toujours présents
-          />
-        );
+        // ✅ Nouveau hub Stats (menu + sous-vues),
+        // StatsHub est maintenant appelé depuis StatsShell (vue TRAINING)
+        page = <StatsShell store={store} go={go} />;
         break;
       }
 
@@ -717,7 +711,7 @@ function App() {
       }
 
       case "training_stats": {
-        // Redirection vers StatsHub onglet "Training"
+        // Redirection vers hub Stats (StatsShell)
         page = <RedirectToStatsTraining go={go} />;
         break;
       }
