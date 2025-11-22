@@ -2,6 +2,7 @@
 // /functions/api/avatar/cartoon.ts
 // IA caricature + cache KV + multi-styles + CORS + QUOTA
 // Cloudflare Pages Functions + Workers AI (img2img)
+// Modèle : SDXL Lightning img2img (Bytedance)
 // ===================================================
 
 type StyleId = "realistic" | "comic" | "flat" | "exaggerated";
@@ -47,7 +48,8 @@ Plain background, no text, no frame.
 };
 
 // --------- Modèle IA (image-to-image) ---------
-const MODEL_ID = "@cf/runwayml/stable-diffusion-v1-5-img2img";
+// ⚠️ Nouveau modèle Lightning img2img compatible
+const MODEL_ID = "@cf/bytedance/stable-diffusion-xl-lightning-img2img";
 
 // --------- CORS ORIGINS AUTORISÉS ---------
 const PAGES_ORIGIN = "https://darts-counter-v5-3.pages.dev";
@@ -119,14 +121,10 @@ export const onRequest = async (context: any): Promise<Response> => {
       });
     }
 
-    // --------- Vérif binding IA ---------
     if (!env.AI || typeof env.AI.run !== "function") {
       return new Response(
         JSON.stringify({
-          ok: false,
-          error: "ai_binding_missing",
-          message:
-            "Workers AI binding 'AI' non configuré. Ajoute un binding AI nommé 'AI' dans les Settings > Bindings du projet Pages.",
+          error: "Workers AI binding 'AI' not configured or not available.",
         }),
         {
           status: 500,
@@ -172,6 +170,7 @@ export const onRequest = async (context: any): Promise<Response> => {
 
       const cached = await env.AVATAR_CACHE.get(cacheKey);
       if (cached) {
+        // ✅ Résultat déjà généré → pas de quota consommé
         return new Response(
           JSON.stringify({
             ok: true,
@@ -190,13 +189,14 @@ export const onRequest = async (context: any): Promise<Response> => {
       }
 
       // 2) Quota journalier
-      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD en UTC
       quotaKey = `quota:${today}`;
 
       const rawQuota = await env.AVATAR_CACHE.get(quotaKey);
       currentQuota = rawQuota ? parseInt(rawQuota, 10) || 0 : 0;
 
       if (currentQuota >= DAILY_QUOTA_LIMIT) {
+        // ❌ Quota dépassé → on NE fait PAS d'appel IA (donc pas de coût)
         return new Response(
           JSON.stringify({
             ok: false,
@@ -214,21 +214,27 @@ export const onRequest = async (context: any): Promise<Response> => {
           }
         );
       }
+      // Sinon, on laisse passer et on incrémentera après génération IA
     }
 
     // ---------------- IA CLOUDFLARE ----------------
     let aiResult: any;
     try {
+      // ⚠️ SDXL Lightning img2img : paramètres adaptés
       const input = {
         prompt: preset.prompt,
-        image: [...new Uint8Array(bytes)], // img2img
+        image: [...new Uint8Array(bytes)], // photo d'origine (déjà compressée côté front)
+        // strength : 0 = proche de la photo, 1 = très stylisé
         strength: preset.strength,
-        num_steps: 20, // ⚠️ doit être <= 20 pour ce modèle
-        guidance: 7.5,
+        // Lightning : très peu d'itérations, 1–8 recommandé
+        steps: 4,
+        // Guidance faible pour éviter les artefacts
+        guidance_scale: 1.0,
       };
 
       aiResult = await env.AI.run(MODEL_ID, input);
     } catch (aiErr: any) {
+      // On renvoie l'erreur IA brute pour comprendre ce qui se passe
       return new Response(
         JSON.stringify({
           ok: false,
@@ -247,31 +253,26 @@ export const onRequest = async (context: any): Promise<Response> => {
 
     // ---------------- Décodage du résultat IA ----------------
     let base64: string | null = null;
-    let binary: Uint8Array | null = null;
 
+    // Cas 1 : Workers AI renvoie directement un ArrayBuffer
     if (aiResult instanceof ArrayBuffer) {
-      binary = new Uint8Array(aiResult);
-    } else if (aiResult instanceof Uint8Array) {
-      binary = aiResult;
-    } else if (
-      aiResult &&
-      typeof aiResult === "object" &&
-      "buffer" in aiResult &&
-      aiResult.buffer instanceof ArrayBuffer
-    ) {
-      binary = new Uint8Array(aiResult.buffer as ArrayBuffer);
-    } else if (aiResult && aiResult.image instanceof ArrayBuffer) {
-      binary = new Uint8Array(aiResult.image);
-    } else if (Array.isArray(aiResult)) {
-      binary = new Uint8Array(aiResult as number[]);
-    } else if (aiResult && typeof aiResult.image_base64 === "string") {
-      base64 = aiResult.image_base64;
-    } else if (aiResult && typeof aiResult.image === "string") {
-      base64 = aiResult.image;
+      base64 = bytesToBase64(new Uint8Array(aiResult));
     }
-
-    if (binary) {
-      base64 = bytesToBase64(binary);
+    // Cas 2 : objet avec propriété .image (ArrayBuffer)
+    else if (aiResult && aiResult.image instanceof ArrayBuffer) {
+      base64 = bytesToBase64(new Uint8Array(aiResult.image));
+    }
+    // Cas 3 : tableau de bytes
+    else if (Array.isArray(aiResult)) {
+      base64 = bytesToBase64(new Uint8Array(aiResult));
+    }
+    // Cas 4 : certains wrappers renvoient { image_base64: "..." }
+    else if (aiResult && typeof aiResult.image_base64 === "string") {
+      base64 = aiResult.image_base64;
+    }
+    // Cas 5 : déjà une string base64
+    else if (aiResult && typeof aiResult.image === "string") {
+      base64 = aiResult.image;
     }
 
     if (!base64) {
@@ -299,13 +300,16 @@ export const onRequest = async (context: any): Promise<Response> => {
 
     // ---------------- STOCKAGE CACHE + MAJ QUOTA ----------------
     if (env.AVATAR_CACHE && cacheKey) {
+      // Cache de l'image pour 30 jours
       await env.AVATAR_CACHE.put(cacheKey, pngDataUrl, {
         expirationTtl: 60 * 60 * 24 * 30, // 30 jours
       });
 
       if (quotaKey) {
+        // +1 sur le quota du jour
         const newQuota = currentQuota + 1;
         await env.AVATAR_CACHE.put(quotaKey, String(newQuota), {
+          // TTL > 24h, mais la clé inclut la date donc ça reset tout seul
           expirationTtl: 60 * 60 * 48,
         });
       }
