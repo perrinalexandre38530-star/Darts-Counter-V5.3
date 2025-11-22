@@ -11,5 +11,10 @@ bindings = [
 tag = "v1"
 new_classes = ["RoomDO"]
 
+# ➕ KV pour le cache des avatars IA
+[[kv_namespaces]]
+binding = "AVATAR_CACHE"
+id = "65729b90e2d44fbe90db28bda837cd63"  # ⬅️ à remplacer par l'ID réel du namespace KV
+
 [vars]
 ALLOW_ORIGINS = "http://localhost:5173,https://ton-domaine.pages.dev"
