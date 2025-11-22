@@ -47,7 +47,7 @@ Plain background, no text, no frame.
 };
 
 // --------- Modèle IA (image-to-image) ---------
-const MODEL_ID = "@cf/runwayml/stable-diffusion-v1-5-img2img";
+const MODEL_ID = "@cf/ton_orga/ton-modele-img2img";
 
 // --------- CORS ORIGINS AUTORISÉS ---------
 const PAGES_ORIGIN = "https://darts-counter-v5-3.pages.dev";

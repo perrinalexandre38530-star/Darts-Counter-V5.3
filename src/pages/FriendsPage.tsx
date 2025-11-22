@@ -9,6 +9,7 @@
 // - Salons online mock : création + join par code
 // - Affiche le DRAPEAU du pays du profil actif (privateInfo.country)
 //   en bas à droite du médaillon, y compris sur mobile
+// - Bouton TEST SUPABASE pour vérifier la connexion à la base
 // ============================================
 
 import React from "react";
@@ -22,6 +23,8 @@ import {
   joinLobbyByCode,
   type OnlineLobby,
 } from "../lib/onlineLobbiesMock";
+
+import { supabase } from "../lib/supabase"; // ✅ test connexion Supabase
 
 /* -------------------------------------------------
    Constantes localStorage
@@ -154,6 +157,30 @@ export default function FriendsPage({ store, update }: Props) {
   }, [user?.nickname]);
 
   const isChecking = status === "checking";
+
+  /* -------------------------------------------------
+      TEST SUPABASE
+  --------------------------------------------------*/
+  async function testSupabase() {
+    console.log("[TEST] Supabase: démarrage…");
+    try {
+      const { data, error } = await supabase
+        .from("profiles_online")
+        .select("*")
+        .limit(1);
+
+      console.log("[TEST] Supabase result:", { data, error });
+
+      alert(
+        error
+          ? "Erreur Supabase (voir console)"
+          : "Connexion Supabase OK (voir console)"
+      );
+    } catch (e) {
+      console.error("[TEST] Supabase: exception", e);
+      alert("Exception lors de l’appel Supabase (voir console)");
+    }
+  }
 
   /* -------------------------------------------------
       Gestion présence locale (set + ping 30s)
@@ -444,6 +471,22 @@ export default function FriendsPage({ store, update }: Props) {
         color: "#f5f5f7",
       }}
     >
+      {/* ✅ Bouton de test Supabase */}
+      <button
+        onClick={testSupabase}
+        style={{
+          marginBottom: 12,
+          padding: "6px 12px",
+          borderRadius: 8,
+          border: "1px solid rgba(255,255,255,0.2)",
+          background: "#222",
+          color: "#fff",
+          fontSize: 12,
+        }}
+      >
+        TEST SUPABASE
+      </button>
+
       <h2
         style={{
           fontSize: 20,
@@ -679,8 +722,8 @@ export default function FriendsPage({ store, update }: Props) {
             Profil online connecté
           </div>
 
-                    {/* Avatar + Nom + Statut */}
-                    <div
+          {/* Avatar + Nom + Statut */}
+          <div
             style={{
               display: "flex",
               alignItems: "center",
@@ -741,7 +784,7 @@ export default function FriendsPage({ store, update }: Props) {
                 <div
                   style={{
                     position: "absolute",
-                    bottom: -6,              // fait dépasser sous le cercle
+                    bottom: -6,
                     left: "50%",
                     transform: "translateX(-50%)",
                     width: 22,
