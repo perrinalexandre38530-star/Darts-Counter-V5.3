@@ -1,10 +1,11 @@
 // ============================================
 // src/lib/onlineApi.ts
 // API Mode Online (auth / profil / matchs / salons)
-// - Utilise un backend si VITE_ONLINE_API_BASE_URL est défini
-// - Sinon fallback en mode MOCK via localStorage
+// - Implémentation directe Supabase (auth + tables)
+// - Garde la même surface d'API que la version mock
 // ============================================
 
+import { supabase } from "./supabase";
 import type {
   UserAuth,
   OnlineProfile,
@@ -12,21 +13,7 @@ import type {
 } from "./onlineTypes";
 
 // --------------------------------------------
-// Config
-// --------------------------------------------
-
-const ONLINE_API_BASE_URL =
-  (import.meta as any).env?.VITE_ONLINE_API_BASE_URL || null;
-
-const USE_MOCK = !ONLINE_API_BASE_URL;
-
-// Clés localStorage pour le mode MOCK
-const LS_AUTH_KEY = "dc_online_auth_v1";
-const LS_MATCHES_KEY = "dc_online_matches_v1";
-const LS_LOBBIES_KEY = "dc_online_lobbies_v1";
-
-// --------------------------------------------
-// Types publics de l'API
+// Types publics de l'API (inchangés)
 // --------------------------------------------
 
 export type AuthSession = {
@@ -38,13 +25,13 @@ export type AuthSession = {
 export type SignupPayload = {
   email?: string;
   nickname: string;
-  password?: string; // optionnel si tu veux passer par magic link plus tard
+  password?: string; // requis pour Supabase
 };
 
 export type LoginPayload = {
   email?: string;
   nickname?: string;
-  password?: string;
+  password?: string; // requis pour Supabase
 };
 
 export type UpdateProfilePayload = Partial<
@@ -101,8 +88,18 @@ export type JoinLobbyPayload = {
 };
 
 // --------------------------------------------
-// Helpers utilitaires (safe parse JSON)
+// Config / helpers locaux
 // --------------------------------------------
+
+// On n'est plus en mode mock : tout passe par Supabase
+const USE_MOCK = false;
+
+// Clé localStorage pour garder la dernière session sérialisée
+const LS_AUTH_KEY = "dc_online_auth_supabase_v1";
+
+function now() {
+  return Date.now();
+}
 
 function safeParse<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
@@ -113,36 +110,13 @@ function safeParse<T>(raw: string | null, fallback: T): T {
   }
 }
 
-function now() {
-  return Date.now();
-}
-
-// --------------------------------------------
-// Helpers MOCK : IDs / Codes / Storage Lobbies
-// --------------------------------------------
-
-function mockGenerateId(prefix: string): string {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(
-    36
-  )}`;
-}
-
-function mockGenerateCode(length = 4): string {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // pas de 0/O/1/I
-  let res = "";
-  for (let i = 0; i < length; i++) {
-    res += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return res;
-}
-
-function mockLoadAuth(): AuthSession | null {
+function loadAuthFromLS(): AuthSession | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(LS_AUTH_KEY);
   return safeParse<AuthSession | null>(raw, null);
 }
 
-function mockSaveAuth(session: AuthSession | null) {
+function saveAuthToLS(session: AuthSession | null) {
   if (typeof window === "undefined") return;
   if (!session) {
     window.localStorage.removeItem(LS_AUTH_KEY);
@@ -151,65 +125,158 @@ function mockSaveAuth(session: AuthSession | null) {
   }
 }
 
-function mockLoadMatches(): OnlineMatch[] {
-  if (typeof window === "undefined") return [];
-  const raw = window.localStorage.getItem(LS_MATCHES_KEY);
-  return safeParse<OnlineMatch[]>(raw, []);
+// --------------------------------------------
+// Mapping Supabase -> types de l'app
+// --------------------------------------------
+
+type SupabaseProfileRow = {
+  id: string;
+  user_id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  country: string | null;
+  bio: string | null;
+  stats: any | null;
+  updated_at: string | null;
+};
+
+function mapProfile(row: SupabaseProfileRow): OnlineProfile {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    displayName: row.display_name ?? "",
+    avatarUrl: row.avatar_url ?? undefined,
+    country: row.country ?? undefined,
+    bio: row.bio ?? "",
+    stats: row.stats ?? {
+      totalMatches: 0,
+      totalLegs: 0,
+      avg3: 0,
+      bestVisit: 0,
+      bestCheckout: 0,
+    },
+    updatedAt: row.updated_at ? Date.parse(row.updated_at) : now(),
+  };
 }
 
-function mockSaveMatches(list: OnlineMatch[]) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(LS_MATCHES_KEY, JSON.stringify(list));
+type SupabaseMatchRow = {
+  id: string;
+  user_id: string;
+  mode: string;
+  payload: any;
+  is_training: boolean | null;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
+function mapMatch(row: SupabaseMatchRow): OnlineMatch {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    mode: row.mode,
+    payload: row.payload,
+    isTraining: row.is_training ?? false,
+    startedAt: row.started_at ? Date.parse(row.started_at) : now(),
+    finishedAt: row.finished_at ? Date.parse(row.finished_at) : now(),
+  };
 }
 
-// --- Lobbies mock ---
+type SupabaseLobbyRow = {
+  id: string;
+  code: string;
+  mode: string;
+  status: string;
+  created_by_user_id: string;
+  created_at: string | null;
+  updated_at: string | null;
+  max_players: number | null;
+  players: LobbyPlayer[] | null;
+  settings: Record<string, any> | null;
+};
 
-function mockLoadLobbies(): OnlineLobby[] {
-  if (typeof window === "undefined") return [];
-  const raw = window.localStorage.getItem(LS_LOBBIES_KEY);
-  return safeParse<OnlineLobby[]>(raw, []);
-}
-
-function mockSaveLobbies(list: OnlineLobby[]) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(LS_LOBBIES_KEY, JSON.stringify(list));
+function mapLobby(row: SupabaseLobbyRow): OnlineLobby {
+  return {
+    id: row.id,
+    code: row.code,
+    mode: row.mode,
+    status: (row.status as LobbyStatus) || "waiting",
+    createdByUserId: row.created_by_user_id,
+    createdAt: row.created_at ? Date.parse(row.created_at) : now(),
+    updatedAt: row.updated_at ? Date.parse(row.updated_at) : now(),
+    maxPlayers: row.max_players ?? 4,
+    players: row.players ?? [],
+    settings: row.settings ?? {},
+  };
 }
 
 // --------------------------------------------
-// Implémentation HTTP (backend réel)
+// Helpers AUTH Supabase
 // --------------------------------------------
 
-async function http<T>(
-  path: string,
-  options: RequestInit & { token?: string } = {}
-): Promise<T> {
-  if (!ONLINE_API_BASE_URL) {
-    throw new Error("ONLINE_API_BASE_URL non configuré");
+async function buildAuthSessionFromSupabase(): Promise<AuthSession | null> {
+  const { data: sessionData, error: sessionError } =
+    await supabase.auth.getSession();
+  if (sessionError) {
+    console.warn("[onlineApi] getSession error", sessionError);
+    return null;
   }
 
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-    ...(options.headers || {}),
+  const session = sessionData.session;
+  const user = session?.user;
+  if (!user) return null;
+
+  const userAuth: UserAuth = {
+    id: user.id,
+    email: user.email ?? undefined,
+    nickname:
+      (user.user_metadata as any)?.nickname ||
+      user.email ||
+      "Player",
+    createdAt: user.created_at
+      ? Date.parse(user.created_at)
+      : now(),
   };
 
-  if (options.token) {
-    (headers as any).Authorization = `Bearer ${options.token}`;
-    delete (options as any).token;
+  // Récupère (ou crée) le profil en ligne
+  const { data: profileRow, error: profileError } = await supabase
+    .from("profiles_online")
+    .select("*")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+
+  let profile: OnlineProfile | null = null;
+
+  if (profileError) {
+    console.warn("[onlineApi] profiles_online select error", profileError);
+  } else if (profileRow) {
+    profile = mapProfile(profileRow as unknown as SupabaseProfileRow);
+  } else {
+    // Pas encore de profil -> on en crée un minimal
+    const { data: created, error: createError } = await supabase
+      .from("profiles_online")
+      .insert({
+        user_id: user.id,
+        display_name: userAuth.nickname,
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      console.warn("[onlineApi] profiles_online insert error", createError);
+    } else {
+      profile = mapProfile(created as unknown as SupabaseProfileRow);
+    }
   }
 
-  const res = await fetch(`${ONLINE_API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  const authSession: AuthSession = {
+    token: session?.access_token ?? "",
+    user: userAuth,
+    profile,
+  };
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `Erreur API (${res.status}) sur ${path} : ${text || res.statusText}`
-    );
-  }
-
-  return (await res.json()) as T;
+  saveAuthToLS(authSession);
+  return authSession;
 }
 
 // --------------------------------------------
@@ -217,123 +284,85 @@ async function http<T>(
 // --------------------------------------------
 
 async function signup(payload: SignupPayload): Promise<AuthSession> {
-  if (USE_MOCK) {
-    // --- MOCK ---
-    const existing = mockLoadAuth();
-    if (existing && existing.user.nickname === payload.nickname) {
-      return existing;
-    }
+  const email = payload.email?.trim();
+  const password = payload.password?.trim();
 
-    const user: UserAuth = {
-      id: mockGenerateId("user"),
-      email: payload.email,
-      nickname: payload.nickname,
-      createdAt: now(),
-    };
-
-    const profile: OnlineProfile = {
-      id: mockGenerateId("profile"),
-      userId: user.id,
-      displayName: payload.nickname,
-      avatarUrl: undefined,
-      country: undefined,
-      bio: "",
-      stats: {
-        totalMatches: 0,
-        totalLegs: 0,
-        avg3: 0,
-        bestVisit: 0,
-        bestCheckout: 0,
-      },
-      updatedAt: now(),
-    };
-
-    const session: AuthSession = {
-      token: mockGenerateId("token"),
-      user,
-      profile,
-    };
-
-    mockSaveAuth(session);
-    return session;
+  if (!email || !password) {
+    throw new Error(
+      "Pour créer un compte online, email et mot de passe sont requis."
+    );
   }
 
-  // --- HTTP réel ---
-  const res = await http<AuthSession>("/auth/signup", {
-    method: "POST",
-    body: JSON.stringify(payload),
+  const nickname = payload.nickname?.trim() || email;
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { nickname },
+    },
   });
-  // Tu peux ici aussi persister le token en local
-  mockSaveAuth(res);
-  return res;
+
+  if (error) {
+    console.error("[onlineApi] signup error", error);
+    throw new Error(error.message);
+  }
+
+  // data.user peut être nul si email de confirmation requis,
+  // mais on va de toute façon reconstruire la session via getSession()
+  const session = await buildAuthSessionFromSupabase();
+  if (!session) {
+    throw new Error(
+      "Compte créé, mais impossible de récupérer la session. Vérifie tes mails si la confirmation est requise."
+    );
+  }
+
+  return session;
 }
 
 async function login(payload: LoginPayload): Promise<AuthSession> {
-  if (USE_MOCK) {
-    // --- MOCK ---
-    const existing = mockLoadAuth();
-    if (existing) return existing;
+  const email = payload.email?.trim();
+  const password = payload.password?.trim();
 
-    // si pas de compte enregistré, on fait comme un signup rapide
-    const nickname =
-      payload.nickname || payload.email || `Player-${Math.floor(Math.random() * 9999)}`;
-    return signup({ nickname, email: payload.email, password: payload.password });
+  if (!email || !password) {
+    throw new Error("Email et mot de passe sont requis pour se connecter.");
   }
 
-  // --- HTTP réel ---
-  const res = await http<AuthSession>("/auth/login", {
-    method: "POST",
-    body: JSON.stringify(payload),
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
   });
-  mockSaveAuth(res);
-  return res;
+
+  if (error) {
+    console.error("[onlineApi] login error", error);
+    throw new Error(error.message);
+  }
+
+  const session = await buildAuthSessionFromSupabase();
+  if (!session) {
+    throw new Error("Impossible de récupérer la session après la connexion.");
+  }
+
+  return session;
 }
 
 async function restoreSession(): Promise<AuthSession | null> {
-  if (USE_MOCK) {
-    return mockLoadAuth();
+  // Tentative rapide depuis localStorage (pour éviter les flashes)
+  const fromLS = loadAuthFromLS();
+  if (fromLS?.user && fromLS.token) {
+    return fromLS;
   }
 
-  // En mode HTTP, on part du token en localStorage
-  const saved = mockLoadAuth();
-  if (!saved?.token) return null;
-
-  try {
-    const res = await http<AuthSession>("/auth/me", {
-      method: "GET",
-      token: saved.token,
-    });
-    const session: AuthSession = {
-      token: saved.token,
-      user: res.user,
-      profile: res.profile,
-    };
-    mockSaveAuth(session);
-    return session;
-  } catch {
-    mockSaveAuth(null);
-    return null;
-  }
+  // Source de vérité : Supabase
+  return await buildAuthSessionFromSupabase();
 }
 
 async function logout(): Promise<void> {
-  if (USE_MOCK) {
-    mockSaveAuth(null);
-    return;
+  const { error } = await supabase.auth.signOut();
+  if (error) {
+    console.warn("[onlineApi] logout error", error);
   }
-
-  const saved = mockLoadAuth();
-  if (saved?.token) {
-    try {
-      await http<void>("/auth/logout", {
-        method: "POST",
-        token: saved.token,
-      });
-    } catch {
-      // on ignore l'erreur côté client
-    }
-  }
-  mockSaveAuth(null);
+  saveAuthToLS(null);
 }
 
 // --------------------------------------------
@@ -343,298 +372,320 @@ async function logout(): Promise<void> {
 async function updateProfile(
   patch: UpdateProfilePayload
 ): Promise<OnlineProfile> {
-  if (USE_MOCK) {
-    const session = mockLoadAuth();
-    if (!session || !session.profile) {
-      throw new Error("Non authentifié (mock)");
-    }
-
-    const updated: OnlineProfile = {
-      ...session.profile,
-      ...patch,
-      stats: {
-        ...session.profile.stats,
-        ...(patch.stats || {}),
-      },
-      updatedAt: now(),
-    };
-
-    const newSession: AuthSession = {
-      ...session,
-      profile: updated,
-    };
-    mockSaveAuth(newSession);
-    return updated;
-  }
-
-  const session = mockLoadAuth();
-  if (!session?.token) {
+  const session = await restoreSession();
+  if (!session?.user) {
     throw new Error("Non authentifié");
   }
 
-  const profile = await http<OnlineProfile>("/profile/update", {
-    method: "POST",
-    token: session.token,
-    body: JSON.stringify(patch),
-  });
+  const userId = session.user.id;
+
+  const { data, error } = await supabase
+    .from("profiles_online")
+    .update({
+      display_name: patch.displayName,
+      avatar_url: patch.avatarUrl,
+      country: patch.country,
+      bio: patch.bio,
+      stats: patch.stats,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("[onlineApi] updateProfile error", error);
+    throw new Error(error.message);
+  }
+
+  const profile = mapProfile(data as unknown as SupabaseProfileRow);
 
   const newSession: AuthSession = {
     ...session,
     profile,
   };
-  mockSaveAuth(newSession);
+  saveAuthToLS(newSession);
+
   return profile;
 }
 
-// ---------- Fonctions publiques : MATCHS ONLINE ----------
+// --------------------------------------------
+// Fonctions publiques : MATCHS ONLINE
+// --------------------------------------------
 
 async function uploadMatch(
   payload: UploadMatchPayload
 ): Promise<OnlineMatch> {
-  if (USE_MOCK) {
-    const session = mockLoadAuth();
-    if (!session) {
-      throw new Error("Non authentifié (mock)");
-    }
-
-    const list = mockLoadMatches();
-    const match: OnlineMatch = {
-      id: mockGenerateId("match"),
-      userId: session.user.id,
-      mode: payload.mode,
-      payload: payload.payload,
-      isTraining: (payload as any).isTraining ?? false,
-      startedAt: payload.startedAt || now(),
-      finishedAt: payload.finishedAt || now(),
-    };
-
-    list.unshift(match);
-    mockSaveMatches(list);
-    return match;
-  }
-
-  const session = mockLoadAuth();
-  if (!session?.token) {
+  const session = await restoreSession();
+  if (!session?.user) {
     throw new Error("Non authentifié");
   }
 
-  const match = await http<OnlineMatch>("/matches/upload", {
-    method: "POST",
-    token: session.token,
-    body: JSON.stringify(payload),
-  });
+  const userId = session.user.id;
+  const started = payload.startedAt ?? now();
+  const finished = payload.finishedAt ?? now();
 
-  // option : garder aussi un cache local
-  const cached = mockLoadMatches();
-  cached.unshift(match);
-  mockSaveMatches(cached);
+  const { data, error } = await supabase
+    .from("live_match_sessions")
+    .insert({
+      user_id: userId,
+      mode: payload.mode,
+      payload: payload.payload,
+      is_training: (payload as any).isTraining ?? false,
+      started_at: new Date(started).toISOString(),
+      finished_at: new Date(finished).toISOString(),
+    })
+    .select()
+    .single();
 
-  return match;
+  if (error) {
+    console.error("[onlineApi] uploadMatch error", error);
+    throw new Error(error.message);
+  }
+
+  return mapMatch(data as unknown as SupabaseMatchRow);
 }
 
 async function listMatches(limit = 50): Promise<OnlineMatch[]> {
-  if (USE_MOCK) {
-    const list = mockLoadMatches();
-    return list.slice(0, limit);
-  }
-
-  const session = mockLoadAuth();
-  if (!session?.token) {
+  const session = await restoreSession();
+  if (!session?.user) {
     throw new Error("Non authentifié");
   }
 
-  const matches = await http<OnlineMatch[]>(
-    `/matches/list?limit=${encodeURIComponent(limit)}`,
-    {
-      method: "GET",
-      token: session.token,
-    }
-  );
+  const userId = session.user.id;
 
-  // option : mettre à jour le cache local
-  mockSaveMatches(matches);
-  return matches;
+  const { data, error } = await supabase
+    .from("live_match_sessions")
+    .select("*")
+    .eq("user_id", userId)
+    .order("finished_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error("[onlineApi] listMatches error", error);
+    throw new Error(error.message);
+  }
+
+  return (data as SupabaseMatchRow[]).map(mapMatch);
 }
 
 // --------------------------------------------
 // Fonctions publiques : SALONS (LOBBIES)
 // --------------------------------------------
 
+function generateCode(length = 4): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // pas de 0/O/1/I
+  let res = "";
+  for (let i = 0; i < length; i++) {
+    res += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return res;
+}
+
 async function createLobby(
   payload: CreateLobbyPayload
 ): Promise<OnlineLobby> {
-  if (USE_MOCK) {
-    const session = mockLoadAuth();
-    if (!session) {
-      throw new Error("Non authentifié (mock)");
-    }
+  const session = await restoreSession();
+  if (!session?.user) {
+    throw new Error("Non authentifié");
+  }
 
-    const list = mockLoadLobbies();
+  const user = session.user;
+  const nowIso = new Date().toISOString();
 
-    // Génère un code unique
-    let code = (payload.code || mockGenerateCode()).toUpperCase();
-    const existingCodes = new Set(list.map((l) => l.code));
-    while (existingCodes.has(code)) {
-      code = mockGenerateCode().toUpperCase();
-    }
+  // Code salon optionnel
+  const code = (payload.code || generateCode()).toUpperCase();
 
-    const nowTs = now();
-    const maxPlayers = payload.maxPlayers && payload.maxPlayers > 0
-      ? payload.maxPlayers
-      : 4;
+  const players: LobbyPlayer[] = [
+    {
+      userId: user.id,
+      nickname: user.nickname,
+      isHost: true,
+      joinedAt: now(),
+      lastSeen: now(),
+    },
+  ];
 
-    const lobby: OnlineLobby = {
-      id: mockGenerateId("lobby"),
+  const { data, error } = await supabase
+    .from("lobbies_online")
+    .insert({
       code,
       mode: payload.mode,
       status: "waiting",
-      createdByUserId: session.user.id,
-      createdAt: nowTs,
-      updatedAt: nowTs,
-      maxPlayers,
-      players: [
-        {
-          userId: session.user.id,
-          nickname: session.user.nickname,
-          isHost: true,
-          joinedAt: nowTs,
-          lastSeen: nowTs,
-        },
-      ],
-      settings: payload.settings || {},
-    };
+      created_by_user_id: user.id,
+      created_at: nowIso,
+      updated_at: nowIso,
+      max_players: payload.maxPlayers ?? 4,
+      players,
+      settings: payload.settings ?? {},
+    })
+    .select()
+    .single();
 
-    list.unshift(lobby);
-    mockSaveLobbies(list);
-    return lobby;
+  if (error) {
+    console.error("[onlineApi] createLobby error", error);
+    throw new Error(error.message);
   }
 
-  const session = mockLoadAuth();
-  if (!session?.token) {
-    throw new Error("Non authentifié");
-  }
-
-  const lobby = await http<OnlineLobby>("/lobbies/create", {
-    method: "POST",
-    token: session.token,
-    body: JSON.stringify(payload),
-  });
-
-  return lobby;
+  return mapLobby(data as unknown as SupabaseLobbyRow);
 }
 
 async function listLobbies(): Promise<OnlineLobby[]> {
-  if (USE_MOCK) {
-    return mockLoadLobbies();
+  const { data, error } = await supabase
+    .from("lobbies_online")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("[onlineApi] listLobbies error", error);
+    throw new Error(error.message);
   }
 
-  const session = mockLoadAuth();
-  if (!session?.token) {
-    throw new Error("Non authentifié");
-  }
-
-  const lobbies = await http<OnlineLobby[]>("/lobbies/list", {
-    method: "GET",
-    token: session.token,
-  });
-
-  return lobbies;
+  return (data as SupabaseLobbyRow[]).map(mapLobby);
 }
 
 async function joinLobby(
   payload: JoinLobbyPayload
 ): Promise<OnlineLobby> {
-  if (USE_MOCK) {
-    const list = mockLoadLobbies();
-    const code = payload.code.trim().toUpperCase();
-
-    const lobby = list.find((l) => l.code === code);
-    if (!lobby) {
-      throw new Error("Salon introuvable (code incorrect).");
-    }
-
-    if (lobby.status !== "waiting") {
-      throw new Error("Ce salon n'est plus disponible.");
-    }
-
-    const already = lobby.players.find((p) => p.userId === payload.userId);
-    const nowTs = now();
-
-    if (already) {
-      already.nickname = payload.nickname;
-      already.lastSeen = nowTs;
-    } else {
-      if (lobby.players.length >= lobby.maxPlayers) {
-        throw new Error("Ce salon est complet.");
-      }
-      lobby.players.push({
-        userId: payload.userId,
-        nickname: payload.nickname,
-        isHost: false,
-        joinedAt: nowTs,
-        lastSeen: nowTs,
-      });
-    }
-
-    lobby.updatedAt = nowTs;
-    mockSaveLobbies(list);
-    return lobby;
-  }
-
-  const session = mockLoadAuth();
-  if (!session?.token) {
+  const session = await restoreSession();
+  if (!session?.user) {
     throw new Error("Non authentifié");
   }
 
-  const lobby = await http<OnlineLobby>("/lobbies/join", {
-    method: "POST",
-    token: session.token,
-    body: JSON.stringify(payload),
-  });
+  const code = payload.code.trim().toUpperCase();
+  const nowTs = now();
+  const nowIso = new Date().toISOString();
 
-  return lobby;
+  // On récupère le lobby par code
+  const { data, error } = await supabase
+    .from("lobbies_online")
+    .select("*")
+    .eq("code", code)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[onlineApi] joinLobby select error", error);
+    throw new Error(error.message);
+  }
+
+  if (!data) {
+    throw new Error("Salon introuvable (code incorrect).");
+  }
+
+  const row = data as SupabaseLobbyRow;
+  const lobby = mapLobby(row);
+
+  if (lobby.status !== "waiting") {
+    throw new Error("Ce salon n'est plus disponible.");
+  }
+
+  const players = [...(lobby.players || [])];
+  const existing = players.find((p) => p.userId === payload.userId);
+
+  if (existing) {
+    existing.nickname = payload.nickname;
+    existing.lastSeen = nowTs;
+  } else {
+    if (players.length >= lobby.maxPlayers) {
+      throw new Error("Ce salon est complet.");
+    }
+    players.push({
+      userId: payload.userId,
+      nickname: payload.nickname,
+      isHost: false,
+      joinedAt: nowTs,
+      lastSeen: nowTs,
+    });
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from("lobbies_online")
+    .update({
+      players,
+      updated_at: nowIso,
+    })
+    .eq("id", lobby.id)
+    .select()
+    .single();
+
+  if (updateError) {
+    console.error("[onlineApi] joinLobby update error", updateError);
+    throw new Error(updateError.message);
+  }
+
+  return mapLobby(updated as unknown as SupabaseLobbyRow);
 }
 
 async function leaveLobby(
   lobbyId: string,
   userId: string
 ): Promise<OnlineLobby | null> {
-  if (USE_MOCK) {
-    const list = mockLoadLobbies();
-    const lobby = list.find((l) => l.id === lobbyId);
-    if (!lobby) return null;
+  const { data, error } = await supabase
+    .from("lobbies_online")
+    .select("*")
+    .eq("id", lobbyId)
+    .maybeSingle();
 
-    const beforeCount = lobby.players.length;
-    lobby.players = lobby.players.filter((p) => p.userId !== userId);
-
-    // Si plus personne -> on marque terminé
-    if (lobby.players.length === 0) {
-      lobby.status = "finished";
-    } else {
-      // Si l'host est parti, on passe l'host au prochain joueur
-      if (!lobby.players.some((p) => p.isHost)) {
-        lobby.players[0].isHost = true;
-      }
-    }
-
-    if (beforeCount !== lobby.players.length) {
-      lobby.updatedAt = now();
-      mockSaveLobbies(list);
-    }
-
-    return lobby;
+  if (error) {
+    console.error("[onlineApi] leaveLobby select error", error);
+    throw new Error(error.message);
   }
 
-  const session = mockLoadAuth();
-  if (!session?.token) {
-    throw new Error("Non authentifié");
+  if (!data) return null;
+
+  const row = data as SupabaseLobbyRow;
+  const lobby = mapLobby(row);
+
+  let players = [...(lobby.players || [])];
+  const beforeCount = players.length;
+
+  players = players.filter((p) => p.userId !== userId);
+
+  if (players.length === 0) {
+    // plus personne -> terminé
+    const { data: updated, error: updateError } = await supabase
+      .from("lobbies_online")
+      .update({
+        players: [],
+        status: "finished",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", lobbyId)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error("[onlineApi] leaveLobby update error", updateError);
+      throw new Error(updateError.message);
+    }
+
+    return mapLobby(updated as unknown as SupabaseLobbyRow);
   }
 
-  const lobby = await http<OnlineLobby | null>("/lobbies/leave", {
-    method: "POST",
-    token: session.token,
-    body: JSON.stringify({ lobbyId, userId }),
-  });
+  // Si l'host est parti, on passe l'host au premier joueur restant
+  if (!players.some((p) => p.isHost)) {
+    players[0].isHost = true;
+  }
+
+  if (beforeCount !== players.length) {
+    const { data: updated, error: updateError } = await supabase
+      .from("lobbies_online")
+      .update({
+        players,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", lobbyId)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error("[onlineApi] leaveLobby update2 error", updateError);
+      throw new Error(updateError.message);
+    }
+
+    return mapLobby(updated as unknown as SupabaseLobbyRow);
+  }
 
   return lobby;
 }
@@ -643,39 +694,26 @@ async function updateLobbyState(
   lobbyId: string,
   patch: Partial<Pick<OnlineLobby, "status" | "settings">>
 ): Promise<OnlineLobby> {
-  if (USE_MOCK) {
-    const list = mockLoadLobbies();
-    const lobby = list.find((l) => l.id === lobbyId);
-    if (!lobby) {
-      throw new Error("Salon introuvable (mock).");
-    }
+  const update: any = {
+    updated_at: new Date().toISOString(),
+  };
 
-    if (patch.status) {
-      lobby.status = patch.status;
-    }
-    if (patch.settings) {
-      lobby.settings = {
-        ...(lobby.settings || {}),
-        ...patch.settings,
-      };
-    }
-    lobby.updatedAt = now();
-    mockSaveLobbies(list);
-    return lobby;
+  if (patch.status) update.status = patch.status;
+  if (patch.settings) update.settings = patch.settings;
+
+  const { data, error } = await supabase
+    .from("lobbies_online")
+    .update(update)
+    .eq("id", lobbyId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("[onlineApi] updateLobbyState error", error);
+    throw new Error(error.message);
   }
 
-  const session = mockLoadAuth();
-  if (!session?.token) {
-    throw new Error("Non authentifié");
-  }
-
-  const lobby = await http<OnlineLobby>("/lobbies/update", {
-    method: "POST",
-    token: session.token,
-    body: JSON.stringify({ lobbyId, patch }),
-  });
-
-  return lobby;
+  return mapLobby(data as unknown as SupabaseLobbyRow);
 }
 
 // --------------------------------------------

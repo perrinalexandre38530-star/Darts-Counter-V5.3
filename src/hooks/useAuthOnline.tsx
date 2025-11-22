@@ -1,200 +1,155 @@
 // ============================================
 // src/hooks/useAuthOnline.tsx
-// Hook + Provider pour le Mode Online
-// - wrappe onlineApi (signup / login / logout / updateProfile / restoreSession)
-// - centralise l'état : status, user, profile, loading
+// Auth Online SIMPLE + 100% compatible MOCK
+// - Pas d’email / pas de mot de passe requis
+// - Pseudo uniquement
+// - Utilise onlineApi (mock ou backend futur)
 // ============================================
 
 import React from "react";
-import type { UserAuth, OnlineProfile } from "../lib/onlineTypes";
 import {
   onlineApi,
   type AuthSession,
-  type SignupPayload,
-  type LoginPayload,
   type UpdateProfilePayload,
 } from "../lib/onlineApi";
+import type { UserAuth, OnlineProfile } from "../lib/onlineTypes";
 
-export type OnlineAuthStatus =
-  | "idle" // pas encore initialisé
-  | "checking" // restoreSession en cours
-  | "signed_out" // pas connecté
-  | "signed_in"; // connecté
+type Status = "checking" | "signed_out" | "signed_in";
 
 export type AuthOnlineContextValue = {
-  status: OnlineAuthStatus;
-  loading: boolean; // true si une action est en cours (login, signup, update...)
+  status: Status;
+  loading: boolean;
   user: UserAuth | null;
   profile: OnlineProfile | null;
-  isMock: boolean; // true si aucun backend (mode localStorage)
-
-  // Actions
-  signup: (payload: SignupPayload) => Promise<void>;
-  login: (payload: LoginPayload) => Promise<void>;
+  isMock: boolean;
+  signup: (p: { nickname: string; email?: string; password?: string }) => Promise<void>;
+  login: (p: { nickname?: string; email?: string; password?: string }) => Promise<void>;
   logout: () => Promise<void>;
-  refresh: () => Promise<void>;
   updateProfile: (patch: UpdateProfilePayload) => Promise<void>;
 };
 
-const AuthOnlineContext = React.createContext<AuthOnlineContextValue | undefined>(
-  undefined
-);
+const AuthOnlineContext = React.createContext<AuthOnlineContextValue | null>(null);
 
 // ============================================
 // Provider
 // ============================================
 
 export function AuthOnlineProvider({ children }: { children: React.ReactNode }) {
-  const [status, setStatus] = React.useState<OnlineAuthStatus>("idle");
+  const [status, setStatus] = React.useState<Status>("checking");
   const [loading, setLoading] = React.useState(false);
-
   const [user, setUser] = React.useState<UserAuth | null>(null);
   const [profile, setProfile] = React.useState<OnlineProfile | null>(null);
 
-  // applique une AuthSession
-  const applySession = React.useCallback((s: AuthSession | null) => {
-    if (s) {
-      setUser(s.user);
-      setProfile(s.profile);
-      setStatus("signed_in");
-    } else {
+  // Applique une session
+  const applySession = React.useCallback((session: AuthSession | null) => {
+    if (!session) {
+      setStatus("signed_out");
       setUser(null);
       setProfile(null);
-      setStatus("signed_out");
+      return;
     }
+    setStatus("signed_in");
+    setUser(session.user);
+    setProfile(session.profile);
   }, []);
 
-  // -------- Initialisation (restoreSession) --------
+  // Restore au chargement
   React.useEffect(() => {
-    let alive = true;
+    let cancelled = false;
 
-    (async () => {
-      setStatus("checking");
-      setLoading(true);
+    async function restore() {
       try {
-        const s = await onlineApi.restoreSession();
-        if (!alive) return;
-        console.log("[online] restoreSession result:", s);
-        applySession(s);
-      } catch (err) {
-        if (!alive) return;
-        console.warn("[online] restoreSession error:", err);
-        applySession(null);
-      } finally {
-        if (!alive) return;
-        setLoading(false);
-        console.log("[online] end restore, status =", status);
+        const session = await onlineApi.restoreSession();
+        if (!cancelled) applySession(session);
+      } catch (e) {
+        console.warn("[authOnline] restore error", e);
+        if (!cancelled) applySession(null);
       }
-    })();
+    }
 
+    restore();
     return () => {
-      alive = false;
+      cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applySession]);
 
-  // -------- Actions publiques --------
+  // SIGNUP (pseudo only)
+  async function signup(params: { nickname: string; email?: string; password?: string }) {
+    const nickname = params.nickname.trim();
+    if (!nickname) throw new Error("Pseudo requis");
 
-  async function signup(payload: SignupPayload): Promise<void> {
     setLoading(true);
     try {
-      const s = await onlineApi.signup(payload);
-      console.log("[online] signup session:", s);
-      applySession(s);
-    } catch (err) {
-      console.warn("[online] signup error:", err);
-      throw err;
+      const session = await onlineApi.signup({ nickname });
+      applySession(session);
     } finally {
       setLoading(false);
     }
   }
 
-  async function login(payload: LoginPayload): Promise<void> {
+  // LOGIN (pseudo only)
+  async function login(params: { nickname?: string; email?: string; password?: string }) {
+    const nickname = params.nickname?.trim();
+    if (!nickname) throw new Error("Pseudo requis");
+
     setLoading(true);
     try {
-      const s = await onlineApi.login(payload);
-      console.log("[online] login session:", s);
-      applySession(s);
-    } catch (err) {
-      console.warn("[online] login error:", err);
-      throw err;
+      const session = await onlineApi.login({ nickname });
+      applySession(session);
     } finally {
       setLoading(false);
     }
   }
 
-  async function logout(): Promise<void> {
+  // LOGOUT
+  async function logout() {
     setLoading(true);
     try {
       await onlineApi.logout();
       applySession(null);
-    } catch (err) {
-      console.warn("[online] logout error:", err);
-      throw err;
     } finally {
       setLoading(false);
     }
   }
 
-  async function refresh(): Promise<void> {
+  // UPDATE PROFILE
+  async function updateProfile(patch: UpdateProfilePayload) {
     setLoading(true);
     try {
-      const s = await onlineApi.restoreSession();
-      console.log("[online] refresh result:", s);
-      applySession(s);
-    } catch (err) {
-      console.warn("[online] refresh error:", err);
-      throw err;
+      const newProfile = await onlineApi.updateProfile(patch);
+      setProfile(newProfile);
     } finally {
       setLoading(false);
     }
   }
-
-  async function updateProfile(patch: UpdateProfilePayload): Promise<void> {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const prof = await onlineApi.updateProfile(patch);
-      console.log("[online] updateProfile result:", prof);
-      setProfile(prof);
-    } catch (err) {
-      console.warn("[online] updateProfile error:", err);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const value: AuthOnlineContextValue = {
-    status,
-    loading,
-    user,
-    profile,
-    isMock: onlineApi.USE_MOCK,
-    signup,
-    login,
-    logout,
-    refresh,
-    updateProfile,
-  };
 
   return (
-    <AuthOnlineContext.Provider value={value}>
+    <AuthOnlineContext.Provider
+      value={{
+        status,
+        loading,
+        user,
+        profile,
+        isMock: onlineApi.USE_MOCK,
+        signup,
+        login,
+        logout,
+        updateProfile,
+      }}
+    >
       {children}
     </AuthOnlineContext.Provider>
   );
 }
 
 // ============================================
-// Hook de consommation
+// Hook
 // ============================================
 
 export function useAuthOnline(): AuthOnlineContextValue {
   const ctx = React.useContext(AuthOnlineContext);
   if (!ctx) {
-    throw new Error(
-      "useAuthOnline doit être utilisé dans un <AuthOnlineProvider>."
-    );
+    throw new Error("useAuthOnline doit être utilisé dans un AuthOnlineProvider.");
   }
   return ctx;
 }
