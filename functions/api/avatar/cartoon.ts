@@ -1,10 +1,13 @@
 // ===================================================
 // /functions/api/avatar/cartoon.ts
-// IA caricature + cache KV + multi-styles + CORS
+// IA caricature + cache KV + multi-styles + CORS + QUOTA
 // Cloudflare Pages Functions
 // ===================================================
 
 type StyleId = "realistic" | "comic" | "flat" | "exaggerated";
+
+// --------- Limite quotidienne ---------
+const DAILY_QUOTA_LIMIT = 100;
 
 // --------- Styles IA (prompts + strength) ---------
 const STYLE_PRESETS: Record<StyleId, { prompt: string; strength: number }> = {
@@ -45,6 +48,7 @@ const STYLE_PRESETS: Record<StyleId, { prompt: string; strength: number }> = {
 
 // --------- Modèle IA (image-to-image) ---------
 const MODEL_ID = "@cf/runwayml/stable-diffusion-v1-5-img2img";
+// Si tu changes de modèle (ex : Dreamshaper), adapte simplement cette ligne.
 
 // --------- CORS ORIGINS AUTORISÉS ---------
 const PAGES_ORIGIN = "https://darts-counter-v5-3.pages.dev";
@@ -154,13 +158,19 @@ export const onRequest = async (context: any): Promise<Response> => {
 
     const bytes = await file.arrayBuffer();
 
-    // ---------------- CACHE KV ----------------
+    // ---------------- CACHE + QUOTA (KV) ----------------
     let cacheKey = "";
+    let quotaKey = "";
+    let currentQuota = 0;
+
     if (env.AVATAR_CACHE) {
+      // 1) Cache par hash de l'image + style
       const hash = await sha256Hex(bytes);
       cacheKey = `avatar:${styleId}:${hash}`;
+
       const cached = await env.AVATAR_CACHE.get(cacheKey);
       if (cached) {
+        // ✅ Résultat déjà généré → pas de quota consommé
         return new Response(
           JSON.stringify({ ok: true, cartoonPng: cached, cached: true }),
           {
@@ -172,6 +182,34 @@ export const onRequest = async (context: any): Promise<Response> => {
           }
         );
       }
+
+      // 2) Quota journalier
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD en UTC
+      quotaKey = `quota:${today}`;
+
+      const rawQuota = await env.AVATAR_CACHE.get(quotaKey);
+      currentQuota = rawQuota ? parseInt(rawQuota, 10) || 0 : 0;
+
+      if (currentQuota >= DAILY_QUOTA_LIMIT) {
+        // ❌ Quota dépassé → on NE fait PAS d'appel IA (donc pas de coût)
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: "daily_quota_reached",
+            message:
+              "Le quota quotidien d’avatars a été atteint. Réessaie demain.",
+            limit: DAILY_QUOTA_LIMIT,
+          }),
+          {
+            status: 429,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+      }
+      // Sinon, on laisse passer et on incrémentera après génération IA
     }
 
     // ---------------- IA CLOUDFLARE ----------------
@@ -212,11 +250,21 @@ export const onRequest = async (context: any): Promise<Response> => {
     const base64 = bytesToBase64(rawBytes);
     const pngDataUrl = `data:image/png;base64,${base64}`;
 
-    // ---------------- STOCKAGE CACHE ----------------
+    // ---------------- STOCKAGE CACHE + MAJ QUOTA ----------------
     if (env.AVATAR_CACHE && cacheKey) {
+      // Cache de l'image pour 30 jours
       await env.AVATAR_CACHE.put(cacheKey, pngDataUrl, {
         expirationTtl: 60 * 60 * 24 * 30, // 30 jours
       });
+
+      if (quotaKey) {
+        // +1 sur le quota du jour
+        const newQuota = currentQuota + 1;
+        await env.AVATAR_CACHE.put(quotaKey, String(newQuota), {
+          // TTL légèrement > 24h, mais la clé inclut la date donc ça reset tout seul
+          expirationTtl: 60 * 60 * 48,
+        });
+      }
     }
 
     return new Response(
