@@ -62,6 +62,36 @@ const CARTOON_STYLES: { id: CartoonStyle; label: string }[] = [
   { id: "exaggerated", label: "Caricature extrême" },
 ];
 
+// -------- Compression / redimensionnement image avant IA --------
+async function downscaleImage(file: File): Promise<File> {
+  const MAX_WIDTH = 512; // ⚠️ plus petit pour passer la limite Workers AI
+  const JPEG_QUALITY = 0.7;
+
+  const bitmap = await createImageBitmap(file);
+
+  let newWidth = bitmap.width;
+  let newHeight = bitmap.height;
+
+  if (bitmap.width > MAX_WIDTH) {
+    const scale = MAX_WIDTH / bitmap.width;
+    newWidth = MAX_WIDTH;
+    newHeight = bitmap.height * scale;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = newWidth;
+  canvas.height = newHeight;
+
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(bitmap, 0, 0, newWidth, newHeight);
+
+  const blob = await new Promise<Blob>((resolve) =>
+    canvas.toBlob((b) => resolve(b!), "image/jpeg", JPEG_QUALITY)
+  );
+
+  return new File([blob], "avatar-small.jpg", { type: "image/jpeg" });
+}
+
 export default function AvatarCreator({
   size = 512,
   overlaySrc, // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -80,10 +110,10 @@ export default function AvatarCreator({
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
 
-  // ➕ nouveau : garder le File brut pour l'envoyer à l'IA
+  // garde le File (compressé) pour l'envoyer à l'IA
   const [rawImage, setRawImage] = React.useState<File | null>(null);
 
-  // ➕ style IA
+  // style IA
   const [cartoonStyle, setCartoonStyle] =
     React.useState<CartoonStyle>("realistic");
 
@@ -103,10 +133,11 @@ export default function AvatarCreator({
   }, [onBack]);
 
   // ---------------- Import photo ----------------
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
-    const maxMb = 6;
+
+    const maxMb = 20; // on laisse large, la compression fait le boulot derrière
     if (f.size > maxMb * 1024 * 1024) {
       setError(
         t(
@@ -118,8 +149,19 @@ export default function AvatarCreator({
     }
     setError(null);
 
-    // ➕ on garde le fichier original pour l'envoyer au backend IA
-    setRawImage(f);
+    // compression → image légère pour l'IA
+    let compressed: File;
+    try {
+      compressed = await downscaleImage(f);
+    } catch (err) {
+      console.warn(
+        "[AvatarCreator] Échec de la compression, utilisation de l'original",
+        err
+      );
+      compressed = f;
+    }
+
+    setRawImage(compressed);
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -132,7 +174,7 @@ export default function AvatarCreator({
         )
       );
     };
-    reader.readAsDataURL(f);
+    reader.readAsDataURL(compressed);
   }
 
   // ---------------- Cartoon IA (backend) + fallback ancien comportement ----------------
@@ -166,7 +208,8 @@ export default function AvatarCreator({
         });
 
         if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
+          const txt = await res.text().catch(() => "");
+          throw new Error(`HTTP ${res.status} ${txt}`);
         }
 
         const data = await res.json();
