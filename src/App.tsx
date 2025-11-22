@@ -3,7 +3,7 @@
 // Fix: "Lancer partie" n'affiche plus la dernière reprise
 // + Intégration pages Training (menu / play / stats)
 // + X01Play V2 en parallèle du X01 actuel
-// + Nouveau hub Stats (menu + sous-vues via StatsHub)
+// + Stats : bouton menu => onglet "Stats joueurs" de StatsHub
 // ============================================
 import React from "react";
 import BottomNav from "./components/BottomNav";
@@ -51,13 +51,12 @@ import TrainingClock from "./pages/TrainingClock";
 // Historique (pour StatsDetail / upsert / get)
 import { History } from "./lib/history";
 
+// ✅ StatsHub (stats joueurs / training / historique…)
+import StatsHub from "./pages/StatsHub";
+
 // ✅ Contexts Thème + Langue
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { LangProvider } from "./contexts/LangContext";
-
-// ✅ Nouveau hub Stats
-import StatsShell from "./pages/StatsShell";
-import StatsHub from "./pages/StatsHub";
 
 // DEV uniquement
 import { installHistoryProbe } from "./dev/devHistoryProbe";
@@ -113,7 +112,7 @@ type Tab =
 // Petit composant pour rediriger "training_stats" vers StatsHub onglet Training
 function RedirectToStatsTraining({ go }: { go: (tab: Tab, params?: any) => void }) {
   React.useEffect(() => {
-    go("stats", { mode: "hub", tab: "training" });
+    go("stats", { tab: "training" });
   }, [go]);
   return null;
 }
@@ -433,8 +432,8 @@ function App() {
       console.warn("[App] onlineApi.uploadMatch failed:", e);
     }
 
-    // 6) route UI → hub Stats, onglet Historique
-    go("stats", { mode: "hub", tab: "history" });
+    // 6) route UI → StatsHub onglet Historique
+    go("stats", { tab: "history" });
   }
 
   // Historique enrichi pour l'UI (avatars garantis)
@@ -478,7 +477,7 @@ function App() {
             store={store}
             update={update}
             setProfiles={setProfiles}
-            go={go} // ✅ navigation injectée ici
+            go={go}
           />
         );
         break;
@@ -496,27 +495,20 @@ function App() {
       }
 
       case "settings": {
-        // ✅ Nouvelle page Settings (thème + langue)
         page = <Settings go={go} />;
         break;
       }
 
       case "stats": {
-        // 👉 2 modes :
-        // - mode "menu" (par défaut) : StatsShell (cartes)
-        // - mode "hub" : StatsHub (onglet précis)
-        const mode = routeParams?.mode || "menu";
-        if (mode === "hub") {
-          page = (
-            <StatsHub
-              go={go}
-              tab={(routeParams?.tab as any) ?? "history"}
-              memHistory={historyForUI}
-            />
-          );
-        } else {
-          page = <StatsShell store={store} go={go} />;
-        }
+        // ✅ Bouton Stats du menu :
+        //    ouvre exclusivement StatsHub onglet "Stats joueurs"
+        page = (
+          <StatsHub
+            go={go}
+            tab={(routeParams?.tab as any) ?? "players"}
+            memHistory={historyForUI}
+          />
+        );
         break;
       }
 
@@ -569,7 +561,7 @@ function App() {
 
           page = (
             <div style={{ padding: 16 }}>
-              <button onClick={() => go("stats", { mode: "hub", tab: "history" })} style={{ marginBottom: 12 }}>
+              <button onClick={() => go("stats", { tab: "history" })} style={{ marginBottom: 12 }}>
                 ← Retour
               </button>
               <h2 style={{ margin: 0 }}>
@@ -582,7 +574,7 @@ function App() {
         } else {
           page = (
             <div style={{ padding: 16 }}>
-              <button onClick={() => go("stats", { mode: "hub", tab: "history" })} style={{ marginBottom: 12 }}>
+              <button onClick={() => go("stats", { tab: "history" })} style={{ marginBottom: 12 }}>
                 ← Retour
               </button>
               {matchId ? "Chargement..." : "Aucune donnée"}
@@ -729,7 +721,7 @@ function App() {
       }
 
       case "training_stats": {
-        // Redirection vers hub Stats (StatsHub onglet Training)
+        // Redirection vers StatsHub onglet "Training"
         page = <RedirectToStatsTraining go={go} />;
         break;
       }
@@ -863,7 +855,17 @@ function App() {
       <div className="container" style={{ paddingBottom: 88 }}>
         {page}
       </div>
-      <BottomNav value={tab as any} onChange={(k: any) => go(k)} />
+      {/* ⬇⬇⬇ PATCH IMPORTANT : Stats du bas = onglet "players" */}
+      <BottomNav
+        value={tab as any}
+        onChange={(k: any) => {
+          if (k === "stats") {
+            go("stats", { tab: "players" });
+          } else {
+            go(k);
+          }
+        }}
+      />
       {/* Bannière de mise à jour PWA */}
       <SWUpdateBanner />
     </>

@@ -1,43 +1,23 @@
 // ===================================================
 // /functions/api/avatar/cartoon.ts
-// IA caricature + quota + cache KV + CORS
-// Modèle Cloudflare : stable-diffusion-xl-base-1.0
+// IA caricature via Replicate + cache KV + QUOTA + CORS
+// - Transforme une photo en cartoon humoristique
+// - Limite à 100 générations / jour (pour éviter les coûts)
+// - Cache par (hash de l'image + style) => pas de quota si déjà fait
 // ===================================================
 
 type StyleId = "realistic" | "comic" | "flat" | "exaggerated";
 
-// --------- QUOTA JOURNALIER ---------
+// --------- Limite quotidienne ---------
 const DAILY_QUOTA_LIMIT = 100;
 
-// --------- STYLE PRESETS ---------
-const STYLE_PRESETS: Record<StyleId, { prompt: string; negative: string }> = {
-  realistic: {
-    prompt: "high quality digital caricature portrait, realistic cartoon, warm colors, clean outlines, expressive face, no frame, no text",
-    negative: "blurry, distorted, watermark, text, logo"
-  },
-  comic: {
-    prompt: "comic book caricature style, bold outlines, halftone shading, vibrant colors, expressive face, no text",
-    negative: "realistic photo, watermark, text"
-  },
-  flat: {
-    prompt: "flat vector esport-mascot style, smooth shading, bold shapes, face centered, no text no frame",
-    negative: "photorealistic, noisy, messy"
-  },
-  exaggerated: {
-    prompt: "highly exaggerated caricature, big facial features, humorous but recognizable, clean background",
-    negative: "ugly, smeared, distorted, watermark"
-  }
-};
-
-// --------- MODELE IA ---------
-const MODEL_ID = "@cf/stabilityai/stable-diffusion-xl-base-1.0";
-
-// --------- ORIGINE CORS ---------
+// --------- CORS ORIGINS AUTORISÉS ---------
 const PAGES_ORIGIN = "https://darts-counter-v5-3.pages.dev";
 
 function isAllowedOrigin(origin: string | null): boolean {
   if (!origin) return false;
   if (origin === PAGES_ORIGIN) return true;
+  // Dev depuis Stackblitz : sous-domaines *.webcontainer.io
   if (origin.endsWith(".webcontainer.io")) return true;
   return false;
 }
@@ -52,7 +32,7 @@ function makeCorsHeaders(origin: string | null): HeadersInit {
   };
 }
 
-// --------- UTILS ---------
+// --------- Utilitaires ---------
 async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(hash)]
@@ -61,38 +41,69 @@ async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
-  let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
 
-// ===================================================
+// Petit helper pour attendre entre 2 polls Replicate
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// -------------- PAGES FUNCTION --------------
 export const onRequest = async (context: any): Promise<Response> => {
   const { request, env } = context;
   const origin = request.headers.get("Origin");
   const corsHeaders = makeCorsHeaders(origin);
 
+  // Préflight CORS
   if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders,
+    });
   }
 
+  // CORS strict
   if (!isAllowedOrigin(origin)) {
-    return new Response("CORS blocked", { status: 403, headers: corsHeaders });
+    return new Response("CORS blocked", {
+      status: 403,
+      headers: corsHeaders,
+    });
   }
 
   try {
     if (request.method !== "POST") {
       return new Response("Only POST allowed", {
         status: 405,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
       });
     }
 
-    if (!env.AI) {
-      return new Response(JSON.stringify({ error: "AI binding missing" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // ---------- Vérif clé Replicate ----------
+    const replicateApiKey = env.REPLICATE_API_KEY as string | undefined;
+    if (!replicateApiKey) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "missing_replicate_key",
+          message:
+            "Variable REPLICATE_API_KEY manquante dans les variables Cloudflare.",
+        }),
+        {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
     }
 
     const form = await request.formData();
@@ -100,92 +111,246 @@ export const onRequest = async (context: any): Promise<Response> => {
     let style = (form.get("style") as string) || "realistic";
 
     if (!file) {
-      return new Response(JSON.stringify({ error: "No image provided" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ ok: false, error: "no_image", message: "No image provided" }),
+        {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
     }
 
-    if (!STYLE_PRESETS[style]) style = "realistic";
-    const preset = STYLE_PRESETS[style as StyleId];
+    if (!["realistic", "comic", "flat", "exaggerated"].includes(style)) {
+      style = "realistic";
+    }
+    const styleId = style as StyleId;
 
-    const bytes = await file.arrayBuffer();
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const base64 = bytesToBase64(bytes);
+    // Data URL utilisée par Replicate (image-to-image)
+    const dataUrl = `data:${file.type || "image/jpeg"};base64,${base64}`;
 
-    // ---------- QUOTA & CACHE ----------
+    // ---------------- CACHE + QUOTA (KV) ----------------
     let cacheKey = "";
     let quotaKey = "";
     let currentQuota = 0;
 
     if (env.AVATAR_CACHE) {
-      const hash = await sha256Hex(bytes);
-      cacheKey = `avatar:${style}:${hash}`;
+      // 1) Cache par hash de l'image + style
+      const hash = await sha256Hex(bytes.buffer);
+      cacheKey = `avatar:${styleId}:${hash}`;
 
       const cached = await env.AVATAR_CACHE.get(cacheKey);
       if (cached) {
-        return new Response(JSON.stringify({ ok: true, cartoonPng: cached, cached: true }), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        // ✅ Résultat déjà généré → pas de quota consommé
+        return new Response(
+          JSON.stringify({ ok: true, cartoonPng: cached, cached: true }),
+          {
+            status: 200,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+            },
+          }
+        );
       }
 
-      const today = new Date().toISOString().slice(0, 10);
+      // 2) Quota journalier
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD en UTC
       quotaKey = `quota:${today}`;
 
-      currentQuota = parseInt((await env.AVATAR_CACHE.get(quotaKey)) || "0");
+      const rawQuota = await env.AVATAR_CACHE.get(quotaKey);
+      currentQuota = rawQuota ? parseInt(rawQuota, 10) || 0 : 0;
 
       if (currentQuota >= DAILY_QUOTA_LIMIT) {
+        // ❌ Quota dépassé → on NE fait PAS d'appel IA (donc pas de coût)
         return new Response(
           JSON.stringify({
             ok: false,
             error: "daily_quota_reached",
+            message:
+              "Le quota quotidien d’avatars IA a été atteint. Réessaie demain.",
             limit: DAILY_QUOTA_LIMIT,
           }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          {
+            status: 429,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+            },
+          }
         );
+      }
+      // Sinon, on laisse passer et on incrémentera après génération IA
+    }
+
+    // ---------------- APPEL REPLICATE ----------------
+    // Modèle : flux-kontext-apps/cartoonify (photo -> cartoon)
+    const apiUrl =
+      "https://api.replicate.com/v1/models/flux-kontext-apps/cartoonify/predictions";
+
+    // Petit prompt différent selon le style, pour influencer le rendu
+    const stylePrompt: Record<StyleId, string> = {
+      realistic:
+        "realistic cartoon caricature portrait, warm colors, smooth shading, thick outlines, same identity, no text, plain background",
+      comic:
+        "comic-book style caricature portrait, bold lines, halftone shadows, vibrant colors, expressive face, same identity, no text, plain background",
+      flat:
+        "flat vector esport mascot portrait, minimal shading, clean shapes, neon colors, thick outline, same identity, no text, plain background",
+      exaggerated:
+        "highly exaggerated cartoon caricature, big facial features, humorous and expressive, same identity, clean background, no text",
+    };
+
+    const body = JSON.stringify({
+      input: {
+        image: dataUrl,
+        prompt: stylePrompt[styleId],
+      },
+    });
+
+    const createRes = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Token ${replicateApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body,
+    });
+
+    if (!createRes.ok) {
+      const txt = await createRes.text().catch(() => "");
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "replicate_request_failed",
+          status: createRes.status,
+          details: txt.slice(0, 500),
+        }),
+        {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
+
+    let prediction: any = await createRes.json();
+
+    // Si le résultat est déjà prêt (cas rare)
+    let status: string = prediction.status;
+    const getUrl: string | undefined = prediction?.urls?.get;
+
+    // Poll si nécessaire
+    let tries = 0;
+    const MAX_TRIES = 20;
+
+    while (
+      (status === "starting" || status === "processing" || status === "queued") &&
+      tries < MAX_TRIES &&
+      getUrl
+    ) {
+      await sleep(1500);
+      const pollRes = await fetch(getUrl, {
+        headers: {
+          Authorization: `Token ${replicateApiKey}`,
+        },
+      });
+      prediction = await pollRes.json();
+      status = prediction.status;
+      tries++;
+    }
+
+    if (status !== "succeeded") {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "replicate_failed",
+          status,
+          details: prediction?.error || null,
+        }),
+        {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
+
+    // Pour cartoonify, output est en général une liste d'URLs d’images
+    const output = prediction.output;
+    let finalUrl: string | null = null;
+
+    if (Array.isArray(output) && output.length > 0 && typeof output[0] === "string") {
+      finalUrl = output[0] as string;
+    } else if (typeof output === "string") {
+      finalUrl = output;
+    }
+
+    if (!finalUrl) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "no_output_image",
+        }),
+        {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
+
+    // Ici, on renvoie l’URL directe. Ton front l’utilise déjà comme src d’image,
+    // donc pas besoin que ce soit un data: URL.
+    const cartoonUrl = finalUrl;
+
+    // ---------------- STOCKAGE CACHE + MAJ QUOTA ----------------
+    if (env.AVATAR_CACHE && cacheKey) {
+      await env.AVATAR_CACHE.put(cacheKey, cartoonUrl, {
+        expirationTtl: 60 * 60 * 24 * 30, // 30 jours
+      });
+
+      if (quotaKey) {
+        const newQuota = currentQuota + 1;
+        await env.AVATAR_CACHE.put(quotaKey, String(newQuota), {
+          expirationTtl: 60 * 60 * 48,
+        });
       }
     }
 
-    // ---------- APPEL IA ----------
-    const aiResult: any = await env.AI.run(MODEL_ID, {
-      prompt: preset.prompt,
-      negative_prompt: preset.negative,
-      image: [...new Uint8Array(bytes)],
-      strength: 0.55,
-      num_steps: 18,
-    });
-
-    let rawBytes: Uint8Array | null = null;
-
-    if (aiResult instanceof ArrayBuffer) rawBytes = new Uint8Array(aiResult);
-    else if (aiResult?.image instanceof ArrayBuffer) rawBytes = new Uint8Array(aiResult.image);
-    else if (Array.isArray(aiResult)) rawBytes = new Uint8Array(aiResult);
-
-    if (!rawBytes) {
-      return new Response(JSON.stringify({ error: "AI error" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const pngDataUrl = "data:image/png;base64," + bytesToBase64(rawBytes);
-
-    // --------- STOCKAGE + QUOTA ----------
-    if (env.AVATAR_CACHE) {
-      await env.AVATAR_CACHE.put(cacheKey, pngDataUrl, { expirationTtl: 3600 * 24 * 30 });
-      await env.AVATAR_CACHE.put(quotaKey, String(currentQuota + 1), {
-        expirationTtl: 3600 * 48,
-      });
-    }
-
     return new Response(
-      JSON.stringify({ ok: true, cartoonPng: pngDataUrl, cached: false }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ ok: true, cartoonPng: cartoonUrl, cached: false }),
+      {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      }
     );
-
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: err?.message || "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "exception",
+        message: err?.message ?? "Unknown error",
+      }),
+      {
+        status: 500,
+        headers: {
+          ...makeCorsHeaders(request.headers.get("Origin")),
+          "Content-Type": "application/json",
+        },
+      }
+    );
   }
 };
