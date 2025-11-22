@@ -14,7 +14,7 @@ import HistoryPage from "./HistoryPage";
 import SparklinePro from "../components/SparklinePro";
 import TrainingRadar from "../components/TrainingRadar";
 import type { Dart as UIDart } from "../lib/types";
-import type { TrainingX01Session } from "../lib/TrainingStore";
+// ❌ supprimé : import type { TrainingX01Session } from "../lib/TrainingStore";
 
 /* ---------- Thème ---------- */
 const T = {
@@ -53,21 +53,6 @@ type SavedMatch = {
   payload?: any;
 };
 
-/** 
- * Onglet principal demandé à StatsHub :
- * - "history"  : Historique
- * - "stats"    : Stats joueurs
- * - "training" : Training
- * - "players"  : alias de "stats" (pour StatsShell)
- */
-type StatsHubMainTab = "history" | "stats" | "training" | "players";
-
-type Props = {
-  go?: (tab: string, params?: any) => void;
-  tab?: StatsHubMainTab;
-  memHistory?: SavedMatch[];
-};
-
 type Props = {
   go?: (tab: string, params?: any) => void;
   tab?: "history" | "stats" | "training";
@@ -85,7 +70,7 @@ const fmtDate = (ts?: number) =>
 
 type TimeRange = "all" | "day" | "week" | "month" | "year";
 
-export type TrainingX01Session = {
+type TrainingX01Session = {
   id: string;
   date: number;
   profileId: string;
@@ -3667,22 +3652,15 @@ function extractX01PlayerStats(rec: SavedMatch, pid: string) {
 /* ---------- Page ---------- */
 export default function StatsHub(props: Props) {
   const go = props.go ?? (() => {});
-
-  // ⚠️ Ici on mappe toutes les valeurs vers les 3 vrais onglets :
-  // - "training"  -> onglet Training
-  // - "history"   -> onglet Historique
-  // - tout le reste ("stats", "players", undefined…) -> onglet Stats joueurs
-  const requestedTab = props.tab;
   const initialTab: "history" | "stats" | "training" =
-    requestedTab === "training"
+    props.tab === "stats"
+      ? "stats"
+      : props.tab === "training"
       ? "training"
-      : requestedTab === "history"
-      ? "history"
-      : "stats";
-
-  const [tab, setTab] = React.useState<"history" | "stats" | "training">(
-    initialTab
-  );
+      : "history";
+  const [tab, setTab] = React.useState<
+    "history" | "stats" | "training"
+  >(initialTab);
 
    // Sous-onglets dans "Stats joueurs" :
   // - "dashboard" = vue générale StatsPlayerDashboard

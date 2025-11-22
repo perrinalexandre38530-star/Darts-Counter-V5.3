@@ -151,6 +151,43 @@ function readStartParams(
 }
 
 /* ---------------------------------------------
+   Helpers commit Fin de manche (compat Legacy/New)
+----------------------------------------------*/
+type LegacyLegResultLite = {
+  legNo: number;
+  winnerId: string | null;
+  finishedAt: number;
+  [k: string]: any;
+};
+
+function isNewLegStats(x: any): x is import("../lib/stats").LegStats {
+  return !!x && typeof x === "object" && Array.isArray(x.players) && !!x.perPlayer;
+}
+function pickWinnerId(res: LegacyLegResultLite | import("../lib/stats").LegStats) {
+  return isNewLegStats(res) ? (res.winnerId ?? null) : (res.winnerId ?? null);
+}
+function pickLegNo(res: LegacyLegResultLite | import("../lib/stats").LegStats) {
+  return isNewLegStats(res) ? res.legNo : res.legNo;
+}
+async function commitFinishedLeg(opts: {
+  result: LegacyLegResultLite | import("../lib/stats").LegStats;
+  resumeId?: string | null;
+  kind?: "x01" | "cricket" | string;
+}) {
+  const { result, resumeId, kind = "x01" } = opts;
+  try { await mergeLegToBasics(result); } catch (e) { console.warn("[statsBridge] mergeLegToBasics failed:", e); }
+  try {
+    const id = resumeId || (crypto.randomUUID?.() ?? String(Date.now()));
+    const winnerId = pickWinnerId(result);
+    const legNo = pickLegNo(result);
+    await History.upsert({
+      id, kind, status: "finished", updatedAt: Date.now(), winnerId,
+      summary: { legNo, winnerId }, payload: result,
+    } as unknown as SavedMatch);
+  } catch (e) { console.warn("[history] upsert failed:", e); }
+}
+
+/* ---------------------------------------------
    Helper local pour fabriquer un MatchRecord
 ----------------------------------------------*/
 function makeX01RecordFromEngineCompat(args: {

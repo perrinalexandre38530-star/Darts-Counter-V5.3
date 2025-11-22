@@ -510,10 +510,13 @@ function App() {
 
       case "statsHub": {
         // 👇 Ouvert depuis StatsShell (ou fin de partie / Training)
+        //    - si on ne précise rien → onglet "Stats joueurs"
+        const initialTab = (routeParams?.tab as any) ?? "stats";
+
         page = (
           <StatsHub
             go={go}
-            tab={(routeParams?.tab as any) ?? "players"}
+            tab={initialTab}
             memHistory={historyForUI}
           />
         );

@@ -47,7 +47,6 @@ Plain background, no text, no frame.
 };
 
 // --------- Modèle IA (image-to-image) ---------
-// ⚠️ Ce modèle EXISTE dans Workers AI et fait du img2img
 const MODEL_ID = "@cf/runwayml/stable-diffusion-v1-5-img2img";
 
 // --------- CORS ORIGINS AUTORISÉS ---------
@@ -111,22 +110,23 @@ export const onRequest = async (context: any): Promise<Response> => {
 
   try {
     if (request.method !== "POST") {
-      return new Response(
-        JSON.stringify({ error: "Only POST allowed" }),
-        {
-          status: 405,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      return new Response(JSON.stringify({ error: "Only POST allowed" }), {
+        status: 405,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      });
     }
 
+    // --------- Vérif binding IA ---------
     if (!env.AI || typeof env.AI.run !== "function") {
       return new Response(
         JSON.stringify({
-          error: "Workers AI binding 'AI' not configured or not available.",
+          ok: false,
+          error: "ai_binding_missing",
+          message:
+            "Workers AI binding 'AI' non configuré. Ajoute un binding AI nommé 'AI' dans les Settings > Bindings du projet Pages.",
         }),
         {
           status: 500,
@@ -143,16 +143,13 @@ export const onRequest = async (context: any): Promise<Response> => {
     let style = (form.get("style") as string) || "realistic";
 
     if (!file) {
-      return new Response(
-        JSON.stringify({ error: "No image provided" }),
-        {
-          status: 400,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      return new Response(JSON.stringify({ error: "No image provided" }), {
+        status: 400,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      });
     }
 
     if (!["realistic", "comic", "flat", "exaggerated"].includes(style)) {
@@ -175,7 +172,6 @@ export const onRequest = async (context: any): Promise<Response> => {
 
       const cached = await env.AVATAR_CACHE.get(cacheKey);
       if (cached) {
-        // ✅ Résultat déjà généré → pas de quota consommé
         return new Response(
           JSON.stringify({
             ok: true,
@@ -194,14 +190,13 @@ export const onRequest = async (context: any): Promise<Response> => {
       }
 
       // 2) Quota journalier
-      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD en UTC
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
       quotaKey = `quota:${today}`;
 
       const rawQuota = await env.AVATAR_CACHE.get(quotaKey);
       currentQuota = rawQuota ? parseInt(rawQuota, 10) || 0 : 0;
 
       if (currentQuota >= DAILY_QUOTA_LIMIT) {
-        // ❌ Quota dépassé → on NE fait PAS d'appel IA (donc pas de coût)
         return new Response(
           JSON.stringify({
             ok: false,
@@ -219,7 +214,6 @@ export const onRequest = async (context: any): Promise<Response> => {
           }
         );
       }
-      // Sinon, on laisse passer et on incrémentera après génération IA
     }
 
     // ---------------- IA CLOUDFLARE ----------------
@@ -227,16 +221,14 @@ export const onRequest = async (context: any): Promise<Response> => {
     try {
       const input = {
         prompt: preset.prompt,
-        // image-to-image : on envoie la photo originale
-        image: [...new Uint8Array(bytes)],
-        strength: preset.strength, // 0..1, plus c'est haut plus ça s'éloigne de la photo
+        image: [...new Uint8Array(bytes)], // img2img
+        strength: preset.strength,
         num_steps: 25,
         guidance: 7.5,
       };
 
       aiResult = await env.AI.run(MODEL_ID, input);
     } catch (aiErr: any) {
-      // On renvoie l'erreur IA brute pour comprendre ce qui se passe
       return new Response(
         JSON.stringify({
           ok: false,
@@ -255,19 +247,33 @@ export const onRequest = async (context: any): Promise<Response> => {
 
     // ---------------- Décodage du résultat IA ----------------
     let base64: string | null = null;
+    let binary: Uint8Array | null = null;
 
+    // Cas les plus probables : Uint8Array / ArrayBuffer / ArrayBufferView
     if (aiResult instanceof ArrayBuffer) {
-      base64 = bytesToBase64(new Uint8Array(aiResult));
+      binary = new Uint8Array(aiResult);
+    } else if (aiResult instanceof Uint8Array) {
+      binary = aiResult;
+    } else if (
+      aiResult &&
+      typeof aiResult === "object" &&
+      "buffer" in aiResult &&
+      aiResult.buffer instanceof ArrayBuffer
+    ) {
+      // Autre ArrayBufferView (ex: DataView)
+      binary = new Uint8Array(aiResult.buffer as ArrayBuffer);
     } else if (aiResult && aiResult.image instanceof ArrayBuffer) {
-      base64 = bytesToBase64(new Uint8Array(aiResult.image));
+      binary = new Uint8Array(aiResult.image);
     } else if (Array.isArray(aiResult)) {
-      base64 = bytesToBase64(new Uint8Array(aiResult));
+      binary = new Uint8Array(aiResult as number[]);
     } else if (aiResult && typeof aiResult.image_base64 === "string") {
-      // Certains wrappers renvoient { image_base64: "..." }
       base64 = aiResult.image_base64;
     } else if (aiResult && typeof aiResult.image === "string") {
-      // Au cas où le modèle renverrait déjà une string base64
       base64 = aiResult.image;
+    }
+
+    if (binary) {
+      base64 = bytesToBase64(binary);
     }
 
     if (!base64) {
@@ -275,7 +281,8 @@ export const onRequest = async (context: any): Promise<Response> => {
         JSON.stringify({
           ok: false,
           error: "empty_result",
-          message: "AI generation failed (empty or unsupported result format).",
+          message:
+            "AI generation failed (empty or unsupported result format).",
           debugType: typeof aiResult,
         }),
         {
@@ -294,16 +301,13 @@ export const onRequest = async (context: any): Promise<Response> => {
 
     // ---------------- STOCKAGE CACHE + MAJ QUOTA ----------------
     if (env.AVATAR_CACHE && cacheKey) {
-      // Cache de l'image pour 30 jours
       await env.AVATAR_CACHE.put(cacheKey, pngDataUrl, {
         expirationTtl: 60 * 60 * 24 * 30, // 30 jours
       });
 
       if (quotaKey) {
-        // +1 sur le quota du jour
         const newQuota = currentQuota + 1;
         await env.AVATAR_CACHE.put(quotaKey, String(newQuota), {
-          // TTL > 24h, mais la clé inclut la date donc ça reset tout seul
           expirationTtl: 60 * 60 * 48,
         });
       }
