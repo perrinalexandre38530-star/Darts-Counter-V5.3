@@ -9,6 +9,7 @@
 import React from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
+import InfoDot from "../components/InfoDot";
 
 type Props = {
   setTab: (tab: any) => void;
@@ -173,7 +174,7 @@ export default function Games({ setTab }: Props) {
           textShadow: `0 0 12px ${theme.primary}66`,
         }}
       >
-        {t("games.title", "ALL GAMES")}
+        {t("games.title", "TOUS LES JEUX")}
       </h1>
 
       <div
@@ -184,7 +185,7 @@ export default function Games({ setTab }: Props) {
           textAlign: "center",
         }}
       >
-        {t("games.subtitle", "Select a game mode")}
+        {t("games.subtitle", "Choisis un mode de jeu")}
       </div>
 
       {/* Cartes de jeux */}
@@ -194,7 +195,7 @@ export default function Games({ setTab }: Props) {
           const subtitle = t(g.subtitleKey, g.subtitleDefault);
           const disabled = !g.enabled;
           const comingSoon = !g.enabled
-            ? t("games.status.comingSoon", "Coming soon")
+            ? t("games.status.comingSoon", "Bientôt disponible")
             : null;
 
           return (
@@ -253,35 +254,22 @@ export default function Games({ setTab }: Props) {
                 )}
               </div>
 
-              {/* Pastille "i" */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setInfoGame(g);
-                }}
+              {/* Pastille "i" harmonisée (InfoDot) */}
+              <div
                 style={{
                   position: "absolute",
                   right: 10,
                   top: "50%",
                   transform: "translateY(-50%)",
-                  width: 30,
-                  height: 30,
-                  borderRadius: "50%",
-                  border: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "rgba(0,0,0,0.9)",
-                  boxShadow: `0 0 10px ${theme.primary}44`,
-                  color: "#FFFFFF",
-                  fontWeight: 800,
-                  fontSize: 15,
-                  cursor: "pointer",
                 }}
               >
-                i
-              </button>
+                <InfoDot
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    setInfoGame(g);
+                  }}
+                />
+              </div>
             </button>
           );
         })}
@@ -346,7 +334,7 @@ export default function Games({ setTab }: Props) {
                   marginBottom: 10,
                 }}
               >
-                {t("games.status.comingSoon", "Coming soon")}
+                {t("games.status.comingSoon", "Bientôt disponible")}
               </div>
             )}
 
@@ -366,7 +354,7 @@ export default function Games({ setTab }: Props) {
                 cursor: "pointer",
               }}
             >
-              {t("games.info.close", "Close")}
+              {t("games.info.close", "Fermer")}
             </button>
           </div>
         </div>

@@ -22,8 +22,8 @@ import { playSound } from "../lib/sound";
 // Historique
 import { History, type SavedMatch } from "../lib/history";
 
-// Pont “stats unifiées”
-import { mergeLegToBasics } from "../lib/statsBridge";
+// Pont “stats unifiées” (optionnel : mergeLegToBasics si dispo)
+import * as StatsBridge from "../lib/statsBridge";
 
 // Stats locales riches
 import * as StatsOnce from "../lib/statsOnce";
@@ -225,7 +225,13 @@ async function commitFinishedLeg(opts: {
   const { result, resumeId, kind = "x01" } = opts;
 
   try {
-    await mergeLegToBasics(result);
+    const fn = (StatsBridge as any).mergeLegToBasics;
+    if (typeof fn === "function") {
+      await fn(result);
+    } else {
+      // Pas de mergeLegToBasics dans statsBridge : on ignore juste
+      // console.warn("[statsBridge] mergeLegToBasics non disponible");
+    }
   } catch (e) {
     console.warn("[statsBridge] mergeLegToBasics failed:", e);
   }

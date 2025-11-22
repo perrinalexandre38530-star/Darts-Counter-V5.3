@@ -10,12 +10,9 @@
 import React from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
+import InfoDot from "../components/InfoDot";
 
-type Tab =
-  | "training"
-  | "training_x01"
-  | "training_clock"
-  | "training_stats";
+type Tab = "training" | "training_x01" | "training_clock" | "training_stats";
 
 type Props = {
   go?: (tab: Tab, params?: any) => void;
@@ -196,35 +193,25 @@ export default function TrainingMenu({ go }: Props) {
                 )}
               </div>
 
-              {/* Pastille "i" */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setInfoMode(m);
-                }}
+              {/* Pastille "i" (InfoDot réutilisé, même style que Games) */}
+              <div
                 style={{
                   position: "absolute",
                   right: 10,
                   top: "50%",
                   transform: "translateY(-50%)",
-                  width: 30,
-                  height: 30,
-                  borderRadius: "50%",
-                  border: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "rgba(0,0,0,0.9)",
-                  boxShadow: `0 0 10px ${theme.primary}44`,
-                  color: "#FFFFFF",
-                  fontWeight: 800,
-                  fontSize: 15,
-                  cursor: "pointer",
                 }}
               >
-                i
-              </button>
+                <InfoDot
+                  size={30}
+                  color="#FFFFFF"
+                  glow={`${theme.primary}55`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setInfoMode(m);
+                  }}
+                />
+              </div>
             </button>
           );
         })}
@@ -295,10 +282,7 @@ export default function TrainingMenu({ go }: Props) {
                 cursor: "pointer",
               }}
             >
-              {t(
-                "training.menu.info.close",
-                t("games.info.close", "Fermer")
-              )}
+              {t("training.menu.info.close", t("games.info.close", "Fermer"))}
             </button>
           </div>
         </div>

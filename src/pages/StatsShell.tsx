@@ -1,11 +1,10 @@
 // ============================================
 // src/pages/StatsShell.tsx
-// Menu STATS (style aligné sur Home / Games)
-// - 4 cartes : Stats joueurs / Training / Online / Historique
-// - Bouton "i" sur chaque carte -> panneau d'info flottant
-// - Halo doux autour des cartes comme le menu Jeux
+// Menu Stats — style identique à Games / Training / Profils
+// - Cartes : Stats joueurs / Training / Online / Historique
+// - Bouton principal : navigation
+// - Bouton "i" : popin d'aide (légère aura animée comme Games)
 // ============================================
-
 import React from "react";
 import type { Store } from "../lib/types";
 import { useTheme } from "../contexts/ThemeContext";
@@ -16,7 +15,7 @@ type Props = {
   go: (tab: any, params?: any) => void;
 };
 
-type InfoKey = "players" | "training" | "online" | "history" | null;
+type InfoMode = "players" | "training" | "online" | "history" | null;
 
 export default function StatsShell({ store, go }: Props) {
   const { theme } = useTheme();
@@ -24,154 +23,202 @@ export default function StatsShell({ store, go }: Props) {
 
   const profiles = store?.profiles ?? [];
   const activeProfileId = store?.activeProfileId ?? null;
-  const active = profiles.find((p) => p.id === activeProfileId) ?? null;
-  const playerName = active?.name || t("stats.shell.noPlayer", "joueur");
+  const active =
+    profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
 
-  const [infoMode, setInfoMode] = React.useState<InfoKey>(null);
+  const [infoMode, setInfoMode] = React.useState<InfoMode>(null);
 
   return (
     <div
       className="stats-shell-page container"
       style={{
         minHeight: "100vh",
-        paddingTop: 18,
-        paddingBottom: 0,
-        paddingInline: 12,
-        background: theme.bg,
-        color: theme.text,
         display: "flex",
         flexDirection: "column",
+        paddingTop: 16,
+        paddingBottom: 0,
         alignItems: "center",
+        background: theme.bg,
+        color: theme.text,
       }}
     >
       <style>{`
         .stats-shell-page {
           --title-min: 26px;
-          --title-ideal: 7.4vw;
+          --title-ideal: 7.6vw;
           --title-max: 38px;
           --card-pad: 14px;
-          --card-radius: 16px;
-          --card-gap: 10px;
-          --subtitle-size: 12.5px;
+          --menu-gap: 10px;
+          --menu-title: 14px;
+          --menu-sub: 12px;
         }
         @media (max-height: 680px), (max-width: 360px) {
           .stats-shell-page {
-            --title-min: 22px;
-            --title-ideal: 7vw;
-            --title-max: 32px;
+            --title-min: 24px;
+            --title-ideal: 6.8vw;
+            --title-max: 34px;
             --card-pad: 12px;
-            --card-radius: 14px;
-            --card-gap: 8px;
-            --subtitle-size: 11.5px;
+            --menu-gap: 8px;
+            --menu-title: 13.5px;
+            --menu-sub: 11px;
+          }
+        }
+
+        /* Bouton "i" avec halo léger (cohérent avec Games) */
+        .stats-shell-info-btn {
+          width: 30px;
+          height: 30px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,.45);
+          background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.18), rgba(0,0,0,0.7));
+          color: #fff;
+          display: grid;
+          place-items: center;
+          font-size: 17px;
+          font-weight: 700;
+          box-shadow:
+            0 0 0 1px rgba(255,255,255,.06),
+            0 0 10px rgba(255,255,255,.22);
+          cursor: pointer;
+          flex-shrink: 0;
+          transition: transform .15s ease, box-shadow .15s ease, background .15s ease, opacity .15s ease;
+          opacity: 0.9;
+          position: relative;
+          overflow: hidden;
+        }
+        .stats-shell-info-btn::before {
+          content: "";
+          position: absolute;
+          inset: -40%;
+          background: radial-gradient(circle, rgba(255,255,255,.22), transparent 65%);
+          opacity: 0.0;
+          transform: scale(0.8);
+          animation: statsInfoGlow 2.4s ease-in-out infinite;
+          pointer-events: none;
+        }
+        .stats-shell-info-btn:hover {
+          transform: translateY(-1px) scale(1.03);
+          box-shadow:
+            0 0 0 1px rgba(255,255,255,.10),
+            0 0 14px rgba(255,255,255,.32);
+          opacity: 1;
+        }
+        .stats-shell-info-btn:active {
+          transform: translateY(0) scale(0.98);
+          box-shadow:
+            0 0 0 1px rgba(255,255,255,.18),
+            0 0 6px rgba(255,255,255,.26);
+        }
+        @keyframes statsInfoGlow {
+          0%, 100% {
+            opacity: 0.05;
+            transform: scale(0.9);
+          }
+          50% {
+            opacity: 0.25;
+            transform: scale(1.05);
           }
         }
       `}</style>
 
-      {/* HEADER */}
+      {/* ===== HEADER ===== */}
       <div
         style={{
           width: "100%",
           maxWidth: 520,
+          paddingInline: 18,
           marginBottom: 16,
+          textAlign: "center",
         }}
       >
         <div
           style={{
-            fontSize: 13,
-            letterSpacing: 1.4,
+            fontWeight: 900,
+            letterSpacing: 0.9,
             textTransform: "uppercase",
-            fontWeight: 700,
-            color: theme.textSoft,
-            marginBottom: 4,
+            color: theme.primary,
+            fontSize:
+              "clamp(var(--title-min), var(--title-ideal), var(--title-max))",
+            textShadow: `0 0 12px ${theme.primary}66`,
+            marginBottom: 6,
           }}
         >
-          STATS
+          {t("statsShell.title", "STATS")}
         </div>
-
-        <h1
+        <div
           style={{
-            fontSize: "clamp(var(--title-min), var(--title-ideal), var(--title-max))",
-            lineHeight: 1.05,
-            margin: "0 0 6px",
-            color: theme.primary,
-            textShadow: `0 6px 18px ${theme.primary}55`,
+            fontSize: 13,
+            lineHeight: 1.35,
+            color: theme.textSoft,
+            maxWidth: 340,
+            margin: "0 auto",
           }}
         >
           {t(
-            "stats.shell.title",
+            "statsShell.subtitle",
             "Analyse tes performances, ton training et ton historique."
           )}
-        </h1>
+        </div>
       </div>
 
-      {/* LISTE DES 4 CARTES */}
+      {/* ===== LISTE CARTES ===== */}
       <div
+        className="stats-shell-list"
         style={{
           width: "100%",
           maxWidth: 520,
           display: "flex",
           flexDirection: "column",
-          gap: "var(--card-gap)",
-          marginBottom: 24,
+          gap: "var(--menu-gap)",
+          paddingInline: 12,
         }}
       >
-        {/* -------- Carte STATS JOUEURS -------- */}
+        {/* STATS JOUEURS */}
         <StatsShellCard
+          title={
+            active
+              ? t("statsShell.players.title", "STATS — ") + (active.name || "")
+              : t("statsShell.players.titleDefault", "STATS JOUEURS")
+          }
           theme={theme}
-          title={t("stats.shell.card.players.title", "STATS — ") + playerName}
-          subtitle={t(
-            "stats.shell.card.players.subtitle",
-            "Vue générale, X01 multi, Cricket, Killer..."
-          )}
           onClick={() => go("statsHub", { tab: "stats" })}
           onInfo={() => setInfoMode("players")}
         />
 
-        {/* -------- Carte TRAINING -------- */}
+        {/* TRAINING */}
         <StatsShellCard
+          title={t("statsShell.training.title", "TRAINING")}
           theme={theme}
-          title={t("stats.shell.card.training.title", "TRAINING")}
-          subtitle={t(
-            "stats.shell.card.training.subtitle",
-            "Stats Training X01 et Tour de l’horloge."
-          )}
           onClick={() => go("statsHub", { tab: "training" })}
           onInfo={() => setInfoMode("training")}
         />
 
-        {/* -------- Carte ONLINE -------- */}
+        {/* ONLINE */}
         <StatsShellCard
+          title={t("statsShell.online.title", "ONLINE")}
           theme={theme}
-          title={t("stats.shell.card.online.title", "ONLINE")}
-          subtitle={t(
-            "stats.shell.card.online.subtitle",
-            "Stats de tes parties Online (bientôt)."
-          )}
-          onClick={() => go("friends", { section: "online_history" })}
+          onClick={() => go("friends", { from: "stats" })}
           onInfo={() => setInfoMode("online")}
         />
 
-        {/* -------- Carte HISTORIQUE -------- */}
+        {/* HISTORIQUE */}
         <StatsShellCard
+          title={t("statsShell.history.title", "HISTORIQUE")}
           theme={theme}
-          title={t("stats.shell.card.history.title", "HISTORIQUE")}
-          subtitle={t(
-            "stats.shell.card.history.subtitle",
-            "Toutes tes parties et la reprise des parties en cours."
-          )}
           onClick={() => go("statsHub", { tab: "history" })}
           onInfo={() => setInfoMode("history")}
         />
       </div>
 
-      {/* Espace bottom-nav */}
-      <div style={{ height: 70 }} />
+      {/* Espace BottomNav */}
+      <div style={{ height: 80 }} />
 
-      {/* PANNEAU D'INFO FLOTTANT */}
+      {/* POPIN INFOS */}
       {infoMode && (
         <InfoOverlay
           mode={infoMode}
-          playerName={playerName}
+          theme={theme}
+          t={t}
           onClose={() => setInfoMode(null)}
         />
       )}
@@ -179,190 +226,163 @@ export default function StatsShell({ store, go }: Props) {
   );
 }
 
-/* --------------------------------------------
-   CARTE UNIQUE (style aligné sur Games / Home)
----------------------------------------------*/
+/* ---------- Carte unique (style = Games) ---------- */
 function StatsShellCard({
-  theme,
   title,
-  subtitle,
+  theme,
   onClick,
   onInfo,
 }: {
-  theme: any;
   title: string;
-  subtitle: string;
+  theme: any;
   onClick?: () => void;
   onInfo?: () => void;
 }) {
   return (
-    <button
-      className="stats-shell-card"
-      onClick={onClick}
+    <div
       style={{
-        width: "100%",
         position: "relative",
-        padding: "var(--card-pad)",
-        paddingRight: 14,
-        borderRadius: "var(--card-radius)",
-        border: `1px solid ${theme.borderSoft}`,
+        borderRadius: 16,
         background: theme.card,
-        textAlign: "left",
-        cursor: "pointer",
-        display: "flex",
-        flexDirection: "column",
-        gap: 4,
-        boxShadow: `
-          0 18px 36px rgba(0,0,0,.55),
-          0 0 22px ${theme.primary}22
-        `,
+        border: `1px solid ${theme.borderSoft}`,
+        boxShadow: "0 16px 32px rgba(0,0,0,.55)",
         overflow: "hidden",
       }}
     >
-      {/* léger voile lumineux en haut à gauche */}
-      <div
-        aria-hidden
+      <button
+        onClick={onClick}
         style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "radial-gradient(circle at 0 0, rgba(255,255,255,.10) 0, transparent 55%)",
-          opacity: 0.9,
-          pointerEvents: "none",
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "var(--card-pad)",
+          paddingRight: 54,
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
         }}
-      />
-
-      {/* contenu réel */}
-      <div style={{ position: "relative", zIndex: 1 }}>
+      >
         <div
           style={{
-            fontSize: 13,
-            fontWeight: 800,
-            letterSpacing: 0.7,
-            textTransform: "uppercase",
-            color: theme.primary,
-            textShadow: `0 0 10px ${theme.primary}55`,
+            display: "flex",
+            flexDirection: "column",
+            gap: 3,
+            textAlign: "left",
           }}
         >
-          {title}
+          <div
+            style={{
+              fontSize: "var(--menu-title)",
+              fontWeight: 900,
+              letterSpacing: 0.6,
+              textTransform: "uppercase",
+              color: theme.primary,
+              textShadow: `0 0 10px ${theme.primary}55`,
+              // 🔥 plus de troncature : on laisse le titre passer sur 2 lignes si besoin
+              whiteSpace: "normal",
+              maxWidth: "100%",
+            }}
+          >
+            {title}
+          </div>
+          {/* plus de sous-titre dans les cartes :
+              toutes les descriptions sont dans la popin du bouton "i"
+          */}
         </div>
-        <div
-          style={{
-            marginTop: 2,
-            fontSize: "var(--subtitle-size)",
-            color: theme.textSoft,
-            maxWidth: "90%",
-          }}
-        >
-          {subtitle}
-        </div>
-      </div>
+      </button>
 
-      {/* Bouton "i" à droite (comme Games) */}
+      {/* Bouton "i" */}
       <button
         type="button"
+        className="stats-shell-info-btn"
         onClick={(e) => {
           e.stopPropagation();
           onInfo?.();
         }}
+        aria-label="Informations"
         style={{
           position: "absolute",
           right: 10,
           top: "50%",
           transform: "translateY(-50%)",
-          width: 26,
-          height: 26,
-          borderRadius: "999px",
-          border: `1px solid ${theme.borderSoft}`,
-          display: "grid",
-          placeItems: "center",
-          background: "rgba(0,0,0,0.75)",
-          color: theme.primary,
-          boxShadow: `0 0 12px ${theme.primary}55`,
-          fontSize: 15,
-          fontWeight: 800,
-          padding: 0,
         }}
       >
         i
       </button>
-    </button>
+    </div>
   );
 }
 
-/* --------------------------------------------
-   OVERLAY D'INFOS
----------------------------------------------*/
+/* ---------- Popin d'aide (même esprit que TrainingMenu) ---------- */
 function InfoOverlay({
   mode,
-  playerName,
+  theme,
+  t,
   onClose,
 }: {
-  mode: InfoKey;
-  playerName: string;
+  mode: InfoMode;
+  theme: any;
+  t: (k: string, f: string) => string;
   onClose: () => void;
 }) {
-  const { theme } = useTheme();
-  const { t } = useLang();
-
   let title = "";
   let body = "";
 
   switch (mode) {
     case "players":
-      title = t("stats.shell.info.players.title", "Stats joueurs");
+      title = t("statsShell.info.players.title", "STATS — Joueurs");
       body = t(
-        "stats.shell.info.players.body",
-        `Vue détaillée des performances de ${playerName} : X01 multi, Cricket, Killer et autres modes. Moyennes, meilleurs scores, taux de victoire et évolution par match.`
+        "statsShell.info.players.body",
+        "Vue générale de tes performances par joueur : moyenne X01, X01 multi, Cricket, Killer et autres modes."
       );
       break;
     case "training":
-      title = t("stats.shell.info.training.title", "Stats Training");
+      title = t("statsShell.info.training.title", "TRAINING");
       body = t(
-        "stats.shell.info.training.body",
-        "Analyse tes sessions Training X01 et Tour de l’horloge : moyennes, hits par segments, progression dans le temps et best sessions."
+        "statsShell.info.training.body",
+        "Accès aux statistiques détaillées de tes sessions Training X01 et du Tour de l’horloge."
       );
       break;
     case "online":
-      title = t("stats.shell.info.online.title", "Stats Online (mock)");
+      title = t("statsShell.info.online.title", "ONLINE");
       body = t(
-        "stats.shell.info.online.body",
-        "Aperçu des futures stats Online : historiques de parties jouées à distance, résultats contre tes amis et résumé des performances réseau."
+        "statsShell.info.online.body",
+        "Historique des parties jouées en mode Online (mock pour l’instant, prêt pour un futur backend)."
       );
       break;
     case "history":
-      title = t("stats.shell.info.history.title", "Historique & reprises");
+      title = t("statsShell.info.history.title", "HISTORIQUE");
       body = t(
-        "stats.shell.info.history.body",
-        "Liste complète de toutes tes parties enregistrées, avec accès rapide aux fiches détaillées et aux parties en cours pour les reprendre."
+        "statsShell.info.history.body",
+        "Liste complète de tes parties locales avec reprise des parties en cours et accès au détail."
       );
       break;
   }
 
   return (
     <div
-      onClick={onClose}
       style={{
         position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.70)",
+        left: 0,
+        right: 0,
+        bottom: 80,
         display: "flex",
-        alignItems: "center",
         justifyContent: "center",
-        padding: 16,
+        pointerEvents: "none",
         zIndex: 999,
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
         style={{
           maxWidth: 420,
-          width: "100%",
+          marginInline: 16,
           borderRadius: 18,
-          padding: 16,
           background: theme.card,
           border: `1px solid ${theme.borderSoft}`,
-          boxShadow: "0 24px 64px rgba(0,0,0,.85)",
+          boxShadow: "0 18px 40px rgba(0,0,0,.85)",
+          padding: 14,
+          pointerEvents: "auto",
         }}
       >
         <div
@@ -372,17 +392,17 @@ function InfoOverlay({
             color: theme.primary,
             marginBottom: 6,
             textTransform: "uppercase",
-            letterSpacing: 0.8,
+            letterSpacing: 0.6,
           }}
         >
           {title}
         </div>
         <div
           style={{
-            fontSize: 13,
-            color: theme.textSoft,
+            fontSize: 12.5,
             lineHeight: 1.4,
-            marginBottom: 12,
+            color: theme.textSoft,
+            marginBottom: 10,
           }}
         >
           {body}
@@ -393,16 +413,16 @@ function InfoOverlay({
             style={{
               borderRadius: 999,
               border: "none",
-              padding: "6px 18px",
+              padding: "6px 16px",
+              fontSize: 12.5,
+              fontWeight: 700,
               background: theme.primary,
               color: "#000",
-              fontWeight: 700,
-              boxShadow: `0 0 14px ${theme.primary}66`,
               cursor: "pointer",
-              fontSize: 13,
+              boxShadow: `0 0 14px ${theme.primary}55`,
             }}
           >
-            {t("common.close", "Fermer")}
+            {t("statsShell.info.close", "Fermer")}
           </button>
         </div>
       </div>

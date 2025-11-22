@@ -1,13 +1,14 @@
 // ============================================
 // src/pages/AvatarCreator.tsx
 // Création d'avatar "Option C" façon CHAPA DARTS
+// OPTION B : IA EXTERNE (OpenArt / autre site)
 // - Médaillon noir + double anneau doré
 // - Texte haut : "DARTS COUNTER" plaqué contre l’anneau intérieur (extérieur)
 // - Texte bas : nom choisi, plaqué contre l’anneau intérieur (extérieur)
-// - Import de photo + zoom dans le médaillon
+// - Import de photo (y compris caricature faite ailleurs) + zoom
 // - Export en PNG (dataURL) via <canvas>
 // - Optionnel : callback onSave pour l’intégrer au profil actif
-// - IA Cloudflare : /api/avatar/cartoon + sélecteur de style
+// - + Bouton pour ouvrir un site externe de caricature (OpenArt)
 // ============================================
 
 import React from "react";
@@ -25,15 +26,6 @@ type Props = {
 const GOLD = "#F6C256";
 const BLACK = "#000000";
 
-// -----------------------------------------------------
-// IA ROUTING : DEV (webcontainer.io) → Cloudflare Pages
-// -----------------------------------------------------
-const AVATAR_IA_URL =
-  typeof window !== "undefined" &&
-  window.location.hostname.includes("webcontainer.io")
-    ? "https://darts-counter-v5-3.pages.dev/api/avatar/cartoon" // ⚠️ Mets ici ton domaine Cloudflare Pages
-    : "/api/avatar/cartoon";
-
 // --- Géométrie du médaillon (calée sur ton modèle) ---
 const R_OUTER = 248; // rayon du grand anneau doré (centre du stroke)
 const R_INNER = 188; // rayon de l’anneau intérieur doré (centre du stroke)
@@ -50,47 +42,7 @@ const TEXT_DY_TOP = -6;
 
 // Texte bas (nom)
 const NAME_RADIUS = R_INNER + 6;
-const TEXT_DY_BOTTOM = 30; // valeur que tu avais trouvée
-
-// -------- Styles IA (pour Cloudflare) --------
-type CartoonStyle = "realistic" | "comic" | "flat" | "exaggerated";
-
-const CARTOON_STYLES: { id: CartoonStyle; label: string }[] = [
-  { id: "realistic", label: "Réalisme caricatural" },
-  { id: "comic", label: "BD humoristique" },
-  { id: "flat", label: "Logo / Esport" },
-  { id: "exaggerated", label: "Caricature extrême" },
-];
-
-// -------- Compression / redimensionnement image avant IA --------
-async function downscaleImage(file: File): Promise<File> {
-  const MAX_WIDTH = 512; // ⚠️ plus petit pour passer la limite Workers AI
-  const JPEG_QUALITY = 0.7;
-
-  const bitmap = await createImageBitmap(file);
-
-  let newWidth = bitmap.width;
-  let newHeight = bitmap.height;
-
-  if (bitmap.width > MAX_WIDTH) {
-    const scale = MAX_WIDTH / bitmap.width;
-    newWidth = MAX_WIDTH;
-    newHeight = bitmap.height * scale;
-  }
-
-  const canvas = document.createElement("canvas");
-  canvas.width = newWidth;
-  canvas.height = newHeight;
-
-  const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(bitmap, 0, 0, newWidth, newHeight);
-
-  const blob = await new Promise<Blob>((resolve) =>
-    canvas.toBlob((b) => resolve(b!), "image/jpeg", JPEG_QUALITY)
-  );
-
-  return new File([blob], "avatar-small.jpg", { type: "image/jpeg" });
-}
+const TEXT_DY_BOTTOM = 40; // valeur que tu avais trouvée
 
 export default function AvatarCreator({
   size = 512,
@@ -104,24 +56,15 @@ export default function AvatarCreator({
 
   const [name, setName] = React.useState(defaultName);
   const [photoUrl, setPhotoUrl] = React.useState<string | null>(null);
-  const [cartoonUrl, setCartoonUrl] = React.useState<string | null>(null);
   const [zoom, setZoom] = React.useState(1.15); // zoom dans le médaillon
   const [status, setStatus] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
 
-  // garde le File (compressé) pour l'envoyer à l'IA
-  const [rawImage, setRawImage] = React.useState<File | null>(null);
-
-  // style IA
-  const [cartoonStyle, setCartoonStyle] =
-    React.useState<CartoonStyle>("realistic");
-
   const svgRef = React.useRef<SVGSVGElement | null>(null);
 
-  const isCartoon = !!cartoonUrl;
-  // Image utilisée dans le médaillon (cartoon si dispo, sinon photo brute)
-  const avatarImage = cartoonUrl || photoUrl || null;
+  // Image utilisée dans le médaillon
+  const avatarImage = photoUrl;
 
   // Back unifié : si onBack fourni (App), on l’utilise, sinon history.back()
   const handleBack = React.useCallback(() => {
@@ -132,12 +75,11 @@ export default function AvatarCreator({
     }
   }, [onBack]);
 
-  // ---------------- Import photo ----------------
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  // ---------------- Import photo (caricature ou non) ----------------
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
-
-    const maxMb = 20; // on laisse large, la compression fait le boulot derrière
+    const maxMb = 8;
     if (f.size > maxMb * 1024 * 1024) {
       setError(
         t(
@@ -149,112 +91,17 @@ export default function AvatarCreator({
     }
     setError(null);
 
-    // compression → image légère pour l'IA
-    let compressed: File;
-    try {
-      compressed = await downscaleImage(f);
-    } catch (err) {
-      console.warn(
-        "[AvatarCreator] Échec de la compression, utilisation de l'original",
-        err
-      );
-      compressed = f;
-    }
-
-    setRawImage(compressed);
-
     const reader = new FileReader();
     reader.onload = () => {
       setPhotoUrl(String(reader.result));
-      setCartoonUrl(null);
       setStatus(
         t(
           "avatar.status.photoLoaded",
-          "Photo importée, ajuste le zoom puis génère la version cartoon."
+          "Image importée, ajuste le zoom puis enregistre ton médaillon."
         )
       );
     };
-    reader.readAsDataURL(compressed);
-  }
-
-  // ---------------- Cartoon IA (backend) + fallback ancien comportement ----------------
-  async function handleCartoonize() {
-    if (!rawImage && !photoUrl) {
-      setError(
-        t("avatar.error.noPhoto", "Commence par importer une photo.")
-      );
-      return;
-    }
-
-    setBusy(true);
-    setError(null);
-    setStatus(
-      t(
-        "avatar.status.cartoonInProgress",
-        "Préparation de l’avatar cartoon (IA)…"
-      )
-    );
-
-    try {
-      if (rawImage) {
-        // Appel au backend Cloudflare IA
-        const form = new FormData();
-        form.append("image", rawImage);
-        form.append("style", cartoonStyle);
-
-        const res = await fetch(AVATAR_IA_URL, {
-          method: "POST",
-          body: form,
-        });
-
-        if (!res.ok) {
-          const txt = await res.text().catch(() => "");
-          throw new Error(`HTTP ${res.status} ${txt}`);
-        }
-
-        const data = await res.json();
-
-        if (data?.cartoonPng) {
-          setCartoonUrl(data.cartoonPng);
-          setStatus(
-            t(
-              "avatar.status.cartoonReady",
-              "Avatar cartoon généré. Tu peux l’enregistrer."
-            )
-          );
-          console.log("[AvatarCreator] Cartoon IA reçu depuis le backend.");
-          return;
-        }
-
-        console.warn("[AvatarCreator] Réponse IA inattendue", data);
-        throw new Error("Réponse IA inattendue");
-      }
-
-      // Si on arrive ici sans rawImage (ou en cas d’erreur data)
-      // on laisse le catch gérer le fallback.
-      throw new Error("Pas d'image brute pour l'IA");
-    } catch (e) {
-      console.warn("[AvatarCreator] Erreur IA, fallback client-side", e);
-      // 🔁 Fallback : ancien comportement — on applique juste ton "cartoon" local
-      if (photoUrl) {
-        setCartoonUrl(photoUrl);
-        setStatus(
-          t(
-            "avatar.status.cartoonReady",
-            "Avatar cartoon prêt (mode secours)."
-          )
-        );
-      } else {
-        setError(
-          t(
-            "avatar.error.cartoonFailed",
-            "Impossible de générer la version cartoon pour le moment."
-          )
-        );
-      }
-    } finally {
-      setBusy(false);
-    }
+    reader.readAsDataURL(f);
   }
 
   // ---------------- Export SVG -> PNG ----------------
@@ -263,7 +110,7 @@ export default function AvatarCreator({
       setError(
         t(
           "avatar.error.noAvatar",
-          "Importe une photo puis génère l’avatar avant d’enregistrer."
+          "Importe d’abord une image (caricature ou photo) avant d’enregistrer."
         )
       );
       return;
@@ -272,6 +119,7 @@ export default function AvatarCreator({
     if (!svg) return;
 
     try {
+      setBusy(true);
       const serializer = new XMLSerializer();
       const svgStr = serializer.serializeToString(svg);
       const svgBlob = new Blob([svgStr], {
@@ -333,6 +181,8 @@ export default function AvatarCreator({
           "Impossible d’enregistrer l’avatar pour le moment."
         )
       );
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -340,6 +190,15 @@ export default function AvatarCreator({
 
   // Calcul taille de l’image dans le clip (zoom)
   const avatarImgSize = R_AVATAR * 2 * zoom;
+
+  // URL externe vers un outil de caricature (OpenArt ou équivalent)
+  // 👉 À PERSONNALISER avec la page exacte que tu préfères
+  const OPEN_ART_URL =
+    "https://openart.ai/create"; // par ex. page de création (remplace par l'URL de ton preset caricature)
+
+  function openOpenArt() {
+    window.open(OPEN_ART_URL, "_blank", "noopener,noreferrer");
+  }
 
   return (
     <div
@@ -390,49 +249,69 @@ export default function AvatarCreator({
         }}
       >
         {t(
-          "avatar.subtitle",
-          "Importe une photo, recadre-la dans le médaillon Darts Counter puis applique un effet cartoon."
+          "avatar.subtitle.optionB",
+          "Génère d’abord une caricature cartoon avec un site externe, puis importe-la dans le médaillon Darts Counter."
         )}
       </p>
 
-      {/* Sélecteur de style IA */}
+      {/* Étape 1 : lien vers l’outil de caricature externe */}
       <div
         style={{
-          marginBottom: 10,
-          fontSize: 11,
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 6,
+          marginBottom: 14,
+          padding: 10,
+          borderRadius: 16,
+          background:
+            "linear-gradient(135deg, rgba(157,89,255,0.25), rgba(22,16,48,0.9))",
+          border: "1px solid rgba(255,255,255,0.18)",
+          boxShadow: "0 12px 26px rgba(0,0,0,0.65)",
+          fontSize: 12,
         }}
       >
-        <span style={{ color: theme.textSoft, marginRight: 6 }}>
-          {t("avatar.label.style", "Style de caricature IA :")}
-        </span>
-        {CARTOON_STYLES.map((opt) => (
-          <button
-            key={opt.id}
-            type="button"
-            onClick={() => setCartoonStyle(opt.id)}
-            style={{
-              fontSize: 11,
-              padding: "3px 8px",
-              borderRadius: 999,
-              border:
-                cartoonStyle === opt.id
-                  ? `1px solid ${primary}`
-                  : `1px solid ${theme.borderSoft}`,
-              background:
-                cartoonStyle === opt.id
-                  ? "rgba(255,255,255,0.08)"
-                  : "transparent",
-              color: cartoonStyle === opt.id ? primary : theme.textSoft,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {opt.label}
-          </button>
-        ))}
+        <div
+          style={{
+            fontWeight: 700,
+            marginBottom: 4,
+            textTransform: "uppercase",
+            letterSpacing: 0.8,
+          }}
+        >
+          {t("avatar.step1.title", "Étape 1 — Crée ta caricature")}
+        </div>
+        <div style={{ opacity: 0.85, marginBottom: 8 }}>
+          {t(
+            "avatar.step1.text",
+            "Clique sur le bouton ci-dessous pour ouvrir un site externe (OpenArt ou autre) qui transforme ta photo en caricature cartoon humoristique. Télécharge ensuite l’image générée sur ton appareil."
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={openOpenArt}
+          style={{
+            borderRadius: 999,
+            padding: "8px 14px",
+            fontSize: 12,
+            fontWeight: 700,
+            border: "none",
+            cursor: "pointer",
+            background:
+              "linear-gradient(135deg, #B06CFF, #7C3AED, #4C1D95)",
+            color: "#FFF",
+          }}
+        >
+          🎨 {t("avatar.step1.btn", "Ouvrir l’atelier caricature (OpenArt)")}
+        </button>
+        <div
+          style={{
+            marginTop: 6,
+            opacity: 0.75,
+            fontSize: 11,
+          }}
+        >
+          {t(
+            "avatar.step1.help",
+            "Une fois ta caricature téléchargée, reviens ici et importe-la comme image de départ."
+          )}
+        </div>
       </div>
 
       <div
@@ -477,32 +356,6 @@ export default function AvatarCreator({
                 <clipPath id="avatarClip">
                   <circle r={R_AVATAR} cx={0} cy={0} />
                 </clipPath>
-
-                {/* Filtre CARTOON pour le mode IA (placeholder / renfort) */}
-                <filter id="cartoonFilter">
-                  <feColorMatrix
-                    type="matrix"
-                    values="
-                      1.2 0   0   0 -0.1
-                      0   1.2 0   0 -0.1
-                      0   0   1.2 0 -0.1
-                      0   0   0   1  0
-                    "
-                  />
-                  <feGaussianBlur stdDeviation="1.2" result="blur" />
-                  <feColorMatrix
-                    in="blur"
-                    type="matrix"
-                    values="
-                      -1  -1  -1  0  1
-                      -1  -1  -1  0  1
-                      -1  -1  -1  0  1
-                      0   0   0   1  0
-                    "
-                    result="edges"
-                  />
-                  <feBlend in="SourceGraphic" in2="edges" mode="multiply" />
-                </filter>
               </defs>
 
               {/* Fond noir global */}
@@ -537,42 +390,25 @@ export default function AvatarCreator({
                     width={avatarImgSize}
                     height={avatarImgSize}
                     preserveAspectRatio="xMidYMid slice"
-                    filter={isCartoon ? "url(#cartoonFilter)" : undefined}
                   />
                 </g>
               ) : (
                 <g clipPath="url(#avatarClip)">
-                  {/* Placeholder cartoon simple */}
+                  {/* Placeholder simple si rien n’est importé */}
                   <circle r={R_AVATAR} fill="#22232b" />
-                  <circle r={R_AVATAR * 0.7} fill="#f0c27b" />
-                  <circle
-                    r={R_AVATAR * 0.55}
-                    cy={R_AVATAR * 0.05}
-                    fill="#f7d29b"
-                  />
-                  <circle
-                    cx={-R_AVATAR * 0.25}
-                    cy={-R_AVATAR * 0.2}
-                    r={R_AVATAR * 0.08}
-                    fill="#2b1c12"
-                  />
-                  <circle
-                    cx={R_AVATAR * 0.25}
-                    cy={-R_AVATAR * 0.2}
-                    r={R_AVATAR * 0.08}
-                    fill="#2b1c12"
-                  />
-                  <path
-                    d={`
-                      M ${-R_AVATAR * 0.3} ${R_AVATAR * 0.18}
-                      Q 0 ${R_AVATAR * 0.35}
-                        ${R_AVATAR * 0.3} ${R_AVATAR * 0.18}
-                    `}
-                    fill="none"
-                    stroke="#c66b2b"
-                    strokeWidth={R_AVATAR * 0.08}
-                    strokeLinecap="round"
-                  />
+                  <text
+                    x={0}
+                    y={6}
+                    textAnchor="middle"
+                    fontFamily="'Montserrat','system-ui',sans-serif"
+                    fontSize={16}
+                    fill="#999"
+                  >
+                    {t(
+                      "avatar.placeholder.noImage",
+                      "Importe ici ta caricature"
+                    )}
+                  </text>
                 </g>
               )}
 
@@ -625,33 +461,6 @@ export default function AvatarCreator({
                   {(name || "PLAYER").toUpperCase()}
                 </textPath>
               </text>
-
-              {/* Petit badge "IA" quand le cartoon est actif */}
-              {isCartoon && (
-                <g transform="translate(150,-190)">
-                  <rect
-                    x={-36}
-                    y={-14}
-                    width={72}
-                    height={28}
-                    rx={14}
-                    fill="rgba(0,0,0,0.75)"
-                    stroke={GOLD}
-                    strokeWidth={2}
-                  />
-                  <text
-                    x={0}
-                    y={6}
-                    textAnchor="middle"
-                    fontFamily="'Montserrat','system-ui',sans-serif"
-                    fontSize={16}
-                    fontWeight={800}
-                    fill={GOLD}
-                  >
-                    IA
-                  </text>
-                </g>
-              )}
             </svg>
           </div>
         </div>
@@ -726,7 +535,7 @@ export default function AvatarCreator({
             </span>
           </div>
 
-          {/* Import photo */}
+          {/* Import photo (caricature faite ailleurs) */}
           <div
             style={{
               display: "flex",
@@ -737,7 +546,10 @@ export default function AvatarCreator({
             }}
           >
             <span style={{ color: theme.textSoft }}>
-              {t("avatar.label.photo", "Photo de départ")}
+              {t(
+                "avatar.label.photo",
+                "Image de départ (caricature ou photo)"
+              )}
             </span>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <label
@@ -748,7 +560,7 @@ export default function AvatarCreator({
                   paddingInline: 12,
                 }}
               >
-                {t("avatar.btn.import", "Importer une photo")}
+                {t("avatar.btn.import", "Importer une image")}
                 <input
                   type="file"
                   accept="image/*"
@@ -762,12 +574,11 @@ export default function AvatarCreator({
                   type="button"
                   onClick={() => {
                     setPhotoUrl(null);
-                    setCartoonUrl(null);
-                    setRawImage(null);
                     setStatus(null);
+                    setError(null);
                   }}
                 >
-                  {t("avatar.btn.clear", "Effacer la photo")}
+                  {t("avatar.btn.clear", "Effacer l’image")}
                 </button>
               )}
             </div>
@@ -777,58 +588,9 @@ export default function AvatarCreator({
             >
               {t(
                 "avatar.help.photo",
-                "Utilise une photo bien centrée sur le visage, de préférence en bonne lumière."
+                "Utilise de préférence une caricature déjà générée (OpenArt, autre site), ou une photo bien centrée."
               )}
             </span>
-          </div>
-
-          {/* Bouton IA */}
-          <div style={{ marginTop: 6 }}>
-            <button
-              className="btn primary sm"
-              type="button"
-              disabled={busy || (!rawImage && !photoUrl)}
-              onClick={handleCartoonize}
-              style={{
-                width: "100%",
-                borderRadius: 999,
-                fontWeight: 800,
-                background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
-                color: "#000",
-              }}
-            >
-              {busy
-                ? t("avatar.btn.cartoonBusy", "Génération cartoon…")
-                : t("avatar.btn.cartoon", "Appliquer l’effet cartoon (IA)")}
-            </button>
-            <div
-              className="subtitle"
-              style={{ fontSize: 11, marginTop: 4, color: theme.textSoft }}
-            >
-              {t(
-                "avatar.help.cartoon",
-                "L’IA génère une caricature cartoon à partir de ta photo. En cas de problème, un filtre cartoon local est utilisé en secours."
-              )}
-            </div>
-          </div>
-
-          {/* Indicateur IA très clair */}
-          <div
-            style={{
-              fontSize: 11,
-              marginTop: 4,
-              color: isCartoon ? "#8fe6aa" : theme.textSoft,
-            }}
-          >
-            {isCartoon
-              ? t(
-                  "avatar.info.cartoonOn",
-                  "Effet cartoon ACTIF sur le médaillon."
-                )
-              : t(
-                  "avatar.info.cartoonOff",
-                  "Effet cartoon inactif. Clique sur le bouton IA après avoir importé ta photo."
-                )}
           </div>
 
           {/* Messages statut / erreurs */}
@@ -866,9 +628,12 @@ export default function AvatarCreator({
                 width: "100%",
                 borderRadius: 999,
                 fontWeight: 800,
+                opacity: busy ? 0.75 : 1,
               }}
             >
-              {t("avatar.btn.save", "Enregistrer l’avatar")}
+              {busy
+                ? t("avatar.btn.saving", "Génération du PNG…")
+                : t("avatar.btn.save", "Enregistrer l’avatar")}
             </button>
             <div
               className="subtitle"
