@@ -1,90 +1,66 @@
-// ===============================================
+// ===================================================
 // /functions/api/avatar/test.ts
-// Petit endpoint de DEBUG Workers AI
-// - Appelle le même MODEL_ID que cartoon.ts
-// - Renvoie le type de résultat + quelques clés
-// ===============================================
+// Endpoint de test Workers AI (img2img)
+// - NE SERT QUE POUR LE DEBUG
+// - Génère une image à partir d'un petit carré neutre
+// ===================================================
 
-export interface Env {
-  AI: any;
-}
-
-// ⚠️ DOIT ÊTRE IDENTIQUE à celui de cartoon.ts
-// Exemple : "@cf/runwayml/stable-diffusion-v1-5-img2img"
 const MODEL_ID = "@cf/runwayml/stable-diffusion-v1-5-img2img";
 
-function toJson(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body, null, 2), {
+function json(data: any, status = 200): Response {
+  return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      "Content-Type": "application/json;charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
-    },
+    headers: { "content-type": "application/json; charset=utf-8" },
   });
 }
 
-export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
+export const onRequestGet: PagesFunction<{ AI: any }> = async ({ env }) => {
   try {
-    // Petite image de test 256x256 noire en PNG encodée en base64
-    // (tu peux changer pour autre chose si tu veux)
-    const base64Png =
-      "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAAA3NCSVQICAjb4U/gAAACN0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgC8G0m4AAbvpBqoAAAAASUVORK5CYII=";
+    // On fabrique une mini image PNG bidon (carré noir) juste pour tester.
+    // Pour simplifier, on envoie un buffer vide, certains modèles acceptent ça
+    // uniquement avec un prompt. Si ça ne passe pas, ce n'est PAS grave :
+    // l'important c'est de voir le type de retour.
+    const prompt =
+      "Simple cartoon icon of a dart player face, gold and black colors.";
 
-    // @ts-ignore atob dispo dans Workers
-    const binary = atob(base64Png);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-
-    const input: any = {
-      prompt:
-        "Cartoon caricature portrait of a darts player, warm colors, dark background, no text.",
-      image: bytes.buffer,
-      strength: 0.65,
-    };
-
-    let result: any;
-    try {
-      result = await env.AI.run(MODEL_ID, input);
-    } catch (e: any) {
-      return toJson(
-        {
-          ok: false,
-          error: "ai_run_failed",
-          message: String(e?.message || e),
-        },
-        500
-      );
-    }
-
-    const summary =
-      result && typeof result === "object"
-        ? {
-            typeofResult: typeof result,
-            isArrayBuffer: result instanceof ArrayBuffer,
-            isArray: Array.isArray(result),
-            keys: Object.keys(result),
-          }
-        : {
-            typeofResult: typeof result,
-            isArrayBuffer: result instanceof ArrayBuffer,
-            isArray: Array.isArray(result),
-          };
-
-    return toJson({
-      ok: true,
-      model: MODEL_ID,
-      summary,
-      // ⚠️ on ne renvoie PAS tout le résultat (souvent énorme),
-      // juste un petit extrait utile pour le debug.
+    const result = await env.AI.run(MODEL_ID, {
+      prompt,
+      // image: new Uint8Array(), // à tester si besoin
+      strength: 0.6,
     });
-  } catch (e: any) {
-    return toJson(
+
+    const isArrayBuffer = result instanceof ArrayBuffer;
+    const isUint8Array = result instanceof Uint8Array;
+
+    let previewDataUrl: string | null = null;
+
+    if (isArrayBuffer || isUint8Array) {
+      const bytes = isArrayBuffer ? new Uint8Array(result as ArrayBuffer) : (result as Uint8Array);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i++) {
+        bin += String.fromCharCode(bytes[i]);
+      }
+      const b64 = btoa(bin);
+      previewDataUrl = `data:image/png;base64,${b64}`;
+    }
+
+    return json({
+      ok: true,
+      modelId: MODEL_ID,
+      typeofResult: typeof result,
+      constructorName: result && (result as any).constructor?.name,
+      isArrayBuffer,
+      isUint8Array,
+      hasPreview: !!previewDataUrl,
+      previewDataUrl,
+    });
+  } catch (err: any) {
+    console.error("[avatar/test] error", err);
+    return json(
       {
         ok: false,
-        error: "unexpected_error",
-        message: String(e?.message || e),
+        error: "ai_run_failed",
+        message: err && err.message ? String(err.message) : "Unknown error",
       },
       500
     );
