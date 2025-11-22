@@ -223,7 +223,7 @@ export const onRequest = async (context: any): Promise<Response> => {
         prompt: preset.prompt,
         image: [...new Uint8Array(bytes)], // img2img
         strength: preset.strength,
-        num_steps: 25,
+        num_steps: 20, // ⚠️ doit être <= 20 pour ce modèle
         guidance: 7.5,
       };
 
@@ -249,7 +249,6 @@ export const onRequest = async (context: any): Promise<Response> => {
     let base64: string | null = null;
     let binary: Uint8Array | null = null;
 
-    // Cas les plus probables : Uint8Array / ArrayBuffer / ArrayBufferView
     if (aiResult instanceof ArrayBuffer) {
       binary = new Uint8Array(aiResult);
     } else if (aiResult instanceof Uint8Array) {
@@ -260,7 +259,6 @@ export const onRequest = async (context: any): Promise<Response> => {
       "buffer" in aiResult &&
       aiResult.buffer instanceof ArrayBuffer
     ) {
-      // Autre ArrayBufferView (ex: DataView)
       binary = new Uint8Array(aiResult.buffer as ArrayBuffer);
     } else if (aiResult && aiResult.image instanceof ArrayBuffer) {
       binary = new Uint8Array(aiResult.image);
