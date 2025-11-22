@@ -18,7 +18,7 @@ type Props = {
   overlaySrc?: string; // pas utilisé ici mais gardé pour compat
   defaultName?: string;
   onSave?: (payload: { pngDataUrl: string; name: string }) => void;
-  onBack?: () => void; // ✅ callback pour bouton Retour
+  onBack?: () => void; // callback pour bouton Retour
 };
 
 const GOLD = "#F6C256";
@@ -32,15 +32,15 @@ const STROKE = 18; // épaisseur des anneaux
 // Cercle avatar = bord interne de l’anneau intérieur → il "touche" l’anneau
 const R_AVATAR = R_INNER - STROKE / 2;
 
-// ⭐ Texte collé au CERCLE INTÉRIEUR (côté extérieur) avec une petite marge
-// Bord extérieur de l’anneau intérieur = R_INNER + STROKE/2
-// On ajoute ~4 px de marge pour respirer un peu
+// Texte haut collé au CERCLE INTÉRIEUR, côté extérieur
 const R_TEXT = R_INNER + STROKE / 2 + 4;
 
-// Légers offsets verticaux pour affiner le centrage visuel
+// Offsets verticaux
 const TEXT_DY_TOP = -6;
-const NAME_RADIUS = R_INNER + 6; // rayon pour le nom
-const TEXT_DY_BOTTOM = 40; // décalage vertical bas (tu l’avais trouvé 👍)
+
+// Texte bas (nom)
+const NAME_RADIUS = R_INNER + 6;
+const TEXT_DY_BOTTOM = 30; // valeur que tu avais trouvée
 
 export default function AvatarCreator({
   size = 512,
@@ -62,10 +62,11 @@ export default function AvatarCreator({
 
   const svgRef = React.useRef<SVGSVGElement | null>(null);
 
+  const isCartoon = !!cartoonUrl;
   // Image utilisée dans le médaillon (cartoon si dispo, sinon photo brute)
   const avatarImage = cartoonUrl || photoUrl || null;
 
-  // ✅ Back unifié : si onBack fourni (App), on l’utilise, sinon history.back()
+  // Back unifié : si onBack fourni (App), on l’utilise, sinon history.back()
   const handleBack = React.useCallback(() => {
     if (onBack) {
       onBack();
@@ -103,7 +104,7 @@ export default function AvatarCreator({
     reader.readAsDataURL(f);
   }
 
-  // ---------------- Cartoon (placeholder) ----------------
+  // ---------------- Cartoon (placeholder + petit filtre visuel) ----------------
   async function handleCartoonize() {
     if (!photoUrl) {
       setError(
@@ -121,12 +122,7 @@ export default function AvatarCreator({
     );
 
     try {
-      // TODO backend IA :
-      // const res = await fetch("/api/avatar/cartoon", {...});
-      // const json = await res.json();
-      // setCartoonUrl(json.dataUrl);
-
-      // Pour l’instant : on réutilise la photo brute (pas de filtre réel).
+      // TODO backend IA réel
       await new Promise((r) => setTimeout(r, 600));
       setCartoonUrl(photoUrl);
       setStatus(
@@ -134,6 +130,9 @@ export default function AvatarCreator({
           "avatar.status.cartoonReady",
           "Avatar cartoon prêt. Tu peux l’enregistrer."
         )
+      );
+      console.log(
+        "[AvatarCreator] Cartoon client appliqué (placeholder filtre SVG)."
       );
     } catch (e) {
       console.warn(e);
@@ -315,6 +314,7 @@ export default function AvatarCreator({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              position: "relative",
             }}
           >
             <svg
@@ -327,6 +327,32 @@ export default function AvatarCreator({
                 <clipPath id="avatarClip">
                   <circle r={R_AVATAR} cx={0} cy={0} />
                 </clipPath>
+
+                {/* Filtre CARTOON pour le mode IA (placeholder) */}
+                <filter id="cartoonFilter">
+                  <feColorMatrix
+                    type="matrix"
+                    values="
+                      1.2 0   0   0 -0.1
+                      0   1.2 0   0 -0.1
+                      0   0   1.2 0 -0.1
+                      0   0   0   1  0
+                    "
+                  />
+                  <feGaussianBlur stdDeviation="1.2" result="blur" />
+                  <feColorMatrix
+                    in="blur"
+                    type="matrix"
+                    values="
+                      -1  -1  -1  0  1
+                      -1  -1  -1  0  1
+                      -1  -1  -1  0  1
+                      0   0   0   1  0
+                    "
+                    result="edges"
+                  />
+                  <feBlend in="SourceGraphic" in2="edges" mode="multiply" />
+                </filter>
               </defs>
 
               {/* Fond noir global */}
@@ -361,6 +387,7 @@ export default function AvatarCreator({
                     width={avatarImgSize}
                     height={avatarImgSize}
                     preserveAspectRatio="xMidYMid slice"
+                    filter={isCartoon ? "url(#cartoonFilter)" : undefined}
                   />
                 </g>
               ) : (
@@ -368,7 +395,11 @@ export default function AvatarCreator({
                   {/* Placeholder cartoon simple */}
                   <circle r={R_AVATAR} fill="#22232b" />
                   <circle r={R_AVATAR * 0.7} fill="#f0c27b" />
-                  <circle r={R_AVATAR * 0.55} cy={R_AVATAR * 0.05} fill="#f7d29b" />
+                  <circle
+                    r={R_AVATAR * 0.55}
+                    cy={R_AVATAR * 0.05}
+                    fill="#f7d29b"
+                  />
                   <circle
                     cx={-R_AVATAR * 0.25}
                     cy={-R_AVATAR * 0.2}
@@ -444,6 +475,33 @@ export default function AvatarCreator({
                   {(name || "PLAYER").toUpperCase()}
                 </textPath>
               </text>
+
+              {/* Petit badge "IA" quand le cartoon est actif */}
+              {isCartoon && (
+                <g transform="translate(150,-190)">
+                  <rect
+                    x={-36}
+                    y={-14}
+                    width={72}
+                    height={28}
+                    rx={14}
+                    fill="rgba(0,0,0,0.75)"
+                    stroke={GOLD}
+                    strokeWidth={2}
+                  />
+                  <text
+                    x={0}
+                    y={6}
+                    textAnchor="middle"
+                    fontFamily="'Montserrat','system-ui',sans-serif"
+                    fontSize={16}
+                    fontWeight={800}
+                    fill={GOLD}
+                  >
+                    IA
+                  </text>
+                </g>
+              )}
             </svg>
           </div>
         </div>
@@ -598,12 +656,31 @@ export default function AvatarCreator({
             >
               {t(
                 "avatar.help.cartoon",
-                "Plus tard, cet effet sera appliqué côté serveur (IA). Pour l’instant, un filtre visuel est appliqué."
+                "Actuellement, un filtre cartoon est appliqué côté client à partir de la photo importée."
               )}
             </div>
           </div>
 
-          {/* Messages */}
+          {/* Indicateur IA très clair */}
+          <div
+            style={{
+              fontSize: 11,
+              marginTop: 4,
+              color: isCartoon ? "#8fe6aa" : theme.textSoft,
+            }}
+          >
+            {isCartoon
+              ? t(
+                  "avatar.info.cartoonOn",
+                  "Effet cartoon ACTIF sur le médaillon."
+                )
+              : t(
+                  "avatar.info.cartoonOff",
+                  "Effet cartoon inactif. Clique sur le bouton IA après avoir importé ta photo."
+                )}
+          </div>
+
+          {/* Messages statut / erreurs */}
           {status && !error && (
             <div
               style={{

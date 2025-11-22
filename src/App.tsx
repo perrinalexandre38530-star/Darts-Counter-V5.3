@@ -131,6 +131,34 @@ const initialStore: Store = {
   history: [],
 } as any;
 
+// ===== Helpers BOTS pour l'éditeur d'avatar =====
+const LS_BOTS_KEY = "dc_bots_v1";
+
+type BotLS = {
+  id: string;
+  name: string;
+  avatarSeed?: string;
+  avatarDataUrl?: string | null;
+  [k: string]: any;
+};
+
+function loadBotsLS(): BotLS[] {
+  try {
+    const raw = localStorage.getItem(LS_BOTS_KEY);
+    return raw ? (JSON.parse(raw) as BotLS[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveBotsLS(list: BotLS[]) {
+  try {
+    localStorage.setItem(LS_BOTS_KEY, JSON.stringify(list));
+  } catch {
+    // ignore
+  }
+}
+
 // ===== Service Worker update prompt =====
 function useServiceWorkerUpdate() {
   const [waitingWorker, setWaitingWorker] = React.useState<ServiceWorker | null>(null);
@@ -707,42 +735,97 @@ function App() {
 
       // ✅ Nouvelle page : Créateur d'avatar
       case "avatar": {
-        // Profil actif (si aucun, on laisse la page mais le bouton Save ne fera rien)
-        const activeProfile =
-          (store.profiles || []).find((p) => p.id === store.activeProfileId) || null;
+        const botId: string | undefined = routeParams?.botId;
+        const profileIdFromParams: string | undefined = routeParams?.profileId;
+        const backTo: Tab = (routeParams?.from as Tab) || "profiles";
 
-        function handleSaveAvatar({
+        // --- Cas 1 : on édite l'avatar d'un BOT ---
+        if (botId) {
+          const bots = loadBotsLS();
+          const targetBot = bots.find((b) => b.id === botId) || null;
+
+          function handleSaveAvatarBot({
+            pngDataUrl,
+            name,
+          }: {
+            pngDataUrl: string;
+            name: string;
+          }) {
+            if (!targetBot) {
+              console.warn("[AvatarCreator] BOT introuvable pour id", botId);
+              go(backTo);
+              return;
+            }
+            const next = bots.slice();
+            const idx = next.findIndex((b) => b.id === targetBot.id);
+            const updated: BotLS = {
+              ...targetBot,
+              name: name?.trim() || targetBot.name,
+              avatarDataUrl: pngDataUrl,
+            };
+            if (idx >= 0) next[idx] = updated;
+            else next.push(updated);
+            saveBotsLS(next);
+            go(backTo);
+          }
+
+          page = (
+            <div style={{ padding: 16 }}>
+              <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
+                ← Retour
+              </button>
+              <AvatarCreator
+                size={512}
+                defaultName={targetBot?.name || ""}
+                onSave={handleSaveAvatarBot}
+              />
+            </div>
+          );
+          break;
+        }
+
+        // --- Cas 2 : avatar pour un profil (profilId explicite ou actif) ---
+        const targetProfile =
+          (store.profiles || []).find(
+            (p) => p.id === (profileIdFromParams || store.activeProfileId)
+          ) || null;
+
+        function handleSaveAvatarProfile({
           pngDataUrl,
           name,
         }: {
           pngDataUrl: string;
           name: string;
         }) {
-          if (!activeProfile) {
-            console.warn("[AvatarCreator] Aucun profil actif");
+          if (!targetProfile) {
+            console.warn("[AvatarCreator] Aucun profil cible");
             return;
           }
 
-          // Mise à jour du profil actif (nom + avatarDataUrl)
           setProfiles((list) =>
             list.map((p) =>
-              p.id === activeProfile.id ? { ...p, name, avatarDataUrl: pngDataUrl } : p
+              p.id === targetProfile.id
+                ? {
+                    ...p,
+                    name: name?.trim() || p.name,
+                    avatarDataUrl: pngDataUrl,
+                  }
+                : p
             )
           );
 
-          // Retour automatique vers Profils
-          go("profiles");
+          go(backTo);
         }
 
         page = (
           <div style={{ padding: 16 }}>
-            <button onClick={() => go("profiles")} style={{ marginBottom: 12 }}>
+            <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
               ← Retour
             </button>
             <AvatarCreator
               size={512}
-              defaultName={activeProfile?.name || ""}
-              onSave={handleSaveAvatar}
+              defaultName={targetProfile?.name || ""}
+              onSave={handleSaveAvatarProfile}
             />
           </div>
         );

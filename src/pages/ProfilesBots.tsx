@@ -3,7 +3,7 @@
 // Gestion des BOTS (CPU) — joueurs virtuels
 // - Liste des BOTS enregistrés (localStorage dc_bots_v1)
 // - Création d'un BOT : nom + niveau + seed d'avatar
-// - Après création, redirection vers le créateur d’avatar
+// - Après création : ouverture du créateur d’avatar
 // ============================================
 import React from "react";
 import { nanoid } from "nanoid";
@@ -13,18 +13,17 @@ import { useLang } from "../contexts/LangContext";
 
 type BotLevel = "easy" | "medium" | "strong" | "pro" | "legend";
 
-type Bot = {
+export type Bot = {
   id: string;
   name: string;
   level: BotLevel;
   avatarSeed: string;
+  avatarDataUrl?: string | null; // 👈 avatar du BOT
   createdAt: string;
   updatedAt: string;
 };
 
 const LS_BOTS_KEY = "dc_bots_v1";
-const LS_BOT_LAST_ID = "dc_bot_last_created_id_v1";
-const LS_BOT_LAST_NAME = "dc_bot_last_created_name_v1";
 
 // ------------------ helpers stockage ------------------
 
@@ -37,23 +36,14 @@ function safeParse<T>(raw: string | null, fallback: T): T {
   }
 }
 
-function loadBots(): Bot[] {
+export function loadBots(): Bot[] {
   if (typeof window === "undefined") return [];
   return safeParse<Bot[]>(window.localStorage.getItem(LS_BOTS_KEY), []);
 }
 
-function saveBots(bots: Bot[]) {
+export function saveBots(bots: Bot[]) {
   try {
     window.localStorage.setItem(LS_BOTS_KEY, JSON.stringify(bots));
-  } catch {
-    // ignore
-  }
-}
-
-function rememberLastBotForAvatar(bot: Bot) {
-  try {
-    window.localStorage.setItem(LS_BOT_LAST_ID, bot.id);
-    window.localStorage.setItem(LS_BOT_LAST_NAME, bot.name);
   } catch {
     // ignore
   }
@@ -114,6 +104,53 @@ function levelDescription(level: BotLevel, t: (k: string, f?: string) => string)
 
 function BotAvatar({ bot, color }: { bot: Bot; color: string }) {
   const letter = (bot.name || "?").trim().charAt(0).toUpperCase() || "?";
+
+  // si on a un avatarDataUrl, on l’affiche
+  if (bot.avatarDataUrl) {
+    return (
+      <div
+        style={{
+          width: 42,
+          height: 42,
+          borderRadius: "50%",
+          background: "#050714",
+          border: `1px solid ${color}aa`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          position: "relative",
+          boxShadow: `0 0 10px ${color}55`,
+          flexShrink: 0,
+          overflow: "hidden",
+        }}
+      >
+        <img
+          src={bot.avatarDataUrl}
+          alt=""
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        />
+        <span
+          style={{
+            position: "absolute",
+            bottom: -6,
+            right: -4,
+            fontSize: 8,
+            padding: "2px 5px",
+            borderRadius: 999,
+            background: "#000",
+            border: `1px solid ${color}aa`,
+            color,
+            textTransform: "uppercase",
+            letterSpacing: 0.5,
+          }}
+        >
+          BOT
+        </span>
+      </div>
+    );
+  }
+
+  // sinon on garde la pastille lettre
   return (
     <div
       style={{
@@ -201,15 +238,15 @@ export default function ProfilesBots({ store, go }: Props) {
       name: name.trim(),
       level,
       avatarSeed: seed.trim() || Math.random().toString(36).slice(2, 10),
+      avatarDataUrl: null,
       createdAt: now,
       updatedAt: now,
     };
     const next = [...bots, bot];
     setBots(next);
     saveBots(next);
-    rememberLastBotForAvatar(bot); // 👈 pour le créateur d’avatar
 
-    // On ouvre directement l'éditeur d’avatar pour ce BOT
+    // 👇 on va direct dans l’éditeur d’avatar pour ce BOT
     go?.("avatar", { botId: bot.id, from: "profiles_bots" });
 
     handleResetForm();
@@ -450,7 +487,7 @@ export default function ProfilesBots({ store, go }: Props) {
         >
           {t(
             "bots.list.footer",
-            "Astuce : tu pourras plus tard affiner le style de chaque BOT dans le créateur d’avatar."
+            "Après création, personnalise le médaillon de ton BOT dans le créateur d’avatar."
           )}
         </div>
       </section>
@@ -478,7 +515,7 @@ export default function ProfilesBots({ store, go }: Props) {
         >
           {t(
             "bots.form.subtitle",
-            "Donne-lui un nom, choisis son niveau, puis crée-le et personnalise son avatar dans l’éditeur."
+            "Donne-lui un nom, choisis son niveau, puis crée son avatar dans l’éditeur."
           )}
         </div>
 
@@ -569,7 +606,7 @@ export default function ProfilesBots({ store, go }: Props) {
             </div>
           </div>
 
-          {/* Seed avatar (optionnel pour l’instant) */}
+          {/* Seed avatar (optionnel) */}
           <div style={{ marginBottom: 10 }}>
             <label
               style={{
@@ -616,18 +653,6 @@ export default function ProfilesBots({ store, go }: Props) {
                 {t("bots.form.seed.random", "Seed aléatoire")}
               </button>
             </div>
-            <div
-              style={{
-                fontSize: 11,
-                color: theme.textSoft,
-                marginTop: 4,
-              }}
-            >
-              {t(
-                "bots.form.seed.hint",
-                "Le seed sert uniquement d’info supplémentaire. L’avatar sera défini ensuite dans l’éditeur."
-              )}
-            </div>
           </div>
 
           {/* Actions form */}
@@ -654,7 +679,7 @@ export default function ProfilesBots({ store, go }: Props) {
                 background: name.trim()
                   ? primary
                   : "linear-gradient(180deg,#3a3a3e,#333338)",
-                color: name.trim ? "#050712" : "#9a9aa0",
+                color: name.trim() ? "#050712" : "#9a9aa0",
                 boxShadow: name.trim() ? `0 0 18px ${primary}` : "none",
               }}
             >
@@ -693,7 +718,7 @@ export default function ProfilesBots({ store, go }: Props) {
         >
           {t(
             "bots.form.footer",
-            "Chaque BOT est stocké en local. Après création, tu personnalises son nom et son médaillon dans le créateur d’avatar."
+            "Chaque BOT est stocké en local. Tu pourras le sélectionner comme joueur dans les écrans de préparation des parties."
           )}
         </div>
       </section>
