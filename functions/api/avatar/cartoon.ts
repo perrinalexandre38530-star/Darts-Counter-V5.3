@@ -18,7 +18,7 @@ Style: realistic cartoon, warm colors, thick outlines, visible brush strokes.
 Emphasize expression and humor without distorting identity.
 High quality. Plain dark background. No frame. No text.
     `,
-    strength: 0.55,
+    strength: 0.65,
   },
   comic: {
     prompt: `
@@ -34,7 +34,7 @@ Vector flat caricature portrait of the same person.
 Esport mascot style logo, minimal shading, smooth shapes.
 Plain background, no text, no frame.
     `,
-    strength: 0.65,
+    strength: 0.55,
   },
   exaggerated: {
     prompt: `
@@ -47,8 +47,7 @@ Plain background, no text, no frame.
 };
 
 // --------- Modèle IA (image-to-image) ---------
-// Nouveau modèle Cloudflare AI 2025 (l'ancien runwayml est déprécié)
-const MODEL_ID = "@cf/hunyuan/hunyuan_diT_img2img";
+const MODEL_ID = "@cf/runwayml/stable-diffusion-v1-5-img2img";
 
 // --------- CORS ORIGINS AUTORISÉS ---------
 const PAGES_ORIGIN = "https://darts-counter-v5-3.pages.dev";
@@ -85,6 +84,65 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
+}
+
+/**
+ * Transforme TOUT ce que peut renvoyer Workers AI en data:image/png;base64
+ * - ArrayBuffer
+ * - Uint8Array
+ * - Blob
+ * - Response-like avec .arrayBuffer()
+ * - Objet avec .image / .image_base64
+ */
+async function aiResultToPngDataUrl(result: any): Promise<string> {
+  if (!result) {
+    throw new Error("Empty AI result");
+  }
+
+  // 1) Cas binaires directs
+  let bytes: Uint8Array | null = null;
+
+  if (result instanceof ArrayBuffer) {
+    bytes = new Uint8Array(result);
+  } else if (result instanceof Uint8Array) {
+    bytes = result;
+  } else if (typeof Blob !== "undefined" && result instanceof Blob) {
+    bytes = new Uint8Array(await result.arrayBuffer());
+  } else if (typeof result.arrayBuffer === "function") {
+    // Response-like / Blob-like
+    const buf = await result.arrayBuffer();
+    bytes = new Uint8Array(buf);
+  } else if (result.image instanceof ArrayBuffer) {
+    bytes = new Uint8Array(result.image as ArrayBuffer);
+  } else if (
+    typeof Uint8Array !== "undefined" &&
+    result.image instanceof Uint8Array
+  ) {
+    bytes = result.image as Uint8Array;
+  } else if (
+    typeof Blob !== "undefined" &&
+    result.image instanceof Blob
+  ) {
+    bytes = new Uint8Array(await (result.image as Blob).arrayBuffer());
+  }
+
+  if (bytes) {
+    return `data:image/png;base64,${bytesToBase64(bytes)}`;
+  }
+
+  // 2) Cas strings base64
+  if (typeof result.image_base64 === "string") {
+    return result.image_base64.startsWith("data:")
+      ? result.image_base64
+      : `data:image/png;base64,${result.image_base64}`;
+  }
+  if (typeof result.image === "string") {
+    return result.image.startsWith("data:")
+      ? result.image
+      : `data:image/png;base64,${result.image}`;
+  }
+
+  throw new Error("Unsupported AI result type for PNG conversion");
 }
 
 // -------------- PAGES FUNCTION --------------
@@ -155,7 +213,7 @@ export const onRequest = async (context: any): Promise<Response> => {
     const styleId = style as StyleId;
     const preset = STYLE_PRESETS[styleId];
 
-    const bytes = await file.arrayBuffer();
+    const bytesBuf = await file.arrayBuffer();
 
     // ---------------- CACHE + QUOTA (KV) ----------------
     let cacheKey = "";
@@ -164,7 +222,7 @@ export const onRequest = async (context: any): Promise<Response> => {
 
     if (env.AVATAR_CACHE) {
       // 1) Cache par hash de l'image + style
-      const hash = await sha256Hex(bytes);
+      const hash = await sha256Hex(bytesBuf);
       cacheKey = `avatar:${styleId}:${hash}`;
 
       const cached = await env.AVATAR_CACHE.get(cacheKey);
@@ -222,15 +280,14 @@ export const onRequest = async (context: any): Promise<Response> => {
       const input = {
         prompt: preset.prompt,
         // image-to-image : on envoie la photo originale
-        image: [...new Uint8Array(bytes)],
+        image: [...new Uint8Array(bytesBuf)],
         strength: preset.strength, // 0..1, plus c'est haut plus ça s'éloigne de la photo
-        num_steps: 20, // max pour ce modèle
+        num_steps: 25,
         guidance: 7.5,
       };
 
       aiResult = await env.AI.run(MODEL_ID, input);
     } catch (aiErr: any) {
-      // On renvoie l'erreur IA brute pour comprendre ce qui se passe
       return new Response(
         JSON.stringify({
           ok: false,
@@ -248,102 +305,27 @@ export const onRequest = async (context: any): Promise<Response> => {
     }
 
     // ---------------- Décodage du résultat IA ----------------
-    // Pour Workers AI image, la sortie est (en pratique) binaire : Uint8Array, ArrayBuffer ou flux.
-    let buf: Uint8Array | null = null;
+    let pngDataUrl: string;
+    try {
+      pngDataUrl = await aiResultToPngDataUrl(aiResult);
+    } catch (decodeErr: any) {
+      const debug: any = {
+        typeofResult: typeof aiResult,
+        isArrayBuffer: aiResult instanceof ArrayBuffer,
+        isUint8Array: aiResult instanceof Uint8Array,
+        isBlob:
+          typeof Blob !== "undefined" && aiResult instanceof Blob,
+        hasImageProp: !!(aiResult && "image" in aiResult),
+        hasImageBase64Prop: !!(aiResult && "image_base64" in aiResult),
+        keys: aiResult ? Object.keys(aiResult) : [],
+      };
 
-    if (aiResult instanceof Uint8Array) {
-      buf = aiResult;
-    } else if (aiResult instanceof ArrayBuffer) {
-      buf = new Uint8Array(aiResult);
-    } else if (
-      aiResult &&
-      typeof aiResult === "object" &&
-      "image" in aiResult &&
-      (aiResult as any).image instanceof ArrayBuffer
-    ) {
-      buf = new Uint8Array((aiResult as any).image);
-    } else if (Array.isArray(aiResult)) {
-      buf = new Uint8Array(aiResult as number[]);
-    } else if (
-      aiResult &&
-      typeof (aiResult as any).arrayBuffer === "function"
-    ) {
-      const ab = await (aiResult as any).arrayBuffer();
-      buf = new Uint8Array(ab);
-    } else if (
-      aiResult &&
-      (typeof (aiResult as any).image_base64 === "string" ||
-        typeof (aiResult as any).image === "string")
-    ) {
-      // Certains wrappers renvoient directement une string base64
-      const rawBase64 =
-        (aiResult as any).image_base64 ?? (aiResult as any).image;
-      const pngDataUrl = rawBase64.startsWith("data:")
-        ? rawBase64
-        : `data:image/png;base64,${rawBase64}`;
-
-      // Cache + quota éventuels
-      if (env.AVATAR_CACHE && cacheKey) {
-        await env.AVATAR_CACHE.put(cacheKey, pngDataUrl, {
-          expirationTtl: 60 * 60 * 24 * 30,
-        });
-        if (quotaKey) {
-          const newQuota = currentQuota + 1;
-          await env.AVATAR_CACHE.put(quotaKey, String(newQuota), {
-            expirationTtl: 60 * 60 * 48,
-          });
-        }
-      }
-
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          cartoonPng: pngDataUrl,
-          cached: false,
-          quotaUsed: true,
-        }),
-        {
-          status: 200,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-    } else {
-      // 👉 Debug ultra-verbeux si Workers AI change de format
-      return new Response(
-        JSON.stringify(
-          {
-            ok: false,
-            error: "unexpected_ai_result",
-            debugType: typeof aiResult,
-            debugInstanceOfUint8Array: aiResult instanceof Uint8Array,
-            debugInstanceOfArrayBuffer: aiResult instanceof ArrayBuffer,
-            debugKeys:
-              aiResult && typeof aiResult === "object"
-                ? Object.keys(aiResult as any)
-                : null,
-          },
-          null,
-          2
-        ),
-        {
-          status: 500,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-    }
-
-    if (!buf) {
       return new Response(
         JSON.stringify({
           ok: false,
-          error: "empty_result",
-          message: "AI generation failed (no binary data).",
+          error: "ai_result_decode_failed",
+          message: decodeErr?.message ?? String(decodeErr),
+          debug,
         }),
         {
           status: 500,
@@ -354,9 +336,6 @@ export const onRequest = async (context: any): Promise<Response> => {
         }
       );
     }
-
-    const base64 = bytesToBase64(buf);
-    const pngDataUrl = `data:image/png;base64,${base64}`;
 
     // ---------------- STOCKAGE CACHE + MAJ QUOTA ----------------
     if (env.AVATAR_CACHE && cacheKey) {
