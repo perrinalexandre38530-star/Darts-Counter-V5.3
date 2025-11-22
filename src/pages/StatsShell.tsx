@@ -1,16 +1,17 @@
 // ============================================
 // src/pages/StatsShell.tsx
-// Menu Stats — style identique Home / Games / Profils
-// - Carte 1 : STATS "Nom du joueur" -> StatsHub onglet "players"
-// - Carte 2 : TRAINING -> StatsHub onglet "training"
-// - Carte 3 : ONLINE     (réservé, plus tard)
-// - Carte 4 : AMIS       (réservé, plus tard)
-// - Carte 5 : HISTORIQUE -> StatsHub onglet "history"
+// Menu Stats (style Home / Games / Profils)
+// - Carte "STATS — Nom du joueur" -> StatsHub onglet "players"
+// - Carte "TRAINING"              -> StatsHub onglet "training"
+// - Carte "ONLINE"                -> StatsHub onglet "online"  (future)
+// - Carte "AMIS"                  -> StatsHub onglet "friends" (future)
+// - Carte "HISTORIQUE"           -> StatsHub onglet "history"
 // ============================================
 
 import React from "react";
 import type { Store } from "../lib/types";
 import { useTheme } from "../contexts/ThemeContext";
+import { useLang } from "../contexts/LangContext";
 
 type Props = {
   store: Store;
@@ -19,195 +20,193 @@ type Props = {
 
 export default function StatsShell({ store, go }: Props) {
   const { theme } = useTheme();
+  const { t } = useLang();
 
-  const profiles = store.profiles ?? [];
-  const active =
-    profiles.find((p) => p.id === store.activeProfileId) ||
-    profiles[0] ||
+  const activeProfile =
+    (store.profiles || []).find((p) => p.id === store.activeProfileId) ||
+    (store.profiles || [])[0] ||
     null;
-  const playerName = (active?.name || "Joueur").toUpperCase();
 
-  const T = {
-    bg: theme.bg,
-    card: theme.card,
-    text: theme.text,
-    textSoft: theme.textSoft,
-    primary: theme.primary,
-    borderSoft: theme.borderSoft,
+  const playerName = activeProfile?.name || t("stats.player_fallback_name", "joueur");
+
+  function openPlayersStats() {
+    // 👉 ouvre directement StatsHub onglet "Stats joueurs"
+    go("statsHub", { tab: "players" });
+  }
+
+  function openTrainingStats() {
+    go("statsHub", { tab: "training" });
+  }
+
+  function openOnlineStats() {
+    go("statsHub", { tab: "online" });
+  }
+
+  function openFriendsStats() {
+    go("statsHub", { tab: "friends" });
+  }
+
+  function openHistory() {
+    go("statsHub", { tab: "history" });
+  }
+
+  const cardBase: React.CSSProperties = {
+    width: "100%",
+    textAlign: "left",
+    border: "none",
+    background: theme.card,
+    color: theme.text,
+    borderRadius: 18,
+    padding: "14px 16px",
+    marginBottom: 12,
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+    boxShadow: "0 10px 25px rgba(0,0,0,0.55)",
+    position: "relative",
+    overflow: "hidden",
   };
 
-  const cards: {
-    id: string;
-    title: string;
-    subtitle: string;
-    chips?: string[];
-    onClick: () => void;
-  }[] = [
-    {
-      id: "player",
-      title: `STATS ${playerName}`,
-      subtitle: "Vue générale, X01 Multi, Cricket, Killer…",
-      chips: ["OVERWIEW", "X01", "CRICKET", "KILLER"],
-      // 🔑 ICI : ouverture StatsHub sur l’onglet "Stats joueurs"
-      onClick: () => go("stats_hub", { tab: "players" }),
-    },
-    {
-      id: "training",
-      title: "TRAINING",
-      subtitle: "Stats Training X01 et Tour de l’horloge.",
-      chips: ["TRAINING X01", "TOUR DE L’HORLOGE"],
-      onClick: () => go("stats_hub", { tab: "training" }),
-    },
-    {
-      id: "online",
-      title: "ONLINE",
-      subtitle: "Stats de tes parties Online (bientôt).",
-      onClick: () => {
-        // plus tard : onglet spécifique dans StatsHub
-        go("stats_hub", { tab: "online" });
-      },
-    },
-    {
-      id: "friends",
-      title: "AMIS",
-      subtitle: "Compare tes stats avec celles de tes amis.",
-      onClick: () => {
-        // plus tard : onglet spécifique dans StatsHub ou FriendsPage
-        go("stats_hub", { tab: "friends" });
-      },
-    },
-    {
-      id: "history",
-      title: "HISTORIQUE",
-      subtitle: "Toutes tes parties et la reprise des parties en cours.",
-      onClick: () => go("stats_hub", { tab: "history" }),
-    },
-  ];
+  const titleStyle: React.CSSProperties = {
+    fontSize: 13,
+    fontWeight: 700,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    color: theme.primary,
+  };
+
+  const subtitleStyle: React.CSSProperties = {
+    fontSize: 11,
+    opacity: 0.8,
+  };
+
+  const chipsRow: React.CSSProperties = {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 8,
+  };
+
+  const chip: React.CSSProperties = {
+    fontSize: 10,
+    padding: "4px 8px",
+    borderRadius: 999,
+    border: `1px solid rgba(255,255,255,0.12)`,
+    background: "rgba(0,0,0,0.35)",
+    color: theme.text,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  };
+
+  const arrowStyle: React.CSSProperties = {
+    position: "absolute",
+    right: 12,
+    top: "50%",
+    transform: "translateY(-50%)",
+    fontSize: 18,
+    color: theme.textSoft,
+  };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: T.bg,
-        padding: "24px 16px 32px",
-        color: T.text,
-      }}
-    >
+    <div style={{ padding: 16 }}>
       {/* Titre page */}
-      <header style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 18 }}>
         <div
           style={{
-            fontSize: 24,
-            fontWeight: 900,
+            fontSize: 20,
+            fontWeight: 800,
             letterSpacing: 2,
-            color: T.primary,
+            textTransform: "uppercase",
+            color: theme.primary,
           }}
         >
-          STATS
+          {t("stats.menu_title", "STATS")}
         </div>
         <div
           style={{
+            fontSize: 11,
             marginTop: 4,
-            fontSize: 12,
-            color: T.textSoft,
+            color: theme.textSoft,
             maxWidth: 260,
           }}
         >
-          Analyse tes performances, ton training et ton historique.
+          {t(
+            "stats.menu_subtitle",
+            "Analyse tes performances, ton training et ton historique."
+          )}
         </div>
-      </header>
-
-      {/* Liste des cartes */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {cards.map((card) => (
-          <button
-            key={card.id}
-            onClick={card.onClick}
-            style={{
-              textAlign: "left",
-              border: `1px solid ${T.borderSoft}`,
-              borderRadius: 18,
-              padding: "16px 16px",
-              background: T.card,
-              color: "inherit",
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              boxShadow: "0 14px 32px rgba(0,0,0,.55)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 800,
-                  letterSpacing: 1,
-                  color: T.primary,
-                }}
-              >
-                {card.title}
-              </div>
-              {/* chevron droit */}
-              <svg
-                viewBox="0 0 24 24"
-                width={18}
-                height={18}
-                style={{ opacity: 0.8 }}
-              >
-                <path
-                  fill="currentColor"
-                  d="M9 5l7 7-7 7"
-                />
-              </svg>
-            </div>
-
-            <div
-              style={{
-                fontSize: 11,
-                color: T.textSoft,
-                maxWidth: 260,
-              }}
-            >
-              {card.subtitle}
-            </div>
-
-            {card.chips && card.chips.length > 0 && (
-              <div
-                style={{
-                  marginTop: 6,
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 6,
-                }}
-              >
-                {card.chips.map((label) => (
-                  <span
-                    key={label}
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 800,
-                      letterSpacing: 0.5,
-                      padding: "4px 8px",
-                      borderRadius: 999,
-                      border: `1px solid ${T.borderSoft}`,
-                      background: "rgba(0,0,0,.35)",
-                    }}
-                  >
-                    {label}
-                  </span>
-                ))}
-              </div>
-            )}
-          </button>
-        ))}
       </div>
+
+      {/* Carte 1 : Stats joueur */}
+      <button style={cardBase} onClick={openPlayersStats}>
+        <div style={titleStyle}>
+          {t("stats.card_player_title", "STATS — {{name}}").replace(
+            "{{name}}",
+            playerName
+          )}
+        </div>
+        <div style={subtitleStyle}>
+          {t(
+            "stats.card_player_subtitle",
+            "Vue générale, X01 multi, Cricket, Killer…"
+          )}
+        </div>
+        <div style={chipsRow}>
+          <span style={chip}>{t("stats.players.chip_overview", "Vue générale")}</span>
+          <span style={chip}>{t("stats.players.chip_x01", "X01 multi")}</span>
+          <span style={chip}>{t("stats.players.chip_cricket", "Cricket")}</span>
+          <span style={chip}>{t("stats.players.chip_killer", "Killer")}</span>
+        </div>
+        <span style={arrowStyle}>›</span>
+      </button>
+
+      {/* Carte 2 : Training */}
+      <button style={cardBase} onClick={openTrainingStats}>
+        <div style={titleStyle}>{t("stats.card_training_title", "TRAINING")}</div>
+        <div style={subtitleStyle}>
+          {t(
+            "stats.card_training_subtitle",
+            "Stats Training X01 et Tour de l'horloge."
+          )}
+        </div>
+        <div style={chipsRow}>
+          <span style={chip}>{t("stats.training.chip_x01", "Training X01")}</span>
+          <span style={chip}>
+            {t("stats.training.chip_clock", "Tour de l'horloge")}
+          </span>
+        </div>
+        <span style={arrowStyle}>›</span>
+      </button>
+
+      {/* Carte 3 : Online */}
+      <button style={cardBase} onClick={openOnlineStats}>
+        <div style={titleStyle}>{t("stats.card_online_title", "ONLINE")}</div>
+        <div style={subtitleStyle}>
+          {t("stats.card_online_subtitle", "Stats de tes parties Online (bientôt).")}
+        </div>
+        <span style={arrowStyle}>›</span>
+      </button>
+
+      {/* Carte 4 : Amis */}
+      <button style={cardBase} onClick={openFriendsStats}>
+        <div style={titleStyle}>{t("stats.card_friends_title", "AMIS")}</div>
+        <div style={subtitleStyle}>
+          {t("stats.card_friends_subtitle", "Compare tes stats avec celles de tes amis.")}
+        </div>
+        <span style={arrowStyle}>›</span>
+      </button>
+
+      {/* Carte 5 : Historique */}
+      <button style={cardBase} onClick={openHistory}>
+        <div style={titleStyle}>{t("stats.card_history_title", "HISTORIQUE")}</div>
+        <div style={subtitleStyle}>
+          {t(
+            "stats.card_history_subtitle",
+            "Toutes tes parties et la reprise des parties en cours."
+          )}
+        </div>
+        <span style={arrowStyle}>›</span>
+      </button>
     </div>
   );
 }

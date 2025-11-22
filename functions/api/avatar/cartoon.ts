@@ -1,15 +1,49 @@
 // ===================================================
 // /functions/api/avatar/cartoon.ts
-// IA caricature via Replicate + cache KV + QUOTA + CORS
-// - Transforme une photo en cartoon humoristique
-// - Limite à 100 générations / jour (pour éviter les coûts)
-// - Cache par (hash de l'image + style) => pas de quota si déjà fait
+// IA caricature + cache KV + multi-styles + CORS + QUOTA
+// Cloudflare Pages Functions — modèle @cf/lykon/dreamshaper-8-lcm
 // ===================================================
 
 type StyleId = "realistic" | "comic" | "flat" | "exaggerated";
 
 // --------- Limite quotidienne ---------
 const DAILY_QUOTA_LIMIT = 100;
+
+// --------- Styles IA (prompts + strength interne) ---------
+const STYLE_PRESETS: Record<StyleId, { prompt: string }> = {
+  realistic: {
+    prompt: `
+      Hand-drawn caricature portrait of the same person.
+      Style: realistic cartoon, warm colors, thick outlines, visible brush strokes.
+      Emphasize expression and humor without distorting identity.
+      High quality. Plain dark background. No frame. No text.
+    `,
+  },
+  comic: {
+    prompt: `
+      Comic-book style caricature portrait of the same person.
+      Bold outlines, halftone shadows, vibrant colors.
+      Recognizable face. Plain dark background, no text, no frame.
+    `,
+  },
+  flat: {
+    prompt: `
+      Vector flat caricature portrait of the same person.
+      Esport mascot style logo, minimal shading, smooth shapes.
+      Plain background, no text, no frame.
+    `,
+  },
+  exaggerated: {
+    prompt: `
+      Highly exaggerated caricature portrait of the same person.
+      Oversized facial features, humorous, expressive, but recognizable.
+      Plain background, no text, no frame.
+    `,
+  },
+};
+
+// --------- Modèle IA (image-to-image Dreamshaper) ---------
+const MODEL_ID = "@cf/lykon/dreamshaper-8-lcm";
 
 // --------- CORS ORIGINS AUTORISÉS ---------
 const PAGES_ORIGIN = "https://darts-counter-v5-3.pages.dev";
@@ -48,11 +82,6 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-// Petit helper pour attendre entre 2 polls Replicate
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 // -------------- PAGES FUNCTION --------------
 export const onRequest = async (context: any): Promise<Response> => {
   const { request, env } = context;
@@ -86,16 +115,9 @@ export const onRequest = async (context: any): Promise<Response> => {
       });
     }
 
-    // ---------- Vérif clé Replicate ----------
-    const replicateApiKey = env.REPLICATE_API_KEY as string | undefined;
-    if (!replicateApiKey) {
+    if (!env.AI || typeof env.AI.run !== "function") {
       return new Response(
-        JSON.stringify({
-          ok: false,
-          error: "missing_replicate_key",
-          message:
-            "Variable REPLICATE_API_KEY manquante dans les variables Cloudflare.",
-        }),
+        JSON.stringify({ error: "Workers AI binding 'AI' not configured." }),
         {
           status: 500,
           headers: {
@@ -112,7 +134,7 @@ export const onRequest = async (context: any): Promise<Response> => {
 
     if (!file) {
       return new Response(
-        JSON.stringify({ ok: false, error: "no_image", message: "No image provided" }),
+        JSON.stringify({ error: "No image provided" }),
         {
           status: 400,
           headers: {
@@ -127,11 +149,9 @@ export const onRequest = async (context: any): Promise<Response> => {
       style = "realistic";
     }
     const styleId = style as StyleId;
+    const preset = STYLE_PRESETS[styleId];
 
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const base64 = bytesToBase64(bytes);
-    // Data URL utilisée par Replicate (image-to-image)
-    const dataUrl = `data:${file.type || "image/jpeg"};base64,${base64}`;
+    const bytes = await file.arrayBuffer();
 
     // ---------------- CACHE + QUOTA (KV) ----------------
     let cacheKey = "";
@@ -140,7 +160,7 @@ export const onRequest = async (context: any): Promise<Response> => {
 
     if (env.AVATAR_CACHE) {
       // 1) Cache par hash de l'image + style
-      const hash = await sha256Hex(bytes.buffer);
+      const hash = await sha256Hex(bytes);
       cacheKey = `avatar:${styleId}:${hash}`;
 
       const cached = await env.AVATAR_CACHE.get(cacheKey);
@@ -172,7 +192,7 @@ export const onRequest = async (context: any): Promise<Response> => {
             ok: false,
             error: "daily_quota_reached",
             message:
-              "Le quota quotidien d’avatars IA a été atteint. Réessaie demain.",
+              "Le quota quotidien d’avatars a été atteint. Réessaie demain.",
             limit: DAILY_QUOTA_LIMIT,
           }),
           {
@@ -187,47 +207,28 @@ export const onRequest = async (context: any): Promise<Response> => {
       // Sinon, on laisse passer et on incrémentera après génération IA
     }
 
-    // ---------------- APPEL REPLICATE ----------------
-    // Modèle : flux-kontext-apps/cartoonify (photo -> cartoon)
-    const apiUrl =
-      "https://api.replicate.com/v1/models/flux-kontext-apps/cartoonify/predictions";
+    // ---------------- IA CLOUDFLARE (Dreamshaper img2img) ----------------
+    const uint8 = new Uint8Array(bytes);
 
-    // Petit prompt différent selon le style, pour influencer le rendu
-    const stylePrompt: Record<StyleId, string> = {
-      realistic:
-        "realistic cartoon caricature portrait, warm colors, smooth shading, thick outlines, same identity, no text, plain background",
-      comic:
-        "comic-book style caricature portrait, bold lines, halftone shadows, vibrant colors, expressive face, same identity, no text, plain background",
-      flat:
-        "flat vector esport mascot portrait, minimal shading, clean shapes, neon colors, thick outline, same identity, no text, plain background",
-      exaggerated:
-        "highly exaggerated cartoon caricature, big facial features, humorous and expressive, same identity, clean background, no text",
+    const aiInput: any = {
+      prompt: preset.prompt,
+      negative_prompt:
+        "text, watermark, logo, border, frame, extra limbs, deformed, blurry, low quality",
+      image: [...uint8], // tableau d'entiers, comme demandé dans la doc
+      // hauteur/largeur typiques (multiples de 64)
+      height: 768,
+      width: 768,
     };
 
-    const body = JSON.stringify({
-      input: {
-        image: dataUrl,
-        prompt: stylePrompt[styleId],
-      },
-    });
-
-    const createRes = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Token ${replicateApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body,
-    });
-
-    if (!createRes.ok) {
-      const txt = await createRes.text().catch(() => "");
+    let aiResult: any;
+    try {
+      aiResult = await env.AI.run(MODEL_ID, aiInput);
+    } catch (err: any) {
+      // On renvoie l’erreur brute pour voir EXACTEMENT ce que dit le modèle
       return new Response(
         JSON.stringify({
-          ok: false,
-          error: "replicate_request_failed",
-          status: createRes.status,
-          details: txt.slice(0, 500),
+          step: "ai_run",
+          error: err?.message ?? String(err),
         }),
         {
           status: 500,
@@ -239,39 +240,53 @@ export const onRequest = async (context: any): Promise<Response> => {
       );
     }
 
-    let prediction: any = await createRes.json();
+    // aiResult peut être :
+    // - un ArrayBuffer
+    // - un objet { image: ArrayBuffer | number[] | string }
+    // - un simple tableau de nombres
+    let rawBytes: Uint8Array | null = null;
 
-    // Si le résultat est déjà prêt (cas rare)
-    let status: string = prediction.status;
-    const getUrl: string | undefined = prediction?.urls?.get;
+    if (aiResult instanceof ArrayBuffer) {
+      rawBytes = new Uint8Array(aiResult);
+    } else if (aiResult && aiResult.image instanceof ArrayBuffer) {
+      rawBytes = new Uint8Array(aiResult.image);
+    } else if (aiResult && Array.isArray(aiResult.image)) {
+      rawBytes = new Uint8Array(aiResult.image);
+    } else if (Array.isArray(aiResult)) {
+      rawBytes = new Uint8Array(aiResult);
+    } else if (aiResult && typeof aiResult.image === "string") {
+      // Certains modèles renvoient directement du base64
+      const pngDataUrl = `data:image/png;base64,${aiResult.image}`;
+      // On met quand même en cache + quota si possible
+      if (env.AVATAR_CACHE && cacheKey) {
+        await env.AVATAR_CACHE.put(cacheKey, pngDataUrl, {
+          expirationTtl: 60 * 60 * 24 * 30,
+        });
+        if (quotaKey) {
+          const newQuota = currentQuota + 1;
+          await env.AVATAR_CACHE.put(quotaKey, String(newQuota), {
+            expirationTtl: 60 * 60 * 48,
+          });
+        }
+      }
 
-    // Poll si nécessaire
-    let tries = 0;
-    const MAX_TRIES = 20;
-
-    while (
-      (status === "starting" || status === "processing" || status === "queued") &&
-      tries < MAX_TRIES &&
-      getUrl
-    ) {
-      await sleep(1500);
-      const pollRes = await fetch(getUrl, {
-        headers: {
-          Authorization: `Token ${replicateApiKey}`,
-        },
-      });
-      prediction = await pollRes.json();
-      status = prediction.status;
-      tries++;
+      return new Response(
+        JSON.stringify({ ok: true, cartoonPng: pngDataUrl, cached: false }),
+        {
+          status: 200,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
     }
 
-    if (status !== "succeeded") {
+    if (!rawBytes || rawBytes.length === 0) {
       return new Response(
         JSON.stringify({
-          ok: false,
-          error: "replicate_failed",
-          status,
-          details: prediction?.error || null,
+          error: "AI generation failed (empty result)",
+          debugType: typeof aiResult,
         }),
         {
           status: 500,
@@ -283,43 +298,18 @@ export const onRequest = async (context: any): Promise<Response> => {
       );
     }
 
-    // Pour cartoonify, output est en général une liste d'URLs d’images
-    const output = prediction.output;
-    let finalUrl: string | null = null;
-
-    if (Array.isArray(output) && output.length > 0 && typeof output[0] === "string") {
-      finalUrl = output[0] as string;
-    } else if (typeof output === "string") {
-      finalUrl = output;
-    }
-
-    if (!finalUrl) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: "no_output_image",
-        }),
-        {
-          status: 500,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-    }
-
-    // Ici, on renvoie l’URL directe. Ton front l’utilise déjà comme src d’image,
-    // donc pas besoin que ce soit un data: URL.
-    const cartoonUrl = finalUrl;
+    const base64 = bytesToBase64(rawBytes);
+    const pngDataUrl = `data:image/png;base64,${base64}`;
 
     // ---------------- STOCKAGE CACHE + MAJ QUOTA ----------------
     if (env.AVATAR_CACHE && cacheKey) {
-      await env.AVATAR_CACHE.put(cacheKey, cartoonUrl, {
+      // Cache de l'image pour 30 jours
+      await env.AVATAR_CACHE.put(cacheKey, pngDataUrl, {
         expirationTtl: 60 * 60 * 24 * 30, // 30 jours
       });
 
       if (quotaKey) {
+        // +1 sur le quota du jour
         const newQuota = currentQuota + 1;
         await env.AVATAR_CACHE.put(quotaKey, String(newQuota), {
           expirationTtl: 60 * 60 * 48,
@@ -328,7 +318,7 @@ export const onRequest = async (context: any): Promise<Response> => {
     }
 
     return new Response(
-      JSON.stringify({ ok: true, cartoonPng: cartoonUrl, cached: false }),
+      JSON.stringify({ ok: true, cartoonPng: pngDataUrl, cached: false }),
       {
         status: 200,
         headers: {
@@ -340,9 +330,8 @@ export const onRequest = async (context: any): Promise<Response> => {
   } catch (err: any) {
     return new Response(
       JSON.stringify({
-        ok: false,
-        error: "exception",
-        message: err?.message ?? "Unknown error",
+        step: "general_catch",
+        error: err?.message ?? "Unknown error",
       }),
       {
         status: 500,
