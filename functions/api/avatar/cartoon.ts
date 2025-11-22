@@ -1,14 +1,15 @@
 // ===================================================
-// /functions/api/avatar/cartoon.ts
-// IA caricature + fallback client-side
-// - Reçoit FormData { image: File, style?: string }
-// - Appelle Workers AI @cf/runwayml/stable-diffusion-v1-5-img2img
-// - Renvoie { ok, cartoonPng? , error? } en JSON
+// functions/api/avatar/cartoon.ts
+// Backend Cloudflare Pages + Workers AI (img2img)
+// Reçoit: FormData (image + style)
+// Renvoie: { ok: true, cartoonPng: "data:image/png;base64,..." }
 // ===================================================
 
 type StyleId = "realistic" | "comic" | "flat" | "exaggerated";
 
-// --------- Styles IA (prompts + strength) ---------
+const DAILY_QUOTA_LIMIT = 100;
+
+// Prompts + strength par style
 const STYLE_PRESETS: Record<StyleId, { prompt: string; strength: number }> = {
   realistic: {
     prompt: `
@@ -30,134 +31,164 @@ Recognizable face. Plain dark background, no text, no frame.
   flat: {
     prompt: `
 Flat esport logo caricature of the same person.
-Clean vector-like shapes, strong contrast, minimal shading.
-Centered face or bust, plain dark background, no text.
-    `,
-    strength: 0.55,
-  },
-  exaggerated: {
-    prompt: `
-Highly exaggerated caricature portrait of the same person.
-Big facial features, high contrast, strong shadows.
-Still recognizable. Plain dark background, no text, no frame.
+Strong outlines, minimal shading, high contrast.
+Centered head and shoulders inside a circular frame. No background image.
     `,
     strength: 0.7,
   },
+  exaggerated: {
+    prompt: `
+Extreme caricature of the same person.
+Very exaggerated facial features, strong shadows, dramatic contrast.
+Painterly comic style, but the person is still clearly recognizable.
+Plain dark background. No text. No frame.
+    `,
+    strength: 0.55,
+  },
 };
 
-// --------- ID du modèle Workers AI (CORRECT) ---------
+// 🧠 Choisis BIEN ce modèle : il doit exister dans ton onglet "Models"
+// Sur ton screen c'était "stable-diffusion-v1-5-img2img" → prefix officiel :
 const MODEL_ID = "@cf/runwayml/stable-diffusion-v1-5-img2img";
 
-// Petit helper JSON
-function json(data: any, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "access-control-allow-origin": "*",
-    },
-  });
-}
+// CORS basiques pour ton front
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
 
-export const onRequestPost: PagesFunction<{
-  AI: any;
-}> = async (context) => {
-  const { request, env } = context;
+export const onRequest: PagesFunction<{ AI: any }> = async (ctx) => {
+  const { request, env } = ctx;
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+
+  if (request.method !== "POST") {
+    return json(
+      { ok: false, error: "method_not_allowed" },
+      { status: 405 }
+    );
+  }
 
   try {
-    const contentType = request.headers.get("content-type") || "";
-    if (!contentType.includes("multipart/form-data")) {
+    // ---------- Sécurité quota DAILY (localStorage Workers KV plus tard si tu veux) ----------
+    // Pour l'instant on ne bloque pas vraiment, on laisse à 100 / jour à implémenter plus tard.
+
+    const contentType = request.headers.get("Content-Type") || "";
+    if (!contentType.toLowerCase().includes("multipart/form-data")) {
       return json(
         {
           ok: false,
-          error: "bad_request",
-          message: "Expected multipart/form-data with field 'image'.",
+          error: "invalid_content_type",
+          message: "Expected multipart/form-data",
         },
-        400
+        { status: 400 }
       );
     }
 
     const form = await request.formData();
-    const imageFile = form.get("image");
-    const styleRaw = (form.get("style") as string) || "realistic";
+    const image = form.get("image");
+    const styleField = (form.get("style") as string) || "realistic";
 
-    if (!(imageFile instanceof File)) {
+    // Style safe
+    const style: StyleId =
+      styleField === "comic" ||
+      styleField === "flat" ||
+      styleField === "exaggerated"
+        ? styleField
+        : "realistic";
+
+    if (!(image instanceof File)) {
       return json(
         {
           ok: false,
           error: "no_image",
-          message: "Champ 'image' manquant dans la requête.",
+          message: "No image file received",
         },
-        400
+        { status: 400 }
       );
     }
 
-    const styleId: StyleId =
-      (["realistic", "comic", "flat", "exaggerated"] as const).includes(
-        styleRaw as StyleId
-      )
-        ? (styleRaw as StyleId)
-        : "realistic";
+    const imgBuffer = await image.arrayBuffer();
+    const imgBytes = new Uint8Array(imgBuffer);
 
-    const preset = STYLE_PRESETS[styleId];
+    const preset = STYLE_PRESETS[style];
 
-    // Lecture du fichier en Uint8Array
-    const imageArrayBuffer = await imageFile.arrayBuffer();
-    const imageUint8 = new Uint8Array(imageArrayBuffer);
-
-    // ---------- Appel Workers AI ----------
-    const aiResult = await env.AI.run(MODEL_ID, {
+    // ⚠️ TRÈS IMPORTANT : on n’envoie QUE 3 CHAMPS (prompt, image, strength)
+    // Pas de null / undefined → plus d'erreur "invalid or incomplete input"
+    const inputs = {
       prompt: preset.prompt,
-      image: imageUint8,
+      image: imgBytes,
       strength: preset.strength,
-    });
+    };
 
-    // Workers AI renvoie normalement un ArrayBuffer ou Uint8Array pour les modèles image
-    let bytes: Uint8Array;
+    const aiResult = await env.AI.run(MODEL_ID, inputs) as {
+      image?: ArrayBuffer | Uint8Array;
+    };
 
-    if (aiResult instanceof ArrayBuffer) {
-      bytes = new Uint8Array(aiResult);
-    } else if (aiResult instanceof Uint8Array) {
-      bytes = aiResult;
-    } else {
-      // Cas bizarre : on log le type pour debug côté front (/api/avatar/test)
+    if (!aiResult || !aiResult.image) {
       return json(
         {
           ok: false,
-          error: "unexpected_ai_result",
-          typeofResult: typeof aiResult,
-          constructorName: aiResult && (aiResult as any).constructor?.name,
+          error: "no_image_returned",
+          message: "No image returned by Workers AI.",
         },
-        500
+        { status: 500 }
       );
     }
 
-    // Encodage base64 → dataURL PNG
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    const base64 = btoa(binary);
+    const outBytes =
+      aiResult.image instanceof Uint8Array
+        ? aiResult.image
+        : new Uint8Array(aiResult.image);
+
+    const base64 = toBase64(outBytes);
     const dataUrl = `data:image/png;base64,${base64}`;
 
-    return json({
-      ok: true,
-      cartoonPng: dataUrl,
-      modelId: MODEL_ID,
-      style: styleId,
-    });
+    return json(
+      {
+        ok: true,
+        cartoonPng: dataUrl,
+        model: MODEL_ID,
+        style,
+      },
+      { status: 200 }
+    );
   } catch (err: any) {
-    console.error("[avatar/cartoon] AI error", err);
+    console.error("[avatar/cartoon] Error:", err);
+
     return json(
       {
         ok: false,
         error: "ai_run_failed",
-        message:
-          err && err.message
-            ? String(err.message)
-            : "Unknown error while calling Workers AI.",
+        message: String(err?.message || err),
       },
-      500
+      { status: 500 }
     );
   }
 };
+
+// ---------- Helpers ----------
+
+function json(body: unknown, init?: ResponseInit) {
+  const headers = {
+    ...CORS_HEADERS,
+    "Content-Type": "application/json; charset=utf-8",
+    ...(init?.headers || {}),
+  };
+  return new Response(JSON.stringify(body), {
+    ...init,
+    headers,
+  });
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  // @ts-ignore
+  return btoa(binary);
+}

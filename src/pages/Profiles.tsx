@@ -18,6 +18,7 @@ import {
 import { getBasicProfileStatsSync } from "../lib/statsLiteIDB";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
+import { useAuthOnline } from "../hooks/useAuthOnline";
 
 type View = "menu" | "me" | "locals" | "friends";
 
@@ -95,6 +96,7 @@ export default function Profiles({
 
   const { theme } = useTheme();
   const { t } = useLang();
+  const auth = useAuthOnline();
 
   const [view, setView] = React.useState<View>(
     params?.view === "me"
@@ -236,6 +238,21 @@ export default function Profiles({
     );
   }
 
+  // Statut affiché : si pas connecté online -> toujours "offline"
+  const onlineStatusForUi: "online" | "away" | "offline" =
+    auth.status === "signed_in"
+      ? (selfStatus as "online" | "away" | "offline")
+      : "offline";
+
+  async function handleQuit() {
+    setActiveProfile(null);
+    try {
+      await auth.logout();
+    } catch (err) {
+      console.warn("[profiles] online logout error:", err);
+    }
+  }
+
   return (
     <>
       <style
@@ -262,7 +279,6 @@ export default function Profiles({
             go={go}
             onSelectMe={() => setView("me")}
             onSelectLocals={() => setView("locals")}
-            onSelectFriends={() => setView("friends")}
           />
         ) : (
           <>
@@ -289,19 +305,20 @@ export default function Profiles({
                 <Card>
                   {active ? (
                     <ActiveProfileBlock
-                      selfStatus={selfStatus as any}
+                      selfStatus={onlineStatusForUi}
                       active={active}
                       activeAvg3D={activeAvg3D}
-                      onToggleAway={() =>
+                      onToggleAway={() => {
+                        if (auth.status !== "signed_in") return;
                         update((s) => ({
                           ...s,
                           selfStatus:
                             s.selfStatus === "away"
                               ? ("online" as const)
                               : ("away" as const),
-                        }))
-                      }
-                      onQuit={() => setActiveProfile(null)}
+                        }));
+                      }}
+                      onQuit={handleQuit}
                       onEdit={(n, f) => {
                         if (n && n !== active.name)
                           renameProfile(active.id, n);
@@ -727,15 +744,7 @@ function ActiveProfileBlock({
           className="row"
           style={{ gap: 8, alignItems: "center", marginTop: 4 }}
         >
-          <StatusDot
-            kind={
-              selfStatus === "away"
-                ? "away"
-                : selfStatus === "offline"
-                ? "offline"
-                : "online"
-            }
-          />
+          <StatusDot kind={selfStatus} />
           <span
             style={{
               fontWeight: 700,
@@ -1173,6 +1182,7 @@ function UnifiedAuthBlock({
   const { t } = useLang();
   const { theme } = useTheme();
   const primary = theme.primary;
+  const { signup: onlineSignup, login: onlineLogin } = useAuthOnline();
 
   // Connexion
   const [loginEmail, setLoginEmail] = React.useState("");
@@ -1206,7 +1216,7 @@ function UnifiedAuthBlock({
     r.readAsDataURL(file);
   }, [file]);
 
-  function submitLogin() {
+  async function submitLogin() {
     const emailNorm = loginEmail.trim().toLowerCase();
     const pass = loginPassword;
 
@@ -1239,9 +1249,20 @@ function UnifiedAuthBlock({
 
     setLoginError(null);
     onConnect(match.id);
+
+    // Essayer aussi de connecter le compte online (mock ou backend)
+    try {
+      await onlineLogin({
+        email: emailNorm || undefined,
+        nickname: match.name || undefined,
+        password: pass || undefined,
+      });
+    } catch (err) {
+      console.warn("[profiles] online login error:", err);
+    }
   }
 
-  function submitCreate() {
+  async function submitCreate() {
     const trimmedName = name.trim();
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedPass = password;
@@ -1291,7 +1312,19 @@ function UnifiedAuthBlock({
       birthDate: birthDate || "",
     };
 
+    // Profil local (+ stats, etc.)
     onCreate(trimmedName, file, privateInfo);
+
+    // Et on tente la création du compte online lié
+    try {
+      await onlineSignup({
+        email: trimmedEmail,
+        nickname: trimmedName,
+        password: trimmedPass,
+      });
+    } catch (err) {
+      console.warn("[profiles] online signup error:", err);
+    }
 
     setName("");
     setEmail("");
