@@ -53,6 +53,21 @@ type SavedMatch = {
   payload?: any;
 };
 
+/** 
+ * Onglet principal demandé à StatsHub :
+ * - "history"  : Historique
+ * - "stats"    : Stats joueurs
+ * - "training" : Training
+ * - "players"  : alias de "stats" (pour StatsShell)
+ */
+type StatsHubMainTab = "history" | "stats" | "training" | "players";
+
+type Props = {
+  go?: (tab: string, params?: any) => void;
+  tab?: StatsHubMainTab;
+  memHistory?: SavedMatch[];
+};
+
 type Props = {
   go?: (tab: string, params?: any) => void;
   tab?: "history" | "stats" | "training";
@@ -3652,15 +3667,22 @@ function extractX01PlayerStats(rec: SavedMatch, pid: string) {
 /* ---------- Page ---------- */
 export default function StatsHub(props: Props) {
   const go = props.go ?? (() => {});
+
+  // ⚠️ Ici on mappe toutes les valeurs vers les 3 vrais onglets :
+  // - "training"  -> onglet Training
+  // - "history"   -> onglet Historique
+  // - tout le reste ("stats", "players", undefined…) -> onglet Stats joueurs
+  const requestedTab = props.tab;
   const initialTab: "history" | "stats" | "training" =
-    props.tab === "stats"
-      ? "stats"
-      : props.tab === "training"
+    requestedTab === "training"
       ? "training"
-      : "history";
-  const [tab, setTab] = React.useState<
-    "history" | "stats" | "training"
-  >(initialTab);
+      : requestedTab === "history"
+      ? "history"
+      : "stats";
+
+  const [tab, setTab] = React.useState<"history" | "stats" | "training">(
+    initialTab
+  );
 
    // Sous-onglets dans "Stats joueurs" :
   // - "dashboard" = vue générale StatsPlayerDashboard

@@ -30,8 +30,8 @@ export default function StatsShell({ store, go }: Props) {
   const playerName = activeProfile?.name || t("stats.player_fallback_name", "joueur");
 
   function openPlayersStats() {
-    // 👉 ouvre directement StatsHub onglet "Stats joueurs"
-    go("statsHub", { tab: "players" });
+    // on envoie "players", maintenant compris par StatsHub comme "Stats joueurs"
+    go("stats", { tab: "players" });
   }
 
   function openTrainingStats() {
