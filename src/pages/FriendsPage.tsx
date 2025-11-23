@@ -1,27 +1,28 @@
 // ============================================
 // src/pages/FriendsPage.tsx
-// Mode Online & Amis — v1 (mock + futur backend)
-// - Compte online synchronisé avec le profil local actif
-// - Connexion / création rapide (pseudo + email + mot de passe)
-// - Statut en ligne (online / away / offline) unifié via store.selfStatus
-// - Historique Online (mock) : Training + Matches
-// - Présence locale lastSeen + ping toutes les 30s
+// Mode Online & Amis — v2 full local (mock)
+// - Compte online email + mot de passe sauvegardé en localStorage
+// - Connexion / création rapide
+// - Statut global store.selfStatus (online / away / offline)
+// - Statut cohérent sur Home / Profils / FriendsPage
+// - Présence locale lastSeen + ping toutes les 30s en "online"
 // - Salons online mock : création + join par code
 // - Affiche le DRAPEAU du pays du profil actif (privateInfo.country)
-// - Bouton TEST SUPABASE pour vérifier la connexion à la base
+// - Bouton TEST SUPABASE (juste pour vérifier la connexion plus tard)
 // ============================================
 
 import React from "react";
 import type { Store } from "../lib/types";
-import { useAuthOnline } from "../hooks/useAuthOnline";
 import { onlineApi } from "../lib/onlineApi";
 import type { OnlineMatch } from "../lib/onlineTypes";
+
 import {
   createLobby,
   joinLobbyByCode,
   type OnlineLobby,
 } from "../lib/onlineLobbiesMock";
-import { supabase } from "../lib/supabase";
+
+import { supabase } from "../lib/supabase"; // ✅ test connexion Supabase
 
 /* -------------------------------------------------
    Constantes localStorage
@@ -29,12 +30,33 @@ import { supabase } from "../lib/supabase";
 const LS_PRESENCE_KEY = "dc_online_presence_v1";
 const LS_ONLINE_MATCHES_KEY = "dc_online_matches_v1";
 
+// Compte online local (email + mot de passe + pseudo)
+const LS_ONLINE_ACCOUNT_KEY = "dc_online_account_v1";
+// Session online actuelle (juste un flag + timestamp)
+const LS_ONLINE_SESSION_KEY = "dc_online_session_v1";
+
 type PresenceStatus = "online" | "away" | "offline";
 
 type StoredPresence = {
   status: PresenceStatus;
   lastSeen: number;
 };
+
+type LocalOnlineAccount = {
+  email: string;
+  password: string;
+  nickname: string;
+  createdAt: number;
+  lastLoginAt: number;
+};
+
+type LocalOnlineSession = {
+  email: string;
+  nickname: string;
+  loggedInAt: number;
+};
+
+/* ------ Helpers localStorage ------ */
 
 function savePresenceToLS(status: PresenceStatus) {
   if (typeof window === "undefined") return;
@@ -85,8 +107,60 @@ function formatLastSeenAgo(lastSeen: number | null): string | null {
   return `Il y a ${diffH} h`;
 }
 
+function loadLocalOnlineAccount(): LocalOnlineAccount | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(LS_ONLINE_ACCOUNT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.email || !parsed.password) return null;
+    return parsed as LocalOnlineAccount;
+  } catch {
+    return null;
+  }
+}
+
+function saveLocalOnlineAccount(acc: LocalOnlineAccount) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      LS_ONLINE_ACCOUNT_KEY,
+      JSON.stringify(acc)
+    );
+  } catch {
+    // ignore
+  }
+}
+
+function loadLocalOnlineSession(): LocalOnlineSession | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(LS_ONLINE_SESSION_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as LocalOnlineSession;
+  } catch {
+    return null;
+  }
+}
+
+function saveLocalOnlineSession(sess: LocalOnlineSession | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (!sess) {
+      window.localStorage.removeItem(LS_ONLINE_SESSION_KEY);
+    } else {
+      window.localStorage.setItem(
+        LS_ONLINE_SESSION_KEY,
+        JSON.stringify(sess)
+      );
+    }
+  } catch {
+    // ignore
+  }
+}
+
 /* -------------------------------------------------
-   Types & props
+   Composant principal
 --------------------------------------------------*/
 
 type Props = {
@@ -94,54 +168,53 @@ type Props = {
   update: (mut: (s: Store) => Store) => void;
 };
 
-/* -------------------------------------------------
-   Composant principal
---------------------------------------------------*/
-
 export default function FriendsPage({ store, update }: Props) {
-  const {
-    status,
-    loading,
-    user,
-    profile,
-    signup,
-    login,
-    logout,
-    updateProfile,
-    isMock,
-  } = useAuthOnline();
-
-  const isSignedIn = status === "signed_in" && !!user;
-  const isChecking = status === "checking";
-
-  // Profil local actif (fallback nickname)
+  // --- Profil local actif (fallback nickname)
   const activeProfile =
     (store.profiles || []).find((p) => p.id === store.activeProfileId) ||
-    (store.profiles || [])[0] ||
+    (store.profiles || [0])[0] ||
     null;
 
-  /* -------- Formulaire auth -------- */
-
-  const [nickname, setNickname] = React.useState(
-    user?.nickname || activeProfile?.name || ""
+  // Compte online enregistré (email + mot de passe + nickname)
+  const [account, setAccount] = React.useState<LocalOnlineAccount | null>(
+    () => loadLocalOnlineAccount()
   );
-  const [email, setEmail] = React.useState("");
-  const [password, setPassword] = React.useState("");
+
+  // Session actuelle (connecté ou pas)
+  const [session, setSession] = React.useState<LocalOnlineSession | null>(
+    () => loadLocalOnlineSession()
+  );
+
+  const isSignedIn = !!session;
+
+  // Champs formulaire
+  const [nickname, setNickname] = React.useState<string>(
+    () =>
+      session?.nickname ||
+      account?.nickname ||
+      activeProfile?.name ||
+      ""
+  );
+  const [email, setEmail] = React.useState<string>(
+    () => session?.email || account?.email || ""
+  );
+  const [password, setPassword] = React.useState<string>("");
 
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [info, setInfo] = React.useState<string | null>(null);
 
-  // Historique online (mock)
+  // --- Historique online (mock)
   const [matches, setMatches] = React.useState<OnlineMatch[]>([]);
   const [loadingMatches, setLoadingMatches] = React.useState(false);
 
-  // Salons (mock)
+  // Salons online (mock) - création
   const [creatingLobby, setCreatingLobby] = React.useState(false);
   const [lastCreatedLobby, setLastCreatedLobby] =
     React.useState<OnlineLobby | null>(null);
   const [showLobbyModal, setShowLobbyModal] = React.useState(false);
 
+  // JOIN salon (mock)
   const [joinCode, setJoinCode] = React.useState("");
   const [joiningLobby, setJoiningLobby] = React.useState(false);
   const [joinedLobby, setJoinedLobby] = React.useState<OnlineLobby | null>(
@@ -150,16 +223,39 @@ export default function FriendsPage({ store, update }: Props) {
   const [joinError, setJoinError] = React.useState<string | null>(null);
   const [joinInfo, setJoinInfo] = React.useState<string | null>(null);
 
-  // Présence locale
+  // --- lastSeen (présence locale)
   const initialPresence = React.useMemo(() => loadPresenceFromLS(), []);
   const [lastSeen, setLastSeen] = React.useState<number | null>(
     initialPresence?.lastSeen ?? null
   );
 
-  // Sync nickname depuis la session
-  React.useEffect(() => {
-    if (user?.nickname) setNickname(user.nickname);
-  }, [user?.nickname]);
+  // --- statut global de l'app : store.selfStatus
+  const selfStatus: PresenceStatus =
+    (store.selfStatus as PresenceStatus) || "offline";
+
+  const statusLabel =
+    selfStatus === "away"
+      ? "Absent"
+      : selfStatus === "online"
+      ? "En ligne"
+      : "Hors ligne";
+
+  const statusColor =
+    selfStatus === "away"
+      ? "#ffb347"
+      : selfStatus === "online"
+      ? "#7fe2a9"
+      : "#cccccc";
+
+  const displayName =
+    activeProfile?.name || account?.nickname || session?.nickname || "Profil online";
+
+  const lastSeenLabel = formatLastSeenAgo(lastSeen);
+
+  // --- Drapeau pays du profil actif (privateInfo.country)
+  const privateInfo = ((activeProfile as any)?.privateInfo || {}) as any;
+  const countryRaw = privateInfo.country || "";
+  const countryFlag = getCountryFlag(countryRaw);
 
   /* -------------------------------------------------
       TEST SUPABASE
@@ -186,65 +282,35 @@ export default function FriendsPage({ store, update }: Props) {
   }
 
   /* -------------------------------------------------
-      Gestion présence locale (store.selfStatus + ping)
+      Gestion présence locale (set + ping 30s)
   --------------------------------------------------*/
 
-  function setPresence(s: PresenceStatus) {
-    update((st) => ({ ...st, selfStatus: s as any }));
-    savePresenceToLS(s);
+  function setPresence(newStatus: PresenceStatus) {
+    update((st) => ({ ...st, selfStatus: newStatus as any }));
+    savePresenceToLS(newStatus);
     setLastSeen(Date.now());
   }
 
-  // Ping toutes les 30s quand online
   React.useEffect(() => {
-    if (!isSignedIn || store.selfStatus !== "online") return;
+    if (!isSignedIn || selfStatus !== "online") return;
     if (typeof window === "undefined") return;
 
     const id = window.setInterval(() => {
       savePresenceToLS("online");
       setLastSeen(Date.now());
-    }, 30000);
+    }, 30_000);
 
     return () => window.clearInterval(id);
-  }, [isSignedIn, store.selfStatus]);
+  }, [isSignedIn, selfStatus]);
 
-  // Au boot : si lastSeen trop vieux, bascule en "away"
   React.useEffect(() => {
     if (!initialPresence) return;
     const diff = Date.now() - initialPresence.lastSeen;
-    if (diff > 10 * 60000 && store.selfStatus === "online") {
+    if (diff > 10 * 60_000 && selfStatus === "online") {
       setPresence("away");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Libellés de statut unifiés
-  const statusLabel =
-    store.selfStatus === "away"
-      ? "Absent"
-      : store.selfStatus === "online"
-      ? "En ligne"
-      : "Hors ligne";
-
-  const statusColor =
-    store.selfStatus === "away"
-      ? "#ffb347"
-      : store.selfStatus === "online"
-      ? "#7fe2a9"
-      : "#cccccc";
-
-  const displayName =
-    profile?.displayName ||
-    user?.nickname ||
-    activeProfile?.name ||
-    "Profil online";
-
-  const lastSeenLabel = formatLastSeenAgo(lastSeen);
-
-  // Drapeau pays du profil actif
-  const privateInfo = ((activeProfile as any)?.privateInfo || {}) as any;
-  const countryRaw = privateInfo.country || "";
-  const countryFlag = getCountryFlag(countryRaw);
 
   /* -------------------------------------------------
       Historique Online (mock)
@@ -313,38 +379,50 @@ export default function FriendsPage({ store, update }: Props) {
 
   /* -------------------------------------------------
       Actions AUTH (signup / login / logout)
+      -> 100% local, pas de Supabase pour l’instant
   --------------------------------------------------*/
 
   async function handleSignup() {
     const nick = nickname.trim();
-    const mail = email.trim();
+    const mail = email.trim().toLowerCase();
     const pass = password;
 
-    if (!nick || !mail || !pass) {
-      setError(
-        "Pseudo requis (pour la création de compte online, email et mot de passe sont requis)."
-      );
-      setInfo(null);
+    setError(null);
+    setInfo(null);
+
+    if (!nick) {
+      setError("Pseudo online requis.");
+      return;
+    }
+    if (!mail || !pass) {
+      setError("Pour créer un compte online, email et mot de passe sont requis.");
       return;
     }
 
     setBusy(true);
-    setError(null);
-    setInfo(null);
-
     try {
-      await signup({ nickname: nick, email: mail, password: pass });
+      const now = Date.now();
+      const acc: LocalOnlineAccount = {
+        email: mail,
+        password: pass,
+        nickname: nick,
+        createdAt: account?.createdAt ?? now,
+        lastLoginAt: now,
+      };
+      saveLocalOnlineAccount(acc);
+      setAccount(acc);
 
-      // synchro profil online avec profil local actif
-      if (activeProfile) {
-        await updateProfile({
-          displayName: activeProfile.name,
-          avatarUrl: activeProfile.avatarDataUrl ?? undefined,
-        }).catch(() => {});
-      }
+      const sess: LocalOnlineSession = {
+        email: mail,
+        nickname: nick,
+        loggedInAt: now,
+      };
+      saveLocalOnlineSession(sess);
+      setSession(sess);
 
       setPresence("online");
-      setInfo("Compte online créé et connecté.");
+      setPassword("");
+      setInfo("Compte online créé et connecté (mode démo local).");
     } catch (e: any) {
       console.warn(e);
       setError(
@@ -356,26 +434,50 @@ export default function FriendsPage({ store, update }: Props) {
   }
 
   async function handleLogin() {
-    const nick = nickname.trim();
-    const mail = email.trim();
+    const mail = email.trim().toLowerCase();
     const pass = password;
 
+    setError(null);
+    setInfo(null);
+
     if (!mail || !pass) {
-      setError(
-        "Pour te connecter, renseigne l’email et le mot de passe du compte."
-      );
-      setInfo(null);
+      setError("Pour te connecter, entre email et mot de passe.");
+      return;
+    }
+
+    const acc = loadLocalOnlineAccount();
+    if (!acc) {
+      setError("Aucun compte local trouvé. Crée d’abord un compte.");
+      return;
+    }
+
+    if (acc.email !== mail || acc.password !== pass) {
+      setError("Email ou mot de passe incorrect.");
       return;
     }
 
     setBusy(true);
-    setError(null);
-    setInfo(null);
-
     try {
-      await login({ email: mail, password: pass, nickname: nick || undefined });
+      const now = Date.now();
+      const updated: LocalOnlineAccount = {
+        ...acc,
+        lastLoginAt: now,
+        nickname: nickname.trim() || acc.nickname,
+      };
+      saveLocalOnlineAccount(updated);
+      setAccount(updated);
+
+      const sess: LocalOnlineSession = {
+        email: updated.email,
+        nickname: updated.nickname,
+        loggedInAt: now,
+      };
+      saveLocalOnlineSession(sess);
+      setSession(sess);
+
       setPresence("online");
-      setInfo("Connexion réussie.");
+      setPassword("");
+      setInfo("Connexion réussie (mode démo local).");
     } catch (e: any) {
       console.warn(e);
       setError(
@@ -391,18 +493,18 @@ export default function FriendsPage({ store, update }: Props) {
     setError(null);
     setInfo(null);
     try {
-      await logout();
+      setSession(null);
+      saveLocalOnlineSession(null);
     } catch {
       // ignore
     }
     setPresence("offline");
-    setInfo("Déconnecté du mode online.");
+    setPassword("");
+    setInfo("Déconnecté du mode online (compte conservé sur cet appareil).");
     setBusy(false);
   }
 
-  /* -------------------------------------------------
-      Salons X01 (mock)
-  --------------------------------------------------*/
+  // ---------- Création d'un salon X01 (mock local) ----------
 
   async function handleCreateLobby() {
     if (!isSignedIn) {
@@ -421,8 +523,8 @@ export default function FriendsPage({ store, update }: Props) {
         hostProfileId: activeProfile?.id ?? null,
         hostName:
           activeProfile?.name ||
-          profile?.displayName ||
-          user?.nickname ||
+          session?.nickname ||
+          account?.nickname ||
           "Joueur",
       });
 
@@ -437,6 +539,8 @@ export default function FriendsPage({ store, update }: Props) {
     }
   }
 
+  // ---------- Join d'un salon X01 par code (mock local) ----------
+
   async function handleJoinLobby() {
     const code = joinCode.trim().toUpperCase();
 
@@ -449,9 +553,7 @@ export default function FriendsPage({ store, update }: Props) {
       return;
     }
     if (!isSignedIn) {
-      setJoinError(
-        "Tu dois être connecté en mode online pour rejoindre un salon."
-      );
+      setJoinError("Tu dois être connecté en mode online pour rejoindre un salon.");
       return;
     }
 
@@ -541,13 +643,13 @@ export default function FriendsPage({ store, update }: Props) {
         <div style={{ fontWeight: 700, marginBottom: 2 }}>Mode démo</div>
 
         <div style={{ opacity: 0.9 }}>
-          Pour l’instant, les données online sont stockées uniquement sur cet
-          appareil. Plus tard, un vrai serveur permettra de partager ton profil.
+          Pour l’instant, ton compte online est sauvegardé uniquement sur cet
+          appareil (email + mot de passe + pseudo). Plus tard, un vrai serveur
+          permettra de le partager entre tous tes appareils.
         </div>
 
         <div style={{ marginTop: 4, color: "#ffcf57" }}>
-          {isSignedIn ? "Connecté en mode démo." : "Non connecté."}{" "}
-          {isMock && "(mock local)"}
+          {isSignedIn ? "Connecté en mode démo local." : "Non connecté."}
         </div>
 
         {lastSeenLabel && (
@@ -563,7 +665,7 @@ export default function FriendsPage({ store, update }: Props) {
         )}
       </div>
 
-      {/* --------- AUTH --------- */}
+      {/* --------- BLOC CONNEXION / CRÉATION --------- */}
       {!isSignedIn ? (
         <div
           style={{
@@ -599,7 +701,7 @@ export default function FriendsPage({ store, update }: Props) {
             </div>
           )}
 
-          {/* Pseudo */}
+          {/* Champ PSEUDO */}
           <label
             style={{
               fontSize: 11.5,
@@ -610,11 +712,12 @@ export default function FriendsPage({ store, update }: Props) {
           >
             Pseudo online
           </label>
+
           <input
             type="text"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
-            disabled={busy || loading || isChecking}
+            disabled={busy}
             placeholder="Ex : CHEVROUTE, NINZALEX…"
             style={{
               width: "100%",
@@ -629,22 +732,12 @@ export default function FriendsPage({ store, update }: Props) {
           />
 
           {/* Email */}
-          <label
-            style={{
-              fontSize: 11.5,
-              opacity: 0.9,
-              display: "block",
-              marginBottom: 4,
-            }}
-          >
-            Email (serveur réel)
-          </label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            disabled={busy || loading || isChecking}
-            placeholder="perrin.alexandre@exemple.com"
+            disabled={busy}
+            placeholder="Email (serveur réel plus tard)"
             style={{
               width: "100%",
               borderRadius: 10,
@@ -658,21 +751,12 @@ export default function FriendsPage({ store, update }: Props) {
           />
 
           {/* Mot de passe */}
-          <label
-            style={{
-              fontSize: 11.5,
-              opacity: 0.9,
-              display: "block",
-              marginBottom: 4,
-            }}
-          >
-            Mot de passe
-          </label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            disabled={busy || loading || isChecking}
+            disabled={busy}
+            placeholder="Mot de passe"
             style={{
               width: "100%",
               borderRadius: 10,
@@ -710,7 +794,7 @@ export default function FriendsPage({ store, update }: Props) {
             </div>
           )}
 
-          {/* Boutons */}
+          {/* BOUTONS */}
           <div
             style={{
               display: "flex",
@@ -721,7 +805,7 @@ export default function FriendsPage({ store, update }: Props) {
             <button
               type="button"
               onClick={handleSignup}
-              disabled={busy || loading || isChecking}
+              disabled={busy}
               style={{
                 flex: 1,
                 borderRadius: 999,
@@ -729,11 +813,11 @@ export default function FriendsPage({ store, update }: Props) {
                 border: "none",
                 fontWeight: 800,
                 fontSize: 13,
-                cursor: busy || loading || isChecking ? "default" : "pointer",
+                cursor: busy ? "default" : "pointer",
                 background: "linear-gradient(180deg,#35c86d,#23a958)",
                 color: "#08130c",
                 boxShadow: "0 8px 18px rgba(0,0,0,.55)",
-                opacity: busy || loading || isChecking ? 0.5 : 1,
+                opacity: busy ? 0.5 : 1,
               }}
             >
               Créer un compte
@@ -742,7 +826,7 @@ export default function FriendsPage({ store, update }: Props) {
             <button
               type="button"
               onClick={handleLogin}
-              disabled={busy || loading || isChecking}
+              disabled={busy}
               style={{
                 flex: 1,
                 borderRadius: 999,
@@ -750,31 +834,19 @@ export default function FriendsPage({ store, update }: Props) {
                 border: "none",
                 fontWeight: 800,
                 fontSize: 13,
-                cursor: busy || loading || isChecking ? "default" : "pointer",
+                cursor: busy ? "default" : "pointer",
                 background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
                 color: "#1b1508",
                 boxShadow: "0 8px 18px rgba(0,0,0,.55)",
-                opacity: busy || loading || isChecking ? 0.5 : 1,
+                opacity: busy ? 0.5 : 1,
               }}
             >
               Se connecter
             </button>
           </div>
-
-          {(loading || isChecking || busy) && (
-            <div
-              style={{
-                fontSize: 11,
-                opacity: 0.8,
-                marginTop: 4,
-              }}
-            >
-              Vérification de la session en cours…
-            </div>
-          )}
         </div>
       ) : (
-        /* --------- PROFIL CONNECTÉ --------- */
+        /* --------- BLOC PROFIL CONNECTÉ --------- */
         <div
           style={{
             borderRadius: 16,
@@ -796,7 +868,7 @@ export default function FriendsPage({ store, update }: Props) {
             Profil online connecté
           </div>
 
-          {/* Avatar + nom + statut */}
+          {/* Avatar + Nom + Statut */}
           <div
             style={{
               display: "flex",
@@ -805,7 +877,7 @@ export default function FriendsPage({ store, update }: Props) {
               marginBottom: 8,
             }}
           >
-            {/* Wrapper avatar + drapeau */}
+            {/* Wrapper externe pour pouvoir faire déborder le drapeau */}
             <div
               style={{
                 position: "relative",
@@ -814,6 +886,7 @@ export default function FriendsPage({ store, update }: Props) {
                 flexShrink: 0,
               }}
             >
+              {/* Cercle avatar avec overflow hidden */}
               <div
                 style={{
                   width: "100%",
@@ -847,11 +920,12 @@ export default function FriendsPage({ store, update }: Props) {
                       fontSize: 20,
                     }}
                   >
-                    {(user?.nickname || "??").slice(0, 2).toUpperCase()}
+                    {(session?.nickname || "??").slice(0, 2).toUpperCase()}
                   </div>
                 )}
               </div>
 
+              {/* Petit drapeau pays centré en bas, qui dépasse du cercle */}
               {countryFlag && (
                 <div
                   style={{
@@ -895,6 +969,7 @@ export default function FriendsPage({ store, update }: Props) {
                 {displayName}
               </div>
 
+              {/* éventuel texte de pays sous le pseudo */}
               {countryRaw && (
                 <div
                   style={{
@@ -907,6 +982,7 @@ export default function FriendsPage({ store, update }: Props) {
                 </div>
               )}
 
+              {/* Status + point lumineux */}
               <div
                 style={{
                   fontSize: 12,
@@ -938,17 +1014,6 @@ export default function FriendsPage({ store, update }: Props) {
                   />
                   <span>{statusLabel}</span>
                 </span>
-
-                {isMock && (
-                  <span
-                    style={{
-                      fontSize: 11,
-                      opacity: 0.75,
-                    }}
-                  >
-                    (mode démo local)
-                  </span>
-                )}
               </div>
 
               {lastSeenLabel && (
@@ -976,9 +1041,9 @@ export default function FriendsPage({ store, update }: Props) {
             <button
               type="button"
               onClick={() =>
-                setPresence(store.selfStatus === "away" ? "online" : "away")
+                setPresence(selfStatus === "away" ? "online" : "away")
               }
-              disabled={busy || loading || isChecking}
+              disabled={busy}
               style={{
                 flex: 1,
                 borderRadius: 999,
@@ -990,13 +1055,13 @@ export default function FriendsPage({ store, update }: Props) {
                 color: "#f5f5f7",
               }}
             >
-              {store.selfStatus === "away" ? "Revenir en ligne" : "Absent"}
+              {selfStatus === "away" ? "Revenir en ligne" : "Absent"}
             </button>
 
             <button
               type="button"
               onClick={handleLogout}
-              disabled={busy || loading || isChecking}
+              disabled={busy}
               style={{
                 borderRadius: 999,
                 padding: "7px 12px",
@@ -1013,7 +1078,7 @@ export default function FriendsPage({ store, update }: Props) {
         </div>
       )}
 
-      {/* --------- PLACEHOLDER FUTUR --------- */}
+      {/* --------- PLACEHOLDER FUTUR : Amis / présence détaillée --------- */}
       <div
         style={{
           marginTop: 4,
@@ -1141,7 +1206,7 @@ export default function FriendsPage({ store, update }: Props) {
                       border: "1px solid rgba(255,255,255,.08)",
                     }}
                   >
-                    {JSON.stringify(m.payload, null, 2)}
+{JSON.stringify(m.payload, null, 2)}
                   </pre>
                 </div>
               );
@@ -1169,7 +1234,7 @@ export default function FriendsPage({ store, update }: Props) {
         )}
       </div>
 
-      {/* --------- Salons online (mock) --------- */}
+      {/* --------- BLOC : Salons online (mock) --------- */}
       <div
         style={{
           marginTop: 16,
@@ -1203,7 +1268,7 @@ export default function FriendsPage({ store, update }: Props) {
           Crée un salon X01 local (mock) ou rejoins celui d’un ami avec un code.
         </div>
 
-        {/* CREATE */}
+        {/* Bouton CREATE */}
         <button
           type="button"
           onClick={handleCreateLobby}
@@ -1227,7 +1292,7 @@ export default function FriendsPage({ store, update }: Props) {
           {creatingLobby ? "Création…" : "Créer un salon X01"}
         </button>
 
-        {/* JOIN */}
+        {/* Champ CODE + bouton JOIN */}
         <div
           style={{
             marginTop: 2,
@@ -1285,6 +1350,7 @@ export default function FriendsPage({ store, update }: Props) {
             {joiningLobby ? "Recherche…" : "Rejoindre avec ce code"}
           </button>
 
+          {/* Messages spécifiques JOIN (erreur / info) */}
           {(joinError || joinInfo) && (
             <div
               style={{
@@ -1365,7 +1431,7 @@ export default function FriendsPage({ store, update }: Props) {
           </div>
         )}
 
-        {/* RÉSUMÉ JOIN */}
+        {/* PETIT RÉSUMÉ SI JOIN OK */}
         {joinedLobby && (
           <div
             style={{
@@ -1399,13 +1465,14 @@ export default function FriendsPage({ store, update }: Props) {
 
 /**
  * Conversion "FR" -> 🇫🇷, "France" -> 🇫🇷, etc.
- * Version sans regex \p{} pour rester compatible partout.
+ * Même logique que sur Home.tsx, MAIS sans regex \p{} pour éviter
+ * les erreurs "Invalid regular expression" dans certains navigateurs.
  */
 function getCountryFlag(country: string): string {
   if (!country) return "";
   const trimmed = country.trim();
 
-  // L'utilisateur met directement un drapeau emoji ?
+  // Si l'utilisateur met directement un drapeau emoji, on renvoie tel quel
   const cps = Array.from(trimmed);
   if (cps.length === 2) {
     const cp0 = cps[0].codePointAt(0) ?? 0;

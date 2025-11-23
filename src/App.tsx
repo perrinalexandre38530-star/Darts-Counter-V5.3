@@ -2,8 +2,9 @@
 // src/App.tsx — Navigation + wiring propre (v5 sécurisé)
 // Fix: "Lancer partie" n'affiche plus la dernière reprise
 // + Intégration pages Training (menu / play / stats)
-// + X01Play V2 en parallèle du X01 actuel
+// + X01Play V3 en parallèle du X01 actuel
 // + Stats : bouton menu => StatsShell (menu), puis StatsHub (détails)
+// + Stats Online : StatsOnline (détails ONLINE)
 // ============================================
 import React from "react";
 import BottomNav from "./components/BottomNav";
@@ -21,6 +22,7 @@ import { onlineApi } from "./lib/onlineApi";
 
 // Types
 import type { Store, Profile, MatchRecord } from "./lib/types";
+import type { X01ConfigV3 as X01ConfigV3Type } from "./types/x01v3";
 
 // Pages
 import Home from "./pages/Home";
@@ -32,7 +34,8 @@ import FriendsPage from "./pages/FriendsPage";
 import Settings from "./pages/Settings";
 import X01Setup from "./pages/X01Setup";
 import X01Play from "./pages/X01Play";
-import X01PlayV2 from "./pages/X01PlayV2"; // 👈 V2
+// ❌ X01PlayV2 supprimé
+// import X01PlayV2 from "./pages/X01PlayV2";
 import CricketPlay from "./pages/CricketPlay";
 import KillerPlay from "./pages/KillerPlay";
 import ShanghaiPlay from "./pages/ShanghaiPlay";
@@ -53,7 +56,13 @@ import { History } from "./lib/history";
 
 // ✅ Stats : menu + hub
 import StatsShell from "./pages/StatsShell"; // Menu style Home/Games/Profils
-import StatsHub from "./pages/StatsHub";     // Vue détaillée (Stats joueurs / Training / Historique)
+import StatsHub from "./pages/StatsHub"; // Vue détaillée (Stats joueurs / Training / Historique)
+// ✅ Stats Online : vue détaillée ONLINE
+import StatsOnline from "./pages/StatsOnline";
+
+// ✅ Contexte X01 V3 (config + play)
+import X01ConfigV3 from "./pages/X01ConfigV3";
+import X01PlayV3 from "./pages/X01PlayV3";
 
 // ✅ Contexts Thème + Langue
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -92,13 +101,13 @@ type Tab =
   | "profiles"
   | "profiles_bots"
   | "friends"
-  | "stats"      // 👈 StatsShell (menu)
-  | "statsHub"   // 👈 StatsHub (détails Stats joueurs / Training / Historique)
+  | "stats" // 👈 StatsShell (menu)
+  | "statsHub" // 👈 StatsHub (détails Stats joueurs / Training / Historique)
+  | "stats_online" // 👈 StatsOnline (détails ONLINE)
   | "statsDetail"
   | "settings"
   | "x01setup"
   | "x01"
-  | "x01_play_v2" // 👈 NOUVEL ONGLET V2
   | "x01_end"
   | "cricket"
   | "killer"
@@ -109,7 +118,10 @@ type Tab =
   | "training_stats"
   | "training_clock"
   // ✅ nouvelle route par onglet
-  | "avatar";
+  | "avatar"
+  // ✅ nouvelles routes X01 V3
+  | "x01_config_v3"
+  | "x01_play_v3";
 
 // Petit composant pour rediriger "training_stats" vers StatsHub onglet Training
 function RedirectToStatsTraining({ go }: { go: (tab: Tab, params?: any) => void }) {
@@ -290,12 +302,15 @@ function App() {
     (window as any).__appStore = store;
   }, [store]);
 
-  // Mémo config X01
+  // Mémo config X01 (v1)
   const [x01Config, setX01Config] = React.useState<{
     start: 301 | 501 | 701 | 1001;
     doubleOut: boolean;
     playerIds: string[];
   } | null>(null);
+
+  // ✅ Mémo config X01 V3
+  const [x01ConfigV3, setX01ConfigV3] = React.useState<X01ConfigV3Type | null>(null);
 
   // -------- Navigation centralisée (avec params) --------
   function go(next: Tab, params?: any) {
@@ -361,10 +376,7 @@ function App() {
       `x01-${now}-${Math.random().toString(36).slice(2, 8)}`;
 
     // 1) source joueurs
-    const rawPlayers =
-      (m as any)?.players ??
-      (m as any)?.payload?.players ??
-      [];
+    const rawPlayers = (m as any)?.players ?? (m as any)?.payload?.players ?? [];
 
     // 2) enrichir avec avatars locaux
     const players = (rawPlayers as any[]).map((p: any) => {
@@ -376,10 +388,7 @@ function App() {
       };
     });
 
-    const summary =
-      (m as any)?.summary ??
-      (m as any)?.payload?.summary ??
-      null;
+    const summary = (m as any)?.summary ?? (m as any)?.payload?.summary ?? null;
 
     const saved: any = {
       id,
@@ -475,12 +484,7 @@ function App() {
 
       case "profiles": {
         page = (
-          <Profiles
-            store={store}
-            update={update}
-            setProfiles={setProfiles}
-            go={go}
-          />
+          <Profiles store={store} update={update} setProfiles={setProfiles} go={go} />
         );
         break;
       }
@@ -513,13 +517,13 @@ function App() {
         //    - si on ne précise rien → onglet "Stats joueurs"
         const initialTab = (routeParams?.tab as any) ?? "stats";
 
-        page = (
-          <StatsHub
-            go={go}
-            tab={initialTab}
-            memHistory={historyForUI}
-          />
-        );
+        page = <StatsHub go={go} tab={initialTab} memHistory={historyForUI} />;
+        break;
+      }
+
+      // ✅ NOUVELLE ROUTE : Stats Online (même style que Training X01 Stats)
+      case "stats_online": {
+        page = <StatsOnline />;
         break;
       }
 
@@ -601,7 +605,7 @@ function App() {
         break;
       }
 
-      // ---------- X01 ----------
+      // ---------- X01 v1 ----------
       case "x01setup": {
         page = (
           <X01Setup
@@ -639,7 +643,9 @@ function App() {
           const rawStart = x01Config?.start ?? store.settings.defaultX01;
           const startClamped: 301 | 501 | 701 | 901 =
             rawStart >= 901 ? 901 : (rawStart as 301 | 501 | 701 | 901);
-          const outMode = (x01Config?.doubleOut ?? store.settings.doubleOut) ? "double" : "simple";
+          const outMode = (x01Config?.doubleOut ?? store.settings.doubleOut)
+            ? "double"
+            : "simple";
 
           // 🔑 Remount garanti:
           // - reprise: key = resume-<id>
@@ -666,40 +672,32 @@ function App() {
         break;
       }
 
-      // ---------- X01 V2 (parallèle, même config, même navigation) ----------
-      case "x01_play_v2": {
-        const isResume = !!routeParams?.resumeId;
-
-        // 👇 première fois / pas de config : on envoie direct vers l'écran de setup
-        if (!x01Config && !isResume) {
-          go("x01setup");
-          page = null;
-          break;
-        }
-
-        const rawStart = x01Config?.start ?? store.settings.defaultX01;
-        const startClamped: 301 | 501 | 701 | 901 =
-          rawStart >= 901 ? 901 : (rawStart as 301 | 501 | 701 | 901);
-        const outMode = (x01Config?.doubleOut ?? store.settings.doubleOut) ? "double" : "simple";
-
-        const key = isResume
-          ? `v2-resume-${routeParams.resumeId}`
-          : `v2-fresh-${routeParams?.fresh ?? (x01Config?.playerIds || []).join("-")}`;
-
+      // ---------- X01 V3 ----------
+      case "x01_config_v3": {
         page = (
-          <X01PlayV2
-            key={key}
+          <X01ConfigV3
             profiles={store.profiles ?? []}
-            playerIds={x01Config?.playerIds ?? []}
-            start={startClamped}
-            outMode={outMode}
-            inMode="simple"
-            // reprise éventuelle
-            params={isResume ? ({ resumeId: routeParams.resumeId } as any) : (undefined as any)}
-            onFinish={(m) => pushHistory(m)}
-            onExit={() => go("x01setup")}
+            onBack={() => go("games")}
+            onStart={(cfg) => {
+              setX01ConfigV3(cfg);
+              go("x01_play_v3", { fresh: Date.now() });
+            }}
           />
         );
+        break;
+      }
+
+      case "x01_play_v3": {
+        if (!x01ConfigV3) {
+          page = (
+            <div style={{ padding: 16 }}>
+              <button onClick={() => go("x01_config_v3")}>← Retour</button>
+              <p>Configuration X01 V3 manquante.</p>
+            </div>
+          );
+          break;
+        }
+        page = <X01PlayV3 config={x01ConfigV3} />;
         break;
       }
 

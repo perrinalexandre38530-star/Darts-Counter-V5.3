@@ -1,8 +1,11 @@
 // ============================================
 // src/pages/StatsShell.tsx
 // Menu Stats — style identique à Games / Training / Profils
-// - Cartes : Stats joueurs / Training / Online / Historique
-// - Bouton principal : navigation
+// - Carte 1 : Stats joueur actif (vue complète : Général / Local / Online / Training)
+// - Carte 2 : Stats profils locaux (multi-joueurs)
+// - Carte 3 : Training (stats sessions d’entraînement)
+// - Carte 4 : Online
+// - Carte 5 : Historique
 // - Bouton "i" : popin d'aide (légère aura animée comme Games)
 // ============================================
 import React from "react";
@@ -17,7 +20,13 @@ type Props = {
   go: (tab: any, params?: any) => void;
 };
 
-type InfoMode = "players" | "training" | "online" | "history" | null;
+type InfoMode =
+  | "active"
+  | "locals"
+  | "training"
+  | "online"
+  | "history"
+  | null;
 
 export default function StatsShell({ store, go }: Props) {
   const { theme } = useTheme();
@@ -30,9 +39,10 @@ export default function StatsShell({ store, go }: Props) {
     profiles[0] ??
     null;
 
-  const playerLabel =
-    active?.name ||
-    t("statsShell.players.titleDefault", "STATS JOUEURS");
+  const playerLabel = active
+    ? t("statsShell.players.titleActivePrefix", "Statistiques — ") +
+      active.name
+    : t("statsShell.players.titleDefault", "STATS JOUEURS");
 
   const [infoMode, setInfoMode] = React.useState<InfoMode>(null);
 
@@ -219,13 +229,32 @@ export default function StatsShell({ store, go }: Props) {
           paddingInline: 12,
         }}
       >
-        {/* STATS JOUEURS — avatar + nom du joueur */}
+        {/* STATS JOUEUR ACTIF — avatar + nom du joueur */}
         <StatsShellPlayerCard
           profile={active}
           label={playerLabel}
           theme={theme}
-          onClick={() => go("statsHub", { tab: "stats" })}
-          onInfo={() => setInfoMode("players")}
+          onClick={() => {
+            if (!active) return;
+            go("statsHub", {
+              tab: "stats",
+              mode: "active",
+              playerId: active.id,
+            });
+          }}
+          onInfo={() => setInfoMode("active")}
+        />
+
+        {/* PROFILS LOCAUX */}
+        <StatsShellCard
+          title={t("statsShell.locals.title", "PROFILS LOCAUX")}
+          subtitle={t(
+            "statsShell.locals.subtitle",
+            "Accède aux mêmes vues de stats pour tous les profils locaux."
+          )}
+          theme={theme}
+          onClick={() => go("statsHub", { tab: "stats", mode: "locals" })}
+          onInfo={() => setInfoMode("locals")}
         />
 
         {/* TRAINING */}
@@ -233,22 +262,22 @@ export default function StatsShell({ store, go }: Props) {
           title={t("statsShell.training.title", "TRAINING")}
           subtitle={t(
             "statsShell.training.subtitle",
-            "Stats mode Training."
+            "Stats complètes de tes sessions Training X01 et Tour de l’horloge."
           )}
           theme={theme}
           onClick={() => go("statsHub", { tab: "training" })}
           onInfo={() => setInfoMode("training")}
         />
 
-        {/* ONLINE */}
+        {/* ONLINE → page StatsOnline */}
         <StatsShellCard
           title={t("statsShell.online.title", "ONLINE")}
           subtitle={t(
             "statsShell.online.subtitle",
-            "Stats de tes parties Online (bientôt)."
+            "Stats de tes parties Online."
           )}
           theme={theme}
-          onClick={() => go("friends", { from: "stats" })}
+          onClick={() => go("stats_online")}
           onInfo={() => setInfoMode("online")}
         />
 
@@ -562,7 +591,7 @@ function StatsShellCard({
   );
 }
 
-/* ---------- Popin d'aide (même esprit que TrainingMenu) ---------- */
+/* ---------- Popin d'aide ---------- */
 function InfoOverlay({
   mode,
   theme,
@@ -578,32 +607,39 @@ function InfoOverlay({
   let body = "";
 
   switch (mode) {
-    case "players":
-      title = t("statsShell.info.players.title", "STATS — Joueurs");
+    case "active":
+      title = t("statsShell.info.active.title", "STATS — Joueur actif");
       body = t(
-        "statsShell.info.players.body",
-        "Vue générale de tes performances dans les différents modes de jeu : X01 multi, Cricket, Killer et autres modes."
+        "statsShell.info.active.body",
+        "Accède aux statistiques complètes du joueur sélectionné : vue générale, stats locales, online et training pour tous les modes (X01, Cricket, etc.)."
+      );
+      break;
+    case "locals":
+      title = t("statsShell.info.locals.title", "STATS — Profils locaux");
+      body = t(
+        "statsShell.info.locals.body",
+        "Retrouve les mêmes vues de statistiques pour tous les profils enregistrés sur cet appareil et compare leurs performances."
       );
       break;
     case "training":
       title = t("statsShell.info.training.title", "TRAINING");
       body = t(
         "statsShell.info.training.body",
-        "Accès aux statistiques détaillées de tes sessions Training X01 et du Tour de l’horloge."
+        "Analyse détaillée de tes séances d'entraînement : Training X01, Tour de l’horloge, progression globale et par segment."
       );
       break;
     case "online":
       title = t("statsShell.info.online.title", "ONLINE");
       body = t(
         "statsShell.info.online.body",
-        "Historique des parties jouées en mode Online (mock pour l’instant, prêt pour un futur backend)."
+        "Analyse complète de tes matchs joués en mode Online : sessions, moyennes, gros scores, classement et progression."
       );
       break;
     case "history":
       title = t("statsShell.info.history.title", "HISTORIQUE");
       body = t(
         "statsShell.info.history.body",
-        "Liste complète de l'historique de tes parties locales avec reprise des parties en cours et accès au détail."
+        "Liste complète de l'historique de tes parties locales avec reprise des parties en cours et accès au détail de chaque match."
       );
       break;
   }
