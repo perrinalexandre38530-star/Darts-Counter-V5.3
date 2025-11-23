@@ -323,24 +323,54 @@ function App() {
   ---------------------------------------- */
   React.useEffect(() => {
     let mounted = true;
+
     (async () => {
       try {
         const saved = await loadStore<Store>();
-        if (mounted && saved) {
-          setStore({
+
+        // Base = initialStore + données sauvegardées (si présentes)
+        let base: Store;
+        if (saved) {
+          base = {
             ...initialStore,
             ...saved,
             profiles: saved.profiles ?? [],
             friends: saved.friends ?? [],
             history: saved.history ?? [],
-          });
+          };
+        } else {
+          base = { ...initialStore };
+        }
+
+        // 👉 Si aucun profil local, on crée quelques profils de démo
+        if (!base.profiles || base.profiles.length === 0) {
+          const demoProfiles: Profile[] = [
+            {
+              id: "demo_ninzalex",
+              name: "Ninzalex",
+              avatarDataUrl: null,
+            } as any,
+            {
+              id: "demo_neven",
+              name: "Neven",
+              avatarDataUrl: null,
+            } as any,
+          ];
+
+          base.profiles = demoProfiles;
+          base.activeProfileId = demoProfiles[0].id;
+        }
+
+        if (mounted) {
+          setStore(base);
         }
       } catch (err) {
         console.warn("[App] erreur loadStore:", err);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     })();
+
     return () => {
       mounted = false;
     };

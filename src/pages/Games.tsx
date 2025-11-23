@@ -18,6 +18,7 @@ type Props = {
 type GameId =
   | "training"
   | "x01"
+  | "x01v3"
   | "cricket"
   | "killer"
   | "shanghai"
@@ -63,9 +64,21 @@ const GAMES: GameDef[] = [
     infoBodyKey: "games.x01.infoBody",
     infoBodyDefault:
       "Parties classiques de 301/501/701/901 avec statistiques, historique et options avancées.",
-    // 🔁 AVANT : "x01setup"
-    // 👉 MAINTENANT : on passe par la nouvelle config V3
-    tab: "x01_config_v3",
+    tab: "x01setup", // 👈 X01 actuel inchangé
+    enabled: true,
+  },
+  {
+    id: "x01v3",
+    titleKey: "games.x01v3.title",
+    titleDefault: "X01 V3",
+    subtitleKey: "games.x01v3.subtitle",
+    subtitleDefault: "Nouveau moteur + stats complètes.",
+    infoTitleKey: "games.x01v3.infoTitle",
+    infoTitleDefault: "X01 V3",
+    infoBodyKey: "games.x01v3.infoBody",
+    infoBodyDefault:
+      "Version X01 V3 avec moteur unifié solo / multi / équipes, classement live, suggestions de check-out et stats propres vers le menu Stats.",
+    tab: "x01_config_v3", // 👈 nouvelle page de configuration V3
     enabled: true,
   },
   {
@@ -210,7 +223,9 @@ export default function Games({ setTab }: Props) {
                   letterSpacing: 0.8,
                   color: disabled ? theme.textSoft : theme.primary,
                   textTransform: "uppercase",
-                  textShadow: disabled ? "none" : `0 0 12px ${theme.primary}55`,
+                  textShadow: disabled
+                    ? "none"
+                    : `0 0 12px ${theme.primary}55`,
                 }}
               >
                 {title}
