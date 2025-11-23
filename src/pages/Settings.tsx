@@ -3,6 +3,7 @@
 // Fond toujours sombre (ne varie pas avec le thème)
 // Les thèmes ne changent que les néons / accents / textes
 // + Drapeaux pour les langues
+// + Option B : carousels horizontaux par catégories de thèmes
 // ============================================
 
 import React from "react";
@@ -14,7 +15,8 @@ type Props = { go?: (tab: any, params?: any) => void };
 
 // ---------------- Thèmes dispo + descriptions fallback ----------------
 
-const THEME_ORDER: ThemeId[] = [
+// Regroupement par catégories (pour les carousels)
+const NEON_THEMES: ThemeId[] = [
   "gold",
   "pink",
   "petrol",
@@ -23,13 +25,20 @@ const THEME_ORDER: ThemeId[] = [
   "red",
   "orange",
   "white",
+];
 
-  // Nouveaux thèmes
-  "electricBlue",
+const SOFT_THEMES: ThemeId[] = [
+  "blueOcean",
   "limeYellow",
   "sage",
   "skyBlue",
-  "darkSteel",
+];
+
+const DARK_THEMES: ThemeId[] = [
+  "darkTitanium",
+  "darkCarbon",
+  "darkFrost",
+  "darkObsidian",
 ];
 
 const THEME_META: Record<
@@ -57,10 +66,10 @@ const THEME_META: Record<
   },
   white: { defaultLabel: "Blanc", defaultDesc: "Fond clair moderne" },
 
-  // Nouveaux thèmes
-  electricBlue: {
-    defaultLabel: "Bleu électrique",
-    defaultDesc: "Bleu profond et intense",
+  // Soft accents
+  blueOcean: {
+    defaultLabel: "Bleu océan",
+    defaultDesc: "Bleu naturel océan / ciel",
   },
   limeYellow: {
     defaultLabel: "Vert jaune",
@@ -74,9 +83,23 @@ const THEME_META: Record<
     defaultLabel: "Bleu pastel",
     defaultDesc: "Bleu très doux et lumineux",
   },
-  darkSteel: {
-    defaultLabel: "Gris acier",
-    defaultDesc: "Palette sombre en acier mat",
+
+  // Dark premiums
+  darkTitanium: {
+    defaultLabel: "Titane sombre",
+    defaultDesc: "Look métal premium mat",
+  },
+  darkCarbon: {
+    defaultLabel: "Carbone",
+    defaultDesc: "Ambiance fibre carbone moderne",
+  },
+  darkFrost: {
+    defaultLabel: "Givre sombre",
+    defaultDesc: "Noir givré futuriste",
+  },
+  darkObsidian: {
+    defaultLabel: "Obsidienne",
+    defaultDesc: "Noir poli premium et lisible",
   },
 };
 
@@ -162,7 +185,7 @@ function injectSettingsAnimationsOnce() {
   document.head.appendChild(style);
 }
 
-// ---------------- Bouton de thème ----------------
+// ---------------- Bouton de thème (carte) ----------------
 
 type ThemeChoiceButtonProps = {
   id: ThemeId;
@@ -184,8 +207,8 @@ function ThemeChoiceButton({
   const [hovered, setHovered] = React.useState(false);
 
   const cardBoxShadow =
-    active || hovered ? `0 0 18px ${neonColor}66` : "0 0 0 rgba(0,0,0,0)";
-  const scale = hovered ? 1.02 : 1.0;
+    active || hovered ? `0 0 20px ${neonColor}66` : "0 0 0 rgba(0,0,0,0)";
+  const scale = hovered ? 1.03 : 1.0;
   const borderColor = active ? neonColor : "rgba(255,255,255,0.12)";
   const titleColor = active ? neonColor : "#FFFFFF";
   const descColor = active ? neonColor : "rgba(255,255,255,0.6)";
@@ -196,11 +219,13 @@ function ThemeChoiceButton({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
+        minWidth: 160,
+        maxWidth: 190,
         textAlign: "left",
-        borderRadius: 14,
-        padding: 12,
+        borderRadius: 16,
+        padding: 10,
         background: active
-          ? "rgba(255,255,255,0.05)"
+          ? "rgba(255,255,255,0.06)"
           : "rgba(255,255,255,0.02)",
         border: `1px solid ${borderColor}`,
         boxShadow: cardBoxShadow,
@@ -215,26 +240,28 @@ function ThemeChoiceButton({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 8,
+          gap: 10,
           fontWeight: 700,
           fontSize: 14,
-          marginBottom: 4,
+          marginBottom: 6,
         }}
       >
+        {/* Pastille preview */}
         <span
           style={{
-            width: 16,
-            height: 16,
-            borderRadius: "50%",
-            border: `2px solid ${neonColor}`,
-            background: "transparent",
-            color: neonColor,
+            width: 20,
+            height: 20,
+            borderRadius: "999px",
+            background: `radial-gradient(circle at 30% 30%, #ffffffAA, ${neonColor})`,
             boxShadow: active
-              ? `0 0 10px ${neonColor}, 0 0 22px ${neonColor}`
+              ? `0 0 12px ${neonColor}, 0 0 28px ${neonColor}`
               : hovered
-              ? `0 0 6px ${neonColor}`
+              ? `0 0 8px ${neonColor}`
               : "none",
-            animation: active ? "dcSettingsHaloPulse 2.1s ease-in-out infinite" : "",
+            border: `1px solid ${neonColor}`,
+            animation: active
+              ? "dcSettingsHaloPulse 2.1s ease-in-out infinite"
+              : "",
             flexShrink: 0,
           }}
         />
@@ -242,6 +269,99 @@ function ThemeChoiceButton({
       </div>
       <div style={{ fontSize: 12, color: descColor }}>{desc}</div>
     </button>
+  );
+}
+
+// ---------------- Carousel de thèmes ----------------
+
+type ThemeCarouselProps = {
+  ids: ThemeId[];
+  title: string;
+  subtitle?: string;
+  themeId: ThemeId;
+  setThemeId: (id: ThemeId) => void;
+  t: (key: string, fallback: string) => string;
+};
+
+function ThemeCarousel({
+  ids,
+  title,
+  subtitle,
+  themeId,
+  setThemeId,
+  t,
+}: ThemeCarouselProps) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          marginBottom: 6,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            letterSpacing: 0.5,
+            textTransform: "uppercase",
+            opacity: 0.9,
+          }}
+        >
+          {title}
+        </div>
+        {subtitle && (
+          <div
+            style={{
+              fontSize: 11,
+              opacity: 0.65,
+            }}
+          >
+            {subtitle}
+          </div>
+        )}
+      </div>
+
+      <div
+        style={{
+          overflowX: "auto",
+          paddingBottom: 4,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "nowrap",
+            gap: 10,
+            minWidth: "100%",
+          }}
+        >
+          {ids.map((id) => {
+            const meta = THEME_META[id];
+            const label = t(
+              `settings.theme.${id}.label`,
+              meta.defaultLabel
+            );
+            const desc = t(
+              `settings.theme.${id}.desc`,
+              meta.defaultDesc
+            );
+            return (
+              <ThemeChoiceButton
+                key={id}
+                id={id}
+                label={label}
+                desc={desc}
+                active={id === themeId}
+                onClick={() => setThemeId(id)}
+              />
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -366,7 +486,7 @@ export default function Settings({ go }: Props) {
         )}
       </div>
 
-      {/* ---------- BLOC THEME ---------- */}
+      {/* ---------- BLOC THEME (carrousels) ---------- */}
       <section
         style={{
           background: CARD_BG,
@@ -379,7 +499,7 @@ export default function Settings({ go }: Props) {
         <h2
           style={{
             margin: 0,
-            marginBottom: 6,
+            marginBottom: 10,
             fontSize: 18,
             color: theme.primary,
           }}
@@ -387,36 +507,41 @@ export default function Settings({ go }: Props) {
           {t("settings.theme", "Thème")}
         </h2>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))",
-            gap: 12,
-            marginTop: 12,
-          }}
-        >
-          {THEME_ORDER.map((id) => {
-            const meta = THEME_META[id];
-            const label = t(
-              `settings.theme.${id}.label`,
-              meta.defaultLabel
-            );
-            const desc = t(
-              `settings.theme.${id}.desc`,
-              meta.defaultDesc
-            );
-            return (
-              <ThemeChoiceButton
-                key={id}
-                id={id}
-                label={label}
-                desc={desc}
-                active={id === themeId}
-                onClick={() => setThemeId(id)}
-              />
-            );
-          })}
-        </div>
+        <ThemeCarousel
+          ids={NEON_THEMES}
+          title={t("settings.theme.neons", "Néons classiques")}
+          subtitle={t(
+            "settings.theme.neons.subtitle",
+            "Thèmes néon principaux"
+          )}
+          themeId={themeId}
+          setThemeId={setThemeId}
+          t={t}
+        />
+
+        <ThemeCarousel
+          ids={SOFT_THEMES}
+          title={t("settings.theme.soft", "Couleurs douces")}
+          subtitle={t(
+            "settings.theme.soft.subtitle",
+            "Bleus, verts et tons plus naturels"
+          )}
+          themeId={themeId}
+          setThemeId={setThemeId}
+          t={t}
+        />
+
+        <ThemeCarousel
+          ids={DARK_THEMES}
+          title={t("settings.theme.dark", "Dark premium")}
+          subtitle={t(
+            "settings.theme.dark.subtitle",
+            "Thèmes sombres élégants"
+          )}
+          themeId={themeId}
+          setThemeId={setThemeId}
+          t={t}
+        />
       </section>
 
       {/* ---------- BLOC LANGUE ---------- */}

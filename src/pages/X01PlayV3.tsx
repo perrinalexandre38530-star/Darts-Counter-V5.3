@@ -593,13 +593,19 @@ export default function X01PlayV3({ config, onExit }: Props) {
         />
       </div>
 
-      {/* OVERLAY FIN DE MANCHE / SET (V3) */}
+      {/* OVERLAY FIN DE MANCHE / SET / MATCH (V3) */}
       <X01LegOverlayV3
-        open={status === "leg_end" || status === "set_end"}
+        open={
+          status === "leg_end" ||
+          status === "set_end" ||
+          status === "match_end"
+        }
+        status={status}
         config={config}
         state={state}
         liveStatsByPlayer={liveStatsByPlayer}
         onNextLeg={startNextLeg}
+        onExitMatch={handleQuit}
       />
 
       {/* TODO (prochaine étape) : petit overlay de fin de match

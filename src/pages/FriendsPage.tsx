@@ -1385,25 +1385,29 @@ export default function FriendsPage({ store, update, go }: Props) {
         {/* 🔥 Nouveau : bouton pour lancer la partie X01 Online */}
         {isSignedIn && (joinedLobby || lastCreatedLobby) && (
           <button
-            type="button"
-            onClick={handleStartOnlineMatch}
-            style={{
-              width: "100%",
-              borderRadius: 999,
-              padding: "9px 12px",
-              border: "none",
-              marginTop: 4,
-              marginBottom: 8,
-              fontWeight: 800,
-              fontSize: 13,
-              background: "linear-gradient(180deg,#35c86d,#23a958)",
-              color: "#03140a",
-              boxShadow: "0 8px 20px rgba(0,0,0,.6)",
-              cursor: "pointer",
-            }}
-          >
-            🚀 Lancer une partie X01 Online (mock)
-          </button>
+          type="button"
+          onClick={() =>
+            go("x01_online_setup", {
+              lobbyCode: (joinedLobby || lastCreatedLobby)?.code || joinCode || null,
+            })
+          }
+          style={{
+            width: "100%",
+            borderRadius: 999,
+            padding: "9px 12px",
+            border: "none",
+            marginTop: 4,
+            marginBottom: 8,
+            fontWeight: 800,
+            fontSize: 13,
+            background: "linear-gradient(180deg,#35c86d,#23a958)",
+            color: "#03140a",
+            boxShadow: "0 8px 20px rgba(0,0,0,.6)",
+            cursor: "pointer",
+          }}
+        >
+          🚀 Lancer une partie X01 Online (mock)
+        </button>
         )}
 
         {/* MODAL LOBBY CRÉÉ */}

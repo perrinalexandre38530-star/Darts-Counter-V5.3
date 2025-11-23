@@ -1,8 +1,10 @@
 // ============================================
 // src/components/x01v3/X01LegOverlayV3.tsx
-// Mini overlay fin de manche / set pour X01 V3
-// - S'affiche au centre de l'écran
-// - Indique manche / set + vainqueur
+// Overlay fin de manche / set pour X01 V3
+// - Card flottante style "beau X01Play"
+// - Titre Manche X/Y • Set A/B
+// - Nom du vainqueur + Sets / Legs
+// - 3 mini-stats : Moy.3D / Fléchettes / Meilleure volée
 // - Bouton "Manche suivante"
 // ============================================
 
@@ -12,7 +14,7 @@ import { useLang } from "../../contexts/LangContext";
 
 type Props = {
   open: boolean;
-  // on reste souple côté types pour éviter les erreurs TS
+  // on garde les types larges pour rester compatible avec le moteur
   config: any;
   state: any;
   liveStatsByPlayer: any;
@@ -41,6 +43,8 @@ export default function X01LegOverlayV3({
   const legsWon = state?.legsWon || {};
   const setsWon = state?.setsWon || {};
 
+  // ---------------- Détection vainqueur ----------------
+
   const winnerId =
     state?.lastLegWinnerId ||
     state?.lastWinnerId ||
@@ -50,10 +54,83 @@ export default function X01LegOverlayV3({
   const winner =
     players.find((p: any) => p.id === winnerId) || players[0] || null;
 
-  const subtitle =
-    state?.status === "set_end"
-      ? t("x01.leg_overlay.set_won", "Set gagné")
-      : t("x01.leg_overlay.leg_won", "Manche gagnée");
+  const isSetEnd = state?.status === "set_end" || state?.lastEvent === "set_end";
+
+  const subtitle = isSetEnd
+    ? t("x01.leg_overlay.set_won", "Set gagné")
+    : t("x01.leg_overlay.leg_won", "Manche gagnée");
+
+  // ---------------- Stats vainqueur (manche en cours) ----------------
+  // On essaie d’abord de lire un snapshot de manche si le moteur l’expose,
+  // sinon on retombe sur les stats live.
+
+  function getWinnerLegStats() {
+    if (!winner) return null;
+
+    const wid = winner.id;
+
+    // Quelques noms possibles pour un snapshot de manche côté moteur V3
+    const legStatsByPlayer =
+      state?.lastLegStatsByPlayer ||
+      state?.lastLegStats ||
+      state?.legSnapshotByPlayer ||
+      null;
+
+    let s: any = null;
+
+    if (legStatsByPlayer && legStatsByPlayer[wid]) {
+      s = legStatsByPlayer[wid];
+    } else if (state?.lastLegResult && state.lastLegResult.byPlayer) {
+      // autre forme possible : lastLegResult.byPlayer[pid]
+      s = state.lastLegResult.byPlayer[wid];
+    } else if (liveStatsByPlayer && liveStatsByPlayer[wid]) {
+      // fallback : stats live (match complet)
+      s = liveStatsByPlayer[wid];
+    }
+
+    if (!s) return null;
+
+    // On essaie plusieurs noms de champs pour être robuste
+    const darts =
+      s.legDarts ??
+      s.dartsInLeg ??
+      s.darts ??
+      s.dartsThrown ??
+      0;
+
+    const bestVisit =
+      s.legBestVisit ??
+      s.bestVisit ??
+      s.best_visit ??
+      0;
+
+    const totalScore =
+      s.legScore ??
+      s.totalScore ??
+      s.sumScore ??
+      0;
+
+    const dartsForAvg =
+      s.legDarts ??
+      s.dartsThrown ??
+      s.darts ??
+      0;
+
+    const avg3 =
+      dartsForAvg > 0
+        ? ((totalScore / dartsForAvg) * 3).toFixed(1)
+        : "0.0";
+
+    return {
+      darts: Number(darts) || 0,
+      bestVisit: Number(bestVisit) || 0,
+      avg3,
+    };
+  }
+
+  const legStats = getWinnerLegStats();
+
+  // ---------------- Rendu ----------------
 
   return (
     <div
@@ -61,7 +138,7 @@ export default function X01LegOverlayV3({
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.65)",
+        background: "rgba(0,0,0,0.70)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -71,107 +148,123 @@ export default function X01LegOverlayV3({
       <div
         className={`x01-leg-overlay-v3-card theme-${theme.id}`}
         style={{
-          width: "90%",
-          maxWidth: 420,
-          background: "#05060b",
+          width: "92%",
+          maxWidth: 460,
           borderRadius: 20,
-          padding: 16,
-          boxShadow: "0 0 25px rgba(0,0,0,0.8)",
-          border: `1px solid ${theme.primary}`,
+          padding: 14,
+          boxShadow: "0 18px 40px rgba(0,0,0,0.85)",
+          background:
+            "radial-gradient(140% 180% at 0% 0%, rgba(255,195,26,0.18), transparent 55%), linear-gradient(180deg, rgba(12,12,16,0.98), rgba(6,6,9,0.98))",
+          border: "1px solid rgba(255,255,255,0.08)",
         }}
       >
-        <div className="x01-leg-overlay-v3-header" style={{ marginBottom: 12 }}>
+        {/* Ligne titre Manche / Set */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 8,
+          }}
+        >
           <div
-            className="x01-leg-overlay-v3-label"
             style={{
-              fontSize: 12,
-              letterSpacing: 1,
+              fontSize: 11,
               textTransform: "uppercase",
-              color: theme.primary,
-              marginBottom: 4,
+              letterSpacing: 1,
+              color: "#ffd98a",
             }}
           >
-            {t("x01.leg_overlay.title", "Manche")} {currentLeg}/{legsPerSet} ·{" "}
-            {t("x01.leg_overlay.set", "Set")} {currentSet}/{setsToWin}
+            {t("x01.leg_overlay.match_header", "Manche")} {currentLeg}/
+            {legsPerSet} · {t("x01.leg_overlay.set", "Set")} {currentSet}/
+            {setsToWin}
           </div>
 
           {winner && (
             <div
-              className="x01-leg-overlay-v3-scoreline"
-              style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}
+              style={{
+                fontSize: 11,
+                padding: "4px 9px",
+                borderRadius: 999,
+                border: "1px solid rgba(255,207,87,0.55)",
+                background:
+                  "linear-gradient(180deg, rgba(255,207,87,0.16), rgba(30,30,32,0.95))",
+                color: "#ffcf57",
+                fontWeight: 700,
+                whiteSpace: "nowrap",
+              }}
             >
-              <span className="winner-name">{winner.name}</span>
-              <span style={{ marginLeft: 8, opacity: 0.85 }}>
-                • {t("x01.leg_overlay.sets", "Sets")}{" "}
-                {setsWon[winner.id] ?? 0} ·{" "}
-                {t("x01.leg_overlay.legs", "Legs")} {legsWon[winner.id] ?? 0}
-              </span>
+              Sets {setsWon[winner.id] ?? 0} • Legs{" "}
+              {legsWon[winner.id] ?? 0}
             </div>
           )}
-
-          <div
-            className="x01-leg-overlay-v3-subtitle"
-            style={{ marginTop: 4, fontSize: 13, color: "#ffd98a" }}
-          >
-            {subtitle}
-          </div>
         </div>
 
-        {/* mini stats vainqueur (optionnel) */}
-        {winner && liveStatsByPlayer && liveStatsByPlayer[winner.id] && (
+        {/* Nom vainqueur + sous-titre */}
+        {winner && (
+          <div style={{ marginBottom: 10 }}>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 800,
+                color: "#ffffff",
+                marginBottom: 2,
+              }}
+            >
+              {winner.name}
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: "#ffd98a",
+              }}
+            >
+              {subtitle}
+            </div>
+          </div>
+        )}
+
+        {/* Mini-stats vainqueur */}
+        {winner && legStats && (
           <div
             className="x01-leg-overlay-v3-ministats"
             style={{
               display: "flex",
-              justifyContent: "space-between",
               gap: 8,
               marginBottom: 12,
+              marginTop: 4,
             }}
           >
-            {(() => {
-              const s = liveStatsByPlayer[winner.id];
-              const darts = s?.dartsThrown ?? 0;
-              const bestVisit = s?.bestVisit ?? 0;
-              const avg3 =
-                darts > 0 && s?.totalScore != null
-                  ? ((s.totalScore / darts) * 3).toFixed(1)
-                  : "0.0";
-              return (
-                <>
-                  <MiniStat
-                    label={t("x01.avg3", "Moy. 3")}
-                    value={avg3}
-                  />
-                  <MiniStat
-                    label={t("x01.darts", "Fléchettes")}
-                    value={String(darts)}
-                  />
-                  <MiniStat
-                    label={t("x01.best_visit", "Meilleure volée")}
-                    value={String(bestVisit)}
-                  />
-                </>
-              );
-            })()}
+            <MiniStat
+              label={t("x01.avg3", "Moy. 3D")}
+              value={legStats.avg3}
+            />
+            <MiniStat
+              label={t("x01.darts", "Fléchettes")}
+              value={String(legStats.darts)}
+            />
+            <MiniStat
+              label={t("x01.best_visit", "Meilleure volée")}
+              value={String(legStats.bestVisit)}
+            />
           </div>
         )}
 
-        <div className="x01-leg-overlay-v3-actions" style={{ marginTop: 8 }}>
+        {/* Bouton principal */}
+        <div style={{ marginTop: 4 }}>
           <button
             type="button"
-            className="x01-leg-overlay-v3-primary"
             onClick={onNextLeg}
             style={{
               width: "100%",
-              padding: "10px 14px",
+              padding: "11px 16px",
               borderRadius: 999,
               border: "none",
-              fontWeight: 700,
+              fontWeight: 800,
               fontSize: 15,
-              background:
-                "linear-gradient(180deg,#ffc63a,#ffaf00)",
-              color: "#000",
-              boxShadow: "0 0 16px rgba(0,0,0,0.6)",
+              background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
+              color: "#111",
+              boxShadow: "0 10px 26px rgba(255,180,0,0.35)",
               cursor: "pointer",
             }}
           >
@@ -190,24 +283,33 @@ function MiniStat({ label, value }: MiniStatProps) {
     <div
       style={{
         flex: 1,
-        background: "rgba(255,255,255,0.03)",
+        background: "rgba(0,0,0,0.35)",
         borderRadius: 14,
         padding: "6px 8px",
         textAlign: "center",
+        border: "1px solid rgba(255,255,255,0.06)",
       }}
     >
       <div
         style={{
           fontSize: 11,
           textTransform: "uppercase",
-          letterSpacing: 0.5,
-          color: "#999",
+          letterSpacing: 0.6,
+          color: "#c0c2c8",
           marginBottom: 2,
         }}
       >
         {label}
       </div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>{value}</div>
+      <div
+        style={{
+          fontSize: 15,
+          fontWeight: 800,
+          color: "#ffffff",
+        }}
+      >
+        {value}
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 // ============================================
 // src/theme/themePresets.ts
 // Thèmes néon : seuls les accents changent,
-// le fond reste toujours sombre.
+// le fond reste toujours sombre (ou très sombre).
 // ============================================
 
 export type ThemeId =
@@ -13,18 +13,21 @@ export type ThemeId =
   | "red"
   | "orange"
   | "white"
-  | "electricBlue"
+  | "blueOcean"
   | "limeYellow"
   | "sage"
   | "skyBlue"
-  | "darkSteel";
+  | "darkTitanium"
+  | "darkCarbon"
+  | "darkFrost"
+  | "darkObsidian";
 
 export type AppTheme = {
   id: ThemeId;
   name: string;
   primary: string;
-  bg: string;        // toujours sombre
-  card: string;      // toujours sombre
+  bg: string;        // fond global
+  card: string;      // fond des cartes
   text: string;
   textSoft: string;
   accent1: string;
@@ -37,7 +40,7 @@ export type AppTheme = {
 export const DEFAULT_THEME_ID: ThemeId = "gold";
 export const THEME_STORAGE_KEY = "dc_app_theme_v1";
 
-// Fond sombre fixe global
+// Fond sombre par défaut (peut être override par certains thèmes dark)
 const DARK_BG = "#050712";
 const DARK_CARD = "#121420";
 
@@ -156,24 +159,31 @@ export const THEMES: AppTheme[] = [
   },
 
   // --------------------------------------------
-  // 🚀 Nouveaux thèmes ajoutés ici
+  // Soft accents supplémentaires
   // --------------------------------------------
 
   {
-    id: "electricBlue",
-    name: "Bleu Électrique",
-    primary: "#103C94",
-    bg: DARK_BG,
-    card: DARK_CARD,
-    text: "#F8FAFF",
-    textSoft: "rgba(180,195,255,0.75)",
-    accent1: "#103C94",
-    accent2: "#4FA3FF",
-    borderSoft: "rgba(16,60,148,0.35)",
-    success: "#4CD964",
-    danger: "#FF4A4A",
-  },
+    id: "blueOcean",
+  name: "Bleu Océan",
+  // 🌊 Bleu océan / bleu ciel naturel
+  primary: "#3B82F6",
 
+  bg: DARK_BG,
+  card: DARK_CARD,
+
+  // Texte légèrement bleuté, très lisible
+  text: "#F5F8FF",
+  textSoft: "rgba(210,225,250,0.85)",
+
+  // Accents en dégradé océan
+  accent1: "#3B82F6",
+  accent2: "#60A5FA",
+
+  borderSoft: "rgba(59,130,246,0.40)",
+
+  success: "#4CD964",
+  danger: "#FF4A4A",
+  },
   {
     id: "limeYellow",
     name: "Vert Jaune",
@@ -188,7 +198,6 @@ export const THEMES: AppTheme[] = [
     success: "#4CD964",
     danger: "#FF4A4A",
   },
-
   {
     id: "sage",
     name: "Vert Sauge",
@@ -203,7 +212,6 @@ export const THEMES: AppTheme[] = [
     success: "#8BC34A",
     danger: "#E06C75",
   },
-
   {
     id: "skyBlue",
     name: "Bleu Pastel",
@@ -219,17 +227,63 @@ export const THEMES: AppTheme[] = [
     danger: "#FF4A4A",
   },
 
+  // --------------------------------------------
+  // Thèmes DARK premiums
+  // --------------------------------------------
+
   {
-    id: "darkSteel",
-    name: "Gris Acier",
-    primary: "#2A2A2A",
-    bg: DARK_BG,
-    card: DARK_CARD,
-    text: "#EEEEEE",
+    id: "darkTitanium",
+    name: "Titane sombre",
+    primary: "#5A5A5A",
+    bg: "#0D0D0F",
+    card: "#16171A",
+    text: "#E6E6E6",
     textSoft: "rgba(200,200,200,0.65)",
-    accent1: "#2A2A2A",
-    accent2: "#555555",
-    borderSoft: "rgba(255,255,255,0.12)",
+    accent1: "#707070",
+    accent2: "#A0A0A0",
+    borderSoft: "rgba(255,255,255,0.10)",
+    success: "#4CD964",
+    danger: "#FF4A4A",
+  },
+  {
+    id: "darkCarbon",
+    name: "Carbone",
+    primary: "#2E3B4E",
+    bg: "#0A0C0F",
+    card: "#13171D",
+    text: "#DDE7F0",
+    textSoft: "rgba(180,200,220,0.65)",
+    accent1: "#32475A",
+    accent2: "#88A3C8",
+    borderSoft: "rgba(255,255,255,0.08)",
+    success: "#4CD964",
+    danger: "#FF4A4A",
+  },
+  {
+    id: "darkFrost",
+    name: "Givre sombre",
+    primary: "#98A3B8",
+    bg: "#080A0E",
+    card: "#101319",
+    text: "#E3E7F2",
+    textSoft: "rgba(210,220,235,0.7)",
+    accent1: "#A8B2C8",
+    accent2: "#D0DAF0",
+    borderSoft: "rgba(150,170,200,0.18)",
+    success: "#4CD964",
+    danger: "#FF4A4A",
+  },
+  {
+    id: "darkObsidian",
+    name: "Obsidienne",
+    primary: "#C5C5C5",
+    bg: "#050607",
+    card: "#0C0E10",
+    text: "#E6E6E6",
+    textSoft: "rgba(180,180,180,0.6)",
+    accent1: "#3A3A3A",
+    accent2: "#707070",
+    borderSoft: "rgba(255,255,255,0.10)",
     success: "#4CD964",
     danger: "#FF4A4A",
   },
