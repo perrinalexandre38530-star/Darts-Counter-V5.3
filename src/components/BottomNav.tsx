@@ -1,51 +1,178 @@
 import React from "react";
+import { useTheme } from "../contexts/ThemeContext";
 
-type TabKey = "home"|"games"|"profiles"|"friends"|"all"|"stats"|"settings";
+type TabKey = "home" | "games" | "profiles" | "friends" | "stats" | "settings";
 type NavItem = { k: TabKey; label: string; icon: React.ReactNode };
 
-function Icon({name,size=22}:{name:TabKey;size?:number}){
-  const p = { fill:"none", stroke:"currentColor", strokeWidth:2, strokeLinecap:"round", strokeLinejoin:"round" } as const;
-  switch(name){
-    case "home":      return <svg width={size} height={size} viewBox="0 0 24 24"><path {...p} d="M3 11.5 12 4l9 7.5"/><path {...p} d="M5 10.5V20h14v-9.5"/></svg>;
-    case "games":     return <svg width={size} height={size} viewBox="0 0 24 24"><path {...p} d="M4 15a5 5 0 0 1 5-5h6a5 5 0 0 1 5 5"/><circle cx="8.5" cy="13" r="1.7" fill="currentColor"/><circle cx="15.5" cy="13" r="1.7" fill="currentColor"/><path {...p} d="M2 15h20"/></svg>;
-    case "profiles":  return <svg width={size} height={size} viewBox="0 0 24 24"><path {...p} d="M4 20a6.5 6.5 0 0 1 16 0"/><circle {...p} cx="12" cy="8" r="3.6"/></svg>;
-    case "friends":   return <svg width={size} height={size} viewBox="0 0 24 24"><path {...p} d="M3 20a5.5 5.5 0 0 1 8.5-4.8"/><path {...p} d="M21 20a5.5 5.5 0 0 0-8.5-4.8"/><circle {...p} cx="7.5" cy="9" r="2.9"/><circle {...p} cx="16.5" cy="9" r="2.9"/></svg>;
-    case "stats":     return <svg width={size} height={size} viewBox="0 0 24 24"><path {...p} d="M4 20V7"/><path {...p} d="M10 20V4"/><path {...p} d="M16 20v-6"/><path {...p} d="M22 20V9"/></svg>;
-    case "settings":  return <svg width={size} height={size} viewBox="0 0 24 24"><path {...p} d="m12 3 1.6 2.4a2 2 0 0 0 1.1.8l2.8.7-.7 2.8a2 2 0 0 0 .2 1.4l1.4 2.3-2.3 1.4a2 2 0 0 0-1 .9l-.8 2.7-2.8-.6a2 2 0 0 0-1.4.2L9 21l-1.4-2.3a2 2 0 0 0-.9-1l-2.7-.8.6-2.8a2 2 0 0 0-.2-1.4L3 9l2.3-1.4a2 2 0 0 0 1-.9l.8-2.7 2.8.6a2 2 0 0 0 1.4-.2Z"/><circle {...p} cx="12" cy="12" r="2.8"/></svg>;
+function Icon({ name, size = 22 }: { name: TabKey; size?: number }) {
+  const p = {
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+  } as const;
+
+  switch (name) {
+    case "home":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24">
+          <path {...p} d="M3 11.5 12 4l9 7.5" />
+          <path {...p} d="M5 10.5V20h14v-9.5" />
+        </svg>
+      );
+
+    // GAMES (Local) — cible 🎯
+    case "games":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24">
+          <circle {...p} cx="12" cy="12" r="7" />
+          <circle {...p} cx="12" cy="12" r="3.2" />
+          <path {...p} d="M12 5V3" />
+          <path {...p} d="M19 12h2" />
+          <path {...p} d="M12 21v-2" />
+          <path {...p} d="M3 12h2" />
+        </svg>
+      );
+
+    case "profiles":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24">
+          <path {...p} d="M4 20a6.5 6.5 0 0 1 16 0" />
+          <circle {...p} cx="12" cy="8" r="3.6" />
+        </svg>
+      );
+
+    // FRIENDS (Online) — globe + ping 🌐
+    case "friends":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24">
+          <circle {...p} cx="12" cy="12" r="7" />
+          <path {...p} d="M12 5c2 2.8 2 11.2 0 14" />
+          <path {...p} d="M5 12h14" />
+          <circle
+            cx="18.2"
+            cy="6"
+            r="2.2"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          />
+          <circle cx="18.2" cy="6" r="0.9" fill="currentColor" />
+        </svg>
+      );
+
+    case "stats":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24">
+          <path {...p} d="M4 20V7" />
+          <path {...p} d="M10 20V4" />
+          <path {...p} d="M16 20v-6" />
+          <path {...p} d="M22 20V9" />
+        </svg>
+      );
+
+    case "settings":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24">
+          <path
+            {...p}
+            d="m12 3 1.6 2.4a2 2 0 0 0 1.1.8l2.8.7-.7 2.8a2 2 0 0 0 .2 1.4l1.4 2.3-2.3 1.4a2 2 0 0 0-1 .9l-.8 2.7-2.8-.6a2 2 0 0 0-1.4.2L9 21l-1.4-2.3a2 2 0 0 0-.9-1l-2.7-.8.6-2.8a2 2 0 0 0-.2-1.4L3 9l2.3-1.4a2 2 0 0 0 1-.9l.8-2.7 2.8.6a2 2 0 0 0 1.4-.2Z"
+          />
+          <circle {...p} cx="12" cy="12" r="2.8" />
+        </svg>
+      );
   }
 }
 
 export default function BottomNav({
   value,
   onChange,
-}: { value: TabKey; onChange: (k: TabKey) => void; }) {
+}: {
+  value: TabKey;
+  onChange: (k: TabKey) => void;
+}) {
+  const { theme } = useTheme();
+
+  // Couleurs pilotées par le thème
+  const bg = (theme as any)?.navBg ?? theme.card ?? "#050608";
+  const borderTop = theme.cardSoft ?? "#111827";
+  const textSoft = theme.textSoft ?? "#9ca3af";
+  const textMain = theme.textMain ?? "#f9fafb";
+  const accent = (theme as any)?.navAccent ?? theme.primary ?? textMain;
 
   const tabs: NavItem[] = [
-    { k:"home",     label:"Accueil",   icon:<Icon name="home"     /> },
-    { k:"games",    label:"Jeux",      icon:<Icon name="games"    /> },
-    { k:"profiles", label:"Profils",   icon:<Icon name="profiles" /> },
-    { k:"friends",  label:"Amis",      icon:<Icon name="friends"  /> },
-    { k:"stats",    label:"Stats",     icon:<Icon name="stats"    /> },
-    { k:"settings", label:"Réglages",  icon:<Icon name="settings" /> },
+    { k: "home", label: "Accueil", icon: <Icon name="home" /> },
+
+    // Profils avant Local
+    { k: "profiles", label: "Profils", icon: <Icon name="profiles" /> },
+    // Games → Local
+    { k: "games", label: "Local", icon: <Icon name="games" /> },
+    // Friends → Online
+    { k: "friends", label: "Online", icon: <Icon name="friends" /> },
+
+    { k: "stats", label: "Stats", icon: <Icon name="stats" /> },
+    { k: "settings", label: "Réglages", icon: <Icon name="settings" /> },
   ];
 
-  const tap = (k: TabKey) => { (navigator as any)?.vibrate?.(8); onChange(k); };
+  const tap = (k: TabKey) => {
+    (navigator as any)?.vibrate?.(8);
+    onChange(k);
+  };
 
   return (
-    <nav className="bottom-nav" role="navigation" aria-label="Navigation principale">
-      {tabs.map(t=>{
-        const active = value===t.k;
+    <nav
+      className="bottom-nav"
+      role="navigation"
+      aria-label="Navigation principale"
+      style={{
+        background: bg,
+        borderTop: `1px solid ${borderTop}`,
+      }}
+    >
+      {tabs.map((t) => {
+        const active = value === t.k;
+        const halo = active ? accent : "transparent";
+
         return (
           <button
             key={t.k}
-            className={`tab pill ${active?"is-active":""}`}
-            onClick={()=>tap(t.k)}
-            aria-current={active?"page":undefined}
+            className={`tab pill ${active ? "is-active" : ""}`}
+            onClick={() => tap(t.k)}
+            aria-current={active ? "page" : undefined}
             title={t.label}
+            style={{
+              color: active ? accent : textSoft,
+            }}
           >
-            <span className="pill-inner">
-              <span className="tab-icon">{t.icon}</span>
-              <span className="tab-label">{t.label}</span>
+            <span
+              className="pill-inner"
+              style={{
+                // 👉 halo NEON 100% lié au thème
+                borderColor: active ? accent : "transparent",
+                boxShadow: active
+                  ? `0 0 0 1px ${accent}55, 0 0 12px ${accent}CC`
+                  : "none",
+                background: active ? "rgba(0,0,0,0.22)" : "transparent",
+                transition: "box-shadow 0.2s ease, border-color 0.2s ease",
+              }}
+            >
+              <span
+                className="tab-icon"
+                style={{
+                  filter: active ? `drop-shadow(0 0 6px ${halo})` : "none",
+                }}
+              >
+                {t.icon}
+              </span>
+              <span
+                className="tab-label"
+                style={{
+                  color: active ? textMain : textSoft,
+                }}
+              >
+                {t.label}
+              </span>
             </span>
           </button>
         );

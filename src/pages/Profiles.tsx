@@ -537,7 +537,7 @@ function ProfilesMenuView({
       </div>
 
       <CardBtn
-        title={t("profiles.menu.avatar.title", "Créer Avatar")}
+        title={t("profiles.menu.avatar.title", "CREER AVATAR")}
         subtitle={t(
           "profiles.menu.avatar.subtitle",
           "Personnalise ton médaillon avec le créateur d’avatar."
@@ -546,7 +546,7 @@ function ProfilesMenuView({
       />
 
       <CardBtn
-        title={t("profiles.menu.me.title", "Mon Profil")}
+        title={t("profiles.menu.me.title", "MON PROFIL")}
         subtitle={t(
           "profiles.menu.me.subtitle",
           "Profil connecté, statut, mini-stats et informations personnelles."
@@ -555,7 +555,7 @@ function ProfilesMenuView({
       />
 
       <CardBtn
-        title={t("profiles.menu.friends.title", "Amis")}
+        title={t("profiles.menu.friends.title", "AMIS")}
         subtitle={t(
           "profiles.menu.friends.subtitle",
           "Amis en ligne et absents."
@@ -564,7 +564,7 @@ function ProfilesMenuView({
       />
 
       <CardBtn
-        title={t("profiles.menu.locals.title", "Profils Locaux")}
+        title={t("profiles.menu.locals.title", "PROFILS LOCAUX")}
         subtitle={t(
           "profiles.menu.locals.subtitle",
           "Profils enregistrés sur cet appareil avec leurs statistiques."

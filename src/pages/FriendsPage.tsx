@@ -539,48 +539,89 @@ export default function FriendsPage({ store, update }: Props) {
     }
   }
 
-  // ---------- Join d'un salon X01 par code (mock local) ----------
+ // ---------- Join d'un salon X01 par code (mock local) ----------
 
-  async function handleJoinLobby() {
-    const code = joinCode.trim().toUpperCase();
+// AJOUT IMPORTANT EN HAUT DU FICHIER :
+// import {
+//   addOnlineMatch,
+//   loadOnlineMatches,
+//   LS_ONLINE_MATCHES_KEY as LS_ONLINE_MATCHES_KEY_STORE,
+// } from "../lib/onlineMatchesStore";
 
-    setJoinError(null);
-    setJoinInfo(null);
-    setJoinedLobby(null);
+async function handleJoinLobby() {
+  const code = joinCode.trim().toUpperCase();
 
-    if (!code) {
-      setJoinError("Entre un code de salon.");
-      return;
-    }
-    if (!isSignedIn) {
-      setJoinError("Tu dois être connecté en mode online pour rejoindre un salon.");
-      return;
-    }
+  setJoinError(null);
+  setJoinInfo(null);
+  setJoinedLobby(null);
 
-    setJoiningLobby(true);
-
-    try {
-      const lobby = await joinLobbyByCode(code);
-      if (!lobby) {
-        setJoinError("Aucun salon trouvé avec ce code.");
-        return;
-      }
-      setJoinedLobby(lobby);
-      setJoinInfo("Salon trouvé (mock). La vraie connexion viendra plus tard.");
-      console.log("[online] join lobby ok", lobby);
-    } catch (e: any) {
-      console.warn(e);
-      setJoinError(
-        e?.message || "Impossible de rejoindre ce salon pour le moment."
-      );
-    } finally {
-      setJoiningLobby(false);
-    }
+  if (!code) {
+    setJoinError("Entre un code de salon.");
+    return;
+  }
+  if (!isSignedIn) {
+    setJoinError("Tu dois être connecté en mode online pour rejoindre un salon.");
+    return;
   }
 
-  /* -------------------------------------------------
-      RENDER
-  --------------------------------------------------*/
+  setJoiningLobby(true);
+
+  try {
+    const lobby = await joinLobbyByCode(code);
+    if (!lobby) {
+      setJoinError("Aucun salon trouvé avec ce code.");
+      return;
+    }
+
+    setJoinedLobby(lobby);
+    setJoinInfo("Salon trouvé (mock). La vraie connexion viendra plus tard.");
+    console.log("[online] join lobby ok", lobby);
+
+    // --------------------------------------------------
+    // 🔥 AJOUT : enregistrer un match ONLINE MOCK immédiatement
+    // --------------------------------------------------
+    try {
+      addOnlineMatch({
+        mode: "x01",
+        darts: 45,
+        totalScore: 1200,
+        avg3: 80,
+        bestVisit: 140,
+        bestCheckout: 88,
+        buckets: {
+          "60+": 12,
+          "100+": 5,
+          "140+": 2,
+          "180": 1,
+        },
+        isMock: true,
+        meta: {
+          source: "friends_joinLobby",
+          lobbyCode: code,
+          host: lobby.hostName,
+        },
+      });
+
+      console.log(
+        "%c[online] match mock enregistré → StatsOnline OK",
+        "color:#7fe2a9;font-weight:bold;"
+      );
+    } catch (err) {
+      console.warn("[online] erreur addOnlineMatch :", err);
+    }
+    // --------------------------------------------------
+
+  } catch (e: any) {
+    console.warn(e);
+    setJoinError(e?.message || "Impossible de rejoindre ce salon pour le moment.");
+  } finally {
+    setJoiningLobby(false);
+  }
+}
+
+/* -------------------------------------------------
+    RENDER
+--------------------------------------------------*/
 
   return (
     <div
