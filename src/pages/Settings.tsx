@@ -23,6 +23,13 @@ const THEME_ORDER: ThemeId[] = [
   "red",
   "orange",
   "white",
+
+  // Nouveaux thèmes
+  "electricBlue",
+  "limeYellow",
+  "sage",
+  "skyBlue",
+  "darkSteel",
 ];
 
 const THEME_META: Record<
@@ -49,6 +56,28 @@ const THEME_META: Record<
     defaultDesc: "Orange chaud énergique",
   },
   white: { defaultLabel: "Blanc", defaultDesc: "Fond clair moderne" },
+
+  // Nouveaux thèmes
+  electricBlue: {
+    defaultLabel: "Bleu électrique",
+    defaultDesc: "Bleu profond et intense",
+  },
+  limeYellow: {
+    defaultLabel: "Vert jaune",
+    defaultDesc: "Couleur lime hyper flashy",
+  },
+  sage: {
+    defaultLabel: "Vert sauge",
+    defaultDesc: "Tons verts naturels et doux",
+  },
+  skyBlue: {
+    defaultLabel: "Bleu pastel",
+    defaultDesc: "Bleu très doux et lumineux",
+  },
+  darkSteel: {
+    defaultLabel: "Gris acier",
+    defaultDesc: "Palette sombre en acier mat",
+  },
 };
 
 function getPreset(id: ThemeId): AppTheme {
@@ -87,6 +116,7 @@ const LANG_CHOICES: { id: Lang; defaultLabel: string; short: string }[] = [
   { id: "hr", defaultLabel: "Hrvatski", short: "HR" },
   { id: "cs", defaultLabel: "Čeština", short: "CZ" },
 ];
+
 const LANG_FLAGS: Record<Lang, string> = {
   fr: "🇫🇷",
   en: "🇬🇧",
@@ -419,18 +449,18 @@ export default function Settings({ go }: Props) {
           }}
         >
           {LANG_CHOICES.map((opt) => {
-  const label = t(`lang.${opt.id}`, opt.defaultLabel);
-  return (
-    <LanguageChoiceButton
-      key={opt.id}              // ✅ chaque id est unique
-      id={opt.id}
-      label={label}
-      active={opt.id === lang}
-      onClick={() => setLang(opt.id)}
-      primary={theme.primary}
-    />
-  );
-})}
+            const label = t(`lang.${opt.id}`, opt.defaultLabel);
+            return (
+              <LanguageChoiceButton
+                key={opt.id}
+                id={opt.id}
+                label={label}
+                active={opt.id === lang}
+                onClick={() => setLang(opt.id)}
+                primary={theme.primary}
+              />
+            );
+          })}
         </div>
       </section>
     </div>

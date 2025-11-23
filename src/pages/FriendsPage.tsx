@@ -9,6 +9,7 @@
 // - Salons online mock : création + join par code
 // - Affiche le DRAPEAU du pays du profil actif (privateInfo.country)
 // - Bouton TEST SUPABASE (juste pour vérifier la connexion plus tard)
+// - Bouton "Lancer une partie X01 Online (mock)" qui ouvre x01_online_setup
 // ============================================
 
 import React from "react";
@@ -123,10 +124,7 @@ function loadLocalOnlineAccount(): LocalOnlineAccount | null {
 function saveLocalOnlineAccount(acc: LocalOnlineAccount) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(
-      LS_ONLINE_ACCOUNT_KEY,
-      JSON.stringify(acc)
-    );
+    window.localStorage.setItem(LS_ONLINE_ACCOUNT_KEY, JSON.stringify(acc));
   } catch {
     // ignore
   }
@@ -149,10 +147,7 @@ function saveLocalOnlineSession(sess: LocalOnlineSession | null) {
     if (!sess) {
       window.localStorage.removeItem(LS_ONLINE_SESSION_KEY);
     } else {
-      window.localStorage.setItem(
-        LS_ONLINE_SESSION_KEY,
-        JSON.stringify(sess)
-      );
+      window.localStorage.setItem(LS_ONLINE_SESSION_KEY, JSON.stringify(sess));
     }
   } catch {
     // ignore
@@ -166,9 +161,11 @@ function saveLocalOnlineSession(sess: LocalOnlineSession | null) {
 type Props = {
   store: Store;
   update: (mut: (s: Store) => Store) => void;
+  // 👇 pour pouvoir lancer X01 directement depuis cette page
+  go: (tab: any, params?: any) => void;
 };
 
-export default function FriendsPage({ store, update }: Props) {
+export default function FriendsPage({ store, update, go }: Props) {
   // --- Profil local actif (fallback nickname)
   const activeProfile =
     (store.profiles || []).find((p) => p.id === store.activeProfileId) ||
@@ -189,11 +186,7 @@ export default function FriendsPage({ store, update }: Props) {
 
   // Champs formulaire
   const [nickname, setNickname] = React.useState<string>(
-    () =>
-      session?.nickname ||
-      account?.nickname ||
-      activeProfile?.name ||
-      ""
+    () => session?.nickname || account?.nickname || activeProfile?.name || ""
   );
   const [email, setEmail] = React.useState<string>(
     () => session?.email || account?.email || ""
@@ -217,9 +210,7 @@ export default function FriendsPage({ store, update }: Props) {
   // JOIN salon (mock)
   const [joinCode, setJoinCode] = React.useState("");
   const [joiningLobby, setJoiningLobby] = React.useState(false);
-  const [joinedLobby, setJoinedLobby] = React.useState<OnlineLobby | null>(
-    null
-  );
+  const [joinedLobby, setJoinedLobby] = React.useState<OnlineLobby | null>(null);
   const [joinError, setJoinError] = React.useState<string | null>(null);
   const [joinInfo, setJoinInfo] = React.useState<string | null>(null);
 
@@ -539,89 +530,71 @@ export default function FriendsPage({ store, update }: Props) {
     }
   }
 
- // ---------- Join d'un salon X01 par code (mock local) ----------
+  // ---------- Join d'un salon X01 par code (mock local) ----------
 
-// AJOUT IMPORTANT EN HAUT DU FICHIER :
-// import {
-//   addOnlineMatch,
-//   loadOnlineMatches,
-//   LS_ONLINE_MATCHES_KEY as LS_ONLINE_MATCHES_KEY_STORE,
-// } from "../lib/onlineMatchesStore";
+  async function handleJoinLobby() {
+    const code = joinCode.trim().toUpperCase();
 
-async function handleJoinLobby() {
-  const code = joinCode.trim().toUpperCase();
+    setJoinError(null);
+    setJoinInfo(null);
+    setJoinedLobby(null);
 
-  setJoinError(null);
-  setJoinInfo(null);
-  setJoinedLobby(null);
-
-  if (!code) {
-    setJoinError("Entre un code de salon.");
-    return;
-  }
-  if (!isSignedIn) {
-    setJoinError("Tu dois être connecté en mode online pour rejoindre un salon.");
-    return;
-  }
-
-  setJoiningLobby(true);
-
-  try {
-    const lobby = await joinLobbyByCode(code);
-    if (!lobby) {
-      setJoinError("Aucun salon trouvé avec ce code.");
+    if (!code) {
+      setJoinError("Entre un code de salon.");
+      return;
+    }
+    if (!isSignedIn) {
+      setJoinError("Tu dois être connecté en mode online pour rejoindre un salon.");
       return;
     }
 
-    setJoinedLobby(lobby);
-    setJoinInfo("Salon trouvé (mock). La vraie connexion viendra plus tard.");
-    console.log("[online] join lobby ok", lobby);
+    setJoiningLobby(true);
 
-    // --------------------------------------------------
-    // 🔥 AJOUT : enregistrer un match ONLINE MOCK immédiatement
-    // --------------------------------------------------
     try {
-      addOnlineMatch({
-        mode: "x01",
-        darts: 45,
-        totalScore: 1200,
-        avg3: 80,
-        bestVisit: 140,
-        bestCheckout: 88,
-        buckets: {
-          "60+": 12,
-          "100+": 5,
-          "140+": 2,
-          "180": 1,
-        },
-        isMock: true,
-        meta: {
-          source: "friends_joinLobby",
-          lobbyCode: code,
-          host: lobby.hostName,
-        },
-      });
-
-      console.log(
-        "%c[online] match mock enregistré → StatsOnline OK",
-        "color:#7fe2a9;font-weight:bold;"
+      const lobby = await joinLobbyByCode(code);
+      if (!lobby) {
+        setJoinError("Aucun salon trouvé avec ce code.");
+        return;
+      }
+      setJoinedLobby(lobby);
+      setJoinInfo("Salon trouvé (mock). La vraie connexion viendra plus tard.");
+      console.log("[online] join lobby ok", lobby);
+    } catch (e: any) {
+      console.warn(e);
+      setJoinError(
+        e?.message || "Impossible de rejoindre ce salon pour le moment."
       );
-    } catch (err) {
-      console.warn("[online] erreur addOnlineMatch :", err);
+    } finally {
+      setJoiningLobby(false);
     }
-    // --------------------------------------------------
-
-  } catch (e: any) {
-    console.warn(e);
-    setJoinError(e?.message || "Impossible de rejoindre ce salon pour le moment.");
-  } finally {
-    setJoiningLobby(false);
   }
-}
 
-/* -------------------------------------------------
-    RENDER
---------------------------------------------------*/
+  // ---------- Lancer une partie X01 Online (mock) ----------
+
+  function handleStartOnlineMatch() {
+    setJoinError(null);
+    setJoinInfo(null);
+
+    if (!isSignedIn) {
+      setJoinError("Connecte-toi en online avant de lancer une partie.");
+      return;
+    }
+
+    const lobby = joinedLobby || lastCreatedLobby;
+    if (!lobby) {
+      setJoinError("Crée ou rejoins d’abord un salon avant de lancer la partie.");
+      return;
+    }
+
+    // 👇 Navigation vers le SETUP X01 ONLINE (mock)
+    go("x01_online_setup", {
+      lobbyCode: lastCreatedLobby?.code || joinCode || null,
+    });
+  }
+
+  /* -------------------------------------------------
+      RENDER
+  --------------------------------------------------*/
 
   return (
     <div
@@ -1247,7 +1220,7 @@ async function handleJoinLobby() {
                       border: "1px solid rgba(255,255,255,.08)",
                     }}
                   >
-{JSON.stringify(m.payload, null, 2)}
+                    {JSON.stringify(m.payload, null, 2)}
                   </pre>
                 </div>
               );
@@ -1408,6 +1381,30 @@ async function handleJoinLobby() {
             </div>
           )}
         </div>
+
+        {/* 🔥 Nouveau : bouton pour lancer la partie X01 Online */}
+        {isSignedIn && (joinedLobby || lastCreatedLobby) && (
+          <button
+            type="button"
+            onClick={handleStartOnlineMatch}
+            style={{
+              width: "100%",
+              borderRadius: 999,
+              padding: "9px 12px",
+              border: "none",
+              marginTop: 4,
+              marginBottom: 8,
+              fontWeight: 800,
+              fontSize: 13,
+              background: "linear-gradient(180deg,#35c86d,#23a958)",
+              color: "#03140a",
+              boxShadow: "0 8px 20px rgba(0,0,0,.6)",
+              cursor: "pointer",
+            }}
+          >
+            🚀 Lancer une partie X01 Online (mock)
+          </button>
+        )}
 
         {/* MODAL LOBBY CRÉÉ */}
         {showLobbyModal && lastCreatedLobby && (

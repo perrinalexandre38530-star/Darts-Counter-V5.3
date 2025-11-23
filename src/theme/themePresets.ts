@@ -12,7 +12,12 @@ export type ThemeId =
   | "magenta"
   | "red"
   | "orange"
-  | "white";
+  | "white"
+  | "electricBlue"
+  | "limeYellow"
+  | "sage"
+  | "skyBlue"
+  | "darkSteel";
 
 export type AppTheme = {
   id: ThemeId;
@@ -85,7 +90,7 @@ export const THEMES: AppTheme[] = [
     primary: "#2ECC71",
     bg: DARK_BG,
     card: DARK_CARD,
-    text: "#EFFFF5",
+    text: "#EFFFFF",
     textSoft: "rgba(200,255,220,0.8)",
     accent1: "#2ECC71",
     accent2: "#F6C256",
@@ -139,8 +144,8 @@ export const THEMES: AppTheme[] = [
     id: "white",
     name: "Clair / Blanc",
     primary: "#FFFFFF",
-    bg: DARK_BG,       // ⚠️ Fixé en sombre
-    card: DARK_CARD,   // ⚠️ Fixé en sombre
+    bg: DARK_BG,
+    card: DARK_CARD,
     text: "#FFFFFF",
     textSoft: "rgba(255,255,255,0.7)",
     accent1: "#FFFFFF",
@@ -148,5 +153,84 @@ export const THEMES: AppTheme[] = [
     borderSoft: "rgba(255,255,255,0.15)",
     success: "#2ECC71",
     danger: "#E74C3C",
+  },
+
+  // --------------------------------------------
+  // 🚀 Nouveaux thèmes ajoutés ici
+  // --------------------------------------------
+
+  {
+    id: "electricBlue",
+    name: "Bleu Électrique",
+    primary: "#103C94",
+    bg: DARK_BG,
+    card: DARK_CARD,
+    text: "#F8FAFF",
+    textSoft: "rgba(180,195,255,0.75)",
+    accent1: "#103C94",
+    accent2: "#4FA3FF",
+    borderSoft: "rgba(16,60,148,0.35)",
+    success: "#4CD964",
+    danger: "#FF4A4A",
+  },
+
+  {
+    id: "limeYellow",
+    name: "Vert Jaune",
+    primary: "#B1DB07",
+    bg: DARK_BG,
+    card: DARK_CARD,
+    text: "#F7FFDF",
+    textSoft: "rgba(200,240,150,0.75)",
+    accent1: "#B1DB07",
+    accent2: "#DFFF4F",
+    borderSoft: "rgba(177,219,7,0.35)",
+    success: "#4CD964",
+    danger: "#FF4A4A",
+  },
+
+  {
+    id: "sage",
+    name: "Vert Sauge",
+    primary: "#A3B18A",
+    bg: DARK_BG,
+    card: DARK_CARD,
+    text: "#F6F7F2",
+    textSoft: "rgba(210,220,210,0.75)",
+    accent1: "#A3B18A",
+    accent2: "#C7D8B7",
+    borderSoft: "rgba(163,177,138,0.35)",
+    success: "#8BC34A",
+    danger: "#E06C75",
+  },
+
+  {
+    id: "skyBlue",
+    name: "Bleu Pastel",
+    primary: "#A7D8FF",
+    bg: DARK_BG,
+    card: DARK_CARD,
+    text: "#F8FBFF",
+    textSoft: "rgba(190,220,255,0.75)",
+    accent1: "#A7D8FF",
+    accent2: "#C2E3FF",
+    borderSoft: "rgba(167,216,255,0.35)",
+    success: "#4CD964",
+    danger: "#FF4A4A",
+  },
+
+  {
+    id: "darkSteel",
+    name: "Gris Acier",
+    primary: "#2A2A2A",
+    bg: DARK_BG,
+    card: DARK_CARD,
+    text: "#EEEEEE",
+    textSoft: "rgba(200,200,200,0.65)",
+    accent1: "#2A2A2A",
+    accent2: "#555555",
+    borderSoft: "rgba(255,255,255,0.12)",
+    success: "#4CD964",
+    danger: "#FF4A4A",
   },
 ];

@@ -34,6 +34,8 @@ import FriendsPage from "./pages/FriendsPage";
 import Settings from "./pages/Settings";
 import X01Setup from "./pages/X01Setup";
 import X01Play from "./pages/X01Play";
+// ✅ NOUVELLE PAGE : setup ONLINE
+import X01OnlineSetup from "./pages/X01OnlineSetup";
 // ❌ X01PlayV2 supprimé
 // import X01PlayV2 from "./pages/X01PlayV2";
 import CricketPlay from "./pages/CricketPlay";
@@ -107,6 +109,7 @@ type Tab =
   | "statsDetail"
   | "settings"
   | "x01setup"
+  | "x01_online_setup" // 👈 NOUVEL ÉCRAN : setup ONLINE
   | "x01"
   | "x01_end"
   | "cricket"
@@ -526,8 +529,7 @@ function App() {
       }
 
       case "friends": {
-        // 🔗 On passe maintenant go pour permettre à FriendsPage
-        // de lancer une partie Online (mock) vers X01PlayV3, etc.
+        // 🔗 FriendsPage peut maintenant lancer une partie Online (mock) via go()
         page = <FriendsPage store={store} update={update} go={go} />;
         break;
       }
@@ -660,10 +662,86 @@ function App() {
         break;
       }
 
+      // ---------- X01 ONLINE SETUP (mock) ----------
+      case "x01_online_setup": {
+        const activeProfile =
+          (store.profiles || []).find((p) => p.id === store.activeProfileId) || null;
+        const lobbyCode: string | null = routeParams?.lobbyCode ?? null;
+
+        page = (
+          <X01OnlineSetup
+            profile={activeProfile}
+            defaults={{
+              start: (store.settings.defaultX01 as 301 | 501 | 701 | 1001) ?? 501,
+              doubleOut: store.settings.doubleOut,
+            }}
+            lobbyCode={lobbyCode}
+            onBack={() => go("friends")}
+            onStart={({ start, doubleOut }) => {
+              if (!activeProfile) {
+                alert("Aucun profil actif sélectionné.");
+                return;
+              }
+
+              // 👉 On réutilise le moteur X01 classique (X01Play)
+              setX01Config({
+                start,
+                doubleOut,
+                playerIds: [activeProfile.id],
+              });
+
+              go("x01", {
+                resumeId: null,
+                fresh: Date.now(),
+                from: "online_mock",
+                lobbyCode,
+                online: true,
+              });
+            }}
+          />
+        );
+        break;
+      }
+
       case "x01": {
         const isResume = !!routeParams?.resumeId;
+        const isOnline = !!routeParams?.online;
 
-        if (!x01Config && !isResume) {
+        // ⚙️ On part de la config mémorisée…
+        let effectiveConfig = x01Config;
+
+        // …mais si on arrive depuis un bouton ONLINE (FriendsPage) sans passer
+        // par X01Setup, on construit une config auto.
+        if (!effectiveConfig && isOnline && !isResume) {
+          const activeProfile =
+            (store.profiles || []).find((p) => p.id === store.activeProfileId) ||
+            (store.profiles || [])[0] ||
+            null;
+
+          const startDefault = (store.settings.defaultX01 as 301 | 501 | 701 | 1001) || 501;
+          const start: 301 | 501 | 701 | 1001 =
+            startDefault === 301 ||
+            startDefault === 501 ||
+            startDefault === 701 ||
+            startDefault === 1001
+              ? startDefault
+              : 501;
+
+          const doubleOut = !!store.settings.doubleOut;
+          const playerIds = activeProfile ? [activeProfile.id] : [];
+
+          effectiveConfig = {
+            start,
+            doubleOut,
+            playerIds,
+          };
+
+          // on mémorise pour la suite de la session
+          setX01Config(effectiveConfig);
+        }
+
+        if (!effectiveConfig && !isResume) {
+          // Aucun setup disponible (ni local, ni online) → message d’erreur
           page = (
             <div className="container" style={{ padding: 16 }}>
               <button onClick={() => go("x01setup")}>← Retour</button>
@@ -672,32 +750,34 @@ function App() {
           );
         } else {
           // ✅ Compat X01Play: mappe doubleOut -> outMode, borne start si 1001
-          const rawStart = x01Config?.start ?? store.settings.defaultX01;
+          const rawStart =
+            effectiveConfig?.start ?? (store.settings.defaultX01 as 301 | 501 | 701 | 1001);
           const startClamped: 301 | 501 | 701 | 901 =
             rawStart >= 901 ? 901 : (rawStart as 301 | 501 | 701 | 901);
-          const outMode = (x01Config?.doubleOut ?? store.settings.doubleOut)
+          const outMode = (effectiveConfig?.doubleOut ?? store.settings.doubleOut)
             ? "double"
             : "simple";
+
+          const playerIds = effectiveConfig?.playerIds ?? [];
 
           // 🔑 Remount garanti:
           // - reprise: key = resume-<id>
           // - nouvelle partie: key = fresh-<timestamp>
-          const key = isResume
-            ? `resume-${routeParams.resumeId}`
-            : `fresh-${routeParams?.fresh ?? (x01Config?.playerIds || []).join("-")}`;
+          const freshToken = routeParams?.fresh ?? Date.now();
+          const key = isResume ? `resume-${routeParams.resumeId}` : `fresh-${freshToken}`;
 
           page = (
             <X01Play
               key={key}
               profiles={store.profiles ?? []}
-              playerIds={x01Config?.playerIds ?? []}
+              playerIds={playerIds}
               start={startClamped}
               outMode={outMode}
               inMode="simple"
               // ⬇️ on ne transmet params QUE pour une reprise
               params={isResume ? ({ resumeId: routeParams.resumeId } as any) : (undefined as any)}
               onFinish={(m) => pushHistory(m)}
-              onExit={() => go("x01setup")}
+              onExit={() => (isOnline ? go("friends") : go("x01setup"))}
             />
           );
         }

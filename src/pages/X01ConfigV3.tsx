@@ -9,7 +9,6 @@ import type { Profile } from "../lib/types";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import ProfileAvatar from "../components/ProfileAvatar";
-import ProfileStarRing from "../components/ProfileStarRing";
 
 type MatchModeV3 = "solo" | "multi" | "teams";
 type InModeV3 = "simple" | "double" | "master";
@@ -96,18 +95,20 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
     });
   }
 
+  const totalPlayers = selectedIds.length;
+
   // ---- conditions pour pouvoir démarrer ----
   const canStart = React.useMemo(() => {
-    if (selectedIds.length === 0) return false;
+    if (totalPlayers === 0) return false;
     if (matchMode === "solo") {
-      return selectedIds.length === 2;
+      return totalPlayers === 2;
     }
     if (matchMode === "multi") {
-      return selectedIds.length >= 2;
+      return totalPlayers >= 2;
     }
     // teams : on fera la validation fine au moment de handleStart
-    return selectedIds.length >= 4; // au moins 4 joueurs pour faire des équipes
-  }, [selectedIds, matchMode]);
+    return totalPlayers >= 4;
+  }, [totalPlayers, matchMode]);
 
   // ---- validation mode équipes ----
   function validateTeams() {
@@ -157,9 +158,9 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
     const teamCount = usedTeams.length;
 
     // Combos autorisés :
-    // 2 équipes : 2v2, 3v3, 4v4
-    // 3 équipes : 2v2v2
-    // 4 équipes : 2v2v2v2
+    // - 2 équipes : 2v2 / 3v3 / 4v4
+    // - 3 équipes : 2v2v2
+    // - 4 équipes : 2v2v2v2
     const ok =
       (teamCount === 2 && (size === 2 || size === 3 || size === 4)) ||
       (teamCount === 3 && size === 2) ||
@@ -169,7 +170,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
       alert(
         t(
           "x01v3.teams.invalidCombo",
-          "Combinaisons autorisées : 2v2 / 3v3 / 4v4, 2v2v2 ou 2v2v2v2."
+          "Combinaisons autorisées : 2v2, 3v3, 4v4, 2v2v2 ou 2v2v2v2."
         )
       );
       return null;
@@ -186,7 +187,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
   // ---- validation & lancement ----
   function handleStart() {
     if (!canStart) {
-      if (selectedIds.length === 0) {
+      if (totalPlayers === 0) {
         alert(
           t(
             "x01v3.config.needPlayer",
@@ -195,7 +196,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
         );
         return;
       }
-      if (matchMode === "solo" && selectedIds.length !== 2) {
+      if (matchMode === "solo" && totalPlayers !== 2) {
         alert(
           t(
             "x01v3.config.needTwoPlayersSolo",
@@ -204,7 +205,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
         );
         return;
       }
-      if (selectedIds.length < 2) {
+      if (totalPlayers < 2) {
         alert(
           t(
             "x01v3.config.needTwoPlayers",
@@ -286,32 +287,47 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
       {/* HEADER */}
       <header
         style={{
-          display: "flex",
-          alignItems: "center",
-          marginBottom: 8,
-          gap: 8,
+          marginBottom: 4,
         }}
       >
-        <button
-          type="button"
-          onClick={onBack}
+        <div
           style={{
-            border: "none",
-            background: "transparent",
-            color: "#f5f5f5",
-            padding: "6px 4px",
-            fontSize: 14,
+            display: "flex",
+            alignItems: "center",
+            marginBottom: 6,
           }}
         >
-          ← {t("x01v3.config.back", "Retour")}
-        </button>
-        <div style={{ flex: 1 }}>
+          <button
+            type="button"
+            onClick={onBack}
+            style={{
+              borderRadius: 999,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(10,12,24,0.9)",
+              color: "#f5f5f5",
+              padding: "5px 10px",
+              fontSize: 13,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <span style={{ fontSize: 16 }}>←</span>
+            <span>{t("x01v3.config.back", "Retour")}</span>
+          </button>
+        </div>
+        <div
+          style={{
+            textAlign: "center",
+          }}
+        >
           <div
             style={{
-              fontSize: 18,
-              fontWeight: 700,
-              letterSpacing: 1,
+              fontSize: 26,
+              fontWeight: 800,
+              letterSpacing: 2,
               color: primary,
+              textTransform: "uppercase",
             }}
           >
             X01
@@ -321,6 +337,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
               fontSize: 12,
               opacity: 0.7,
               color: "#d9d9e4",
+              marginTop: 2,
             }}
           >
             {t(
@@ -340,15 +357,15 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
           paddingBottom: 12,
         }}
       >
-        {/* --------- BLOC JOUEURS (style Cricket) --------- */}
+        {/* --------- BLOC JOUEURS --------- */}
         <section
           style={{
             background: cardBg,
             borderRadius: 18,
-            padding: "12px 12px 4px",
-            marginBottom: 12,
+            padding: "20px 12px 16px",
+            marginBottom: 16,
             boxShadow: "0 16px 40px rgba(0,0,0,0.55)",
-            border: `1px solid rgba(255,255,255,0.04)`,
+            border: "1px solid rgba(255,255,255,0.05)",
           }}
         >
           <div
@@ -356,9 +373,10 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
               fontSize: 12,
               textTransform: "uppercase",
               letterSpacing: 1,
-              fontWeight: 600,
-              color: "#9fa4c0",
-              marginBottom: 8,
+              fontWeight: 700,
+              // 🔥 titre JOUEURS en couleur thème
+              color: primary,
+              marginBottom: 10,
             }}
           >
             {t("x01v3.localPlayers", "Joueurs")}
@@ -366,88 +384,96 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
 
           {profiles.length === 0 ? (
             <p
-              style={{
-                fontSize: 13,
-                color: "#b3b8d0",
-                marginBottom: 8,
-              }}
+              style={{ fontSize: 13, color: "#b3b8d0", marginBottom: 8 }}
             >
-              {t(
-                "x01v3.noProfiles",
-                "Aucun profil local. Crée des joueurs dans le menu Profils."
-              )}
+              {t("x01v3.noProfiles", "Aucun profil local.")}
             </p>
           ) : (
             <>
               <div
                 style={{
                   display: "flex",
-                  gap: 12,
+                  gap: 18,
                   overflowX: "auto",
-                  paddingBottom: 8,
-                  marginBottom: 4,
+                  paddingBottom: 12,
+                  marginBottom: 6,
+                  justifyContent:
+                    profiles.length <= 4 ? "center" : "flex-start",
                 }}
               >
                 {profiles.map((p) => {
                   const active = selectedIds.includes(p.id);
+
+                  // Couleur d’équipe → halo coloré
+                  const teamId =
+                    matchMode === "teams"
+                      ? (teamAssignments[p.id] as TeamId | null) ?? null
+                      : null;
+                  const haloColor = teamId ? TEAM_COLORS[teamId] : primary;
+
                   return (
                     <button
                       key={p.id}
-                      type="button"
                       onClick={() => togglePlayer(p.id)}
                       style={{
-                        minWidth: 86,
-                        borderRadius: 18,
-                        padding: 8,
-                        border: active
-                          ? `1px solid ${primary}`
-                          : "1px solid rgba(255,255,255,0.04)",
-                        background: active ? primarySoft : "transparent",
+                        minWidth: 90,
+                        maxWidth: 90,
+                        background: "transparent",
+                        border: "none",
+                        padding: 0,
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
-                        gap: 4,
-                        color: "#f5f5ff",
+                        gap: 8,
+                        flexShrink: 0,
                       }}
                     >
-                      <div style={{ position: "relative" }}>
-                        <ProfileStarRing
-                          size={56}
-                          rank={p.rank ?? 1}
-                          glowColor={primary}
+                      {/* Médaillon SANS anneau sombre : l’avatar remplit le halo */}
+                      <div
+                        style={{
+                          width: 78,
+                          height: 78,
+                          borderRadius: "50%",
+                          overflow: "hidden",
+                          boxShadow: active
+                            ? `0 0 28px ${haloColor}aa`
+                            : "0 0 14px rgba(0,0,0,0.65)",
+                          background: active
+                            ? `radial-gradient(circle at 30% 20%, #fff8d0, ${haloColor})`
+                            : "#111320",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            borderRadius: "50%",
+                            overflow: "hidden",
+                            filter: active
+                              ? "none"
+                              : "grayscale(100%) brightness(0.55)",
+                            opacity: active ? 1 : 0.6,
+                            transition:
+                              "filter 0.2s ease, opacity 0.2s ease",
+                          }}
                         >
-                          <ProfileAvatar profile={p} size={44} />
-                        </ProfileStarRing>
-                        {active && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              bottom: -2,
-                              right: -2,
-                              width: 18,
-                              height: 18,
-                              borderRadius: "50%",
-                              background: primary,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: 11,
-                              fontWeight: 700,
-                              color: "#111217",
-                              boxShadow: "0 0 8px rgba(0,0,0,0.65)",
-                            }}
-                          >
-                            ✓
-                          </div>
-                        )}
+                          <ProfileAvatar profile={p} size={78} />
+                        </div>
                       </div>
+
+                      {/* Nom du joueur */}
                       <div
                         style={{
                           fontSize: 12,
                           fontWeight: 600,
-                          maxWidth: 70,
-                          textOverflow: "ellipsis",
+                          textAlign: "center",
+                          color: active ? "#f6f2e9" : "#7e8299",
+                          maxWidth: "100%",
                           overflow: "hidden",
+                          textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
                         }}
                       >
@@ -459,11 +485,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
               </div>
 
               <p
-                style={{
-                  fontSize: 11,
-                  color: "#7c80a0",
-                  marginBottom: 4,
-                }}
+                style={{ fontSize: 11, color: "#7c80a0", marginBottom: 0 }}
               >
                 {t(
                   "x01v3.playersHint",
@@ -490,8 +512,9 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
               fontSize: 13,
               textTransform: "uppercase",
               letterSpacing: 1,
-              fontWeight: 600,
-              color: "#9fa4c0",
+              fontWeight: 700,
+              // 🔥 titre PARAMÈTRES DE BASE en couleur thème
+              color: primary,
               marginBottom: 10,
             }}
           >
@@ -612,8 +635,9 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
               fontSize: 13,
               textTransform: "uppercase",
               letterSpacing: 1,
-              fontWeight: 600,
-              color: "#9fa4c0",
+              fontWeight: 700,
+              // 🔥 titre FORMAT DU MATCH en couleur thème
+              color: primary,
               marginBottom: 10,
             }}
           >
@@ -751,147 +775,216 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
         </section>
 
         {/* --------- BLOC COMPO ÉQUIPES (si mode teams) --------- */}
-        {matchMode === "teams" && selectedIds.length >= 2 && (
-          <section
-            style={{
-              background: cardBg,
-              borderRadius: 18,
-              padding: 12,
-              marginBottom: 12,
-              boxShadow: "0 16px 40px rgba(0,0,0,0.55)",
-              border: `1px solid rgba(255,255,255,0.04)`,
-            }}
-          >
-            <h3
-              style={{
-                fontSize: 13,
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                fontWeight: 600,
-                color: "#9fa4c0",
-                marginBottom: 6,
-              }}
-            >
-              {t("x01v3.teams.title", "Composition des équipes")}
-            </h3>
-            <p
-              style={{
-                fontSize: 11,
-                color: "#7c80a0",
-                marginBottom: 10,
-              }}
-            >
-              {t(
-                "x01v3.teams.subtitle",
-                "Assigne chaque joueur à une Team : Gold, Pink, Blue ou Green. Combos possibles : 2v2, 3v3, 4v4, 2v2v2, 2v2v2v2."
-              )}
-            </p>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {selectedIds.map((pid) => {
-                const p = profiles.find((pr) => pr.id === pid);
-                if (!p) return null;
-                const team = teamAssignments[pid] ?? null;
-                return (
-                  <div
-                    key={pid}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 8,
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        minWidth: 0,
-                      }}
-                    >
-                      <ProfileAvatar profile={p} size={28} />
-                      <span
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 500,
-                          whiteSpace: "nowrap",
-                          textOverflow: "ellipsis",
-                          overflow: "hidden",
-                          maxWidth: 90,
-                        }}
-                      >
-                        {p.name}
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 4,
-                        flexWrap: "wrap",
-                        justifyContent: "flex-end",
-                      }}
-                    >
-                      {(["gold", "pink", "blue", "green"] as TeamId[]).map(
-                        (tid) => (
-                          <TeamPillButton
-                            key={tid}
-                            label={TEAM_LABELS[tid].replace("Team ", "")}
-                            color={TEAM_COLORS[tid]}
-                            active={team === tid}
-                            onClick={() => setPlayerTeam(pid, tid)}
-                          />
-                        )
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+        {matchMode === "teams" && totalPlayers >= 2 && (
+          <TeamsSection
+            profiles={profiles}
+            selectedIds={selectedIds}
+            teamAssignments={teamAssignments}
+            setPlayerTeam={setPlayerTeam}
+          />
         )}
       </div>
 
-      {/* CTA collée en bas comme Cricket */}
+      {/* CTA collée au-dessus de la barre de nav */}
       <div
         style={{
           position: "fixed",
           left: 0,
           right: 0,
-          bottom: 0,
-          padding: "8px 12px 10px",
-          background:
-            "linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.4), transparent)",
-          backdropFilter: "blur(10px)",
+          bottom: 88, // au-dessus du BottomNav
+          padding: "6px 12px 8px",
+          pointerEvents: "none",
         }}
       >
-        <button
-          type="button"
-          onClick={handleStart}
-          disabled={!canStart}
-          style={{
-            width: "100%",
-            height: 46,
-            borderRadius: 999,
-            border: "none",
-            fontWeight: 700,
-            fontSize: 14,
-            letterSpacing: 1,
-            textTransform: "uppercase",
-            background: canStart
-              ? `linear-gradient(90deg, ${primary}, #ffe9a3)`
-              : "rgba(120,120,120,0.5)",
-            color: canStart ? "#151515" : "#2b2b2b",
-            boxShadow: canStart
-              ? "0 0 18px rgba(255, 207, 120, 0.65)"
-              : "none",
-            opacity: canStart ? 1 : 0.6,
-          }}
-        >
-          {t("x01v3.start", "Lancer la partie")}
-        </button>
+        <div style={{ pointerEvents: "auto" }}>
+          <button
+            type="button"
+            onClick={handleStart}
+            disabled={!canStart}
+            style={{
+              width: "100%",
+              height: 46,
+              borderRadius: 999,
+              border: "none",
+              fontWeight: 700,
+              fontSize: 14,
+              letterSpacing: 1,
+              textTransform: "uppercase",
+              background: canStart
+                ? `linear-gradient(90deg, ${primary}, #ffe9a3)`
+                : "rgba(120,120,120,0.5)",
+              color: canStart ? "#151515" : "#2b2b2b",
+              boxShadow: canStart
+                ? "0 0 18px rgba(255, 207, 120, 0.65)"
+                : "none",
+              opacity: canStart ? 1 : 0.6,
+            }}
+          >
+            {t("x01v3.start", "Lancer la partie")}
+          </button>
+        </div>
       </div>
     </div>
+  );
+}
+
+/* --------- Sous-section équipes avec grissage intelligent --------- */
+
+type TeamsSectionProps = {
+  profiles: Profile[];
+  selectedIds: string[];
+  teamAssignments: Record<string, TeamId | null>;
+  setPlayerTeam: (playerId: string, tid: TeamId) => void;
+};
+
+function TeamsSection({
+  profiles,
+  selectedIds,
+  teamAssignments,
+  setPlayerTeam,
+}: TeamsSectionProps) {
+  const { t } = useLang();
+  const cardBg = "rgba(10, 12, 24, 0.96)";
+  const totalPlayers = selectedIds.length;
+
+  const counts: Record<TeamId, number> = {
+    gold: 0,
+    pink: 0,
+    blue: 0,
+    green: 0,
+  };
+
+  selectedIds.forEach((pid) => {
+    const tId = teamAssignments[pid];
+    if (tId) counts[tId]++;
+  });
+
+  const orderedTeams: TeamId[] = ["gold", "pink", "blue", "green"];
+
+  // max nombre d'équipes possibles selon le nombre de joueurs
+  const maxTeams =
+    totalPlayers <= 4 ? 2 : totalPlayers <= 6 ? 3 : 4;
+
+  // base: capacité max par équipe pour le cas 2 équipes
+  const maxPerTeamBase =
+    totalPlayers >= 8 ? 4 : totalPlayers >= 6 ? 3 : 2;
+
+  const usedTeamsCount = orderedTeams.filter(
+    (tid) => counts[tid] > 0
+  ).length;
+
+  // règle : dès qu'on utilise 3 équipes ou plus -> 2 joueurs max par équipe
+  const maxPerTeam = usedTeamsCount >= 3 ? 2 : maxPerTeamBase;
+
+  return (
+    <section
+      style={{
+        background: cardBg,
+        borderRadius: 18,
+        padding: 12,
+        marginBottom: 12,
+        boxShadow: "0 16px 40px rgba(0,0,0,0.55)",
+        border: `1px solid rgba(255,255,255,0.04)`,
+      }}
+    >
+      <h3
+        style={{
+          fontSize: 13,
+          textTransform: "uppercase",
+          letterSpacing: 1,
+          fontWeight: 600,
+          color: "#9fa4c0",
+          marginBottom: 6,
+        }}
+      >
+        {t("x01v3.teams.title", "Composition des équipes")}
+      </h3>
+      <p
+        style={{
+          fontSize: 11,
+          color: "#7c80a0",
+          marginBottom: 10,
+        }}
+      >
+        {t(
+          "x01v3.teams.subtitle",
+          "Assigne chaque joueur à une Team : Gold, Pink, Blue ou Green. Combos possibles : 2v2, 3v3, 4v4, 2v2v2 ou 2v2v2v2."
+        )}
+      </p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {selectedIds.map((pid) => {
+          const p = profiles.find((pr) => pr.id === pid);
+          if (!p) return null;
+          const team = teamAssignments[pid] ?? null;
+
+          return (
+            <div
+              key={pid}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  minWidth: 0,
+                }}
+              >
+                <ProfileAvatar profile={p} size={28} />
+                <span
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 500,
+                    whiteSpace: "nowrap",
+                    textOverflow: "ellipsis",
+                    overflow: "hidden",
+                    maxWidth: 90,
+                  }}
+                >
+                  {p.name}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 4,
+                  flexWrap: "wrap",
+                  justifyContent: "flex-end",
+                }}
+              >
+                {orderedTeams.map((tid, idx) => {
+                  const allowedTeamSlot = idx < maxTeams;
+                  const full =
+                    counts[tid] >= maxPerTeam && team !== tid;
+
+                  const disabled = !allowedTeamSlot || full;
+
+                  return (
+                    <TeamPillButton
+                      key={tid}
+                      label={TEAM_LABELS[tid].replace("Team ", "")}
+                      color={TEAM_COLORS[tid]}
+                      active={team === tid}
+                      disabled={disabled}
+                      onClick={() => {
+                        if (disabled) return;
+                        setPlayerTeam(pid, tid);
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -941,24 +1034,42 @@ type TeamPillProps = {
   label: string;
   color: string;
   active: boolean;
+  disabled: boolean;
   onClick: () => void;
 };
 
-function TeamPillButton({ label, color, active, onClick }: TeamPillProps) {
+function TeamPillButton({
+  label,
+  color,
+  active,
+  disabled,
+  onClick,
+}: TeamPillProps) {
+  const baseBg = active ? color : "rgba(9,11,20,0.9)";
+  const baseColor = active ? "#151515" : "#e5e7f8";
+
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       style={{
         borderRadius: 999,
         padding: "3px 8px",
-        border: active ? `1px solid ${color}` : "1px solid rgba(255,255,255,0.07)",
-        background: active ? color : "rgba(9,11,20,0.9)",
-        color: active ? "#151515" : "#e5e7f8",
+        border: disabled
+          ? "1px solid rgba(255,255,255,0.06)"
+          : active
+          ? `1px solid ${color}`
+          : "1px solid rgba(255,255,255,0.12)",
+        background: disabled ? "rgba(40,42,60,0.6)" : baseBg,
+        color: disabled ? "#777b92" : baseColor,
         fontSize: 11,
         fontWeight: 600,
-        boxShadow: active ? `0 0 10px ${color}55` : "none",
+        boxShadow:
+          active && !disabled ? `0 0 10px ${color}55` : "none",
         whiteSpace: "nowrap",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.6 : 1,
       }}
     >
       {label}

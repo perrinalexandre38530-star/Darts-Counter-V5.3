@@ -4,6 +4,8 @@
 // - Moteur : useX01EngineV3 (V3 propre)
 // - UI : layout beau (header fixe, avatar, chips, ranking, keypad fixe)
 // - Keypad = même signature que X01 v1
+// - Pastilles dernière volée par joueur
+// - Checkout adaptatif V3 depuis le moteur
 // =============================================================
 
 import React from "react";
@@ -19,7 +21,6 @@ import X01LegOverlayV3 from "../lib/x01v3/x01LegOverlayV3";
 
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
-import { getAdaptiveCheckoutSuggestion } from "../lib/x01v3/x01CheckoutV3";
 
 // ---------------- Constantes visuelles ----------------
 
@@ -149,7 +150,7 @@ function dartValue(d: UIDart) {
 }
 
 // Checkout suggestion à partir de la structure V3
-function formatCheckoutFromSuggestion(suggestion: any): string {
+function formatCheckoutFromVisit(suggestion: any): string {
   if (!suggestion?.darts || !Array.isArray(suggestion.darts)) return "";
   return suggestion.darts
     .map((d: any) => {
@@ -215,8 +216,7 @@ export default function X01PlayV3({ config, onExit }: Props) {
   } = useX01EngineV3({ config });
 
   const players = config.players;
-  const activePlayer =
-    players.find((p) => p.id === activePlayerId) || null;
+  const activePlayer = players.find((p) => p.id === activePlayerId) || null;
 
   const setsTarget = config.setsToWin ?? 1;
   const legsTarget = config.legsPerSet ?? 1;
@@ -226,14 +226,11 @@ export default function X01PlayV3({ config, onExit }: Props) {
   // ---------------- Avatars (depuis config.players) ----------------
 
   const profileById = React.useMemo(() => {
-    const m: Record<
-      string,
-      { avatarDataUrl: string | null; name: string }
-    > = {};
+    const m: Record<string, { avatarDataUrl: string | null; name: string }> =
+      {};
     for (const p of players as any[]) {
       m[p.id] = {
-        avatarDataUrl:
-          p.avatarDataUrl ?? p.avatarUrl ?? p.photoUrl ?? null,
+        avatarDataUrl: p.avatarDataUrl ?? p.avatarUrl ?? p.photoUrl ?? null,
         name: p.name,
       };
     }
@@ -245,7 +242,7 @@ export default function X01PlayV3({ config, onExit }: Props) {
 
   const currentVisit = state.visit;
 
-  // double-out ? (info pour plus tard si besoin)
+  // double-out ? on essaie de lire config, sinon false (garde pour futur visuel)
   const doubleOut =
     (config as any).doubleOut === true ||
     (config as any).finishMode === "double" ||
@@ -267,7 +264,7 @@ export default function X01PlayV3({ config, onExit }: Props) {
       const next: UIDart = { v: value, mult: multiplier } as UIDart;
       return [...prev, next];
     });
-    // ✅ désélectionne DOUBLE / TRIPLE après chaque saisie
+    // ✅ on désélectionne Double / Triple après CHAQUE fléchette
     setMultiplier(1);
   }
 
@@ -373,40 +370,10 @@ export default function X01PlayV3({ config, onExit }: Props) {
   const bestVisit = activeStats?.bestVisit ?? 0;
 
   // =====================================================
-  // Checkout "live" (preview en fonction de la volée saisie)
-  // =====================================================
-
-  const projectedRemaining = Math.max(
-    currentScore -
-      currentThrow.reduce(
-        (s: number, d: UIDart) => s + dartValue(d),
-        0
-      ),
-    0
-  );
-  const dartsLeftInVisit = Math.max(3 - currentThrow.length, 0);
-
-  const liveCheckoutSuggestion = React.useMemo(() => {
-    if (dartsLeftInVisit <= 0) return null;
-    return getAdaptiveCheckoutSuggestion({
-      score: projectedRemaining,
-      dartsLeft: dartsLeftInVisit,
-      outMode:
-        (config as any).outMode ??
-        (config as any).finishMode ??
-        (doubleOut ? "double" : "single"),
-    });
-  }, [projectedRemaining, dartsLeftInVisit, config, doubleOut]);
-
-  const checkoutToDisplay =
-    liveCheckoutSuggestion || currentVisit?.checkoutSuggestion || null;
-
-  // =====================================================
   // Mesure header & keypad (pour scroll zone joueurs)
   // =====================================================
 
-  const headerWrapRef =
-    React.useRef<HTMLDivElement | null>(null);
+  const headerWrapRef = React.useRef<HTMLDivElement | null>(null);
   const [headerH, setHeaderH] = React.useState(0);
 
   React.useEffect(() => {
@@ -424,8 +391,7 @@ export default function X01PlayV3({ config, onExit }: Props) {
     };
   }, []);
 
-  const keypadWrapRef =
-    React.useRef<HTMLDivElement | null>(null);
+  const keypadWrapRef = React.useRef<HTMLDivElement | null>(null);
   const [keypadH, setKeypadH] = React.useState(0);
 
   React.useEffect(() => {
@@ -495,12 +461,10 @@ export default function X01PlayV3({ config, onExit }: Props) {
               borderRadius: 10,
               padding: "5px 11px",
               border: "1px solid rgba(255,180,0,.3)",
-              background:
-                "linear-gradient(180deg, #ffc63a, #ffaf00)",
+              background: "linear-gradient(180deg, #ffc63a, #ffaf00)",
               color: "#1a1a1a",
               fontWeight: 900,
-              boxShadow:
-                "0 8px 18px rgba(255,170,0,.25)",
+              boxShadow: "0 8px 18px rgba(255,170,0,.25)",
               fontSize: 13,
               whiteSpace: "nowrap",
             }}
@@ -520,12 +484,10 @@ export default function X01PlayV3({ config, onExit }: Props) {
               <DuelHeaderCompact
                 // @ts-expect-error : adapter à ta signature réelle si besoin
                 leftAvatarUrl={
-                  profileById[players[0].id]?.avatarDataUrl ??
-                  ""
+                  profileById[players[0].id]?.avatarDataUrl ?? ""
                 }
                 rightAvatarUrl={
-                  profileById[players[1].id]?.avatarDataUrl ??
-                  ""
+                  profileById[players[1].id]?.avatarDataUrl ?? ""
                 }
                 leftSets={state.setsWon[players[0].id] ?? 0}
                 rightSets={state.setsWon[players[1].id] ?? 0}
@@ -556,20 +518,20 @@ export default function X01PlayV3({ config, onExit }: Props) {
             currentPlayer={activePlayer}
             currentAvatar={
               activePlayer
-                ? profileById[activePlayer.id]
-                    ?.avatarDataUrl ?? null
+                ? profileById[activePlayer.id]?.avatarDataUrl ?? null
                 : null
             }
             currentRemaining={currentScore}
             currentThrow={currentThrow}
+            doubleOut={doubleOut}
             liveRanking={liveRanking}
             curDarts={curDarts}
             curM3D={curM3D}
             bestVisit={bestVisit}
-            useSets={useSetsUi}
             legsWon={state.legsWon}
             setsWon={state.setsWon}
-            checkoutSuggestion={checkoutToDisplay}
+            useSets={useSetsUi}
+            currentVisit={currentVisit}
           />
         </div>
       </div>
@@ -639,6 +601,11 @@ export default function X01PlayV3({ config, onExit }: Props) {
         liveStatsByPlayer={liveStatsByPlayer}
         onNextLeg={startNextLeg}
       />
+
+      {/* TODO (prochaine étape) : petit overlay de fin de match
+          quand status === "match_end" + bouton pour valider la victoire
+          et revenir au menu / historique.
+      */}
     </div>
   );
 }
@@ -652,6 +619,7 @@ function HeaderBlock(props: {
   currentAvatar: string | null;
   currentRemaining: number;
   currentThrow: UIDart[];
+  doubleOut: boolean;
   liveRanking: { id: string; name: string; score: number }[];
   curDarts: number;
   curM3D: string;
@@ -659,13 +627,14 @@ function HeaderBlock(props: {
   useSets: boolean;
   legsWon: Record<string, number>;
   setsWon: Record<string, number>;
-  checkoutSuggestion: any | null;
+  currentVisit: any;
 }) {
   const {
     currentPlayer,
     currentAvatar,
     currentRemaining,
     currentThrow,
+    doubleOut, // pas encore utilisé mais gardé
     liveRanking,
     curDarts,
     curM3D,
@@ -673,7 +642,7 @@ function HeaderBlock(props: {
     useSets,
     legsWon,
     setsWon,
-    checkoutSuggestion,
+    currentVisit,
   } = props;
 
   const legsWonThisSet =
@@ -878,8 +847,8 @@ function HeaderBlock(props: {
             })}
           </div>
 
-          {/* Checkout suggestion (preview live ou visite moteur) */}
-          {checkoutSuggestion ? (
+          {/* Checkout suggestion (moteur V3) */}
+          {currentVisit?.checkoutSuggestion ? (
             <div
               style={{
                 marginTop: 3,
@@ -892,8 +861,7 @@ function HeaderBlock(props: {
                   display: "inline-flex",
                   padding: 5,
                   borderRadius: 12,
-                  border:
-                    "1px solid rgba(255,255,255,.08)",
+                  border: "1px solid rgba(255,255,255,.08)",
                   background:
                     "radial-gradient(120% 120% at 50% 0%, rgba(255,195,26,.10), rgba(30,30,34,.95))",
                   minWidth: 170,
@@ -916,8 +884,8 @@ function HeaderBlock(props: {
                     fontSize: 13,
                   }}
                 >
-                  {formatCheckoutFromSuggestion(
-                    checkoutSuggestion
+                  {formatCheckoutFromVisit(
+                    currentVisit.checkoutSuggestion
                   )}
                 </span>
               </div>
@@ -975,7 +943,7 @@ function PlayersListOnly(props: {
   >;
   liveStatsByPlayer: Record<
     string,
-    { dartsThrown: number; totalScore: number }
+    { dartsThrown: number; totalScore: number; bestVisit?: number }
   >;
   start: number;
   scoresByPlayer: Record<string, number>;
@@ -1015,9 +983,7 @@ function PlayersListOnly(props: {
         const dCount = live?.dartsThrown ?? 0;
         const pSum = live?.totalScore ?? 0;
         const a3d =
-          dCount > 0
-            ? ((pSum / dCount) * 3).toFixed(2)
-            : "0.00";
+          dCount > 0 ? ((pSum / dCount) * 3).toFixed(2) : "0.00";
         const score = scoresByPlayer[p.id] ?? start;
         const legsWonThisSet = legsWon?.[p.id] ?? 0;
         const setsWonTotal = setsWon?.[p.id] ?? 0;
@@ -1122,8 +1088,7 @@ function PlayersListOnly(props: {
             <div
               style={{
                 fontWeight: 900,
-                color:
-                  score === 0 ? "#7fe2a9" : "#ffcf57",
+                color: score === 0 ? "#7fe2a9" : "#ffcf57",
               }}
             >
               {score}
