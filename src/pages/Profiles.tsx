@@ -253,6 +253,11 @@ export default function Profiles({
     }
   }
 
+  // Nombre d'amis online/away (pour le titre de la section Amis)
+  const onlineFriendsCount = friends.filter(
+    (f) => f.status === "online" || f.status === "away"
+  ).length;
+
   return (
     <>
       <style
@@ -279,6 +284,7 @@ export default function Profiles({
             go={go}
             onSelectMe={() => setView("me")}
             onSelectLocals={() => setView("locals")}
+            onSelectFriends={() => setView("friends")}
           />
         ) : (
           <>
@@ -295,8 +301,7 @@ export default function Profiles({
                 fontSize: 12,
               }}
             >
-              ←{" "}
-              {t("profiles.menu.back", "Retour au menu Profils")}
+              ← {t("profiles.menu.back", "Retour au menu Profils")}
             </button>
 
             {view === "me" && (
@@ -384,10 +389,10 @@ export default function Profiles({
 
             {view === "friends" && (
               <Card
-                title={t("profiles.section.friends", "Amis ({count})").replace(
-                  "{count}",
-                  String((store as any).friends?.length ?? 0)
-                )}
+                title={t(
+                  "profiles.section.friends",
+                  "Amis ({count})"
+                ).replace("{count}", String(onlineFriendsCount))}
               >
                 <FriendsMergedBlock friends={friends} />
               </Card>
@@ -407,10 +412,12 @@ function ProfilesMenuView({
   go,
   onSelectMe,
   onSelectLocals,
+  onSelectFriends,
 }: {
   go?: (tab: any, params?: any) => void;
   onSelectMe: () => void;
   onSelectLocals: () => void;
+  onSelectFriends: () => void;
 }) {
   const { theme } = useTheme();
   const { t } = useLang();
@@ -507,11 +514,13 @@ function ProfilesMenuView({
       <div style={{ marginBottom: 12 }}>
         <div
           style={{
-            fontSize: 18,
-            fontWeight: 800,
-            letterSpacing: 1.4,
+            fontSize: 30,
+            fontWeight: 900,
+            letterSpacing: 1.6,
             textTransform: "uppercase",
             color: primary,
+            textAlign: "center",
+            width: "100%",
           }}
         >
           {t("profiles.menu.title", "PROFILS")}
@@ -528,7 +537,7 @@ function ProfilesMenuView({
       </div>
 
       <CardBtn
-        title={t("profiles.menu.avatar.title", "Créer son avatar")}
+        title={t("profiles.menu.avatar.title", "Créer Avatar")}
         subtitle={t(
           "profiles.menu.avatar.subtitle",
           "Personnalise ton médaillon avec le créateur d’avatar."
@@ -537,7 +546,7 @@ function ProfilesMenuView({
       />
 
       <CardBtn
-        title={t("profiles.menu.me.title", "Mon profil")}
+        title={t("profiles.menu.me.title", "Mon Profil")}
         subtitle={t(
           "profiles.menu.me.subtitle",
           "Profil connecté, statut, mini-stats et informations personnelles."
@@ -549,13 +558,13 @@ function ProfilesMenuView({
         title={t("profiles.menu.friends.title", "Amis")}
         subtitle={t(
           "profiles.menu.friends.subtitle",
-          "Gère tes amis et tes profils en ligne."
+          "Amis en ligne et absents."
         )}
-        onClick={() => go?.("friends")}
+        onClick={onSelectFriends} // plus de go("friends") => vue interne
       />
 
       <CardBtn
-        title={t("profiles.menu.locals.title", "Profils locaux")}
+        title={t("profiles.menu.locals.title", "Profils Locaux")}
         subtitle={t(
           "profiles.menu.locals.subtitle",
           "Profils enregistrés sur cet appareil avec leurs statistiques."
@@ -1002,12 +1011,16 @@ function FriendsMergedBlock({ friends }: { friends: FriendLike[] }) {
   const [open, setOpen] = React.useState(true);
 
   const order: Record<string, number> = { online: 0, away: 1, offline: 2 };
-  const merged = [...friends].sort((a, b) => {
-    const sa = order[(a.status as string) ?? "offline"] ?? 2;
-    const sb = order[(b.status as string) ?? "offline"] ?? 2;
-    if (sa !== sb) return sa - sb;
-    return (a.name || "").localeCompare(b.name || "");
-  });
+
+  // ➜ On ne garde que les amis online / away (offline masqués)
+  const merged = [...friends]
+    .filter((f) => f.status === "online" || f.status === "away")
+    .sort((a, b) => {
+      const sa = order[(a.status as string) ?? "offline"] ?? 2;
+      const sb = order[(b.status as string) ?? "offline"] ?? 2;
+      if (sa !== sb) return sa - sb;
+      return (a.name || "").localeCompare(b.name || "");
+    });
 
   return (
     <div>
@@ -1148,9 +1161,7 @@ function FriendsMergedBlock({ friends }: { friends: FriendLike[] }) {
                   >
                     {f.status === "online"
                       ? t("status.online", "En ligne")
-                      : f.status === "away"
-                      ? t("status.away", "Absent")
-                      : t("status.offline", "Hors ligne")}
+                      : t("status.away", "Absent")}
                   </span>
                 </div>
               );
@@ -1230,6 +1241,7 @@ function UnifiedAuthBlock({
       return;
     }
 
+    // On cherche le profil local qui correspond à cet email/mot de passe
     const match = profiles.find((p) => {
       const pi = ((p as any).privateInfo || {}) as PrivateInfo;
       const pe = (pi.email || "").trim().toLowerCase();
@@ -1247,6 +1259,9 @@ function UnifiedAuthBlock({
       return;
     }
 
+    // ✅ On lie le profil actif avec le compte online (FriendsPage)
+    //    ➜ activeProfileId = id du profil local
+    //    ➜ onlineLogin avec le même email + pseudo => même joueur online
     setLoginError(null);
     onConnect(match.id);
 
@@ -1313,6 +1328,7 @@ function UnifiedAuthBlock({
     };
 
     // Profil local (+ stats, etc.)
+    // ➜ Le nouveau profil sera actif via addProfile()
     onCreate(trimmedName, file, privateInfo);
 
     // Et on tente la création du compte online lié
