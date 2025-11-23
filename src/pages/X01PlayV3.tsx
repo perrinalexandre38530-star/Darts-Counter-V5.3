@@ -19,6 +19,7 @@ import X01LegOverlayV3 from "../lib/x01v3/x01LegOverlayV3";
 
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
+import { getAdaptiveCheckoutSuggestion } from "../lib/x01v3/x01CheckoutV3";
 
 // ---------------- Constantes visuelles ----------------
 
@@ -147,6 +148,54 @@ function dartValue(d: UIDart) {
   return d.v * d.mult;
 }
 
+// Checkout suggestion à partir de la structure V3
+function formatCheckoutFromSuggestion(suggestion: any): string {
+  if (!suggestion?.darts || !Array.isArray(suggestion.darts)) return "";
+  return suggestion.darts
+    .map((d: any) => {
+      const seg = d.segment === 25 ? "BULL" : String(d.segment);
+      if (d.multiplier === 1) return seg;
+      if (d.multiplier === 2) return `D${seg}`;
+      if (d.multiplier === 3) return `T${seg}`;
+      return seg;
+    })
+    .join(" • ");
+}
+
+// Pastilles pour la dernière volée d’un joueur
+function renderLastVisitChips(
+  pid: string,
+  lastVisits: Record<string, UIDart[]>
+) {
+  const darts = lastVisits[pid] ?? [];
+  if (!darts.length) return null;
+
+  return (
+    <span style={{ display: "inline-flex", gap: 6 }}>
+      {darts.map((d, i) => {
+        const st = chipStyle(d, false);
+        return (
+          <span
+            key={i}
+            style={{
+              minWidth: 36,
+              padding: "2px 8px",
+              borderRadius: 10,
+              fontSize: 11,
+              fontWeight: 700,
+              background: st.background,
+              border: st.border as string,
+              color: st.color as string,
+            }}
+          >
+            {fmt(d)}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 // =============================================================
 // Composant principal X01PlayV3
 // =============================================================
@@ -196,7 +245,7 @@ export default function X01PlayV3({ config, onExit }: Props) {
 
   const currentVisit = state.visit;
 
-  // double-out ? on essaie de lire config, sinon false
+  // double-out ? (info pour plus tard si besoin)
   const doubleOut =
     (config as any).doubleOut === true ||
     (config as any).finishMode === "double" ||
@@ -208,6 +257,9 @@ export default function X01PlayV3({ config, onExit }: Props) {
 
   const [multiplier, setMultiplier] = React.useState<1 | 2 | 3>(1);
   const [currentThrow, setCurrentThrow] = React.useState<UIDart[]>([]);
+  const [lastVisitsByPlayer, setLastVisitsByPlayer] = React.useState<
+    Record<string, UIDart[]>
+  >({});
 
   function pushDart(value: number) {
     setCurrentThrow((prev) => {
@@ -215,6 +267,8 @@ export default function X01PlayV3({ config, onExit }: Props) {
       const next: UIDart = { v: value, mult: multiplier } as UIDart;
       return [...prev, next];
     });
+    // ✅ désélectionne DOUBLE / TRIPLE après chaque saisie
+    setMultiplier(1);
   }
 
   const handleNumber = (value: number) => {
@@ -235,17 +289,28 @@ export default function X01PlayV3({ config, onExit }: Props) {
   };
 
   const validateThrow = () => {
-    setCurrentThrow((prev) => {
-      const toSend = [...prev];
-      toSend.forEach((d) => {
-        const input: X01DartInputV3 = {
-          segment: d.v === 25 ? 25 : d.v,
-          multiplier: d.mult as 1 | 2 | 3,
-        };
-        throwDart(input);
-      });
-      return [];
+    if (!currentThrow.length) return;
+    const toSend = [...currentThrow];
+
+    // 🔥 mémorise dernière volée pour pastilles
+    const pid = activePlayerId;
+    if (pid) {
+      setLastVisitsByPlayer((m) => ({
+        ...m,
+        [pid]: toSend,
+      }));
+    }
+
+    // moteur V3
+    toSend.forEach((d) => {
+      const input: X01DartInputV3 = {
+        segment: d.v === 25 ? 25 : d.v,
+        multiplier: d.mult as 1 | 2 | 3,
+      };
+      throwDart(input);
     });
+
+    setCurrentThrow([]);
     setMultiplier(1);
   };
 
@@ -308,6 +373,35 @@ export default function X01PlayV3({ config, onExit }: Props) {
   const bestVisit = activeStats?.bestVisit ?? 0;
 
   // =====================================================
+  // Checkout "live" (preview en fonction de la volée saisie)
+  // =====================================================
+
+  const projectedRemaining = Math.max(
+    currentScore -
+      currentThrow.reduce(
+        (s: number, d: UIDart) => s + dartValue(d),
+        0
+      ),
+    0
+  );
+  const dartsLeftInVisit = Math.max(3 - currentThrow.length, 0);
+
+  const liveCheckoutSuggestion = React.useMemo(() => {
+    if (dartsLeftInVisit <= 0) return null;
+    return getAdaptiveCheckoutSuggestion({
+      score: projectedRemaining,
+      dartsLeft: dartsLeftInVisit,
+      outMode:
+        (config as any).outMode ??
+        (config as any).finishMode ??
+        (doubleOut ? "double" : "single"),
+    });
+  }, [projectedRemaining, dartsLeftInVisit, config, doubleOut]);
+
+  const checkoutToDisplay =
+    liveCheckoutSuggestion || currentVisit?.checkoutSuggestion || null;
+
+  // =====================================================
   // Mesure header & keypad (pour scroll zone joueurs)
   // =====================================================
 
@@ -359,8 +453,6 @@ export default function X01PlayV3({ config, onExit }: Props) {
       window.history.back();
     }
   }
-
-  const currentPlayerId = activePlayer?.id ?? "";
 
   // =====================================================
   // Rendu principal : UI du "beau" X01Play
@@ -470,14 +562,14 @@ export default function X01PlayV3({ config, onExit }: Props) {
             }
             currentRemaining={currentScore}
             currentThrow={currentThrow}
-            doubleOut={doubleOut}
             liveRanking={liveRanking}
             curDarts={curDarts}
             curM3D={curM3D}
             bestVisit={bestVisit}
+            useSets={useSetsUi}
             legsWon={state.legsWon}
             setsWon={state.setsWon}
-            useSets={useSetsUi}
+            checkoutSuggestion={checkoutToDisplay}
           />
         </div>
       </div>
@@ -507,6 +599,7 @@ export default function X01PlayV3({ config, onExit }: Props) {
           legsWon={state.legsWon}
           setsWon={state.setsWon}
           useSets={useSetsUi}
+          lastVisitsByPlayer={lastVisitsByPlayer}
         />
       </div>
 
@@ -559,7 +652,6 @@ function HeaderBlock(props: {
   currentAvatar: string | null;
   currentRemaining: number;
   currentThrow: UIDart[];
-  doubleOut: boolean;
   liveRanking: { id: string; name: string; score: number }[];
   curDarts: number;
   curM3D: string;
@@ -567,14 +659,13 @@ function HeaderBlock(props: {
   useSets: boolean;
   legsWon: Record<string, number>;
   setsWon: Record<string, number>;
-  currentVisit: any; // 👈 ajouté
+  checkoutSuggestion: any | null;
 }) {
   const {
     currentPlayer,
     currentAvatar,
     currentRemaining,
     currentThrow,
-    doubleOut,
     liveRanking,
     curDarts,
     curM3D,
@@ -582,7 +673,7 @@ function HeaderBlock(props: {
     useSets,
     legsWon,
     setsWon,
-    currentVisit,             // 👈 récupéré ici
+    checkoutSuggestion,
   } = props;
 
   const legsWonThisSet =
@@ -749,17 +840,6 @@ function HeaderBlock(props: {
           >
             {[0, 1, 2].map((i) => {
               const d = currentThrow[i];
-              const afterNow = Math.max(
-                currentRemaining -
-                  currentThrow
-                    .slice(0, i + 1)
-                    .reduce(
-                      (s: number, x: UIDart) =>
-                        s + dartValue(x),
-                      0
-                    ),
-                0
-              );
 
               const wouldBust =
                 currentRemaining -
@@ -769,7 +849,8 @@ function HeaderBlock(props: {
                       (s: number, x: UIDart) =>
                         s + dartValue(x),
                       0
-                    ) < 0;
+                    ) <
+                0;
 
               const st = chipStyle(d, wouldBust);
 
@@ -797,8 +878,8 @@ function HeaderBlock(props: {
             })}
           </div>
 
-          {/* Checkout suggestion (moteur V3) */}
-          {currentVisit?.checkoutSuggestion ? (
+          {/* Checkout suggestion (preview live ou visite moteur) */}
+          {checkoutSuggestion ? (
             <div
               style={{
                 marginTop: 3,
@@ -835,8 +916,8 @@ function HeaderBlock(props: {
                     fontSize: 13,
                   }}
                 >
-                  {formatCheckoutFromVisit(
-                    currentVisit.checkoutSuggestion
+                  {formatCheckoutFromSuggestion(
+                    checkoutSuggestion
                   )}
                 </span>
               </div>
@@ -886,21 +967,6 @@ function HeaderBlock(props: {
   );
 }
 
-// Checkout suggestion à partir de la structure V3
-function formatCheckoutFromVisit(suggestion: any): string {
-  if (!suggestion?.darts || !Array.isArray(suggestion.darts))
-    return "";
-  return suggestion.darts
-    .map((d: any) => {
-      const seg = d.segment === 25 ? "BULL" : String(d.segment);
-      if (d.multiplier === 1) return seg;
-      if (d.multiplier === 2) return `D${seg}`;
-      if (d.multiplier === 3) return `T${seg}`;
-      return seg;
-    })
-    .join(" • ");
-}
-
 function PlayersListOnly(props: {
   players: any[];
   profileById: Record<
@@ -916,6 +982,7 @@ function PlayersListOnly(props: {
   legsWon: Record<string, number>;
   setsWon: Record<string, number>;
   useSets: boolean;
+  lastVisitsByPlayer: Record<string, UIDart[]>;
 }) {
   const {
     players,
@@ -926,6 +993,7 @@ function PlayersListOnly(props: {
     legsWon,
     setsWon,
     useSets,
+    lastVisitsByPlayer,
   } = props;
 
   return (
@@ -1024,9 +1092,9 @@ function PlayersListOnly(props: {
                 >
                   {p.name}
                 </div>
-                {/* Pastilles dernière volée : pour l'instant on ne montre rien
-                    (le moteur V3 ne nous renvoie pas les segments directement dans ce composant)
-                 */}
+
+                {/* Pastilles dernière volée */}
+                {renderLastVisitChips(p.id, lastVisitsByPlayer)}
               </div>
               <div
                 style={{
@@ -1096,7 +1164,9 @@ function SetLegChip(props: {
   if (!useSets) {
     return (
       <span style={st}>
-        <span>Leg {currentLegInSet}/{legsTarget}</span>
+        <span>
+          Leg {currentLegInSet}/{legsTarget}
+        </span>
       </span>
     );
   }

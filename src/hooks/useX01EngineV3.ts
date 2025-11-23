@@ -1,8 +1,12 @@
-// =======================================================
+// =============================================================
 // src/hooks/useX01EngineV3.ts
-// Moteur unifié X01 V3 (Solo / Multi / Teams)
-// + Checkouts V3 intégrés via getAdaptiveCheckoutSuggestion
-// =======================================================
+// Moteur X01 V3 (hook React)
+// - Orchestration logique : score, bust, visits
+// - Flow : rotation joueurs, legs, sets, match
+// - Checkout adaptatif (1/2/3 darts) via x01CheckoutV3
+// - Stats live par joueur (darts, totalScore, bestVisit)
+// - Status : "playing" | "leg_end" | "set_end" | "match_end"
+// =============================================================
 
 import * as React from "react";
 
@@ -10,10 +14,14 @@ import type {
   X01ConfigV3,
   X01MatchStateV3,
   X01PlayerId,
-  X01StatsLiveV3,
-  X01MatchStatsV3,
-  X01EngineEventsV3,
+  X01OutMode,
 } from "../types/x01v3";
+
+import {
+  startNewVisitV3,
+  applyDartToCurrentPlayerV3,
+  type X01DartInputV3,
+} from "../lib/x01v3/x01LogicV3";
 
 import {
   generateThrowOrderV3,
@@ -26,282 +34,337 @@ import {
 } from "../lib/x01v3/x01FlowV3";
 
 import {
-  startNewVisitV3,
-  applyDartToCurrentPlayerV3,
-  type X01DartInputV3,
-} from "../lib/x01v3/x01LogicV3";
-
-import {
-  createEmptyLiveStatsV3,
-  applyVisitToLiveStatsV3,
-} from "../lib/x01v3/x01StatsLiveV3";
-
-import {
-  createEmptyMatchStatsV3,
-  applyLiveStatsToMatchStatsV3,
-  finalizeMatchStatsV3,
-} from "../lib/x01v3/x01StatsMatchV3";
-
-import {
-  getAdaptiveCheckoutSuggestion
+  getAdaptiveCheckoutSuggestionV3,
 } from "../lib/x01v3/x01CheckoutV3";
 
-/* -------------------------------------------------------
-   Types internes du hook
-------------------------------------------------------- */
-interface X01EngineInternalStateV3 {
-  match: X01MatchStateV3;
-  liveStatsByPlayer: Record<X01PlayerId, X01StatsLiveV3>;
-  matchStats: X01MatchStatsV3 | null;
+// -------------------------------------------------------------
+// Types locaux
+// -------------------------------------------------------------
+
+type LiveStats = {
+  dartsThrown: number;
+  totalScore: number;
+  bestVisit: number;
+};
+
+type StatusV3 = "playing" | "leg_end" | "set_end" | "match_end";
+
+// -------------------------------------------------------------
+// Helpers internes
+// -------------------------------------------------------------
+
+function initLiveStats(config: X01ConfigV3): Record<string, LiveStats> {
+  const res: Record<string, LiveStats> = {};
+  for (const p of config.players) {
+    res[p.id] = { dartsThrown: 0, totalScore: 0, bestVisit: 0 };
+  }
+  return res;
 }
 
-export interface UseX01EngineV3Args {
-  config: X01ConfigV3;
-  matchId?: string;
-  events?: X01EngineEventsV3;
+function canSuggestCheckout(
+  score: number,
+  dartsLeft: number,
+  outMode: X01OutMode
+): boolean {
+  if (score <= 1) return false;
+  if (score > 170) return false;
+  if (dartsLeft <= 0) return false;
+
+  // Règle "score = 1 interdit" déjà gérée par la logique de bust,
+  // mais on garde un garde-fou ici pour tous les modes de sortie.
+  if (score === 1) return false;
+
+  return true;
 }
 
-export interface UseX01EngineV3Value {
-  state: X01MatchStateV3;
-  liveStatsByPlayer: Record<X01PlayerId, X01StatsLiveV3>;
-  matchStats: X01MatchStatsV3 | null;
-
-  activePlayerId: X01PlayerId;
-  scores: Record<X01PlayerId, number>;
-  status: X01MatchStateV3["status"];
-
-  throwDart: (input: X01DartInputV3) => void;
-  startNextLeg: () => void;
-}
-
-/* -------------------------------------------------------
-   Création état initial
-------------------------------------------------------- */
-function createInitialEngineStateV3(
+function updateVisitCheckout(
   config: X01ConfigV3,
-  matchId?: string
-): X01EngineInternalStateV3 {
-  const match: X01MatchStateV3 = {
-    matchId: matchId ?? `x01v3_${Date.now()}`,
+  state: X01MatchStateV3
+) {
+  const visit = state.visit;
+  if (!visit) return;
+
+  if (!canSuggestCheckout(visit.currentScore, visit.dartsLeft, config.outMode)) {
+    visit.checkoutSuggestion = null;
+    return;
+  }
+
+  visit.checkoutSuggestion = getAdaptiveCheckoutSuggestionV3({
+    score: visit.currentScore,
+    dartsLeft: visit.dartsLeft,
+    outMode: config.outMode as any,
+  });
+}
+
+function createInitialMatchState(config: X01ConfigV3): X01MatchStateV3 {
+  const scores: Record<string, number> = {};
+  for (const p of config.players) {
+    scores[p.id] = config.startScore;
+  }
+
+  const throwOrder = generateThrowOrderV3(config, null, 1);
+
+  const base: X01MatchStateV3 = {
+    scores,
+    activePlayer: throwOrder[0],
+    throwOrder,
     currentSet: 1,
     currentLeg: 1,
-    activePlayer: config.players[0]?.id ?? "",
-    throwOrder: [],
-    scores: {},
     legsWon: {},
     setsWon: {},
     teamLegsWon: config.gameMode === "teams" ? {} : undefined,
     teamSetsWon: config.gameMode === "teams" ? {} : undefined,
-    visit: {
-      dartsLeft: 3,
-      startingScore: config.startScore,
-      currentScore: config.startScore,
-      darts: [],
-      checkoutSuggestion: null,
-    },
     status: "playing",
-  };
+    visit: null,
+  } as X01MatchStateV3;
 
-  // Scores init
-  for (const p of config.players) {
-    match.scores[p.id] = config.startScore;
-    match.legsWon[p.id] = 0;
-    match.setsWon[p.id] = 0;
-  }
+  // Première visite
+  startNewVisitV3(base);
+  updateVisitCheckout(config, base);
 
-  // Teams init
-  if (config.gameMode === "teams" && match.teamLegsWon && match.teamSetsWon && config.teams) {
-    for (const t of config.teams) {
-      match.teamLegsWon[t.id] = 0;
-      match.teamSetsWon[t.id] = 0;
+  return base;
+}
+
+// -------------------------------------------------------------
+// Hook principal
+// -------------------------------------------------------------
+
+export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
+  const [state, setState] = React.useState<X01MatchStateV3>(() =>
+    createInitialMatchState(config)
+  );
+
+  const [liveStatsByPlayer, setLiveStatsByPlayer] =
+    React.useState<Record<string, LiveStats>>(() =>
+      initLiveStats(config)
+    );
+
+  // Score de volée courant par joueur (pour bestVisit)
+  const visitScoreRef = React.useRef<Record<string, number>>({});
+
+  // -----------------------------------------------------------
+  // Helper : démarrer une nouvelle visite pour un joueur donné
+  // -----------------------------------------------------------
+  function startVisitForActivePlayer(nextState: X01MatchStateV3) {
+    startNewVisitV3(nextState);
+    const v = nextState.visit!;
+    visitScoreRef.current[nextState.activePlayer] = 0;
+
+    if (canSuggestCheckout(v.currentScore, v.dartsLeft, config.outMode)) {
+      v.checkoutSuggestion = getAdaptiveCheckoutSuggestionV3({
+        score: v.currentScore,
+        dartsLeft: v.dartsLeft,
+        outMode: config.outMode as any,
+      });
+    } else {
+      v.checkoutSuggestion = null;
     }
   }
 
-  // Ordre set 1
-  const throwOrder = generateThrowOrderV3(config, null, 1);
-  match.throwOrder = throwOrder;
-  match.activePlayer = throwOrder[0];
+  // -----------------------------------------------------------
+  // throwDart : appliqué à CHAQUE fléchette
+  // -----------------------------------------------------------
+  const throwDart = React.useCallback(
+    (input: X01DartInputV3) => {
+      setState((prev) => {
+        const next = { ...prev } as X01MatchStateV3;
 
-  // Première visite
-  startNewVisitV3(match);
-  match.visit.checkoutSuggestion = getAdaptiveCheckoutSuggestion({
-    score: match.visit.currentScore,
-    dartsLeft: match.visit.dartsLeft,
-    outMode: config.outMode,
-  });
+        // S'il n'y a pas de visite (cas limite) → on en crée une
+        if (!next.visit) {
+          startVisitForActivePlayer(next);
+        }
 
-  // Stats LIVE
-  const liveStatsByPlayer: Record<X01PlayerId, X01StatsLiveV3> = {};
-  for (const p of config.players) {
-    liveStatsByPlayer[p.id] = createEmptyLiveStatsV3();
-  }
+        const activeId = next.activePlayer as X01PlayerId;
 
-  return {
-    match,
-    liveStatsByPlayer,
-    matchStats: createEmptyMatchStatsV3(config.players.map(p => p.id)),
-  };
-}
+        // Appliquer la fléchette via la logique V3
+        const result = applyDartToCurrentPlayerV3(config, next, input);
+        const visit = next.visit!;
 
-/* -------------------------------------------------------
-   Hook principal
-------------------------------------------------------- */
-export function useX01EngineV3({
-  config,
-  matchId,
-  events,
-}: UseX01EngineV3Args): UseX01EngineV3Value {
+        // MAJ score de volée courant
+        const prevVisitScore =
+          visitScoreRef.current[activeId] ?? 0;
+        const newVisitScore = prevVisitScore + result.dart.score;
+        visitScoreRef.current[activeId] = newVisitScore;
 
-  const [engineState, setEngineState] = React.useState<X01EngineInternalStateV3>(
-    () => createInitialEngineStateV3(config, matchId)
-  );
+        // MAJ stats live (darts, totalScore, bestVisit)
+        setLiveStatsByPlayer((prevStats) => {
+          const cur = prevStats[activeId] ?? {
+            dartsThrown: 0,
+            totalScore: 0,
+            bestVisit: 0,
+          };
 
-  const { match, liveStatsByPlayer, matchStats } = engineState;
+          const dartsThrown = cur.dartsThrown + 1;
+          const totalScore = cur.totalScore + result.dart.score;
+          let bestVisit = cur.bestVisit;
 
-  /* -------------------------------------------------------
-     Lancer une fléchette
-  ------------------------------------------------------- */
-  const throwDart = React.useCallback((input: X01DartInputV3) => {
-    setEngineState(prev => {
+          const visitFinished =
+            result.bust ||
+            result.scoreAfter === 0 ||
+            visit.dartsLeft === 0;
 
-      const next: X01EngineInternalStateV3 = {
-        match: {
-          ...prev.match,
-          scores: { ...prev.match.scores },
-          legsWon: { ...prev.match.legsWon },
-          setsWon: { ...prev.match.setsWon },
-          teamLegsWon: prev.match.teamLegsWon ? { ...prev.match.teamLegsWon } : undefined,
-          teamSetsWon: prev.match.teamSetsWon ? { ...prev.match.teamSetsWon } : undefined,
-          visit: {
-            ...prev.match.visit,
-            darts: [...prev.match.visit.darts],
-          },
-        },
-        liveStatsByPlayer: { ...prev.liveStatsByPlayer },
-        matchStats: prev.matchStats ? {
-          ...prev.matchStats,
-          players: { ...prev.matchStats.players }
-        } : null,
-      };
-
-      const m = next.match;
-
-      if (m.status !== "playing") return next;
-
-      const currentPlayerId = m.activePlayer;
-
-      const result = applyDartToCurrentPlayerV3(config, m, input);
-      const visit = m.visit;
-
-      const wasBust = result.bust;
-      const visitEnded = wasBust || visit.dartsLeft === 0 || result.scoreAfter === 0;
-
-      // Mise à jour du checkout
-      visit.checkoutSuggestion = getAdaptiveCheckoutSuggestion({
-        score: visit.currentScore,
-        dartsLeft: visit.dartsLeft,
-        outMode: config.outMode,
-      });
-
-      if (visitEnded) {
-        applyVisitToLiveStatsV3(next.liveStatsByPlayer[currentPlayerId], visit, wasBust);
-      }
-
-      // Fin de leg ?
-      if (!wasBust && result.scoreAfter === 0) {
-        const legWinner = checkLegWinV3(config, m);
-        if (legWinner) {
-          applyLegWinV3(config, m, legWinner);
-
-          const setWinner = checkSetWinV3(config, m);
-          if (setWinner) {
-            applySetWinV3(config, m, setWinner);
-
-            const matchWinner = checkMatchWinV3(config, m);
-            if (matchWinner) {
-              m.status = "match_end";
-              if (next.matchStats) finalizeMatchStatsV3(config, m, next.matchStats);
-              return next;
-            }
-
-            m.status = "set_end";
-            return next;
+          if (visitFinished && newVisitScore > bestVisit) {
+            bestVisit = newVisitScore;
           }
 
-          m.status = "leg_end";
+          return {
+            ...prevStats,
+            [activeId]: {
+              dartsThrown,
+              totalScore,
+              bestVisit,
+            },
+          };
+        });
+
+        // Checkout : seulement si la visite n'est pas terminée
+        if (!result.bust && visit.dartsLeft > 0 && result.scoreAfter > 1) {
+          updateVisitCheckout(config, next);
+        } else {
+          if (next.visit) {
+            next.visit.checkoutSuggestion = null;
+          }
+        }
+
+        // --------- Détection fin de leg / set / match ----------
+        const legWin = checkLegWinV3(config, next);
+
+        if (legWin) {
+          // Leg gagné
+          applyLegWinV3(config, next, legWin);
+
+          const setWin = checkSetWinV3(config, next);
+
+          if (setWin) {
+            // Set gagné
+            applySetWinV3(config, next, setWin);
+
+            // IMPORTANT : reset des legs pour le prochain set
+            if (config.gameMode === "teams") {
+              next.teamLegsWon = {};
+            } else {
+              next.legsWon = {};
+            }
+
+            const matchWin = checkMatchWinV3(config, next);
+            if (matchWin) {
+              // Match gagné → status final
+              next.status = "match_end" as StatusV3;
+            } else {
+              // Set gagné, match NON terminé
+              next.status = "set_end" as StatusV3;
+            }
+          } else {
+            // Leg gagné, set non encore gagné
+            next.status = "leg_end" as StatusV3;
+          }
+
+          // Quoi qu'il arrive, la visite est terminée
+          if (next.visit) {
+            next.visit.dartsLeft = 0;
+            next.visit.checkoutSuggestion = null;
+          }
+
           return next;
         }
-      }
 
-      // Changement de joueur ?
-      if (!visitEnded && !wasBust && visit.dartsLeft > 0) {
+        // --------- Pas de leg gagné : on continue ----------
+        // Si bust ou plus de fléchettes → fin de visite, joueur suivant
+        const visitFinished =
+          result.bust || (next.visit && next.visit.dartsLeft === 0);
+
+        if (visitFinished) {
+          const nextPlayer = getNextPlayerV3(next);
+          next.activePlayer = nextPlayer;
+          next.visit = null;
+          next.status = "playing" as StatusV3;
+          startVisitForActivePlayer(next);
+          return next;
+        }
+
+        // Visite toujours en cours
+        next.status = "playing" as StatusV3;
+        return next;
+      });
+    },
+    [config]
+  );
+
+  // -----------------------------------------------------------
+  // startNextLeg : appelé par l'overlay de fin de manche/set
+  // -----------------------------------------------------------
+  const startNextLeg = React.useCallback(() => {
+    setState((prev) => {
+      const next = { ...prev } as X01MatchStateV3;
+
+      // Si le match est déjà gagné, on ne relance rien
+      const matchWin = checkMatchWinV3(config, next);
+      if (matchWin) {
+        next.status = "match_end" as StatusV3;
         return next;
       }
 
-      // Next player
-      if (m.status === "playing") {
-        const nextPlayerId = getNextPlayerV3(m);
-        m.activePlayer = nextPlayerId;
-        startNewVisitV3(m);
+      // On distingue deux cas :
+      // - on vient de finir un SET
+      // - on vient "juste" de finir un LEG
+      const setWin = checkSetWinV3(config, next);
 
-        m.visit.checkoutSuggestion = getAdaptiveCheckoutSuggestion({
-          score: m.visit.currentScore,
-          dartsLeft: m.visit.dartsLeft,
-          outMode: config.outMode,
-        });
-      }
+      if (setWin) {
+        // Nouveau set
+        next.currentSet += 1;
+        next.currentLeg = 1;
 
-      return next;
-    });
-  }, [config]);
-
-  /* -------------------------------------------------------
-     Manche suivante
-  ------------------------------------------------------- */
-  const startNextLeg = React.useCallback(() => {
-    setEngineState(prev => {
-      const next = JSON.parse(JSON.stringify(prev)) as X01EngineInternalStateV3;
-      const m = next.match;
-
-      // Merge stats LIVE → stats match
-      if (next.matchStats) {
-        for (const pid of Object.keys(next.liveStatsByPlayer)) {
-          applyLiveStatsToMatchStatsV3(next.matchStats, pid as X01PlayerId, next.liveStatsByPlayer[pid]);
+        // Legs remis à zéro pour ce nouveau set
+        if (config.gameMode === "teams") {
+          next.teamLegsWon = {};
+        } else {
+          next.legsWon = {};
         }
+
+        // Nouvel ordre de tir pour ce set (serveMode random/alternate)
+        next.throwOrder = generateThrowOrderV3(
+          config,
+          next.throwOrder,
+          next.currentSet
+        );
+        next.activePlayer = next.throwOrder[0];
+      } else {
+        // Même set → leg suivant
+        next.currentLeg += 1;
+
+        // Joueur qui commence le leg suivant : suivant dans l'ordre
+        const nextPlayer = getNextPlayerV3(next);
+        next.activePlayer = nextPlayer;
       }
 
-      // Reset LIVE
-      next.liveStatsByPlayer = {};
-      for (const p of config.players) {
-        next.liveStatsByPlayer[p.id] = createEmptyLiveStatsV3();
+      // Reset des scores pour tous les joueurs
+      for (const pid of Object.keys(next.scores)) {
+        next.scores[pid] = config.startScore;
       }
 
-      // Nouveau leg
-      m.currentLeg++;
-      for (const pid of Object.keys(m.scores)) {
-        m.scores[pid] = config.startScore;
-      }
-
-      startNewVisitV3(m);
-      m.visit.checkoutSuggestion = getAdaptiveCheckoutSuggestion({
-        score: m.visit.currentScore,
-        dartsLeft: m.visit.dartsLeft,
-        outMode: config.outMode,
-      });
-
-      m.status = "playing";
+      // Reset visite
+      next.visit = null;
+      next.status = "playing" as StatusV3;
+      startVisitForActivePlayer(next);
 
       return next;
     });
   }, [config]);
+
+  // -----------------------------------------------------------
+  // Exposition au composant UI
+  // -----------------------------------------------------------
+
+  const activePlayerId = state.activePlayer as X01PlayerId;
+  const scores = state.scores;
+  const status = state.status as StatusV3;
 
   return {
-    state: match,
+    state,
     liveStatsByPlayer,
-    matchStats,
-    activePlayerId: match.activePlayer,
-    scores: match.scores,
-    status: match.status,
+    activePlayerId,
+    scores,
+    status,
     throwDart,
     startNextLeg,
   };

@@ -40,7 +40,7 @@ export default function StatsShell({ store, go }: Props) {
     null;
 
   const playerLabel = active
-    ? t("statsShell.players.titleActivePrefix", "Statistiques — ") +
+    ? t("statsShell.players.titleActivePrefix", "STATS ") +
       active.name
     : t("statsShell.players.titleDefault", "STATS JOUEURS");
 

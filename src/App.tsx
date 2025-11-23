@@ -526,7 +526,9 @@ function App() {
       }
 
       case "friends": {
-        page = <FriendsPage store={store} update={update} />;
+        // 🔗 On passe maintenant go pour permettre à FriendsPage
+        // de lancer une partie Online (mock) vers X01PlayV3, etc.
+        page = <FriendsPage store={store} update={update} go={go} />;
         break;
       }
 
