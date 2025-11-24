@@ -179,7 +179,7 @@ function injectSettingsAnimationsOnce() {
   document.head.appendChild(style);
 }
 
-// ---------------- Bouton de thème ----------------
+// ---------------- Bouton de thème (compact) ----------------
 
 type ThemeChoiceButtonProps = {
   id: ThemeId;
@@ -201,8 +201,8 @@ function ThemeChoiceButton({
   const [hovered, setHovered] = React.useState(false);
 
   const cardBoxShadow =
-    active || hovered ? `0 0 18px ${neonColor}66` : "0 0 0 rgba(0,0,0,0)";
-  const scale = hovered ? 1.02 : 1.0;
+    active || hovered ? `0 0 14px ${neonColor}66` : "0 0 0 rgba(0,0,0,0)";
+  const scale = hovered ? 1.01 : 1.0; // 🔽 plus discret pour éviter de dépasser
   const borderColor = active ? neonColor : "rgba(255,255,255,0.12)";
   const titleColor = active ? neonColor : "#FFFFFF";
   const descColor = active ? neonColor : "rgba(255,255,255,0.6)";
@@ -215,7 +215,7 @@ function ThemeChoiceButton({
       style={{
         textAlign: "left",
         borderRadius: 14,
-        padding: 12,
+        padding: "8px 10px", // 🔽 hauteur réduite
         background: active
           ? "rgba(255,255,255,0.05)"
           : "rgba(255,255,255,0.02)",
@@ -236,22 +236,22 @@ function ThemeChoiceButton({
           alignItems: "center",
           gap: 8,
           fontWeight: 700,
-          fontSize: 14,
-          marginBottom: 4,
+          fontSize: 13, // 🔽 un poil plus petit
+          marginBottom: 2,
         }}
       >
         <span
           style={{
-            width: 16,
-            height: 16,
+            width: 14,
+            height: 14,
             borderRadius: "50%",
             border: `2px solid ${neonColor}`,
             background: "transparent",
             color: neonColor,
             boxShadow: active
-              ? `0 0 10px ${neonColor}, 0 0 22px ${neonColor}`
+              ? `0 0 8px ${neonColor}, 0 0 18px ${neonColor}`
               : hovered
-              ? `0 0 6px ${neonColor}`
+              ? `0 0 5px ${neonColor}`
               : "none",
             animation: active
               ? "dcSettingsHaloPulse 2.1s ease-in-out infinite"
@@ -261,7 +261,9 @@ function ThemeChoiceButton({
         />
         <span style={{ color: titleColor }}>{label}</span>
       </div>
-      <div style={{ fontSize: 12, color: descColor }}>{desc}</div>
+      <div style={{ fontSize: 11, color: descColor, lineHeight: 1.25 }}>
+        {desc}
+      </div>
     </button>
   );
 }
@@ -339,30 +341,6 @@ export default function Settings({ go }: Props) {
   React.useEffect(() => {
     injectSettingsAnimationsOnce();
   }, []);
-
-  // 🔥 Scrollbars fines + couleur qui suit theme.primary pour les carrousels
-  React.useEffect(() => {
-    if (typeof document === "undefined") return;
-    const STYLE_ID = "dc-settings-scrollbars";
-    let style = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
-    if (!style) {
-      style = document.createElement("style");
-      style.id = STYLE_ID;
-      document.head.appendChild(style);
-    }
-    style.innerHTML = `
-      .dc-scroll-thin::-webkit-scrollbar {
-        height: 3px;
-      }
-      .dc-scroll-thin::-webkit-scrollbar-thumb {
-        background: ${theme.primary};
-        border-radius: 999px;
-      }
-      .dc-scroll-thin {
-        scrollbar-width: thin;
-      }
-    `;
-  }, [theme.primary]);
 
   const PAGE_BG = "#050712";
   const CARD_BG = "rgba(8, 10, 20, 0.98)";
@@ -448,8 +426,12 @@ export default function Settings({ go }: Props) {
         </div>
 
         <div
-          className="dc-scroll-thin"
-          style={{ overflowX: "auto", paddingBottom: 6 }}
+           className="dc-scroll-thin"
+           style={{
+             overflowX: "auto",
+             padding: "6px 0 10px 0",  // ✨ marge en haut et en bas
+             marginTop: 4,
+             marginBottom: 4, }}
         >
           <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
             {NEONS.map((id) => {
