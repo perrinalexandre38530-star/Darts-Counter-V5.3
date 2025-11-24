@@ -475,7 +475,11 @@ export default function Settings({ go }: Props) {
 
         <div
           className="dc-scroll-thin"
-          style={{ overflowX: "auto", paddingBottom: 6 }}
+          style={{
+            overflowX: "auto",
+            padding: "6px 0 10px 0",  // ✨ marge en haut et en bas
+            marginTop: 4,
+            marginBottom: 4, }}
         >
           <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
             {SOFTS.map((id) => {
@@ -518,8 +522,11 @@ export default function Settings({ go }: Props) {
         </div>
 
         <div
-          className="dc-scroll-thin"
-          style={{ overflowX: "auto", paddingBottom: 6 }}
+          style={{
+            overflowX: "auto",
+            padding: "6px 0 10px 0",
+            marginTop: 4,
+            marginBottom: 4, }}
         >
           <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
             {DARKS.map((id) => {
