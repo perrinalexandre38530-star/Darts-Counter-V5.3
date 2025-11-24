@@ -283,3 +283,50 @@ body {
 .stats-theme .barEdge { stroke:#7A5A16; stroke-opacity:.35; fill:transparent; }
 .stats-theme .lab { fill: rgba(255,255,255,.65); font-size:10px; }
 
+/* =========================================
+   Scrollbars globales DartsCounter V5
+   - Couleur = thème (var(--dc-accent))
+   - Taille fine
+   ========================================= */
+
+   :root {
+    /* Valeurs par défaut au premier chargement (thème gold) */
+    --dc-accent: #f6c256;
+    --dc-accent-soft: #f6c256;
+  }
+  
+  /* Firefox - scrollbars fines + couleur thème */
+  * {
+    scrollbar-width: thin !important;
+    scrollbar-color: var(--dc-accent) transparent !important;
+  }
+  
+  /* WebKit (Chrome / Edge / Safari) — global */
+  *::-webkit-scrollbar {
+    width: 6px !important;
+    height: 6px !important;
+  }
+  
+  *::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+  
+  *::-webkit-scrollbar-thumb {
+    background: var(--dc-accent) !important;
+    border-radius: 999px !important;
+  }
+  
+  /* Scrollbar ULTRA fine pour les carrousels du menu Réglages */
+  .dc-scroll-thin::-webkit-scrollbar {
+    height: 3px !important;
+  }
+  
+  .dc-scroll-thin::-webkit-scrollbar-thumb {
+    background: var(--dc-accent) !important;
+    border-radius: 999px !important;
+  }
+  
+  .dc-scroll-thin {
+    scrollbar-width: thin !important;
+  }  
+

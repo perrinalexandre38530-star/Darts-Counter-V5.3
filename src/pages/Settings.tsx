@@ -179,7 +179,7 @@ function injectSettingsAnimationsOnce() {
   document.head.appendChild(style);
 }
 
-// ---------------- Bouton de thème (ton design exact) ----------------
+// ---------------- Bouton de thème ----------------
 
 type ThemeChoiceButtonProps = {
   id: ThemeId;
@@ -253,7 +253,9 @@ function ThemeChoiceButton({
               : hovered
               ? `0 0 6px ${neonColor}`
               : "none",
-            animation: active ? "dcSettingsHaloPulse 2.1s ease-in-out infinite" : "",
+            animation: active
+              ? "dcSettingsHaloPulse 2.1s ease-in-out infinite"
+              : "",
             flexShrink: 0,
           }}
         />
@@ -264,7 +266,7 @@ function ThemeChoiceButton({
   );
 }
 
-// ---------------- Bouton de langue (remis, comme avant) ----------------
+// ---------------- Bouton de langue ----------------
 
 type LanguageChoiceButtonProps = {
   id: Lang;
@@ -337,6 +339,30 @@ export default function Settings({ go }: Props) {
   React.useEffect(() => {
     injectSettingsAnimationsOnce();
   }, []);
+
+  // 🔥 Scrollbars fines + couleur qui suit theme.primary pour les carrousels
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    const STYLE_ID = "dc-settings-scrollbars";
+    let style = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
+    if (!style) {
+      style = document.createElement("style");
+      style.id = STYLE_ID;
+      document.head.appendChild(style);
+    }
+    style.innerHTML = `
+      .dc-scroll-thin::-webkit-scrollbar {
+        height: 3px;
+      }
+      .dc-scroll-thin::-webkit-scrollbar-thumb {
+        background: ${theme.primary};
+        border-radius: 999px;
+      }
+      .dc-scroll-thin {
+        scrollbar-width: thin;
+      }
+    `;
+  }, [theme.primary]);
 
   const PAGE_BG = "#050712";
   const CARD_BG = "rgba(8, 10, 20, 0.98)";
@@ -421,7 +447,10 @@ export default function Settings({ go }: Props) {
           ⚡ {t("settings.theme.group.neons", "Néons classiques")}
         </div>
 
-        <div style={{ overflowX: "auto", paddingBottom: 6 }}>
+        <div
+          className="dc-scroll-thin"
+          style={{ overflowX: "auto", paddingBottom: 6 }}
+        >
           <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
             {NEONS.map((id) => {
               const meta = THEME_META[id];
@@ -462,7 +491,10 @@ export default function Settings({ go }: Props) {
           🎨 {t("settings.theme.group.soft", "Couleurs douces")}
         </div>
 
-        <div style={{ overflowX: "auto", paddingBottom: 6 }}>
+        <div
+          className="dc-scroll-thin"
+          style={{ overflowX: "auto", paddingBottom: 6 }}
+        >
           <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
             {SOFTS.map((id) => {
               const meta = THEME_META[id];
@@ -503,7 +535,10 @@ export default function Settings({ go }: Props) {
           🌑 {t("settings.theme.group.dark", "Thèmes Dark Premium")}
         </div>
 
-        <div style={{ overflowX: "auto", paddingBottom: 6 }}>
+        <div
+          className="dc-scroll-thin"
+          style={{ overflowX: "auto", paddingBottom: 6 }}
+        >
           <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
             {DARKS.map((id) => {
               const meta = THEME_META[id];

@@ -1,11 +1,6 @@
 // =============================================================
 // src/pages/X01PlayV3.tsx
 // X01 V3 — moteur neuf + UI du "beau" X01Play
-// - Moteur : useX01EngineV3 (V3 propre)
-// - UI : layout beau (header fixe, avatar, chips, ranking, keypad fixe)
-// - Keypad = même signature que X01 v1
-// - Pastilles dernière volée par joueur
-// - Checkout adaptatif V3 depuis le moteur
 // =============================================================
 
 import React from "react";
@@ -298,7 +293,7 @@ export default function X01PlayV3({ config, onExit }: Props) {
       }));
     }
 
-    // moteur V3
+    // moteur V3 : une fléchette = un appel
     toSend.forEach((d) => {
       const input: X01DartInputV3 = {
         segment: d.v === 25 ? 25 : d.v,
@@ -318,7 +313,12 @@ export default function X01PlayV3({ config, onExit }: Props) {
   function computeAvg3For(playerId: X01PlayerId): number {
     const live = liveStatsByPlayer[playerId];
     if (!live || live.dartsThrown === 0) return 0;
-    const perDart = live.totalScore / live.dartsThrown;
+
+    // 💡 HOTFIX : le moteur renvoie dartsThrown x2 → on corrige ici
+    const darts = live.dartsThrown / 2;
+    if (darts <= 0) return 0;
+
+    const perDart = live.totalScore / darts;
     return perDart * 3;
   }
 
@@ -330,8 +330,8 @@ export default function X01PlayV3({ config, onExit }: Props) {
           id: p.id,
           name: p.name,
           score: scores[p.id] ?? config.startScore,
-          legsWon: state.legsWon[p.id] ?? 0,
-          setsWon: state.setsWon[p.id] ?? 0,
+          legsWon: (state as any).legsWon?.[p.id] ?? 0,
+          setsWon: (state as any).setsWon?.[p.id] ?? 0,
           avg3,
         };
       })
@@ -343,8 +343,8 @@ export default function X01PlayV3({ config, onExit }: Props) {
   }, [
     players,
     scores,
-    state.legsWon,
-    state.setsWon,
+    (state as any).legsWon,
+    (state as any).setsWon,
     config.startScore,
     liveStatsByPlayer,
   ]);
@@ -363,7 +363,11 @@ export default function X01PlayV3({ config, onExit }: Props) {
   const activeStats = activePlayer
     ? liveStatsByPlayer[activePlayer.id]
     : undefined;
-  const curDarts = activeStats?.dartsThrown ?? 0;
+
+  // 💡 HOTFIX : on corrige ici aussi le nombre affiché de fléchettes
+  const rawDarts = activeStats?.dartsThrown ?? 0;
+  const curDarts = Math.round(rawDarts / 2);
+
   const curM3D = activePlayer
     ? computeAvg3For(activePlayer.id).toFixed(2)
     : "0.00";
@@ -482,25 +486,24 @@ export default function X01PlayV3({ config, onExit }: Props) {
           >
             {isDuel && useSetsUi && (
               <DuelHeaderCompact
-                // @ts-expect-error : adapter à ta signature réelle si besoin
                 leftAvatarUrl={
                   profileById[players[0].id]?.avatarDataUrl ?? ""
                 }
                 rightAvatarUrl={
                   profileById[players[1].id]?.avatarDataUrl ?? ""
                 }
-                leftSets={state.setsWon[players[0].id] ?? 0}
-                rightSets={state.setsWon[players[1].id] ?? 0}
-                leftLegs={state.legsWon[players[0].id] ?? 0}
-                rightLegs={state.legsWon[players[1].id] ?? 0}
+                leftSets={(state as any).setsWon?.[players[0].id] ?? 0}
+                rightSets={(state as any).setsWon?.[players[1].id] ?? 0}
+                leftLegs={(state as any).legsWon?.[players[0].id] ?? 0}
+                rightLegs={(state as any).legsWon?.[players[1].id] ?? 0}
               />
             )}
           </div>
 
           {/* CAPSULE SET / LEG */}
           <SetLegChip
-            currentSet={state.currentSet}
-            currentLegInSet={state.currentLeg}
+            currentSet={(state as any).currentSet ?? 1}
+            currentLegInSet={(state as any).currentLeg ?? 1}
             setsTarget={setsTarget}
             legsTarget={legsTarget}
             useSets={useSetsUi}
@@ -528,8 +531,8 @@ export default function X01PlayV3({ config, onExit }: Props) {
             curDarts={curDarts}
             curM3D={curM3D}
             bestVisit={bestVisit}
-            legsWon={state.legsWon}
-            setsWon={state.setsWon}
+            legsWon={(state as any).legsWon ?? {}}
+            setsWon={(state as any).setsWon ?? {}}
             useSets={useSetsUi}
             currentVisit={currentVisit}
           />
@@ -558,8 +561,8 @@ export default function X01PlayV3({ config, onExit }: Props) {
           liveStatsByPlayer={liveStatsByPlayer}
           start={config.startScore}
           scoresByPlayer={scores}
-          legsWon={state.legsWon}
-          setsWon={state.setsWon}
+          legsWon={(state as any).legsWon ?? {}}
+          setsWon={(state as any).setsWon ?? {}}
           useSets={useSetsUi}
           lastVisitsByPlayer={lastVisitsByPlayer}
         />
@@ -607,11 +610,6 @@ export default function X01PlayV3({ config, onExit }: Props) {
         onNextLeg={startNextLeg}
         onExitMatch={handleQuit}
       />
-
-      {/* TODO (prochaine étape) : petit overlay de fin de match
-          quand status === "match_end" + bouton pour valider la victoire
-          et revenir au menu / historique.
-      */}
     </div>
   );
 }
@@ -640,7 +638,7 @@ function HeaderBlock(props: {
     currentAvatar,
     currentRemaining,
     currentThrow,
-    doubleOut, // pas encore utilisé mais gardé
+    doubleOut, // pas encore utilisé
     liveRanking,
     curDarts,
     curM3D,
@@ -986,7 +984,11 @@ function PlayersListOnly(props: {
         const prof = profileById[p.id];
         const avatarSrc = prof?.avatarDataUrl ?? null;
         const live = liveStatsByPlayer[p.id];
-        const dCount = live?.dartsThrown ?? 0;
+
+        // 💡 HOTFIX : moteur → dartsThrown x2, on corrige ici
+        const rawDarts = live?.dartsThrown ?? 0;
+        const dCount = Math.round(rawDarts / 2);
+
         const pSum = live?.totalScore ?? 0;
         const a3d =
           dCount > 0 ? ((pSum / dCount) * 3).toFixed(2) : "0.00";

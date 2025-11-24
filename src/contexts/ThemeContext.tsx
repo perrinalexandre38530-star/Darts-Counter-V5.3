@@ -1,6 +1,7 @@
 // ============================================
 // src/contexts/ThemeContext.tsx
 // Contexte global pour le thème (couleurs néon)
+// + export des couleurs en variables CSS (--dc-accent, etc.)
 // ============================================
 
 import React from "react";
@@ -55,6 +56,18 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       // ignore
     }
   }, []);
+
+  // 🔥 Export des couleurs du thème en variables CSS globales
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+
+    root.style.setProperty("--dc-accent", theme.primary);
+    root.style.setProperty("--dc-accent-soft", theme.accent1);
+    root.style.setProperty("--dc-text", theme.text);
+    root.style.setProperty("--dc-bg", theme.bg);
+    root.style.setProperty("--dc-card", theme.card);
+  }, [theme]);
 
   const value: ThemeContextValue = React.useMemo(
     () => ({ theme, themeId, setThemeId, themes: THEMES }),
