@@ -263,10 +263,11 @@ export default function Games({ setTab }: Props) {
                 }}
               >
                 <InfoDot
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    setInfoGame(g);
-                  }}
+  onClick={(ev) => {
+    ev.stopPropagation();
+    setInfoGame(g);
+  }}
+  glow={theme.primary + "88"}   // halo léger & thème-compatible
                 />
               </div>
             </button>

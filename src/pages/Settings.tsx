@@ -3,7 +3,7 @@
 // Fond toujours sombre (ne varie pas avec le thème)
 // Les thèmes ne changent que les néons / accents / textes
 // + Drapeaux pour les langues
-// + Option B : carousels horizontaux par catégories de thèmes
+// + Catégories + carrousels horizontaux pour les thèmes
 // ============================================
 
 import React from "react";
@@ -15,8 +15,7 @@ type Props = { go?: (tab: any, params?: any) => void };
 
 // ---------------- Thèmes dispo + descriptions fallback ----------------
 
-// Regroupement par catégories (pour les carousels)
-const NEON_THEMES: ThemeId[] = [
+const NEONS: ThemeId[] = [
   "gold",
   "pink",
   "petrol",
@@ -27,14 +26,9 @@ const NEON_THEMES: ThemeId[] = [
   "white",
 ];
 
-const SOFT_THEMES: ThemeId[] = [
-  "blueOcean",
-  "limeYellow",
-  "sage",
-  "skyBlue",
-];
+const SOFTS: ThemeId[] = ["blueOcean", "limeYellow", "sage", "skyBlue"];
 
-const DARK_THEMES: ThemeId[] = [
+const DARKS: ThemeId[] = [
   "darkTitanium",
   "darkCarbon",
   "darkFrost",
@@ -185,7 +179,7 @@ function injectSettingsAnimationsOnce() {
   document.head.appendChild(style);
 }
 
-// ---------------- Bouton de thème (carte) ----------------
+// ---------------- Bouton de thème (ton design exact) ----------------
 
 type ThemeChoiceButtonProps = {
   id: ThemeId;
@@ -207,8 +201,8 @@ function ThemeChoiceButton({
   const [hovered, setHovered] = React.useState(false);
 
   const cardBoxShadow =
-    active || hovered ? `0 0 20px ${neonColor}66` : "0 0 0 rgba(0,0,0,0)";
-  const scale = hovered ? 1.03 : 1.0;
+    active || hovered ? `0 0 18px ${neonColor}66` : "0 0 0 rgba(0,0,0,0)";
+  const scale = hovered ? 1.02 : 1.0;
   const borderColor = active ? neonColor : "rgba(255,255,255,0.12)";
   const titleColor = active ? neonColor : "#FFFFFF";
   const descColor = active ? neonColor : "rgba(255,255,255,0.6)";
@@ -219,13 +213,11 @@ function ThemeChoiceButton({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        minWidth: 160,
-        maxWidth: 190,
         textAlign: "left",
-        borderRadius: 16,
-        padding: 10,
+        borderRadius: 14,
+        padding: 12,
         background: active
-          ? "rgba(255,255,255,0.06)"
+          ? "rgba(255,255,255,0.05)"
           : "rgba(255,255,255,0.02)",
         border: `1px solid ${borderColor}`,
         boxShadow: cardBoxShadow,
@@ -234,34 +226,34 @@ function ThemeChoiceButton({
         transform: `scale(${scale})`,
         transition:
           "transform 0.18s ease-out, box-shadow 0.18s ease-out, border-color 0.18s ease-out, background 0.18s ease-out",
+        minWidth: 140,
+        flexShrink: 0,
       }}
     >
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
+          gap: 8,
           fontWeight: 700,
           fontSize: 14,
-          marginBottom: 6,
+          marginBottom: 4,
         }}
       >
-        {/* Pastille preview */}
         <span
           style={{
-            width: 20,
-            height: 20,
-            borderRadius: "999px",
-            background: `radial-gradient(circle at 30% 30%, #ffffffAA, ${neonColor})`,
+            width: 16,
+            height: 16,
+            borderRadius: "50%",
+            border: `2px solid ${neonColor}`,
+            background: "transparent",
+            color: neonColor,
             boxShadow: active
-              ? `0 0 12px ${neonColor}, 0 0 28px ${neonColor}`
+              ? `0 0 10px ${neonColor}, 0 0 22px ${neonColor}`
               : hovered
-              ? `0 0 8px ${neonColor}`
+              ? `0 0 6px ${neonColor}`
               : "none",
-            border: `1px solid ${neonColor}`,
-            animation: active
-              ? "dcSettingsHaloPulse 2.1s ease-in-out infinite"
-              : "",
+            animation: active ? "dcSettingsHaloPulse 2.1s ease-in-out infinite" : "",
             flexShrink: 0,
           }}
         />
@@ -272,100 +264,7 @@ function ThemeChoiceButton({
   );
 }
 
-// ---------------- Carousel de thèmes ----------------
-
-type ThemeCarouselProps = {
-  ids: ThemeId[];
-  title: string;
-  subtitle?: string;
-  themeId: ThemeId;
-  setThemeId: (id: ThemeId) => void;
-  t: (key: string, fallback: string) => string;
-};
-
-function ThemeCarousel({
-  ids,
-  title,
-  subtitle,
-  themeId,
-  setThemeId,
-  t,
-}: ThemeCarouselProps) {
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "baseline",
-          marginBottom: 6,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 700,
-            letterSpacing: 0.5,
-            textTransform: "uppercase",
-            opacity: 0.9,
-          }}
-        >
-          {title}
-        </div>
-        {subtitle && (
-          <div
-            style={{
-              fontSize: 11,
-              opacity: 0.65,
-            }}
-          >
-            {subtitle}
-          </div>
-        )}
-      </div>
-
-      <div
-        style={{
-          overflowX: "auto",
-          paddingBottom: 4,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "nowrap",
-            gap: 10,
-            minWidth: "100%",
-          }}
-        >
-          {ids.map((id) => {
-            const meta = THEME_META[id];
-            const label = t(
-              `settings.theme.${id}.label`,
-              meta.defaultLabel
-            );
-            const desc = t(
-              `settings.theme.${id}.desc`,
-              meta.defaultDesc
-            );
-            return (
-              <ThemeChoiceButton
-                key={id}
-                id={id}
-                label={label}
-                desc={desc}
-                active={id === themeId}
-                onClick={() => setThemeId(id)}
-              />
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------- Bouton de langue ----------------
+// ---------------- Bouton de langue (remis, comme avant) ----------------
 
 type LanguageChoiceButtonProps = {
   id: Lang;
@@ -486,7 +385,8 @@ export default function Settings({ go }: Props) {
         )}
       </div>
 
-      {/* ---------- BLOC THEME (carrousels) ---------- */}
+      {/* ---------- BLOC THEME AVEC CARROUSELS ---------- */}
+
       <section
         style={{
           background: CARD_BG,
@@ -507,44 +407,132 @@ export default function Settings({ go }: Props) {
           {t("settings.theme", "Thème")}
         </h2>
 
-        <ThemeCarousel
-          ids={NEON_THEMES}
-          title={t("settings.theme.neons", "Néons classiques")}
-          subtitle={t(
-            "settings.theme.neons.subtitle",
-            "Thèmes néon principaux"
-          )}
-          themeId={themeId}
-          setThemeId={setThemeId}
-          t={t}
-        />
+        {/* --- Catégorie Néons --- */}
+        <div
+          style={{
+            marginTop: 12,
+            marginBottom: 6,
+            color: theme.textSoft,
+            fontSize: 13,
+            fontWeight: 600,
+            textTransform: "uppercase",
+          }}
+        >
+          ⚡ {t("settings.theme.group.neons", "Néons classiques")}
+        </div>
 
-        <ThemeCarousel
-          ids={SOFT_THEMES}
-          title={t("settings.theme.soft", "Couleurs douces")}
-          subtitle={t(
-            "settings.theme.soft.subtitle",
-            "Bleus, verts et tons plus naturels"
-          )}
-          themeId={themeId}
-          setThemeId={setThemeId}
-          t={t}
-        />
+        <div style={{ overflowX: "auto", paddingBottom: 6 }}>
+          <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
+            {NEONS.map((id) => {
+              const meta = THEME_META[id];
+              const label = t(
+                `settings.theme.${id}.label`,
+                meta.defaultLabel
+              );
+              const desc = t(
+                `settings.theme.${id}.desc`,
+                meta.defaultDesc
+              );
 
-        <ThemeCarousel
-          ids={DARK_THEMES}
-          title={t("settings.theme.dark", "Dark premium")}
-          subtitle={t(
-            "settings.theme.dark.subtitle",
-            "Thèmes sombres élégants"
-          )}
-          themeId={themeId}
-          setThemeId={setThemeId}
-          t={t}
-        />
+              return (
+                <ThemeChoiceButton
+                  key={id}
+                  id={id}
+                  label={label}
+                  desc={desc}
+                  active={id === themeId}
+                  onClick={() => setThemeId(id)}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        {/* --- Catégorie Douces --- */}
+        <div
+          style={{
+            marginTop: 16,
+            marginBottom: 6,
+            color: theme.textSoft,
+            fontSize: 13,
+            fontWeight: 600,
+            textTransform: "uppercase",
+          }}
+        >
+          🎨 {t("settings.theme.group.soft", "Couleurs douces")}
+        </div>
+
+        <div style={{ overflowX: "auto", paddingBottom: 6 }}>
+          <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
+            {SOFTS.map((id) => {
+              const meta = THEME_META[id];
+              const label = t(
+                `settings.theme.${id}.label`,
+                meta.defaultLabel
+              );
+              const desc = t(
+                `settings.theme.${id}.desc`,
+                meta.defaultDesc
+              );
+
+              return (
+                <ThemeChoiceButton
+                  key={id}
+                  id={id}
+                  label={label}
+                  desc={desc}
+                  active={id === themeId}
+                  onClick={() => setThemeId(id)}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        {/* --- Catégorie DARK --- */}
+        <div
+          style={{
+            marginTop: 16,
+            marginBottom: 6,
+            color: theme.textSoft,
+            fontSize: 13,
+            fontWeight: 600,
+            textTransform: "uppercase",
+          }}
+        >
+          🌑 {t("settings.theme.group.dark", "Thèmes Dark Premium")}
+        </div>
+
+        <div style={{ overflowX: "auto", paddingBottom: 6 }}>
+          <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
+            {DARKS.map((id) => {
+              const meta = THEME_META[id];
+              const label = t(
+                `settings.theme.${id}.label`,
+                meta.defaultLabel
+              );
+              const desc = t(
+                `settings.theme.${id}.desc`,
+                meta.defaultDesc
+              );
+
+              return (
+                <ThemeChoiceButton
+                  key={id}
+                  id={id}
+                  label={label}
+                  desc={desc}
+                  active={id === themeId}
+                  onClick={() => setThemeId(id)}
+                />
+              );
+            })}
+          </div>
+        </div>
       </section>
 
       {/* ---------- BLOC LANGUE ---------- */}
+
       <section
         style={{
           background: CARD_BG,

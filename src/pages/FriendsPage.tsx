@@ -10,6 +10,7 @@
 // - Affiche le DRAPEAU du pays du profil actif (privateInfo.country)
 // - Bouton TEST SUPABASE (juste pour vérifier la connexion plus tard)
 // - Bouton "Lancer une partie X01 Online (mock)" qui ouvre x01_online_setup
+// - Salle d’attente ONLINE (mock) pour les lobbys actifs
 // ============================================
 
 import React from "react";
@@ -205,7 +206,6 @@ export default function FriendsPage({ store, update, go }: Props) {
   const [creatingLobby, setCreatingLobby] = React.useState(false);
   const [lastCreatedLobby, setLastCreatedLobby] =
     React.useState<OnlineLobby | null>(null);
-  const [showLobbyModal, setShowLobbyModal] = React.useState(false);
 
   // JOIN salon (mock)
   const [joinCode, setJoinCode] = React.useState("");
@@ -520,7 +520,6 @@ export default function FriendsPage({ store, update, go }: Props) {
       });
 
       setLastCreatedLobby(lobby);
-      setShowLobbyModal(true);
       console.log("[online] lobby créé", lobby);
     } catch (e: any) {
       console.warn(e);
@@ -567,29 +566,6 @@ export default function FriendsPage({ store, update, go }: Props) {
     } finally {
       setJoiningLobby(false);
     }
-  }
-
-  // ---------- Lancer une partie X01 Online (mock) ----------
-
-  function handleStartOnlineMatch() {
-    setJoinError(null);
-    setJoinInfo(null);
-
-    if (!isSignedIn) {
-      setJoinError("Connecte-toi en online avant de lancer une partie.");
-      return;
-    }
-
-    const lobby = joinedLobby || lastCreatedLobby;
-    if (!lobby) {
-      setJoinError("Crée ou rejoins d’abord un salon avant de lancer la partie.");
-      return;
-    }
-
-    // 👇 Navigation vers le SETUP X01 ONLINE (mock)
-    go("x01_online_setup", {
-      lobbyCode: lastCreatedLobby?.code || joinCode || null,
-    });
   }
 
   /* -------------------------------------------------
@@ -1372,133 +1348,239 @@ export default function FriendsPage({ store, update, go }: Props) {
                 fontSize: 11.5,
               }}
             >
-              {joinError && (
-                <div style={{ color: "#ff8a8a" }}>{joinError}</div>
-              )}
+              {joinError && <div style={{ color: "#ff8a8a" }}>{joinError}</div>}
               {joinInfo && !joinError && (
                 <div style={{ color: "#8fe6aa" }}>{joinInfo}</div>
               )}
             </div>
           )}
         </div>
+      </div>
 
-        {/* 🔥 Nouveau : bouton pour lancer la partie X01 Online */}
-        {isSignedIn && (joinedLobby || lastCreatedLobby) && (
-          <button
-          type="button"
-          onClick={() =>
-            go("x01_online_setup", {
-              lobbyCode: (joinedLobby || lastCreatedLobby)?.code || joinCode || null,
-            })
-          }
+      {/* ---------- WAITING ROOM ONLINE (mock) ---------- */}
+      {(joinedLobby || lastCreatedLobby) && (
+        <div
           style={{
-            width: "100%",
-            borderRadius: 999,
-            padding: "9px 12px",
-            border: "none",
-            marginTop: 4,
-            marginBottom: 8,
-            fontWeight: 800,
-            fontSize: 13,
-            background: "linear-gradient(180deg,#35c86d,#23a958)",
-            color: "#03140a",
-            boxShadow: "0 8px 20px rgba(0,0,0,.6)",
-            cursor: "pointer",
+            marginTop: 18,
+            padding: 14,
+            borderRadius: 14,
+            border: "1px solid rgba(255,255,255,.15)",
+            background:
+              "linear-gradient(180deg, rgba(34,34,44,.96), rgba(10,10,14,.98))",
+            boxShadow: "0 12px 26px rgba(0,0,0,.55)",
+            fontSize: 12,
           }}
         >
-          🚀 Lancer une partie X01 Online (mock)
-        </button>
-        )}
-
-        {/* MODAL LOBBY CRÉÉ */}
-        {showLobbyModal && lastCreatedLobby && (
+          {/* HEADER */}
           <div
             style={{
-              marginTop: 12,
+              fontWeight: 800,
+              fontSize: 16,
+              marginBottom: 10,
+              color: "#ffd56a",
+              textShadow: "0 0 10px rgba(255,215,80,.35)",
+            }}
+          >
+            Salle d’attente Online
+          </div>
+
+          {/* Code du salon */}
+          <div
+            style={{
+              marginBottom: 12,
+              padding: "8px 10px",
+              borderRadius: 10,
+              background: "#111",
+              border: "1px solid rgba(255,255,255,.12)",
+              fontFamily: "monospace",
+              letterSpacing: 2,
+              fontSize: 14,
+              fontWeight: 800,
+              color: "#ffd56a",
+              textAlign: "center",
+              boxShadow: "0 0 12px rgba(255,215,80,.25)",
+            }}
+          >
+            {(joinedLobby || lastCreatedLobby)?.code}
+          </div>
+
+          {/* SECTION HÔTE */}
+          <div
+            style={{
+              marginBottom: 12,
               padding: 12,
               borderRadius: 12,
-              background: "rgba(0,0,0,0.65)",
-              border: "1px solid rgba(255,255,255,.15)",
-              boxShadow: "0 8px 20px rgba(0,0,0,.5)",
+              background:
+                "linear-gradient(180deg, rgba(44,44,54,.95), rgba(18,18,24,.98))",
+              border: "1px solid rgba(255,255,255,.10)",
+              display: "flex",
+              gap: 12,
+              alignItems: "center",
+            }}
+          >
+            {/* Avatar host */}
+            <div
+              style={{
+                position: "relative",
+                width: 56,
+                height: 56,
+                borderRadius: "50%",
+                overflow: "hidden",
+                background: "radial-gradient(circle,#ffd56a,#c8922f)",
+                flexShrink: 0,
+                boxShadow: "0 0 12px rgba(255,215,80,.35)",
+              }}
+            >
+              {activeProfile?.avatarDataUrl ? (
+                <img
+                  src={activeProfile.avatarDataUrl}
+                  alt=""
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 900,
+                    color: "#1a1a1a",
+                    fontSize: 20,
+                  }}
+                >
+                  {(activeProfile?.name || "??").slice(0, 2).toUpperCase()}
+                </div>
+              )}
+            </div>
+
+            {/* Infos host */}
+            <div style={{ flex: 1 }}>
+              <div
+                style={{ fontWeight: 800, fontSize: 14, color: "#ffd56a" }}
+              >
+                {activeProfile?.name}
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.85 }}>
+                Hôte — Attend les joueurs…
+              </div>
+            </div>
+
+            {/* Drapeau */}
+            {countryFlag && (
+              <div
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: "50%",
+                  overflow: "hidden",
+                  border: "2px solid #000",
+                  background: "#111",
+                  display: "grid",
+                  placeItems: "center",
+                  fontSize: 14,
+                }}
+              >
+                {countryFlag}
+              </div>
+            )}
+          </div>
+
+          {/* JOUEUR LOCAL / INVITÉ */}
+          <div
+            style={{
+              marginBottom: 12,
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,.10)",
+              background:
+                "linear-gradient(180deg, rgba(30,30,38,.96), rgba(10,10,14,.98))",
             }}
           >
             <div
               style={{
-                fontWeight: 700,
-                marginBottom: 6,
-                fontSize: 13,
-                color: "#7fe2a9",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
               }}
             >
-              Salon créé !
-            </div>
+              {/* Avatar invité */}
+              <div
+                style={{
+                  width: 50,
+                  height: 50,
+                  borderRadius: "50%",
+                  overflow: "hidden",
+                  background: "radial-gradient(circle,#7fe2a9,#35c86d)",
+                  flexShrink: 0,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    width: "100%",
+                    height: "100%",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 900,
+                    color: "#0a1a12",
+                    fontSize: 18,
+                  }}
+                >
+                  {session?.nickname?.[0]?.toUpperCase() || "J"}
+                </div>
+              </div>
 
-            <div style={{ fontSize: 11.5, opacity: 0.85, marginBottom: 8 }}>
-              Code du salon :
+              {/* Infos invité */}
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    fontWeight: 800,
+                    fontSize: 14,
+                    color: "#7fe2a9",
+                  }}
+                >
+                  {session?.nickname || "Joueur Online"}
+                </div>
+                <div style={{ fontSize: 12, opacity: 0.85 }}>
+                  A rejoint le salon
+                </div>
+              </div>
             </div>
+          </div>
 
-            <div
-              style={{
-                padding: "8px 10px",
-                borderRadius: 8,
-                background: "#111",
-                border: "1px solid rgba(255,255,255,.15)",
-                fontSize: 16,
-                fontWeight: 800,
-                textAlign: "center",
-                letterSpacing: 2,
-                color: "#ffd56a",
-                marginBottom: 12,
-              }}
-            >
-              {lastCreatedLobby.code}
-            </div>
-
+          {/* BOUTON LANCER */}
+          {isSignedIn && (
             <button
-              type="button"
-              onClick={() => setShowLobbyModal(false)}
+              onClick={() =>
+                go("x01_online_setup", {
+                  lobbyCode: (joinedLobby || lastCreatedLobby)?.code || null,
+                })
+              }
               style={{
                 width: "100%",
                 borderRadius: 999,
-                padding: "8px 14px",
+                padding: "10px 14px",
                 border: "none",
-                background: "linear-gradient(180deg,#444,#222)",
-                color: "#fff",
-                fontWeight: 700,
+                fontWeight: 800,
+                fontSize: 14,
+                background: "linear-gradient(180deg,#35c86d,#23a958)",
+                color: "#03140a",
+                boxShadow: "0 10px 22px rgba(0,0,0,.5)",
                 cursor: "pointer",
+                marginTop: 10,
               }}
             >
-              Fermer
+              🚀 Lancer maintenant
             </button>
-          </div>
-        )}
-
-        {/* PETIT RÉSUMÉ SI JOIN OK */}
-        {joinedLobby && (
-          <div
-            style={{
-              marginTop: 10,
-              padding: 10,
-              borderRadius: 10,
-              background: "rgba(0,0,0,0.6)",
-              border: "1px solid rgba(127,226,169,.45)",
-              fontSize: 11.5,
-            }}
-          >
-            <div
-              style={{
-                fontWeight: 700,
-                marginBottom: 4,
-                color: "#7fe2a9",
-              }}
-            >
-              Salon trouvé
-            </div>
-            <div>Code : {joinedLobby.code}</div>
-            <div>Hôte : {joinedLobby.hostName}</div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

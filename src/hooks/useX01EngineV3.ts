@@ -4,7 +4,7 @@
 // - Orchestration logique : score, bust, visits
 // - Flow : rotation joueurs, legs, sets, match
 // - Checkout adaptatif (1/2/3 darts) via x01CheckoutV3
-// - Stats live par joueur (darts, totalScore, bestVisit)
+// - Stats live par joueur (darts, totalScore, bestVisit) PAR MANCHE
 // - Status : "playing" | "leg_end" | "set_end" | "match_end"
 // =============================================================
 
@@ -15,6 +15,7 @@ import type {
   X01MatchStateV3,
   X01PlayerId,
   X01OutMode,
+  X01DartV3,
 } from "../types/x01v3";
 
 import {
@@ -33,18 +34,16 @@ import {
   checkMatchWinV3,
 } from "../lib/x01v3/x01FlowV3";
 
-import {
-  getAdaptiveCheckoutSuggestionV3,
-} from "../lib/x01v3/x01CheckoutV3";
+import { getAdaptiveCheckoutSuggestionV3 } from "../lib/x01v3/x01CheckoutV3";
 
 // -------------------------------------------------------------
 // Types locaux
 // -------------------------------------------------------------
 
 type LiveStats = {
-  dartsThrown: number;
-  totalScore: number;
-  bestVisit: number;
+  dartsThrown: number; // nb de fléchettes jouées dans la manche courante
+  totalScore: number;  // total des points marqués dans la manche courante
+  bestVisit: number;   // meilleure VOLÉE (max 180)
 };
 
 type StatusV3 = "playing" | "leg_end" | "set_end" | "match_end";
@@ -70,17 +69,13 @@ function canSuggestCheckout(
   if (score > 170) return false;
   if (dartsLeft <= 0) return false;
 
-  // Règle "score = 1 interdit" déjà gérée par la logique de bust,
-  // mais on garde un garde-fou ici pour tous les modes de sortie.
+  // Garde-fou pour tous les outMode
   if (score === 1) return false;
 
   return true;
 }
 
-function updateVisitCheckout(
-  config: X01ConfigV3,
-  state: X01MatchStateV3
-) {
+function updateVisitCheckout(config: X01ConfigV3, state: X01MatchStateV3) {
   const visit = state.visit;
   if (!visit) return;
 
@@ -134,16 +129,17 @@ export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
     createInitialMatchState(config)
   );
 
+  // Stats live PAR MANCHE (remises à zéro à chaque leg)
   const [liveStatsByPlayer, setLiveStatsByPlayer] =
     React.useState<Record<string, LiveStats>>(() =>
       initLiveStats(config)
     );
 
-  // Score de volée courant par joueur (pour bestVisit)
+  // Score de la VOLÉE en cours par joueur (pour bestVisit)
   const visitScoreRef = React.useRef<Record<string, number>>({});
 
   // -----------------------------------------------------------
-  // Helper : démarrer une nouvelle visite pour un joueur donné
+  // Helper : démarrer une nouvelle visite pour le joueur actif
   // -----------------------------------------------------------
   function startVisitForActivePlayer(nextState: X01MatchStateV3) {
     startNewVisitV3(nextState);
@@ -179,51 +175,53 @@ export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
         // Appliquer la fléchette via la logique V3
         const result = applyDartToCurrentPlayerV3(config, next, input);
         const visit = next.visit!;
+        const dartsThisVisit = visit.darts.length;
 
-        // MAJ score de volée courant
-        const prevVisitScore =
-          visitScoreRef.current[activeId] ?? 0;
+        // MAJ score de volée courant (uniquement pour cette visite)
+        const prevVisitScore = visitScoreRef.current[activeId] ?? 0;
         const newVisitScore = prevVisitScore + result.dart.score;
         visitScoreRef.current[activeId] = newVisitScore;
 
-        // MAJ stats live (darts, totalScore, bestVisit)
-        setLiveStatsByPlayer((prevStats) => {
-          const cur = prevStats[activeId] ?? {
-            dartsThrown: 0,
-            totalScore: 0,
-            bestVisit: 0,
-          };
+        // Visite terminée ?
+        const visitFinished =
+          result.bust ||
+          result.scoreAfter === 0 ||
+          visit.dartsLeft === 0;
 
-          const dartsThrown = cur.dartsThrown + 1;
-          const totalScore = cur.totalScore + result.dart.score;
-          let bestVisit = cur.bestVisit;
+        // Si la visite est terminée → MAJ stats live UNE FOIS
+        if (visitFinished) {
+          const visitScore = newVisitScore;
 
-          const visitFinished =
-            result.bust ||
-            result.scoreAfter === 0 ||
-            visit.dartsLeft === 0;
+          setLiveStatsByPlayer((prevStats) => {
+            const cur = prevStats[activeId] ?? {
+              dartsThrown: 0,
+              totalScore: 0,
+              bestVisit: 0,
+            };
 
-          if (visitFinished && newVisitScore > bestVisit) {
-            bestVisit = newVisitScore;
-          }
+            const dartsThrown = cur.dartsThrown + dartsThisVisit;
+            const totalScore = cur.totalScore + visitScore;
+            const bestVisit = Math.max(cur.bestVisit, visitScore);
 
-          return {
-            ...prevStats,
-            [activeId]: {
-              dartsThrown,
-              totalScore,
-              bestVisit,
-            },
-          };
-        });
+            return {
+              ...prevStats,
+              [activeId]: {
+                dartsThrown,
+                totalScore,
+                bestVisit,
+              },
+            };
+          });
+
+          // Reset compteur de volée pour ce joueur
+          visitScoreRef.current[activeId] = 0;
+        }
 
         // Checkout : seulement si la visite n'est pas terminée
         if (!result.bust && visit.dartsLeft > 0 && result.scoreAfter > 1) {
           updateVisitCheckout(config, next);
-        } else {
-          if (next.visit) {
-            next.visit.checkoutSuggestion = null;
-          }
+        } else if (next.visit) {
+          next.visit.checkoutSuggestion = null;
         }
 
         // --------- Détection fin de leg / set / match ----------
@@ -270,10 +268,10 @@ export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
 
         // --------- Pas de leg gagné : on continue ----------
         // Si bust ou plus de fléchettes → fin de visite, joueur suivant
-        const visitFinished =
+        const visitReallyFinished =
           result.bust || (next.visit && next.visit.dartsLeft === 0);
 
-        if (visitFinished) {
+        if (visitReallyFinished) {
           const nextPlayer = getNextPlayerV3(next);
           next.activePlayer = nextPlayer;
           next.visit = null;
@@ -349,6 +347,10 @@ export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
 
       return next;
     });
+
+    // Reset des stats live & des scores de volée pour la nouvelle manche
+    setLiveStatsByPlayer(() => initLiveStats(config));
+    visitScoreRef.current = {};
   }, [config]);
 
   // -----------------------------------------------------------
