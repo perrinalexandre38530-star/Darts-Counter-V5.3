@@ -1,81 +1,27 @@
 // ============================================
-// src/lib/x01v3/X01LegOverlayV3.tsx
+// src/components/x01v3/X01LegOverlayV3.tsx
 // Overlay fin de manche / set / match pour X01 V3
-// - Style proche de la V2 "beau" que tu aimes
+// - Style proche de la V2
 // - Affiche : manche / set, vainqueur, score Sets/Legs
-// - Gère bien les 3 états : leg_end / set_end / match_end
-//   • leg_end / set_end → bouton "Manche suivante" → onNextLeg()
-//   • match_end         → bouton "Terminer le match" → onExitMatch()
 // - Mini-stats vainqueur (Moy.3D / Darts / Best visit)
-//   → masquées si aucune data
+//   → MASQUÉES si tout est à 0
+// - Bouton : Manche suivante OU Nouvelle partie si match_end
 // ============================================
 
 import React from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useLang } from "../../contexts/LangContext";
-import { getAvg3FromLiveStatsV3 } from "./x01StatsLiveV3";
-
-type X01OverlayStatus = "leg_end" | "set_end" | "match_end" | string;
 
 type Props = {
   open: boolean;
-  status: X01OverlayStatus;
+  status: "playing" | "leg_end" | "set_end" | "match_end";
   // on reste souple côté types pour éviter les erreurs TS
   config: any;
   state: any;
-  liveStatsByPlayer: Record<string, any>;
+  liveStatsByPlayer: any;
   onNextLeg: () => void;
-  onExitMatch: () => void;
+  onExitMatch?: () => void;
 };
-
-/* -------------------------------------------------------
-   Helper : trouver le vainqueur à partir du state
-   - leg_end  → joueur avec le plus de legsWon
-   - set_end  → joueur avec le plus de setsWon
-   - match_end→ joueur avec le plus de setsWon
-------------------------------------------------------- */
-function getWinnerIdFromState(
-  config: any,
-  state: any,
-  status: X01OverlayStatus
-): string | null {
-  const players = config?.players ?? [];
-  const ids: string[] = players.map((p: any) => p.id).filter(Boolean);
-  if (!ids.length) return null;
-
-  const legsWon = state?.legsWon || {};
-  const setsWon = state?.setsWon || {};
-
-  // Teams non géré finement ici (tu joues surtout en 1v1 / multi)
-  if (config?.gameMode === "teams") {
-    return null;
-  }
-
-  if (status === "match_end" || status === "set_end") {
-    let bestId: string | null = null;
-    let best = -Infinity;
-    for (const pid of ids) {
-      const v = setsWon[pid] ?? 0;
-      if (v > best) {
-        best = v;
-        bestId = pid;
-      }
-    }
-    return bestId;
-  }
-
-  // leg_end ou fallback
-  let bestId: string | null = null;
-  let best = -Infinity;
-  for (const pid of ids) {
-    const v = legsWon[pid] ?? 0;
-    if (v > best) {
-      best = v;
-      bestId = pid;
-    }
-  }
-  return bestId;
-}
 
 export default function X01LegOverlayV3({
   open,
@@ -101,17 +47,17 @@ export default function X01LegOverlayV3({
   const legsWon = state?.legsWon || {};
   const setsWon = state?.setsWon || {};
 
-  const isMatchEnd = status === "match_end";
-  const isSetEnd = status === "set_end";
-
-  // --- Vainqueur ---
-  const winnerIdFromState = getWinnerIdFromState(config, state, status);
-
-  const winner =
-    players.find((p: any) => p.id === winnerIdFromState) ||
-    players[0] ||
+  // --- Vainqueur de la dernière manche / set / match ---
+  const winnerId =
+    state?.lastLegWinnerId ||
+    state?.lastWinnerId ||
+    state?.lastWinningPlayerId ||
     null;
 
+  const winner =
+    players.find((p: any) => p.id === winnerId) || players[0] || null;
+
+  // Adversaire principal (2 joueurs : classique)
   const opponent =
     winner && players.length >= 2
       ? players.find((p: any) => p.id !== winner.id) || null
@@ -125,19 +71,20 @@ export default function X01LegOverlayV3({
   const opponentLegs =
     opponent && opponent.id ? legsWon[opponent.id] ?? 0 : 0;
 
-  // --- Texte principal ---
-  const subtitle = isMatchEnd
-    ? t("x01.leg_overlay.match_won", "Match gagné")
-    : isSetEnd
-    ? t("x01.leg_overlay.set_won", "Set gagné")
-    : t("x01.leg_overlay.leg_won", "Manche gagnée");
+  const subtitle =
+    status === "set_end"
+      ? t("x01.leg_overlay.set_won", "Set gagné")
+      : status === "match_end"
+      ? t("x01.leg_overlay.match_won", "Match gagné")
+      : t("x01.leg_overlay.leg_won", "Manche gagnée");
 
-  const primaryLabel = isMatchEnd
-    ? t("x01.leg_overlay.finish_match", "Terminer le match")
-    : t("x01.leg_overlay.next_leg", "Manche suivante");
+  const mainButtonLabel =
+    status === "match_end"
+      ? t("x01.leg_overlay.new_match", "Nouvelle partie")
+      : t("x01.leg_overlay.next_leg", "Manche suivante");
 
-  const handlePrimaryClick = () => {
-    if (isMatchEnd) {
+  const handleMainButton = () => {
+    if (status === "match_end" && onExitMatch) {
       onExitMatch();
     } else {
       onNextLeg();
@@ -152,9 +99,12 @@ export default function X01LegOverlayV3({
     const totalScore = s?.totalScore ?? 0;
     const bestVisit = s?.bestVisit ?? 0;
 
+    // On ne montre les mini-stats que si on a VRAIMENT des données
     if (darts > 0 || bestVisit > 0 || totalScore > 0) {
       const avg3 =
-        darts > 0 ? getAvg3FromLiveStatsV3(s).toFixed(1) : "0.0";
+        darts > 0 && totalScore != null
+          ? ((totalScore / darts) * 3).toFixed(1)
+          : "0.0";
 
       miniStatsNode = (
         <div
@@ -289,14 +239,14 @@ export default function X01LegOverlayV3({
           </div>
         </div>
 
-        {/* Mini-stats vainqueur (si disponibles) */}
+        {/* Mini-stats vainqueur (si dispos) */}
         {miniStatsNode}
 
         {/* Bouton principal */}
         <div style={{ marginTop: 8 }}>
           <button
             type="button"
-            onClick={handlePrimaryClick}
+            onClick={handleMainButton}
             style={{
               width: "100%",
               padding: "11px 16px",
@@ -310,7 +260,7 @@ export default function X01LegOverlayV3({
               cursor: "pointer",
             }}
           >
-            {primaryLabel}
+            {mainButtonLabel}
           </button>
         </div>
       </div>

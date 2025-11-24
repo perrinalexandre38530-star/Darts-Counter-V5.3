@@ -21,6 +21,7 @@ type Props = {
   profiles: Profile[];
   onBack: () => void;
   onStart: (cfg: X01ConfigV3) => void;
+  go?: (tab: any, params?: any) => void; // ✅ pour ouvrir "Créer BOT"
 };
 
 const START_SCORES: Array<301 | 501 | 701 | 901> = [301, 501, 701, 901];
@@ -41,7 +42,12 @@ const TEAM_COLORS: Record<TeamId, string> = {
   green: "#6dff7c",
 };
 
-export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
+export default function X01ConfigV3({
+  profiles,
+  onBack,
+  onStart,
+  go,
+}: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
 
@@ -407,6 +413,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
                   return (
                     <button
                       key={p.id}
+                      type="button"
                       onClick={() => togglePlayer(p.id)}
                       style={{
                         minWidth: 90,
@@ -773,62 +780,64 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
           />
         )}
 
-        {/* --------- BLOC BOTS --------- */}
+        {/* --------- BLOC BOTS IA --------- */}
         <section
           style={{
             background: cardBg,
             borderRadius: 18,
-            padding: "16px 12px 16px",
-            marginTop: 6,
+            padding: 12,
             marginBottom: 80,
             boxShadow: "0 16px 40px rgba(0,0,0,0.55)",
-            border: "1px solid rgba(255,255,255,0.05)",
+            border: `1px solid rgba(255,255,255,0.04)`,
           }}
         >
-          <div
+          <h3
             style={{
-              fontSize: 12,
+              fontSize: 13,
               textTransform: "uppercase",
               letterSpacing: 1,
               fontWeight: 700,
               color: primary,
-              marginBottom: 6,
+              marginBottom: 10,
             }}
           >
             {t("x01v3.bots.title", "Bots IA")}
-          </div>
+          </h3>
 
           {botProfiles.length === 0 ? (
             <>
               <p
                 style={{
-                  fontSize: 11,
-                  color: "#7c80a0",
-                  marginBottom: 10,
+                  fontSize: 12,
+                  color: "#b3b8d0",
+                  marginBottom: 12,
                 }}
               >
                 {t(
                   "x01v3.bots.none",
-                  "Aucun BOT IA pour l’instant. Tu peux en créer dans le menu Profils, via la page « Créer un BOT »."
+                  "Aucun BOT IA pour l’instant. Tu peux en créer dans le menu Profils."
                 )}
               </p>
+
               <button
                 type="button"
-                onClick={() => {
-                  // lien symbolique vers Profils > Créer BOT (à adapter si tu as un router interne)
-                  window.location.hash = "#create-bot";
-                }}
+                onClick={() => go && go("create_bot")}
                 style={{
+                  padding: "8px 12px",
                   borderRadius: 999,
-                  padding: "6px 12px",
-                  border: "1px solid rgba(255,255,255,0.14)",
-                  background: "rgba(17,20,40,0.95)",
-                  color: "#f5f5ff",
+                  border: `1px solid ${primary}`,
+                  background: primarySoft,
+                  color: primary,
+                  fontWeight: 700,
                   fontSize: 12,
-                  fontWeight: 600,
+                  letterSpacing: 0.5,
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                  width: "fit-content",
+                  alignSelf: "flex-start",
                 }}
               >
-                {t("x01v3.bots.goCreate", "Ouvrir la page « Créer un BOT »")}
+                {t("x01v3.bots.create", "Créer BOT")}
               </button>
             </>
           ) : (
@@ -849,15 +858,16 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
               <div
                 style={{
                   display: "flex",
-                  gap: 18,
+                  gap: 14,
                   overflowX: "auto",
                   paddingBottom: 10,
+                  marginBottom: 10,
                 }}
+                className="dc-scroll-thin"
               >
-                {botProfiles.map((p) => {
-                  const active = selectedIds.includes(p.id);
-                  const haloColor = primary;
-                  const botLevel = (p as any).botLevel as
+                {botProfiles.map((bot) => {
+                  const active = selectedIds.includes(bot.id);
+                  const level = (bot as any).botLevel as
                     | "easy"
                     | "medium"
                     | "hard"
@@ -865,8 +875,9 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
 
                   return (
                     <button
-                      key={p.id}
-                      onClick={() => togglePlayer(p.id)}
+                      key={bot.id}
+                      type="button"
+                      onClick={() => togglePlayer(bot.id)}
                       style={{
                         minWidth: 90,
                         maxWidth: 90,
@@ -876,7 +887,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
-                        gap: 6,
+                        gap: 8,
                         flexShrink: 0,
                       }}
                     >
@@ -887,70 +898,49 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
                           borderRadius: "50%",
                           overflow: "hidden",
                           boxShadow: active
-                            ? `0 0 28px ${haloColor}aa`
+                            ? `0 0 28px ${primary}aa`
                             : "0 0 14px rgba(0,0,0,0.65)",
                           background: active
-                            ? `radial-gradient(circle at 30% 20%, #fff8d0, ${haloColor})`
+                            ? `radial-gradient(circle at 30% 20%, #fff8d0, ${primary})`
                             : "#111320",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                         }}
                       >
-                        <div
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            borderRadius: "50%",
-                            overflow: "hidden",
-                            filter: active
-                              ? "none"
-                              : "grayscale(40%) brightness(0.8)",
-                            opacity: active ? 1 : 0.85,
-                            transition:
-                              "filter 0.2s ease, opacity 0.2s ease",
-                          }}
-                        >
-                          <ProfileAvatar profile={p} size={78} />
-                        </div>
+                        <ProfileAvatar profile={bot} size={78} />
                       </div>
 
                       <div
                         style={{
-                          fontSize: 12,
+                          fontSize: 11,
                           fontWeight: 600,
                           textAlign: "center",
-                          color: active ? "#f6f2e9" : "#b5b8cf",
+                          color: active ? "#f6f2e9" : "#7e8299",
                           maxWidth: "100%",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {p.name}
+                        {bot.name}
                       </div>
 
                       <div
                         style={{
-                          marginTop: 0,
-                          fontSize: 9,
+                          fontSize: 10,
                           fontWeight: 700,
-                          textTransform: "uppercase",
-                          padding: "1px 6px",
-                          borderRadius: 999,
-                          background:
-                            "linear-gradient(90deg, #ff9a9e, #fad0c4)",
-                          color: "#151515",
+                          opacity: 0.7,
+                          color: primary,
                         }}
                       >
-                        BOT{" "}
-                        {botLevel
-                          ? botLevel === "easy"
-                            ? "Easy"
-                            : botLevel === "medium"
-                            ? "Medium"
-                            : "Hard"
-                          : ""}
+                        {level
+                          ? `BOT ${level === "easy"
+                              ? "EASY"
+                              : level === "medium"
+                              ? "MEDIUM"
+                              : "HARD"}`
+                          : "BOT"}
                       </div>
                     </button>
                   );
@@ -959,24 +949,19 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
 
               <button
                 type="button"
-                onClick={() => {
-                  window.location.hash = "#create-bot";
-                }}
+                onClick={() => go && go("create_bot")}
                 style={{
-                  marginTop: 4,
+                  padding: "6px 10px",
                   borderRadius: 999,
-                  padding: "5px 10px",
-                  border: "1px solid rgba(255,255,255,0.14)",
-                  background: "rgba(17,20,40,0.95)",
-                  color: "#f5f5ff",
-                  fontSize: 11,
+                  border: `1px solid ${primary}`,
+                  background: "rgba(255,255,255,0.04)",
+                  color: primary,
                   fontWeight: 600,
+                  fontSize: 11,
+                  textTransform: "uppercase",
                 }}
               >
-                {t(
-                  "x01v3.bots.manage",
-                  "Gérer mes BOTS dans le menu Profils"
-                )}
+                {t("x01v3.bots.manage", "Créer BOT")}
               </button>
             </>
           )}
