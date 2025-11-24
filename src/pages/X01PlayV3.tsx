@@ -5,9 +5,12 @@
 
 import React from "react";
 
-import type { X01ConfigV3, X01PlayerId } from "../types/x01v3";
+import type {
+  X01ConfigV3,
+  X01PlayerId,
+  X01DartInputV3,
+} from "../types/x01v3";
 import { useX01EngineV3 } from "../hooks/useX01EngineV3";
-import type { X01DartInputV3 } from "../lib/x01v3/x01LogicV3";
 import type { Dart as UIDart } from "../lib/types";
 
 import Keypad from "../components/Keypad";
@@ -352,13 +355,7 @@ export default function X01PlayV3({ config, onExit }: Props) {
         if (b.legsWon !== a.legsWon) return b.legsWon - a.legsWon;
         return a.score - b.score;
       });
-  }, [
-    players,
-    scores,
-    state as any,
-    config.startScore,
-    avg3ByPlayer,
-  ]);
+  }, [players, scores, state, config.startScore, avg3ByPlayer]);
 
   const liveRanking = React.useMemo(
     () =>

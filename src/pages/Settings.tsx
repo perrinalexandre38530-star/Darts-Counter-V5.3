@@ -10,6 +10,7 @@ import React from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang, type Lang } from "../contexts/LangContext";
 import { THEMES, type ThemeId, type AppTheme } from "../theme/themePresets";
+import { nukeAll } from "../lib/storage";
 
 type Props = { go?: (tab: any, params?: any) => void };
 

@@ -45,7 +45,6 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
 
-  // 👉 Séparation humains / bots
   const allProfiles: Profile[] = profiles ?? [];
   const humanProfiles = allProfiles.filter((p) => !(p as any).isBot);
   const botProfiles = allProfiles.filter((p) => (p as any).isBot);
@@ -62,15 +61,9 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
   const [matchMode, setMatchMode] = React.useState<MatchModeV3>("solo");
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>(() => {
-    // priorité : 2 humains, sinon 1 humain + 1 bot, sinon 2 bots, sinon 1 seul…
     if (humanProfiles.length >= 2)
       return [humanProfiles[0].id, humanProfiles[1].id];
-    if (humanProfiles.length === 1 && botProfiles.length >= 1)
-      return [humanProfiles[0].id, botProfiles[0].id];
-    if (botProfiles.length >= 2)
-      return [botProfiles[0].id, botProfiles[1].id];
     if (humanProfiles.length === 1) return [humanProfiles[0].id];
-    if (botProfiles.length === 1) return [botProfiles[0].id];
     return [];
   });
 
@@ -101,7 +94,6 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
     setTeamAssignments((prev) => {
       const current = prev[playerId] ?? null;
       const next = { ...prev };
-      // re-click sur la même team => désaffectation
       next[playerId] = current === teamId ? null : teamId;
       return next;
     });
@@ -112,13 +104,8 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
   // ---- conditions pour pouvoir démarrer ----
   const canStart = React.useMemo(() => {
     if (totalPlayers === 0) return false;
-    if (matchMode === "solo") {
-      return totalPlayers === 2;
-    }
-    if (matchMode === "multi") {
-      return totalPlayers >= 2;
-    }
-    // teams : on fera la validation fine au moment de handleStart
+    if (matchMode === "solo") return totalPlayers === 2;
+    if (matchMode === "multi") return totalPlayers >= 2;
     return totalPlayers >= 4;
   }, [totalPlayers, matchMode]);
 
@@ -133,9 +120,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
 
     selectedIds.forEach((pid) => {
       const tId = teamAssignments[pid];
-      if (tId) {
-        teamBuckets[tId].push(pid);
-      }
+      if (tId) teamBuckets[tId].push(pid);
     });
 
     const usedTeams = (Object.keys(teamBuckets) as TeamId[]).filter(
@@ -169,10 +154,6 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
     const size = sizes[0];
     const teamCount = usedTeams.length;
 
-    // Combos autorisés :
-    // - 2 équipes : 2v2 / 3v3 / 4v4
-    // - 3 équipes : 2v2v2
-    // - 4 équipes : 2v2v2v2
     const ok =
       (teamCount === 2 && (size === 2 || size === 3 || size === 4)) ||
       (teamCount === 3 && size === 2) ||
@@ -237,7 +218,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
 
     if (matchMode === "teams") {
       teams = validateTeams();
-      if (!teams) return; // validation échouée
+      if (!teams) return;
     }
 
     const players = selectedIds
@@ -263,7 +244,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
     };
 
     if (matchMode === "teams" && teams) {
-      // @ts-expect-error: champ "teams" prévu pour l’extension du moteur
+      // @ts-expect-error champ "teams" prévu pour l’extension du moteur
       baseCfg.teams = teams;
     }
 
@@ -282,7 +263,6 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
   const textMain = theme?.text ?? "#f5f5ff";
   const cardBg = "rgba(10, 12, 24, 0.96)";
 
-  // ---- UI style Cricket ----
   return (
     <div
       className="screen x01-config-v3-screen"
@@ -399,7 +379,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
             >
               {t(
                 "x01v3.noProfiles",
-                "Aucun profil local. Tu peux créer des profils dans le menu Profils."
+                "Aucun profil local. Tu peux créer des joueurs et des BOTS dans le menu Profils."
               )}
             </p>
           ) : (
@@ -418,7 +398,6 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
                 {humanProfiles.map((p) => {
                   const active = selectedIds.includes(p.id);
 
-                  // Couleur d’équipe → halo coloré
                   const teamId =
                     matchMode === "teams"
                       ? (teamAssignments[p.id] as TeamId | null) ?? null
@@ -442,7 +421,6 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
                         flexShrink: 0,
                       }}
                     >
-                      {/* Médaillon joueur */}
                       <div
                         style={{
                           width: 78,
@@ -478,7 +456,6 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
                         </div>
                       </div>
 
-                      {/* Nom du joueur */}
                       <div
                         style={{
                           fontSize: 12,
@@ -796,156 +773,214 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
           />
         )}
 
-        {/* --------- BLOC BOTS (en bas, carrousel) --------- */}
-        {botProfiles.length > 0 && (
-          <section
+        {/* --------- BLOC BOTS --------- */}
+        <section
+          style={{
+            background: cardBg,
+            borderRadius: 18,
+            padding: "16px 12px 16px",
+            marginTop: 6,
+            marginBottom: 80,
+            boxShadow: "0 16px 40px rgba(0,0,0,0.55)",
+            border: "1px solid rgba(255,255,255,0.05)",
+          }}
+        >
+          <div
             style={{
-              background: cardBg,
-              borderRadius: 18,
-              padding: "16px 12px 14px",
-              marginTop: 6,
-              marginBottom: 80, // laisse respirer avant le CTA
-              boxShadow: "0 16px 40px rgba(0,0,0,0.55)",
-              border: "1px solid rgba(255,255,255,0.05)",
+              fontSize: 12,
+              textTransform: "uppercase",
+              letterSpacing: 1,
+              fontWeight: 700,
+              color: primary,
+              marginBottom: 6,
             }}
           >
-            <div
-              style={{
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                fontWeight: 700,
-                color: primary,
-                marginBottom: 6,
-              }}
-            >
-              {t("x01v3.bots.title", "Bots IA")}
-            </div>
-            <p
-              style={{
-                fontSize: 11,
-                color: "#7c80a0",
-                marginBottom: 10,
-              }}
-            >
-              {t(
-                "x01v3.bots.subtitle",
-                "Sélectionne un ou plusieurs bots créés dans ton menu Profils. Ils joueront automatiquement selon leur niveau."
-              )}
-            </p>
+            {t("x01v3.bots.title", "Bots IA")}
+          </div>
 
-            <div
-              style={{
-                display: "flex",
-                gap: 18,
-                overflowX: "auto",
-                paddingBottom: 10,
-              }}
-            >
-              {botProfiles.map((p) => {
-                const active = selectedIds.includes(p.id);
-                const haloColor = primary;
-                const botLevel = (p as any).botLevel as
-                  | "easy"
-                  | "medium"
-                  | "hard"
-                  | undefined;
+          {botProfiles.length === 0 ? (
+            <>
+              <p
+                style={{
+                  fontSize: 11,
+                  color: "#7c80a0",
+                  marginBottom: 10,
+                }}
+              >
+                {t(
+                  "x01v3.bots.none",
+                  "Aucun BOT IA pour l’instant. Tu peux en créer dans le menu Profils, via la page « Créer un BOT »."
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  // lien symbolique vers Profils > Créer BOT (à adapter si tu as un router interne)
+                  window.location.hash = "#create-bot";
+                }}
+                style={{
+                  borderRadius: 999,
+                  padding: "6px 12px",
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  background: "rgba(17,20,40,0.95)",
+                  color: "#f5f5ff",
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
+                {t("x01v3.bots.goCreate", "Ouvrir la page « Créer un BOT »")}
+              </button>
+            </>
+          ) : (
+            <>
+              <p
+                style={{
+                  fontSize: 11,
+                  color: "#7c80a0",
+                  marginBottom: 10,
+                }}
+              >
+                {t(
+                  "x01v3.bots.subtitle",
+                  "Sélectionne un ou plusieurs bots créés dans ton menu Profils. Ils joueront automatiquement selon leur niveau."
+                )}
+              </p>
 
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => togglePlayer(p.id)}
-                    style={{
-                      minWidth: 90,
-                      maxWidth: 90,
-                      background: "transparent",
-                      border: "none",
-                      padding: 0,
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: 6,
-                      flexShrink: 0,
-                    }}
-                  >
-                    <div
+              <div
+                style={{
+                  display: "flex",
+                  gap: 18,
+                  overflowX: "auto",
+                  paddingBottom: 10,
+                }}
+              >
+                {botProfiles.map((p) => {
+                  const active = selectedIds.includes(p.id);
+                  const haloColor = primary;
+                  const botLevel = (p as any).botLevel as
+                    | "easy"
+                    | "medium"
+                    | "hard"
+                    | undefined;
+
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => togglePlayer(p.id)}
                       style={{
-                        width: 78,
-                        height: 78,
-                        borderRadius: "50%",
-                        overflow: "hidden",
-                        boxShadow: active
-                          ? `0 0 28px ${haloColor}aa`
-                          : "0 0 14px rgba(0,0,0,0.65)",
-                        background: active
-                          ? `radial-gradient(circle at 30% 20%, #fff8d0, ${haloColor})`
-                          : "#111320",
+                        minWidth: 90,
+                        maxWidth: 90,
+                        background: "transparent",
+                        border: "none",
+                        padding: 0,
                         display: "flex",
+                        flexDirection: "column",
                         alignItems: "center",
-                        justifyContent: "center",
+                        gap: 6,
+                        flexShrink: 0,
                       }}
                     >
                       <div
                         style={{
-                          width: "100%",
-                          height: "100%",
+                          width: 78,
+                          height: 78,
                           borderRadius: "50%",
                           overflow: "hidden",
-                          filter: active
-                            ? "none"
-                            : "grayscale(40%) brightness(0.8)",
-                          opacity: active ? 1 : 0.85,
-                          transition:
-                            "filter 0.2s ease, opacity 0.2s ease",
+                          boxShadow: active
+                            ? `0 0 28px ${haloColor}aa`
+                            : "0 0 14px rgba(0,0,0,0.65)",
+                          background: active
+                            ? `radial-gradient(circle at 30% 20%, #fff8d0, ${haloColor})`
+                            : "#111320",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
                         }}
                       >
-                        <ProfileAvatar profile={p} size={78} />
+                        <div
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            borderRadius: "50%",
+                            overflow: "hidden",
+                            filter: active
+                              ? "none"
+                              : "grayscale(40%) brightness(0.8)",
+                            opacity: active ? 1 : 0.85,
+                            transition:
+                              "filter 0.2s ease, opacity 0.2s ease",
+                          }}
+                        >
+                          <ProfileAvatar profile={p} size={78} />
+                        </div>
                       </div>
-                    </div>
 
-                    <div
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        textAlign: "center",
-                        color: active ? "#f6f2e9" : "#b5b8cf",
-                        maxWidth: "100%",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {p.name}
-                    </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          textAlign: "center",
+                          color: active ? "#f6f2e9" : "#b5b8cf",
+                          maxWidth: "100%",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {p.name}
+                      </div>
 
-                    <div
-                      style={{
-                        marginTop: 0,
-                        fontSize: 9,
-                        fontWeight: 700,
-                        textTransform: "uppercase",
-                        padding: "1px 6px",
-                        borderRadius: 999,
-                        background:
-                          "linear-gradient(90deg, #ff9a9e, #fad0c4)",
-                        color: "#151515",
-                      }}
-                    >
-                      BOT{" "}
-                      {botLevel
-                        ? botLevel === "easy"
-                          ? "Easy"
-                          : botLevel === "medium"
-                          ? "Medium"
-                          : "Hard"
-                        : ""}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        )}
+                      <div
+                        style={{
+                          marginTop: 0,
+                          fontSize: 9,
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          padding: "1px 6px",
+                          borderRadius: 999,
+                          background:
+                            "linear-gradient(90deg, #ff9a9e, #fad0c4)",
+                          color: "#151515",
+                        }}
+                      >
+                        BOT{" "}
+                        {botLevel
+                          ? botLevel === "easy"
+                            ? "Easy"
+                            : botLevel === "medium"
+                            ? "Medium"
+                            : "Hard"
+                          : ""}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.hash = "#create-bot";
+                }}
+                style={{
+                  marginTop: 4,
+                  borderRadius: 999,
+                  padding: "5px 10px",
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  background: "rgba(17,20,40,0.95)",
+                  color: "#f5f5ff",
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                {t(
+                  "x01v3.bots.manage",
+                  "Gérer mes BOTS dans le menu Profils"
+                )}
+              </button>
+            </>
+          )}
+        </section>
       </div>
 
       {/* CTA collée au-dessus de la barre de nav */}
@@ -954,7 +989,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
           position: "fixed",
           left: 0,
           right: 0,
-          bottom: 88, // au-dessus du BottomNav
+          bottom: 88,
           padding: "6px 12px 8px",
           pointerEvents: "none",
         }}
@@ -1024,11 +1059,9 @@ function TeamsSection({
 
   const orderedTeams: TeamId[] = ["gold", "pink", "blue", "green"];
 
-  // max nombre d'équipes possibles selon le nombre de joueurs
   const maxTeams =
     totalPlayers <= 4 ? 2 : totalPlayers <= 6 ? 3 : 4;
 
-  // base: capacité max par équipe pour le cas 2 équipes
   const maxPerTeamBase =
     totalPlayers >= 8 ? 4 : totalPlayers >= 6 ? 3 : 2;
 
@@ -1036,7 +1069,6 @@ function TeamsSection({
     (tid) => counts[tid] > 0
   ).length;
 
-  // règle : dès qu'on utilise 3 équipes ou plus -> 2 joueurs max par équipe
   const maxPerTeam = usedTeamsCount >= 3 ? 2 : maxPerTeamBase;
 
   return (
