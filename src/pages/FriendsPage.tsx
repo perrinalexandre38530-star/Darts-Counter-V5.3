@@ -170,7 +170,7 @@ export default function FriendsPage({ store, update, go }: Props) {
   // --- Profil local actif (fallback nickname)
   const activeProfile =
     (store.profiles || []).find((p) => p.id === store.activeProfileId) ||
-    (store.profiles || [0])[0] ||
+    (store.profiles || [])[0] ||
     null;
 
   // Compte online enregistré (email + mot de passe + nickname)
@@ -202,12 +202,11 @@ export default function FriendsPage({ store, update, go }: Props) {
   const [matches, setMatches] = React.useState<OnlineMatch[]>([]);
   const [loadingMatches, setLoadingMatches] = React.useState(false);
 
-  // Salons online (mock) - création
+  // Salons online (mock) - création / join
   const [creatingLobby, setCreatingLobby] = React.useState(false);
   const [lastCreatedLobby, setLastCreatedLobby] =
     React.useState<OnlineLobby | null>(null);
 
-  // JOIN salon (mock)
   const [joinCode, setJoinCode] = React.useState("");
   const [joiningLobby, setJoiningLobby] = React.useState(false);
   const [joinedLobby, setJoinedLobby] = React.useState<OnlineLobby | null>(null);
@@ -496,7 +495,6 @@ export default function FriendsPage({ store, update, go }: Props) {
   }
 
   // ---------- Création d'un salon X01 (mock local) ----------
-
   async function handleCreateLobby() {
     if (!isSignedIn) {
       setError("Tu dois être connecté en mode online pour créer un salon.");
@@ -520,6 +518,9 @@ export default function FriendsPage({ store, update, go }: Props) {
       });
 
       setLastCreatedLobby(lobby);
+      setJoinedLobby(null);
+      setJoinInfo(null);
+      setJoinError(null);
       console.log("[online] lobby créé", lobby);
     } catch (e: any) {
       console.warn(e);
@@ -530,7 +531,6 @@ export default function FriendsPage({ store, update, go }: Props) {
   }
 
   // ---------- Join d'un salon X01 par code (mock local) ----------
-
   async function handleJoinLobby() {
     const code = joinCode.trim().toUpperCase();
 

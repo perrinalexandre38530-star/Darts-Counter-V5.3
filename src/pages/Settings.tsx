@@ -1,9 +1,10 @@
 // ============================================
-// src/pages/Settings.tsx — Thème + Langue
+// src/pages/Settings.tsx — Thème + Langue + Reset App
 // Fond toujours sombre (ne varie pas avec le thème)
 // Les thèmes ne changent que les néons / accents / textes
 // + Drapeaux pour les langues
 // + Catégories + carrousels horizontaux pour les thèmes
+// + Bouton "Tout réinitialiser" (nukeAll + reload)
 // ============================================
 
 import React from "react";
@@ -203,20 +204,21 @@ function ThemeChoiceButton({
 
   const cardBoxShadow =
     active || hovered ? `0 0 14px ${neonColor}66` : "0 0 0 rgba(0,0,0,0)";
-  const scale = hovered ? 1.01 : 1.0; // 🔽 plus discret pour éviter de dépasser
+  const scale = hovered ? 1.01 : 1.0; // plus discret
   const borderColor = active ? neonColor : "rgba(255,255,255,0.12)";
   const titleColor = active ? neonColor : "#FFFFFF";
   const descColor = active ? neonColor : "rgba(255,255,255,0.6)";
 
   return (
     <button
+      type="button"
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         textAlign: "left",
         borderRadius: 14,
-        padding: "8px 10px", // 🔽 hauteur réduite
+        padding: "8px 10px", // hauteur réduite
         background: active
           ? "rgba(255,255,255,0.05)"
           : "rgba(255,255,255,0.02)",
@@ -237,7 +239,7 @@ function ThemeChoiceButton({
           alignItems: "center",
           gap: 8,
           fontWeight: 700,
-          fontSize: 13, // 🔽 un poil plus petit
+          fontSize: 13,
           marginBottom: 2,
         }}
       >
@@ -298,6 +300,7 @@ function LanguageChoiceButton({
 
   return (
     <button
+      type="button"
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -343,6 +346,26 @@ export default function Settings({ go }: Props) {
     injectSettingsAnimationsOnce();
   }, []);
 
+  // 🔥 Reset complet de l'app (profils, BOTS, stats, historique, réglages)
+  function handleFullReset() {
+    const ok = window.confirm(
+      "Cette action va effacer tous les profils locaux, BOTS, stats, historique et réglages. Tu devras tout recréer. Continuer ?"
+    );
+    if (!ok) return;
+
+    nukeAll()
+      .then(() => {
+        alert("Application réinitialisée. La page va se recharger.");
+        window.location.reload();
+      })
+      .catch((err) => {
+        console.error("[Settings] nukeAll error:", err);
+        alert(
+          "Erreur lors de la réinitialisation. Tu peux essayer de vider le stockage du navigateur pour ce site."
+        );
+      });
+  }
+
   const PAGE_BG = "#050712";
   const CARD_BG = "rgba(8, 10, 20, 0.98)";
 
@@ -359,6 +382,7 @@ export default function Settings({ go }: Props) {
     >
       {/* Retour */}
       <button
+        type="button"
         onClick={() => go && go("home")}
         style={{
           border: "none",
@@ -427,12 +451,13 @@ export default function Settings({ go }: Props) {
         </div>
 
         <div
-           className="dc-scroll-thin"
-           style={{
-             overflowX: "auto",
-             padding: "6px 0 10px 0",  // ✨ marge en haut et en bas
-             marginTop: 4,
-             marginBottom: 4, }}
+          className="dc-scroll-thin"
+          style={{
+            overflowX: "auto",
+            padding: "6px 0 10px 0", // marge en haut et en bas
+            marginTop: 4,
+            marginBottom: 4,
+          }}
         >
           <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
             {NEONS.map((id) => {
@@ -478,9 +503,10 @@ export default function Settings({ go }: Props) {
           className="dc-scroll-thin"
           style={{
             overflowX: "auto",
-            padding: "6px 0 10px 0",  // ✨ marge en haut et en bas
+            padding: "6px 0 10px 0",
             marginTop: 4,
-            marginBottom: 4, }}
+            marginBottom: 4,
+          }}
         >
           <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
             {SOFTS.map((id) => {
@@ -523,11 +549,13 @@ export default function Settings({ go }: Props) {
         </div>
 
         <div
+          className="dc-scroll-thin"
           style={{
             overflowX: "auto",
             padding: "6px 0 10px 0",
             marginTop: 4,
-            marginBottom: 4, }}
+            marginBottom: 4,
+          }}
         >
           <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
             {DARKS.map((id) => {
@@ -600,6 +628,66 @@ export default function Settings({ go }: Props) {
             );
           })}
         </div>
+      </section>
+
+      {/* ---------- BLOC RÉINITIALISATION ---------- */}
+
+      <section
+        style={{
+          background: CARD_BG,
+          borderRadius: 18,
+          border: `1px solid ${theme.borderSoft}`,
+          padding: 16,
+          marginBottom: 24,
+        }}
+      >
+        <h2
+          style={{
+            margin: 0,
+            marginBottom: 6,
+            fontSize: 16,
+            color: theme.primary,
+            textTransform: "uppercase",
+            letterSpacing: 1,
+          }}
+        >
+          {t("settings.reset.title", "Réinitialiser l’application")}
+        </h2>
+
+        <p
+          style={{
+            fontSize: 11,
+            color: theme.textSoft,
+            marginBottom: 10,
+            lineHeight: 1.4,
+          }}
+        >
+          {t(
+            "settings.reset.subtitle",
+            "Efface tous les profils locaux, BOTS, stats, historique de parties et réglages. Action définitive."
+          )}
+        </p>
+
+        <button
+          type="button"
+          onClick={handleFullReset}
+          style={{
+            width: "100%",
+            borderRadius: 999,
+            padding: "7px 12px",
+            border: "1px solid rgba(255,120,120,0.8)",
+            background:
+              "linear-gradient(90deg, rgba(255,80,80,0.95), rgba(255,170,120,0.95))",
+            color: "#120808",
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: 0.5,
+            textTransform: "uppercase",
+            boxShadow: "0 0 18px rgba(255,80,80,0.65)",
+          }}
+        >
+          {t("settings.reset.button", "Tout réinitialiser")}
+        </button>
       </section>
     </div>
   );
