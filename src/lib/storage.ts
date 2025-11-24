@@ -4,13 +4,59 @@
 // API principale : loadStore(), saveStore(), clearStore()
 // + Helpers : getKV()/setKV()/delKV(), exportAll(), importAll(), storageEstimate()
 // ============================================
-import type { Store } from "./types";
+import type { Store, Profile } from "./types";
 
 /* ---------- Constantes ---------- */
 const DB_NAME = "darts-counter-v5";
 const STORE_NAME = "kv";
 const STORE_KEY = "store";
 const LEGACY_LS_KEY = "darts-counter-store-v3";
+
+/* ---------- Profils BOT par défaut ---------- */
+// ⚠️ Tu peux changer les noms / avatars / niveaux comme tu veux
+const DEFAULT_BOTS: Profile[] = [
+  {
+    id: "bot-easy-1",
+    name: "BOT Easy",
+    isBot: true,
+    botLevel: "easy",
+    avatarUrl: "/bots/bot-easy.png",
+  },
+  {
+    id: "bot-medium-1",
+    name: "BOT Medium",
+    isBot: true,
+    botLevel: "medium",
+    avatarUrl: "/bots/bot-medium.png",
+  },
+  {
+    id: "bot-hard-1",
+    name: "BOT Hard",
+    isBot: true,
+    botLevel: "hard",
+    avatarUrl: "/bots/bot-hard.png",
+  },
+];
+
+/** Injecte les BOTs par défaut dans store.profiles si absents. */
+function mergeDefaultBots<T extends Store>(store: T | null): T | null {
+  if (!store) return store;
+
+  const existing = (store.profiles ?? []) as Profile[];
+  const botIds = new Set(DEFAULT_BOTS.map(b => b.id));
+
+  // Si un des bots est déjà présent, on considère que la migration est faite
+  const alreadyHasAnyBot = existing.some(p => p.isBot && botIds.has(p.id));
+  if (alreadyHasAnyBot) return store;
+
+  // On évite les doublons d'id au cas où
+  const withoutDupes = existing.filter(p => !botIds.has(p.id));
+
+  return {
+    ...store,
+    profiles: [...withoutDupes, ...DEFAULT_BOTS],
+  };
+}
 
 /* ---------- Détection compression (gzip) ---------- */
 const supportsCompression =
@@ -157,13 +203,17 @@ export async function loadStore<T extends Store>(): Promise<T | null> {
     const raw = (await idbGet<ArrayBuffer | Uint8Array | string>(STORE_KEY)) ?? null;
     if (raw != null) {
       const json = await decompressGzip(raw as any);
-      return JSON.parse(json) as T;
+      let parsed = JSON.parse(json) as T;
+      // Injection/migration des bots par défaut
+      parsed = mergeDefaultBots(parsed) as T;
+      return parsed;
     }
 
     // 2) Migration depuis localStorage (legacy)
     const legacy = localStorage.getItem(LEGACY_LS_KEY);
     if (legacy) {
-      const parsed = JSON.parse(legacy) as T;
+      let parsed = JSON.parse(legacy) as T;
+      parsed = mergeDefaultBots(parsed) as T;
       await saveStore(parsed);
       try {
         localStorage.removeItem(LEGACY_LS_KEY);

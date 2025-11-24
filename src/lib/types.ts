@@ -18,6 +18,21 @@ export type ProfileStats = {
   losses?: number;        // nb de défaites
 };
 
+// Niveau d'IA du bot
+export type BotLevel = "easy" | "medium" | "hard";
+
+export type Profile = {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  stats?: ProfileStats; 
+  // ...tout ce que tu avais déjà
+
+  // 🔹 Nouveau : identification BOT
+  isBot?: boolean;         // true si c'est un bot
+  botLevel?: BotLevel;     // niveau d'IA
+};
+
 export type Profile = {
   id: ID;
   name: string;

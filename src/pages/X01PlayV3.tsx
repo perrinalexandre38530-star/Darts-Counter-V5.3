@@ -144,23 +144,6 @@ function dartValue(d: UIDart) {
   return d.v * d.mult;
 }
 
-// Moyenne 3D à partir du score restant + nb de fléchettes
-function computeAvg3For(
-  playerId: X01PlayerId,
-  liveStatsByPlayer: Record<string, { dartsThrown: number }>,
-  scores: Record<string, number>,
-  startScore: number
-): number {
-  const live = liveStatsByPlayer[playerId];
-  const dartsThrown = live?.dartsThrown ?? 0;
-  if (!dartsThrown) return 0;
-
-  const remaining = scores[playerId] ?? startScore;
-  const scored = startScore - remaining; // points marqués sur la manche
-
-  return (scored / dartsThrown) * 3;
-}
-
 // Checkout suggestion à partir de la structure V3
 function formatCheckoutFromVisit(suggestion: any): string {
   if (!suggestion?.darts || !Array.isArray(suggestion.darts)) return "";
@@ -276,7 +259,7 @@ export default function X01PlayV3({ config, onExit }: Props) {
       const next: UIDart = { v: value, mult: multiplier } as UIDart;
       return [...prev, next];
     });
-    // on désélectionne Double / Triple après CHAQUE fléchette
+    // ✅ on désélectionne Double / Triple après CHAQUE fléchette
     setMultiplier(1);
   }
 
@@ -301,7 +284,7 @@ export default function X01PlayV3({ config, onExit }: Props) {
     if (!currentThrow.length) return;
     const toSend = [...currentThrow];
 
-    // mémorise dernière volée pour pastilles
+    // 🔥 mémorise dernière volée pour pastilles
     const pid = activePlayerId;
     if (pid) {
       setLastVisitsByPlayer((m) => ({
@@ -325,23 +308,42 @@ export default function X01PlayV3({ config, onExit }: Props) {
 
   // =====================================================
   // STATS LIVE & MINI-RANKING
+  // — Moyenne recalculée à partir du score réel
+  //   avg3 = ((startScore - scoreActuel) / dartsThrown) * 3
   // =====================================================
+
+  const avg3ByPlayer: Record<string, number> = React.useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const p of players as any[]) {
+      const pid = p.id as X01PlayerId;
+      const live = liveStatsByPlayer[pid];
+      const dartsThrown = live?.dartsThrown ?? 0;
+      if (!dartsThrown) {
+        map[pid] = 0;
+        continue;
+      }
+      const scoreNow = scores[pid] ?? config.startScore;
+      const scored = config.startScore - scoreNow; // points marqués sur le leg
+      if (scored <= 0) {
+        map[pid] = 0;
+        continue;
+      }
+      map[pid] = (scored / dartsThrown) * 3;
+    }
+    return map;
+  }, [players, liveStatsByPlayer, scores, config.startScore]);
 
   const miniRanking: MiniRankingRow[] = React.useMemo(() => {
     return players
       .map((p: any) => {
-        const avg3 = computeAvg3For(
-          p.id,
-          liveStatsByPlayer,
-          scores,
-          config.startScore
-        );
+        const pid = p.id as X01PlayerId;
+        const avg3 = avg3ByPlayer[pid] ?? 0;
         return {
-          id: p.id,
+          id: pid,
           name: p.name,
-          score: scores[p.id] ?? config.startScore,
-          legsWon: (state as any).legsWon?.[p.id] ?? 0,
-          setsWon: (state as any).setsWon?.[p.id] ?? 0,
+          score: scores[pid] ?? config.startScore,
+          legsWon: (state as any).legsWon?.[pid] ?? 0,
+          setsWon: (state as any).setsWon?.[pid] ?? 0,
           avg3,
         };
       })
@@ -353,10 +355,9 @@ export default function X01PlayV3({ config, onExit }: Props) {
   }, [
     players,
     scores,
-    (state as any).legsWon,
-    (state as any).setsWon,
+    state as any,
     config.startScore,
-    liveStatsByPlayer,
+    avg3ByPlayer,
   ]);
 
   const liveRanking = React.useMemo(
@@ -375,14 +376,8 @@ export default function X01PlayV3({ config, onExit }: Props) {
     : undefined;
 
   const curDarts = activeStats?.dartsThrown ?? 0;
-
   const curM3D = activePlayer
-    ? computeAvg3For(
-        activePlayer.id,
-        liveStatsByPlayer,
-        scores,
-        config.startScore
-      ).toFixed(2)
+    ? (avg3ByPlayer[activePlayer.id] ?? 0).toFixed(2)
     : "0.00";
   const bestVisit = activeStats?.bestVisit ?? 0;
 
@@ -578,6 +573,7 @@ export default function X01PlayV3({ config, onExit }: Props) {
           setsWon={(state as any).setsWon ?? {}}
           useSets={useSetsUi}
           lastVisitsByPlayer={lastVisitsByPlayer}
+          avg3ByPlayer={avg3ByPlayer}
         />
       </div>
 
@@ -958,16 +954,14 @@ function PlayersListOnly(props: {
     string,
     { avatarDataUrl: string | null; name: string }
   >;
-  liveStatsByPlayer: Record<
-    string,
-    { dartsThrown: number; totalScore: number; bestVisit?: number }
-  >;
+  liveStatsByPlayer: Record<string, any>;
   start: number;
   scoresByPlayer: Record<string, number>;
   legsWon: Record<string, number>;
   setsWon: Record<string, number>;
   useSets: boolean;
   lastVisitsByPlayer: Record<string, UIDart[]>;
+  avg3ByPlayer: Record<string, number>;
 }) {
   const {
     players,
@@ -979,6 +973,7 @@ function PlayersListOnly(props: {
     setsWon,
     useSets,
     lastVisitsByPlayer,
+    avg3ByPlayer,
   } = props;
 
   return (
@@ -998,16 +993,9 @@ function PlayersListOnly(props: {
         const avatarSrc = prof?.avatarDataUrl ?? null;
         const live = liveStatsByPlayer[p.id];
 
-        const dCount = live?.dartsThrown ?? 0;
-
-        const a3d = dCount
-          ? computeAvg3For(
-              p.id,
-              liveStatsByPlayer,
-              scoresByPlayer,
-              start
-            ).toFixed(2)
-          : "0.00";
+        const dCount: number = live?.dartsThrown ?? 0;
+        const a3d =
+          dCount > 0 ? (avg3ByPlayer[p.id] ?? 0).toFixed(2) : "0.00";
 
         const score = scoresByPlayer[p.id] ?? start;
         const legsWonThisSet = legsWon?.[p.id] ?? 0;

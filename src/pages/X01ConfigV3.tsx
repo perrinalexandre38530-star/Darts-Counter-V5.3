@@ -45,6 +45,11 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
 
+  // 👉 Séparation humains / bots
+  const allProfiles: Profile[] = profiles ?? [];
+  const humanProfiles = allProfiles.filter((p) => !(p as any).isBot);
+  const botProfiles = allProfiles.filter((p) => (p as any).isBot);
+
   // ---- état local des paramètres ----
   const [startScore, setStartScore] =
     React.useState<301 | 501 | 701 | 901>(501);
@@ -57,9 +62,16 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
   const [matchMode, setMatchMode] = React.useState<MatchModeV3>("solo");
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>(() => {
-    if (!profiles.length) return [];
-    if (profiles.length === 1) return [profiles[0].id];
-    return [profiles[0].id, profiles[1].id];
+    // priorité : 2 humains, sinon 1 humain + 1 bot, sinon 2 bots, sinon 1 seul…
+    if (humanProfiles.length >= 2)
+      return [humanProfiles[0].id, humanProfiles[1].id];
+    if (humanProfiles.length === 1 && botProfiles.length >= 1)
+      return [humanProfiles[0].id, botProfiles[0].id];
+    if (botProfiles.length >= 2)
+      return [botProfiles[0].id, botProfiles[1].id];
+    if (humanProfiles.length === 1) return [humanProfiles[0].id];
+    if (botProfiles.length === 1) return [botProfiles[0].id];
+    return [];
   });
 
   // playerId -> teamId
@@ -67,7 +79,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
     Record<string, TeamId | null>
   >({});
 
-  // ---- helpers sélection joueurs ----
+  // ---- helpers sélection joueurs (humains + bots) ----
   function togglePlayer(id: string) {
     setSelectedIds((prev) => {
       const exists = prev.includes(id);
@@ -229,12 +241,12 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
     }
 
     const players = selectedIds
-      .map((id) => profiles.find((p) => p.id === id))
+      .map((id) => allProfiles.find((p) => p.id === id))
       .filter(Boolean)
       .map((p) => ({
         id: p!.id,
         name: p!.name,
-        avatarDataUrl: p!.avatarDataUrl ?? null,
+        avatarDataUrl: (p as any).avatarDataUrl ?? null,
       }));
 
     const baseCfg: any = {
@@ -357,7 +369,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
           paddingBottom: 12,
         }}
       >
-        {/* --------- BLOC JOUEURS --------- */}
+        {/* --------- BLOC JOUEURS (HUMAINS) --------- */}
         <section
           style={{
             background: cardBg,
@@ -374,7 +386,6 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
               textTransform: "uppercase",
               letterSpacing: 1,
               fontWeight: 700,
-              // 🔥 titre JOUEURS en couleur thème
               color: primary,
               marginBottom: 10,
             }}
@@ -382,11 +393,14 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
             {t("x01v3.localPlayers", "Joueurs")}
           </div>
 
-          {profiles.length === 0 ? (
+          {humanProfiles.length === 0 ? (
             <p
               style={{ fontSize: 13, color: "#b3b8d0", marginBottom: 8 }}
             >
-              {t("x01v3.noProfiles", "Aucun profil local.")}
+              {t(
+                "x01v3.noProfiles",
+                "Aucun profil local. Tu peux créer des profils dans le menu Profils."
+              )}
             </p>
           ) : (
             <>
@@ -398,10 +412,10 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
                   paddingBottom: 12,
                   marginBottom: 6,
                   justifyContent:
-                    profiles.length <= 4 ? "center" : "flex-start",
+                    humanProfiles.length <= 4 ? "center" : "flex-start",
                 }}
               >
-                {profiles.map((p) => {
+                {humanProfiles.map((p) => {
                   const active = selectedIds.includes(p.id);
 
                   // Couleur d’équipe → halo coloré
@@ -424,11 +438,11 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
-                        gap: 8,
+                        gap: 6,
                         flexShrink: 0,
                       }}
                     >
-                      {/* Médaillon SANS anneau sombre : l’avatar remplit le halo */}
+                      {/* Médaillon joueur */}
                       <div
                         style={{
                           width: 78,
@@ -513,7 +527,6 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
               textTransform: "uppercase",
               letterSpacing: 1,
               fontWeight: 700,
-              // 🔥 titre PARAMÈTRES DE BASE en couleur thème
               color: primary,
               marginBottom: 10,
             }}
@@ -636,7 +649,6 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
               textTransform: "uppercase",
               letterSpacing: 1,
               fontWeight: 700,
-              // 🔥 titre FORMAT DU MATCH en couleur thème
               color: primary,
               marginBottom: 10,
             }}
@@ -777,11 +789,162 @@ export default function X01ConfigV3({ profiles, onBack, onStart }: Props) {
         {/* --------- BLOC COMPO ÉQUIPES (si mode teams) --------- */}
         {matchMode === "teams" && totalPlayers >= 2 && (
           <TeamsSection
-            profiles={profiles}
+            profiles={allProfiles}
             selectedIds={selectedIds}
             teamAssignments={teamAssignments}
             setPlayerTeam={setPlayerTeam}
           />
+        )}
+
+        {/* --------- BLOC BOTS (en bas, carrousel) --------- */}
+        {botProfiles.length > 0 && (
+          <section
+            style={{
+              background: cardBg,
+              borderRadius: 18,
+              padding: "16px 12px 14px",
+              marginTop: 6,
+              marginBottom: 80, // laisse respirer avant le CTA
+              boxShadow: "0 16px 40px rgba(0,0,0,0.55)",
+              border: "1px solid rgba(255,255,255,0.05)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: 1,
+                fontWeight: 700,
+                color: primary,
+                marginBottom: 6,
+              }}
+            >
+              {t("x01v3.bots.title", "Bots IA")}
+            </div>
+            <p
+              style={{
+                fontSize: 11,
+                color: "#7c80a0",
+                marginBottom: 10,
+              }}
+            >
+              {t(
+                "x01v3.bots.subtitle",
+                "Sélectionne un ou plusieurs bots créés dans ton menu Profils. Ils joueront automatiquement selon leur niveau."
+              )}
+            </p>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 18,
+                overflowX: "auto",
+                paddingBottom: 10,
+              }}
+            >
+              {botProfiles.map((p) => {
+                const active = selectedIds.includes(p.id);
+                const haloColor = primary;
+                const botLevel = (p as any).botLevel as
+                  | "easy"
+                  | "medium"
+                  | "hard"
+                  | undefined;
+
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => togglePlayer(p.id)}
+                    style={{
+                      minWidth: 90,
+                      maxWidth: 90,
+                      background: "transparent",
+                      border: "none",
+                      padding: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 6,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 78,
+                        height: 78,
+                        borderRadius: "50%",
+                        overflow: "hidden",
+                        boxShadow: active
+                          ? `0 0 28px ${haloColor}aa`
+                          : "0 0 14px rgba(0,0,0,0.65)",
+                        background: active
+                          ? `radial-gradient(circle at 30% 20%, #fff8d0, ${haloColor})`
+                          : "#111320",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          borderRadius: "50%",
+                          overflow: "hidden",
+                          filter: active
+                            ? "none"
+                            : "grayscale(40%) brightness(0.8)",
+                          opacity: active ? 1 : 0.85,
+                          transition:
+                            "filter 0.2s ease, opacity 0.2s ease",
+                        }}
+                      >
+                        <ProfileAvatar profile={p} size={78} />
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        textAlign: "center",
+                        color: active ? "#f6f2e9" : "#b5b8cf",
+                        maxWidth: "100%",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {p.name}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 0,
+                        fontSize: 9,
+                        fontWeight: 700,
+                        textTransform: "uppercase",
+                        padding: "1px 6px",
+                        borderRadius: 999,
+                        background:
+                          "linear-gradient(90deg, #ff9a9e, #fad0c4)",
+                        color: "#151515",
+                      }}
+                    >
+                      BOT{" "}
+                      {botLevel
+                        ? botLevel === "easy"
+                          ? "Easy"
+                          : botLevel === "medium"
+                          ? "Medium"
+                          : "Hard"
+                        : ""}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
         )}
       </div>
 

@@ -1,31 +1,90 @@
 // ============================================
-// src/components/x01v3/X01LegOverlayV3.tsx
-// Overlay fin de manche / set pour X01 V3
-// - Style proche de la V2 (capture que tu aimes)
+// src/lib/x01v3/X01LegOverlayV3.tsx
+// Overlay fin de manche / set / match pour X01 V3
+// - Style proche de la V2 "beau" que tu aimes
 // - Affiche : manche / set, vainqueur, score Sets/Legs
+// - Gère bien les 3 états : leg_end / set_end / match_end
+//   • leg_end / set_end → bouton "Manche suivante" → onNextLeg()
+//   • match_end         → bouton "Terminer le match" → onExitMatch()
 // - Mini-stats vainqueur (Moy.3D / Darts / Best visit)
-//   → MASQUÉES si tout est à 0 pour éviter l’affichage pourri
+//   → masquées si aucune data
 // ============================================
 
 import React from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useLang } from "../../contexts/LangContext";
+import { getAvg3FromLiveStatsV3 } from "./x01StatsLiveV3";
+
+type X01OverlayStatus = "leg_end" | "set_end" | "match_end" | string;
 
 type Props = {
   open: boolean;
+  status: X01OverlayStatus;
   // on reste souple côté types pour éviter les erreurs TS
   config: any;
   state: any;
-  liveStatsByPlayer: any;
+  liveStatsByPlayer: Record<string, any>;
   onNextLeg: () => void;
+  onExitMatch: () => void;
 };
+
+/* -------------------------------------------------------
+   Helper : trouver le vainqueur à partir du state
+   - leg_end  → joueur avec le plus de legsWon
+   - set_end  → joueur avec le plus de setsWon
+   - match_end→ joueur avec le plus de setsWon
+------------------------------------------------------- */
+function getWinnerIdFromState(
+  config: any,
+  state: any,
+  status: X01OverlayStatus
+): string | null {
+  const players = config?.players ?? [];
+  const ids: string[] = players.map((p: any) => p.id).filter(Boolean);
+  if (!ids.length) return null;
+
+  const legsWon = state?.legsWon || {};
+  const setsWon = state?.setsWon || {};
+
+  // Teams non géré finement ici (tu joues surtout en 1v1 / multi)
+  if (config?.gameMode === "teams") {
+    return null;
+  }
+
+  if (status === "match_end" || status === "set_end") {
+    let bestId: string | null = null;
+    let best = -Infinity;
+    for (const pid of ids) {
+      const v = setsWon[pid] ?? 0;
+      if (v > best) {
+        best = v;
+        bestId = pid;
+      }
+    }
+    return bestId;
+  }
+
+  // leg_end ou fallback
+  let bestId: string | null = null;
+  let best = -Infinity;
+  for (const pid of ids) {
+    const v = legsWon[pid] ?? 0;
+    if (v > best) {
+      best = v;
+      bestId = pid;
+    }
+  }
+  return bestId;
+}
 
 export default function X01LegOverlayV3({
   open,
+  status,
   config,
   state,
   liveStatsByPlayer,
   onNextLeg,
+  onExitMatch,
 }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
@@ -42,17 +101,17 @@ export default function X01LegOverlayV3({
   const legsWon = state?.legsWon || {};
   const setsWon = state?.setsWon || {};
 
+  const isMatchEnd = status === "match_end";
+  const isSetEnd = status === "set_end";
+
   // --- Vainqueur ---
-  const winnerId =
-    state?.lastLegWinnerId ||
-    state?.lastWinnerId ||
-    state?.lastWinningPlayerId ||
-    null;
+  const winnerIdFromState = getWinnerIdFromState(config, state, status);
 
   const winner =
-    players.find((p: any) => p.id === winnerId) || players[0] || null;
+    players.find((p: any) => p.id === winnerIdFromState) ||
+    players[0] ||
+    null;
 
-  // Adversaire principal (2 joueurs : classique)
   const opponent =
     winner && players.length >= 2
       ? players.find((p: any) => p.id !== winner.id) || null
@@ -66,12 +125,24 @@ export default function X01LegOverlayV3({
   const opponentLegs =
     opponent && opponent.id ? legsWon[opponent.id] ?? 0 : 0;
 
-  const subtitle =
-    state?.status === "set_end"
-      ? t("x01.leg_overlay.set_won", "Set gagné")
-      : state?.status === "match_end"
-      ? t("x01.leg_overlay.match_won", "Match gagné")
-      : t("x01.leg_overlay.leg_won", "Manche gagnée");
+  // --- Texte principal ---
+  const subtitle = isMatchEnd
+    ? t("x01.leg_overlay.match_won", "Match gagné")
+    : isSetEnd
+    ? t("x01.leg_overlay.set_won", "Set gagné")
+    : t("x01.leg_overlay.leg_won", "Manche gagnée");
+
+  const primaryLabel = isMatchEnd
+    ? t("x01.leg_overlay.finish_match", "Terminer le match")
+    : t("x01.leg_overlay.next_leg", "Manche suivante");
+
+  const handlePrimaryClick = () => {
+    if (isMatchEnd) {
+      onExitMatch();
+    } else {
+      onNextLeg();
+    }
+  };
 
   // --- Mini-stats vainqueur ---
   let miniStatsNode: React.ReactNode = null;
@@ -81,12 +152,9 @@ export default function X01LegOverlayV3({
     const totalScore = s?.totalScore ?? 0;
     const bestVisit = s?.bestVisit ?? 0;
 
-    // On ne montre les mini-stats que si on a VRAIMENT des données
     if (darts > 0 || bestVisit > 0 || totalScore > 0) {
       const avg3 =
-        darts > 0 && totalScore != null
-          ? ((totalScore / darts) * 3).toFixed(1)
-          : "0.0";
+        darts > 0 ? getAvg3FromLiveStatsV3(s).toFixed(1) : "0.0";
 
       miniStatsNode = (
         <div
@@ -211,13 +279,11 @@ export default function X01LegOverlayV3({
               {t("x01.leg_overlay.score", "Score")}
             </div>
             <div style={{ fontSize: 12, color: "#fff" }}>
-              {t("x01.leg_overlay.sets_short", "Sets")}{" "}
-              {winnerSets}
+              {t("x01.leg_overlay.sets_short", "Sets")} {winnerSets}
               {opponent && " - " + opponentSets}
             </div>
             <div style={{ fontSize: 12, color: "#fff" }}>
-              {t("x01.leg_overlay.legs_short", "Legs")}{" "}
-              {winnerLegs}
+              {t("x01.leg_overlay.legs_short", "Legs")} {winnerLegs}
               {opponent && " - " + opponentLegs}
             </div>
           </div>
@@ -230,7 +296,7 @@ export default function X01LegOverlayV3({
         <div style={{ marginTop: 8 }}>
           <button
             type="button"
-            onClick={onNextLeg}
+            onClick={handlePrimaryClick}
             style={{
               width: "100%",
               padding: "11px 16px",
@@ -244,7 +310,7 @@ export default function X01LegOverlayV3({
               cursor: "pointer",
             }}
           >
-            {t("x01.leg_overlay.next_leg", "Manche suivante")}
+            {primaryLabel}
           </button>
         </div>
       </div>
