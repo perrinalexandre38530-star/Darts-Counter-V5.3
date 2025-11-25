@@ -154,6 +154,9 @@ const initialStore: Store = {
 // ===== Helpers BOTS pour l'éditeur d'avatar =====
 const LS_BOTS_KEY = "dc_bots_v1";
 
+// ✅ même clé que FriendsPage / StatsOnline
+const LS_ONLINE_MATCHES_KEY = "dc_online_matches_v1";
+
 type BotLS = {
   id: string;
   name: string;
@@ -444,11 +447,38 @@ function App() {
       return { ...s, history: list };
     });
 
-    // 4) persistant local
+    // 4) persistant local (historique détaillé)
     try {
       (History as any)?.upsert?.(saved);
     } catch (e) {
       console.warn("[App] History.upsert failed:", e);
+    }
+
+    // ✅ 4bis) miroir local pour StatsOnline (LS_ONLINE_MATCHES_KEY)
+    try {
+      if (typeof window !== "undefined") {
+        const raw = window.localStorage.getItem(LS_ONLINE_MATCHES_KEY);
+        const list = raw ? JSON.parse(raw) : [];
+
+        // On stocke une version light ; StatsOnline est tolérant si stats manquent
+        const entry = {
+          id: saved.id,
+          mode: saved.kind,
+          createdAt: saved.createdAt,
+          finishedAt: saved.updatedAt,
+          players: saved.players,
+          winnerId: saved.winnerId,
+          summary: saved.summary ?? null,
+          stats: (saved.payload as any)?.stats ?? null,
+        };
+
+        list.unshift(entry);
+        // on limite un peu la taille pour éviter l'infini
+        const trimmed = list.slice(0, 200);
+        window.localStorage.setItem(LS_ONLINE_MATCHES_KEY, JSON.stringify(trimmed));
+      }
+    } catch (e) {
+      console.warn("[App] miroir LS_ONLINE_MATCHES_KEY failed:", e);
     }
 
     // 5) upload online (best effort)
