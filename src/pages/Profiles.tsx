@@ -108,6 +108,14 @@ export default function Profiles({
       : "menu"
   );
 
+  // 🔗 Si on nous appelle avec view === "create_bot" depuis X01ConfigV3,
+  // on redirige vers la vraie page BOTS (profiles_bots)
+  React.useEffect(() => {
+    if (params?.view === "create_bot" && go) {
+      go("profiles_bots");
+    }
+  }, [params?.view, go]);
+
   const [statsMap, setStatsMap] = React.useState<
     Record<string, BasicProfileStats | undefined>
   >({});
@@ -1817,7 +1825,8 @@ function LocalProfiles({
                 <ProfileAvatar
                   size={AVA}
                   dataUrl={p.avatarDataUrl}
-                  label={p.name?.[0]?.toUpperCase() || "?"}
+                  label={p.name?.[0]?.toUpperCase() || "?"
+                  }
                   showStars={false}
                 />
               </div>

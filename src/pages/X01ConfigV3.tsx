@@ -1,6 +1,7 @@
 // =============================================================
 // src/pages/X01ConfigV3.tsx
 // Paramètres X01 V3 — style "Cricket params" + gestion d'équipes
+// + Sélection de BOTS IA créés dans Profils (go("create_bot"))
 // =============================================================
 
 import React from "react";
@@ -112,6 +113,7 @@ export default function X01ConfigV3({
     if (totalPlayers === 0) return false;
     if (matchMode === "solo") return totalPlayers === 2;
     if (matchMode === "multi") return totalPlayers >= 2;
+    // mode équipes : au moins 4 joueurs
     return totalPlayers >= 4;
   }, [totalPlayers, matchMode]);
 
@@ -724,7 +726,10 @@ export default function X01ConfigV3({
                 primarySoft={primarySoft}
               />
               <PillButton
-                label={t("x01v3.service.alternate", "Alterné (officiel)")}
+                label={t(
+                  "x01v3.service.alternate",
+                  "Alterné (officiel)"
+                )}
                 active={serveMode === "alternate"}
                 onClick={() => setServeMode("alternate")}
                 primary={primary}
@@ -935,11 +940,13 @@ export default function X01ConfigV3({
                         }}
                       >
                         {level
-                          ? `BOT ${level === "easy"
-                              ? "EASY"
-                              : level === "medium"
-                              ? "MEDIUM"
-                              : "HARD"}`
+                          ? `BOT ${
+                              level === "easy"
+                                ? "EASY"
+                                : level === "medium"
+                                ? "MEDIUM"
+                                : "HARD"
+                            }`
                           : "BOT"}
                       </div>
                     </button>

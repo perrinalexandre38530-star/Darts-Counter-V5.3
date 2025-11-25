@@ -89,7 +89,8 @@ function getRangeStart(range: TimeRange): number | null {
 function loadOnlineMatches(range: TimeRange) {
   try {
     const raw = window.localStorage.getItem(LS_ONLINE_MATCHES_KEY);
-    if (!raw) return { matches: [] as any[], sessions: [] as OnlineSession[] };
+    if (!raw)
+      return { matches: [] as any[], sessions: [] as OnlineSession[] };
 
     const all = JSON.parse(raw) || [];
     const fromTs = getRangeStart(range);
@@ -162,28 +163,27 @@ function aggregateOnline(matches: any[]): { agg: OnlineAgg; row: OnlineRow } {
   let bestVisit = 0;
   let bestCheckout = 0;
 
-  let hits = 0;
-  let miss = 0;
-  let s = 0;
-  let d = 0;
-  let t = 0;
-  let bull = 0;
-  let dbull = 0;
-  let bust = 0;
+  let hits = 0,
+    miss = 0,
+    s = 0,
+    d = 0,
+    t = 0,
+    bull = 0,
+    dbull = 0,
+    bust = 0;
 
-  let h60 = 0;
-  let h100 = 0;
-  let h140 = 0;
-  let h180 = 0;
+  let h60 = 0,
+    h100 = 0,
+    h140 = 0,
+    h180 = 0;
 
   for (const m of matches) {
     const darts = Number(m?.stats?.darts ?? m?.darts ?? 0);
     const score = Number(m?.stats?.totalScore ?? m?.totalScore ?? 0);
 
-    totalDarts += Number.isFinite(darts) ? darts : 0;
-    totalScore += Number.isFinite(score) ? score : 0;
+    totalDarts += darts;
+    totalScore += score;
 
-    // Breakdown si dispo
     const br = m?.stats?.breakdown ?? m?.breakdown ?? {};
     hits += Number(br.hits ?? 0);
     miss += Number(br.miss ?? 0);
@@ -250,9 +250,11 @@ function buildLeaderboard(matches: any[]): LeaderRow[] {
 
   for (const m of matches) {
     const players: any[] =
-      (Array.isArray(m?.players) && m.players) ||
-      (Array.isArray(m?.payload?.players) && m.payload.players) ||
-      [];
+      Array.isArray(m?.players)
+        ? m.players
+        : Array.isArray(m?.payload?.players)
+        ? m.payload.players
+        : [];
 
     const winnerId =
       m?.winnerId ??
@@ -262,35 +264,32 @@ function buildLeaderboard(matches: any[]): LeaderRow[] {
 
     const darts = Number(m?.stats?.darts ?? m?.darts ?? 0);
     const totalScore = Number(m?.stats?.totalScore ?? m?.totalScore ?? 0);
-    const matchAvg3 =
-      darts > 0 ? ((totalScore / darts) * 3) : 0;
+    const matchAvg3 = darts ? (totalScore / darts) * 3 : 0;
 
     for (const p of players) {
       const id = String(p?.id ?? "");
       if (!id) continue;
-      const name = p?.name || "Player";
 
-      const existing = map.get(id) ?? {
+      const entry = map.get(id) ?? {
         playerId: id,
-        name,
+        name: p?.name ?? "Player",
         matches: 0,
         wins: 0,
         avg3: 0,
         _sumAvg3: 0,
       };
 
-      existing.matches += 1;
-      existing._sumAvg3 += matchAvg3 || 0;
-      if (winnerId && winnerId === id) {
-        existing.wins += 1;
-      }
-      existing.name = name;
+      entry.matches++;
+      entry._sumAvg3 += matchAvg3;
+      if (winnerId === id) entry.wins++;
 
-      map.set(id, existing);
+      entry.name = p?.name ?? entry.name;
+
+      map.set(id, entry);
     }
   }
 
-  const arr: LeaderRow[] = Array.from(map.values()).map((r) => ({
+  const arr: LeaderRow[] = [...map.values()].map((r) => ({
     playerId: r.playerId,
     name: r.name,
     matches: r.matches,
@@ -298,7 +297,6 @@ function buildLeaderboard(matches: any[]): LeaderRow[] {
     avg3: r.matches ? r._sumAvg3 / r.matches : 0,
   }));
 
-  // tri : victoires DESC, puis Moy.3D DESC
   arr.sort((a, b) => {
     if (b.wins !== a.wins) return b.wins - a.wins;
     return b.avg3 - a.avg3;
