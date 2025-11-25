@@ -72,7 +72,9 @@ const miniRankScoreFini: React.CSSProperties = {
 
 type Props = {
   config: X01ConfigV3;
-  onExit?: () => void; // optionnel : callback Quitter
+  onExit?: () => void; // QUITTER -> Home (via App)
+  onShowSummary?: (matchId: string) => void; // RÉSUMÉ -> Historique détaillé
+  onReplayNewConfig?: () => void; // REJOUER -> changer paramètres (App)
 };
 
 type MiniRankingRow = {
@@ -199,7 +201,12 @@ function renderLastVisitChips(
 // Composant principal X01PlayV3
 // =============================================================
 
-export default function X01PlayV3({ config, onExit }: Props) {
+export default function X01PlayV3({
+  config,
+  onExit,
+  onShowSummary,
+  onReplayNewConfig,
+}: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
 
@@ -256,6 +263,9 @@ export default function X01PlayV3({ config, onExit }: Props) {
     Record<string, UIDart[]>
   >({});
 
+  // 🔒 garde-fou anti double-validation
+  const isValidatingRef = React.useRef(false);
+
   function pushDart(value: number) {
     setCurrentThrow((prev) => {
       if (prev.length >= 3) return prev;
@@ -284,10 +294,15 @@ export default function X01PlayV3({ config, onExit }: Props) {
   };
 
   const validateThrow = () => {
+    // 🛑 pas de volée vide
     if (!currentThrow.length) return;
+    // 🛑 si déjà en train de valider (double tap / double évènement)
+    if (isValidatingRef.current) return;
+    isValidatingRef.current = true;
+
     const toSend = [...currentThrow];
 
-    // 🔥 mémorise dernière volée pour pastilles
+    // 🔥 mémorise dernière volée pour pastilles (UI ONLY)
     const pid = activePlayerId;
     if (pid) {
       setLastVisitsByPlayer((m) => ({
@@ -307,6 +322,7 @@ export default function X01PlayV3({ config, onExit }: Props) {
 
     setCurrentThrow([]);
     setMultiplier(1);
+    isValidatingRef.current = false;
   };
 
   // =====================================================
@@ -419,7 +435,7 @@ export default function X01PlayV3({ config, onExit }: Props) {
   }, []);
 
   // =====================================================
-  // Quitter
+  // Quitter / Rejouer / Résumé / Continuer
   // =====================================================
 
   function handleQuit() {
@@ -427,6 +443,36 @@ export default function X01PlayV3({ config, onExit }: Props) {
     else if (typeof window !== "undefined") {
       window.history.back();
     }
+  }
+
+  // REJOUER même config : version simple => reload
+  function handleReplaySameConfig() {
+    if (typeof window !== "undefined") {
+      window.location.reload();
+    }
+  }
+
+  // REJOUER en changeant les paramètres
+  function handleReplayNewConfig() {
+    if (onReplayNewConfig) {
+      onReplayNewConfig();
+    } else {
+      // fallback : on quitte vers la vue parente
+      handleQuit();
+    }
+  }
+
+  // RÉSUMÉ : on remonte le matchId vers App (si dispo)
+  function handleShowSummary() {
+    if (onShowSummary && (state as any).matchId) {
+      onShowSummary((state as any).matchId as string);
+    }
+  }
+
+  // CONTINUER (3 joueurs et +) : on relance un nouveau leg
+  // pour continuer à jouer et affiner le classement.
+  function handleContinueMulti() {
+    startNextLeg();
   }
 
   // =====================================================
@@ -615,6 +661,11 @@ export default function X01PlayV3({ config, onExit }: Props) {
         liveStatsByPlayer={liveStatsByPlayer}
         onNextLeg={startNextLeg}
         onExitMatch={handleQuit}
+        // 🆕 callbacks pour les boutons
+        onReplaySameConfig={handleReplaySameConfig}
+        onReplayNewConfig={handleReplayNewConfig}
+        onShowSummary={handleShowSummary}
+        onContinueMulti={players.length >= 3 ? handleContinueMulti : undefined}
       />
     </div>
   );

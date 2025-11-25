@@ -1,9 +1,10 @@
-// ============================================
+// ============================================================
 // src/lib/onlineApi.ts
-// API Mode Online (auth / profil / matchs / salons)
-// - Implémentation directe Supabase (auth + tables)
-// - Garde la même surface d'API que la version mock
-// ============================================
+// API Mode Online
+// - Auth / Profil / Matchs → Supabase
+// - Lobbies temps réel X01 → Cloudflare Durable Objects (REST+WS)
+// - Surface d'API unique pour le front
+// ============================================================
 
 import { supabase } from "./supabase";
 import type {
@@ -13,7 +14,7 @@ import type {
 } from "./onlineTypes";
 
 // --------------------------------------------
-// Types publics de l'API (inchangés)
+// Types publics de l'API (auth / profils / matchs)
 // --------------------------------------------
 
 export type AuthSession = {
@@ -49,49 +50,55 @@ export type UploadMatchPayload = Omit<
   finishedAt?: number;
 };
 
-// ---------- Types Salons (Lobbies) ----------
+// --------------------------------------------
+// Types Lobbies (Cloudflare DO)
+// --------------------------------------------
 
-export type LobbyStatus = "waiting" | "playing" | "finished";
+// statut de salle en temps réel
+export type LobbyStatus = "waiting" | "running" | "ended";
 
+// joueur dans un lobby temps réel
 export type LobbyPlayer = {
-  userId: string;
-  nickname: string;
-  isHost: boolean;
+  id: string;              // id "online" (ou profil local si tu veux)
+  name: string;
+  avatar?: string | null;
   joinedAt: number;
-  lastSeen: number;
 };
 
+// Lobby temps réel (géré par Durable Object RoomDO)
 export type OnlineLobby = {
-  id: string;
-  code: string; // ex: "AB7F"
-  mode: string; // ex: "x01", "cricket"...
-  status: LobbyStatus;
-  createdByUserId: string;
-  createdAt: number;
-  updatedAt: number;
-  maxPlayers: number;
+  code: string;            // code court type "AB7F"
   players: LobbyPlayer[];
-  settings?: Record<string, any>;
+  hostId: string | null;
+  status: LobbyStatus;
+  engineState?: any;       // snapshot du moteur X01 (optionnel)
 };
 
+// payloads REST côté front
 export type CreateLobbyPayload = {
-  mode: string;
-  maxPlayers?: number;
-  settings?: Record<string, any>;
-  code?: string; // optionnel : si tu veux forcer un code précis
+  // pour l'instant on peut laisser vide (RoomDO gère tout),
+  // mais on garde le type si on veut ajouter des options plus tard
 };
 
 export type JoinLobbyPayload = {
   code: string;
-  userId: string;
-  nickname: string;
+  player: {
+    id: string;
+    name: string;
+    avatar?: string | null;
+  };
+};
+
+export type LeaveLobbyPayload = {
+  code: string;
+  playerId: string;
 };
 
 // --------------------------------------------
 // Config / helpers locaux
 // --------------------------------------------
 
-// On n'est plus en mode mock : tout passe par Supabase
+// On n'est plus en mode mock : tout passe par Supabase + Worker DO
 const USE_MOCK = false;
 
 // Clé localStorage pour garder la dernière session sérialisée
@@ -124,6 +131,10 @@ function saveAuthToLS(session: AuthSession | null) {
     window.localStorage.setItem(LS_AUTH_KEY, JSON.stringify(session));
   }
 }
+
+// ============================================================
+// 1) PARTIE SUPABASE (Auth / Profils / Matchs)
+// ============================================================
 
 // --------------------------------------------
 // Mapping Supabase -> types de l'app
@@ -178,34 +189,6 @@ function mapMatch(row: SupabaseMatchRow): OnlineMatch {
     isTraining: row.is_training ?? false,
     startedAt: row.started_at ? Date.parse(row.started_at) : now(),
     finishedAt: row.finished_at ? Date.parse(row.finished_at) : now(),
-  };
-}
-
-type SupabaseLobbyRow = {
-  id: string;
-  code: string;
-  mode: string;
-  status: string;
-  created_by_user_id: string;
-  created_at: string | null;
-  updated_at: string | null;
-  max_players: number | null;
-  players: LobbyPlayer[] | null;
-  settings: Record<string, any> | null;
-};
-
-function mapLobby(row: SupabaseLobbyRow): OnlineLobby {
-  return {
-    id: row.id,
-    code: row.code,
-    mode: row.mode,
-    status: (row.status as LobbyStatus) || "waiting",
-    createdByUserId: row.created_by_user_id,
-    createdAt: row.created_at ? Date.parse(row.created_at) : now(),
-    updatedAt: row.updated_at ? Date.parse(row.updated_at) : now(),
-    maxPlayers: row.max_players ?? 4,
-    players: row.players ?? [],
-    settings: row.settings ?? {},
   };
 }
 
@@ -295,7 +278,7 @@ async function signup(payload: SignupPayload): Promise<AuthSession> {
 
   const nickname = payload.nickname?.trim() || email;
 
-  const { data, error } = await supabase.auth.signUp({
+  const { error } = await supabase.auth.signUp({
     email,
     password,
     options: {
@@ -308,8 +291,6 @@ async function signup(payload: SignupPayload): Promise<AuthSession> {
     throw new Error(error.message);
   }
 
-  // data.user peut être nul si email de confirmation requis,
-  // mais on va de toute façon reconstruire la session via getSession()
   const session = await buildAuthSessionFromSupabase();
   if (!session) {
     throw new Error(
@@ -469,251 +450,139 @@ async function listMatches(limit = 50): Promise<OnlineMatch[]> {
   return (data as SupabaseMatchRow[]).map(mapMatch);
 }
 
+// ============================================================
+// 2) PARTIE CLOUDFLARE DURABLE OBJECTS (Lobbies temps réel)
+// ============================================================
+
+// ⚙️ BASE HTTP pour les appels REST → Worker
+//    -> configure VITE_ONLINE_BASE_URL dans ton .env
+const BASE_HTTP =
+  (typeof import.meta !== "undefined" &&
+    (import.meta as any).env?.VITE_ONLINE_BASE_URL) ||
+  "https://darts-online.example.workers.dev"; // ⬅️ à remplacer
+
+// ⚙️ BASE WS pour les WebSockets
+function makeWsBase(httpBase: string): string {
+  if (httpBase.startsWith("https://")) {
+    return "wss://" + httpBase.slice("https://".length);
+  }
+  if (httpBase.startsWith("http://")) {
+    return "ws://" + httpBase.slice("http://".length);
+  }
+  // fallback
+  return httpBase.replace(/^http/, "ws");
+}
+const BASE_WS = makeWsBase(BASE_HTTP);
+
+// Helpers JSON REST
+async function post(path: string, body: any) {
+  const res = await fetch(`${BASE_HTTP}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    console.error("[onlineApi] POST error", path, res.status, txt);
+    throw new Error(
+      `Erreur serveur (${res.status}) sur ${path}${txt ? `: ${txt}` : ""}`
+    );
+  }
+
+  const ct = res.headers.get("Content-Type") || "";
+  if (ct.includes("application/json")) {
+    return (await res.json()) as any;
+  }
+  return null;
+}
+
+async function get(path: string) {
+  const res = await fetch(`${BASE_HTTP}${path}`);
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    console.error("[onlineApi] GET error", path, res.status, txt);
+    throw new Error(
+      `Erreur serveur (${res.status}) sur ${path}${txt ? `: ${txt}` : ""}`
+    );
+  }
+  const ct = res.headers.get("Content-Type") || "";
+  if (ct.includes("application/json")) {
+    return (await res.json()) as any;
+  }
+  return null;
+}
+
 // --------------------------------------------
-// Fonctions publiques : SALONS (LOBBIES)
+// Fonctions publiques : LOBBIES temps réel
+// (impl Cloudflare DO)
 // --------------------------------------------
 
-function generateCode(length = 4): string {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // pas de 0/O/1/I
-  let res = "";
-  for (let i = 0; i < length; i++) {
-    res += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return res;
+// 1) CREATE LOBBY
+async function createLobbyRealtime(
+  _payload?: CreateLobbyPayload
+): Promise<{ code: string }> {
+  // Pour l'instant on ne passe rien, la RoomDO gère tout
+  return await post("/lobby/create", {});
 }
 
-async function createLobby(
-  payload: CreateLobbyPayload
-): Promise<OnlineLobby> {
-  const session = await restoreSession();
-  if (!session?.user) {
-    throw new Error("Non authentifié");
-  }
-
-  const user = session.user;
-  const nowIso = new Date().toISOString();
-
-  // Code salon optionnel
-  const code = (payload.code || generateCode()).toUpperCase();
-
-  const players: LobbyPlayer[] = [
-    {
-      userId: user.id,
-      nickname: user.nickname,
-      isHost: true,
-      joinedAt: now(),
-      lastSeen: now(),
-    },
-  ];
-
-  const { data, error } = await supabase
-    .from("lobbies_online")
-    .insert({
-      code,
-      mode: payload.mode,
-      status: "waiting",
-      created_by_user_id: user.id,
-      created_at: nowIso,
-      updated_at: nowIso,
-      max_players: payload.maxPlayers ?? 4,
-      players,
-      settings: payload.settings ?? {},
-    })
-    .select()
-    .single();
-
-  if (error) {
-    console.error("[onlineApi] createLobby error", error);
-    throw new Error(error.message);
-  }
-
-  return mapLobby(data as unknown as SupabaseLobbyRow);
+// 2) JOIN LOBBY
+async function joinLobbyRealtime(payload: JoinLobbyPayload): Promise<OnlineLobby> {
+  const { code, player } = payload;
+  return await post(`/lobby/${encodeURIComponent(code)}/join`, player);
 }
 
-async function listLobbies(): Promise<OnlineLobby[]> {
-  const { data, error } = await supabase
-    .from("lobbies_online")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("[onlineApi] listLobbies error", error);
-    throw new Error(error.message);
-  }
-
-  return (data as SupabaseLobbyRow[]).map(mapLobby);
+// 3) LEAVE LOBBY
+async function leaveLobbyRealtime(payload: LeaveLobbyPayload): Promise<void> {
+  const { code, playerId } = payload;
+  await post(`/lobby/${encodeURIComponent(code)}/leave`, { playerId });
 }
 
-async function joinLobby(
-  payload: JoinLobbyPayload
-): Promise<OnlineLobby> {
-  const session = await restoreSession();
-  if (!session?.user) {
-    throw new Error("Non authentifié");
-  }
-
-  const code = payload.code.trim().toUpperCase();
-  const nowTs = now();
-  const nowIso = new Date().toISOString();
-
-  // On récupère le lobby par code
-  const { data, error } = await supabase
-    .from("lobbies_online")
-    .select("*")
-    .eq("code", code)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    console.error("[onlineApi] joinLobby select error", error);
-    throw new Error(error.message);
-  }
-
-  if (!data) {
-    throw new Error("Salon introuvable (code incorrect).");
-  }
-
-  const row = data as SupabaseLobbyRow;
-  const lobby = mapLobby(row);
-
-  if (lobby.status !== "waiting") {
-    throw new Error("Ce salon n'est plus disponible.");
-  }
-
-  const players = [...(lobby.players || [])];
-  const existing = players.find((p) => p.userId === payload.userId);
-
-  if (existing) {
-    existing.nickname = payload.nickname;
-    existing.lastSeen = nowTs;
-  } else {
-    if (players.length >= lobby.maxPlayers) {
-      throw new Error("Ce salon est complet.");
-    }
-    players.push({
-      userId: payload.userId,
-      nickname: payload.nickname,
-      isHost: false,
-      joinedAt: nowTs,
-      lastSeen: nowTs,
-    });
-  }
-
-  const { data: updated, error: updateError } = await supabase
-    .from("lobbies_online")
-    .update({
-      players,
-      updated_at: nowIso,
-    })
-    .eq("id", lobby.id)
-    .select()
-    .single();
-
-  if (updateError) {
-    console.error("[onlineApi] joinLobby update error", updateError);
-    throw new Error(updateError.message);
-  }
-
-  return mapLobby(updated as unknown as SupabaseLobbyRow);
+// 4) START MATCH (l'host démarre la partie X01)
+async function startMatchRealtime(code: string): Promise<OnlineLobby> {
+  return await post(`/lobby/${encodeURIComponent(code)}/start`, {});
 }
 
-async function leaveLobby(
-  lobbyId: string,
-  userId: string
-): Promise<OnlineLobby | null> {
-  const { data, error } = await supabase
-    .from("lobbies_online")
-    .select("*")
-    .eq("id", lobbyId)
-    .maybeSingle();
-
-  if (error) {
-    console.error("[onlineApi] leaveLobby select error", error);
-    throw new Error(error.message);
-  }
-
-  if (!data) return null;
-
-  const row = data as SupabaseLobbyRow;
-  const lobby = mapLobby(row);
-
-  let players = [...(lobby.players || [])];
-  const beforeCount = players.length;
-
-  players = players.filter((p) => p.userId !== userId);
-
-  if (players.length === 0) {
-    // plus personne -> terminé
-    const { data: updated, error: updateError } = await supabase
-      .from("lobbies_online")
-      .update({
-        players: [],
-        status: "finished",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", lobbyId)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error("[onlineApi] leaveLobby update error", updateError);
-      throw new Error(updateError.message);
-    }
-
-    return mapLobby(updated as unknown as SupabaseLobbyRow);
-  }
-
-  // Si l'host est parti, on passe l'host au premier joueur restant
-  if (!players.some((p) => p.isHost)) {
-    players[0].isHost = true;
-  }
-
-  if (beforeCount !== players.length) {
-    const { data: updated, error: updateError } = await supabase
-      .from("lobbies_online")
-      .update({
-        players,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", lobbyId)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error("[onlineApi] leaveLobby update2 error", updateError);
-      throw new Error(updateError.message);
-    }
-
-    return mapLobby(updated as unknown as SupabaseLobbyRow);
-  }
-
-  return lobby;
+// 5) SEND COMMAND (throw / undo / next / snapshot, etc.)
+async function sendCommandRealtime(code: string, cmd: any): Promise<void> {
+  await post(`/lobby/${encodeURIComponent(code)}/command`, cmd);
 }
 
-async function updateLobbyState(
-  lobbyId: string,
-  patch: Partial<Pick<OnlineLobby, "status" | "settings">>
-): Promise<OnlineLobby> {
-  const update: any = {
-    updated_at: new Date().toISOString(),
+// 6) GET STATE (charge l'état initial du lobby)
+async function getLobbyStateRealtime(code: string): Promise<OnlineLobby> {
+  return await get(`/lobby/${encodeURIComponent(code)}/state`);
+}
+
+// 7) WebSocket temps réel
+function connectLobbyWS(
+  code: string,
+  onMessage: (msg: any) => void
+): WebSocket {
+  const url = `${BASE_WS}/lobby/${encodeURIComponent(code)}/ws`;
+  const ws = new WebSocket(url);
+
+  ws.onopen = () => {
+    console.log("[onlineApi] WS connected", code);
   };
 
-  if (patch.status) update.status = patch.status;
-  if (patch.settings) update.settings = patch.settings;
+  ws.onmessage = (evt) => {
+    try {
+      const msg = JSON.parse(evt.data);
+      onMessage(msg);
+    } catch (err) {
+      console.warn("[onlineApi] Bad WS message:", evt.data);
+    }
+  };
 
-  const { data, error } = await supabase
-    .from("lobbies_online")
-    .update(update)
-    .eq("id", lobbyId)
-    .select()
-    .single();
+  ws.onclose = () => {
+    console.log("[onlineApi] WS closed");
+  };
 
-  if (error) {
-    console.error("[onlineApi] updateLobbyState error", error);
-    throw new Error(error.message);
-  }
+  ws.onerror = (err) => {
+    console.warn("[onlineApi] WS error", err);
+  };
 
-  return mapLobby(data as unknown as SupabaseLobbyRow);
+  return ws;
 }
 
 // --------------------------------------------
@@ -726,17 +595,23 @@ export const onlineApi = {
   login,
   restoreSession,
   logout,
+
   // Profil
   updateProfile,
-  // Matchs
+
+  // Matchs (stats / historique online)
   uploadMatch,
   listMatches,
-  // Salons
-  createLobby,
-  listLobbies,
-  joinLobby,
-  leaveLobby,
-  updateLobbyState,
+
+  // Lobbies temps réel (Cloudflare DO)
+  createLobbyRealtime,
+  joinLobbyRealtime,
+  leaveLobbyRealtime,
+  startMatchRealtime,
+  sendCommandRealtime,
+  getLobbyStateRealtime,
+  connectLobbyWS,
+
   // Info
   USE_MOCK,
 };

@@ -1,6 +1,16 @@
+# =============================================
+# wrangler.toml — Worker ONLINE temps réel
+# - Durable Object "RoomDO" pour les salons
+# - KV pour cache avatars IA (optionnel)
+# - CORS ALLOW_ORIGINS à adapter
+# =============================================
+
 name = "darts-online"
 main = "src/online/server/worker.ts"
 compatibility_date = "2024-11-15"
+
+# ✅ Active le support WebSocket / DO
+compatibility_flags = ["nodejs_compat"]
 
 [durable_objects]
 bindings = [
@@ -11,10 +21,11 @@ bindings = [
 tag = "v1"
 new_classes = ["RoomDO"]
 
-# ➕ KV pour le cache des avatars IA
+# ➕ KV pour le cache des avatars IA (optionnel)
 [[kv_namespaces]]
 binding = "AVATAR_CACHE"
-id = "65729b90e2d44fbe90db28bda837cd63"  # ⬅️ à remplacer par l'ID réel du namespace KV
+id = "65729b90e2d44fbe90db28bda837cd63"  # ⬅️ remplace par ton vrai ID KV
 
 [vars]
+# ➜ IMPORTANT : ajoute ici ton/tes domaines Front (Pages, localhost, etc.)
 ALLOW_ORIGINS = "http://localhost:5173,https://ton-domaine.pages.dev"

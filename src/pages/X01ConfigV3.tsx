@@ -155,6 +155,11 @@ export default function X01ConfigV3({
     return totalPlayers >= 4;
   }, [totalPlayers, matchMode]);
 
+  // ---- désactivation visuelle des modes impossibles (Option A) ----
+  const soloDisabled = totalPlayers !== 2;
+  const multiDisabled = totalPlayers < 2;
+  const teamsDisabled = totalPlayers < 4;
+
   // ---- validation mode équipes ----
   function validateTeams() {
     const teamBuckets: Record<TeamId, string[]> = {
@@ -809,23 +814,35 @@ export default function X01ConfigV3({
               <PillButton
                 label={t("x01v3.mode.solo", "Solo (1v1)")}
                 active={matchMode === "solo"}
-                onClick={() => setMatchMode("solo")}
+                onClick={() => {
+                  if (soloDisabled) return;
+                  setMatchMode("solo");
+                }}
                 primary={primary}
                 primarySoft={primarySoft}
+                disabled={soloDisabled}
               />
               <PillButton
                 label={t("x01v3.mode.multi", "Multi (FFA)")}
                 active={matchMode === "multi"}
-                onClick={() => setMatchMode("multi")}
+                onClick={() => {
+                  if (multiDisabled) return;
+                  setMatchMode("multi");
+                }}
                 primary={primary}
                 primarySoft={primarySoft}
+                disabled={multiDisabled}
               />
               <PillButton
                 label={t("x01v3.mode.teams", "Équipes")}
                 active={matchMode === "teams"}
-                onClick={() => setMatchMode("teams")}
+                onClick={() => {
+                  if (teamsDisabled) return;
+                  setMatchMode("teams");
+                }}
                 primary={primary}
                 primarySoft={primarySoft}
+                disabled={teamsDisabled}
               />
             </div>
           </div>
@@ -997,9 +1014,7 @@ export default function X01ConfigV3({
                           color: primary,
                         }}
                       >
-                        {level
-                          ? `BOT ${level.toUpperCase()}`
-                          : "BOT"}
+                        {level ? `BOT ${level.toUpperCase()}` : "BOT"}
                       </div>
                     </button>
                   );
@@ -1236,6 +1251,7 @@ type PillProps = {
   primary: string;
   primarySoft: string;
   compact?: boolean;
+  disabled?: boolean;
 };
 
 function PillButton({
@@ -1245,23 +1261,46 @@ function PillButton({
   primary,
   primarySoft,
   compact,
+  disabled,
 }: PillProps) {
+  const isDisabled = !!disabled;
+
+  const bg = isDisabled
+    ? "rgba(40,42,60,0.7)"
+    : active
+    ? primarySoft
+    : "rgba(9,11,20,0.9)";
+
+  const border = isDisabled
+    ? "1px solid rgba(255,255,255,0.04)"
+    : active
+    ? `1px solid ${primary}`
+    : "1px solid rgba(255,255,255,0.07)";
+
+  const color = isDisabled
+    ? "#777b92"
+    : active
+    ? "#fdf9ee"
+    : "#d0d3ea";
+
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={isDisabled}
       style={{
         borderRadius: 999,
         padding: compact ? "4px 9px" : "6px 12px",
-        border: active
-          ? `1px solid ${primary}`
-          : "1px solid rgba(255,255,255,0.07)",
-        background: active ? primarySoft : "rgba(9,11,20,0.9)",
-        color: active ? "#fdf9ee" : "#d0d3ea",
+        border,
+        background: bg,
+        color,
         fontSize: 12,
-        fontWeight: active ? 600 : 500,
-        boxShadow: active ? "0 0 12px rgba(0,0,0,0.7)" : "none",
+        fontWeight: active && !isDisabled ? 600 : 500,
+        boxShadow:
+          active && !isDisabled ? "0 0 12px rgba(0,0,0,0.7)" : "none",
         whiteSpace: "nowrap",
+        opacity: isDisabled ? 0.7 : 1,
+        cursor: isDisabled ? "default" : "pointer",
       }}
     >
       {label}
