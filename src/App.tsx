@@ -824,6 +824,8 @@ function App() {
               setX01ConfigV3(cfg);
               go("x01_play_v3", { fresh: Date.now() });
             }}
+            // 🔗 IMPORTANT : on passe go pour "CRÉER BOT"
+            go={go}
           />
         );
         break;

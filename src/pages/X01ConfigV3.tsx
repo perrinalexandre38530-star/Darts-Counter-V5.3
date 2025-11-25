@@ -1,7 +1,7 @@
 // =============================================================
 // src/pages/X01ConfigV3.tsx
 // Paramètres X01 V3 — style "Cricket params" + gestion d'équipes
-// + Sélection de BOTS IA créés dans Profils (go("create_bot"))
+// + Sélection de BOTS IA créés dans Profils (LS "dc_bots_v1")
 // =============================================================
 
 import React from "react";
@@ -22,7 +22,7 @@ type Props = {
   profiles: Profile[];
   onBack: () => void;
   onStart: (cfg: X01ConfigV3) => void;
-  go?: (tab: any, params?: any) => void; // ✅ pour ouvrir "Créer BOT"
+  go?: (tab: any, params?: any) => void; // pour ouvrir "Créer BOT"
 };
 
 const START_SCORES: Array<301 | 501 | 701 | 901> = [301, 501, 701, 901];
@@ -43,6 +43,16 @@ const TEAM_COLORS: Record<TeamId, string> = {
   green: "#6dff7c",
 };
 
+// même clé que dans App / ProfilesBots
+const LS_BOTS_KEY = "dc_bots_v1";
+
+type BotLite = {
+  id: string;
+  name: string;
+  avatarDataUrl?: string | null;
+  botLevel?: string;
+};
+
 export default function X01ConfigV3({
   profiles,
   onBack,
@@ -54,7 +64,35 @@ export default function X01ConfigV3({
 
   const allProfiles: Profile[] = profiles ?? [];
   const humanProfiles = allProfiles.filter((p) => !(p as any).isBot);
-  const botProfiles = allProfiles.filter((p) => (p as any).isBot);
+
+  // ---- BOTS depuis localStorage (fallback si pas dans store.profiles) ----
+  const [botsFromLS, setBotsFromLS] = React.useState<BotLite[]>([]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(LS_BOTS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as any[];
+      const mapped: BotLite[] = parsed.map((b) => ({
+        id: b.id,
+        name: b.name || "BOT",
+        avatarDataUrl: b.avatarDataUrl ?? null,
+        botLevel: b.botLevel,
+      }));
+      setBotsFromLS(mapped);
+    } catch (e) {
+      console.warn("[X01ConfigV3] load BOTS LS failed:", e);
+    }
+  }, []);
+
+  const botProfiles: BotLite[] = React.useMemo(() => {
+    const fromStore = (allProfiles || []).filter(
+      (p) => (p as any).isBot
+    ) as unknown as BotLite[];
+    if (fromStore.length > 0) return fromStore;
+    return botsFromLS;
+  }, [allProfiles, botsFromLS]);
 
   // ---- état local des paramètres ----
   const [startScore, setStartScore] =
@@ -229,14 +267,32 @@ export default function X01ConfigV3({
       if (!teams) return;
     }
 
+    // résout les IDs : humains d'abord, puis bots LS
     const players = selectedIds
-      .map((id) => allProfiles.find((p) => p.id === id))
-      .filter(Boolean)
-      .map((p) => ({
-        id: p!.id,
-        name: p!.name,
-        avatarDataUrl: (p as any).avatarDataUrl ?? null,
-      }));
+      .map((id) => {
+        const human = allProfiles.find((p) => p.id === id);
+        if (human) {
+          return {
+            id: human.id,
+            name: human.name,
+            avatarDataUrl: (human as any).avatarDataUrl ?? null,
+            isBot: !!(human as any).isBot,
+            botLevel: (human as any).botLevel ?? undefined,
+          };
+        }
+        const bot = botProfiles.find((b) => b.id === id);
+        if (bot) {
+          return {
+            id: bot.id,
+            name: bot.name,
+            avatarDataUrl: bot.avatarDataUrl ?? null,
+            isBot: true,
+            botLevel: bot.botLevel ?? undefined,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean) as any[];
 
     const baseCfg: any = {
       id: `x01v3-${Date.now()}`,
@@ -826,7 +882,7 @@ export default function X01ConfigV3({
 
               <button
                 type="button"
-                onClick={() => go && go("create_bot")}
+                onClick={() => go && go("profiles_bots")}
                 style={{
                   padding: "8px 12px",
                   borderRadius: 999,
@@ -872,10 +928,12 @@ export default function X01ConfigV3({
               >
                 {botProfiles.map((bot) => {
                   const active = selectedIds.includes(bot.id);
-                  const level = (bot as any).botLevel as
+                  const level = bot.botLevel as
                     | "easy"
                     | "medium"
                     | "hard"
+                    | "pro"
+                    | "legend"
                     | undefined;
 
                   return (
@@ -913,7 +971,7 @@ export default function X01ConfigV3({
                           justifyContent: "center",
                         }}
                       >
-                        <ProfileAvatar profile={bot} size={78} />
+                        <ProfileAvatar profile={bot as any} size={78} />
                       </div>
 
                       <div
@@ -940,13 +998,7 @@ export default function X01ConfigV3({
                         }}
                       >
                         {level
-                          ? `BOT ${
-                              level === "easy"
-                                ? "EASY"
-                                : level === "medium"
-                                ? "MEDIUM"
-                                : "HARD"
-                            }`
+                          ? `BOT ${level.toUpperCase()}`
                           : "BOT"}
                       </div>
                     </button>
@@ -956,7 +1008,7 @@ export default function X01ConfigV3({
 
               <button
                 type="button"
-                onClick={() => go && go("create_bot")}
+                onClick={() => go && go("profiles_bots")}
                 style={{
                   padding: "6px 10px",
                   borderRadius: 999,
@@ -968,7 +1020,7 @@ export default function X01ConfigV3({
                   textTransform: "uppercase",
                 }}
               >
-                {t("x01v3.bots.manage", "Créer BOT")}
+                {t("x01v3.bots.manage", "Gérer les BOTS")}
               </button>
             </>
           )}
