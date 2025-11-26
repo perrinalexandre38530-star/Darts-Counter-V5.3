@@ -2,6 +2,7 @@
 // src/pages/X01ConfigV3.tsx
 // Paramètres X01 V3 — style "Cricket params" + gestion d'équipes
 // + Sélection de BOTS IA créés dans Profils (LS "dc_bots_v1")
+// + Médaillon BOT avec ring d’étoiles identique à Profils
 // =============================================================
 
 import React from "react";
@@ -10,6 +11,7 @@ import type { Profile } from "../lib/types";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import ProfileAvatar from "../components/ProfileAvatar";
+import ProfileStarRing from "../components/ProfileStarRing";
 
 type MatchModeV3 = "solo" | "multi" | "teams";
 type InModeV3 = "simple" | "double" | "master";
@@ -933,6 +935,7 @@ export default function X01ConfigV3({
                 )}
               </p>
 
+              {/* LISTE HORIZONTALE DES BOTS AVEC MÉDAILLON + RING D’ÉTOILES */}
               <div
                 style={{
                   display: "flex",
@@ -945,13 +948,27 @@ export default function X01ConfigV3({
               >
                 {botProfiles.map((bot) => {
                   const active = selectedIds.includes(bot.id);
-                  const level = bot.botLevel as
+
+                  const levelKey = (bot.botLevel ??
+                    "easy") as
                     | "easy"
                     | "medium"
                     | "hard"
                     | "pro"
-                    | "legend"
-                    | undefined;
+                    | "legend";
+
+                  const levelToStars: Record<
+                    "easy" | "medium" | "hard" | "pro" | "legend",
+                    number
+                  > = {
+                    easy: 1,
+                    medium: 2,
+                    hard: 3,
+                    pro: 4,
+                    legend: 5,
+                  };
+
+                  const stars = levelToStars[levelKey] ?? 1;
 
                   return (
                     <button
@@ -959,8 +976,8 @@ export default function X01ConfigV3({
                       type="button"
                       onClick={() => togglePlayer(bot.id)}
                       style={{
-                        minWidth: 90,
-                        maxWidth: 90,
+                        minWidth: 110,
+                        maxWidth: 110,
                         background: "transparent",
                         border: "none",
                         padding: 0,
@@ -971,25 +988,13 @@ export default function X01ConfigV3({
                         flexShrink: 0,
                       }}
                     >
-                      <div
-                        style={{
-                          width: 78,
-                          height: 78,
-                          borderRadius: "50%",
-                          overflow: "hidden",
-                          boxShadow: active
-                            ? `0 0 28px ${primary}aa`
-                            : "0 0 14px rgba(0,0,0,0.65)",
-                          background: active
-                            ? `radial-gradient(circle at 30% 20%, #fff8d0, ${primary})`
-                            : "#111320",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <ProfileAvatar profile={bot as any} size={78} />
-                      </div>
+                      {/* Médaillon BOT avec ring d’étoiles (copie style Profils) */}
+                      <BotMedallion
+                        bot={bot}
+                        level={stars}
+                        active={active}
+                        primary={primary}
+                      />
 
                       <div
                         style={{
@@ -1010,11 +1015,14 @@ export default function X01ConfigV3({
                         style={{
                           fontSize: 10,
                           fontWeight: 700,
-                          opacity: 0.7,
+                          opacity: 0.8,
                           color: primary,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
                         }}
                       >
-                        {level ? `BOT ${level.toUpperCase()}` : "BOT"}
+                        <span>{stars} ★</span>
                       </div>
                     </button>
                   );
@@ -1354,3 +1362,92 @@ function TeamPillButton({
     </button>
   );
 }
+
+/* ------------------ Médaillon BOT avec ring d’étoiles (version réduite) ------------------ */
+
+function BotMedallion({
+  bot,
+  level,
+  active,
+  primary,
+}: {
+  bot: BotLite;
+  level: number; // 1..5
+  active: boolean;
+  primary: string;
+}) {
+  // Échelle générale 80% pour ne pas être trop gros
+  const SCALE = 0.80;
+
+  // Tailles originales (comme Profils)
+  const AVATAR = 96 * SCALE;
+  const MEDALLION = 104 * SCALE;
+  const STAR = 20 * SCALE;
+  const WRAP = MEDALLION + STAR;
+
+  // Simulation d’un avg3d pour générer le nombre d’étoiles
+  const fakeAvg3d = 30 + (level - 1) * 15;
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: WRAP,
+        height: WRAP,
+        flex: "0 0 auto",
+        overflow: "visible",
+      }}
+    >
+      {/* ★ Ring d'étoiles (au-dessus de tout) */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          zIndex: 3,
+        }}
+      >
+        <ProfileStarRing
+          anchorSize={MEDALLION}
+          gapPx={-2 * SCALE}
+          starSize={STAR}
+          stepDeg={10}
+          avg3d={fakeAvg3d}
+        />
+      </div>
+
+      {/* Disque + avatar */}
+      <div
+        style={{
+          position: "absolute",
+          top: (WRAP - MEDALLION) / 2,
+          left: (WRAP - MEDALLION) / 2,
+          width: MEDALLION,
+          height: MEDALLION,
+          borderRadius: "50%",
+          padding: 6 * SCALE,
+          background: active
+            ? `linear-gradient(135deg, ${primary}, ${primary}55)`
+            : "linear-gradient(135deg, #323640, #181a22)",
+          boxShadow: active
+            ? `0 0 ${26 * SCALE}px ${primary}77, inset 0 0 ${12 * SCALE}px rgba(0,0,0,.55)`
+            : `0 0 ${18 * SCALE}px rgba(0,0,0,.65)`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          transition: "transform .15s ease, box-shadow .15s ease",
+          transform: active ? "scale(1.05)" : "scale(1)",
+        }}
+      >
+        <ProfileAvatar
+          size={AVATAR}
+          dataUrl={bot.avatarDataUrl ?? undefined}
+          label={bot.name?.[0]?.toUpperCase() || "B"}
+          showStars={false}
+        />
+      </div>
+    </div>
+  );
+}
+

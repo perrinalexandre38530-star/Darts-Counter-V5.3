@@ -1,6 +1,7 @@
 // =============================================================
 // src/pages/X01PlayV3.tsx
 // X01 V3 — moteur neuf + UI du "beau" X01Play
+// + Tour automatique des BOTS (isBot / botLevel)
 // =============================================================
 
 import React from "react";
@@ -26,7 +27,7 @@ const NAV_HEIGHT = 64;
 const CONTENT_MAX = 520;
 
 const miniCard: React.CSSProperties = {
-  width: "clamp(150px,22vw,190px)",
+  width: "clamp(150px, 22vw, 190px)",
   height: 86,
   padding: 6,
   borderRadius: 12,
@@ -197,6 +198,81 @@ function renderLastVisitChips(
   );
 }
 
+/* ---------------------------------------------------
+   Petit "cerveau" BOT local (placeholder)
+   - plus tard tu pourras le déplacer dans ../lib/botBrain.ts
+--------------------------------------------------- */
+
+type BotLevel = "easy" | "medium" | "hard" | "pro" | "legend" | undefined;
+
+function randomInt(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function computeBotVisit(level: BotLevel, currentScore: number): UIDart[] {
+  const darts: UIDart[] = [];
+  const lvl = level || "easy";
+
+  let hitProb: number;
+  let preferTriple: number; // 0..1
+
+  switch (lvl) {
+    case "legend":
+      hitProb = 0.92;
+      preferTriple = 0.9;
+      break;
+    case "pro":
+      hitProb = 0.82;
+      preferTriple = 0.8;
+      break;
+    case "hard":
+      hitProb = 0.7;
+      preferTriple = 0.7;
+      break;
+    case "medium":
+      hitProb = 0.55;
+      preferTriple = 0.5;
+      break;
+    case "easy":
+    default:
+      hitProb = 0.38;
+      preferTriple = 0.25;
+      break;
+  }
+
+  const baseSegs = [20, 19, 18, 17];
+
+  for (let i = 0; i < 3; i++) {
+    // Miss occasionnelle
+    if (Math.random() > hitProb) {
+      darts.push({ v: 0, mult: 1 });
+      continue;
+    }
+
+    // Petite tentative de finish si possible
+    if (currentScore <= 40 && currentScore % 2 === 0) {
+      const target = currentScore / 2;
+      darts.push({ v: target, mult: 2 });
+      currentScore = 0;
+      continue;
+    }
+
+    // Sinon scoring
+    const seg =
+      currentScore > 60
+        ? baseSegs[randomInt(0, baseSegs.length - 1)]
+        : baseSegs[randomInt(1, baseSegs.length - 1)];
+
+    const useTriple = Math.random() < preferTriple && currentScore > 60;
+    const mult: 1 | 2 | 3 = useTriple ? 3 : 1;
+
+    darts.push({ v: seg, mult });
+    currentScore = Math.max(currentScore - seg * mult, 0);
+  }
+
+  return darts;
+}
+
 // =============================================================
 // Composant principal X01PlayV3
 // =============================================================
@@ -235,7 +311,7 @@ export default function X01PlayV3({
       {};
     for (const p of players as any[]) {
       m[p.id] = {
-        avatarDataUrl: p.avatarDataUrl ?? p.avatarUrl ?? p.photoUrl ?? null,
+        avatarDataUrl: p.avatarDataUrl ?? (p as any).avatarUrl ?? (p as any).photoUrl ?? null,
         name: p.name,
       };
     }
@@ -247,14 +323,14 @@ export default function X01PlayV3({
 
   const currentVisit = state.visit;
 
-  // double-out ? on essaie de lire config, sinon false (garde pour futur visuel)
+  // double-out ? on essaie de lire config
   const doubleOut =
     (config as any).doubleOut === true ||
     (config as any).finishMode === "double" ||
     (config as any).outMode === "double";
 
   // =====================================================
-  // ÉTAT LOCAL KEYPAD (copie logique v1)
+  // ÉTAT LOCAL KEYPAD (logique v1)
   // =====================================================
 
   const [multiplier, setMultiplier] = React.useState<1 | 2 | 3>(1);
@@ -263,7 +339,7 @@ export default function X01PlayV3({
     Record<string, UIDart[]>
   >({});
 
-  // 🔒 garde-fou anti double-validation
+  // 🔒 garde-fou anti double-validation HUMAIN
   const isValidatingRef = React.useRef(false);
 
   function pushDart(value: number) {
@@ -327,8 +403,6 @@ export default function X01PlayV3({
 
   // =====================================================
   // STATS LIVE & MINI-RANKING
-  // — Moyenne recalculée à partir du score réel
-  //   avg3 = ((startScore - scoreActuel) / dartsThrown) * 3
   // =====================================================
 
   const avg3ByPlayer: Record<string, number> = React.useMemo(() => {
@@ -342,7 +416,7 @@ export default function X01PlayV3({
         continue;
       }
       const scoreNow = scores[pid] ?? config.startScore;
-      const scored = config.startScore - scoreNow; // points marqués sur le leg
+      const scored = config.startScore - scoreNow;
       if (scored <= 0) {
         map[pid] = 0;
         continue;
@@ -457,7 +531,6 @@ export default function X01PlayV3({
     if (onReplayNewConfig) {
       onReplayNewConfig();
     } else {
-      // fallback : on quitte vers la vue parente
       handleQuit();
     }
   }
@@ -469,11 +542,81 @@ export default function X01PlayV3({
     }
   }
 
-  // CONTINUER (3 joueurs et +) : on relance un nouveau leg
-  // pour continuer à jouer et affiner le classement.
+  // CONTINUER (3 joueurs et +)
   function handleContinueMulti() {
     startNextLeg();
   }
+
+  // =====================================================
+  // BOT : tour auto si joueur courant est un BOT
+  // =====================================================
+
+  const botTurnRef = React.useRef<string | null>(null);
+  const isBotTurn = !!(activePlayer && (activePlayer as any).isBot);
+
+  const currentSetIndex = (state as any).currentSet ?? 1;
+  const currentLegIndex = (state as any).currentLeg ?? 1;
+
+  React.useEffect(() => {
+    if (
+      !activePlayer ||
+      !(activePlayer as any).isBot ||
+      status === "leg_end" ||
+      status === "set_end" ||
+      status === "match_end"
+    ) {
+      // reset de la clé pour le prochain tour BOT
+      botTurnRef.current = null;
+      return;
+    }
+
+    const pid = activePlayer.id;
+    const scoreNow = scores[pid] ?? config.startScore;
+
+    const turnKey = `${pid}-${currentSetIndex}-${currentLegIndex}-${scoreNow}`;
+    if (botTurnRef.current === turnKey) return;
+    botTurnRef.current = turnKey;
+
+    const level = ((activePlayer as any).botLevel as BotLevel) ?? "easy";
+
+    const timeout = setTimeout(() => {
+      const visit = computeBotVisit(level, scoreNow);
+
+      // UI : mémorise la volée du BOT pour les pastilles
+      setLastVisitsByPlayer((m) => ({
+        ...m,
+        [pid]: visit,
+      }));
+
+      visit.forEach((d) => {
+        if (d.v <= 0) {
+          // MISS = pas de tir envoyé -> dart de valeur 0
+          const inputMiss: X01DartInputV3 = {
+            segment: 0 as any,
+            multiplier: 1,
+          };
+          throwDart(inputMiss);
+          return;
+        }
+        const input: X01DartInputV3 = {
+          segment: d.v === 25 ? 25 : d.v,
+          multiplier: d.mult as 1 | 2 | 3,
+        };
+        throwDart(input);
+      });
+    }, 650);
+
+    return () => clearTimeout(timeout);
+  }, [
+    activePlayer,
+    activePlayerId,
+    status,
+    scores,
+    config.startScore,
+    currentSetIndex,
+    currentLegIndex,
+    throwDart,
+  ]);
 
   // =====================================================
   // Rendu principal : UI du "beau" X01Play
@@ -633,19 +776,40 @@ export default function X01PlayV3({
           width: `min(100%, ${CONTENT_MAX}px)`,
         }}
       >
-        <Keypad
-          currentThrow={currentThrow}
-          multiplier={multiplier}
-          onSimple={() => setMultiplier(1)}
-          onDouble={() => setMultiplier(2)}
-          onTriple={() => setMultiplier(3)}
-          onBackspace={handleBackspace}
-          onCancel={handleCancel}
-          onNumber={handleNumber}
-          onBull={handleBull}
-          onValidate={validateThrow}
-          hidePreview
-        />
+        {isBotTurn ? (
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.08)",
+              background:
+                "linear-gradient(180deg, rgba(10,10,12,.9), rgba(6,6,8,.95))",
+              textAlign: "center",
+              fontSize: 13,
+              color: "#e3e6ff",
+              boxShadow: "0 10px 24px rgba(0,0,0,.5)",
+            }}
+          >
+            🤖{" "}
+            {activePlayer?.name ??
+              t("x01v3.bot.name", "BOT")}{" "}
+            {t("x01v3.bot.playing", "joue son tour...")}
+          </div>
+        ) : (
+          <Keypad
+            currentThrow={currentThrow}
+            multiplier={multiplier}
+            onSimple={() => setMultiplier(1)}
+            onDouble={() => setMultiplier(2)}
+            onTriple={() => setMultiplier(3)}
+            onBackspace={handleBackspace}
+            onCancel={handleCancel}
+            onNumber={handleNumber}
+            onBull={handleBull}
+            onValidate={validateThrow}
+            hidePreview
+          />
+        )}
       </div>
 
       {/* OVERLAY FIN DE MANCHE / SET / MATCH (V3) */}
@@ -1049,6 +1213,9 @@ function PlayersListOnly(props: {
         const legsWonThisSet = legsWon?.[p.id] ?? 0;
         const setsWonTotal = setsWon?.[p.id] ?? 0;
 
+        const isBot = !!(p as any).isBot;
+        const level = (p as any).botLevel as BotLevel;
+
         return (
           <div
             key={p.id}
@@ -1118,6 +1285,19 @@ function PlayersListOnly(props: {
                   }}
                 >
                   {p.name}
+                  {isBot && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        marginLeft: 4,
+                        color: "#9fa4ff",
+                        fontWeight: 700,
+                      }}
+                    >
+                      · BOT{" "}
+                      {(level || "easy").toUpperCase()}
+                    </span>
+                  )}
                 </div>
 
                 {/* Pastilles dernière volée */}
