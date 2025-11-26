@@ -554,20 +554,21 @@ export default function X01PlayV3({
     }
   }
 
-  // REJOUER même config : on délègue à l'app si possible, sinon reload
+  // REJOUER même config : on relance l'app avec le même écran
   function handleReplaySameConfig() {
-    // Si l'app a prévu un flux "nouvelle partie X01v3", on l'utilise
-    if (onReplayNewConfig) {
-      onReplayNewConfig();
-      return;
-    }
-    // Fallback : on recharge la page (comportement ancien)
+    // Idéalement : reset propre du moteur avec la même config.
+    // Ici, fallback simple mais efficace : reload complet.
     if (typeof window !== "undefined") {
       window.location.reload();
+      return;
+    }
+    // Si jamais on est dans un contexte sans window, on repasse par le flux App
+    if (onReplayNewConfig) {
+      onReplayNewConfig();
     }
   }
 
-  // REJOUER en changeant les paramètres (si tu veux une action distincte)
+  // REJOUER en changeant les paramètres (écran de config)
   function handleReplayNewConfig() {
     if (onReplayNewConfig) {
       onReplayNewConfig();
@@ -576,15 +577,14 @@ export default function X01PlayV3({
     }
   }
 
-  // RÉSUMÉ : on remonte toujours quelque chose
-  function handleShowSummary() {
-    if (onShowSummary) {
-      const id = (state as any).matchId ?? "";
-      onShowSummary(id);
-    }
+  // RÉSUMÉ : on remonte un matchId (param prioritaire, sinon state.matchId)
+  function handleShowSummary(matchId?: string) {
+    if (!onShowSummary) return;
+    const id = matchId || (state as any).matchId || "";
+    onShowSummary(id);
   }
 
-  // CONTINUER (3 joueurs et +)
+  // CONTINUER (3 joueurs et +) — on enchaîne sur la suite via le moteur
   function handleContinueMulti() {
     startNextLeg();
   }

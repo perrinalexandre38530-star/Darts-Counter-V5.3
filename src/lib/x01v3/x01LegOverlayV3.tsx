@@ -1,8 +1,8 @@
 // =============================================================
 // src/components/x01v3/X01LegOverlayV3.tsx
 // Overlay fin de manche / set / match pour X01 V3
-// - Style néon + trophée 🏆 (petit, à côté du texte)
-// - 1v1 : duel avec avatars au-dessus des noms, scoreboard central
+// - Style néon + trophée 🏆
+// - 1v1 : duel avec avatars alignés + scoreboard central
 // - 3+ joueurs : classement final simple
 // - Boutons : Manche suivante / Rejouer / Nouvelle partie / Résumé / Quitter
 // - Mini stats : vainqueur en doré / perdant en blanc
@@ -173,7 +173,7 @@ export default function X01LegOverlayV3({
     if (onReplayNewConfig) onReplayNewConfig();
   };
 
-  // 🔁 NOUVELLE VERSION : on appelle le callback même si matchId est vide
+  // on appelle le callback même si matchId est vide
   const showSummary = () => {
     if (onShowSummary) {
       onShowSummary(matchId ?? "");
@@ -227,25 +227,35 @@ export default function X01LegOverlayV3({
         />
 
         <div style={{ position: "relative", zIndex: 2 }}>
-          {/* Manche / Set chip */}
+          {/* Manche / Set chip — CENTRÉ AU-DESSUS DU SCOREBOARD */}
           <div
             style={{
-              display: "inline-flex",
-              alignItems: "center",
-              padding: "4px 10px",
-              borderRadius: 999,
-              border: `1px solid ${accent}`,
-              background:
-                "linear-gradient(135deg,rgba(0,0,0,0.9),rgba(0,0,0,0.4))",
-              color: accent,
-              fontSize: 11,
-              fontWeight: 700,
-              textTransform: "uppercase",
+              display: "flex",
+              justifyContent: "center",
               marginBottom: 10,
-              boxShadow: "0 0 16px rgba(0,0,0,0.7)",
             }}
           >
-            {topChipLabel}
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "4px 10px",
+                borderRadius: 999,
+                border: `1px solid ${accent}`,
+                background:
+                  "linear-gradient(135deg,rgba(0,0,0,0.9),rgba(0,0,0,0.4))",
+                color: accent,
+                fontSize: 11,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                boxShadow: "0 0 16px rgba(0,0,0,0.7)",
+                textAlign: "center",
+                minWidth: 190,
+                justifyContent: "center",
+              }}
+            >
+              {topChipLabel}
+            </div>
           </div>
 
           {/* 1v1 : duel layout / 3+ : classement */}
@@ -302,10 +312,7 @@ export default function X01LegOverlayV3({
           {status !== "match_end" ? (
             <div style={{ marginTop: 18, display: "flex", gap: 10 }}>
               <button style={btnGold} onClick={nextLeg}>
-                {t(
-                  "x01.leg_overlay.next_leg",
-                  "MANCHE SUIVANTE"
-                )}
+                {t("x01.leg_overlay.next_leg", "MANCHE SUIVANTE")}
               </button>
 
               <button style={btnGhost} onClick={quitMatch}>
@@ -336,28 +343,19 @@ export default function X01LegOverlayV3({
               >
                 {onReplayNewConfig && (
                   <button style={btnGhostWide} onClick={replayNew}>
-                    {t(
-                      "x01.leg_overlay.new_match",
-                      "Nouvelle partie"
-                    )}
+                    {t("x01.leg_overlay.new_match", "Nouvelle partie")}
                   </button>
                 )}
 
                 {onShowSummary && (
                   <button style={btnGhostWide} onClick={showSummary}>
-                    {t(
-                      "x01.leg_overlay.summary",
-                      "Résumé"
-                    )}
+                    {t("x01.leg_overlay.summary", "Résumé")}
                   </button>
                 )}
 
                 {showContinueMulti && (
                   <button style={btnGhostWide} onClick={continueMulti}>
-                    {t(
-                      "x01.leg_overlay.continue",
-                      "Continuer"
-                    )}
+                    {t("x01.leg_overlay.continue", "Continuer")}
                   </button>
                 )}
 
@@ -374,7 +372,7 @@ export default function X01LegOverlayV3({
 }
 
 // ------------------------------------------------------------
-// Layout duel 1v1
+// Layout duel 1v1 — avatars alignés, même taille, scoreboard central
 // ------------------------------------------------------------
 function DuelLayout({
   winner,
@@ -396,12 +394,13 @@ function DuelLayout({
   accent: string;
 }) {
   const loserLabel = "Défaite";
+  const AVATAR_SIZE = 72;
 
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "1.1fr 1.1fr 1.1fr",
+        gridTemplateColumns: "1.1fr 1fr 1.1fr",
         gap: 10,
         alignItems: "center",
       }}
@@ -413,21 +412,28 @@ function DuelLayout({
           flexDirection: "column",
           alignItems: "center",
           textAlign: "center",
+          minWidth: 0,
+          gap: 4,
         }}
       >
-        {/* avatar au-dessus du nom */}
+        {/* avatar au-dessus du nom – taille fixe */}
         <AvatarMedallion
           avatar={
             winner?.avatarDataUrl || winner?.avatarUrl || winner?.photoUrl
           }
+          size={AVATAR_SIZE}
         />
 
         <div
           style={{
-            marginTop: 6,
+            marginTop: 4,
             fontWeight: 800,
-            fontSize: 16,
+            fontSize: 15,
             color: accent,
+            maxWidth: 110,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
           }}
         >
           {winner?.name ?? "—"}
@@ -447,8 +453,8 @@ function DuelLayout({
           <img
             src={trophyCup}
             style={{
-              width: 32,
-              height: 32,
+              width: 28,
+              height: 28,
               objectFit: "contain",
               filter: "drop-shadow(0 0 8px rgba(255,215,120,0.7))",
             }}
@@ -467,8 +473,12 @@ function DuelLayout({
           border: "1px solid rgba(255,255,255,0.16)",
           textAlign: "center",
           color: "#fff",
-          minWidth: 120,
+          minWidth: 96,
           boxShadow: "0 0 14px rgba(0,0,0,0.8)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
         <div
@@ -528,6 +538,8 @@ function DuelLayout({
           flexDirection: "column",
           alignItems: "center",
           textAlign: "center",
+          minWidth: 0,
+          gap: 4,
         }}
       >
         <AvatarMedallion
@@ -536,14 +548,19 @@ function DuelLayout({
             opponent?.avatarUrl ||
             opponent?.photoUrl
           }
+          size={AVATAR_SIZE}
         />
 
         <div
           style={{
-            marginTop: 6,
+            marginTop: 4,
             fontWeight: 800,
-            fontSize: 16,
-            color: accent,
+            fontSize: 15,
+            color: "#ffffff",
+            maxWidth: 110,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
           }}
         >
           {opponent?.name ?? "—"}
@@ -688,9 +705,9 @@ function AvatarMedallion({
         height: size,
         borderRadius: "50%",
         overflow: "hidden",
-        background: "transparent", // plus de gradient
-        border: "none", // plus de bord
-        boxShadow: "none", // plus de halo
+        background: "transparent",
+        border: "none",
+        boxShadow: "none",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",

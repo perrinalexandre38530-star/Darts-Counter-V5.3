@@ -2,7 +2,7 @@
 // src/hooks/useX01OnlineV3.ts
 // Couche ONLINE autour du moteur X01 V3
 // - Multi-joueurs ONLINE (jusqu'à 10 joueurs)
-// - Ordre ALEATOIRE imposé par l'hôte
+// - Ordre ALEATOIRE imposé par l'hôte (géré dans la config)
 // - Support complet Sets / Legs (moteur X01 V3)
 // - Commands réseau ("throw", "undo", "next") + snapshots
 // - Gestion HOST / GUEST
@@ -15,7 +15,6 @@ import { useX01EngineV3 } from "./useX01EngineV3";
 import type {
   X01ConfigV3,
   X01MatchStateV3,
-  X01CommandV3,
   X01PlayerId,
 } from "../types/x01v3";
 
@@ -36,11 +35,11 @@ import type {
 // =============================================================
 
 export interface UseX01OnlineV3Args {
-  role: X01OnlineRoleV3;                 // "host" ou "guest"
-  meta: X01OnlineMatchMetaV3;            // lobbyId, matchId...
+  role: X01OnlineRoleV3; // "host" ou "guest"
+  meta: X01OnlineMatchMetaV3; // lobbyId, matchId...
   config: X01ConfigV3;
 
-  // callbacks réseau (implémentés plus tard dans FriendsPage / onlineApi)
+  // callbacks réseau (implémentés plus tard via WebSocket client)
   onSendCommand?: (payload: X01OnlineCommandEnvelope) => void;
   onSendSnapshot?: (payload: { seq: number; state: X01MatchStateV3 }) => void;
 }
@@ -51,7 +50,7 @@ export interface UseX01OnlineV3Value {
   meta: X01OnlineMatchMetaV3;
   seq: number;
 
-  // Local player (index dans config)
+  // Local player (index dans config pour l’instant)
   getLocalPlayerId: () => X01PlayerId | null;
 
   // --- COMMANDES LOCALES ---
@@ -82,9 +81,10 @@ export function useX01OnlineV3({
   onSendCommand,
   onSendSnapshot,
 }: UseX01OnlineV3Args): UseX01OnlineV3Value {
-  
   // Identifiant séquentiel unique pour chaque commande
   const [seq, setSeq] = React.useState(0);
+  const seqRef = React.useRef(0);
+  seqRef.current = seq;
 
   // ====================
   // MOTEUR LOCAL
@@ -93,7 +93,8 @@ export function useX01OnlineV3({
     config,
   });
 
-  // Joueur local = premier joueur de la config
+  // Joueur local = premier joueur de la config (pour l’instant)
+  // Plus tard : on fera le mapping avec l’ID online (userId / profileId)
   const getLocalPlayerId = React.useCallback((): X01PlayerId | null => {
     return config.players[0]?.id ?? null;
   }, [config.players]);
@@ -102,17 +103,20 @@ export function useX01OnlineV3({
   // FONCTIONS LOCALES (THROW, UNDO, NEXT PLAYER)
   // ==================================================
 
-  function localApplyThrow(dart: X01DartInputV3) {
-    engine.throwDart(dart);
-  }
+  const localApplyThrow = React.useCallback(
+    (dart: X01DartInputV3) => {
+      engine.throwDart(dart);
+    },
+    [engine]
+  );
 
-  function localApplyUndo() {
+  const localApplyUndo = React.useCallback(() => {
     engine.undoLast();
-  }
+  }, [engine]);
 
-  function localApplyForceNext() {
+  const localApplyForceNext = React.useCallback(() => {
     engine.forceNextPlayer();
-  }
+  }, [engine]);
 
   // ==================================================
   // EMETTRE une commande LOCALE → réseau
@@ -125,10 +129,10 @@ export function useX01OnlineV3({
       setSeq((prev) => {
         const nextSeq = prev + 1;
 
-        // 1) appliquer en local
+        // 1) Appliquer en local
         engine.throwDart(input);
 
-        // 2) envoyer au réseau
+        // 2) Envoyer au réseau
         if (onSendCommand) {
           const env: X01OnlineCommandEnvelope = {
             seq: nextSeq,
@@ -169,7 +173,7 @@ export function useX01OnlineV3({
 
       return nextSeq;
     });
-  }, [role, onSendCommand]);
+  }, [role, onSendCommand, localApplyUndo]);
 
   const sendForceNextPlayer = React.useCallback(() => {
     setSeq((prev) => {
@@ -189,7 +193,7 @@ export function useX01OnlineV3({
 
       return nextSeq;
     });
-  }, [role, onSendCommand]);
+  }, [role, onSendCommand, localApplyForceNext]);
 
   // ==================================================
   // COMMANDES RÉSEAU → appliquer localement
@@ -198,6 +202,11 @@ export function useX01OnlineV3({
   const applyRemoteCommand = React.useCallback(
     (env: X01OnlineCommandEnvelope) => {
       if (!env) return;
+
+      // Sécurité basique : on ignore les commandes trop anciennes
+      if (env.seq && env.seq <= seqRef.current) {
+        return;
+      }
 
       if (env.type === "throw") {
         const d = env.payload.dart;
@@ -215,8 +224,13 @@ export function useX01OnlineV3({
       if (env.type === "next_player") {
         localApplyForceNext();
       }
+
+      // On se met à jour sur la séquence
+      if (typeof env.seq === "number") {
+        setSeq(env.seq);
+      }
     },
-    []
+    [localApplyThrow, localApplyUndo, localApplyForceNext]
   );
 
   // ==================================================
@@ -234,15 +248,21 @@ export function useX01OnlineV3({
       });
       return nextSeq;
     });
-  }, [engine.state, onSendSnapshot]);
+  }, [engine, onSendSnapshot]);
 
   const applyRemoteSnapshot = React.useCallback(
     (remoteSeq: number, state: X01MatchStateV3) => {
+      // Anti "rewind": on ignore les snapshots plus vieux
+      if (remoteSeq <= seqRef.current) return;
+
       console.warn(
-        "[useX01OnlineV3] applyRemoteSnapshot — TODO: synchronisation moteur"
+        "[useX01OnlineV3] applyRemoteSnapshot — TODO: synchronisation moteur depuis l'état remote",
+        { remoteSeq, state }
       );
-      // plus tard :
-      // engine.syncFromRemote(state)
+
+      // Plus tard :
+      // engine.syncFromRemote(state);
+      setSeq(remoteSeq);
     },
     []
   );
@@ -254,25 +274,26 @@ export function useX01OnlineV3({
   const sendLifecycle = React.useCallback(
     (cmd: X01OnlineLifecycleCommand) => {
       if (onSendCommand) {
+        const nextSeq = seqRef.current + 1;
         onSendCommand({
-          seq: seq + 1,
+          seq: nextSeq,
           type: "lifecycle",
           origin: role,
           payload: cmd,
         });
+        setSeq(nextSeq);
       }
-      setSeq((s) => s + 1);
     },
-    [onSendCommand, seq, role]
+    [onSendCommand, role]
   );
 
   const applyLifecycle = React.useCallback(
     (cmd: X01OnlineLifecycleCommand) => {
-      console.log("[Lifecycle] Remote:", cmd);
+      console.log("[useX01OnlineV3] Lifecycle remote:", cmd);
       // On préparera ici :
       // - mise à jour salle d'attente
-      // - ready flags
-      // - démarrage partie synchronisé
+      // - flags "ready"
+      // - démarrage partie synchronisé (host → guests)
     },
     []
   );

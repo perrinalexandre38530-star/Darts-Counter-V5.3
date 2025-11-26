@@ -58,8 +58,13 @@ type StatsHubMainTab = "history" | "stats" | "training";
 
 type Props = {
   go?: (tab: string, params?: any) => void;
-  tab?: StatsHubMainTab;        // "stats" = stats joueurs, "history" = historique, "training" = training
+  tab?: StatsHubMainTab;
+
   memHistory?: SavedMatch[];
+
+  // 🔥 Ajouts pour navigation depuis HistoryPage/X01PlayV3
+  initialPlayerId?: string | null;
+  initialStatsSubTab?: "dashboard" | "x01_multi";
 };
 
 /* ---------- Helpers génériques ---------- */
@@ -3660,6 +3665,12 @@ export default function StatsHub(props: Props) {
   // Onglet principal piloté par le menu Stats
   const mainTab: StatsHubMainTab = props.tab ?? "stats";
 
+  // ====================================================
+  // 🔥 paramètres initiaux (navigation depuis History)
+  // ====================================================
+  const initialPlayerIdFromProps = props.initialPlayerId ?? null;
+  const initialStatsSubTabFromProps = props.initialStatsSubTab ?? null;
+
   // 0) Récupère les profils (pour enrichir avatars si manquants)
   const [storeProfiles, setStoreProfiles] = React.useState<PlayerLite[]>([]);
   React.useEffect(() => {
@@ -3759,12 +3770,20 @@ export default function StatsHub(props: Props) {
 
   // 4) Sélection du joueur + quick stats
   const [selectedPlayerId, setSelectedPlayerId] = React.useState<string | null>(
-    players[0]?.id ?? null
+    initialPlayerIdFromProps ?? players[0]?.id ?? null
   );
+
+  React.useEffect(() => {
+    if (initialPlayerIdFromProps) {
+      setSelectedPlayerId(initialPlayerIdFromProps);
+    }
+  }, [initialPlayerIdFromProps]);
+
   React.useEffect(() => {
     if (!selectedPlayerId && players[0]?.id)
       setSelectedPlayerId(players[0].id);
   }, [players, selectedPlayerId]);
+
   const selectedPlayer =
     players.find((p) => p.id === selectedPlayerId) || players[0];
 
@@ -3774,7 +3793,15 @@ export default function StatsHub(props: Props) {
   // - "dashboard" = vue générale StatsPlayerDashboard
   // - "x01_multi" = stats X01Play (multijoueurs)
   const [statsSubTab, setStatsSubTab] =
-    React.useState<"dashboard" | "x01_multi">("dashboard");
+    React.useState<"dashboard" | "x01_multi">(
+      initialStatsSubTabFromProps ?? "dashboard"
+    );
+
+  React.useEffect(() => {
+    if (initialStatsSubTabFromProps) {
+      setStatsSubTab(initialStatsSubTabFromProps);
+    }
+  }, [initialStatsSubTabFromProps]);
 
   // Bloc dépliant (sélecteur joueurs)
   const [openPlayers, setOpenPlayers] = React.useState(true);

@@ -1,44 +1,110 @@
-// ============================================
+// =============================================================
 // src/pages/X01OnlineSetup.tsx
-// Setup d'une partie X01 ONLINE (mock)
-// - Tu règles : 301 / 501 / 701 / 1001 + Double Out
-// - Joueur = profil actif uniquement
-// - Optionnel : affiche le code de salon (mock)
-// ============================================
+// Pré-salle X01 Online (FULLWEB)
+// - Reçoit un lobbyCode depuis FriendsPage
+// - Se connecte au Worker Cloudflare via useOnlineRoom
+// - Affiche le code, l'état de connexion et la liste des joueurs
+// - Boutons pour : ping, join, démarrer une manche X01 501,
+//   envoyer une visite de test, undo, etc.
+// - Prochaine étape : remplacer la partie "debug" par un vrai
+//   écran de jeu X01OnlinePlay avec Keypad, scores, etc.
+// =============================================================
 
 import React from "react";
-import type { Profile } from "../lib/types";
-
-type StartValue = 301 | 501 | 701 | 1001;
+import type { Store } from "../lib/types";
+import { useOnlineRoom } from "../online/client/useOnlineRoom";
 
 type Props = {
-  profile: Profile | null;
-  defaults: {
-    start: StartValue;
-    doubleOut: boolean;
+  store: Store;
+  go: (tab: any, params?: any) => void;
+  params?: {
+    lobbyCode?: string | null;
   };
-  lobbyCode?: string | null;
-  onBack: () => void;
-  onStart: (params: { start: StartValue; doubleOut: boolean }) => void;
 };
 
-const START_CHOICES: StartValue[] = [301, 501, 701, 1001];
+export default function X01OnlineSetup({ store, go, params }: Props) {
+  // --- Profil local actif (id + nom + avatar)
+  const activeProfile =
+    (store.profiles || []).find((p) => p.id === store.activeProfileId) ||
+    (store.profiles || [])[0] ||
+    null;
 
-export default function X01OnlineSetup({
-  profile,
-  defaults,
-  lobbyCode,
-  onBack,
-  onStart,
-}: Props) {
-  const [start, setStart] = React.useState<StartValue>(defaults.start);
-  const [doubleOut, setDoubleOut] = React.useState<boolean>(defaults.doubleOut);
+  const lobbyCode = (params?.lobbyCode || "").toString().trim().toUpperCase();
 
-  const displayName = profile?.name || "Profil local";
+  // Si pas de code => on affiche juste un message
+  const effectiveCode = lobbyCode || "----";
 
-  function handleStart() {
-    onStart({ start, doubleOut });
+  // Hook WebSocket temps réel
+  const {
+    roomState,
+    wsStatus,
+    lastError,
+    reconnect,
+    close,
+    sendPing,
+    joinRoom,
+    leaveRoom,
+    startX01Match,
+    sendVisit,
+    undoLast,
+  } = useOnlineRoom({
+    roomCode: lobbyCode || "default",
+    playerId: (activeProfile?.id as any) || "local",
+    playerName: activeProfile?.name || "Joueur",
+    autoJoin: true,
+  });
+
+  // --------------------------------------------
+  // Helpers d'affichage
+  // --------------------------------------------
+
+  const statusLabel =
+    wsStatus === "idle"
+      ? "En attente"
+      : wsStatus === "connecting"
+      ? "Connexion en cours…"
+      : wsStatus === "connected"
+      ? "Connecté"
+      : "Déconnecté";
+
+  const statusColor =
+    wsStatus === "connected"
+      ? "#7fe2a9"
+      : wsStatus === "connecting"
+      ? "#ffd56a"
+      : "#ff8a8a";
+
+  const clients = roomState?.clients || [];
+  const match: any = roomState?.match || null;
+
+  // Exemple d'ordre par défaut pour démarrer une manche
+  const defaultOrder =
+    clients.length > 0
+      ? clients.map((c) => ({ id: c.id, name: c.name }))
+      : activeProfile
+      ? [{ id: activeProfile.id as any, name: activeProfile.name }]
+      : [];
+
+  function handleStartMatch501() {
+    if (!defaultOrder.length) return;
+    startX01Match({
+      startScore: 501,
+      order: defaultOrder,
+    });
   }
+
+  function handleSendDemoVisit() {
+    // Simple démo : visite T20, 20, miss
+    sendVisit([
+      { value: 20, mult: 3 },
+      { value: 20, mult: 1 },
+      { value: 0, mult: 1 },
+    ]);
+  }
+
+  // --------------------------------------------
+  // RENDER
+  // --------------------------------------------
 
   return (
     <div
@@ -49,23 +115,6 @@ export default function X01OnlineSetup({
         color: "#f5f5f7",
       }}
     >
-      {/* Header simple */}
-      <button
-        type="button"
-        onClick={onBack}
-        style={{
-          marginBottom: 12,
-          padding: "4px 10px",
-          borderRadius: 999,
-          border: "1px solid rgba(255,255,255,.25)",
-          background: "rgba(0,0,0,.65)",
-          color: "#f5f5f7",
-          fontSize: 12,
-        }}
-      >
-        ← Retour
-      </button>
-
       <h2
         style={{
           fontSize: 20,
@@ -73,7 +122,7 @@ export default function X01OnlineSetup({
           marginBottom: 4,
         }}
       >
-        X01 Online (mock)
+        X01 Online — Salle d’attente
       </h2>
 
       <p
@@ -83,20 +132,132 @@ export default function X01OnlineSetup({
           marginBottom: 12,
         }}
       >
-        Paramètre ta partie X01 Online locale avant de la lancer. Plus tard, cet
-        écran sera relié à un vrai serveur.
+        Code de salon partagé entre les joueurs. Dès que tout le monde est
+        connecté à la même room, tu peux lancer la manche X01.
       </p>
 
-      {/* Info salon (optionnel) */}
-      {lobbyCode && (
+      {/* Code du salon */}
+      <div
+        style={{
+          marginBottom: 14,
+          padding: "10px 12px",
+          borderRadius: 12,
+          background: "#111",
+          border: "1px solid rgba(255,255,255,.16)",
+          fontFamily: "monospace",
+          letterSpacing: 3,
+          fontSize: 18,
+          fontWeight: 800,
+          textAlign: "center",
+          color: lobbyCode ? "#ffd56a" : "#888",
+          boxShadow: lobbyCode
+            ? "0 0 12px rgba(255,215,80,.25)"
+            : "0 0 8px rgba(0,0,0,.6)",
+        }}
+      >
+        {effectiveCode}
+      </div>
+
+      {/* Statut WebSocket */}
+      <div
+        style={{
+          marginBottom: 12,
+          padding: 10,
+          borderRadius: 12,
+          border: "1px solid rgba(255,255,255,.12)",
+          background:
+            "linear-gradient(180deg, rgba(32,32,40,.95), rgba(10,10,14,.98))",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          fontSize: 12,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontWeight: 700,
+              marginBottom: 4,
+            }}
+          >
+            Connexion temps réel
+          </div>
+          <div style={{ opacity: 0.9 }}>
+            Statut :{" "}
+            <span
+              style={{
+                fontWeight: 700,
+                color: statusColor,
+              }}
+            >
+              {statusLabel}
+            </span>
+          </div>
+          {lastError && (
+            <div
+              style={{
+                marginTop: 4,
+                color: "#ff8a8a",
+              }}
+            >
+              {lastError}
+            </div>
+          )}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          <button
+            type="button"
+            onClick={reconnect}
+            style={{
+              borderRadius: 999,
+              padding: "6px 10px",
+              border: "none",
+              fontSize: 11,
+              fontWeight: 700,
+              background: "linear-gradient(180deg,#4fb4ff,#1c78d5)",
+              color: "#04101f",
+              cursor: "pointer",
+            }}
+          >
+            Reconnecter
+          </button>
+          <button
+            type="button"
+            onClick={close}
+            style={{
+              borderRadius: 999,
+              padding: "6px 10px",
+              border: "none",
+              fontSize: 11,
+              fontWeight: 700,
+              background: "linear-gradient(180deg,#ff5a5a,#e01f1f)",
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            Fermer
+          </button>
+        </div>
+      </div>
+
+      {/* Infos joueur local */}
+      {activeProfile && (
         <div
           style={{
             marginBottom: 12,
             padding: 10,
             borderRadius: 12,
-            border: "1px solid rgba(255,213,106,.4)",
+            border: "1px solid rgba(255,255,255,.10)",
             background:
-              "linear-gradient(180deg, rgba(40,32,16,.96), rgba(12,8,4,.98))",
+              "linear-gradient(180deg, rgba(24,24,30,.96), rgba(10,10,12,.98))",
             fontSize: 12,
           }}
         >
@@ -104,41 +265,77 @@ export default function X01OnlineSetup({
             style={{
               fontWeight: 700,
               marginBottom: 4,
-              color: "#ffd56a",
             }}
           >
-            Salon Online (mock)
+            Joueur local
           </div>
-          <div style={{ opacity: 0.85 }}>Code du salon :</div>
-          <div
-            style={{
-              marginTop: 4,
-              padding: "6px 10px",
-              borderRadius: 8,
-              background: "#111",
-              border: "1px solid rgba(255,255,255,.15)",
-              fontFamily: "monospace",
-              letterSpacing: 2,
-              fontSize: 14,
-              fontWeight: 800,
-              textAlign: "center",
-              color: "#ffd56a",
-            }}
-          >
-            {lobbyCode}
+          <div style={{ opacity: 0.9 }}>
+            Tu es connecté en tant que{" "}
+            <b>{activeProfile.name || "Joueur"}</b> (
+            <code style={{ fontSize: 11 }}>{activeProfile.id}</code>).
           </div>
         </div>
       )}
 
-      {/* Joueur */}
+      {/* Liste des clients dans la room */}
       <div
         style={{
           marginBottom: 14,
           padding: 10,
           borderRadius: 12,
+          border: "1px solid rgba(255,255,255,.10)",
+          background:
+            "linear-gradient(180deg, rgba(26,26,34,.96), rgba(8,8,12,.98))",
+          fontSize: 12,
+        }}
+      >
+        <div
+          style={{
+            fontWeight: 700,
+            marginBottom: 4,
+          }}
+        >
+          Joueurs connectés dans la room
+        </div>
+
+        {clients.length === 0 ? (
+          <div style={{ opacity: 0.85 }}>
+            Aucun client pour le moment. Demande à ton ami de se connecter au
+            même code de salon.
+          </div>
+        ) : (
+          <ul
+            style={{
+              margin: 0,
+              paddingLeft: 16,
+            }}
+          >
+            {clients.map((c) => (
+              <li key={c.id} style={{ marginBottom: 2 }}>
+                <span style={{ fontWeight: 700 }}>{c.name}</span>{" "}
+                <span
+                  style={{
+                    opacity: 0.8,
+                    fontSize: 11,
+                  }}
+                >
+                  (<code>{c.id}</code>)
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Boutons actions "debug" DO */}
+      <div
+        style={{
+          marginBottom: 16,
+          padding: 10,
+          borderRadius: 12,
           border: "1px solid rgba(255,255,255,.12)",
           background:
-            "linear-gradient(180deg, rgba(24,24,32,.96), rgba(8,8,12,.98))",
+            "linear-gradient(180deg, rgba(30,30,40,.96), rgba(10,10,14,.98))",
           fontSize: 12,
         }}
       >
@@ -148,162 +345,173 @@ export default function X01OnlineSetup({
             marginBottom: 6,
           }}
         >
-          Joueur
+          Actions DO (debug)
         </div>
-        <div style={{ opacity: 0.9 }}>
-          Partie Online lancée pour : <b>{displayName}</b>
-        </div>
-        <div style={{ marginTop: 4, opacity: 0.7, fontSize: 11 }}>
-          Pour l’instant, seul ton profil local est utilisé. Les autres joueurs
-          online seront gérés plus tard.
-        </div>
-      </div>
 
-      {/* Choix du départ */}
-      <div
-        style={{
-          marginBottom: 14,
-          padding: 10,
-          borderRadius: 12,
-          border: "1px solid rgba(255,255,255,.12)",
-          background:
-            "linear-gradient(180deg, rgba(26,26,40,.96), rgba(8,8,12,.98))",
-          fontSize: 12,
-        }}
-      >
-        <div
-          style={{
-            fontWeight: 700,
-            marginBottom: 8,
-          }}
-        >
-          Score de départ
-        </div>
         <div
           style={{
             display: "flex",
-            gap: 8,
-          }}
-        >
-          {START_CHOICES.map((value) => {
-            const selected = start === value;
-            return (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setStart(value)}
-                style={{
-                  flex: 1,
-                  padding: "8px 0",
-                  borderRadius: 999,
-                  border: selected
-                    ? "1px solid rgba(255,213,106,.9)"
-                    : "1px solid rgba(255,255,255,.18)",
-                  background: selected
-                    ? "linear-gradient(180deg,#ffd56a,#e9a93d)"
-                    : "linear-gradient(180deg,#262633,#151520)",
-                  color: selected ? "#1b1404" : "#f5f5f7",
-                  fontWeight: 800,
-                  fontSize: 14,
-                  cursor: "pointer",
-                }}
-              >
-                {value}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Double out */}
-      <div
-        style={{
-          marginBottom: 20,
-          padding: 10,
-          borderRadius: 12,
-          border: "1px solid rgba(255,255,255,.12)",
-          background:
-            "linear-gradient(180deg, rgba(24,32,24,.96), rgba(8,12,8,.98))",
-          fontSize: 12,
-        }}
-      >
-        <div
-          style={{
-            fontWeight: 700,
-            marginBottom: 6,
-          }}
-        >
-          Règle de sortie
-        </div>
-        <div
-          style={{
-            display: "flex",
+            flexWrap: "wrap",
             gap: 8,
           }}
         >
           <button
             type="button"
-            onClick={() => setDoubleOut(false)}
+            onClick={sendPing}
             style={{
-              flex: 1,
-              padding: "8px 0",
               borderRadius: 999,
-              border: !doubleOut
-                ? "1px solid rgba(127,226,169,.9)"
-                : "1px solid rgba(255,255,255,.18)",
-              background: !doubleOut
-                ? "linear-gradient(180deg,#7fe2a9,#35c86d)"
-                : "linear-gradient(180deg,#262633,#151520)",
-              color: !doubleOut ? "#04120a" : "#f5f5f7",
-              fontWeight: 800,
-              fontSize: 13,
+              padding: "6px 10px",
+              border: "none",
+              fontSize: 11,
+              fontWeight: 700,
+              background: "linear-gradient(180deg,#666,#444)",
+              color: "#f5f5f7",
               cursor: "pointer",
             }}
           >
-            Sortie simple
+            Ping
           </button>
+
           <button
             type="button"
-            onClick={() => setDoubleOut(true)}
+            onClick={joinRoom}
             style={{
-              flex: 1,
-              padding: "8px 0",
               borderRadius: 999,
-              border: doubleOut
-                ? "1px solid rgba(127,226,169,.9)"
-                : "1px solid rgba(255,255,255,.18)",
-              background: doubleOut
-                ? "linear-gradient(180deg,#7fe2a9,#35c86d)"
-                : "linear-gradient(180deg,#262633,#151520)",
-              color: doubleOut ? "#04120a" : "#f5f5f7",
-              fontWeight: 800,
-              fontSize: 13,
+              padding: "6px 10px",
+              border: "none",
+              fontSize: 11,
+              fontWeight: 700,
+              background: "linear-gradient(180deg,#35c86d,#23a958)",
+              color: "#03140a",
               cursor: "pointer",
             }}
           >
-            Double-Out
+            join_room
+          </button>
+
+          <button
+            type="button"
+            onClick={leaveRoom}
+            style={{
+              borderRadius: 999,
+              padding: "6px 10px",
+              border: "none",
+              fontSize: 11,
+              fontWeight: 700,
+              background: "linear-gradient(180deg,#ff8a5a,#e0491f)",
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            leave_room
+          </button>
+
+          <button
+            type="button"
+            onClick={handleStartMatch501}
+            disabled={!defaultOrder.length}
+            style={{
+              borderRadius: 999,
+              padding: "6px 10px",
+              border: "none",
+              fontSize: 11,
+              fontWeight: 700,
+              background: defaultOrder.length
+                ? "linear-gradient(180deg,#ffd56a,#e9a93d)"
+                : "linear-gradient(180deg,#444,#333)",
+              color: "#1c1304",
+              cursor: defaultOrder.length ? "pointer" : "default",
+              opacity: defaultOrder.length ? 1 : 0.5,
+            }}
+          >
+            Démarrer X01 (501)
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSendDemoVisit}
+            style={{
+              borderRadius: 999,
+              padding: "6px 10px",
+              border: "none",
+              fontSize: 11,
+              fontWeight: 700,
+              background: "linear-gradient(180deg,#4fb4ff,#1c78d5)",
+              color: "#04101f",
+              cursor: "pointer",
+            }}
+          >
+            Envoyer visite T20-20-miss
+          </button>
+
+          <button
+            type="button"
+            onClick={undoLast}
+            style={{
+              borderRadius: 999,
+              padding: "6px 10px",
+              border: "none",
+              fontSize: 11,
+              fontWeight: 700,
+              background: "linear-gradient(180deg,#888,#555)",
+              color: "#f5f5f7",
+              cursor: "pointer",
+            }}
+          >
+            Undo last
           </button>
         </div>
       </div>
 
-      {/* Bouton lancer */}
+      {/* Affichage brut de l'état Room / Match (debug) */}
+      <div
+        style={{
+          fontSize: 11,
+          padding: 10,
+          borderRadius: 12,
+          border: "1px solid rgba(255,255,255,.10)",
+          background: "rgba(0,0,0,0.8)",
+          maxHeight: 260,
+          overflow: "auto",
+        }}
+      >
+        <div
+          style={{
+            fontWeight: 700,
+            marginBottom: 4,
+          }}
+        >
+          État RoomState (debug)
+        </div>
+        <pre
+          style={{
+            margin: 0,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
+          {JSON.stringify(roomState, null, 2)}
+        </pre>
+      </div>
+
+      {/* Retour Friends / Home */}
       <button
         type="button"
-        onClick={handleStart}
+        onClick={() => go("friends")}
         style={{
+          marginTop: 14,
           width: "100%",
           borderRadius: 999,
-          padding: "10px 14px",
+          padding: "8px 12px",
           border: "none",
           fontWeight: 800,
-          fontSize: 14,
-          background: "linear-gradient(180deg,#7fe2a9,#35c86d)",
-          color: "#04120a",
-          boxShadow: "0 10px 22px rgba(0,0,0,.65)",
+          fontSize: 13,
+          background: "linear-gradient(180deg,#444,#262626)",
+          color: "#f5f5f7",
           cursor: "pointer",
         }}
       >
-        Lancer la partie X01 Online (mock)
+        ⬅️ Retour Mode Online & Amis
       </button>
     </div>
   );
