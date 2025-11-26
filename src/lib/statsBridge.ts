@@ -6,12 +6,18 @@
 //   - objet StatsBridge { makeLeg, commitLegAndAccumulate, makeMatch,
 //                         commitMatchAndSave, getBasicProfileStats,
 //                         getMergedProfilesStats, getProfileQuickStats,
-//                         getBasicProfileStatsAsync }
+//                         getBasicProfileStatsAsync, getCricketProfileStats }
 //   - alias nommés (compat pages): getBasicProfileStats, getMergedProfilesStats,
-//                                  getProfileQuickStats, getBasicProfileStatsAsync
+//                                  getProfileQuickStats, getBasicProfileStatsAsync,
+//                                  getCricketProfileStats
 // ============================================
 
 import { History } from "./history";
+import {
+  aggregateCricketProfileStats,
+  type CricketLegStats,
+  type CricketProfileStats,
+} from "./cricketStats";
 
 /* ---------- Types publics ---------- */
 
@@ -101,6 +107,40 @@ function dartValue(seg?: Seg) {
   if (!seg) return 0;
   if (seg.v === 25 && seg.mult === 2) return 50;
   return (seg.v || 0) * (seg.mult || 1);
+}
+
+/* ---------- Helper interne : charger les CricketLegStats d'un profil ---------- */
+/* NOTE:
+   On suppose que History.list() renvoie des rows pouvant contenir un champ
+   `cricketLegs` (ou `summary.cricketLegs`) = CricketLegStats[] pour chaque match Cricket.
+   Si ce n'est pas (encore) le cas, la fonction renvoie simplement [].
+*/
+
+async function loadCricketLegStatsForProfile(
+  profileId: string
+): Promise<CricketLegStats[]> {
+  try {
+    const rows = await History.list();
+    const out: CricketLegStats[] = [];
+
+    for (const r of rows as any[]) {
+      const legsRaw: any =
+        (r && (r.cricketLegs as any)) ??
+        (r && r.summary && (r.summary.cricketLegs as any));
+
+      if (!Array.isArray(legsRaw)) continue;
+
+      for (const leg of legsRaw) {
+        if (leg && leg.playerId === profileId) {
+          out.push(leg as CricketLegStats);
+        }
+      }
+    }
+
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 /* ================================================================
@@ -575,6 +615,19 @@ export const StatsBridge = {
       winRate,
     };
   },
+
+  /* --------------------------------------------------------------
+     getCricketProfileStats :
+     - charge toutes les CricketLegStats d'un profil (History.list)
+     - agrège en bloc CricketProfileStats (matches, solo/teams,
+       victoires, records, historique des scores)
+  -------------------------------------------------------------- */
+  async getCricketProfileStats(
+    profileId: string
+  ): Promise<CricketProfileStats> {
+    const legs = await loadCricketLegStatsForProfile(profileId);
+    return aggregateCricketProfileStats(legs, { maxHistoryItems: 30 });
+  },
 };
 
 /* ---------- Alias en export NOMMÉ (compat import { ... } ) ---------- */
@@ -590,3 +643,7 @@ export const getProfileQuickStats = (profileId: string) =>
 
 export const getBasicProfileStatsAsync = (profileId: string) =>
   StatsBridge.getBasicProfileStatsAsync(profileId);
+
+// 🔸 Nouveau : stats Cricket complètes pour un profil
+export const getCricketProfileStats = (profileId: string) =>
+  StatsBridge.getCricketProfileStats(profileId);

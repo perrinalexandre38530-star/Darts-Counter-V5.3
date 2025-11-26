@@ -503,6 +503,9 @@ export default function X01PlayV3({
   const dBullPct =
     curDarts > 0 ? ((dBullCount / curDarts) * 100).toFixed(0) : "0";
 
+  // (⚠️ ces 6 valeurs restent calculées pour les stats globales,
+  // mais ne sont plus affichées dans le HeaderBlock)
+
   // =====================================================
   // Mesure header & keypad (pour scroll zone joueurs)
   // =====================================================
@@ -548,43 +551,42 @@ export default function X01PlayV3({
   // =====================================================
 
   function handleQuit() {
-    if (onExit) onExit();
-    else if (typeof window !== "undefined") {
+    if (onExit) {
+      onExit();
+      return;
+    }
+    if (typeof window !== "undefined") {
       window.history.back();
     }
   }
 
-  // REJOUER même config : on relance l'app avec le même écran
+  // REJOUER même config : on relance l'écran avec la même config
   function handleReplaySameConfig() {
-    // Idéalement : reset propre du moteur avec la même config.
-    // Ici, fallback simple mais efficace : reload complet.
+    // 🔁 Pour l’instant: reload complet de la page -> recrée un match X01V3
     if (typeof window !== "undefined") {
       window.location.reload();
       return;
     }
-    // Si jamais on est dans un contexte sans window, on repasse par le flux App
-    if (onReplayNewConfig) {
-      onReplayNewConfig();
-    }
   }
 
-  // REJOUER en changeant les paramètres (écran de config)
+  // NOUVELLE PARTIE (retour écran de config)
   function handleReplayNewConfig() {
     if (onReplayNewConfig) {
       onReplayNewConfig();
-    } else {
-      handleQuit();
+      return;
     }
+    // fallback : on quitte
+    handleQuit();
   }
 
-  // RÉSUMÉ : on remonte un matchId (param prioritaire, sinon state.matchId)
-  function handleShowSummary(matchId?: string) {
+  // RÉSUMÉ : l'overlay envoie toujours un matchId: string
+  function handleShowSummary(matchId: string) {
     if (!onShowSummary) return;
     const id = matchId || (state as any).matchId || "";
     onShowSummary(id);
   }
 
-  // CONTINUER (3 joueurs et +) — on enchaîne sur la suite via le moteur
+  // CONTINUER (3+ joueurs) : on laisse le moteur passer à la suite
   function handleContinueMulti() {
     startNextLeg();
   }
@@ -792,12 +794,6 @@ export default function X01PlayV3({
             setsWon={(state as any).setsWon ?? {}}
             useSets={useSetsUi}
             currentVisit={currentVisit}
-            missCount={missCount}
-            bustCount={bustCount}
-            dBullCount={dBullCount}
-            missPct={missPct}
-            bustPct={bustPct}
-            dBullPct={dBullPct}
           />
         </div>
       </div>
@@ -892,7 +888,6 @@ export default function X01PlayV3({
         liveStatsByPlayer={liveStatsByPlayer}
         onNextLeg={startNextLeg}
         onExitMatch={handleQuit}
-        // 🆕 callbacks pour les boutons
         onReplaySameConfig={handleReplaySameConfig}
         onReplayNewConfig={handleReplayNewConfig}
         onShowSummary={handleShowSummary}
@@ -920,12 +915,6 @@ function HeaderBlock(props: {
   legsWon: Record<string, number>;
   setsWon: Record<string, number>;
   currentVisit: any;
-  missCount: number;
-  bustCount: number;
-  dBullCount: number;
-  missPct: string;
-  bustPct: string;
-  dBullPct: string;
 }) {
   const {
     currentPlayer,
@@ -941,12 +930,6 @@ function HeaderBlock(props: {
     legsWon,
     setsWon,
     currentVisit,
-    missCount,
-    bustCount,
-    dBullCount,
-    missPct,
-    bustPct,
-    dBullPct,
   } = props;
 
   const legsWonThisSet =
@@ -1075,44 +1058,6 @@ function HeaderBlock(props: {
               </div>
               <div>
                 Volée : <b>{currentThrow.length}/3</b>
-              </div>
-
-              {/* ligne séparatrice légère */}
-              <div
-                style={{
-                  margin: "5px 0 3px",
-                  height: 1,
-                  background: "rgba(255,255,255,0.08)",
-                }}
-              />
-
-              {/* MISS / BUST / DBULL */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(3, 1fr)",
-                  gap: 4,
-                  fontSize: 10.5,
-                }}
-              >
-                <div>
-                  <div style={{ opacity: 0.7 }}>Miss</div>
-                  <div>
-                    <b>{missCount}</b> ({missPct}%)
-                  </div>
-                </div>
-                <div>
-                  <div style={{ opacity: 0.7 }}>Bust</div>
-                  <div>
-                    <b>{bustCount}</b> ({bustPct}%)
-                  </div>
-                </div>
-                <div>
-                  <div style={{ opacity: 0.7 }}>DBull</div>
-                  <div>
-                    <b>{dBullCount}</b> ({dBullPct}%)
-                  </div>
-                </div>
               </div>
             </div>
           </div>

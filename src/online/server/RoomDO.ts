@@ -1,300 +1,289 @@
 // =======================================================
 // src/online/server/RoomDO.ts
-// Durable Object pour un salon ONLINE
-// - Gère les connexions WebSocket d’un "room" (par code)
-// - Broadcast des messages JSON à tous les clients
-// - Garde une liste minimale des joueurs connectés
+// Durable Object "RoomDO" pour l’ONLINE temps réel
+// - Chaque room = un DO (clé = code salon : "AB7F")
+// - Le DO ne connaît PAS le moteur X01 : il relaie juste les messages
+// - Protocole JSON:
+//    Client → DO : { kind: "join" | "command" | "snapshot" | "lifecycle" | "ping", ... }
+//    DO → Clients : { kind: "welcome" | "command" | "snapshot" | "lifecycle" | "error" | "info" | "pong" }
 // =======================================================
 
-export interface Env {
-    ROOMS: DurableObjectNamespace;
-    AVATAR_CACHE: KVNamespace;
-    ALLOW_ORIGINS: string;
+export type Env = {
+  ROOMS: DurableObjectNamespace;
+  ALLOW_ORIGINS: string;
+};
+
+type ClientWs = WebSocket;
+
+type ClientWsMessage =
+  | {
+      kind: "join";
+      role: "host" | "guest";
+      lobbyCode: string;
+      matchId: string;
+      playerId: string | null;
+    }
+  | { kind: "ping" }
+  | { kind: "command"; data: any }
+  | { kind: "snapshot"; data: { seq: number; state: any } }
+  | { kind: "lifecycle"; data: any };
+
+type ServerWsMessage =
+  | { kind: "welcome"; roomId: string }
+  | { kind: "pong" }
+  | { kind: "command"; data: any }
+  | { kind: "snapshot"; data: { seq: number; state: any } }
+  | { kind: "lifecycle"; data: any }
+  | { kind: "info"; message: string }
+  | { kind: "error"; code: string; message: string };
+
+// Info minimale par socket (principalement pour debug)
+type ClientInfo = {
+  socket: ClientWs;
+  role: "host" | "guest" | "unknown";
+  playerId: string | null;
+  lastSeen: number;
+};
+
+export class RoomDO {
+  private state: DurableObjectState;
+  private env: Env;
+
+  private roomId: string;
+  private clients: Set<ClientWs>;
+  private clientMeta: Map<ClientWs, ClientInfo>;
+
+  constructor(state: DurableObjectState, env: Env) {
+    this.state = state;
+    this.env = env;
+
+    // Nom logique de la room = name du DO (créé via idFromName(code))
+    // (ex: "AB7F")
+    // @ts-expect-error: Cloudflare ajoute .name sur id dans le runtime
+    this.roomId = (state.id as any).name || state.id.toString();
+
+    this.clients = new Set();
+    this.clientMeta = new Map();
   }
-  
-  type ClientId = string;
-  
-  type ClientMeta = {
-    ws: WebSocket;
-    userId?: string;
-    nickname?: string;
-    isHost?: boolean;
-    lastSeen: number;
-  };
-  
-  type RoomPlayer = {
-    userId: string;
-    nickname: string;
-    isHost: boolean;
-    lastSeen: number;
-  };
-  
-  type ClientMessage =
-    | {
-        type: "join";
-        userId: string;
-        nickname: string;
-        isHost?: boolean;
-        lobbyCode?: string;
-      }
-    | { type: "leave" }
-    | { type: "ping" }
-    | {
-        type: "x01_cmd";
-        payload: any;
-      }
-    | {
-        type: "custom";
-        kind: string;
-        payload: any;
-      };
-  
-  type ServerMessage =
-    | {
-        type: "welcome";
-        roomCode: string;
-      }
-    | {
-        type: "room_state";
-        roomCode: string;
-        players: RoomPlayer[];
-      }
-    | {
-        type: "player_joined";
-        player: RoomPlayer;
-      }
-    | {
-        type: "player_left";
-        userId: string;
-      }
-    | {
-        type: "pong";
-        ts: number;
-      }
-    | {
-        type: "x01_cmd";
-        from: { userId?: string; nickname?: string };
-        payload: any;
-      }
-    | {
-        type: "custom";
-        kind: string;
-        from: { userId?: string; nickname?: string };
-        payload: any;
-      };
-  
-  export class RoomDO {
-    private state: DurableObjectState;
-    private env: Env;
-  
-    // Clients connectés
-    private clients: Map<ClientId, ClientMeta>;
-    // Code du salon (on le déduit du name utilisé : env.ROOMS.idFromName(code))
-    private roomCode: string;
-  
-    constructor(state: DurableObjectState, env: Env) {
-      this.state = state;
-      this.env = env;
-      this.clients = new Map();
-      this.roomCode = state.id.toString(); // sera remplacé à la première "join" avec lobbyCode si fourni
-  
-      // Optionnel : recharger des infos persistées plus tard
+
+  // ---------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------
+
+  private isOriginAllowed(origin: string | null): boolean {
+    if (!origin) return false;
+    const raw = this.env.ALLOW_ORIGINS || "";
+    const allowed = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (allowed.length === 0) return true;
+    return allowed.includes(origin);
+  }
+
+  private safeSend(ws: ClientWs, msg: ServerWsMessage) {
+    try {
+      ws.send(JSON.stringify(msg));
+    } catch {
+      // ignore
     }
-  
-    // Utilitaire : broadcast à tous les clients (ou à tous sauf un)
-    private broadcast(msg: ServerMessage, exceptId?: ClientId) {
-      const data = JSON.stringify(msg);
-      for (const [id, meta] of this.clients.entries()) {
-        if (exceptId && id === exceptId) continue;
-        try {
-          meta.ws.send(data);
-        } catch (e) {
-          // En cas d’erreur envoi → on ferme la socket
-          try {
-            meta.ws.close();
-          } catch {}
-          this.clients.delete(id);
-        }
-      }
-    }
-  
-    private getPlayers(): RoomPlayer[] {
-      const players: RoomPlayer[] = [];
-      for (const [, meta] of this.clients.entries()) {
-        if (!meta.userId || !meta.nickname) continue;
-        players.push({
-          userId: meta.userId,
-          nickname: meta.nickname,
-          isHost: !!meta.isHost,
-          lastSeen: meta.lastSeen,
-        });
-      }
-      return players;
-    }
-  
-    private handleClientMessage(clientId: ClientId, raw: string) {
-      let msg: ClientMessage | null = null;
+  }
+
+  private broadcast(msg: ServerWsMessage, except?: ClientWs) {
+    const payload = JSON.stringify(msg);
+    for (const sock of this.clients) {
+      if (except && sock === except) continue;
       try {
-        msg = JSON.parse(raw);
+        sock.send(payload);
       } catch {
+        // ignore erreurs individuelles
+      }
+    }
+  }
+
+  // ---------------------------------------------------
+  // fetch : entrée WS pour ce DO
+  // ---------------------------------------------------
+
+  async fetch(request: Request): Promise<Response> {
+    const upgrade = request.headers.get("Upgrade");
+    if (upgrade !== "websocket") {
+      return new Response("Expected WebSocket", { status: 400 });
+    }
+
+    const origin = request.headers.get("Origin");
+    if (!this.isOriginAllowed(origin)) {
+      return new Response("Forbidden origin", { status: 403 });
+    }
+
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+
+    this.state.acceptWebSocket(server);
+
+    // On stocke ce socket dans le set
+    this.clients.add(server);
+    this.clientMeta.set(server, {
+      socket: server,
+      role: "unknown",
+      playerId: null,
+      lastSeen: Date.now(),
+    });
+
+    // Message de bienvenue immédiat
+    this.safeSend(server, {
+      kind: "welcome",
+      roomId: this.roomId,
+    });
+
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+    });
+  }
+
+  // ---------------------------------------------------
+  // Gestion des WebSockets (Cloudflare DO)
+  // ---------------------------------------------------
+
+  async webSocketMessage(ws: ClientWs, raw: string | ArrayBuffer) {
+    let text: string;
+    if (typeof raw === "string") {
+      text = raw;
+    } else {
+      text = new TextDecoder().decode(raw);
+    }
+
+    let msg: ClientWsMessage | undefined;
+    try {
+      msg = JSON.parse(text);
+    } catch (e) {
+      this.safeSend(ws, {
+        kind: "error",
+        code: "bad_json",
+        message: "Message JSON invalide",
+      });
+      return;
+    }
+    if (!msg) return;
+
+    // Mise à jour lastSeen
+    const meta = this.clientMeta.get(ws);
+    if (meta) {
+      meta.lastSeen = Date.now();
+      this.clientMeta.set(ws, meta);
+    }
+
+    switch (msg.kind) {
+      // ----------------- PING → PONG -----------------
+      case "ping": {
+        this.safeSend(ws, { kind: "pong" });
         return;
       }
-      if (!msg) return;
-  
-      const meta = this.clients.get(clientId);
-      if (!meta) return;
-  
-      const nowTs = Date.now();
-      meta.lastSeen = nowTs;
-  
-      if (msg.type === "join") {
-        meta.userId = msg.userId;
-        meta.nickname = msg.nickname;
-        meta.isHost = !!msg.isHost;
-  
-        if (msg.lobbyCode && !this.roomCode) {
-          this.roomCode = msg.lobbyCode;
-        }
-  
-        // Envoie l’état complet au nouveau client
-        const players = this.getPlayers();
-        this.sendTo(clientId, {
-          type: "welcome",
-          roomCode: this.roomCode,
+
+      // ----------------- JOIN -----------------
+      case "join": {
+        const info: ClientInfo = {
+          socket: ws,
+          role: msg.role || "unknown",
+          playerId: msg.playerId || null,
+          lastSeen: Date.now(),
+        };
+        this.clientMeta.set(ws, info);
+
+        // petit message info au client
+        this.safeSend(ws, {
+          kind: "info",
+          message: `Rejoint la room ${this.roomId} en tant que ${info.role}`,
         });
-        this.sendTo(clientId, {
-          type: "room_state",
-          roomCode: this.roomCode,
-          players,
-        });
-  
-        // Broadcast aux autres
-        if (meta.userId && meta.nickname) {
-          this.broadcast(
-            {
-              type: "player_joined",
-              player: {
-                userId: meta.userId,
-                nickname: meta.nickname,
-                isHost: !!meta.isHost,
-                lastSeen: meta.lastSeen,
-              },
-            },
-            clientId
-          );
-        }
-        return;
-      }
-  
-      if (msg.type === "leave") {
-        this.handleClientClose(clientId);
-        return;
-      }
-  
-      if (msg.type === "ping") {
-        this.sendTo(clientId, { type: "pong", ts: nowTs });
-        return;
-      }
-  
-      if (msg.type === "x01_cmd") {
+
+        // (optionnel) on pourrait aussi broadcast un lifecycle ici
+        // mais pour l’instant, le client se contente de loguer
         this.broadcast(
           {
-            type: "x01_cmd",
-            from: {
-              userId: meta.userId,
-              nickname: meta.nickname,
+            kind: "lifecycle",
+            data: {
+              type: "join",
+              roomId: this.roomId,
+              role: info.role,
+              playerId: info.playerId,
             },
-            payload: msg.payload,
           },
-          clientId
+          ws
         );
         return;
       }
-  
-      if (msg.type === "custom") {
+
+      // ----------------- COMMAND -----------------
+      case "command": {
+        // Relais brut vers tous les autres clients
         this.broadcast(
           {
-            type: "custom",
-            kind: msg.kind,
-            from: {
-              userId: meta.userId,
-              nickname: meta.nickname,
-            },
-            payload: msg.payload,
+            kind: "command",
+            data: msg.data,
           },
-          clientId
+          ws
         );
         return;
       }
-    }
-  
-    private sendTo(id: ClientId, msg: ServerMessage) {
-      const meta = this.clients.get(id);
-      if (!meta) return;
-      try {
-        meta.ws.send(JSON.stringify(msg));
-      } catch {
-        try {
-          meta.ws.close();
-        } catch {}
-        this.clients.delete(id);
+
+      // ----------------- SNAPSHOT -----------------
+      case "snapshot": {
+        // Typiquement envoyé par l’hôte pour resynchroniser les autres
+        this.broadcast(
+          {
+            kind: "snapshot",
+            data: msg.data,
+          },
+          ws
+        );
+        return;
       }
-    }
-  
-    private handleClientClose(clientId: ClientId) {
-      const meta = this.clients.get(clientId);
-      if (!meta) return;
-  
-      const userId = meta.userId;
-      this.clients.delete(clientId);
-  
-      if (userId) {
-        this.broadcast({
-          type: "player_left",
-          userId,
+
+      // ----------------- LIFECYCLE -----------------
+      case "lifecycle": {
+        // join/leave/ready/start… → on relaie simplement
+        this.broadcast(
+          {
+            kind: "lifecycle",
+            data: msg.data,
+          },
+          ws
+        );
+        return;
+      }
+
+      default: {
+        this.safeSend(ws, {
+          kind: "error",
+          code: "unknown_kind",
+          message: "Type de message inconnu",
         });
       }
-    }
-  
-    async fetch(request: Request): Promise<Response> {
-      const upgradeHeader = request.headers.get("Upgrade") || request.headers.get("upgrade");
-      if (upgradeHeader !== "websocket") {
-        return new Response("Durable Object endpoint expects WebSocket", {
-          status: 400,
-        });
-      }
-  
-      const pair = new WebSocketPair();
-      const client = pair[0];
-      const server = pair[1];
-  
-      const clientId = crypto.randomUUID();
-      const meta: ClientMeta = {
-        ws: server as unknown as WebSocket,
-        lastSeen: Date.now(),
-      };
-      this.clients.set(clientId, meta);
-  
-      (server as unknown as WebSocket).accept();
-  
-      (server as unknown as WebSocket).addEventListener("message", (evt: any) => {
-        if (typeof evt.data === "string") {
-          this.handleClientMessage(clientId, evt.data);
-        }
-      });
-  
-      (server as unknown as WebSocket).addEventListener("close", () => {
-        this.handleClientClose(clientId);
-      });
-  
-      (server as unknown as WebSocket).addEventListener("error", () => {
-        this.handleClientClose(clientId);
-      });
-  
-      return new Response(null, {
-        status: 101,
-        webSocket: client,
-      });
     }
   }
-  
+
+  async webSocketClose(ws: ClientWs, code: number, reason: string, wasClean: boolean) {
+    this.clients.delete(ws);
+    this.clientMeta.delete(ws);
+
+    // Broadcast d'une info de leave (optionnel)
+    this.broadcast({
+      kind: "lifecycle",
+      data: {
+        type: "leave",
+        roomId: this.roomId,
+        code,
+        wasClean,
+      },
+    });
+  }
+
+  async webSocketError(ws: ClientWs, error: any) {
+    this.clients.delete(ws);
+    this.clientMeta.delete(ws);
+    // On ne renvoie rien, juste log server-side
+    console.warn("[RoomDO] webSocketError", error);
+  }
+}

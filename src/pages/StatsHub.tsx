@@ -14,6 +14,8 @@ import HistoryPage from "./HistoryPage";
 import SparklinePro from "../components/SparklinePro";
 import TrainingRadar from "../components/TrainingRadar";
 import type { Dart as UIDart } from "../lib/types";
+import { getCricketProfileStats } from "../lib/statsBridge";
+import type { CricketProfileStats } from "../lib/cricketStats";
 // ❌ IMPORTANT : plus d'import TrainingX01Session ici
 
 /* ---------- Thème ---------- */
@@ -3768,34 +3770,82 @@ export default function StatsHub(props: Props) {
     );
   }, [records]);
 
-  // 4) Sélection du joueur + quick stats
-  const [selectedPlayerId, setSelectedPlayerId] = React.useState<string | null>(
-    initialPlayerIdFromProps ?? players[0]?.id ?? null
-  );
+  // 4) Sélection du joueur
+const [selectedPlayerId, setSelectedPlayerId] = React.useState<string | null>(
+  initialPlayerIdFromProps ?? players[0]?.id ?? null
+);
 
-  React.useEffect(() => {
-    if (initialPlayerIdFromProps) {
-      setSelectedPlayerId(initialPlayerIdFromProps);
-    }
-  }, [initialPlayerIdFromProps]);
+// 🔄 si StatsHub est re-ouvert depuis HistoryPage
+React.useEffect(() => {
+  if (initialPlayerIdFromProps) {
+    setSelectedPlayerId(initialPlayerIdFromProps);
+  }
+}, [initialPlayerIdFromProps]);
 
-  React.useEffect(() => {
-    if (!selectedPlayerId && players[0]?.id)
-      setSelectedPlayerId(players[0].id);
-  }, [players, selectedPlayerId]);
+// Fallback si aucun joueur n'était sélectionné
+React.useEffect(() => {
+  if (!selectedPlayerId && players[0]?.id) {
+    setSelectedPlayerId(players[0].id);
+  }
+}, [players, selectedPlayerId]);
 
   const selectedPlayer =
     players.find((p) => p.id === selectedPlayerId) || players[0];
 
   const quick = useQuickStats(selectedPlayer?.id || null);
 
+    // ---------- Stats Cricket pour le joueur sélectionné ----------
+    const [cricketStats, setCricketStats] =
+    React.useState<CricketProfileStats | null>(null);
+  const [cricketLoading, setCricketLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadCricket() {
+      if (!selectedPlayer?.id) {
+        setCricketStats(null);
+        return;
+      }
+
+      setCricketLoading(true);
+      try {
+        const cs = await getCricketProfileStats(selectedPlayer.id);
+        if (!cancelled) {
+          setCricketStats(cs);
+        }
+      } catch {
+        if (!cancelled) {
+          setCricketStats(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setCricketLoading(false);
+        }
+      }
+    }
+
+    loadCricket();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPlayer?.id]);
+
   // Sous-onglets dans "Stats joueurs" :
   // - "dashboard" = vue générale StatsPlayerDashboard
   // - "x01_multi" = stats X01Play (multijoueurs)
-  const [statsSubTab, setStatsSubTab] =
-    React.useState<"dashboard" | "x01_multi">(
-      initialStatsSubTabFromProps ?? "dashboard"
-    );
+  // Sous-onglet Stats : dashboard / x01_multi
+const [statsSubTab, setStatsSubTab] =
+  React.useState<"dashboard" | "x01_multi">(
+    initialStatsSubTabFromProps ?? "dashboard"
+  );
+
+// 🔄 si une autre page force l'ouverture de X01 multi
+React.useEffect(() => {
+  if (initialStatsSubTabFromProps) {
+    setStatsSubTab(initialStatsSubTabFromProps);
+  }
+}, [initialStatsSubTabFromProps]);
 
   React.useEffect(() => {
     if (initialStatsSubTabFromProps) {
@@ -3907,13 +3957,87 @@ export default function StatsHub(props: Props) {
           {statsSubTab === "dashboard" && (
             <>
               {selectedPlayer ? (
-                <StatsPlayerDashboard
-                  data={buildDashboardForPlayer(
-                    selectedPlayer,
-                    records,
-                    quick || null
-                  )}
-                />
+                <>
+                  <StatsPlayerDashboard
+                    data={buildDashboardForPlayer(
+                      selectedPlayer,
+                      records,
+                      quick || null
+                    )}
+                  />
+
+                  {/* Carte Cricket juste en dessous */}
+                  <div style={{ ...card, marginTop: 12 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 800,
+                        textTransform: "uppercase",
+                        color: T.gold,
+                        textShadow:
+                          "0 0 6px rgba(246,194,86,.9), 0 0 14px rgba(246,194,86,.45)",
+                        letterSpacing: 0.8,
+                        marginBottom: 6,
+                      }}
+                    >
+                      Cricket
+                    </div>
+
+                    {cricketLoading && (
+                      <div style={{ fontSize: 12, color: T.text70 }}>
+                        Chargement des stats Cricket...
+                      </div>
+                    )}
+
+                    {!cricketLoading && !cricketStats && (
+                      <div style={{ fontSize: 12, color: T.text70 }}>
+                        Aucune partie Cricket enregistrée pour ce joueur.
+                      </div>
+                    )}
+
+                    {!cricketLoading && cricketStats && (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr",
+                          gap: 8,
+                          fontSize: 12,
+                          color: T.text70,
+                        }}
+                      >
+                        <div>
+                          <div>Parties totales</div>
+                          <div style={{ fontWeight: 800, color: "#FFF" }}>
+                            {cricketStats.matchesTotal}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div>Record points / partie</div>
+                          <div style={{ fontWeight: 800, color: "#FFF" }}>
+                            {cricketStats.bestPointsInMatch ?? 0}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div>Solo (V / D)</div>
+                          <div style={{ fontWeight: 800, color: "#7CFF9A" }}>
+                            {cricketStats.winsSolo} /{" "}
+                            {cricketStats.lossesSolo}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div>Équipes (V / D)</div>
+                          <div style={{ fontWeight: 800, color: "#7CFF9A" }}>
+                            {cricketStats.winsTeams} /{" "}
+                            {cricketStats.lossesTeams}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
               ) : (
                 <div style={card}>
                   Sélectionne un joueur pour afficher ses stats.
