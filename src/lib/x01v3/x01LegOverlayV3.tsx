@@ -1,9 +1,11 @@
 // =============================================================
-// src/lib/x01v3/X01LegOverlayV3.tsx
+// src/components/x01v3/X01LegOverlayV3.tsx
 // Overlay fin de manche / set / match pour X01 V3
-// - 1v1 : vainqueur vs adversaire + trophée + scoreboard central
-// - 3+ joueurs : classement final
-// - Boutons correctement câblés : Rejouer / Nouvelle partie / Résumé / Continuer / Quitter
+// - Style néon + trophée 🏆 (petit, à côté du texte)
+// - 1v1 : duel avec avatars au-dessus des noms, scoreboard central
+// - 3+ joueurs : classement final simple
+// - Boutons : Manche suivante / Rejouer / Nouvelle partie / Résumé / Quitter
+// - Mini stats : vainqueur en doré / perdant en blanc
 // =============================================================
 
 import React from "react";
@@ -49,32 +51,18 @@ export default function X01LegOverlayV3({
   const scores = state?.scores ?? {};
   const legsWon = state?.legsWon ?? {};
   const setsWon = state?.setsWon ?? {};
+
   const currentSet = state?.currentSet ?? 1;
   const currentLeg = state?.currentLeg ?? 1;
   const legsPerSet = config?.legsPerSet ?? "?";
   const setsToWin = config?.setsToWin ?? "?";
   const matchId = state?.matchId;
 
-  const isDuel = players.length === 2;
+  const accent = (theme as any)?.accent ?? "#ffc63a";
 
-  const accent =
-    (theme as any)?.accent ||
-    (theme as any)?.colors?.accent ||
-    "#ffc63a";
-
-  const [isNarrow, setIsNarrow] = React.useState(false);
-  React.useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handle = () => setIsNarrow(window.innerWidth <= 420);
-    handle();
-    window.addEventListener("resize", handle);
-    return () => window.removeEventListener("resize", handle);
-  }, []);
-
-  const getAvatarUrl = (p: any) =>
-    p?.avatarDataUrl ?? p?.avatarUrl ?? p?.photoUrl ?? null;
-
-  // ---- Vainqueur / perdant (1v1) ----
+  // ------------------------------------------------------------
+  // Détermination vainqueur / classement
+  // ------------------------------------------------------------
   const winnerId =
     state?.lastLegWinnerId ||
     state?.lastWinnerId ||
@@ -85,7 +73,7 @@ export default function X01LegOverlayV3({
     players.find((p: any) => p.id === winnerId) || players[0] || null;
 
   const opponent =
-    isDuel && winner
+    winner && players.length >= 2
       ? players.find((p: any) => p.id !== winner.id)
       : null;
 
@@ -94,71 +82,115 @@ export default function X01LegOverlayV3({
   const opponentSets = opponent ? setsWon[opponent.id] ?? 0 : 0;
   const opponentLegs = opponent ? legsWon[opponent.id] ?? 0 : 0;
 
-  // Texte type "Gain Leg" / "Gain Set" / "Victoire"
   const victoryLabel =
     status === "match_end"
-      ? t("x01v3.overlay.victory", "Victoire")
+      ? t("x01.leg_overlay.victory", "Victoire")
       : status === "set_end"
-      ? t("x01v3.overlay.set_win", "Gain Set")
-      : t("x01v3.overlay.leg_win", "Gain Leg");
+      ? t("x01.leg_overlay.set_won", "Gain Set")
+      : t("x01.leg_overlay.leg_won", "Gain Leg");
 
-  // Multi-joueurs : classement
-  const ranking =
-    players.length >= 3
-      ? [...players]
-          .map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            sets: setsWon[p.id] ?? 0,
-            legs: legsWon[p.id] ?? 0,
-            score: scores[p.id] ?? config.startScore ?? 0,
-          }))
-          .sort((a, b) => {
-            if (b.sets !== a.sets) return b.sets - a.sets;
-            if (b.legs !== a.legs) return b.legs - a.legs;
-            return a.score - b.score;
-          })
-      : [];
+  const topChipLabel = `${t(
+    "x01.leg_overlay.leg",
+    "Manche"
+  )} ${currentLeg}/${legsPerSet} · ${t(
+    "x01.leg_overlay.set",
+    "Set"
+  )} ${currentSet}/${setsToWin}`;
 
-  // Mini stats vainqueur (pour les KPI en bas)
+  // CONTINUER (3+ joueurs)
+  const finishedCount = players.filter((p: any) => scores[p.id] === 0).length;
+  const showContinueMulti =
+    players.length >= 3 &&
+    finishedCount >= 1 &&
+    finishedCount < players.length &&
+    typeof onContinueMulti === "function";
+
+  // ------------------------------------------------------------
+  // Mini stats vainqueur & perdant
+  // ------------------------------------------------------------
+
+  function computeAvg3(stats: any | null | undefined) {
+    if (!stats) return "0.0";
+    const d = stats.dartsThrown ?? 0;
+    const ts = stats.totalScore ?? 0;
+    if (!d || !ts) return "0.0";
+    return ((ts / d) * 3).toFixed(1);
+  }
+
   const winnerStats = winner ? liveStatsByPlayer?.[winner.id] : null;
-  const darts = winnerStats?.dartsThrown ?? 0;
-  const totalScore = winnerStats?.totalScore ?? 0;
-  const bestVisit = winnerStats?.bestVisit ?? 0;
-  const showMiniStats = darts > 0 || totalScore > 0 || bestVisit > 0;
-  const avg3 =
-    darts > 0 ? ((totalScore / darts) * 3).toFixed(1) : "0.0";
+  const opponentStats =
+    opponent && liveStatsByPlayer ? liveStatsByPlayer?.[opponent.id] : null;
 
-  // ---- Callbacks boutons ----
-  const handleNextLeg = () => {
-    onNextLeg();
-  };
+  const wDarts = winnerStats?.dartsThrown ?? 0;
+  const wTotalScore = winnerStats?.totalScore ?? 0;
+  const wBestVisit = winnerStats?.bestVisit ?? 0;
+  const wAvg3 = computeAvg3(winnerStats);
 
-  const handleQuit = () => {
+  const oDarts = opponentStats?.dartsThrown ?? 0;
+  const oTotalScore = opponentStats?.totalScore ?? 0;
+  const oBestVisit = opponentStats?.bestVisit ?? 0;
+  const oAvg3 = computeAvg3(opponentStats);
+
+  const showMiniStats =
+    wDarts > 0 || wTotalScore > 0 || wBestVisit > 0 || !!opponentStats;
+
+  // ------------------------------------------------------------
+  // Classement multi (3+ joueurs)
+  // ------------------------------------------------------------
+  const isMulti = players.length >= 3;
+
+  const rankedPlayers = isMulti
+    ? [...players].sort((a: any, b: any) => {
+        const aSets = setsWon[a.id] ?? 0;
+        const bSets = setsWon[b.id] ?? 0;
+        if (bSets !== aSets) return bSets - aSets;
+
+        const aLegs = legsWon[a.id] ?? 0;
+        const bLegs = legsWon[b.id] ?? 0;
+        if (bLegs !== aLegs) return bLegs - aLegs;
+
+        const aScore = scores[a.id] ?? config.startScore ?? 0;
+        const bScore = scores[b.id] ?? config.startScore ?? 0;
+        // plus petit score en premier (le premier à finir)
+        return aScore - bScore;
+      })
+    : [];
+
+  // ------------------------------------------------------------
+  // Callbacks
+  // ------------------------------------------------------------
+  const nextLeg = () => onNextLeg();
+
+  const quitMatch = () => {
     if (onExitMatch) onExitMatch();
   };
 
-  const handleReplaySame = () => {
+  const replaySame = () => {
     if (onReplaySameConfig) onReplaySameConfig();
   };
 
-  const handleReplayNew = () => {
+  const replayNew = () => {
     if (onReplayNewConfig) onReplayNewConfig();
   };
 
-  const handleSummary = () => {
-    if (matchId && onShowSummary) onShowSummary(matchId);
+  // 🔁 NOUVELLE VERSION : on appelle le callback même si matchId est vide
+  const showSummary = () => {
+    if (onShowSummary) {
+      onShowSummary(matchId ?? "");
+    }
   };
 
-  const handleContinueMulti = () => {
+  const continueMulti = () => {
     if (onContinueMulti) onContinueMulti();
   };
 
-  const showContinueMulti =
-    players.length >= 3 && typeof onContinueMulti === "function";
+  // ------------------------------------------------------------
+  // Rendu
+  // ------------------------------------------------------------
 
   return (
     <div
+      className="x01legoverlay-backdrop"
       style={{
         position: "fixed",
         inset: 0,
@@ -189,13 +221,13 @@ export default function X01LegOverlayV3({
             position: "absolute",
             inset: 0,
             background:
-              "radial-gradient(circle at 10% 0%,rgba(255,215,120,0.2),transparent 55%)",
+              "radial-gradient(circle at 10% 0%,rgba(255,215,120,0.18),transparent 55%)",
             pointerEvents: "none",
           }}
         />
 
         <div style={{ position: "relative", zIndex: 2 }}>
-          {/* Capsule Manche / Set */}
+          {/* Manche / Set chip */}
           <div
             style={{
               display: "inline-flex",
@@ -204,42 +236,42 @@ export default function X01LegOverlayV3({
               borderRadius: 999,
               border: `1px solid ${accent}`,
               background:
-                "linear-gradient(135deg,rgba(0,0,0,0.85),rgba(0,0,0,0.45))",
+                "linear-gradient(135deg,rgba(0,0,0,0.9),rgba(0,0,0,0.4))",
               color: accent,
               fontSize: 11,
-              fontWeight: 800,
+              fontWeight: 700,
               textTransform: "uppercase",
-              letterSpacing: 0.5,
-              marginBottom: 8,
+              marginBottom: 10,
+              boxShadow: "0 0 16px rgba(0,0,0,0.7)",
             }}
           >
-            {t("x01.leg_overlay.leg", "Manche")} {currentLeg}/{legsPerSet} ·{" "}
-            {t("x01.leg_overlay.set", "Set")} {currentSet}/{setsToWin}
+            {topChipLabel}
           </div>
 
-          {/* Contenu principal */}
-          {isDuel ? (
+          {/* 1v1 : duel layout / 3+ : classement */}
+          {!isMulti ? (
             <DuelLayout
               winner={winner}
               opponent={opponent}
-              victoryLabel={victoryLabel}
               winnerSets={winnerSets}
               winnerLegs={winnerLegs}
               opponentSets={opponentSets}
               opponentLegs={opponentLegs}
-              getAvatarUrl={getAvatarUrl}
+              victoryLabel={victoryLabel}
               accent={accent}
-              isNarrow={isNarrow}
             />
           ) : (
-            <MultiRankingBlock
-              ranking={ranking}
+            <RankingLayout
+              players={rankedPlayers}
+              scores={scores}
+              setsWon={setsWon}
+              legsWon={legsWon}
               accent={accent}
               t={t}
             />
           )}
 
-          {/* Mini KPI vainqueur */}
+          {/* Mini stats vainqueur + perdant */}
           {showMiniStats && (
             <div
               style={{
@@ -248,34 +280,43 @@ export default function X01LegOverlayV3({
                 marginTop: 12,
               }}
             >
-              <Mini label="Moy.3D" value={avg3} />
-              <Mini label="Darts" value={String(darts)} />
-              <Mini label="Best" value={String(bestVisit)} />
+              <Mini
+                label="Moy.3D"
+                win={wAvg3}
+                lose={opponent ? oAvg3 : "-"}
+              />
+              <Mini
+                label="Darts"
+                win={String(wDarts)}
+                lose={opponent ? String(oDarts) : "-"}
+              />
+              <Mini
+                label="Best"
+                win={String(wBestVisit)}
+                lose={opponent ? String(oBestVisit) : "-"}
+              />
             </div>
           )}
 
-          {/* Boutons */}
+          {/* BOUTONS */}
           {status !== "match_end" ? (
-            <div style={{ marginTop: 14, display: "flex", gap: 10 }}>
-              <button style={btnGold} onClick={handleNextLeg}>
-                {t("x01.leg_overlay.next_leg", "MANCHE SUIVANTE")}
+            <div style={{ marginTop: 18, display: "flex", gap: 10 }}>
+              <button style={btnGold} onClick={nextLeg}>
+                {t(
+                  "x01.leg_overlay.next_leg",
+                  "MANCHE SUIVANTE"
+                )}
               </button>
-              <button style={btnDanger} onClick={handleQuit}>
+
+              <button style={btnGhost} onClick={quitMatch}>
                 {t("common.quit", "Quitter")}
               </button>
             </div>
           ) : (
-            <div
-              style={{
-                marginTop: 14,
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-              }}
-            >
-              {/* Rejouer mêmes paramètres */}
+            <div style={{ marginTop: 18 }}>
+              {/* REJOUER (mêmes paramètres) */}
               {onReplaySameConfig && (
-                <button style={btnGoldFull} onClick={handleReplaySame}>
+                <button style={btnGoldFull} onClick={replaySame}>
                   🏆{" "}
                   {t(
                     "x01.leg_overlay.replay_same",
@@ -284,36 +325,43 @@ export default function X01LegOverlayV3({
                 </button>
               )}
 
-              {/* Ligne de boutons secondaires */}
+              {/* Actions secondaires */}
               <div
                 style={{
                   display: "flex",
                   flexWrap: "wrap",
                   gap: 8,
+                  marginTop: 4,
                 }}
               >
                 {onReplayNewConfig && (
-                  <button style={btnGhostWide} onClick={handleReplayNew}>
-                    {t("x01.leg_overlay.new_match", "Nouvelle partie")}
+                  <button style={btnGhostWide} onClick={replayNew}>
+                    {t(
+                      "x01.leg_overlay.new_match",
+                      "Nouvelle partie"
+                    )}
                   </button>
                 )}
+
                 {onShowSummary && (
-                  <button style={btnGhostWide} onClick={handleSummary}>
-                    {t("x01.leg_overlay.summary", "Résumé")}
+                  <button style={btnGhostWide} onClick={showSummary}>
+                    {t(
+                      "x01.leg_overlay.summary",
+                      "Résumé"
+                    )}
                   </button>
                 )}
+
                 {showContinueMulti && (
-                  <button
-                    style={btnGhostWide}
-                    onClick={handleContinueMulti}
-                  >
-                    {t("x01.leg_overlay.continue", "Continuer")}
+                  <button style={btnGhostWide} onClick={continueMulti}>
+                    {t(
+                      "x01.leg_overlay.continue",
+                      "Continuer"
+                    )}
                   </button>
                 )}
-                <button
-                  style={btnGhostWideDanger}
-                  onClick={handleQuit}
-                >
+
+                <button style={btnGhostWide} onClick={quitMatch}>
                   {t("common.quit", "Quitter")}
                 </button>
               </div>
@@ -325,490 +373,294 @@ export default function X01LegOverlayV3({
   );
 }
 
-// =============================================================
-// DUEL 1v1 : layout avec scoreboard central
-// =============================================================
-
-function DuelLayout(props: {
+// ------------------------------------------------------------
+// Layout duel 1v1
+// ------------------------------------------------------------
+function DuelLayout({
+  winner,
+  opponent,
+  winnerSets,
+  winnerLegs,
+  opponentSets,
+  opponentLegs,
+  victoryLabel,
+  accent,
+}: {
   winner: any;
   opponent: any;
-  victoryLabel: string;
   winnerSets: number;
   winnerLegs: number;
   opponentSets: number;
   opponentLegs: number;
-  getAvatarUrl: (p: any) => string | null;
+  victoryLabel: string;
   accent: string;
-  isNarrow: boolean;
 }) {
-  const {
-    winner,
-    opponent,
-    victoryLabel,
-    winnerSets,
-    winnerLegs,
-    opponentSets,
-    opponentLegs,
-    getAvatarUrl,
-    accent,
-    isNarrow,
-  } = props;
+  const loserLabel = "Défaite";
 
-  const winnerAvatar = winner ? getAvatarUrl(winner) : null;
-  const opponentAvatar = opponent ? getAvatarUrl(opponent) : null;
-
-  // Layout colonne sur mobile, mais on garde la logique
-  if (isNarrow) {
-    return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-          marginTop: 4,
-        }}
-      >
-        {/* bloc gagnant */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                color: accent,
-                fontWeight: 900,
-                fontSize: 18,
-                textOverflow: "ellipsis",
-                overflow: "hidden",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {winner?.name ?? "—"}
-            </div>
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                marginTop: 2,
-              }}
-            >
-              <TrophyInline />
-              <span
-                style={{
-                  color: accent,
-                  fontSize: 13,
-                  fontWeight: 700,
-                }}
-              >
-                {victoryLabel}
-              </span>
-            </div>
-          </div>
-          <AvatarMedallion src={winnerAvatar} />
-        </div>
-
-        {/* scoreboard central */}
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <ScoreCard
-            accent={accent}
-            winnerSets={winnerSets}
-            winnerLegs={winnerLegs}
-            opponentSets={opponentSets}
-            opponentLegs={opponentLegs}
-          />
-        </div>
-
-        {/* bloc perdant */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            justifyContent: "flex-end",
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 0, textAlign: "right" }}>
-            <div
-              style={{
-                color: accent,
-                fontWeight: 800,
-                fontSize: 16,
-                textOverflow: "ellipsis",
-                overflow: "hidden",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {opponent?.name ?? "—"}
-            </div>
-            <div
-              style={{
-                marginTop: 2,
-                color: "#ff8a8a",
-                fontSize: 13,
-                fontWeight: 700,
-              }}
-            >
-              Défaite
-            </div>
-          </div>
-          <AvatarMedallion src={opponentAvatar} />
-        </div>
-      </div>
-    );
-  }
-
-  // Layout horizontal (téléphone large / tablette)
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "minmax(0,1.1fr) auto minmax(0,1.1fr)",
-        gap: 12,
+        gridTemplateColumns: "1.1fr 1.1fr 1.1fr",
+        gap: 10,
         alignItems: "center",
-        marginTop: 4,
       }}
     >
-      {/* gagnant */}
+      {/* VAINQUEUR */}
       <div
         style={{
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
-          gap: 8,
-          minWidth: 0,
+          textAlign: "center",
         }}
       >
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              color: accent,
-              fontWeight: 900,
-              fontSize: 20,
-              textOverflow: "ellipsis",
-              overflow: "hidden",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {winner?.name ?? "—"}
-          </div>
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              marginTop: 3,
-            }}
-          >
-            <TrophyInline />
-            <span
-              style={{
-                color: accent,
-                fontSize: 13,
-                fontWeight: 700,
-              }}
-            >
-              {victoryLabel}
-            </span>
-          </div>
-        </div>
-        <AvatarMedallion src={winnerAvatar} />
-      </div>
+        {/* avatar au-dessus du nom */}
+        <AvatarMedallion
+          avatar={
+            winner?.avatarDataUrl || winner?.avatarUrl || winner?.photoUrl
+          }
+        />
 
-      {/* Scoreboard central */}
-      <ScoreCard
-        accent={accent}
-        winnerSets={winnerSets}
-        winnerLegs={winnerLegs}
-        opponentSets={opponentSets}
-        opponentLegs={opponentLegs}
-      />
-
-      {/* perdant */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          justifyContent: "flex-end",
-          minWidth: 0,
-        }}
-      >
-        <AvatarMedallion src={opponentAvatar} />
         <div
           style={{
-            flex: 1,
-            minWidth: 0,
-            textAlign: "right",
+            marginTop: 6,
+            fontWeight: 800,
+            fontSize: 16,
+            color: accent,
           }}
         >
+          {winner?.name ?? "—"}
+        </div>
+
+        <div
+          style={{
+            marginTop: 2,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            fontWeight: 700,
+            color: accent,
+          }}
+        >
+          <img
+            src={trophyCup}
+            style={{
+              width: 32,
+              height: 32,
+              objectFit: "contain",
+              filter: "drop-shadow(0 0 8px rgba(255,215,120,0.7))",
+            }}
+          />
+          <span>{victoryLabel}</span>
+        </div>
+      </div>
+
+      {/* SCOREBOARD CENTRAL */}
+      <div
+        style={{
+          padding: "8px 10px 10px",
+          borderRadius: 18,
+          background:
+            "linear-gradient(145deg,rgba(0,0,0,0.9),rgba(0,0,0,0.4))",
+          border: "1px solid rgba(255,255,255,0.16)",
+          textAlign: "center",
+          color: "#fff",
+          minWidth: 120,
+          boxShadow: "0 0 14px rgba(0,0,0,0.8)",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            textTransform: "uppercase",
+            letterSpacing: 1,
+            opacity: 0.7,
+            marginBottom: 4,
+          }}
+        >
+          Score
+        </div>
+
+        <div style={{ fontSize: 13, fontWeight: 800, lineHeight: 1.4 }}>
+          {/* Ligne SET */}
           <div
             style={{
-              color: accent,
-              fontWeight: 800,
-              fontSize: 16,
-              textOverflow: "ellipsis",
-              overflow: "hidden",
-              whiteSpace: "nowrap",
+              display: "grid",
+              gridTemplateColumns: "1fr auto 1fr",
+              alignItems: "center",
+              marginBottom: 4,
             }}
           >
-            {opponent?.name ?? "—"}
+            <div style={{ textAlign: "right", color: accent }}>
+              {winnerSets}
+            </div>
+            <div style={{ paddingInline: 6, opacity: 0.8 }}>SET</div>
+            <div style={{ textAlign: "left", color: accent }}>
+              {opponentSets}
+            </div>
           </div>
+
+          {/* Ligne LEG */}
           <div
             style={{
-              marginTop: 2,
-              color: "#ff8a8a",
-              fontSize: 13,
-              fontWeight: 700,
+              display: "grid",
+              gridTemplateColumns: "1fr auto 1fr",
+              alignItems: "center",
             }}
           >
-            Défaite
+            <div style={{ textAlign: "right", color: accent }}>
+              {winnerLegs}
+            </div>
+            <div style={{ paddingInline: 6, opacity: 0.8 }}>LEG</div>
+            <div style={{ textAlign: "left", color: accent }}>
+              {opponentLegs}
+            </div>
           </div>
+        </div>
+      </div>
+
+      {/* ADVERSAIRE */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          textAlign: "center",
+        }}
+      >
+        <AvatarMedallion
+          avatar={
+            opponent?.avatarDataUrl ||
+            opponent?.avatarUrl ||
+            opponent?.photoUrl
+          }
+        />
+
+        <div
+          style={{
+            marginTop: 6,
+            fontWeight: 800,
+            fontSize: 16,
+            color: accent,
+          }}
+        >
+          {opponent?.name ?? "—"}
+        </div>
+
+        <div
+          style={{
+            marginTop: 2,
+            fontSize: 12,
+            fontWeight: 700,
+            color: "#ff6677",
+          }}
+        >
+          {loserLabel}
         </div>
       </div>
     </div>
   );
 }
 
-// Trophée petit à côté du libellé
-function TrophyInline() {
-  return (
-    <span
-      style={{
-        width: 18,
-        height: 18,
-        borderRadius: "50%",
-        overflow: "hidden",
-        background:
-          "radial-gradient(circle,#ffeb9a 0%,#ffc63a 60%,#c48b18 100%)",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        boxShadow: "0 0 8px rgba(255,210,90,0.6)",
-        flexShrink: 0,
-      }}
-    >
-      <img
-        src={trophyCup}
-        style={{
-          width: "80%",
-          height: "80%",
-          objectFit: "contain",
-        }}
-      />
-    </span>
-  );
-}
-
-// =============================================================
-// Carte SCORE centrale :
-// [valeur] [Set] [valeur]
-// [valeur] [Leg] [valeur]
-// =============================================================
-
-function ScoreCard(props: {
+// ------------------------------------------------------------
+// Layout classement multi (3+ joueurs)
+// ------------------------------------------------------------
+function RankingLayout({
+  players,
+  scores,
+  setsWon,
+  legsWon,
+  accent,
+  t,
+}: {
+  players: any[];
+  scores: Record<string, number>;
+  setsWon: Record<string, number>;
+  legsWon: Record<string, number>;
   accent: string;
-  winnerSets: number;
-  winnerLegs: number;
-  opponentSets: number;
-  opponentLegs: number;
+  t: (k: string, d: string) => string;
 }) {
-  const { accent, winnerSets, winnerLegs, opponentSets, opponentLegs } =
-    props;
-
-  const cellLabel: React.CSSProperties = {
-    fontSize: 11,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    color: "#d0d2dd",
-    paddingInline: 4,
-  };
-
-  const cellValue: React.CSSProperties = {
-    fontSize: 18,
-    fontWeight: 900,
-    color: accent,
-    minWidth: 32,
-    textAlign: "center",
-  };
-
-  return (
-    <div
-      style={{
-        minWidth: 150,
-        padding: "8px 10px",
-        borderRadius: 16,
-        background:
-          "linear-gradient(145deg,rgba(0,0,0,0.85),rgba(0,0,0,0.35))",
-        border: `1px solid ${accent}`,
-        boxShadow: "0 0 14px rgba(0,0,0,0.65)",
-        textAlign: "center",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 10,
-          color: "#aaa",
-          textTransform: "uppercase",
-          letterSpacing: 0.7,
-          marginBottom: 4,
-        }}
-      >
-        SCORE
-      </div>
-
-      {/* Ligne Sets */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "center",
-          gap: 6,
-          marginBottom: 2,
-        }}
-      >
-        <span style={cellValue}>{winnerSets}</span>
-        <span style={cellLabel}>Set</span>
-        <span style={cellValue}>{opponentSets}</span>
-      </div>
-
-      {/* Ligne Legs */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "center",
-          gap: 6,
-        }}
-      >
-        <span style={cellValue}>{winnerLegs}</span>
-        <span style={cellLabel}>Leg</span>
-        <span style={cellValue}>{opponentLegs}</span>
-      </div>
-    </div>
-  );
-}
-
-// =============================================================
-// Classement multi (3+ joueurs)
-// =============================================================
-
-function MultiRankingBlock(props: {
-  ranking: {
-    id: string;
-    name: string;
-    sets: number;
-    legs: number;
-    score: number;
-  }[];
-  accent: string;
-  t: (k: string, fallback: string) => string;
-}) {
-  const { ranking, accent, t } = props;
-
   return (
     <div style={{ marginTop: 4 }}>
       <div
         style={{
-          fontSize: 14,
-          fontWeight: 800,
-          color: "#fff",
+          fontSize: 13,
+          fontWeight: 700,
+          color: accent,
           marginBottom: 6,
         }}
       >
-        {t("x01.leg_overlay.final_standings", "Classement final")}
+        {t("x01.leg_overlay.final_ranking", "Classement final")}
       </div>
 
       <div
         style={{
           borderRadius: 16,
+          border: "1px solid rgba(255,255,255,0.18)",
+          background:
+            "linear-gradient(145deg,rgba(0,0,0,0.9),rgba(0,0,0,0.45))",
           padding: 8,
-          background: "rgba(0,0,0,0.5)",
-          border: "1px solid rgba(255,255,255,0.12)",
         }}
       >
-        {ranking.map((r, idx) => {
-          const pos = idx + 1;
-          const isWinner = pos === 1;
-          const medalColor = isWinner
-            ? accent
-            : pos === 2
-            ? "#d0d5ff"
-            : pos === 3
-            ? "#ffb37a"
-            : "#888";
+        {players.map((p: any, index: number) => {
+          const rank = index + 1;
+          const s = scores[p.id] ?? 0;
+          const st = setsWon[p.id] ?? 0;
+          const lg = legsWon[p.id] ?? 0;
+
+          const avatar =
+            p.avatarDataUrl || p.avatarUrl || p.photoUrl || null;
 
           return (
             <div
-              key={r.id}
+              key={p.id}
               style={{
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "space-between",
-                padding: "4px 6px",
-                borderRadius: 10,
+                gap: 8,
+                padding: "5px 6px",
+                borderRadius: 12,
                 background:
-                  idx % 2 === 0
-                    ? "rgba(255,255,255,0.04)"
-                    : "transparent",
+                  rank === 1
+                    ? "rgba(255,215,120,0.1)"
+                    : "rgba(255,255,255,0.04)",
+                marginBottom: 4,
               }}
             >
               <div
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  minWidth: 0,
+                  width: 22,
+                  textAlign: "center",
+                  fontWeight: 800,
+                  color: rank === 1 ? accent : "#ddd",
+                  fontSize: 13,
                 }}
               >
-                <div
-                  style={{
-                    minWidth: 26,
-                    height: 26,
-                    borderRadius: 999,
-                    border: `1px solid ${medalColor}`,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 12,
-                    fontWeight: 800,
-                    color: medalColor,
-                  }}
-                >
-                  {pos}
-                </div>
-                <div
-                  style={{
-                    color: "#fff",
-                    fontWeight: 700,
-                    fontSize: 14,
-                    textOverflow: "ellipsis",
-                    overflow: "hidden",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {r.name}
-                </div>
+                {rank}.
               </div>
 
-              <div
-                style={{
-                  fontSize: 11.5,
-                  color: "#d6d7e0",
-                  textAlign: "right",
-                }}
-              >
-                <div>
-                  Sets <b>{r.sets}</b> · Legs <b>{r.legs}</b>
+              <AvatarMedallion avatar={avatar} size={32} />
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: "#fff",
+                  }}
+                >
+                  {p.name}
                 </div>
-                <div>
-                  Score{" "}
-                  <b style={{ color: r.score === 0 ? "#7fe2a9" : "#ffd98a" }}>
-                    {r.score === 0 ? "FINI" : r.score}
-                  </b>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "#cfd1d7",
+                    marginTop: 2,
+                  }}
+                >
+                  Sets {st} · Legs {lg} · Score {s}
                 </div>
               </div>
             </div>
@@ -819,52 +671,67 @@ function MultiRankingBlock(props: {
   );
 }
 
-// =============================================================
-// Avatars & mini-KPI
-// =============================================================
-
-function AvatarMedallion({ src }: { src: string | null }) {
+// ------------------------------------------------------------
+// Avatar médaillon simple
+// ------------------------------------------------------------
+function AvatarMedallion({
+  avatar,
+  size = 70, // ajustable
+}: {
+  avatar?: string | null;
+  size?: number;
+}) {
   return (
     <div
       style={{
-        width: 52,
-        height: 52,
+        width: size,
+        height: size,
         borderRadius: "50%",
         overflow: "hidden",
-        background: "rgba(255,255,255,0.06)",
-        boxShadow: "0 4px 14px rgba(0,0,0,0.6)",
-        flexShrink: 0,
+        background: "transparent", // plus de gradient
+        border: "none", // plus de bord
+        boxShadow: "none", // plus de halo
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
       }}
     >
-      {src ? (
+      {avatar ? (
         <img
-          src={src}
+          src={avatar}
           style={{
-            width: "100%",
-            height: "100%",
+            width: "105%", // léger zoom pour couper les bords PNG
+            height: "105%",
             objectFit: "cover",
           }}
         />
       ) : (
-        <div
+        <span
           style={{
-            width: "100%",
-            height: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontWeight: 700,
-            color: "#999",
+            fontWeight: 800,
+            color: "#fff",
+            fontSize: size * 0.35,
           }}
         >
           ?
-        </div>
+        </span>
       )}
     </div>
   );
 }
 
-function Mini({ label, value }: { label: string; value: string }) {
+// ------------------------------------------------------------
+// MINI KPI (vainqueur + perdant)
+// ------------------------------------------------------------
+function Mini({
+  label,
+  win,
+  lose,
+}: {
+  label: string;
+  win: string | number;
+  lose: string | number;
+}) {
   return (
     <div
       style={{
@@ -876,16 +743,38 @@ function Mini({ label, value }: { label: string; value: string }) {
       }}
     >
       <div style={{ fontSize: 11, opacity: 0.7 }}>{label}</div>
-      <div style={{ fontWeight: 800, color: "#ffc63a", fontSize: 17 }}>
-        {value}
+
+      {/* Vainqueur en doré */}
+      <div
+        style={{
+          fontWeight: 800,
+          color: "#ffc63a",
+          fontSize: 17,
+          lineHeight: 1.1,
+        }}
+      >
+        {win}
+      </div>
+
+      {/* Perdant en blanc */}
+      <div
+        style={{
+          fontWeight: 700,
+          color: "#ffffff",
+          fontSize: 13,
+          opacity: 0.9,
+          marginTop: 2,
+        }}
+      >
+        {lose}
       </div>
     </div>
   );
 }
 
-// =============================================================
-// Styles boutons
-// =============================================================
+// ------------------------------------------------------------
+// STYLES BOUTONS
+// ------------------------------------------------------------
 
 const btnGold: React.CSSProperties = {
   flex: 1,
@@ -898,18 +787,19 @@ const btnGold: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const btnDanger: React.CSSProperties = {
+const btnGhost: React.CSSProperties = {
   padding: "11px 16px",
   borderRadius: 999,
   fontWeight: 700,
-  background: "linear-gradient(180deg,#ff5a5a,#d92626)",
-  border: "1px solid rgba(255,120,120,0.9)",
+  background: "rgba(255,255,255,0.08)",
+  border: "1px solid rgba(255,255,255,0.2)",
   color: "#fff",
   cursor: "pointer",
 };
 
 const btnGoldFull: React.CSSProperties = {
   width: "100%",
+  marginBottom: 10,
   padding: "11px 16px",
   borderRadius: 999,
   fontWeight: 800,
@@ -929,11 +819,4 @@ const btnGhostWide: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,0.2)",
   color: "#fff",
   cursor: "pointer",
-};
-
-const btnGhostWideDanger: React.CSSProperties = {
-  ...btnGhostWide,
-  background: "rgba(255,80,80,0.12)",
-  border: "1px solid rgba(255,120,120,0.7)",
-  color: "#ffb3b3",
 };

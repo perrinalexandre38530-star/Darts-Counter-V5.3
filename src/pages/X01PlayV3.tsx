@@ -2,6 +2,7 @@
 // src/pages/X01PlayV3.tsx
 // X01 V3 — moteur neuf + UI du "beau" X01Play
 // + Tour automatique des BOTS (isBot / botLevel)
+// + Sauvegarde en Historique / Stats à la fin du match
 // =============================================================
 
 import React from "react";
@@ -20,6 +21,7 @@ import X01LegOverlayV3 from "../lib/x01v3/x01LegOverlayV3";
 
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
+import { History } from "../lib/history";
 
 // ---------------- Constantes visuelles ----------------
 
@@ -286,6 +288,9 @@ export default function X01PlayV3({
   const { theme } = useTheme();
   const { t } = useLang();
 
+  // Pour éviter de sauvegarder le match plusieurs fois
+  const hasSavedMatchRef = React.useRef(false);
+
   const {
     state,
     liveStatsByPlayer,
@@ -311,7 +316,11 @@ export default function X01PlayV3({
       {};
     for (const p of players as any[]) {
       m[p.id] = {
-        avatarDataUrl: p.avatarDataUrl ?? (p as any).avatarUrl ?? (p as any).photoUrl ?? null,
+        avatarDataUrl:
+          p.avatarDataUrl ??
+          (p as any).avatarUrl ??
+          (p as any).photoUrl ??
+          null,
         name: p.name,
       };
     }
@@ -457,7 +466,7 @@ export default function X01PlayV3({
     [miniRanking]
   );
 
-  // Stats joueur actif (pour la mini-card sous l’avatar)
+  // Stats joueur actif
   const activeStats = activePlayer
     ? liveStatsByPlayer[activePlayer.id]
     : undefined;
@@ -467,6 +476,32 @@ export default function X01PlayV3({
     ? (avg3ByPlayer[activePlayer.id] ?? 0).toFixed(2)
     : "0.00";
   const bestVisit = activeStats?.bestVisit ?? 0;
+
+  // --- nouveaux compteurs live (avec plusieurs fallbacks) ---
+  const missCount =
+    activeStats?.miss ??
+    activeStats?.missCount ??
+    activeStats?.misses ??
+    0;
+
+  const bustCount =
+    activeStats?.bust ??
+    activeStats?.bustCount ??
+    activeStats?.busts ??
+    0;
+
+  const dBullCount =
+    activeStats?.dBull ??
+    activeStats?.doubleBull ??
+    activeStats?.dBullCount ??
+    0;
+
+  const missPct =
+    curDarts > 0 ? ((missCount / curDarts) * 100).toFixed(0) : "0";
+  const bustPct =
+    curDarts > 0 ? ((bustCount / curDarts) * 100).toFixed(0) : "0";
+  const dBullPct =
+    curDarts > 0 ? ((dBullCount / curDarts) * 100).toFixed(0) : "0";
 
   // =====================================================
   // Mesure header & keypad (pour scroll zone joueurs)
@@ -519,14 +554,20 @@ export default function X01PlayV3({
     }
   }
 
-  // REJOUER même config : version simple => reload
+  // REJOUER même config : on délègue à l'app si possible, sinon reload
   function handleReplaySameConfig() {
+    // Si l'app a prévu un flux "nouvelle partie X01v3", on l'utilise
+    if (onReplayNewConfig) {
+      onReplayNewConfig();
+      return;
+    }
+    // Fallback : on recharge la page (comportement ancien)
     if (typeof window !== "undefined") {
       window.location.reload();
     }
   }
 
-  // REJOUER en changeant les paramètres
+  // REJOUER en changeant les paramètres (si tu veux une action distincte)
   function handleReplayNewConfig() {
     if (onReplayNewConfig) {
       onReplayNewConfig();
@@ -535,10 +576,11 @@ export default function X01PlayV3({
     }
   }
 
-  // RÉSUMÉ : on remonte le matchId vers App (si dispo)
+  // RÉSUMÉ : on remonte toujours quelque chose
   function handleShowSummary() {
-    if (onShowSummary && (state as any).matchId) {
-      onShowSummary((state as any).matchId as string);
+    if (onShowSummary) {
+      const id = (state as any).matchId ?? "";
+      onShowSummary(id);
     }
   }
 
@@ -546,6 +588,27 @@ export default function X01PlayV3({
   function handleContinueMulti() {
     startNextLeg();
   }
+
+  // =====================================================
+  // Sauvegarde du match dans l'Historique / Stats
+  // =====================================================
+
+  React.useEffect(() => {
+    if (status !== "match_end") return;
+    if (hasSavedMatchRef.current) return;
+    hasSavedMatchRef.current = true;
+
+    try {
+      saveX01V3MatchToHistory({
+        config,
+        state,
+        scores,
+        liveStatsByPlayer,
+      });
+    } catch (err) {
+      console.warn("[X01PlayV3] saveX01V3MatchToHistory failed", err);
+    }
+  }, [status, config, state, scores, liveStatsByPlayer]);
 
   // =====================================================
   // BOT : tour auto si joueur courant est un BOT
@@ -729,6 +792,12 @@ export default function X01PlayV3({
             setsWon={(state as any).setsWon ?? {}}
             useSets={useSetsUi}
             currentVisit={currentVisit}
+            missCount={missCount}
+            bustCount={bustCount}
+            dBullCount={dBullCount}
+            missPct={missPct}
+            bustPct={bustPct}
+            dBullPct={dBullPct}
           />
         </div>
       </div>
@@ -790,9 +859,7 @@ export default function X01PlayV3({
               boxShadow: "0 10px 24px rgba(0,0,0,.5)",
             }}
           >
-            🤖{" "}
-            {activePlayer?.name ??
-              t("x01v3.bot.name", "BOT")}{" "}
+            🤖 {activePlayer?.name ?? t("x01v3.bot.name", "BOT")}{" "}
             {t("x01v3.bot.playing", "joue son tour...")}
           </div>
         ) : (
@@ -853,6 +920,12 @@ function HeaderBlock(props: {
   legsWon: Record<string, number>;
   setsWon: Record<string, number>;
   currentVisit: any;
+  missCount: number;
+  bustCount: number;
+  dBullCount: number;
+  missPct: string;
+  bustPct: string;
+  dBullPct: string;
 }) {
   const {
     currentPlayer,
@@ -868,6 +941,12 @@ function HeaderBlock(props: {
     legsWon,
     setsWon,
     currentVisit,
+    missCount,
+    bustCount,
+    dBullCount,
+    missPct,
+    bustPct,
+    dBullPct,
   } = props;
 
   const legsWonThisSet =
@@ -997,6 +1076,44 @@ function HeaderBlock(props: {
               <div>
                 Volée : <b>{currentThrow.length}/3</b>
               </div>
+
+              {/* ligne séparatrice légère */}
+              <div
+                style={{
+                  margin: "5px 0 3px",
+                  height: 1,
+                  background: "rgba(255,255,255,0.08)",
+                }}
+              />
+
+              {/* MISS / BUST / DBULL */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, 1fr)",
+                  gap: 4,
+                  fontSize: 10.5,
+                }}
+              >
+                <div>
+                  <div style={{ opacity: 0.7 }}>Miss</div>
+                  <div>
+                    <b>{missCount}</b> ({missPct}%)
+                  </div>
+                </div>
+                <div>
+                  <div style={{ opacity: 0.7 }}>Bust</div>
+                  <div>
+                    <b>{bustCount}</b> ({bustPct}%)
+                  </div>
+                </div>
+                <div>
+                  <div style={{ opacity: 0.7 }}>DBull</div>
+                  <div>
+                    <b>{dBullCount}</b> ({dBullPct}%)
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1016,8 +1133,7 @@ function HeaderBlock(props: {
               fontSize: 64,
               fontWeight: 900,
               color: "#ffcf57",
-              textShadow:
-                "0 4px 18px rgba(255,195,26,.25)",
+              textShadow: "0 4px 18px rgba(255,195,26,.25)",
               lineHeight: 1.02,
             }}
           >
@@ -1040,8 +1156,7 @@ function HeaderBlock(props: {
                   currentThrow
                     .slice(0, i + 1)
                     .reduce(
-                      (s: number, x: UIDart) =>
-                        s + dartValue(x),
+                      (s: number, x: UIDart) => s + dartValue(x),
                       0
                     ) <
                 0;
@@ -1099,10 +1214,8 @@ function HeaderBlock(props: {
                   style={{
                     padding: "3px 8px",
                     borderRadius: 8,
-                    border:
-                      "1px solid rgba(255,187,51,.4)",
-                    background:
-                      "rgba(255,187,51,.12)",
+                    border: "1px solid rgba(255,187,51,.4)",
+                    background: "rgba(255,187,51,.12)",
                     color: "#ffc63a",
                     fontWeight: 900,
                     whiteSpace: "nowrap",
@@ -1130,10 +1243,7 @@ function HeaderBlock(props: {
             <div
               style={{
                 maxHeight: 3 * 26,
-                overflow:
-                  liveRanking.length > 3
-                    ? "auto"
-                    : "visible",
+                overflow: liveRanking.length > 3 ? "auto" : "visible",
               }}
             >
               {liveRanking.map((r, i) => (
@@ -1294,8 +1404,7 @@ function PlayersListOnly(props: {
                         fontWeight: 700,
                       }}
                     >
-                      · BOT{" "}
-                      {(level || "easy").toUpperCase()}
+                      · BOT {(level || "easy").toUpperCase()}
                     </span>
                   )}
                 </div>
@@ -1388,4 +1497,53 @@ function SetLegChip(props: {
       </span>
     </span>
   );
+}
+
+// =============================================================
+// Bridge X01 V3 -> Historique / Stats
+// =============================================================
+
+type X01V3HistoryPayload = {
+  config: X01ConfigV3;
+  state: any;
+  scores: Record<string, number>;
+  liveStatsByPlayer: any;
+};
+
+function saveX01V3MatchToHistory({
+  config,
+  state,
+  scores,
+  liveStatsByPlayer,
+}: X01V3HistoryPayload) {
+  const players = config.players || [];
+  const matchId =
+    state?.matchId ||
+    `x01v3-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  const createdAt = state?.createdAt || Date.now();
+
+  // Petit snapshot très générique — à adapter si besoin à ton History
+  const record: any = {
+    id: matchId,
+    mode: "x01v3",
+    game: "x01",
+    variant: "x01v3",
+    createdAt,
+    startScore: config.startScore,
+    config,
+    // Pour les stats : on garde un snapshot brut du moteur V3
+    engineState: state,
+    liveStatsByPlayer,
+    scores,
+    players: players.map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      profileId: p.profileId ?? null,
+      isBot: !!p.isBot,
+    })),
+  };
+
+  // Si ton History attend un autre shape, tu pourras ajuster ici
+  History.upsert(record);
 }

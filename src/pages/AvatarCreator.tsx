@@ -2,7 +2,7 @@
 // src/pages/AvatarCreator.tsx
 // Création d'avatar "Option C" façon CHAPA DARTS
 // OPTION B : IA EXTERNE (OpenArt / autre site)
-// - Médaillon noir + double anneau doré
+// - Médaillon noir + double anneau doré (ou BLEU pour les BOTS)
 // - Texte haut : "DARTS COUNTER" plaqué contre l’anneau intérieur (extérieur)
 // - Texte bas : nom choisi, plaqué contre l’anneau intérieur (extérieur)
 // - Import de photo (y compris caricature faite ailleurs) + zoom
@@ -21,14 +21,17 @@ type Props = {
   defaultName?: string;
   onSave?: (payload: { pngDataUrl: string; name: string }) => void;
   onBack?: () => void; // callback pour bouton Retour
+  /** Quand true => médaillon BOT en bleu (ring + textes) */
+  isBotMode?: boolean;
 };
 
 const GOLD = "#F6C256";
 const BLACK = "#000000";
+const BOT_RING = "#00b4ff"; // bleu spécifique BOTS
 
 // --- Géométrie du médaillon (calée sur ton modèle) ---
-const R_OUTER = 248; // rayon du grand anneau doré (centre du stroke)
-const R_INNER = 188; // rayon de l’anneau intérieur doré (centre du stroke)
+const R_OUTER = 248; // rayon du grand anneau (centre du stroke)
+const R_INNER = 188; // rayon de l’anneau intérieur (centre du stroke)
 const STROKE = 18; // épaisseur des anneaux
 
 // Cercle avatar = bord interne de l’anneau intérieur → il "touche" l’anneau
@@ -50,6 +53,7 @@ export default function AvatarCreator({
   defaultName = "",
   onSave,
   onBack,
+  isBotMode = false,
 }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
@@ -186,15 +190,20 @@ export default function AvatarCreator({
     }
   }
 
+  // Couleur principale UI (titres, etc.)
   const primary = theme.primary ?? GOLD;
+
+  // Couleur du RING du médaillon :
+  // - doré par défaut
+  // - BLEU spécial quand on est en mode BOT
+  const RING_COLOR = isBotMode ? BOT_RING : GOLD;
 
   // Calcul taille de l’image dans le clip (zoom)
   const avatarImgSize = R_AVATAR * 2 * zoom;
 
   // URL externe vers un outil de caricature (OpenArt ou équivalent)
-  // 👉 À PERSONNALISER avec la page exacte que tu préfères
   const OPEN_ART_URL =
-    "https://openart.ai/create"; // par ex. page de création (remplace par l'URL de ton preset caricature)
+    "https://openart.ai/create"; // à remplacer par ton preset caricature exact
 
   function openOpenArt() {
     window.open(OPEN_ART_URL, "_blank", "noopener,noreferrer");
@@ -361,19 +370,19 @@ export default function AvatarCreator({
               {/* Fond noir global */}
               <circle r={R_OUTER + STROKE} fill={BLACK} />
 
-              {/* Grand anneau doré extérieur */}
+              {/* Grand anneau (doré ou bleu BOT) */}
               <circle
                 r={R_OUTER}
                 fill="none"
-                stroke={GOLD}
+                stroke={RING_COLOR}
                 strokeWidth={STROKE}
               />
 
-              {/* Anneau doré intérieur */}
+              {/* Anneau intérieur (doré ou bleu BOT) */}
               <circle
                 r={R_INNER}
                 fill="none"
-                stroke={GOLD}
+                stroke={RING_COLOR}
                 strokeWidth={STROKE}
               />
 
@@ -412,7 +421,7 @@ export default function AvatarCreator({
                 </g>
               )}
 
-              {/* Texte haut : DARTS COUNTER collé au cercle intérieur côté extérieur */}
+              {/* Texte haut : DARTS COUNTER */}
               <path
                 id="arcTop"
                 d={`
@@ -426,7 +435,7 @@ export default function AvatarCreator({
                 fontSize={40}
                 fontWeight={800}
                 letterSpacing={4}
-                fill={GOLD}
+                fill={RING_COLOR}
               >
                 <textPath
                   href="#arcTop"
@@ -437,7 +446,7 @@ export default function AvatarCreator({
                 </textPath>
               </text>
 
-              {/* Texte bas : nom, collé au cercle intérieur dans la bande noire */}
+              {/* Texte bas : nom */}
               <path
                 id="arcBottom"
                 d={`
@@ -451,7 +460,7 @@ export default function AvatarCreator({
                 fontSize={40}
                 fontWeight={800}
                 letterSpacing={4}
-                fill={GOLD}
+                fill={RING_COLOR}
               >
                 <textPath
                   href="#arcBottom"
@@ -535,7 +544,7 @@ export default function AvatarCreator({
             </span>
           </div>
 
-          {/* Import photo (caricature faite ailleurs) */}
+          {/* Import photo */}
           <div
             style={{
               display: "flex",

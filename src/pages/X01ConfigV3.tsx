@@ -44,14 +44,14 @@ const TEAM_COLORS: Record<TeamId, string> = {
   green: "#6dff7c",
 };
 
-// même clé que dans App / ProfilesBots
+// Clé locale BOTS (même que Profils>Bots)
 const LS_BOTS_KEY = "dc_bots_v1";
 
 type BotLite = {
   id: string;
   name: string;
   avatarDataUrl?: string | null;
-  botLevel?: string;
+  botLevel?: string; // libellé ("Easy", "Standard", "Pro", etc.)
 };
 
 export default function X01ConfigV3({
@@ -75,12 +75,27 @@ export default function X01ConfigV3({
       const raw = window.localStorage.getItem(LS_BOTS_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as any[];
-      const mapped: BotLite[] = parsed.map((b) => ({
-        id: b.id,
-        name: b.name || "BOT",
-        avatarDataUrl: b.avatarDataUrl ?? null,
-        botLevel: b.botLevel,
-      }));
+
+      const mapped: BotLite[] = parsed.map((b) => {
+        // On récupère le libellé de niveau depuis plusieurs clés possibles
+        const levelLabel: string =
+          b.botLevel ??
+          b.levelLabel ??
+          b.levelName ??
+          b.performanceLevel ??
+          b.performance ??
+          b.skill ??
+          b.difficulty ??
+          "";
+
+        return {
+          id: b.id,
+          name: b.name || "BOT",
+          avatarDataUrl: b.avatarDataUrl ?? null,
+          botLevel: levelLabel,
+        };
+      });
+
       setBotsFromLS(mapped);
     } catch (e) {
       console.warn("[X01ConfigV3] load BOTS LS failed:", e);
@@ -941,7 +956,10 @@ export default function X01ConfigV3({
                   display: "flex",
                   gap: 14,
                   overflowX: "auto",
+                  overflowY: "visible", // ⭐ laisse les étoiles dépasser vers le haut
                   paddingBottom: 10,
+                  paddingTop: 16, // ⭐ marge haute pour respirer
+                  marginTop: 10, // ⭐ décale légèrement vers le bas
                   marginBottom: 10,
                 }}
                 className="dc-scroll-thin"
@@ -972,7 +990,6 @@ export default function X01ConfigV3({
                         bot={bot}
                         level={level}
                         active={active}
-                        primary={primary}
                       />
 
                       <div
@@ -991,21 +1008,33 @@ export default function X01ConfigV3({
                         {bot.name}
                       </div>
 
+                      {/* Chip BOT bleu néon (sans étoiles) */}
                       <div
                         style={{
-                          fontSize: 10,
-                          color: primary,
-                          opacity: 0.9,
+                          marginTop: 2,
                           display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          gap: 2,
+                          justifyContent: "center",
                         }}
                       >
-                        <span style={{ fontSize: 9, opacity: 0.8 }}>
+                        <span
+                          style={{
+                            padding: "2px 8px",
+                            borderRadius: 999,
+                            fontSize: 9,
+                            fontWeight: 800,
+                            letterSpacing: 0.7,
+                            textTransform: "uppercase",
+                            background:
+                              "radial-gradient(circle at 30% 0, #6af3ff, #008cff)",
+                            color: "#020611",
+                            boxShadow:
+                              "0 0 10px rgba(0,172,255,0.55), 0 0 18px rgba(0,172,255,0.35)",
+                            border: "1px solid rgba(144,228,255,0.9)",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
                           BOT
                         </span>
-                        <BotLevelStars level={level} />
                       </div>
                     </button>
                   );
@@ -1236,39 +1265,80 @@ function TeamsSection({
 /* --------- Helpers niveau BOT (1 à 5 étoiles) --------- */
 
 function resolveBotLevel(botLevelRaw?: string | null): { level: number } {
-  const v = (botLevelRaw || "").toLowerCase();
+  const v = (botLevelRaw || "").toLowerCase().trim();
 
-  if (v.includes("legend")) return { level: 5 }; // legend / légende
+  if (!v) return { level: 1 };
+
+  // Si un chiffre apparaît dans la chaîne (ex: "lvl2", "3/5", "level 4")
+  const digits = v.replace(/[^0-9]/g, "");
+  if (digits) {
+    const n = parseInt(digits, 10);
+    if (Number.isFinite(n) && n >= 1 && n <= 5) {
+      return { level: n };
+    }
+  }
+
+  // Mots-clés
+  if (v.includes("legend")) return { level: 5 };
+  if (v.includes("légende")) return { level: 5 };
+
   if (v.includes("pro")) return { level: 4 };
-  if (v.includes("fort") || v.includes("strong") || v.includes("hard"))
-    return { level: 3 };
-  if (v.includes("standard") || v.includes("normal") || v.includes("medium"))
-    return { level: 2 };
 
-  // défaut : débutant
+  if (
+    v.includes("fort") ||
+    v.includes("strong") ||
+    v.includes("hard") ||
+    v.includes("difficile")
+  ) {
+    return { level: 3 };
+  }
+
+  if (
+    v.includes("standard") ||
+    v.includes("normal") ||
+    v.includes("medium") ||
+    v.includes("moyen")
+  ) {
+    return { level: 2 };
+  }
+
+  if (
+    v.includes("easy") ||
+    v.includes("facile") ||
+    v.includes("beginner") ||
+    v.includes("débutant") ||
+    v.includes("rookie")
+  ) {
+    return { level: 1 };
+  }
+
+  // défaut : 1 étoile
   return { level: 1 };
 }
 
-/* Médaillon BOT + ring d'étoiles (taille réduite) */
+/* Médaillon BOT bleu + ring d'étoiles */
 function BotMedallion({
   bot,
   level,
   active,
-  primary,
 }: {
   bot: BotLite;
   level: number; // 1..5
   active: boolean;
-  primary: string;
 }) {
-  const SCALE = 0.6;
+  // 🎨 Couleur BOT unique
+  const BOT_COLOR = "#00b4ff";
 
+  // Taille
+  const SCALE = 0.6;
   const AVATAR = 96 * SCALE;
   const MEDALLION = 104 * SCALE;
   const STAR = 18 * SCALE;
   const WRAP = MEDALLION + STAR;
 
-  const fakeAvg3d = 20 + (level - 1) * 15;
+  // ⭐ Densité d’étoiles basée sur niveau 1..5
+  const lvl = Math.max(1, Math.min(5, level));
+  const fakeAvg3d = 15 + (lvl - 1) * 12; // 15, 27, 39, 51, 63
 
   return (
     <div
@@ -1280,7 +1350,7 @@ function BotMedallion({
         overflow: "visible",
       }}
     >
-      {/* Anneau d'étoiles */}
+      {/* 🌟 Anneau d'étoiles (bleu) */}
       <div
         aria-hidden
         style={{
@@ -1288,6 +1358,7 @@ function BotMedallion({
           inset: 0,
           pointerEvents: "none",
           zIndex: 3,
+          filter: "drop-shadow(0 0 4px #008cff88)",
         }}
       >
         <ProfileStarRing
@@ -1296,10 +1367,11 @@ function BotMedallion({
           starSize={STAR}
           stepDeg={10}
           avg3d={fakeAvg3d}
+          color={BOT_COLOR}
         />
       </div>
 
-      {/* Disque principal + avatar */}
+      {/* 🟦 Anneau principal bleu */}
       <div
         style={{
           position: "absolute",
@@ -1310,43 +1382,32 @@ function BotMedallion({
           borderRadius: "50%",
           padding: 6 * SCALE,
           background: active
-            ? `linear-gradient(135deg, ${primary}, ${primary}55)`
-            : "linear-gradient(135deg, #323640, #181a22)",
+            ? `linear-gradient(135deg, #7df3ff, ${BOT_COLOR})`
+            : "linear-gradient(135deg, #2c3640, #141b26)",
           boxShadow: active
-            ? `0 0 ${24 * SCALE}px ${primary}88, inset 0 0 ${10 * SCALE}px rgba(0,0,0,.55)`
+            ? `0 0 ${24 * SCALE}px ${BOT_COLOR}a8, inset 0 0 ${
+                10 * SCALE
+              }px rgba(0,0,0,.6)`
             : `0 0 ${16 * SCALE}px rgba(0,0,0,0.65)`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           transform: active ? "scale(1.05)" : "scale(1)",
           transition: "transform .15s ease, box-shadow .15s ease",
+          border: `2px solid ${BOT_COLOR}`,
         }}
       >
+        {/* 👤 Avatar BOT */}
         <ProfileAvatar
           size={AVATAR}
           dataUrl={bot.avatarDataUrl ?? undefined}
           label={bot.name?.[0]?.toUpperCase() || "B"}
           showStars={false}
+          ringColor={BOT_COLOR}
+          textColor={BOT_COLOR}
         />
       </div>
     </div>
-  );
-}
-
-/* Rangée d'étoiles 1..5 pour le niveau BOT */
-function BotLevelStars({ level }: { level: number }) {
-  const clamped = Math.max(1, Math.min(5, level));
-  const stars = "★".repeat(clamped);
-  return (
-    <span
-      style={{
-        fontSize: 10,
-        fontWeight: 700,
-        letterSpacing: 1,
-      }}
-    >
-      {stars}
-    </span>
   );
 }
 

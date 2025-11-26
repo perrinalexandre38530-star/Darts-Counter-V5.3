@@ -896,104 +896,110 @@ function App() {
         break;
       }
 
-      // ✅ Nouvelle page : Créateur d'avatar
-      case "avatar": {
-        const botId: string | undefined = routeParams?.botId;
-        const profileIdFromParams: string | undefined = routeParams?.profileId;
-        const backTo: Tab = (routeParams?.from as Tab) || "profiles";
-
-        // --- Cas 1 : on édite l'avatar d'un BOT ---
-        if (botId) {
-          const bots = loadBotsLS();
-          const targetBot = bots.find((b) => b.id === botId) || null;
-
-          function handleSaveAvatarBot({
-            pngDataUrl,
-            name,
-          }: {
-            pngDataUrl: string;
-            name: string;
-          }) {
-            if (!targetBot) {
-              console.warn("[AvatarCreator] BOT introuvable pour id", botId);
-              go(backTo);
-              return;
-            }
-            const next = bots.slice();
-            const idx = next.findIndex((b) => b.id === targetBot.id);
-            const updated: BotLS = {
-              ...targetBot,
-              name: name?.trim() || targetBot.name,
-              avatarDataUrl: pngDataUrl,
-            };
-            if (idx >= 0) next[idx] = updated;
-            else next.push(updated);
-            saveBotsLS(next);
-            go(backTo);
-          }
-
-          page = (
-            <div style={{ padding: 16 }}>
-              <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
-                ← Retour
-              </button>
-              <AvatarCreator
-                size={512}
-                defaultName={targetBot?.name || ""}
-                onSave={handleSaveAvatarBot}
-              />
-            </div>
-          );
-          break;
-        }
-
-        // --- Cas 2 : avatar pour un profil (profilId explicite ou actif) ---
-        const targetProfile =
-          (store.profiles || []).find(
-            (p) => p.id === (profileIdFromParams || store.activeProfileId)
-          ) || null;
-
-        function handleSaveAvatarProfile({
-          pngDataUrl,
-          name,
-        }: {
-          pngDataUrl: string;
-          name: string;
-        }) {
-          if (!targetProfile) {
-            console.warn("[AvatarCreator] Aucun profil cible");
-            return;
-          }
-
-          setProfiles((list) =>
-            list.map((p) =>
-              p.id === targetProfile.id
-                ? {
-                    ...p,
-                    name: name?.trim() || p.name,
-                    avatarDataUrl: pngDataUrl,
+            // ✅ Nouvelle page : Créateur d'avatar
+            case "avatar": {
+              const botId: string | undefined = routeParams?.botId;
+              const profileIdFromParams: string | undefined = routeParams?.profileId;
+              const backTo: Tab = (routeParams?.from as Tab) || "profiles";
+              const isBotMode = !!routeParams?.isBot;
+      
+              // --- Cas 1 : on édite l'avatar d'un BOT ---
+              if (botId) {
+                const bots = loadBotsLS();
+                const targetBot = bots.find((b) => b.id === botId) || null;
+      
+                function handleSaveAvatarBot({
+                  pngDataUrl,
+                  name,
+                }: {
+                  pngDataUrl: string;
+                  name: string;
+                }) {
+                  if (!targetBot) {
+                    console.warn("[AvatarCreator] BOT introuvable pour id", botId);
+                    go(backTo);
+                    return;
                   }
-                : p
-            )
-          );
-
-          go(backTo);
-        }
-
-        page = (
-          <div style={{ padding: 16 }}>
-            <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
-              ← Retour
-            </button>
-            <AvatarCreator
-              size={512}
-              defaultName={targetProfile?.name || ""}
-              onSave={handleSaveAvatarProfile}
-            />
-          </div>
-        );
-        break;
-      }
+                  const next = bots.slice();
+                  const idx = next.findIndex((b) => b.id === targetBot.id);
+                  const updated: BotLS = {
+                    ...targetBot,
+                    name: name?.trim() || targetBot.name,
+                    avatarDataUrl: pngDataUrl,
+                  };
+                  if (idx >= 0) next[idx] = updated;
+                  else next.push(updated);
+                  saveBotsLS(next);
+                  go(backTo);
+                }
+      
+                page = (
+                  <div style={{ padding: 16 }}>
+                    <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
+                      ← Retour
+                    </button>
+                    <AvatarCreator
+                      size={512}
+                      defaultName={targetBot?.name || ""}
+                      onSave={handleSaveAvatarBot}
+                      // 👇 médaillon bleu pour les BOTS
+                      isBotMode={true}
+                    />
+                  </div>
+                );
+                break;
+              }
+      
+              // --- Cas 2 : avatar pour un profil (profilId explicite ou actif) ---
+              const targetProfile =
+                (store.profiles || []).find(
+                  (p) => p.id === (profileIdFromParams || store.activeProfileId)
+                ) || null;
+      
+              function handleSaveAvatarProfile({
+                pngDataUrl,
+                name,
+              }: {
+                pngDataUrl: string;
+                name: string;
+              }) {
+                if (!targetProfile) {
+                  console.warn("[AvatarCreator] Aucun profil cible");
+                  return;
+                }
+      
+                setProfiles((list) =>
+                  list.map((p) =>
+                    p.id === targetProfile.id
+                      ? {
+                          ...p,
+                          name: name?.trim() || p.name,
+                          avatarDataUrl: pngDataUrl,
+                        }
+                      : p
+                  )
+                );
+      
+                go(backTo);
+              }
+      
+              page = (
+                <div style={{ padding: 16 }}>
+                  <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
+                    ← Retour
+                  </button>
+                  <AvatarCreator
+                    size={512}
+                    defaultName={targetProfile?.name || ""}
+                    onSave={handleSaveAvatarProfile}
+                    // 👇 médaillon doré (humain)
+                    isBotMode={false}
+                  />
+                </div>
+              );
+              break;
+            }
+      
 
       default: {
         page = (

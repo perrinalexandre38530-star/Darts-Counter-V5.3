@@ -3,7 +3,7 @@
 // Gestion des BOTS (CPU) — joueurs virtuels
 // - Liste des BOTS enregistrés (localStorage dc_bots_v1)
 // - Création d'un BOT : nom + niveau + seed d'avatar
-// - Après création : ouverture du créateur d’avatar
+// - Après création : ouverture du créateur d’avatar (mode BOT)
 // ============================================
 import React from "react";
 import { nanoid } from "nanoid";
@@ -17,6 +17,8 @@ export type Bot = {
   id: string;
   name: string;
   level: BotLevel;
+  /** champ texte utilisé par X01ConfigV3 → pour resolveBotLevel() */
+  botLevel?: string | null;
   avatarSeed: string;
   avatarDataUrl?: string | null; // 👈 avatar du BOT
   createdAt: string;
@@ -36,9 +38,55 @@ function safeParse<T>(raw: string | null, fallback: T): T {
   }
 }
 
+/**
+ * Normalise les anciens enregistrements :
+ * - certains n'ont que "level"
+ * - X01ConfigV3 lit "botLevel"
+ */
+function normalizeBots(arr: any[]): Bot[] {
+  return (arr || []).map((b) => {
+    const rawLevel: string =
+      (b.level as string) || (b.botLevel as string) || "easy";
+
+    let level: BotLevel;
+    switch (rawLevel) {
+      case "medium":
+      case "strong":
+      case "pro":
+      case "legend":
+      case "easy":
+        level = rawLevel;
+        break;
+      default:
+        // si jamais c'est autre chose on mappe sur easy
+        level = "easy";
+        break;
+    }
+
+    const botLevel: string =
+      typeof b.botLevel === "string" && b.botLevel.trim()
+        ? b.botLevel
+        : level;
+
+    return {
+      id: String(b.id ?? nanoid()),
+      name: String(b.name ?? "BOT"),
+      level,
+      botLevel,
+      avatarSeed: String(
+        b.avatarSeed ?? Math.random().toString(36).slice(2, 10)
+      ),
+      avatarDataUrl: b.avatarDataUrl ?? null,
+      createdAt: String(b.createdAt ?? new Date().toISOString()),
+      updatedAt: String(b.updatedAt ?? new Date().toISOString()),
+    } satisfies Bot;
+  });
+}
+
 export function loadBots(): Bot[] {
   if (typeof window === "undefined") return [];
-  return safeParse<Bot[]>(window.localStorage.getItem(LS_BOTS_KEY), []);
+  const raw = safeParse<any[]>(window.localStorage.getItem(LS_BOTS_KEY), []);
+  return normalizeBots(raw);
 }
 
 export function saveBots(bots: Bot[]) {
@@ -68,7 +116,10 @@ function levelLabel(level: BotLevel, t: (k: string, f?: string) => string) {
   }
 }
 
-function levelDescription(level: BotLevel, t: (k: string, f?: string) => string) {
+function levelDescription(
+  level: BotLevel,
+  t: (k: string, f?: string) => string
+) {
   switch (level) {
     case "easy":
       return t(
@@ -233,21 +284,25 @@ export default function ProfilesBots({ store, go }: Props) {
     e.preventDefault();
     if (!name.trim()) return;
     const now = new Date().toISOString();
+
     const bot: Bot = {
       id: nanoid(),
       name: name.trim(),
       level,
+      botLevel: level, // 👈 stocké aussi en texte pour X01ConfigV3
       avatarSeed: seed.trim() || Math.random().toString(36).slice(2, 10),
       avatarDataUrl: null,
       createdAt: now,
       updatedAt: now,
     };
+
     const next = [...bots, bot];
     setBots(next);
     saveBots(next);
 
     // 👇 on va direct dans l’éditeur d’avatar pour ce BOT
-    go?.("avatar", { botId: bot.id, from: "profiles_bots" });
+    //    on précise isBot: true pour que AvatarCreator passe en bleu
+    go?.("avatar", { botId: bot.id, from: "profiles_bots", isBot: true });
 
     handleResetForm();
   }

@@ -1,41 +1,35 @@
 // ============================================
 // src/pages/FriendsPage.tsx
-// Mode Online & Amis — v2 full local (mock)
-// - Compte online email + mot de passe sauvegardé en localStorage
-// - Connexion / création rapide
+// Mode Online & Amis — v3 FULLWEB (Supabase)
+// - Auth réelle via onlineApi (Supabase)
+// - Session restaurée automatiquement (onlineApi.restoreSession)
 // - Statut global store.selfStatus (online / away / offline)
 // - Statut cohérent sur Home / Profils / FriendsPage
 // - Présence locale lastSeen + ping toutes les 30s en "online"
-// - Salons online mock : création + join par code
+// - Lobbies ONLINE réels : création + join par code (onlineApi.createLobby/joinLobby)
 // - Affiche le DRAPEAU du pays du profil actif (privateInfo.country)
-// - Bouton TEST SUPABASE (juste pour vérifier la connexion plus tard)
-// - Bouton "Lancer une partie X01 Online (mock)" qui ouvre x01_online_setup
-// - Salle d’attente ONLINE (mock) pour les lobbys actifs
+//   via getCountryFlag() partagé (src/lib/countryNames.ts)
+// - Bouton TEST SUPABASE (juste pour vérifier la connexion)
+// - Bouton "Lancer une partie X01 Online" qui ouvre x01_online_setup
+// - Salle d’attente ONLINE (affiche le code et infos host/joueur local)
 // ============================================
 
 import React from "react";
 import type { Store } from "../lib/types";
+
 import { onlineApi } from "../lib/onlineApi";
+import type { AuthSession, OnlineLobby } from "../lib/onlineApi";
 import type { OnlineMatch } from "../lib/onlineTypes";
 
-import {
-  createLobby,
-  joinLobbyByCode,
-  type OnlineLobby,
-} from "../lib/onlineLobbiesMock";
-
 import { supabase } from "../lib/supabase"; // ✅ test connexion Supabase
+import { getCountryFlag } from "../lib/countryNames"; // ✅ util partagé pour les drapeaux
 
 /* -------------------------------------------------
    Constantes localStorage
 --------------------------------------------------*/
 const LS_PRESENCE_KEY = "dc_online_presence_v1";
+// Gardé pour compat avec StatsOnline (qui lit encore ce cache local)
 const LS_ONLINE_MATCHES_KEY = "dc_online_matches_v1";
-
-// Compte online local (email + mot de passe + pseudo)
-const LS_ONLINE_ACCOUNT_KEY = "dc_online_account_v1";
-// Session online actuelle (juste un flag + timestamp)
-const LS_ONLINE_SESSION_KEY = "dc_online_session_v1";
 
 type PresenceStatus = "online" | "away" | "offline";
 
@@ -44,21 +38,7 @@ type StoredPresence = {
   lastSeen: number;
 };
 
-type LocalOnlineAccount = {
-  email: string;
-  password: string;
-  nickname: string;
-  createdAt: number;
-  lastLoginAt: number;
-};
-
-type LocalOnlineSession = {
-  email: string;
-  nickname: string;
-  loggedInAt: number;
-};
-
-/* ------ Helpers localStorage ------ */
+/* ------ Helpers localStorage présence ------ */
 
 function savePresenceToLS(status: PresenceStatus) {
   if (typeof window === "undefined") return;
@@ -80,15 +60,10 @@ function loadPresenceFromLS(): StoredPresence | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed.lastSeen !== "number") return null;
-    return {
-      status:
-        parsed.status === "online" ||
-        parsed.status === "away" ||
-        parsed.status === "offline"
-          ? parsed.status
-          : "offline",
-      lastSeen: parsed.lastSeen,
-    };
+    const st = parsed.status;
+    const status: PresenceStatus =
+      st === "online" || st === "away" || st === "offline" ? st : "offline";
+    return { status, lastSeen: parsed.lastSeen };
   } catch {
     return null;
   }
@@ -109,52 +84,6 @@ function formatLastSeenAgo(lastSeen: number | null): string | null {
   return `Il y a ${diffH} h`;
 }
 
-function loadLocalOnlineAccount(): LocalOnlineAccount | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(LS_ONLINE_ACCOUNT_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || !parsed.email || !parsed.password) return null;
-    return parsed as LocalOnlineAccount;
-  } catch {
-    return null;
-  }
-}
-
-function saveLocalOnlineAccount(acc: LocalOnlineAccount) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(LS_ONLINE_ACCOUNT_KEY, JSON.stringify(acc));
-  } catch {
-    // ignore
-  }
-}
-
-function loadLocalOnlineSession(): LocalOnlineSession | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(LS_ONLINE_SESSION_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as LocalOnlineSession;
-  } catch {
-    return null;
-  }
-}
-
-function saveLocalOnlineSession(sess: LocalOnlineSession | null) {
-  if (typeof window === "undefined") return;
-  try {
-    if (!sess) {
-      window.localStorage.removeItem(LS_ONLINE_SESSION_KEY);
-    } else {
-      window.localStorage.setItem(LS_ONLINE_SESSION_KEY, JSON.stringify(sess));
-    }
-  } catch {
-    // ignore
-  }
-}
-
 /* -------------------------------------------------
    Composant principal
 --------------------------------------------------*/
@@ -167,42 +96,34 @@ type Props = {
 };
 
 export default function FriendsPage({ store, update, go }: Props) {
-  // --- Profil local actif (fallback nickname)
+  // --- Profil local actif (fallback pseudo + avatar)
   const activeProfile =
     (store.profiles || []).find((p) => p.id === store.activeProfileId) ||
     (store.profiles || [])[0] ||
     null;
 
-  // Compte online enregistré (email + mot de passe + nickname)
-  const [account, setAccount] = React.useState<LocalOnlineAccount | null>(
-    () => loadLocalOnlineAccount()
-  );
-
-  // Session actuelle (connecté ou pas)
-  const [session, setSession] = React.useState<LocalOnlineSession | null>(
-    () => loadLocalOnlineSession()
-  );
-
-  const isSignedIn = !!session;
+  // -------- AUTH ONLINE (Supabase via onlineApi) --------
+  const [auth, setAuth] = React.useState<AuthSession | null>(null);
+  const [authLoading, setAuthLoading] = React.useState(true);
 
   // Champs formulaire
   const [nickname, setNickname] = React.useState<string>(
-    () => session?.nickname || account?.nickname || activeProfile?.name || ""
+    () => activeProfile?.name || ""
   );
-  const [email, setEmail] = React.useState<string>(
-    () => session?.email || account?.email || ""
-  );
+  const [email, setEmail] = React.useState<string>("");
   const [password, setPassword] = React.useState<string>("");
 
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [info, setInfo] = React.useState<string | null>(null);
 
-  // --- Historique online (mock)
+  const isSignedIn = !!auth?.user;
+
+  // --- Historique online (onlineApi.listMatches)
   const [matches, setMatches] = React.useState<OnlineMatch[]>([]);
   const [loadingMatches, setLoadingMatches] = React.useState(false);
 
-  // Salons online (mock) - création / join
+  // -------- LOBBIES ONLINE (réels) --------
   const [creatingLobby, setCreatingLobby] = React.useState(false);
   const [lastCreatedLobby, setLastCreatedLobby] =
     React.useState<OnlineLobby | null>(null);
@@ -238,7 +159,10 @@ export default function FriendsPage({ store, update, go }: Props) {
       : "#cccccc";
 
   const displayName =
-    activeProfile?.name || account?.nickname || session?.nickname || "Profil online";
+    activeProfile?.name ||
+    auth?.profile?.displayName ||
+    auth?.user?.nickname ||
+    "Profil online";
 
   const lastSeenLabel = formatLastSeenAgo(lastSeen);
 
@@ -281,6 +205,7 @@ export default function FriendsPage({ store, update, go }: Props) {
     setLastSeen(Date.now());
   }
 
+  // 🔁 Ping toutes les 30s quand connecté + en ligne
   React.useEffect(() => {
     if (!isSignedIn || selfStatus !== "online") return;
     if (typeof window === "undefined") return;
@@ -293,6 +218,45 @@ export default function FriendsPage({ store, update, go }: Props) {
     return () => window.clearInterval(id);
   }, [isSignedIn, selfStatus]);
 
+  // Au montage : restaurer session Supabase (si déjà loggué)
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setAuthLoading(true);
+      try {
+        const sess = await onlineApi.restoreSession();
+        if (cancelled) return;
+        setAuth(sess);
+        if (sess?.user) {
+          setPresence("online");
+          // préremplir email/nickname si dispo
+          setEmail(sess.user.email || "");
+          setNickname(
+            sess.profile?.displayName ||
+              sess.user.nickname ||
+              activeProfile?.name ||
+              ""
+          );
+        } else {
+          setPresence("offline");
+        }
+      } catch (e) {
+        console.warn("[FriendsPage] restoreSession error", e);
+        if (!cancelled) {
+          setAuth(null);
+          setPresence("offline");
+        }
+      } finally {
+        if (!cancelled) setAuthLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Si on retrouve une ancienne présence locale très vieille, on bascule en "away"
   React.useEffect(() => {
     if (!initialPresence) return;
     const diff = Date.now() - initialPresence.lastSeen;
@@ -303,7 +267,7 @@ export default function FriendsPage({ store, update, go }: Props) {
   }, []);
 
   /* -------------------------------------------------
-      Historique Online (mock)
+      Historique Online (vrai serveur)
   --------------------------------------------------*/
 
   React.useEffect(() => {
@@ -318,7 +282,20 @@ export default function FriendsPage({ store, update, go }: Props) {
       setLoadingMatches(true);
       try {
         const list = await onlineApi.listMatches(50);
-        if (!cancelled) setMatches(list || []);
+        if (!cancelled) {
+          setMatches(list || []);
+          // ⚠️ Optionnel: mettre un cache local pour StatsOnline
+          try {
+            if (typeof window !== "undefined") {
+              window.localStorage.setItem(
+                LS_ONLINE_MATCHES_KEY,
+                JSON.stringify(list || [])
+              );
+            }
+          } catch {
+            // ignore
+          }
+        }
       } catch (e) {
         console.warn("[online] listMatches failed", e);
         if (!cancelled) setMatches([]);
@@ -369,11 +346,10 @@ export default function FriendsPage({ store, update, go }: Props) {
 
   /* -------------------------------------------------
       Actions AUTH (signup / login / logout)
-      -> 100% local, pas de Supabase pour l’instant
   --------------------------------------------------*/
 
   async function handleSignup() {
-    const nick = nickname.trim();
+    const nick = (nickname || activeProfile?.name || "").trim();
     const mail = email.trim().toLowerCase();
     const pass = password;
 
@@ -391,28 +367,16 @@ export default function FriendsPage({ store, update, go }: Props) {
 
     setBusy(true);
     try {
-      const now = Date.now();
-      const acc: LocalOnlineAccount = {
+      const sess = await onlineApi.signup({
         email: mail,
         password: pass,
         nickname: nick,
-        createdAt: account?.createdAt ?? now,
-        lastLoginAt: now,
-      };
-      saveLocalOnlineAccount(acc);
-      setAccount(acc);
+      });
 
-      const sess: LocalOnlineSession = {
-        email: mail,
-        nickname: nick,
-        loggedInAt: now,
-      };
-      saveLocalOnlineSession(sess);
-      setSession(sess);
-
+      setAuth(sess);
       setPresence("online");
       setPassword("");
-      setInfo("Compte online créé et connecté (mode démo local).");
+      setInfo("Compte online créé et connecté (serveur Supabase).");
     } catch (e: any) {
       console.warn(e);
       setError(
@@ -435,39 +399,23 @@ export default function FriendsPage({ store, update, go }: Props) {
       return;
     }
 
-    const acc = loadLocalOnlineAccount();
-    if (!acc) {
-      setError("Aucun compte local trouvé. Crée d’abord un compte.");
-      return;
-    }
-
-    if (acc.email !== mail || acc.password !== pass) {
-      setError("Email ou mot de passe incorrect.");
-      return;
-    }
-
     setBusy(true);
     try {
-      const now = Date.now();
-      const updated: LocalOnlineAccount = {
-        ...acc,
-        lastLoginAt: now,
-        nickname: nickname.trim() || acc.nickname,
-      };
-      saveLocalOnlineAccount(updated);
-      setAccount(updated);
+      const sess = await onlineApi.login({
+        email: mail,
+        password: pass,
+      });
 
-      const sess: LocalOnlineSession = {
-        email: updated.email,
-        nickname: updated.nickname,
-        loggedInAt: now,
-      };
-      saveLocalOnlineSession(sess);
-      setSession(sess);
-
+      setAuth(sess);
       setPresence("online");
       setPassword("");
-      setInfo("Connexion réussie (mode démo local).");
+      setNickname(
+        sess.profile?.displayName ||
+          sess.user.nickname ||
+          activeProfile?.name ||
+          ""
+      );
+      setInfo("Connexion réussie au serveur online.");
     } catch (e: any) {
       console.warn(e);
       setError(
@@ -483,20 +431,20 @@ export default function FriendsPage({ store, update, go }: Props) {
     setError(null);
     setInfo(null);
     try {
-      setSession(null);
-      saveLocalOnlineSession(null);
-    } catch {
-      // ignore
+      await onlineApi.logout();
+      setAuth(null);
+    } catch (e) {
+      console.warn("[FriendsPage] logout error", e);
     }
     setPresence("offline");
     setPassword("");
-    setInfo("Déconnecté du mode online (compte conservé sur cet appareil).");
+    setInfo("Déconnecté du mode online (compte conservé côté serveur).");
     setBusy(false);
   }
 
-  // ---------- Création d'un salon X01 (mock local) ----------
+  // ---------- Création d'un salon X01 (online réel) ----------
   async function handleCreateLobby() {
-    if (!isSignedIn) {
+    if (!isSignedIn || !auth?.user) {
       setError("Tu dois être connecté en mode online pour créer un salon.");
       setInfo(null);
       return;
@@ -508,29 +456,32 @@ export default function FriendsPage({ store, update, go }: Props) {
     setInfo(null);
 
     try {
-      const lobby = await createLobby({
-        hostProfileId: activeProfile?.id ?? null,
-        hostName:
-          activeProfile?.name ||
-          session?.nickname ||
-          account?.nickname ||
-          "Joueur",
+      const lobby = await onlineApi.createLobby({
+        mode: "x01",
+        maxPlayers: 2,
+        settings: {
+          start: store.settings.defaultX01,
+          doubleOut: store.settings.doubleOut,
+        },
       });
 
       setLastCreatedLobby(lobby);
       setJoinedLobby(null);
-      setJoinInfo(null);
+      setJoinInfo("Salon créé sur le serveur online.");
       setJoinError(null);
       console.log("[online] lobby créé", lobby);
     } catch (e: any) {
       console.warn(e);
-      setError(e?.message || "Impossible de créer un salon pour le moment.");
+      setError(
+        e?.message ||
+          "Impossible de créer un salon online pour le moment."
+      );
     } finally {
       setCreatingLobby(false);
     }
   }
 
-  // ---------- Join d'un salon X01 par code (mock local) ----------
+  // ---------- Join d'un salon X01 par code (online réel) ----------
   async function handleJoinLobby() {
     const code = joinCode.trim().toUpperCase();
 
@@ -542,7 +493,7 @@ export default function FriendsPage({ store, update, go }: Props) {
       setJoinError("Entre un code de salon.");
       return;
     }
-    if (!isSignedIn) {
+    if (!isSignedIn || !auth?.user) {
       setJoinError("Tu dois être connecté en mode online pour rejoindre un salon.");
       return;
     }
@@ -550,13 +501,18 @@ export default function FriendsPage({ store, update, go }: Props) {
     setJoiningLobby(true);
 
     try {
-      const lobby = await joinLobbyByCode(code);
-      if (!lobby) {
-        setJoinError("Aucun salon trouvé avec ce code.");
-        return;
-      }
+      const lobby = await onlineApi.joinLobby({
+        code,
+        userId: auth.user.id,
+        nickname:
+          auth.profile?.displayName ||
+          auth.user.nickname ||
+          activeProfile?.name ||
+          "Joueur",
+      });
+
       setJoinedLobby(lobby);
-      setJoinInfo("Salon trouvé (mock). La vraie connexion viendra plus tard.");
+      setJoinInfo("Salon trouvé sur le serveur online.");
       console.log("[online] join lobby ok", lobby);
     } catch (e: any) {
       console.warn(e);
@@ -615,10 +571,10 @@ export default function FriendsPage({ store, update, go }: Props) {
         }}
       >
         Crée ton compte online pour synchroniser ton profil entre appareils et
-        préparer les parties en ligne avec tes amis.
+        jouer de vraies parties en ligne (auth Supabase + salons online).
       </p>
 
-      {/* --------- BLOC INFO MODE DEMO --------- */}
+      {/* --------- BLOC INFO --------- */}
       <div
         style={{
           fontSize: 11.5,
@@ -630,16 +586,22 @@ export default function FriendsPage({ store, update, go }: Props) {
             "linear-gradient(180deg, rgba(40,40,48,.88), rgba(18,18,22,.96))",
         }}
       >
-        <div style={{ fontWeight: 700, marginBottom: 2 }}>Mode démo</div>
+        <div style={{ fontWeight: 700, marginBottom: 2 }}>
+          {authLoading ? "Vérification de la session online…" : "Serveur online"}
+        </div>
 
         <div style={{ opacity: 0.9 }}>
-          Pour l’instant, ton compte online est sauvegardé uniquement sur cet
-          appareil (email + mot de passe + pseudo). Plus tard, un vrai serveur
-          permettra de le partager entre tous tes appareils.
+          Ton compte online est stocké sur un vrai serveur (Supabase). Tu peux
+          te reconnecter depuis plusieurs appareils avec le même email/mot de
+          passe.
         </div>
 
         <div style={{ marginTop: 4, color: "#ffcf57" }}>
-          {isSignedIn ? "Connecté en mode démo local." : "Non connecté."}
+          {isSignedIn
+            ? "Connecté au serveur online."
+            : authLoading
+            ? "Connexion en cours…"
+            : "Non connecté."}
         </div>
 
         {lastSeenLabel && (
@@ -707,7 +669,7 @@ export default function FriendsPage({ store, update, go }: Props) {
             type="text"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
-            disabled={busy}
+            disabled={busy || authLoading}
             placeholder="Ex : CHEVROUTE, NINZALEX…"
             style={{
               width: "100%",
@@ -726,8 +688,8 @@ export default function FriendsPage({ store, update, go }: Props) {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            disabled={busy}
-            placeholder="Email (serveur réel plus tard)"
+            disabled={busy || authLoading}
+            placeholder="Email (pour te reconnecter sur tous tes appareils)"
             style={{
               width: "100%",
               borderRadius: 10,
@@ -745,7 +707,7 @@ export default function FriendsPage({ store, update, go }: Props) {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            disabled={busy}
+            disabled={busy || authLoading}
             placeholder="Mot de passe"
             style={{
               width: "100%",
@@ -795,7 +757,7 @@ export default function FriendsPage({ store, update, go }: Props) {
             <button
               type="button"
               onClick={handleSignup}
-              disabled={busy}
+              disabled={busy || authLoading}
               style={{
                 flex: 1,
                 borderRadius: 999,
@@ -803,11 +765,11 @@ export default function FriendsPage({ store, update, go }: Props) {
                 border: "none",
                 fontWeight: 800,
                 fontSize: 13,
-                cursor: busy ? "default" : "pointer",
+                cursor: busy || authLoading ? "default" : "pointer",
                 background: "linear-gradient(180deg,#35c86d,#23a958)",
                 color: "#08130c",
                 boxShadow: "0 8px 18px rgba(0,0,0,.55)",
-                opacity: busy ? 0.5 : 1,
+                opacity: busy || authLoading ? 0.5 : 1,
               }}
             >
               Créer un compte
@@ -816,7 +778,7 @@ export default function FriendsPage({ store, update, go }: Props) {
             <button
               type="button"
               onClick={handleLogin}
-              disabled={busy}
+              disabled={busy || authLoading}
               style={{
                 flex: 1,
                 borderRadius: 999,
@@ -824,11 +786,11 @@ export default function FriendsPage({ store, update, go }: Props) {
                 border: "none",
                 fontWeight: 800,
                 fontSize: 13,
-                cursor: busy ? "default" : "pointer",
+                cursor: busy || authLoading ? "default" : "pointer",
                 background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
                 color: "#1b1508",
                 boxShadow: "0 8px 18px rgba(0,0,0,.55)",
-                opacity: busy ? 0.5 : 1,
+                opacity: busy || authLoading ? 0.5 : 1,
               }}
             >
               Se connecter
@@ -910,7 +872,7 @@ export default function FriendsPage({ store, update, go }: Props) {
                       fontSize: 20,
                     }}
                   >
-                    {(session?.nickname || "??").slice(0, 2).toUpperCase()}
+                    {(displayName || "??").slice(0, 2).toUpperCase()}
                   </div>
                 )}
               </div>
@@ -1089,12 +1051,12 @@ export default function FriendsPage({ store, update, go }: Props) {
           À venir
         </div>
         <div style={{ opacity: 0.85 }}>
-          Liste d’amis, invitations, présence en ligne détaillée, lobbys de
-          parties online seront ajoutés ici.
+          Liste d’amis, invitations, présence en ligne détaillée seront ajoutés
+          ici (basés sur les profils online).
         </div>
       </div>
 
-      {/* --------- HISTORIQUE ONLINE (MOCK) --------- */}
+      {/* --------- HISTORIQUE ONLINE (serveur) --------- */}
       <div
         style={{
           marginTop: 10,
@@ -1112,11 +1074,15 @@ export default function FriendsPage({ store, update, go }: Props) {
             marginBottom: 4,
           }}
         >
-          Historique Online (mock)
+          Historique Online
         </div>
 
         {loadingMatches ? (
           <div style={{ opacity: 0.85 }}>Chargement…</div>
+        ) : !isSignedIn ? (
+          <div style={{ opacity: 0.85 }}>
+            Connecte-toi pour voir ton historique online.
+          </div>
         ) : matches.length === 0 ? (
           <div style={{ opacity: 0.85 }}>
             Aucun match online enregistré pour le moment.
@@ -1218,13 +1184,13 @@ export default function FriendsPage({ store, update, go }: Props) {
                 cursor: "pointer",
               }}
             >
-              Effacer l’historique local
+              Effacer le cache local
             </button>
           </>
         )}
       </div>
 
-      {/* --------- BLOC : Salons online (mock) --------- */}
+      {/* --------- BLOC : Salons online (réels) --------- */}
       <div
         style={{
           marginTop: 16,
@@ -1246,7 +1212,7 @@ export default function FriendsPage({ store, update, go }: Props) {
             textShadow: "0 0 10px rgba(255,215,80,.4)",
           }}
         >
-          Salons online (mock)
+          Salons online (serveur)
         </div>
 
         <div
@@ -1255,31 +1221,39 @@ export default function FriendsPage({ store, update, go }: Props) {
             marginBottom: 10,
           }}
         >
-          Crée un salon X01 local (mock) ou rejoins celui d’un ami avec un code.
+          Crée un salon X01 ou rejoins celui d’un ami avec un code (stocké sur le
+          serveur).
         </div>
 
         {/* Bouton CREATE */}
         <button
           type="button"
           onClick={handleCreateLobby}
-          disabled={creatingLobby}
+          disabled={creatingLobby || !isSignedIn}
           style={{
             width: "100%",
             borderRadius: 12,
             padding: "10px 12px",
             border: "1px solid rgba(255,255,255,.16)",
-            background: creatingLobby
+            background: !isSignedIn
+              ? "linear-gradient(180deg,#666,#444)"
+              : creatingLobby
               ? "linear-gradient(180deg,#666,#444)"
               : "linear-gradient(180deg,#ffd56a,#e9a93d)",
             color: "#1c1304",
             fontWeight: 800,
             fontSize: 13,
-            cursor: creatingLobby ? "default" : "pointer",
+            cursor:
+              creatingLobby || !isSignedIn ? "default" : "pointer",
             marginBottom: 10,
-            opacity: creatingLobby ? 0.6 : 1,
+            opacity: creatingLobby || !isSignedIn ? 0.6 : 1,
           }}
         >
-          {creatingLobby ? "Création…" : "Créer un salon X01"}
+          {!isSignedIn
+            ? "Connecte-toi pour créer un salon"
+            : creatingLobby
+            ? "Création…"
+            : "Créer un salon X01"}
         </button>
 
         {/* Champ CODE + bouton JOIN */}
@@ -1321,23 +1295,30 @@ export default function FriendsPage({ store, update, go }: Props) {
           <button
             type="button"
             onClick={handleJoinLobby}
-            disabled={joiningLobby}
+            disabled={joiningLobby || !isSignedIn}
             style={{
               width: "100%",
               borderRadius: 12,
               padding: "9px 12px",
               border: "1px solid rgba(255,255,255,.16)",
-              background: joiningLobby
+              background: !isSignedIn
+                ? "linear-gradient(180deg,#555,#333)"
+                : joiningLobby
                 ? "linear-gradient(180deg,#555,#333)"
                 : "linear-gradient(180deg,#4fb4ff,#1c78d5)",
               color: "#04101f",
               fontWeight: 800,
               fontSize: 13,
-              cursor: joiningLobby ? "default" : "pointer",
-              opacity: joiningLobby ? 0.65 : 1,
+              cursor:
+                joiningLobby || !isSignedIn ? "default" : "pointer",
+              opacity: joiningLobby || !isSignedIn ? 0.65 : 1,
             }}
           >
-            {joiningLobby ? "Recherche…" : "Rejoindre avec ce code"}
+            {!isSignedIn
+              ? "Connecte-toi pour rejoindre"
+              : joiningLobby
+              ? "Recherche…"
+              : "Rejoindre avec ce code"}
           </button>
 
           {/* Messages spécifiques JOIN (erreur / info) */}
@@ -1357,7 +1338,7 @@ export default function FriendsPage({ store, update, go }: Props) {
         </div>
       </div>
 
-      {/* ---------- WAITING ROOM ONLINE (mock) ---------- */}
+      {/* ---------- WAITING ROOM ONLINE ---------- */}
       {(joinedLobby || lastCreatedLobby) && (
         <div
           style={{
@@ -1418,7 +1399,7 @@ export default function FriendsPage({ store, update, go }: Props) {
               alignItems: "center",
             }}
           >
-            {/* Avatar host */}
+            {/* Avatar host = profil local actif (pour l’instant) */}
             <div
               style={{
                 position: "relative",
@@ -1464,7 +1445,7 @@ export default function FriendsPage({ store, update, go }: Props) {
               <div
                 style={{ fontWeight: 800, fontSize: 14, color: "#ffd56a" }}
               >
-                {activeProfile?.name}
+                {activeProfile?.name || "Hôte"}
               </div>
               <div style={{ fontSize: 12, opacity: 0.85 }}>
                 Hôte — Attend les joueurs…
@@ -1492,67 +1473,74 @@ export default function FriendsPage({ store, update, go }: Props) {
           </div>
 
           {/* JOUEUR LOCAL / INVITÉ */}
-          <div
-            style={{
-              marginBottom: 12,
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,.10)",
-              background:
-                "linear-gradient(180deg, rgba(30,30,38,.96), rgba(10,10,14,.98))",
-            }}
-          >
+          {isSignedIn && auth?.user && (
             <div
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
+                marginBottom: 12,
+                padding: 12,
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,.10)",
+                background:
+                  "linear-gradient(180deg, rgba(30,30,38,.96), rgba(10,10,14,.98))",
               }}
             >
-              {/* Avatar invité */}
               <div
                 style={{
-                  width: 50,
-                  height: 50,
-                  borderRadius: "50%",
-                  overflow: "hidden",
-                  background: "radial-gradient(circle,#7fe2a9,#35c86d)",
-                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
                 }}
               >
+                {/* Avatar invité */}
                 <div
                   style={{
-                    display: "flex",
-                    width: "100%",
-                    height: "100%",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: 900,
-                    color: "#0a1a12",
-                    fontSize: 18,
+                    width: 50,
+                    height: 50,
+                    borderRadius: "50%",
+                    overflow: "hidden",
+                    background: "radial-gradient(circle,#7fe2a9,#35c86d)",
+                    flexShrink: 0,
                   }}
                 >
-                  {session?.nickname?.[0]?.toUpperCase() || "J"}
+                  <div
+                    style={{
+                      display: "flex",
+                      width: "100%",
+                      height: "100%",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: 900,
+                      color: "#0a1a12",
+                      fontSize: 18,
+                    }}
+                  >
+                    {(auth.profile?.displayName ||
+                      auth.user.nickname ||
+                      "J")[0]
+                      ?.toUpperCase() || "J"}
+                  </div>
                 </div>
-              </div>
 
-              {/* Infos invité */}
-              <div style={{ flex: 1 }}>
-                <div
-                  style={{
-                    fontWeight: 800,
-                    fontSize: 14,
-                    color: "#7fe2a9",
-                  }}
-                >
-                  {session?.nickname || "Joueur Online"}
-                </div>
-                <div style={{ fontSize: 12, opacity: 0.85 }}>
-                  A rejoint le salon
+                {/* Infos invité */}
+                <div style={{ flex: 1 }}>
+                  <div
+                    style={{
+                      fontWeight: 800,
+                      fontSize: 14,
+                      color: "#7fe2a9",
+                    }}
+                  >
+                    {auth.profile?.displayName ||
+                      auth.user.nickname ||
+                      "Joueur Online"}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.85 }}>
+                    A rejoint le salon
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* BOUTON LANCER */}
           {isSignedIn && (
@@ -1583,77 +1571,4 @@ export default function FriendsPage({ store, update, go }: Props) {
       )}
     </div>
   );
-}
-
-/* ---------- Utils : drapeau pays ---------- */
-
-/**
- * Conversion "FR" -> 🇫🇷, "France" -> 🇫🇷, etc.
- * Même logique que sur Home.tsx, MAIS sans regex \p{} pour éviter
- * les erreurs "Invalid regular expression" dans certains navigateurs.
- */
-function getCountryFlag(country: string): string {
-  if (!country) return "";
-  const trimmed = country.trim();
-
-  // Si l'utilisateur met directement un drapeau emoji, on renvoie tel quel
-  const cps = Array.from(trimmed);
-  if (cps.length === 2) {
-    const cp0 = cps[0].codePointAt(0) ?? 0;
-    const cp1 = cps[1].codePointAt(0) ?? 0;
-    if (
-      cp0 >= 0x1f1e6 &&
-      cp0 <= 0x1f1ff &&
-      cp1 >= 0x1f1e6 &&
-      cp1 <= 0x1f1ff
-    ) {
-      return trimmed;
-    }
-  }
-
-  const names: Record<string, string> = {
-    france: "FR",
-    belgique: "BE",
-    belgium: "BE",
-    suisse: "CH",
-    switzerland: "CH",
-    espagne: "ES",
-    spain: "ES",
-    italie: "IT",
-    italy: "IT",
-    allemagne: "DE",
-    germany: "DE",
-    royaumeuni: "GB",
-    "royaume-uni": "GB",
-    uk: "GB",
-    angleterre: "GB",
-    paysbas: "NL",
-    "pays-bas": "NL",
-    netherlands: "NL",
-    usa: "US",
-    étatsunis: "US",
-    "états-unis": "US",
-    unitedstates: "US",
-    portugal: "PT",
-  };
-
-  let code: string | undefined;
-
-  if (trimmed.length === 2) {
-    code = trimmed.toUpperCase();
-  } else {
-    const key = trimmed
-      .toLowerCase()
-      .replace(/\s+/g, "")
-      .replace(/[-']/g, "");
-    code = names[key];
-  }
-
-  if (!code || code.length !== 2) return "";
-
-  const A = 0x1f1e6;
-  const chars = Array.from(code.toUpperCase()).map((c) =>
-    String.fromCodePoint(A + (c.charCodeAt(0) - 65))
-  );
-  return chars.join("");
 }
