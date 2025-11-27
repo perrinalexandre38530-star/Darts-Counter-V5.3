@@ -24,6 +24,12 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import { History } from "../lib/history";
 
+import {
+  saveX01V3Autosave,
+  loadX01V3Autosave,
+  clearX01V3Autosave,
+} from "../lib/x01AutosaveV3";
+
 // ---------------- Constantes visuelles / autosave ----------------
 
 const NAV_HEIGHT = 64;

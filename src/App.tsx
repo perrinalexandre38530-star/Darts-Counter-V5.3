@@ -61,6 +61,8 @@ import StatsShell from "./pages/StatsShell"; // Menu style Home/Games/Profils
 import StatsHub from "./pages/StatsHub"; // Vue détaillée (Stats joueurs / Training / Historique)
 // ✅ Stats Online : vue détaillée ONLINE
 import StatsOnline from "./pages/StatsOnline";
+// ✅ Stats Cricket : vue dédiée Cricket
+import StatsCricket from "./pages/StatsCricket";
 
 // ✅ Contexte X01 V3 (config + play)
 import X01ConfigV3 from "./pages/X01ConfigV3";
@@ -106,6 +108,7 @@ type Tab =
   | "stats" // 👈 StatsShell (menu)
   | "statsHub" // 👈 StatsHub (détails Stats joueurs / Training / Historique)
   | "stats_online" // 👈 StatsOnline (détails ONLINE)
+  | "cricket_stats" // 👈 StatsCricket (vue dédiée Cricket)
   | "statsDetail"
   | "settings"
   | "x01setup"
@@ -283,7 +286,8 @@ function saveBotsLS(list: BotLS[]) {
 
 // ===== Service Worker update prompt =====
 function useServiceWorkerUpdate() {
-  const [waitingWorker, setWaitingWorker] = React.useState<ServiceWorker | null>(null);
+  const [waitingWorker, setWaitingWorker] =
+    React.useState<ServiceWorker | null>(null);
   const [showPrompt, setShowPrompt] = React.useState(false);
 
   React.useEffect(() => {
@@ -415,7 +419,8 @@ function App() {
   } | null>(null);
 
   // ✅ Mémo config X01 V3
-  const [x01ConfigV3, setX01ConfigV3] = React.useState<X01ConfigV3Type | null>(null);
+  const [x01ConfigV3, setX01ConfigV3] =
+    React.useState<X01ConfigV3Type | null>(null);
 
   // -------- Navigation centralisée (avec params) --------
   function go(next: Tab, params?: any) {
@@ -511,7 +516,8 @@ function App() {
       `x01-${now}-${Math.random().toString(36).slice(2, 8)}`;
 
     // 1) source joueurs
-    const rawPlayers = (m as any)?.players ?? (m as any)?.payload?.players ?? [];
+    const rawPlayers =
+      (m as any)?.players ?? (m as any)?.payload?.players ?? [];
 
     // 2) enrichir avec avatars locaux
     const players = (rawPlayers as any[]).map((p: any) => {
@@ -523,14 +529,16 @@ function App() {
       };
     });
 
-    const summary = (m as any)?.summary ?? (m as any)?.payload?.summary ?? null;
+    const summary =
+      (m as any)?.summary ?? (m as any)?.payload?.summary ?? null;
 
     const saved: any = {
       id,
       kind: (m as any)?.kind || "x01",
       status: (m as any)?.status || "finished",
       players,
-      winnerId: (m as any)?.winnerId || (m as any)?.payload?.winnerId || null,
+      winnerId:
+        (m as any)?.winnerId || (m as any)?.payload?.winnerId || null,
       createdAt: (m as any)?.createdAt || now,
       updatedAt: now,
       summary,
@@ -574,7 +582,10 @@ function App() {
         list.unshift(entry);
         // on limite un peu la taille pour éviter l'infini
         const trimmed = list.slice(0, 200);
-        window.localStorage.setItem(LS_ONLINE_MATCHES_KEY, JSON.stringify(trimmed));
+        window.localStorage.setItem(
+          LS_ONLINE_MATCHES_KEY,
+          JSON.stringify(trimmed)
+        );
       }
     } catch (e) {
       console.warn("[App] miroir LS_ONLINE_MATCHES_KEY failed:", e);
@@ -611,7 +622,10 @@ function App() {
 
   // Historique enrichi pour l'UI (avatars garantis)
   const historyForUI = React.useMemo(
-    () => (store.history || []).map((r: any) => withAvatars(r, store.profiles || [])),
+    () =>
+      (store.history || []).map((r: any) =>
+        withAvatars(r, store.profiles || [])
+      ),
     [store.history, store.profiles]
   );
 
@@ -621,7 +635,10 @@ function App() {
 
   if (loading) {
     page = (
-      <div className="container" style={{ padding: 40, textAlign: "center", color: "#ccc" }}>
+      <div
+        className="container"
+        style={{ padding: 40, textAlign: "center", color: "#ccc" }}
+      >
         Chargement...
       </div>
     );
@@ -646,7 +663,12 @@ function App() {
 
       case "profiles": {
         page = (
-          <Profiles store={store} update={update} setProfiles={setProfiles} go={go} />
+          <Profiles
+            store={store}
+            update={update}
+            setProfiles={setProfiles}
+            go={go}
+          />
         );
         break;
       }
@@ -670,7 +692,7 @@ function App() {
 
       // ---------- STATS ----------
       case "stats": {
-        // 👇 BottomNav "Stats" arrive ici : menu avec les 5 cartes
+        // 👇 BottomNav "Stats" arrive ici : menu avec les cartes
         page = <StatsShell store={store} go={go} />;
         break;
       }
@@ -706,8 +728,22 @@ function App() {
       }
 
       case "stats_online": {
-        // 👈 NOUVELLE ROUTE : carte ONLINE dans StatsShell
+        // 👈 Carte ONLINE dans StatsShell
         page = <StatsOnline />;
+        break;
+      }
+
+      case "cricket_stats": {
+        // 👈 Carte CRICKET dans StatsShell
+        const profileId: string | null =
+          routeParams?.profileId ?? store.activeProfileId ?? null;
+        page = (
+          <StatsCricket
+            store={store}
+            go={go}
+            profileId={profileId}
+          />
+        );
         break;
       }
 
@@ -749,7 +785,9 @@ function App() {
       // ---------- X01 ONLINE SETUP (mock) ----------
       case "x01_online_setup": {
         const activeProfile =
-          (store.profiles || []).find((p) => p.id === store.activeProfileId) || null;
+          (store.profiles || []).find(
+            (p) => p.id === store.activeProfileId
+          ) || null;
         const lobbyCode: string | null = routeParams?.lobbyCode ?? null;
 
         page = (
@@ -798,11 +836,14 @@ function App() {
         // par X01Setup, on construit une config auto.
         if (!effectiveConfig && isOnline && !isResume) {
           const activeProfile =
-            (store.profiles || []).find((p) => p.id === store.activeProfileId) ||
+            (store.profiles || []).find(
+              (p) => p.id === store.activeProfileId
+            ) ||
             (store.profiles || [])[0] ||
             null;
 
-          const startDefault = (store.settings.defaultX01 as 301 | 501 | 701 | 1001) || 501;
+          const startDefault =
+            (store.settings.defaultX01 as 301 | 501 | 701 | 1001) || 501;
           const start: 301 | 501 | 701 | 1001 =
             startDefault === 301 ||
             startDefault === 501 ||
@@ -835,10 +876,12 @@ function App() {
         } else {
           // ✅ Compat X01Play: mappe doubleOut -> outMode, borne start si 1001
           const rawStart =
-            effectiveConfig?.start ?? (store.settings.defaultX01 as 301 | 501 | 701 | 1001);
+            effectiveConfig?.start ??
+            (store.settings.defaultX01 as 301 | 501 | 701 | 1001);
           const startClamped: 301 | 501 | 701 | 901 =
             rawStart >= 901 ? 901 : (rawStart as 301 | 501 | 701 | 901);
-          const outMode = (effectiveConfig?.doubleOut ?? store.settings.doubleOut)
+          const outMode = (effectiveConfig?.doubleOut ??
+          store.settings.doubleOut)
             ? "double"
             : "simple";
 
@@ -848,7 +891,9 @@ function App() {
           // - reprise: key = resume-<id>
           // - nouvelle partie: key = fresh-<timestamp>
           const freshToken = routeParams?.fresh ?? Date.now();
-          const key = isResume ? `resume-${routeParams.resumeId}` : `fresh-${freshToken}`;
+          const key = isResume
+            ? `resume-${routeParams.resumeId}`
+            : `fresh-${freshToken}`;
 
           page = (
             <X01Play
@@ -859,7 +904,11 @@ function App() {
               outMode={outMode}
               inMode="simple"
               // ⬇️ on ne transmet params QUE pour une reprise
-              params={isResume ? ({ resumeId: routeParams.resumeId } as any) : (undefined as any)}
+              params={
+                isResume
+                  ? ({ resumeId: routeParams.resumeId } as any)
+                  : (undefined as any)
+              }
               onFinish={(m) => pushHistory(m)}
               onExit={() => (isOnline ? go("friends") : go("x01setup"))}
             />
@@ -953,7 +1002,8 @@ function App() {
       // ✅ Nouvelle page : Créateur d'avatar
       case "avatar": {
         const botId: string | undefined = routeParams?.botId;
-        const profileIdFromParams: string | undefined = routeParams?.profileId;
+        const profileIdFromParams: string | undefined =
+          routeParams?.profileId;
         const backTo: Tab = (routeParams?.from as Tab) || "profiles";
         const isBotMode = !!routeParams?.isBot;
 
@@ -989,7 +1039,10 @@ function App() {
 
           page = (
             <div style={{ padding: 16 }}>
-              <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
+              <button
+                onClick={() => go(backTo)}
+                style={{ marginBottom: 12 }}
+              >
                 ← Retour
               </button>
               <AvatarCreator
@@ -1039,7 +1092,10 @@ function App() {
 
         page = (
           <div style={{ padding: 16 }}>
-            <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
+            <button
+              onClick={() => go(backTo)}
+              style={{ marginBottom: 12 }}
+            >
               ← Retour
             </button>
             <AvatarCreator
