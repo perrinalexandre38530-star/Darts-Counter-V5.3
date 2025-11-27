@@ -6,6 +6,7 @@
 // + Stats : bouton menu => StatsShell (menu), puis StatsHub (détails)
 // + Stats Online : StatsOnline (détails ONLINE)
 // + Stats Cricket : StatsCricket (vue dédiée Cricket)
+// + SyncCenter : export/import des stats locales
 // ============================================
 import React from "react";
 import BottomNav from "./components/BottomNav";
@@ -15,10 +16,10 @@ import { loadStore, saveStore } from "./lib/storage";
 // OPFS / StorageManager — demande la persistance une fois au boot
 import { ensurePersisted } from "./lib/deviceStore";
 
-// ✅ Amorçage agrégateur léger (warm-up au démarrage)
+// 🚀 warmUp lite aggregator
 import { warmAggOnce } from "./boot/warmAgg";
 
-// ✅ Mode Online — API (mock ou backend réel)
+// Mode Online
 import { onlineApi } from "./lib/onlineApi";
 
 // Types
@@ -30,54 +31,48 @@ import Home from "./pages/Home";
 import Games from "./pages/Games";
 import Profiles from "./pages/Profiles";
 import FriendsPage from "./pages/FriendsPage";
-// ⛔ Ancienne page réglages supprimée
-// import SettingsPage from "./pages/SettingsPage";
 import Settings from "./pages/Settings";
 import X01Setup from "./pages/X01Setup";
 import X01Play from "./pages/X01Play";
-// ✅ NOUVELLE PAGE : setup ONLINE
 import X01OnlineSetup from "./pages/X01OnlineSetup";
-// ❌ X01PlayV2 supprimé
-// import X01PlayV2 from "./pages/X01PlayV2";
 import CricketPlay from "./pages/CricketPlay";
 import KillerPlay from "./pages/KillerPlay";
 import ShanghaiPlay from "./pages/ShanghaiPlay";
 import LobbyPick from "./pages/LobbyPick";
 import X01End from "./pages/X01End";
-// ✅ Nouvelle page
 import AvatarCreator from "./pages/AvatarCreator";
-// ✅ Nouvelle page : gestion des BOTS (CPU)
 import ProfilesBots from "./pages/ProfilesBots";
 
-// ✅ Pages Training (menu / solo X01 / stats)
 import TrainingMenu from "./pages/TrainingMenu";
 import TrainingX01Play from "./pages/TrainingX01Play";
 import TrainingClock from "./pages/TrainingClock";
 
-// Historique (pour StatsDetail / upsert / get)
+// Historique
 import { History } from "./lib/history";
 
-// ✅ Stats : menu + hub
-import StatsShell from "./pages/StatsShell"; // Menu style Home/Games/Profils
-import StatsHub from "./pages/StatsHub"; // Vue détaillée (Stats joueurs / Training / Historique)
-// ✅ Stats Online : vue détaillée ONLINE
+// Stats pages
+import StatsShell from "./pages/StatsShell";
+import StatsHub from "./pages/StatsHub";
 import StatsOnline from "./pages/StatsOnline";
-// ✅ Stats Cricket : vue dédiée Cricket
 import StatsCricket from "./pages/StatsCricket";
 
-// ✅ Contexte X01 V3 (config + play)
+// X01 V3
 import X01ConfigV3 from "./pages/X01ConfigV3";
 import X01PlayV3 from "./pages/X01PlayV3";
 
-// ✅ Contexts Thème + Langue
+// 🌟 Nouveau : SYNC / Partage stats locales
+import SyncCenter from "./pages/SyncCenter";
+
+// Contexts
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { LangProvider } from "./contexts/LangContext";
 
-// DEV uniquement
+// Dev helper
 import { installHistoryProbe } from "./dev/devHistoryProbe";
 if (import.meta.env.DEV) installHistoryProbe();
 
-/* -- Helper UI : complète les joueurs d’un record avec l’avatar depuis le store -- */
+/* --- helpers --- */
+
 function withAvatars(rec: any, profiles: any[]) {
   const get = (arr: any[]) =>
     (arr || []).map((p: any) => {
@@ -99,38 +94,39 @@ function withAvatars(rec: any, profiles: any[]) {
   };
 }
 
-// --------------------------------------------
+/* --------------------------------------------
+   ROUTES
+-------------------------------------------- */
 type Tab =
   | "home"
   | "games"
   | "profiles"
   | "profiles_bots"
   | "friends"
-  | "stats" // 👈 StatsShell (menu)
-  | "statsHub" // 👈 StatsHub (détails Stats joueurs / Training / Historique)
-  | "stats_online" // 👈 StatsOnline (détails ONLINE)
-  | "cricket_stats" // 👈 StatsCricket (vue dédiée Cricket)
-  | "statsDetail"
   | "settings"
+  | "stats"
+  | "statsHub"
+  | "stats_online"
+  | "cricket_stats"
+  | "statsDetail"
   | "x01setup"
-  | "x01_online_setup" // 👈 NOUVEL ÉCRAN : setup ONLINE
+  | "x01_online_setup"
   | "x01"
   | "x01_end"
   | "cricket"
   | "killer"
   | "shanghai"
-  // ✅ nouvelles routes tabs Training
   | "training"
   | "training_x01"
   | "training_stats"
   | "training_clock"
-  // ✅ nouvelle route par onglet
   | "avatar"
-  // ✅ nouvelles routes X01 V3
   | "x01_config_v3"
-  | "x01_play_v3";
+  | "x01_play_v3"
+  // ⭐ nouveau onglet
+  | "sync_center";
 
-// Petit composant pour rediriger "training_stats" vers StatsHub onglet Training
+/* redirect TrainingStats → StatsHub */
 function RedirectToStatsTraining({ go }: { go: (tab: Tab, params?: any) => void }) {
   React.useEffect(() => {
     go("statsHub", { tab: "training" });
@@ -138,16 +134,7 @@ function RedirectToStatsTraining({ go }: { go: (tab: Tab, params?: any) => void 
   return null;
 }
 
-// Nouveau wrapper pour l'écran de détail stats (respect des hooks)
-function StatsDetailRoute({
-  store,
-  go,
-  params,
-}: {
-  store: Store;
-  go: (tab: Tab, params?: any) => void;
-  params: any;
-}) {
+function StatsDetailRoute({ store, go, params }: any) {
   const [rec, setRec] = React.useState<any>(() => {
     if (params?.rec) {
       return withAvatars(params.rec, store.profiles || []);
@@ -169,9 +156,7 @@ function StatsDetailRoute({
         if (alive && byId) {
           setRec(withAvatars(byId, store.profiles || []));
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     })();
     return () => {
       alive = false;
@@ -194,42 +179,25 @@ function StatsDetailRoute({
   if (rec) {
     const when = Number(rec.updatedAt ?? rec.createdAt ?? Date.now());
     const dateStr = new Date(when).toLocaleString();
-    const toArrLoc = (v: any) => (Array.isArray(v) ? v : []);
-    const players = toArrLoc(
-      rec.players?.length ? rec.players : rec.payload?.players
-    );
-    const names = players.map((p: any) => p?.name ?? "—").join(" · ");
-    const winnerName = rec.winnerId
-      ? (players.find((p: any) => p?.id === rec.winnerId)?.name ?? "—")
-      : null;
-
+    const players = Array.isArray(rec.players) ? rec.players : [];
     return (
       <div style={{ padding: 16 }}>
-        <button
-          onClick={() => go("statsHub", { tab: "history" })}
-          style={{ marginBottom: 12 }}
-        >
+        <button onClick={() => go("statsHub", { tab: "history" })}>
           ← Retour
         </button>
-        <h2 style={{ margin: 0 }}>
+        <h2>
           {(rec.kind || "MATCH").toUpperCase()} — {dateStr}
         </h2>
-        <div style={{ opacity: 0.85, marginTop: 8 }}>
-          Joueurs : {names || "—"}
+        <div style={{ opacity: 0.85 }}>
+          Joueurs : {players.map((p) => p.name).join(" · ")}
         </div>
-        {winnerName && (
-          <div style={{ marginTop: 6 }}>Vainqueur : 🏆 {winnerName}</div>
-        )}
       </div>
     );
   }
 
   return (
     <div style={{ padding: 16 }}>
-      <button
-        onClick={() => go("statsHub", { tab: "history" })}
-        style={{ marginBottom: 12 }}
-      >
+      <button onClick={() => go("statsHub", { tab: "history" })}>
         ← Retour
       </button>
       {matchId ? "Chargement..." : "Aucune donnée"}
@@ -237,7 +205,9 @@ function StatsDetailRoute({
   );
 }
 
-// Store initial minimal
+/* --------------------------------------------
+   STORE INITIAL
+-------------------------------------------- */
 const initialStore: Store = {
   profiles: [],
   activeProfileId: null,
@@ -254,10 +224,10 @@ const initialStore: Store = {
   history: [],
 } as any;
 
-// ===== Helpers BOTS pour l'éditeur d'avatar =====
+/* BOTS LS */
 const LS_BOTS_KEY = "dc_bots_v1";
 
-// ✅ même clé que FriendsPage / StatsOnline
+/* ONLINE mirror LS (comme FriendsPage / StatsOnline) */
 const LS_ONLINE_MATCHES_KEY = "dc_online_matches_v1";
 
 type BotLS = {
@@ -280,12 +250,10 @@ function loadBotsLS(): BotLS[] {
 function saveBotsLS(list: BotLS[]) {
   try {
     localStorage.setItem(LS_BOTS_KEY, JSON.stringify(list));
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
-// ===== Service Worker update prompt =====
+/* Service Worker banner */
 function useServiceWorkerUpdate() {
   const [waitingWorker, setWaitingWorker] =
     React.useState<ServiceWorker | null>(null);
@@ -303,7 +271,10 @@ function useServiceWorkerUpdate() {
         const newWorker = registration.installing;
         if (!newWorker) return;
         newWorker.addEventListener("statechange", () => {
-          if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+          if (
+            newWorker.state === "installed" &&
+            navigator.serviceWorker.controller
+          ) {
             setWaitingWorker(newWorker);
             setShowPrompt(true);
           }
@@ -373,73 +344,58 @@ function SWUpdateBanner() {
     </div>
   );
 }
-// ===== fin SW update prompt =====
 
-// --------------------------------------------
+/* --------------------------------------------
+                APP
+-------------------------------------------- */
 function App() {
   const [store, setStore] = React.useState<Store>(initialStore);
   const [tab, setTab] = React.useState<Tab>("home");
   const [routeParams, setRouteParams] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
 
-  // Demander la persistance une fois au boot (silencieux si déjà accordée)
+  /* Persistence request */
   React.useEffect(() => {
     ensurePersisted().catch(() => {});
   }, []);
 
-  // ✅ Warm-up agrégateur léger au démarrage
+  /* Warm-up aggregator */
   React.useEffect(() => {
     try {
       warmAggOnce();
     } catch {}
   }, []);
 
-  // ✅ Mode Online : tentative de restauration de session au boot
+  /* Restore online session */
   React.useEffect(() => {
-    onlineApi
-      .restoreSession()
-      .then((session) => {
-        console.log("[Online] session restaurée :", session);
-        // plus tard : on pourra brancher ça sur un contexte ou sur le store
-      })
-      .catch((err) => {
-        console.warn("[Online] restoreSession failed:", err);
-      });
+    onlineApi.restoreSession().catch(() => {});
   }, []);
 
-  // ⚠️ Expose le store en global pour les fallbacks (X01End / autres)
+  /* expose store globally for debug */
   React.useEffect(() => {
     (window as any).__appStore = store;
   }, [store]);
 
-  // Mémo config X01 (v1)
-  const [x01Config, setX01Config] = React.useState<{
-    start: 301 | 501 | 701 | 1001;
-    doubleOut: boolean;
-    playerIds: string[];
-  } | null>(null);
+  /* X01 v1 config */
+  const [x01Config, setX01Config] = React.useState<any>(null);
 
-  // ✅ Mémo config X01 V3
+  /* X01 v3 config */
   const [x01ConfigV3, setX01ConfigV3] =
     React.useState<X01ConfigV3Type | null>(null);
 
-  // -------- Navigation centralisée (avec params) --------
+  /* Navigation */
   function go(next: Tab, params?: any) {
     setRouteParams(params ?? null);
     setTab(next);
   }
 
-  /* ----------------------------------------
-     Chargement initial depuis IndexedDB
-  ---------------------------------------- */
+  /* Load store from IDB at boot */
   React.useEffect(() => {
     let mounted = true;
-
     (async () => {
       try {
         const saved = await loadStore<Store>();
 
-        // Base = initialStore + données sauvegardées (si présentes)
         let base: Store;
         if (saved) {
           base = {
@@ -453,48 +409,33 @@ function App() {
           base = { ...initialStore };
         }
 
-        // 👉 Si aucun profil local, on crée quelques profils de démo
+        // Démo si aucun profil
         if (!base.profiles || base.profiles.length === 0) {
           const demoProfiles: Profile[] = [
-            {
-              id: "demo_ninzalex",
-              name: "Ninzalex",
-              avatarDataUrl: null,
-            } as any,
-            {
-              id: "demo_neven",
-              name: "Neven",
-              avatarDataUrl: null,
-            } as any,
+            { id: "demo_ninzalex", name: "Ninzalex", avatarDataUrl: null } as any,
+            { id: "demo_neven", name: "Neven", avatarDataUrl: null } as any,
           ];
-
           base.profiles = demoProfiles;
           base.activeProfileId = demoProfiles[0].id;
         }
 
-        if (mounted) {
-          setStore(base);
-        }
-      } catch (err) {
-        console.warn("[App] erreur loadStore:", err);
+        if (mounted) setStore(base);
+      } catch {
       } finally {
         if (mounted) setLoading(false);
       }
     })();
-
     return () => {
       mounted = false;
     };
   }, []);
 
-  // Sauvegarde à chaque modification
+  /* Save store each time it changes */
   React.useEffect(() => {
     if (!loading) saveStore(store);
   }, [store, loading]);
 
-  /* ----------------------------------------
-     Mutateur centralisé
-  ---------------------------------------- */
+  /* centralized update */
   function update(mut: (s: Store) => Store) {
     setStore((s) => {
       const next = mut({ ...s });
@@ -503,12 +444,14 @@ function App() {
     });
   }
 
-  // Helpers profils
+  /* Profiles mutator */
   function setProfiles(fn: (p: Profile[]) => Profile[]) {
     update((s) => ({ ...s, profiles: fn(s.profiles ?? []) }));
   }
 
-  // Fin de partie → normalise, dédupe, persiste, route vers Historique
+  /* --------------------------------------------
+      pushHistory (FIN DE PARTIE)
+  -------------------------------------------- */
   function pushHistory(m: MatchRecord) {
     const now = Date.now();
     const id =
@@ -516,17 +459,14 @@ function App() {
       (m as any)?.matchId ||
       `x01-${now}-${Math.random().toString(36).slice(2, 8)}`;
 
-    // 1) source joueurs
     const rawPlayers =
       (m as any)?.players ?? (m as any)?.payload?.players ?? [];
-
-    // 2) enrichir avec avatars locaux
-    const players = (rawPlayers as any[]).map((p: any) => {
+    const players = rawPlayers.map((p: any) => {
       const prof = (store.profiles || []).find((pr) => pr.id === p?.id);
       return {
         id: p?.id,
         name: p?.name ?? prof?.name ?? "",
-        avatarDataUrl: p?.avatarDataUrl ?? (prof?.avatarDataUrl ?? null),
+        avatarDataUrl: p?.avatarDataUrl ?? prof?.avatarDataUrl ?? null,
       };
     });
 
@@ -536,7 +476,7 @@ function App() {
     const saved: any = {
       id,
       kind: (m as any)?.kind || "x01",
-      status: (m as any)?.status || "finished",
+      status: "finished",
       players,
       winnerId:
         (m as any)?.winnerId || (m as any)?.payload?.winnerId || null,
@@ -546,7 +486,7 @@ function App() {
       payload: { ...(m as any), players },
     };
 
-    // 3) mémoire locale
+    /* mémoire locale */
     update((s) => {
       const list = [...(s.history ?? [])];
       const i = list.findIndex((r: any) => r.id === saved.id);
@@ -555,52 +495,38 @@ function App() {
       return { ...s, history: list };
     });
 
-    // 4) persistant local (historique détaillé)
+    /* Historique détaillé IDB */
     try {
       (History as any)?.upsert?.(saved);
-    } catch (e) {
-      console.warn("[App] History.upsert failed:", e);
-    }
+    } catch {}
 
-    // ✅ 4bis) miroir local pour StatsOnline (LS_ONLINE_MATCHES_KEY)
+    /* miroir LocalStorage pour StatsOnline */
     try {
-      if (typeof window !== "undefined") {
-        const raw = window.localStorage.getItem(LS_ONLINE_MATCHES_KEY);
-        const list = raw ? JSON.parse(raw) : [];
+      const raw = localStorage.getItem(LS_ONLINE_MATCHES_KEY);
+      const list = raw ? JSON.parse(raw) : [];
+      list.unshift({
+        id: saved.id,
+        mode: saved.kind,
+        createdAt: saved.createdAt,
+        finishedAt: saved.updatedAt,
+        players: saved.players,
+        winnerId: saved.winnerId,
+        summary: saved.summary ?? null,
+        stats: (saved.payload as any)?.stats ?? null,
+      });
+      localStorage.setItem(
+        LS_ONLINE_MATCHES_KEY,
+        JSON.stringify(list.slice(0, 200))
+      );
+    } catch {}
 
-        // On stocke une version light ; StatsOnline est tolérant si stats manquent
-        const entry = {
-          id: saved.id,
-          mode: saved.kind,
-          createdAt: saved.createdAt,
-          finishedAt: saved.updatedAt,
-          players: saved.players,
-          winnerId: saved.winnerId,
-          summary: saved.summary ?? null,
-          stats: (saved.payload as any)?.stats ?? null,
-        };
-
-        list.unshift(entry);
-        // on limite un peu la taille pour éviter l'infini
-        const trimmed = list.slice(0, 200);
-        window.localStorage.setItem(
-          LS_ONLINE_MATCHES_KEY,
-          JSON.stringify(trimmed)
-        );
-      }
-    } catch (e) {
-      console.warn("[App] miroir LS_ONLINE_MATCHES_KEY failed:", e);
-    }
-
-    // 5) upload online (best effort)
+    /* upload online (best effort) */
     try {
-      const kind = saved.kind as string;
       const supported = ["x01", "cricket", "killer", "shanghai"];
-
-      if (supported.includes(kind)) {
+      if (supported.includes(saved.kind)) {
         onlineApi
           .uploadMatch({
-            mode: kind as any,
+            mode: saved.kind as any,
             payload: {
               summary: saved.summary ?? null,
               payload: saved.payload ?? null,
@@ -609,19 +535,14 @@ function App() {
             startedAt: saved.createdAt,
             finishedAt: saved.updatedAt,
           })
-          .catch(() => {
-            /* ignore erreurs online */
-          });
+          .catch(() => {});
       }
-    } catch (e) {
-      console.warn("[App] onlineApi.uploadMatch failed:", e);
-    }
+    } catch {}
 
-    // 6) route UI → StatsHub onglet Historique (pas le menu)
     go("statsHub", { tab: "history" });
   }
 
-  // Historique enrichi pour l'UI (avatars garantis)
+  /* history formatted */
   const historyForUI = React.useMemo(
     () =>
       (store.history || []).map((r: any) =>
@@ -630,39 +551,36 @@ function App() {
     [store.history, store.profiles]
   );
 
-  // --------------------------------------------
-  // Routes
+  /* --------------------------------------------
+        ROUTING SWITCH
+  -------------------------------------------- */
+
   let page: React.ReactNode = null;
 
   if (loading) {
     page = (
-      <div
-        className="container"
-        style={{ padding: 40, textAlign: "center", color: "#ccc" }}
-      >
+      <div className="container" style={{ padding: 40, textAlign: "center" }}>
         Chargement...
       </div>
     );
   } else {
     switch (tab) {
-      case "home": {
+      case "home":
         page = (
           <Home
             store={store}
             update={update}
-            go={(t: any, p?: any) => go(t, p)}
+            go={go}
             onConnect={() => go("profiles")}
           />
         );
         break;
-      }
 
-      case "games": {
+      case "games":
         page = <Games setTab={(t: any) => go(t)} />;
         break;
-      }
 
-      case "profiles": {
+      case "profiles":
         page = (
           <Profiles
             store={store}
@@ -672,85 +590,54 @@ function App() {
           />
         );
         break;
-      }
 
-      // ✅ Nouvelle page : gestion des BOTS (CPU)
-      case "profiles_bots": {
+      case "profiles_bots":
         page = <ProfilesBots store={store} go={go} />;
         break;
-      }
 
-      case "friends": {
-        // 🔗 FriendsPage peut maintenant lancer une partie Online (mock) via go()
+      case "friends":
         page = <FriendsPage store={store} update={update} go={go} />;
         break;
-      }
 
-      case "settings": {
+      case "settings":
         page = <Settings go={go} />;
         break;
-      }
 
-      // ---------- STATS ----------
-      case "stats": {
-        // 👇 BottomNav "Stats" arrive ici : menu avec les cartes
+      /* ---------- STATS ---------- */
+      case "stats":
         page = <StatsShell store={store} go={go} />;
         break;
-      }
 
-      case "statsHub": {
-        // 👇 Ouvert depuis StatsShell (ou fin de partie / Training)
-        //    - si on ne précise rien → onglet "Stats joueurs"
-        const initialTab = (routeParams?.tab as any) ?? "stats";
-
-        // 🔥 On récupère tous les paramètres envoyés par StatsShell / App
-        const mode = (routeParams?.mode as any) ?? undefined;
-
-        const initialPlayerId =
-          (routeParams?.initialPlayerId as string | null | undefined) ??
-          (routeParams?.playerId as string | null | undefined) ??
-          null;
-
-        const initialStatsSubTab =
-          (routeParams?.initialStatsSubTab as any) ?? undefined;
-
+      case "statsHub":
         page = (
           <StatsHub
             go={go}
-            tab={initialTab}
+            tab={(routeParams?.tab as any) ?? "stats"}
             memHistory={historyForUI}
-            mode={mode}
-            initialPlayerId={initialPlayerId}
-            initialStatsSubTab={initialStatsSubTab}
+            mode={routeParams?.mode}
+            initialPlayerId={routeParams?.initialPlayerId ?? null}
+            initialStatsSubTab={routeParams?.initialStatsSubTab}
             playerId={routeParams?.playerId ?? null}
           />
         );
         break;
-      }
 
-      case "stats_online": {
-        // 👈 Carte ONLINE dans StatsShell
+      case "stats_online":
         page = <StatsOnline />;
         break;
-      }
 
-      case "cricket_stats": {
-        // 👈 Carte CRICKET dans StatsShell → vue dédiée Cricket
-        const profiles = store.profiles ?? [];
-        const activeProfileId: string | null =
-          routeParams?.profileId ?? store.activeProfileId ?? null;
-
+      case "cricket_stats":
         page = (
           <StatsCricket
-            profiles={profiles}
-            activeProfileId={activeProfileId}
+            profiles={store.profiles}
+            activeProfileId={
+              routeParams?.profileId ?? store.activeProfileId ?? null
+            }
           />
         );
         break;
-      }
 
-      case "statsDetail": {
-        // 👈 Wrapper dédié pour respecter les Rules of Hooks
+      case "statsDetail":
         page = (
           <StatsDetailRoute
             store={store}
@@ -759,22 +646,26 @@ function App() {
           />
         );
         break;
-      }
 
-      // ---------- X01 v1 ----------
-      case "x01setup": {
+      /* ---------- SYNC / PARTAGE ---------- */
+      case "sync_center":
+        page = <SyncCenter store={store} go={go} />;
+        break;
+
+      /* ---------- X01 SETUP (v1) ---------- */
+      case "x01setup":
         page = (
           <X01Setup
-            profiles={store.profiles ?? []}
+            profiles={store.profiles}
             defaults={{
               start: store.settings.defaultX01,
               doubleOut: store.settings.doubleOut,
             }}
             onStart={(ids, start, doubleOut) => {
-              // ⚠️ NOUVELLE PARTIE → purge toute reprise + remount forcé
               const players = store.settings.randomOrder
                 ? ids.slice().sort(() => Math.random() - 0.5)
                 : ids;
+
               setX01Config({ playerIds: players, start, doubleOut });
               go("x01", { resumeId: null, fresh: Date.now() });
             }}
@@ -782,21 +673,20 @@ function App() {
           />
         );
         break;
-      }
 
-      // ---------- X01 ONLINE SETUP (mock) ----------
+      /* ---------- X01 ONLINE SETUP (mock) ---------- */
       case "x01_online_setup": {
         const activeProfile =
-          (store.profiles || []).find(
-            (p) => p.id === store.activeProfileId
-          ) || null;
-        const lobbyCode: string | null = routeParams?.lobbyCode ?? null;
+          store.profiles.find((p) => p.id === store.activeProfileId) ?? null;
+
+        const lobbyCode = routeParams?.lobbyCode ?? null;
 
         page = (
           <X01OnlineSetup
             profile={activeProfile}
             defaults={{
-              start: (store.settings.defaultX01 as 301 | 501 | 701 | 1001) ?? 501,
+              start:
+                (store.settings.defaultX01 as 301 | 501 | 701 | 1001) ?? 501,
               doubleOut: store.settings.doubleOut,
             }}
             lobbyCode={lobbyCode}
@@ -807,7 +697,6 @@ function App() {
                 return;
               }
 
-              // 👉 On réutilise le moteur X01 classique (X01Play)
               setX01Config({
                 start,
                 doubleOut,
@@ -827,26 +716,23 @@ function App() {
         break;
       }
 
+      /* ---------- X01 PLAY (v1) ---------- */
       case "x01": {
         const isResume = !!routeParams?.resumeId;
         const isOnline = !!routeParams?.online;
 
-        // ⚙️ On part de la config mémorisée…
         let effectiveConfig = x01Config;
 
-        // …mais si on arrive depuis un bouton ONLINE (FriendsPage) sans passer
-        // par X01Setup, on construit une config auto.
+        // Cas ONLINE lancé sans passer par X01Setup
         if (!effectiveConfig && isOnline && !isResume) {
           const activeProfile =
-            (store.profiles || []).find(
-              (p) => p.id === store.activeProfileId
-            ) ||
-            (store.profiles || [])[0] ||
+            store.profiles.find((p) => p.id === store.activeProfileId) ??
+            store.profiles[0] ??
             null;
 
           const startDefault =
             (store.settings.defaultX01 as 301 | 501 | 701 | 1001) || 501;
-          const start: 301 | 501 | 701 | 1001 =
+          const start =
             startDefault === 301 ||
             startDefault === 501 ||
             startDefault === 701 ||
@@ -854,88 +740,73 @@ function App() {
               ? startDefault
               : 501;
 
-          const doubleOut = !!store.settings.doubleOut;
-          const playerIds = activeProfile ? [activeProfile.id] : [];
-
           effectiveConfig = {
             start,
-            doubleOut,
-            playerIds,
+            doubleOut: store.settings.doubleOut,
+            playerIds: activeProfile ? [activeProfile.id] : [],
           };
 
-          // on mémorise pour la suite de la session
           setX01Config(effectiveConfig);
         }
 
         if (!effectiveConfig && !isResume) {
-          // Aucun setup disponible (ni local, ni online) → message d’erreur
           page = (
             <div className="container" style={{ padding: 16 }}>
               <button onClick={() => go("x01setup")}>← Retour</button>
               <p>Configuration X01 manquante.</p>
             </div>
           );
-        } else {
-          // ✅ Compat X01Play: mappe doubleOut -> outMode, borne start si 1001
-          const rawStart =
-            effectiveConfig?.start ??
-            (store.settings.defaultX01 as 301 | 501 | 701 | 1001);
-          const startClamped: 301 | 501 | 701 | 901 =
-            rawStart >= 901 ? 901 : (rawStart as 301 | 501 | 701 | 901);
-          const outMode = (effectiveConfig?.doubleOut ??
-          store.settings.doubleOut)
-            ? "double"
-            : "simple";
-
-          const playerIds = effectiveConfig?.playerIds ?? [];
-
-          // 🔑 Remount garanti:
-          // - reprise: key = resume-<id>
-          // - nouvelle partie: key = fresh-<timestamp>
-          const freshToken = routeParams?.fresh ?? Date.now();
-          const key = isResume
-            ? `resume-${routeParams.resumeId}`
-            : `fresh-${freshToken}`;
-
-          page = (
-            <X01Play
-              key={key}
-              profiles={store.profiles ?? []}
-              playerIds={playerIds}
-              start={startClamped}
-              outMode={outMode}
-              inMode="simple"
-              // ⬇️ on ne transmet params QUE pour une reprise
-              params={
-                isResume
-                  ? ({ resumeId: routeParams.resumeId } as any)
-                  : (undefined as any)
-              }
-              onFinish={(m) => pushHistory(m)}
-              onExit={() => (isOnline ? go("friends") : go("x01setup"))}
-            />
-          );
+          break;
         }
-        break;
-      }
 
-      // ---------- X01 V3 ----------
-      case "x01_config_v3": {
+        const rawStart =
+          effectiveConfig?.start ??
+          (store.settings.defaultX01 as 301 | 501 | 701 | 1001);
+
+        const startClamped: 301 | 501 | 701 | 901 =
+          rawStart >= 901 ? 901 : (rawStart as 301 | 501 | 701 | 901);
+
+        const outMode = effectiveConfig?.doubleOut ? "double" : "simple";
+
+        const playerIds = effectiveConfig?.playerIds ?? [];
+
+        const freshToken = routeParams?.fresh ?? Date.now();
+        const key = isResume
+          ? `resume-${routeParams.resumeId}`
+          : `fresh-${freshToken}`;
+
         page = (
-          <X01ConfigV3
-            profiles={store.profiles ?? []}
-            onBack={() => go("games")}
-            onStart={(cfg) => {
-              setX01ConfigV3(cfg);
-              go("x01_play_v3", { fresh: Date.now() });
-            }}
-            // 🔗 IMPORTANT : on passe go pour "CRÉER BOT"
-            go={go}
+          <X01Play
+            key={key}
+            profiles={store.profiles}
+            playerIds={playerIds}
+            start={startClamped}
+            outMode={outMode}
+            inMode="simple"
+            params={isResume ? { resumeId: routeParams.resumeId } : undefined}
+            onFinish={(m) => pushHistory(m)}
+            onExit={() => (isOnline ? go("friends") : go("x01setup"))}
           />
         );
         break;
       }
 
+      /* ---------- X01 V3 CONFIG ---------- */
+      case "x01_config_v3":
+        page = (
+          <X01ConfigV3
+            profiles={store.profiles}
+            onBack={() => go("games")}
+            onStart={(cfg) => {
+              setX01ConfigV3(cfg);
+              go("x01_play_v3", { fresh: Date.now() });
+            }}
+            go={go} // pour "Créer BOT"
+          />
+        );
+        break;
+
+      /* ---------- X01 V3 PLAY ---------- */
       case "x01_play_v3": {
         if (!x01ConfigV3) {
           page = (
@@ -964,14 +835,21 @@ function App() {
         break;
       }
 
+      /* ---------- X01 END ---------- */
       case "x01_end": {
         page = <X01End go={go} params={routeParams} />;
         break;
       }
 
-      // ---------- Autres jeux ----------
+      /* ---------- AUTRES JEUX ---------- */
       case "cricket": {
-        page = <CricketPlay profiles={store.profiles ?? []} />;
+        page = (
+          <CricketPlay
+            profiles={store.profiles ?? []}
+            // 🔗 enregistre la manche dans History + Stats
+            onFinish={(m: any) => pushHistory(m)}
+          />
+        );
         break;
       }
 
@@ -985,27 +863,23 @@ function App() {
         break;
       }
 
-      // ---------- Training ----------
+      /* ---------- TRAINING ---------- */
       case "training": {
-        // Menu Training (choix mode, bouton "X01 solo", bouton "Voir évolution")
         page = <TrainingMenu go={go} />;
         break;
       }
 
       case "training_x01": {
-        // Partie Training X01 solo (même keypad que X01 mais sans liste joueurs)
         page = <TrainingX01Play go={go} />;
         break;
       }
 
       case "training_stats": {
-        // Redirection vers StatsHub onglet "Training"
         page = <RedirectToStatsTraining go={go} />;
         break;
       }
 
       case "training_clock": {
-        // Tour de l'horloge (training — solo + multi)
         page = (
           <TrainingClock
             profiles={store.profiles ?? []}
@@ -1015,18 +889,16 @@ function App() {
         break;
       }
 
-      // ✅ Nouvelle page : Créateur d'avatar
+      /* ---------- AVATAR CREATOR ---------- */
       case "avatar": {
         const botId: string | undefined = routeParams?.botId;
-        const profileIdFromParams: string | undefined =
-          routeParams?.profileId;
+        const profileIdFromParams: string | undefined = routeParams?.profileId;
         const backTo: Tab = (routeParams?.from as Tab) || "profiles";
         const isBotMode = !!routeParams?.isBot;
 
-        // --- Cas 1 : on édite l'avatar d'un BOT ---
         if (botId) {
           const bots = loadBotsLS();
-          const targetBot = bots.find((b) => b.id === botId) || null;
+          const targetBot = bots.find((b) => b.id === botId) ?? null;
 
           function handleSaveAvatarBot({
             pngDataUrl,
@@ -1035,37 +907,33 @@ function App() {
             pngDataUrl: string;
             name: string;
           }) {
-            if (!targetBot) {
-              console.warn("[AvatarCreator] BOT introuvable pour id", botId);
-              go(backTo);
-              return;
-            }
+            if (!targetBot) return go(backTo);
+
             const next = bots.slice();
             const idx = next.findIndex((b) => b.id === targetBot.id);
+
             const updated: BotLS = {
               ...targetBot,
               name: name?.trim() || targetBot.name,
               avatarDataUrl: pngDataUrl,
             };
+
             if (idx >= 0) next[idx] = updated;
             else next.push(updated);
+
             saveBotsLS(next);
             go(backTo);
           }
 
           page = (
             <div style={{ padding: 16 }}>
-              <button
-                onClick={() => go(backTo)}
-                style={{ marginBottom: 12 }}
-              >
+              <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
                 ← Retour
               </button>
               <AvatarCreator
                 size={512}
                 defaultName={targetBot?.name || ""}
                 onSave={handleSaveAvatarBot}
-                // 👇 médaillon bleu pour les BOTS
                 isBotMode={true}
               />
             </div>
@@ -1073,11 +941,10 @@ function App() {
           break;
         }
 
-        // --- Cas 2 : avatar pour un profil (profilId explicite ou actif) ---
         const targetProfile =
-          (store.profiles || []).find(
+          store.profiles.find(
             (p) => p.id === (profileIdFromParams || store.activeProfileId)
-          ) || null;
+          ) ?? null;
 
         function handleSaveAvatarProfile({
           pngDataUrl,
@@ -1086,10 +953,7 @@ function App() {
           pngDataUrl: string;
           name: string;
         }) {
-          if (!targetProfile) {
-            console.warn("[AvatarCreator] Aucun profil cible");
-            return;
-          }
+          if (!targetProfile) return;
 
           setProfiles((list) =>
             list.map((p) =>
@@ -1108,52 +972,48 @@ function App() {
 
         page = (
           <div style={{ padding: 16 }}>
-            <button
-              onClick={() => go(backTo)}
-              style={{ marginBottom: 12 }}
-            >
+            <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
               ← Retour
             </button>
             <AvatarCreator
               size={512}
               defaultName={targetProfile?.name || ""}
               onSave={handleSaveAvatarProfile}
-              // 👇 médaillon doré (humain)
-              isBotMode={false}
+              isBotMode={isBotMode}
             />
           </div>
         );
         break;
       }
 
-      default: {
+      /* ---------- FALLBACK ---------- */
+      default:
         page = (
           <Home
             store={store}
             update={update}
-            go={(t: any, p?: any) => go(t, p)}
+            go={go}
             onConnect={() => go("profiles")}
           />
         );
-      }
     }
   }
 
-  // --------------------------------------------
+  /* ---------- RENDER ---------- */
   return (
     <>
       <div className="container" style={{ paddingBottom: 88 }}>
         {page}
       </div>
-      {/* BottomNav : "Stats" ouvre StatsShell (menu) */}
+
       <BottomNav value={tab as any} onChange={(k: any) => go(k)} />
-      {/* Bannière de mise à jour PWA */}
+
       <SWUpdateBanner />
     </>
   );
 }
 
-// ✅ Wrapper global avec Thème + Langue
+/* ---------- ROOT PROVIDERS ---------- */
 export default function AppRoot() {
   return (
     <ThemeProvider>

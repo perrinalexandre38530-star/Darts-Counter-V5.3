@@ -18,6 +18,7 @@ import type { Dart as UIDart } from "../lib/types";
 import { getCricketProfileStats } from "../lib/statsBridge";
 import type { CricketProfileStats } from "../lib/cricketStats";
 import StatsCricketDashboard from "../components/StatsCricketDashboard";
+import StatsX01MultiDashboard, { type X01MultiPlayer,} from "../components/StatsX01MultiDashboard";
 // ❌ IMPORTANT : plus d'import TrainingX01Session ici
 
 /* ---------- Thème ---------- */
@@ -4550,20 +4551,27 @@ const mode: StatsMode =
             </>
           )}
 
-          {statsSubTab === "x01_multi" && (
-            <>
-              {selectedPlayer ? (
-                <X01MultiStatsTab
-                  records={records}
-                  playerId={selectedPlayer.id}
-                />
-              ) : (
-                <div style={card}>
-                  Sélectionne un joueur pour afficher ses stats X01.
-                </div>
-              )}
-            </>
-          )}
+{statsSubTab === "x01_multi" && (
+  <>
+    {selectedPlayer ? (
+      <StatsX01MultiDashboard
+        records={records}
+        activePlayer={
+          {
+            id: selectedPlayer.id,
+            name: selectedPlayer.name,
+            avatarDataUrl: (selectedPlayer as any).avatarDataUrl ?? null,
+          } as X01MultiPlayer
+        }
+        allPlayers={allPlayers as unknown as X01MultiPlayer[]}
+      />
+    ) : (
+      <div style={card}>
+        Sélectionne un joueur pour afficher ses stats X01.
+      </div>
+    )}
+  </>
+)}
 
           {statsSubTab === "cricket" && (
             <>

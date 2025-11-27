@@ -1,12 +1,12 @@
 // ============================================
 // src/pages/StatsShell.tsx
 // Menu Stats — style identique à Games / Training / Profils
-// - Carte 1 : Stats joueur actif (vue complète : Général / Local / Online / Training)
+// - Carte 1 : Stats joueur actif (vue complète : Général / Local / Online / Training / Cricket)
 // - Carte 2 : Stats profils locaux (multi-joueurs)
-// - Carte 3 : Stats Cricket (dédié au mode Cricket)
-// - Carte 4 : Training (stats sessions d’entraînement)
-// - Carte 5 : Online
-// - Carte 6 : Historique
+// - Carte 3 : Training (stats sessions d’entraînement)
+// - Carte 4 : Online
+// - Carte 5 : Historique
+// - Carte 6 : Sync & Partage (exports / imports / cloud / device-à-device)
 // - Bouton "i" : popin d'aide (légère aura animée comme Games)
 // ============================================
 import React from "react";
@@ -24,10 +24,10 @@ type Props = {
 type InfoMode =
   | "active"
   | "locals"
-  | "cricket"
   | "training"
   | "online"
   | "history"
+  | "sync"
   | null;
 
 export default function StatsShell({ store, go }: Props) {
@@ -211,7 +211,7 @@ export default function StatsShell({ store, go }: Props) {
         >
           {t(
             "statsShell.subtitle",
-            "Analyse tes performances, ton training et ton historique."
+            "Analyse tes performances, ton training, ton historique et synchronise tes stats."
           )}
         </div>
       </div>
@@ -264,21 +264,6 @@ export default function StatsShell({ store, go }: Props) {
           onInfo={() => setInfoMode("locals")}
         />
 
-        {/* CRICKET — vue dédiée stats Cricket */}
-        <StatsShellCard
-          title={t("statsShell.cricket.title", "CRICKET")}
-          subtitle={t(
-            "statsShell.cricket.subtitle",
-            "Stats détaillées de tes parties Cricket : marks, cibles, domination, bull…"
-          )}
-          theme={theme}
-          onClick={() => {
-            if (!active) return;
-            go("cricket_stats", { profileId: active.id });
-          }}
-          onInfo={() => setInfoMode("cricket")}
-        />
-
         {/* TRAINING */}
         <StatsShellCard
           title={t("statsShell.training.title", "TRAINING")}
@@ -296,7 +281,7 @@ export default function StatsShell({ store, go }: Props) {
           title={t("statsShell.online.title", "ONLINE")}
           subtitle={t(
             "statsShell.online.subtitle",
-            "Stats de tes parties Online."
+            'Stats de tes parties Online (quand tu joues en mode "Online").'
           )}
           theme={theme}
           onClick={() => go("stats_online")}
@@ -313,6 +298,18 @@ export default function StatsShell({ store, go }: Props) {
           theme={theme}
           onClick={() => go("statsHub", { tab: "history" })}
           onInfo={() => setInfoMode("history")}
+        />
+
+        {/* SYNC & PARTAGE */}
+        <StatsShellCard
+          title={t("statsShell.sync.title", "SYNC & PARTAGE")}
+          subtitle={t(
+            "statsShell.sync.subtitle",
+            "Export / import de stats, sync entre appareils et via le cloud."
+          )}
+          theme={theme}
+          onClick={() => go("sync_center")}
+          onInfo={() => setInfoMode("sync")}
         />
       </div>
 
@@ -640,14 +637,7 @@ function InfoOverlay({
       title = t("statsShell.info.locals.title", "STATS — Profils locaux");
       body = t(
         "statsShell.info.locals.body",
-        "Retrouve les mêmes vues de statistiques pour tous les profils enregistrés sur cet appareil et compare leurs performances."
-      );
-      break;
-    case "cricket":
-      title = t("statsShell.info.cricket.title", "STATS — Cricket");
-      body = t(
-        "statsShell.info.cricket.body",
-        "Analyse dédiée de tes parties Cricket : marks par cible (15–20 & Bull), temps d’ouverture/fermeture, points marqués et domination sur chaque segment."
+        "Retrouve les mêmes vues de statistiques (y compris l’onglet Cricket) pour tous les profils enregistrés sur cet appareil et compare leurs performances."
       );
       break;
     case "training":
@@ -669,6 +659,13 @@ function InfoOverlay({
       body = t(
         "statsShell.info.history.body",
         "Liste complète de l'historique de tes parties locales avec reprise des parties en cours et accès au détail de chaque match."
+      );
+      break;
+    case "sync":
+      title = t("statsShell.info.sync.title", "SYNC & PARTAGE");
+      body = t(
+        "statsShell.info.sync.body",
+        "Centralise toutes les options d’export / import : fichiers, JSON, sync directe entre appareils et synchronisation via le cloud. Idéal pour récupérer les stats d’un profil local sur un nouveau téléphone."
       );
       break;
   }

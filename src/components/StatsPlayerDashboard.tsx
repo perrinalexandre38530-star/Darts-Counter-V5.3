@@ -89,17 +89,18 @@ const IconHourglass = ({ size = 18, color = T.text }: { size?: number; color?: s
   </svg>
 );
 
-/* ---------- UI réutilisable ---------- */
 export function GoldPill({
   children,
   active = false,
   onClick,
   leftIcon,
+  style,
 }: {
   children: React.ReactNode;
   active?: boolean;
   onClick?: () => void;
   leftIcon?: React.ReactNode;
+  style?: React.CSSProperties;
 }) {
   const base: React.CSSProperties = {
     padding: "10px 14px",
@@ -111,10 +112,22 @@ export function GoldPill({
     background: active ? "rgba(246,194,86,.10)" : "rgba(255,255,255,.02)",
     color: T.text,
     boxShadow: active ? "inset 0 0 0 1px rgba(246,194,86,.25)" : "none",
+    cursor: onClick ? "pointer" : "default",
+    whiteSpace: "nowrap",
   };
+
+  const merged: React.CSSProperties = {
+    ...base,
+    ...(style || {}),
+  };
+
   return (
-    <button style={base} onClick={onClick}>
-      {leftIcon ? <span style={{ display: "grid", placeItems: "center" }}>{leftIcon}</span> : null}
+    <button type="button" style={merged} onClick={onClick}>
+      {leftIcon ? (
+        <span style={{ display: "grid", placeItems: "center" }}>
+          {leftIcon}
+        </span>
+      ) : null}
       <span style={{ fontWeight: 600 }}>{children}</span>
     </button>
   );

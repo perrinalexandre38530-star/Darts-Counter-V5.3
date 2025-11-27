@@ -4,6 +4,7 @@
 // - Setup : sélection 2 à 4 profils + options simples
 // - Play  : tableau Cricket (15..20 + Bull) avec colonnes centrées
 // - Keypad 0..20 (3 × 7) + bouton BULL
+// - Intégration Historique : enregistre chaque manche dans History (kind: "cricket")
 // ============================================
 
 import React from "react";
@@ -18,6 +19,7 @@ import {
 } from "../lib/cricketEngine";
 import { playSound } from "../lib/sound";
 import type { Profile } from "../lib/types";
+import type { SavedMatch } from "../lib/history";
 import {
   DartIconColorizable,
   CricketMarkIcon,
@@ -70,9 +72,11 @@ type HitMode = "S" | "D" | "T";
 
 type Props = {
   profiles?: Profile[];
+  // 🔥 NOUVEAU : callback pour enregistrer la manche dans l’historique
+  onFinish?: (m: SavedMatch) => void;
 };
 
-export default function CricketPlay({ profiles }: Props) {
+export default function CricketPlay({ profiles, onFinish }: Props) {
   const allProfiles = profiles ?? [];
 
   // ---- Phase (setup -> play) ----
@@ -90,8 +94,10 @@ export default function CricketPlay({ profiles }: Props) {
   // ---- Match en cours ----
   const [state, setState] = React.useState<CricketState | null>(null);
   const [hitMode, setHitMode] = React.useState<HitMode>("S");
-
   const [showHelp, setShowHelp] = React.useState(false);
+
+  // 🕒 timestamp de début de manche (pour createdAt)
+  const [legStartAt, setLegStartAt] = React.useState<number | null>(null);
 
   const currentPlayer =
     state && state.players[state.currentPlayerIndex]
@@ -234,6 +240,7 @@ export default function CricketPlay({ profiles }: Props) {
     setState(match);
     setPhase("play");
     setHitMode("S");
+    setLegStartAt(Date.now());
     playSound("start");
   }
 
@@ -284,7 +291,7 @@ export default function CricketPlay({ profiles }: Props) {
     playSound("undo");
   }
 
-  function handleNewLeg() {
+  function handleNewLegInternal() {
     if (!state) return;
 
     let nextPlayers = state.players;
@@ -303,13 +310,98 @@ export default function CricketPlay({ profiles }: Props) {
 
     setState(match);
     setHitMode("S");
+    setLegStartAt(Date.now());
     playSound("start");
   }
 
-  function handleQuit() {
+  function handleQuitInternal() {
     setState(null);
     setPhase("setup");
     setHitMode("S");
+    setLegStartAt(null);
+  }
+
+  // --------------------------------------------------
+  // CONSTRUCTION DU RECORD POUR L'HISTORIQUE
+  // --------------------------------------------------
+
+  function buildHistoryRecord(): SavedMatch | null {
+    if (!state) return null;
+
+    const now = Date.now();
+    const createdAt = legStartAt ?? now;
+
+    // Players "light" pour la liste
+    const playersLite = state.players.map((p) => {
+      const prof = profileById.get(p.id) ?? null;
+      return {
+        id: p.id,
+        name: p.name,
+        avatarDataUrl: prof?.avatarDataUrl ?? null,
+      };
+    });
+
+    // Payload complet Cricket
+    const playersPayload = state.players.map((p: any) => {
+      const hits = Array.isArray(p.hits) ? p.hits : [];
+      return {
+        id: p.id,
+        name: p.name,
+        score: p.score,
+        marks: p.marks,
+        hits,
+      };
+    });
+
+    const totalDarts = playersPayload.reduce(
+      (acc, p) => acc + (Array.isArray(p.hits) ? p.hits.length : 0),
+      0
+    );
+
+    const rec: SavedMatch = {
+      id:
+        `cricket-${createdAt}-` +
+        Math.random().toString(36).slice(2, 8),
+      kind: "cricket",
+      status: "finished",
+      players: playersLite,
+      winnerId: state.winnerId ?? null,
+      createdAt,
+      updatedAt: now,
+      summary: {
+        legs: 1,
+        darts: totalDarts,
+        avg3ByPlayer: undefined,
+        co: undefined,
+      },
+      payload: {
+        mode: "cricket",
+        withPoints: scoreMode === "points",
+        maxRounds,
+        rotateFirstPlayer,
+        players: playersPayload,
+      },
+    };
+
+    return rec;
+  }
+
+  // Quand la manche est finie + on clique QUITTER
+  function handleFinishAndQuit() {
+    if (isFinished && onFinish) {
+      const rec = buildHistoryRecord();
+      if (rec) onFinish(rec);
+    }
+    handleQuitInternal();
+  }
+
+  // Quand la manche est finie + on clique REJOUER
+  function handleFinishAndNewLeg() {
+    if (isFinished && onFinish) {
+      const rec = buildHistoryRecord();
+      if (rec) onFinish(rec);
+    }
+    handleNewLegInternal();
   }
 
   // --------------------------------------------------
@@ -354,171 +446,174 @@ export default function CricketPlay({ profiles }: Props) {
         </div>
 
         {/* JOUEURS — CARROUSEL HORIZONTAL 4 par vue */}
-<div
-  style={{
-    borderRadius: 18,
-    background: T.card,
-    border: `1px solid ${T.borderSoft}`,
-    padding: 14,
-    marginBottom: 18,
-  }}
->
-  <div
-    style={{
-      fontSize: 13,
-      textTransform: "uppercase",
-      letterSpacing: 1.2,
-      color: T.textSoft,
-      marginBottom: 4,
-    }}
-  >
-    Joueurs
-  </div>
-
-  <div
-    style={{
-      fontSize: 12,
-      color: T.textSoft,
-      marginBottom: 10,
-    }}
-  >
-    Sélectionne <strong>2 à 4 joueurs</strong>. Chaque joueur jouera la
-    manche à la suite, dans l&apos;ordre indiqué.
-  </div>
-
-  {/* --- CARROUSEL --- */}
-  <div
-    style={{
-      position: "relative",
-      width: "100%",
-      overflow: "hidden",
-    }}
-  >
-    {/* Flèche gauche */}
-    <button
-      onClick={() => {
-        const el = document.getElementById("cricket-profiles-scroll");
-        if (el) el.scrollBy({ left: -90, behavior: "smooth" });
-      }}
-      style={{
-        position: "absolute",
-        left: -4,
-        top: "50%",
-        transform: "translateY(-50%)",
-        zIndex: 10,
-        background: "rgba(0,0,0,0.6)",
-        border: `1px solid ${T.borderSoft}`,
-        color: T.gold,
-        width: 28,
-        height: 28,
-        borderRadius: "50%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        cursor: "pointer",
-        boxShadow: "0 0 10px rgba(0,0,0,0.7)",
-      }}
-    >
-      ‹
-    </button>
-
-    {/* Liste scrollable */}
-    <div
-      id="cricket-profiles-scroll"
-      style={{
-        display: "flex",
-        gap: 14,
-        overflowX: "auto",
-        scrollSnapType: "x mandatory",
-        // 👉 marge gauche/droite pour espacer des flèches
-        padding: "0 26px 8px 26px",
-      }}
-    >
-      {allProfiles.map((p) => {
-        const idx = selectedIds.indexOf(p.id);
-        const isSelected = idx !== -1;
-
-        return (
+        <div
+          style={{
+            borderRadius: 18,
+            background: T.card,
+            border: `1px solid ${T.borderSoft}`,
+            padding: 14,
+            marginBottom: 18,
+          }}
+        >
           <div
-            key={p.id}
-            onClick={() => toggleProfile(p.id)}
             style={{
-              scrollSnapAlign: "start",
-              minWidth: "25%", // 4 profils visibles
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              cursor: "pointer",
+              fontSize: 13,
+              textTransform: "uppercase",
+              letterSpacing: 1.2,
+              color: T.textSoft,
+              marginBottom: 4,
             }}
           >
-            {renderAvatarCircle(p, {
-              selected: isSelected,
-              size: 58,
-              mode: "setup",
-            })}
-
-            <div
-              style={{
-                marginTop: 4,
-                fontSize: 11,
-                fontWeight: 600,
-                color: isSelected ? "#ffffff" : T.textSoft,
-                textAlign: "center",
-              }}
-            >
-              {p.name}
-            </div>
-
-            <div
-              style={{
-                marginTop: 2,
-                padding: "2px 8px",
-                borderRadius: 999,
-                background: isSelected
-                  ? "rgba(246,194,86,0.2)"
-                  : "rgba(255,255,255,0.07)",
-                color: isSelected ? T.gold : T.textSoft,
-                fontSize: 10,
-                fontWeight: 700,
-              }}
-            >
-              {isSelected ? `J${idx + 1}` : "—"}
-            </div>
+            Joueurs
           </div>
-        );
-      })}
-    </div>
 
-    {/* Flèche droite */}
-    <button
-      onClick={() => {
-        const el = document.getElementById("cricket-profiles-scroll");
-        if (el) el.scrollBy({ left: 90, behavior: "smooth" });
-      }}
-      style={{
-        position: "absolute",
-        right: -4,
-        top: "50%",
-        transform: "translateY(-50%)",
-        zIndex: 10,
-        background: "rgba(0,0,0,0.6)",
-        border: `1px solid ${T.borderSoft}`,
-        color: T.gold,
-        width: 28,
-        height: 28,
-        borderRadius: "50%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        cursor: "pointer",
-        boxShadow: "0 0 10px rgba(0,0,0,0.7)",
-      }}
-    >
-      ›
-    </button>
-  </div>
-</div>
+          <div
+            style={{
+              fontSize: 12,
+              color: T.textSoft,
+              marginBottom: 10,
+            }}
+          >
+            Sélectionne <strong>2 à 4 joueurs</strong>. Chaque joueur jouera la
+            manche à la suite, dans l&apos;ordre indiqué.
+          </div>
 
+          {/* --- CARROUSEL --- */}
+          <div
+            style={{
+              position: "relative",
+              width: "100%",
+              overflow: "hidden",
+            }}
+          >
+            {/* Flèche gauche */}
+            <button
+              onClick={() => {
+                const el = document.getElementById(
+                  "cricket-profiles-scroll"
+                );
+                if (el) el.scrollBy({ left: -90, behavior: "smooth" });
+              }}
+              style={{
+                position: "absolute",
+                left: -4,
+                top: "50%",
+                transform: "translateY(-50%)",
+                zIndex: 10,
+                background: "rgba(0,0,0,0.6)",
+                border: `1px solid ${T.borderSoft}`,
+                color: T.gold,
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                boxShadow: "0 0 10px rgba(0,0,0,0.7)",
+              }}
+            >
+              ‹
+            </button>
+
+            {/* Liste scrollable */}
+            <div
+              id="cricket-profiles-scroll"
+              style={{
+                display: "flex",
+                gap: 14,
+                overflowX: "auto",
+                scrollSnapType: "x mandatory",
+                // 👉 marge gauche/droite pour espacer des flèches
+                padding: "0 26px 8px 26px",
+              }}
+            >
+              {allProfiles.map((p) => {
+                const idx = selectedIds.indexOf(p.id);
+                const isSelected = idx !== -1;
+
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => toggleProfile(p.id)}
+                    style={{
+                      scrollSnapAlign: "start",
+                      minWidth: "25%", // 4 profils visibles
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {renderAvatarCircle(p, {
+                      selected: isSelected,
+                      size: 58,
+                      mode: "setup",
+                    })}
+
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: isSelected ? "#ffffff" : T.textSoft,
+                        textAlign: "center",
+                      }}
+                    >
+                      {p.name}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 2,
+                        padding: "2px 8px",
+                        borderRadius: 999,
+                        background: isSelected
+                          ? "rgba(246,194,86,0.2)"
+                          : "rgba(255,255,255,0.07)",
+                        color: isSelected ? T.gold : T.textSoft,
+                        fontSize: 10,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {isSelected ? `J${idx + 1}` : "—"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Flèche droite */}
+            <button
+              onClick={() => {
+                const el = document.getElementById(
+                  "cricket-profiles-scroll"
+                );
+                if (el) el.scrollBy({ left: 90, behavior: "smooth" });
+              }}
+              style={{
+                position: "absolute",
+                right: -4,
+                top: "50%",
+                transform: "translateY(-50%)",
+                zIndex: 10,
+                background: "rgba(0,0,0,0.6)",
+                border: `1px solid ${T.borderSoft}`,
+                color: T.gold,
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                boxShadow: "0 0 10px rgba(0,0,0,0.7)",
+              }}
+            >
+              ›
+            </button>
+          </div>
+        </div>
 
         {/* PARAMÈTRES */}
         <div
@@ -1501,7 +1596,7 @@ export default function CricketPlay({ profiles }: Props) {
         {/* QUITTER si fini */}
         {isFinished && (
           <button
-            onClick={handleQuit}
+            onClick={handleFinishAndQuit}
             style={{
               flex: 1,
               padding: "10px 12px",
@@ -1522,7 +1617,7 @@ export default function CricketPlay({ profiles }: Props) {
 
         {/* VALIDER / REJOUER */}
         <button
-          onClick={isFinished ? handleNewLeg : () => {}}
+          onClick={isFinished ? handleFinishAndNewLeg : () => {}}
           style={{
             flex: 1,
             padding: "10px 12px",
