@@ -97,7 +97,16 @@ export type TrainingX01Session = {
   bull: number;
   dBull: number;
   bust: number;
+
+  // ancien format global
   bySegment?: Record<string, number>;
+
+  // nouveaux formats détaillés S / D / T
+  bySegmentS?: Record<string, number>;
+  bySegmentD?: Record<string, number>;
+  bySegmentT?: Record<string, number>;
+
+  // détail fléchette par fléchette
   dartsDetail?: UIDart[];
 };
 
@@ -319,6 +328,11 @@ function normalizeRecordPlayers(
       avatarDataUrl: p?.avatarDataUrl ?? prof?.avatarDataUrl ?? null,
     };
   });
+
+  // PATCH — support X01V3
+if (rec.variant === "x01v3" || rec.mode === "x01v3") {
+  rec.game = "x01";
+}
 
   return {
     ...rec,
@@ -3190,15 +3204,9 @@ function TrainingHitsBySegment({ sessions }: TrainingHitsBySegmentProps) {
 // Onglet "X01 multi" dans Stats joueurs
 // - Stats par joueur à partir de l'historique X01 (X01Play)
 // - Filtres J/S/M/A/All
+// - Design inspiré de TrainingX01StatsTab
+// - ❌ Sans "Mots du coach"
 // ============================================================
-
-type X01MultiSession = {
-  id: string;
-  date: number;
-  avg3D: number;
-  bestVisit: number;
-  bestCheckout: number;
-};
 
 type X01MultiStatsTabProps = {
   records: SavedMatch[];
@@ -3226,13 +3234,22 @@ function X01MultiStatsTab({ records, playerId }: X01MultiStatsTabProps) {
     return t >= now - delta;
   }
 
-// --- extrait les stats X01 pour un joueur dans un match ---
+  const Nloc = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : 0);
+
+  // --- extrait les stats X01 pour un joueur dans un match ---
 function extractX01PlayerStats(rec: SavedMatch, pid: string) {
-  const ss: any = rec.summary ?? rec.payload?.summary ?? {};
+  // summary peut venir de plusieurs endroits (v1, v2, v3)
+  const ss: any =
+    rec.summary ??
+    rec.payload?.summary ??
+    rec.engineState?.summary ??
+    {};
+
   const per: any[] =
     ss.perPlayer ??
     ss.players ??
     rec.payload?.summary?.perPlayer ??
+    rec.engineState?.summary?.perPlayer ??
     [];
 
   const Nloc = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : 0);
@@ -3241,18 +3258,33 @@ function extractX01PlayerStats(rec: SavedMatch, pid: string) {
   let bestVisit = 0;
   let bestCheckout = 0;
 
-  // A) 🔹 Nouveau format : maps par joueur (finalizeMatch v2)
-  if (ss.avg3ByPlayer && ss.avg3ByPlayer[pid] != null) {
-    avg3 = Nloc(ss.avg3ByPlayer[pid]);
+  // A) 🔹 Nouveau format : maps par joueur (finalizeMatch v2+)
+  const mapAvg3 =
+    ss.avg3ByPlayer ??
+    rec.engineState?.avg3ByPlayer ??
+    rec.payload?.summary?.avg3ByPlayer ??
+    null;
+
+  const mapBestVisit =
+    ss.bestVisitByPlayer ??
+    rec.engineState?.bestVisitByPlayer ??
+    rec.payload?.summary?.bestVisitByPlayer ??
+    null;
+
+  const mapBestCheckout =
+    ss.bestCheckoutByPlayer ??
+    rec.engineState?.bestCheckoutByPlayer ??
+    rec.payload?.summary?.bestCheckoutByPlayer ??
+    null;
+
+  if (mapAvg3 && mapAvg3[pid] != null) {
+    avg3 = Nloc(mapAvg3[pid]);
   }
-  if (ss.bestVisitByPlayer && ss.bestVisitByPlayer[pid] != null) {
-    bestVisit = Math.max(bestVisit, Nloc(ss.bestVisitByPlayer[pid]));
+  if (mapBestVisit && mapBestVisit[pid] != null) {
+    bestVisit = Math.max(bestVisit, Nloc(mapBestVisit[pid]));
   }
-  if (ss.bestCheckoutByPlayer && ss.bestCheckoutByPlayer[pid] != null) {
-    bestCheckout = Math.max(
-      bestCheckout,
-      Nloc(ss.bestCheckoutByPlayer[pid])
-    );
+  if (mapBestCheckout && mapBestCheckout[pid] != null) {
+    bestCheckout = Math.max(bestCheckout, Nloc(mapBestCheckout[pid]));
   }
 
   // B) 🔹 perPlayer (summaryPerPlayer de finalizeMatch)
@@ -3282,7 +3314,30 @@ function extractX01PlayerStats(rec: SavedMatch, pid: string) {
     Nloc(pstat.bestFinish)
   );
 
-  // C) 🔹 Fallback sur payload.legs (au cas où summary est pauvre)
+  // C) 🔹 Support moteur X01 V3 : liveStatsByPlayer + scores
+  const live =
+    (rec as any).liveStatsByPlayer?.[pid] ??
+    rec.engineState?.statsByPlayer?.[pid];
+
+  if (live) {
+    const dartsThrown = live.dartsThrown ?? live.darts ?? 0;
+    const startScore =
+      rec.startScore ?? rec.config?.startScore ?? 501;
+
+    const scoreNow =
+      rec.scores?.[pid] ?? live.scoreRemaining ?? startScore;
+
+    if (dartsThrown > 0) {
+      const scored = startScore - scoreNow;
+      const a3 = (scored / dartsThrown) * 3;
+      if (a3 > 0) avg3 = a3;
+    }
+
+    bestVisit = Math.max(bestVisit, Nloc(live.bestVisit));
+    bestCheckout = Math.max(bestCheckout, Nloc(live.bestCheckout));
+  }
+
+  // D) 🔹 Fallback sur payload.legs (au cas où summary est pauvre)
   if ((!avg3 || (!bestVisit && !bestCheckout)) && rec.payload?.legs) {
     const legs: any[] = Array.isArray((rec.payload as any).legs)
       ? (rec.payload as any).legs
@@ -3328,7 +3383,7 @@ function extractX01PlayerStats(rec: SavedMatch, pid: string) {
     }
   }
 
-  // D) 🔹 Fallback ultime : payload.visits (recalcul complet)
+  // E) 🔹 Fallback ultime : payload.visits (recalcul complet)
   if ((!avg3 || (!bestVisit && !bestCheckout)) && rec.payload?.visits) {
     const visits: any[] = Array.isArray((rec.payload as any).visits)
       ? (rec.payload as any).visits
@@ -3367,7 +3422,8 @@ function extractX01PlayerStats(rec: SavedMatch, pid: string) {
   };
 }
 
-  // --- matches X01 du joueur sélectionné ---
+
+  // --- matches X01 filtrés ---
   const x01Matches = React.useMemo(() => {
     const out: Array<{
       rec: SavedMatch;
@@ -3375,55 +3431,59 @@ function extractX01PlayerStats(rec: SavedMatch, pid: string) {
       avg3: number;
       bestVisit: number;
       bestCheckout: number;
+      result: "W" | "L" | "?";
     }> = [];
 
-    const seen = new Set<string>(); // évite les doublons de match
+    const seen = new Set<string>();
 
     for (const rec of records) {
-      // 🔹 1) On ne garde que les matchs X01 :
-      //    kind peut être "x01", "x01_multi", "x01_local", etc. ou undefined.
       const kind = (rec.kind || "").toLowerCase();
-      if (kind && !kind.startsWith("x01")) continue;
-
-      // 🔹 2) On ignore uniquement ceux explicitement "in_progress"
+      if (!kind.startsWith("x01")) continue;
       if (rec.status && rec.status !== "finished") continue;
 
-      // déduplication forte par id
       if (rec.id && seen.has(rec.id)) continue;
       if (rec.id) seen.add(rec.id);
 
       const players = toArr<PlayerLite>(rec.players);
       if (!players.some((p) => p?.id === playerId)) continue;
 
-      // timestamp (fallback sur createdAt, sinon date courante)
       const tRaw = rec.updatedAt ?? rec.createdAt ?? 0;
       const t = tRaw || Date.now();
       if (!inRange(t, range)) continue;
 
       const s = extractX01PlayerStats(rec, playerId);
 
-      // ⚠️ Avant on faisait : if (!s.avg3 && !s.bestVisit && !s.bestCheckout) continue;
-      //    → ça jetait tous les matchs dont History n’a pas les stats détaillées.
-      //    On garde maintenant le match même si les stats sont à 0.
+      const result: "W" | "L" | "?" =
+        rec.winnerId === playerId
+          ? "W"
+          : rec.winnerId && rec.winnerId !== playerId
+          ? "L"
+          : "?";
+
       out.push({
         rec,
         t,
         avg3: s.avg3 || 0,
         bestVisit: s.bestVisit || 0,
         bestCheckout: s.bestCheckout || 0,
+        result,
       });
     }
 
-    // tri chronologique
     out.sort((a, b) => a.t - b.t);
     return out;
   }, [records, playerId, range]);
 
   const matchCount = x01Matches.length;
+  const wins = x01Matches.filter((m) => m.result === "W").length;
+  const losses = x01Matches.filter((m) => m.result === "L").length;
+  const winRate =
+    matchCount > 0 ? (wins / matchCount) * 100 : 0;
 
   const avg3Period =
     matchCount > 0
-      ? x01Matches.reduce((s, m) => s + (m.avg3 || 0), 0) / matchCount
+      ? x01Matches.reduce((s, m) => s + (m.avg3 || 0), 0) /
+        matchCount
       : 0;
 
   const bestVisitPeriod =
@@ -3436,33 +3496,64 @@ function extractX01PlayerStats(rec: SavedMatch, pid: string) {
       ? Math.max(...x01Matches.map((m) => m.bestCheckout || 0))
       : 0;
 
-  // --- sparkline ---
+  // sparkline
   const sparkPoints = x01Matches.map((m) => ({
     x: m.t,
     y: m.avg3 || 0,
   }));
 
+  // =======================
+  // KPIs STYLE TRAINING X01
+  // =======================
+  const kpiBox: React.CSSProperties = {
+    borderRadius: 18,
+    padding: 10,
+    background: "linear-gradient(180deg,#18181A,#0F0F12)",
+    border: "1px solid rgba(255,255,255,.16)",
+    boxShadow: "0 10px 24px rgba(0,0,0,.55)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 2,
+    minHeight: 70,
+  };
+
+  const kpiLabel: React.CSSProperties = {
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    color: T.text70,
+  };
+
+  const kpiValueMain: React.CSSProperties = {
+    fontSize: 18,
+    fontWeight: 900,
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* HEADER + FILTRES TEMPORELS */}
-      <div style={card}>
+      <div style={{ ...card, padding: 14 }}>
         <div
           style={{
             ...goldNeon,
-            fontSize: 16,
-            marginBottom: 6,
+            fontSize: 18,
+            marginBottom: 10,
+            textAlign: "center",
           }}
         >
-          X01 multi — stats par joueur
+          X01 multi
         </div>
 
         {/* Filtres J/S/M/A/All */}
         <div
           style={{
             display: "flex",
+            flexDirection: "row",
+            justifyContent: "center",
             gap: 6,
-            flexWrap: "wrap",
-            marginBottom: 10,
+            flexWrap: "nowrap",
+            transform: "scale(0.92)",
+            transformOrigin: "center",
           }}
         >
           {(["day", "week", "month", "year", "all"] as TimeRange[]).map(
@@ -3472,7 +3563,7 @@ function extractX01PlayerStats(rec: SavedMatch, pid: string) {
                 active={range === r}
                 onClick={() => setRange(r)}
                 style={{
-                  padding: "4px 10px",
+                  padding: "4px 12px",
                   fontSize: 11,
                   minWidth: "unset",
                   whiteSpace: "nowrap",
@@ -3487,82 +3578,100 @@ function extractX01PlayerStats(rec: SavedMatch, pid: string) {
             )
           )}
         </div>
+      </div>
 
-        {/* Petits KPI période */}
+      {/* KPIs PRINCIPAUX */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0,1fr))",
+          gap: 10,
+        }}
+      >
+        {/* Matchs X01 */}
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3,1fr)",
-            gap: 8,
+            ...kpiBox,
+            borderColor: "rgba(246,194,86,.9)",
+            boxShadow:
+              "0 0 0 1px rgba(246,194,86,.35), 0 0 14px rgba(246,194,86,.7)",
           }}
         >
+          <div style={kpiLabel}>Matchs X01 (période)</div>
           <div
             style={{
-              borderRadius: 16,
-              padding: 8,
-              background: "linear-gradient(180deg,#18181A,#101015)",
-              border: "1px solid rgba(255,255,255,.12)",
-              textAlign: "center",
+              ...kpiValueMain,
+              color: T.gold,
             }}
           >
-            <div style={{ fontSize: 10, color: T.text70 }}>
-              Matchs X01 (période)
-            </div>
-            <div
-              style={{
-                fontSize: 20,
-                fontWeight: 900,
-                color: T.gold,
-              }}
-            >
-              {matchCount}
-            </div>
+            {matchCount}
           </div>
-
-          <div
-            style={{
-              borderRadius: 16,
-              padding: 8,
-              background: "linear-gradient(180deg,#18181A,#101015)",
-              border: "1px solid rgba(255,255,255,.12)",
-              textAlign: "center",
-            }}
-          >
-            <div style={{ fontSize: 10, color: T.text70 }}>
-              Moy.3D (période)
-            </div>
-            <div
-              style={{
-                fontSize: 18,
-                fontWeight: 900,
-                color: "#FFB8DE",
-              }}
-            >
-              {avg3Period.toFixed(1)}
-            </div>
+          <div style={{ fontSize: 11, color: T.text70 }}>
+            {wins} victoires / {losses} défaites
           </div>
+        </div>
 
+        {/* Winrate */}
+        <div
+          style={{
+            ...kpiBox,
+            borderColor: "rgba(124,255,154,.6)",
+            boxShadow:
+              "0 0 0 1px rgba(124,255,154,.16), 0 0 12px rgba(124,255,154,.55)",
+          }}
+        >
+          <div style={kpiLabel}>Winrate (période)</div>
           <div
             style={{
-              borderRadius: 16,
-              padding: 8,
-              background: "linear-gradient(180deg,#18181A,#101015)",
-              border: "1px solid rgba(255,255,255,.12)",
-              textAlign: "center",
+              ...kpiValueMain,
+              color: "#7CFF9A",
             }}
           >
-            <div style={{ fontSize: 10, color: T.text70 }}>
-              Best Visit / Best CO
-            </div>
-            <div
-              style={{
-                fontSize: 14,
-                fontWeight: 900,
-                color: "#7CFF9A",
-              }}
-            >
-              {bestVisitPeriod || 0} / {bestCheckoutPeriod || 0}
-            </div>
+            {winRate.toFixed(1)}%
+          </div>
+          <div style={{ fontSize: 11, color: T.text70 }}>
+            Performance globale en X01
+          </div>
+        </div>
+
+        {/* Moy.3D */}
+        <div
+          style={{
+            ...kpiBox,
+            borderColor: "rgba(255,184,222,.6)",
+            boxShadow:
+              "0 0 0 1px rgba(255,184,222,.16), 0 0 12px rgba(255,184,222,.55)",
+          }}
+        >
+          <div style={kpiLabel}>Moy.3D (période)</div>
+          <div
+            style={{
+              ...kpiValueMain,
+              color: "#FFB8DE",
+            }}
+          >
+            {avg3Period.toFixed(1)}
+          </div>
+        </div>
+
+        {/* Records BV / CO */}
+        <div
+          style={{
+            ...kpiBox,
+            borderColor: "rgba(71,181,255,.6)",
+            boxShadow:
+              "0 0 0 1px rgba(71,181,255,.16), 0 0 12px rgba(71,181,255,.55)",
+          }}
+        >
+          <div style={kpiLabel}>Records (période)</div>
+          <div
+            style={{
+              ...kpiValueMain,
+              color: "#47B5FF",
+              fontSize: 16,
+            }}
+          >
+            BV {bestVisitPeriod || 0} / CO {bestCheckoutPeriod || 0}
           </div>
         </div>
       </div>
@@ -3629,27 +3738,49 @@ function extractX01PlayerStats(rec: SavedMatch, pid: string) {
                     background: "rgba(0,0,0,.45)",
                     fontSize: 11,
                     color: T.text70,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 3,
                   }}
                 >
                   <div
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
-                      marginBottom: 2,
+                      alignItems: "center",
                     }}
                   >
                     <span>
                       {formatShortDate(
-                        m.rec.updatedAt ?? m.rec.createdAt ?? Date.now()
+                        m.rec.updatedAt ??
+                          m.rec.createdAt ??
+                          Date.now()
                       )}
                     </span>
-                    <span style={{ fontWeight: 700, color: T.gold }}>
-                      {m.avg3.toFixed(1)} Moy.3D
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        color:
+                          m.result === "W"
+                            ? "#7CFF9A"
+                            : m.result === "L"
+                            ? "#FF8A8A"
+                            : T.gold,
+                      }}
+                    >
+                      {m.avg3.toFixed(1)} Moy.3D ·{" "}
+                      {m.result === "W"
+                        ? "Victoire"
+                        : m.result === "L"
+                        ? "Défaite"
+                        : "—"}
                     </span>
                   </div>
                   <div>
                     BV {m.bestVisit || 0}
-                    {m.bestCheckout ? ` · CO ${m.bestCheckout}` : ""}
+                    {m.bestCheckout
+                      ? ` · CO ${m.bestCheckout}`
+                      : ""}
                   </div>
                 </div>
               ))}
@@ -3771,31 +3902,32 @@ export default function StatsHub(props: Props) {
   }, [records]);
 
   // 4) Sélection du joueur
-const [selectedPlayerId, setSelectedPlayerId] = React.useState<string | null>(
-  initialPlayerIdFromProps ?? players[0]?.id ?? null
-);
+  const [selectedPlayerId, setSelectedPlayerId] =
+    React.useState<string | null>(
+      initialPlayerIdFromProps ?? players[0]?.id ?? null
+    );
 
-// 🔄 si StatsHub est re-ouvert depuis HistoryPage
-React.useEffect(() => {
-  if (initialPlayerIdFromProps) {
-    setSelectedPlayerId(initialPlayerIdFromProps);
-  }
-}, [initialPlayerIdFromProps]);
+  // 🔄 si StatsHub est re-ouvert depuis HistoryPage
+  React.useEffect(() => {
+    if (initialPlayerIdFromProps) {
+      setSelectedPlayerId(initialPlayerIdFromProps);
+    }
+  }, [initialPlayerIdFromProps]);
 
-// Fallback si aucun joueur n'était sélectionné
-React.useEffect(() => {
-  if (!selectedPlayerId && players[0]?.id) {
-    setSelectedPlayerId(players[0].id);
-  }
-}, [players, selectedPlayerId]);
+  // Fallback si aucun joueur n'était sélectionné
+  React.useEffect(() => {
+    if (!selectedPlayerId && players[0]?.id) {
+      setSelectedPlayerId(players[0].id);
+    }
+  }, [players, selectedPlayerId]);
 
   const selectedPlayer =
     players.find((p) => p.id === selectedPlayerId) || players[0];
 
   const quick = useQuickStats(selectedPlayer?.id || null);
 
-    // ---------- Stats Cricket pour le joueur sélectionné ----------
-    const [cricketStats, setCricketStats] =
+  // ---------- Stats Cricket pour le joueur sélectionné ----------
+  const [cricketStats, setCricketStats] =
     React.useState<CricketProfileStats | null>(null);
   const [cricketLoading, setCricketLoading] = React.useState(false);
 
@@ -3831,30 +3963,58 @@ React.useEffect(() => {
     };
   }, [selectedPlayer?.id]);
 
-  // Sous-onglets dans "Stats joueurs" :
-  // - "dashboard" = vue générale StatsPlayerDashboard
-  // - "x01_multi" = stats X01Play (multijoueurs)
-  // Sous-onglet Stats : dashboard / x01_multi
-const [statsSubTab, setStatsSubTab] =
-  React.useState<"dashboard" | "x01_multi">(
-    initialStatsSubTabFromProps ?? "dashboard"
-  );
+  // Sous-onglets dans "Stats joueurs"
+  type StatsSubTab = "dashboard" | "x01_multi" | "cricket";
 
-// 🔄 si une autre page force l'ouverture de X01 multi
-React.useEffect(() => {
-  if (initialStatsSubTabFromProps) {
-    setStatsSubTab(initialStatsSubTabFromProps);
-  }
-}, [initialStatsSubTabFromProps]);
+  const [statsSubTab, setStatsSubTab] =
+    React.useState<StatsSubTab>(
+      initialStatsSubTabFromProps ?? "dashboard"
+    );
 
+  // 🔄 si une autre page force l'ouverture d’un sous-onglet
   React.useEffect(() => {
     if (initialStatsSubTabFromProps) {
-      setStatsSubTab(initialStatsSubTabFromProps);
+      setStatsSubTab(initialStatsSubTabFromProps as StatsSubTab);
     }
   }, [initialStatsSubTabFromProps]);
 
   // Bloc dépliant (sélecteur joueurs)
   const [openPlayers, setOpenPlayers] = React.useState(true);
+
+  // ---------- Data agrégée pour les KPIs (même logique que StatsPlayerDashboard) ----------
+  const dashboardData = React.useMemo(() => {
+    if (!selectedPlayer) return null;
+    return buildDashboardForPlayer(selectedPlayer, records, quick || null);
+  }, [selectedPlayer, records, quick]);
+
+  const avg3Overall = dashboardData?.avg3Overall ?? 0;
+  const winRate = dashboardData?.winRatePct ?? 0;
+  const bestVisit = dashboardData?.bestVisit ?? 0;
+  const bestCheckout = dashboardData?.bestCheckout ?? 0;
+
+  const kpiBox: React.CSSProperties = {
+    borderRadius: 18,
+    padding: 10,
+    background: "linear-gradient(180deg,#18181A,#0F0F12)",
+    border: "1px solid rgba(255,255,255,.16)",
+    boxShadow: "0 10px 24px rgba(0,0,0,.55)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 2,
+    minHeight: 70,
+  };
+
+  const kpiLabel: React.CSSProperties = {
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    color: T.text70,
+  };
+
+  const kpiValueMain: React.CSSProperties = {
+    fontSize: 18,
+    fontWeight: 900,
+  };
 
   return (
     <div
@@ -3878,21 +4038,199 @@ React.useEffect(() => {
           =============================== */}
       {mainTab === "stats" && (
         <>
-          {/* Bloc dépliant Joueurs */}
+          {/* =======================
+              HEADER STAT JOUEUR
+              (style proche TrainingX01)
+              ======================= */}
+          <div
+            style={{
+              ...card,
+              marginBottom: 12,
+              padding: 16,
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}
+          >
+            <div
+              style={{
+                ...goldNeon,
+                fontSize: 18,
+                textAlign: "center",
+              }}
+            >
+              Stats Joueurs
+            </div>
+
+            {/* Ligne : joueur sélectionné + résumé global */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                gap: 12,
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.6,
+                    color: T.text70,
+                  }}
+                >
+                  Joueur sélectionné
+                </div>
+                <div
+                  style={{
+                    fontSize: 18,
+                    fontWeight: 900,
+                    color: "#FFFFFF",
+                    textShadow:
+                      "0 0 8px rgba(255,255,255,.45), 0 0 18px rgba(0,0,0,.85)",
+                  }}
+                >
+                  {selectedPlayer?.name || "—"}
+                </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: T.text70,
+                  }}
+                >
+                  {records.length} matchs au total (X01 + autres modes)
+                </div>
+              </div>
+
+              {/* Petits KPIs résumé (comme TrainingX01) */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(90px, 1fr))",
+                  gap: 8,
+                  flex: 1,
+                  minWidth: 180,
+                }}
+              >
+                {/* Moyenne 3D */}
+                <div
+                  style={{
+                    ...kpiBox,
+                    borderColor: "rgba(255,184,222,.6)",
+                    boxShadow:
+                      "0 0 0 1px rgba(255,184,222,.16), 0 0 12px rgba(255,184,222,.55)",
+                  }}
+                >
+                  <div style={kpiLabel}>Moy. 3D globale</div>
+                  <div
+                    style={{
+                      ...kpiValueMain,
+                      color: "#FFB8DE",
+                    }}
+                  >
+                    {avg3Overall.toFixed(1)}
+                  </div>
+                </div>
+
+                {/* Winrate */}
+                <div
+                  style={{
+                    ...kpiBox,
+                    borderColor: "rgba(124,255,154,.6)",
+                    boxShadow:
+                      "0 0 0 1px rgba(124,255,154,.16), 0 0 12px rgba(124,255,154,.55)",
+                  }}
+                >
+                  <div style={kpiLabel}>Winrate global</div>
+                  <div
+                    style={{
+                      ...kpiValueMain,
+                      color: "#7CFF9A",
+                    }}
+                  >
+                    {winRate.toFixed(1)}%
+                  </div>
+                </div>
+
+                {/* Best visit */}
+                <div
+                  style={{
+                    ...kpiBox,
+                    borderColor: "rgba(71,181,255,.6)",
+                    boxShadow:
+                      "0 0 0 1px rgba(71,181,255,.16), 0 0 12px rgba(71,181,255,.55)",
+                  }}
+                >
+                  <div style={kpiLabel}>Best Visit</div>
+                  <div
+                    style={{
+                      ...kpiValueMain,
+                      color: "#47B5FF",
+                    }}
+                  >
+                    {bestVisit || 0}
+                  </div>
+                </div>
+
+                {/* Best CO */}
+                <div
+                  style={{
+                    ...kpiBox,
+                    borderColor: "rgba(246,194,86,.9)",
+                    boxShadow:
+                      "0 0 0 1px rgba(246,194,86,.35), 0 0 14px rgba(246,194,86,.7)",
+                  }}
+                >
+                  <div style={kpiLabel}>Best Checkout</div>
+                  <div
+                    style={{
+                      ...kpiValueMain,
+                      color: T.gold,
+                    }}
+                  >
+                    {bestCheckout || 0}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* =======================
+              LISTE JOUEURS (collapsible, style training)
+              ======================= */}
           <div style={{ ...card, marginBottom: 12 }}>
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
+                marginBottom: openPlayers ? 6 : 0,
               }}
             >
-              <div style={{ fontWeight: 800 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6,
+                  color: T.gold,
+                }}
+              >
                 Joueurs ({players.length})
               </div>
               <GoldPill
                 active={openPlayers}
                 onClick={() => setOpenPlayers((o) => !o)}
+                style={{ fontSize: 11, padding: "4px 10px" }}
               >
                 {openPlayers ? "Replier" : "Déplier"}
               </GoldPill>
@@ -3901,7 +4239,7 @@ React.useEffect(() => {
             {openPlayers && (
               <div
                 style={{
-                  marginTop: 10,
+                  marginTop: 6,
                   display: "flex",
                   flexWrap: "wrap",
                   gap: 8,
@@ -3931,12 +4269,15 @@ React.useEffect(() => {
             )}
           </div>
 
-          {/* Sous-onglets de "Stats joueurs" */}
+          {/* =======================
+              SOUS-ONGLETS (Dashboard / X01 / Cricket)
+              ======================= */}
           <div
             style={{
               display: "flex",
               gap: 8,
               marginBottom: 10,
+              flexWrap: "wrap",
             }}
           >
             <GoldPill
@@ -3945,19 +4286,30 @@ React.useEffect(() => {
             >
               Vue générale
             </GoldPill>
+
             <GoldPill
               active={statsSubTab === "x01_multi"}
               onClick={() => setStatsSubTab("x01_multi")}
             >
               X01 multi
             </GoldPill>
+
+            <GoldPill
+              active={statsSubTab === "cricket"}
+              onClick={() => setStatsSubTab("cricket")}
+            >
+              Cricket
+            </GoldPill>
           </div>
 
-          {/* Contenu selon sous-onglet */}
+          {/* =======================
+              CONTENU SELON SOUS-ONGLET
+              ======================= */}
           {statsSubTab === "dashboard" && (
             <>
               {selectedPlayer ? (
                 <>
+                  {/* Stats globales joueur (déjà stylées) */}
                   <StatsPlayerDashboard
                     data={buildDashboardForPlayer(
                       selectedPlayer,
@@ -3966,7 +4318,7 @@ React.useEffect(() => {
                     )}
                   />
 
-                  {/* Carte Cricket juste en dessous */}
+                  {/* Petit résumé Cricket en dessous, style TrainingX01 */}
                   <div style={{ ...card, marginTop: 12 }}>
                     <div
                       style={{
@@ -4060,9 +4412,89 @@ React.useEffect(() => {
               )}
             </>
           )}
+
+          {statsSubTab === "cricket" && (
+            <>
+              {selectedPlayer ? (
+                <div style={card}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 800,
+                      textTransform: "uppercase",
+                      color: T.gold,
+                      textShadow:
+                        "0 0 6px rgba(246,194,86,.9), 0 0 14px rgba(246,194,86,.45)",
+                      letterSpacing: 0.8,
+                      marginBottom: 8,
+                    }}
+                  >
+                    Cricket — stats joueur
+                  </div>
+
+                  {cricketLoading && (
+                    <div style={{ fontSize: 12, color: T.text70 }}>
+                      Chargement des stats Cricket...
+                    </div>
+                  )}
+
+                  {!cricketLoading && !cricketStats && (
+                    <div style={{ fontSize: 12, color: T.text70 }}>
+                      Aucune partie Cricket enregistrée pour ce joueur.
+                    </div>
+                  )}
+
+                  {!cricketLoading && cricketStats && (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 10,
+                        fontSize: 12,
+                        color: T.text70,
+                      }}
+                    >
+                      <div>
+                        <div>Parties totales</div>
+                        <div style={{ fontWeight: 800, color: "#FFF" }}>
+                          {cricketStats.matchesTotal}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div>Record points / partie</div>
+                        <div style={{ fontWeight: 800, color: "#FFF" }}>
+                          {cricketStats.bestPointsInMatch ?? 0}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div>Solo (V / D)</div>
+                        <div style={{ fontWeight: 800, color: "#7CFF9A" }}>
+                          {cricketStats.winsSolo} /{" "}
+                          {cricketStats.lossesSolo}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div>Équipes (V / D)</div>
+                        <div style={{ fontWeight: 800, color: "#7CFF9A" }}>
+                          {cricketStats.winsTeams} /{" "}
+                          {cricketStats.lossesTeams}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={card}>
+                  Sélectionne un joueur pour afficher ses stats Cricket.
+                </div>
+              )}
+            </>
+          )}
         </>
       )}
     </div>
   );
 }
-
