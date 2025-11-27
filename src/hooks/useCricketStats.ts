@@ -14,7 +14,7 @@ import {
   aggregateCricketMatches,
   type CricketLegStats,
   type CricketMatchAgg,
-} from "../lib/statsCricket";
+} from "../lib/StatsCricket";
 import type { SavedMatch } from "../lib/history";
 
 export type CricketPlayerDashboardStats = CricketMatchAgg & {

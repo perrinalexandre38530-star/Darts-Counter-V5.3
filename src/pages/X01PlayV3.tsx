@@ -24,12 +24,6 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import { History } from "../lib/history";
 
-import {
-  saveX01V3Autosave,
-  loadX01V3Autosave,
-  clearX01V3Autosave,
-} from "../lib/x01AutosaveV3";
-
 // ---------------- Constantes visuelles / autosave ----------------
 
 const NAV_HEIGHT = 64;
@@ -359,7 +353,7 @@ export default function X01PlayV3({
     (config as any).outMode === "double";
 
   // =====================================================
-  // Autosave : persistance / reprise
+  // Autosave : persistance / reprise (A1 basé sur la liste des darts)
   // =====================================================
 
   const persistAutosave = React.useCallback(() => {
@@ -393,7 +387,7 @@ export default function X01PlayV3({
 
       const snapPlayers = (snap.config?.players ?? []) as any[];
 
-      // Compat rapide : même startScore + même nombre de joueurs + mêmes noms à l'index
+      // Compat rapide : même startScore + même nombre de joueurs + mêmes noms à l’index
       if (
         snap.config?.startScore !== config.startScore ||
         !Array.isArray(snapPlayers) ||
@@ -1577,33 +1571,39 @@ function saveX01V3MatchToHistory({
   liveStatsByPlayer,
 }: X01V3HistoryPayload) {
   const players = config.players || [];
+
   const matchId =
     state?.matchId ||
     `x01v3-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   const createdAt = state?.createdAt || Date.now();
 
-  // Construire des maps compatibles avec extractX01PlayerStats
+  // -------------------------
+  // Maps compatibles Summary
+  // -------------------------
   const avg3ByPlayer: Record<string, number> = {};
   const bestVisitByPlayer: Record<string, number> = {};
   const bestCheckoutByPlayer: Record<string, number> = {};
   const perPlayer: any[] = [];
 
+  let winnerId: string | null = null;
+
   for (const p of players as any[]) {
     const pid = p.id as string;
-    const live = liveStatsByPlayer?.[pid] ?? {};
-    const dartsThrown = live?.dartsThrown ?? 0;
+    const live = (liveStatsByPlayer && liveStatsByPlayer[pid]) || {};
+    const dartsThrown = live.dartsThrown ?? live.darts ?? 0;
 
-    const scoreNow = scores[pid] ?? config.startScore;
-    const scored = config.startScore - scoreNow;
+    const startScore = config.startScore ?? 501;
+    const scoreNow = scores[pid] ?? startScore;
+    const scored = startScore - scoreNow;
 
     let avg3 = 0;
     if (dartsThrown > 0 && scored > 0) {
       avg3 = (scored / dartsThrown) * 3;
     }
 
-    const bestVisit = live?.bestVisit ?? 0;
-    const bestCheckout = live?.bestCheckout ?? 0;
+    const bestVisit = live.bestVisit ?? 0;
+    const bestCheckout = live.bestCheckout ?? 0;
 
     avg3ByPlayer[pid] = avg3;
     bestVisitByPlayer[pid] = bestVisit;
@@ -1615,6 +1615,11 @@ function saveX01V3MatchToHistory({
       bestVisit,
       bestCheckout,
     });
+
+    // Gagnant simple : score à 0
+    if (scoreNow === 0 && !winnerId) {
+      winnerId = pid;
+    }
   }
 
   const summary = {
@@ -1624,13 +1629,13 @@ function saveX01V3MatchToHistory({
     perPlayer,
   };
 
-  // Snapshot pour History
-  const record: any = {
-    id: matchId,
+  // -------------------------
+  // Payload "lourd" compressé
+  // -------------------------
+  const payload = {
     mode: "x01v3",
-    game: "x01",
     variant: "x01v3",
-    createdAt,
+    game: "x01",
     startScore: config.startScore,
     config,
     engineState: state,
@@ -1641,8 +1646,26 @@ function saveX01V3MatchToHistory({
       name: p.name,
       profileId: p.profileId ?? null,
       isBot: !!p.isBot,
+      avatarDataUrl: p.avatarDataUrl ?? null,
     })),
+  };
+
+  // -------------------------
+  // Record History (léger)
+  // -------------------------
+  const record: any = {
+    id: matchId,
+    kind: "x01",
+    status: "finished",
+    createdAt,
+    players: payload.players.map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      avatarDataUrl: p.avatarDataUrl ?? null,
+    })),
+    winnerId,
     summary,
+    payload,
   };
 
   History.upsert(record);

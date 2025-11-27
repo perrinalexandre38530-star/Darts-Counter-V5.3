@@ -5,6 +5,7 @@
 // + X01Play V3 en parallèle du X01 actuel
 // + Stats : bouton menu => StatsShell (menu), puis StatsHub (détails)
 // + Stats Online : StatsOnline (détails ONLINE)
+// + Stats Cricket : StatsCricket (vue dédiée Cricket)
 // ============================================
 import React from "react";
 import BottomNav from "./components/BottomNav";
@@ -734,14 +735,15 @@ function App() {
       }
 
       case "cricket_stats": {
-        // 👈 Carte CRICKET dans StatsShell
-        const profileId: string | null =
+        // 👈 Carte CRICKET dans StatsShell → vue dédiée Cricket
+        const profiles = store.profiles ?? [];
+        const activeProfileId: string | null =
           routeParams?.profileId ?? store.activeProfileId ?? null;
+
         page = (
           <StatsCricket
-            store={store}
-            go={go}
-            profileId={profileId}
+            profiles={profiles}
+            activeProfileId={activeProfileId}
           />
         );
         break;
@@ -944,7 +946,21 @@ function App() {
           );
           break;
         }
-        page = <X01PlayV3 config={x01ConfigV3} />;
+
+        const freshToken = routeParams?.fresh ?? Date.now();
+        const key = `x01v3-${freshToken}`;
+
+        page = (
+          <X01PlayV3
+            key={key}
+            config={x01ConfigV3}
+            onExit={() => go("x01_config_v3")}
+            onReplayNewConfig={() => go("x01_config_v3")}
+            onShowSummary={(matchId: string) =>
+              go("statsDetail", { matchId, showEnd: true })
+            }
+          />
+        );
         break;
       }
 

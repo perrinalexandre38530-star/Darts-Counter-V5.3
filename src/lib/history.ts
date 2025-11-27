@@ -44,7 +44,7 @@ export type SavedMatch = {
 /* =========================
    Cricket stats (nouveau)
 ========================= */
-import { computeCricketLegStats, type CricketHit } from "./statsCricket";
+import { computeCricketLegStats, type CricketHit } from "./StatsCricket";
 
 /* =========================
    Constantes

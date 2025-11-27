@@ -55,6 +55,12 @@ type SavedMatch = {
   updatedAt?: number;
   summary?: any;
   payload?: any;
+
+  // Champs libres tolérés (comme dans lib/history.ts)
+  mode?: string;
+  variant?: string;
+  game?: string;
+  [k: string]: any;
 };
 
 // Onglet principal demandé par le menu Stats
@@ -84,6 +90,46 @@ const toObj = <T,>(v: any): T => (v && typeof v === "object" ? v : ({} as T));
 const N = (x: any, d = 0) => (Number.isFinite(Number(x)) ? Number(x) : d);
 const fmtDate = (ts?: number) =>
   new Date(N(ts, Date.now())).toLocaleString();
+
+/* ---------- Normalise les joueurs (support X01 V3) ---------- */
+function normalizeRecordPlayers(
+  rec: SavedMatch,
+  storeProfiles: PlayerLite[]
+): SavedMatch {
+  // On part d’abord des players du record, sinon fallback sur payload.players
+  const basePlayers: PlayerLite[] =
+    (Array.isArray(rec.players) && rec.players.length
+      ? rec.players
+      : toArr<PlayerLite>(rec.payload?.players)) ?? [];
+
+  const withAvatars = basePlayers.map((p) => {
+    const prof = storeProfiles.find((sp) => sp.id === p?.id);
+    return {
+      id: p?.id,
+      name: p?.name ?? prof?.name ?? "",
+      avatarDataUrl: p?.avatarDataUrl ?? prof?.avatarDataUrl ?? null,
+    };
+  });
+
+  // 🔹 PATCH X01 V3 :
+  // si le match vient du moteur V3 (mode/variant = "x01v3"),
+  // on force game = "x01" pour que tous les filtres X01 le récupèrent proprement
+  const isX01V3 =
+    rec.variant === "x01v3" || rec.mode === "x01v3";
+
+  const game: string | undefined =
+    rec.game ?? (isX01V3 ? "x01" : rec.game);
+
+  return {
+    ...rec,
+    game,
+    players: withAvatars,
+    payload: {
+      ...(rec.payload ?? {}),
+      players: withAvatars,
+    },
+  };
+}
 
 /* ========== TRAINING X01 : SESSIONS LOCALSTORAGE ========== */
 
@@ -318,36 +364,6 @@ function formatShortDate(ts: number) {
 function safePercent(num: number, den: number) {
   if (!den) return 0;
   return (num / den) * 100;
-}
-
-/* ---------- Normalise les joueurs ---------- */
-function normalizeRecordPlayers(
-  rec: SavedMatch,
-  storeProfiles: PlayerLite[]
-): SavedMatch {
-  const pick = (Array.isArray(rec.players) && rec.players!.length
-    ? rec.players!
-    : toArr<PlayerLite>(rec.payload?.players)) as PlayerLite[];
-
-  const withAvatars = pick.map((p) => {
-    const prof = storeProfiles.find((sp) => sp.id === p?.id);
-    return {
-      id: p?.id,
-      name: p?.name ?? prof?.name ?? "",
-      avatarDataUrl: p?.avatarDataUrl ?? prof?.avatarDataUrl ?? null,
-    };
-  });
-
-  // PATCH — support X01V3
-if (rec.variant === "x01v3" || rec.mode === "x01v3") {
-  rec.game = "x01";
-}
-
-  return {
-    ...rec,
-    players: withAvatars,
-    payload: { ...(rec.payload ?? {}), players: withAvatars },
-  };
 }
 
 /* ---------- Hooks Historique ---------- */
