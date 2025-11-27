@@ -2,7 +2,8 @@
 // src/pages/X01PlayV3.tsx
 // X01 V3 — moteur neuf + UI du "beau" X01Play
 // + Tour automatique des BOTS (isBot / botLevel)
-// + Sauvegarde en Historique / Stats à la fin du match
+// + Sauvegarde Historique à la fin du match
+// + Autosave localStorage (reprise après coupure)
 // =============================================================
 
 import React from "react";
@@ -23,10 +24,11 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import { History } from "../lib/history";
 
-// ---------------- Constantes visuelles ----------------
+// ---------------- Constantes visuelles / autosave ----------------
 
 const NAV_HEIGHT = 64;
 const CONTENT_MAX = 520;
+const AUTOSAVE_KEY = "x01v3:autosave";
 
 const miniCard: React.CSSProperties = {
   width: "clamp(150px, 22vw, 190px)",
@@ -87,6 +89,13 @@ type MiniRankingRow = {
   legsWon: number;
   setsWon: number;
   avg3: number;
+};
+
+type X01V3AutosaveSnapshot = {
+  id: string;
+  createdAt: number;
+  config: X01ConfigV3;
+  darts: X01DartInputV3[];
 };
 
 function fmt(d?: UIDart) {
@@ -288,8 +297,13 @@ export default function X01PlayV3({
   const { theme } = useTheme();
   const { t } = useLang();
 
-  // Pour éviter de sauvegarder le match plusieurs fois
+  // Pour éviter de sauvegarder le match plusieurs fois (History)
   const hasSavedMatchRef = React.useRef(false);
+
+  // Autosave : log de toutes les fléchettes (dans l'ordre global)
+  const replayDartsRef = React.useRef<X01DartInputV3[]>([]);
+  const isReplayingRef = React.useRef(false);
+  const hasReplayedRef = React.useRef(false);
 
   const {
     state,
@@ -337,6 +351,84 @@ export default function X01PlayV3({
     (config as any).doubleOut === true ||
     (config as any).finishMode === "double" ||
     (config as any).outMode === "double";
+
+  // =====================================================
+  // Autosave : persistance / reprise
+  // =====================================================
+
+  const persistAutosave = React.useCallback(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const snap: X01V3AutosaveSnapshot = {
+        id: `x01v3-${config.startScore}-${config.players
+          .map((p: any) => p.name)
+          .join("-")}`,
+        createdAt: Date.now(),
+        config,
+        darts: replayDartsRef.current,
+      };
+      window.localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(snap));
+    } catch (e) {
+      console.warn("[X01PlayV3] persistAutosave failed", e);
+    }
+  }, [config]);
+
+  // Reprise auto : au premier rendu, on rejoue toutes les fléchettes sauvegardées
+  React.useEffect(() => {
+    if (hasReplayedRef.current) return;
+    hasReplayedRef.current = true;
+
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(AUTOSAVE_KEY);
+      if (!raw) return;
+      const snap = JSON.parse(raw) as X01V3AutosaveSnapshot;
+      if (!snap || !Array.isArray(snap.darts)) return;
+
+      const snapPlayers = (snap.config?.players ?? []) as any[];
+
+      // Compat rapide : même startScore + même nombre de joueurs + mêmes noms à l'index
+      if (
+        snap.config?.startScore !== config.startScore ||
+        !Array.isArray(snapPlayers) ||
+        snapPlayers.length !== config.players.length
+      ) {
+        return;
+      }
+
+      const sameNames = snapPlayers.every((p, idx) => {
+        const target = config.players[idx] as any;
+        return p.name === target.name;
+      });
+      if (!sameNames) return;
+
+      // OK, on rejoue
+      isReplayingRef.current = true;
+      replayDartsRef.current = snap.darts.slice();
+
+      snap.darts.forEach((d) => {
+        throwDart(d);
+      });
+
+      isReplayingRef.current = false;
+    } catch (e) {
+      console.warn("[X01PlayV3] autosave resume failed", e);
+    }
+  }, [config, throwDart]);
+
+  // Quand le match est terminé : on vide l’autosave
+  React.useEffect(() => {
+    if (status === "match_end") {
+      replayDartsRef.current = [];
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.removeItem(AUTOSAVE_KEY);
+        } catch (e) {
+          console.warn("[X01PlayV3] clear autosave failed", e);
+        }
+      }
+    }
+  }, [status]);
 
   // =====================================================
   // ÉTAT LOCAL KEYPAD (logique v1)
@@ -396,14 +488,20 @@ export default function X01PlayV3({
       }));
     }
 
+    // Conversion vers input V3
+    const inputs: X01DartInputV3[] = toSend.map((d) => ({
+      segment: d.v === 25 ? 25 : d.v,
+      multiplier: d.mult as 1 | 2 | 3,
+    }));
+
     // moteur V3 : une fléchette = un appel
-    toSend.forEach((d) => {
-      const input: X01DartInputV3 = {
-        segment: d.v === 25 ? 25 : d.v,
-        multiplier: d.mult as 1 | 2 | 3,
-      };
+    inputs.forEach((input) => {
       throwDart(input);
     });
+
+    // Autosave : on enrichit le log complet + on persiste
+    replayDartsRef.current = replayDartsRef.current.concat(inputs);
+    persistAutosave();
 
     setCurrentThrow([]);
     setMultiplier(1);
@@ -477,7 +575,7 @@ export default function X01PlayV3({
     : "0.00";
   const bestVisit = activeStats?.bestVisit ?? 0;
 
-  // --- nouveaux compteurs live (avec plusieurs fallbacks) ---
+  // --- nouveaux compteurs live (garde pour Stats globales, pas affichés) ---
   const missCount =
     activeStats?.miss ??
     activeStats?.missCount ??
@@ -502,9 +600,6 @@ export default function X01PlayV3({
     curDarts > 0 ? ((bustCount / curDarts) * 100).toFixed(0) : "0";
   const dBullPct =
     curDarts > 0 ? ((dBullCount / curDarts) * 100).toFixed(0) : "0";
-
-  // (⚠️ ces 6 valeurs restent calculées pour les stats globales,
-  // mais ne sont plus affichées dans le HeaderBlock)
 
   // =====================================================
   // Mesure header & keypad (pour scroll zone joueurs)
@@ -623,6 +718,11 @@ export default function X01PlayV3({
   const currentLegIndex = (state as any).currentLeg ?? 1;
 
   React.useEffect(() => {
+    // Pendant la reprise depuis autosave, on NE JOUE PAS les bots
+    if (isReplayingRef.current) {
+      return;
+    }
+
     if (
       !activePlayer ||
       !(activePlayer as any).isBot ||
@@ -653,13 +753,16 @@ export default function X01PlayV3({
         [pid]: visit,
       }));
 
+      const inputs: X01DartInputV3[] = [];
+
       visit.forEach((d) => {
         if (d.v <= 0) {
-          // MISS = pas de tir envoyé -> dart de valeur 0
+          // MISS = dart de valeur 0
           const inputMiss: X01DartInputV3 = {
             segment: 0 as any,
             multiplier: 1,
           };
+          inputs.push(inputMiss);
           throwDart(inputMiss);
           return;
         }
@@ -667,8 +770,13 @@ export default function X01PlayV3({
           segment: d.v === 25 ? 25 : d.v,
           multiplier: d.mult as 1 | 2 | 3,
         };
+        inputs.push(input);
         throwDart(input);
       });
+
+      // Autosave : on enregistre aussi les volées des bots
+      replayDartsRef.current = replayDartsRef.current.concat(inputs);
+      persistAutosave();
     }, 650);
 
     return () => clearTimeout(timeout);
@@ -681,6 +789,7 @@ export default function X01PlayV3({
     currentSetIndex,
     currentLegIndex,
     throwDart,
+    persistAutosave,
   ]);
 
   // =====================================================
@@ -887,14 +996,9 @@ export default function X01PlayV3({
         state={state}
         liveStatsByPlayer={liveStatsByPlayer}
         onNextLeg={startNextLeg}
-        // noms anciens
         onExitMatch={handleQuit}
         onReplaySameConfig={handleReplaySameConfig}
         onReplayNewConfig={handleReplayNewConfigInternal}
-        // et noms nouveaux pour compat totale avec le composant overlay
-        onQuit={handleQuit}
-        onReplaySame={handleReplaySameConfig}
-        onReplayNew={handleReplayNewConfigInternal}
         onShowSummary={handleShowSummary}
         onContinueMulti={players.length >= 3 ? handleContinueMulti : undefined}
       />
@@ -1473,7 +1577,7 @@ function saveX01V3MatchToHistory({
 
   const createdAt = state?.createdAt || Date.now();
 
-  // --- construit un petit summary compatible avec extractX01PlayerStats ---
+  // Construire des maps compatibles avec extractX01PlayerStats
   const avg3ByPlayer: Record<string, number> = {};
   const bestVisitByPlayer: Record<string, number> = {};
   const bestCheckoutByPlayer: Record<string, number> = {};
@@ -1481,28 +1585,29 @@ function saveX01V3MatchToHistory({
 
   for (const p of players as any[]) {
     const pid = p.id as string;
-    const stats = liveStatsByPlayer?.[pid] ?? {};
-    const darts: number = stats.dartsThrown ?? 0;
-    const totalScore: number = stats.totalScore ?? 0;
-    const bestVisit: number = stats.bestVisit ?? 0;
-    const bestCheckout: number =
-      stats.bestCheckout ?? stats.bestFinish ?? 0;
+    const live = liveStatsByPlayer?.[pid] ?? {};
+    const dartsThrown = live?.dartsThrown ?? 0;
 
-    if (darts > 0 && totalScore > 0) {
-      avg3ByPlayer[pid] = (totalScore / darts) * 3;
-    } else {
-      avg3ByPlayer[pid] = 0;
+    const scoreNow = scores[pid] ?? config.startScore;
+    const scored = config.startScore - scoreNow;
+
+    let avg3 = 0;
+    if (dartsThrown > 0 && scored > 0) {
+      avg3 = (scored / dartsThrown) * 3;
     }
+
+    const bestVisit = live?.bestVisit ?? 0;
+    const bestCheckout = live?.bestCheckout ?? 0;
+
+    avg3ByPlayer[pid] = avg3;
     bestVisitByPlayer[pid] = bestVisit;
     bestCheckoutByPlayer[pid] = bestCheckout;
 
     perPlayer.push({
       playerId: pid,
-      avg3: avg3ByPlayer[pid],
+      avg3,
       bestVisit,
       bestCheckout,
-      dartsThrown: darts,
-      totalScore,
     });
   }
 
@@ -1513,7 +1618,7 @@ function saveX01V3MatchToHistory({
     perPlayer,
   };
 
-  // Petit snapshot très générique — à adapter si besoin à ton History
+  // Snapshot pour History
   const record: any = {
     id: matchId,
     mode: "x01v3",
@@ -1522,7 +1627,6 @@ function saveX01V3MatchToHistory({
     createdAt,
     startScore: config.startScore,
     config,
-    // Pour les stats : on garde un snapshot brut du moteur V3
     engineState: state,
     liveStatsByPlayer,
     scores,
@@ -1535,6 +1639,5 @@ function saveX01V3MatchToHistory({
     summary,
   };
 
-  // Si ton History attend un autre shape, tu pourras ajuster ici
   History.upsert(record);
 }

@@ -16,6 +16,7 @@ import TrainingRadar from "../components/TrainingRadar";
 import type { Dart as UIDart } from "../lib/types";
 import { getCricketProfileStats } from "../lib/statsBridge";
 import type { CricketProfileStats } from "../lib/cricketStats";
+import StatsCricketDashboard from "../components/StatsCricketDashboard";
 // ❌ IMPORTANT : plus d'import TrainingX01Session ici
 
 /* ---------- Thème ---------- */
@@ -59,21 +60,21 @@ type SavedMatch = {
 type StatsHubMainTab = "history" | "stats" | "training";
 
 // ---------- Props ----------
+type StatsMode = "active" | "locals";
+
 type Props = {
   go?: (tab: string, params?: any) => void;
   tab?: StatsHubMainTab;
 
   memHistory?: SavedMatch[];
 
-  // Navigation depuis StatsShell / History
+  // Navigation depuis History / X01PlayV3
   initialPlayerId?: string | null;
-  initialStatsSubTab?: "dashboard" | "x01_multi" | "cricket";
+  initialStatsSubTab?: "dashboard" | "x01_multi";
 
-  // 🔒 si true + initialPlayerId → pas de sélecteur joueurs
-  lockToInitialPlayer?: boolean;
-
-  // 👥 si true → on ajoute tous les profils locaux du store à la liste
-  useStoreProfiles?: boolean;
+  // Nouveau : mode d’ouverture
+  mode?: StatsMode; // "active" = joueur actif / "locals" = profils locaux
+  playerId?: string | null; // compat : StatsShell envoie playerId pour le joueur actif
 };
 
 /* ---------- Helpers génériques ---------- */
@@ -3805,21 +3806,21 @@ export default function StatsHub(props: Props) {
   // Onglet principal piloté par le menu Stats
   const mainTab: StatsHubMainTab = props.tab ?? "stats";
 
+  // Mode d’affichage : "active" (joueur actif) ou "locals" (profils locaux)
+  const mode: StatsMode = (props.mode as StatsMode) ?? "locals";
+
   // ====================================================
   // 🔥 paramètres initiaux (navigation depuis History / StatsShell)
   // ====================================================
-  const initialPlayerIdFromProps = props.initialPlayerId ?? null;
+  const initialPlayerIdFromProps =
+    props.initialPlayerId ?? props.playerId ?? null;
   const initialStatsSubTabFromProps = props.initialStatsSubTab ?? null;
 
-  // 🔒 si true : on ne montre PAS le sélecteur de joueurs
-  const lockToInitialPlayer = Boolean(
-    props.lockToInitialPlayer && initialPlayerIdFromProps
-  );
+  // 🔒 En mode "active" on verrouille le joueur initial
+  const lockToInitialPlayer =
+    mode === "active" && Boolean(initialPlayerIdFromProps);
 
-  // 🇸🇹 si true : on utilise store.profiles comme source principale de joueurs
-  const useStoreProfilesFlag = Boolean(props.useStoreProfiles);
-
-  // 0) Récupère les profils (pour enrichir avatars si manquants)
+  // 0) Récupère les profils (pour enrichir avatars + fallback joueurs)
   const [storeProfiles, setStoreProfiles] = React.useState<PlayerLite[]>([]);
   React.useEffect(() => {
     (async () => {
@@ -3898,29 +3899,30 @@ export default function StatsHub(props: Props) {
       );
   }, [persisted, mem, fromStore, storeProfiles]);
 
-  // 3) Liste des joueurs (historique + éventuellement tous les profils locaux)
-const players = React.useMemo<PlayerLite[]>(() => {
-  const map = new Map<string, PlayerLite>();
-
-  // a) Joueurs vus dans l'historique
-  for (const r of records) {
-    for (const p of toArr<PlayerLite>(r.players)) {
-      if (!p?.id) continue;
-      if (!map.has(p.id)) {
-        map.set(p.id, {
-          id: p.id,
-          name: p.name ?? `Joueur ${map.size + 1}`,
-          avatarDataUrl: p.avatarDataUrl ?? null,
-        });
+  // 3) Joueurs vus dans l'historique
+  const playersFromHistory = React.useMemo<PlayerLite[]>(() => {
+    const map = new Map<string, PlayerLite>();
+    for (const r of records)
+      for (const p of toArr<PlayerLite>(r.players)) {
+        if (!p?.id) continue;
+        if (!map.has(p.id))
+          map.set(p.id, {
+            id: p.id,
+            name: p.name ?? `Joueur ${map.size + 1}`,
+            avatarDataUrl: p.avatarDataUrl ?? null,
+          });
       }
-    }
-  }
+    return Array.from(map.values());
+  }, [records]);
 
-  // b) Profils locaux du store
-  // - toujours en mode "profils locaux" (useStoreProfiles=true)
-  // - ou en fallback si l'historique est vide (map.size === 0)
-  const useStoreProfiles = Boolean(props.useStoreProfiles);
-  if (useStoreProfiles || map.size === 0) {
+  // 3bis) Fusion historique + profils du store (pour toujours avoir tes profils)
+  const allPlayers = React.useMemo<PlayerLite[]>(() => {
+    const map = new Map<string, PlayerLite>();
+
+    for (const p of playersFromHistory) {
+      if (p?.id) map.set(p.id, p);
+    }
+
     for (const p of storeProfiles) {
       if (!p?.id) continue;
       if (!map.has(p.id)) {
@@ -3931,35 +3933,33 @@ const players = React.useMemo<PlayerLite[]>(() => {
         });
       }
     }
-  }
 
-  return Array.from(map.values()).sort((a, b) =>
-    (a.name || "").localeCompare(b.name || "")
-  );
-}, [records, storeProfiles, props.useStoreProfiles]);
+    return Array.from(map.values()).sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "")
+    );
+  }, [playersFromHistory, storeProfiles]);
 
   // 4) Sélection du joueur
   const [selectedPlayerId, setSelectedPlayerId] =
-    React.useState<string | null>(
-      initialPlayerIdFromProps ?? players[0]?.id ?? null
-    );
+    React.useState<string | null>(initialPlayerIdFromProps ?? null);
 
-  // Si on reçoit un initialPlayerId (depuis History / StatsShell)
+  // Si on verrouille un joueur initial (mode "active"), on force sa sélection
   React.useEffect(() => {
-    if (initialPlayerIdFromProps) {
+    if (lockToInitialPlayer && initialPlayerIdFromProps) {
       setSelectedPlayerId(initialPlayerIdFromProps);
     }
-  }, [initialPlayerIdFromProps]);
+  }, [lockToInitialPlayer, initialPlayerIdFromProps]);
 
-  // Fallback si aucun joueur sélectionné ET pas de verrouillage
+  // Fallback auto sur le premier joueur disponible (uniquement en mode "locals")
   React.useEffect(() => {
-    if (!lockToInitialPlayer && !selectedPlayerId && players[0]?.id) {
-      setSelectedPlayerId(players[0].id);
+    if (!lockToInitialPlayer && !selectedPlayerId && allPlayers[0]?.id) {
+      setSelectedPlayerId(allPlayers[0].id);
     }
-  }, [players, selectedPlayerId, lockToInitialPlayer]);
+  }, [allPlayers, selectedPlayerId, lockToInitialPlayer]);
 
-  const selectedPlayer =
-    players.find((p) => p.id === selectedPlayerId) || players[0];
+  const selectedPlayer: PlayerLite | undefined =
+    allPlayers.find((p) => p.id === selectedPlayerId) ||
+    (!lockToInitialPlayer ? allPlayers[0] : undefined);
 
   const quick = useQuickStats(selectedPlayer?.id || null);
 
@@ -4005,7 +4005,7 @@ const players = React.useMemo<PlayerLite[]>(() => {
 
   const [statsSubTab, setStatsSubTab] =
     React.useState<StatsSubTab>(
-      initialStatsSubTabFromProps ?? "dashboard"
+      (initialStatsSubTabFromProps as StatsSubTab) ?? "dashboard"
     );
 
   // 🔄 si une autre page force l'ouverture d’un sous-onglet
@@ -4015,10 +4015,10 @@ const players = React.useMemo<PlayerLite[]>(() => {
     }
   }, [initialStatsSubTabFromProps]);
 
-  // Bloc dépliant (sélecteur joueurs)
+  // Bloc dépliant (sélecteur joueurs) — seulement en mode "locals"
   const [openPlayers, setOpenPlayers] = React.useState(true);
 
-  // ---------- Data agrégée pour les KPIs ----------
+  // ---------- Data agrégée pour les KPIs (même logique que StatsPlayerDashboard) ----------
   const dashboardData = React.useMemo(() => {
     if (!selectedPlayer) return null;
     return buildDashboardForPlayer(selectedPlayer, records, quick || null);
@@ -4096,7 +4096,7 @@ const players = React.useMemo<PlayerLite[]>(() => {
                 textAlign: "center",
               }}
             >
-              Stats Joueurs
+              {mode === "active" ? "Stats joueur actif" : "Stats joueurs"}
             </div>
 
             {/* Ligne : joueur sélectionné + résumé global */}
@@ -4242,12 +4242,10 @@ const players = React.useMemo<PlayerLite[]>(() => {
           </div>
 
           {/* =======================
-              LISTE JOUEURS (collapsible)
-              - cachée quand lockToInitialPlayer = true
+              LISTE JOUEURS (UNIQUEMENT EN MODE "locals")
               ======================= */}
-          {!lockToInitialPlayer && (
+          {mode === "locals" && (
             <div style={{ ...card, marginBottom: 12 }}>
-              ...
               <div
                 style={{
                   display: "flex",
@@ -4265,7 +4263,7 @@ const players = React.useMemo<PlayerLite[]>(() => {
                     color: T.gold,
                   }}
                 >
-                  Joueurs ({players.length})
+                  Joueurs ({allPlayers.length})
                 </div>
                 <GoldPill
                   active={openPlayers}
@@ -4285,8 +4283,8 @@ const players = React.useMemo<PlayerLite[]>(() => {
                     gap: 8,
                   }}
                 >
-                  {players.length ? (
-                    players.map((p) => (
+                  {allPlayers.length ? (
+                    allPlayers.map((p) => (
                       <ProfilePill
                         key={p.id}
                         name={p.name || "Joueur"}
@@ -4350,7 +4348,7 @@ const players = React.useMemo<PlayerLite[]>(() => {
             <>
               {selectedPlayer ? (
                 <>
-                  {/* Stats globales joueur (déjà stylées) */}
+                  {/* Stats globales joueur */}
                   <StatsPlayerDashboard
                     data={buildDashboardForPlayer(
                       selectedPlayer,
@@ -4359,7 +4357,7 @@ const players = React.useMemo<PlayerLite[]>(() => {
                     )}
                   />
 
-                  {/* Petit résumé Cricket en dessous */}
+                  {/* Petit résumé Cricket */}
                   <div style={{ ...card, marginTop: 12 }}>
                     <div
                       style={{
@@ -4457,76 +4455,7 @@ const players = React.useMemo<PlayerLite[]>(() => {
           {statsSubTab === "cricket" && (
             <>
               {selectedPlayer ? (
-                <div style={card}>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 800,
-                      textTransform: "uppercase",
-                      color: T.gold,
-                      textShadow:
-                        "0 0 6px rgba(246,194,86,.9), 0 0 14px rgba(246,194,86,.45)",
-                      letterSpacing: 0.8,
-                      marginBottom: 8,
-                    }}
-                  >
-                    Cricket — stats joueur
-                  </div>
-
-                  {cricketLoading && (
-                    <div style={{ fontSize: 12, color: T.text70 }}>
-                      Chargement des stats Cricket...
-                    </div>
-                  )}
-
-                  {!cricketLoading && !cricketStats && (
-                    <div style={{ fontSize: 12, color: T.text70 }}>
-                      Aucune partie Cricket enregistrée pour ce joueur.
-                    </div>
-                  )}
-
-                  {!cricketLoading && cricketStats && (
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gap: 10,
-                        fontSize: 12,
-                        color: T.text70,
-                      }}
-                    >
-                      <div>
-                        <div>Parties totales</div>
-                        <div style={{ fontWeight: 800, color: "#FFF" }}>
-                          {cricketStats.matchesTotal}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div>Record points / partie</div>
-                        <div style={{ fontWeight: 800, color: "#FFF" }}>
-                          {cricketStats.bestPointsInMatch ?? 0}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div>Solo (V / D)</div>
-                        <div style={{ fontWeight: 800, color: "#7CFF9A" }}>
-                          {cricketStats.winsSolo} /{" "}
-                          {cricketStats.lossesSolo}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div>Équipes (V / D)</div>
-                        <div style={{ fontWeight: 800, color: "#7CFF9A" }}>
-                          {cricketStats.winsTeams} /{" "}
-                          {cricketStats.lossesTeams}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <StatsCricketDashboard profileId={selectedPlayer.id} />
               ) : (
                 <div style={card}>
                   Sélectionne un joueur pour afficher ses stats Cricket.

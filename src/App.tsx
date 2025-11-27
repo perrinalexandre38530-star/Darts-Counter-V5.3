@@ -581,13 +581,29 @@ function App() {
         //    - si on ne précise rien → onglet "Stats joueurs"
         const initialTab = (routeParams?.tab as any) ?? "stats";
 
-        page = <StatsHub go={go} tab={initialTab} memHistory={historyForUI} />;
-        break;
-      }
+        // 🔥 NOUVEAU : on récupère tous les paramètres envoyés par StatsShell
+        const mode = (routeParams?.mode as any) ?? undefined;
 
-      // ✅ NOUVELLE ROUTE : Stats Online (même style que Training X01 Stats)
-      case "stats_online": {
-        page = <StatsOnline />;
+        const initialPlayerId =
+          (routeParams?.initialPlayerId as string | null | undefined) ??
+          (routeParams?.playerId as string | null | undefined) ??
+          null;
+
+        const initialStatsSubTab =
+          (routeParams?.initialStatsSubTab as any) ?? undefined;
+
+        page = (
+          <StatsHub
+            go={go}
+            tab={initialTab}
+            memHistory={historyForUI}
+            // nouveaux props utilisés par StatsHub
+            mode={mode}
+            initialPlayerId={initialPlayerId}
+            initialStatsSubTab={initialStatsSubTab}
+            playerId={routeParams?.playerId ?? null}
+          />
+        );
         break;
       }
 

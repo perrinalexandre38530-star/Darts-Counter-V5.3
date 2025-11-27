@@ -3,9 +3,10 @@
 // Menu Stats — style identique à Games / Training / Profils
 // - Carte 1 : Stats joueur actif (vue complète : Général / Local / Online / Training)
 // - Carte 2 : Stats profils locaux (multi-joueurs)
-// - Carte 3 : Training (stats sessions d’entraînement)
-// - Carte 4 : Online
-// - Carte 5 : Historique
+// - Carte 3 : Stats Cricket (dédié au mode Cricket)
+// - Carte 4 : Training (stats sessions d’entraînement)
+// - Carte 5 : Online
+// - Carte 6 : Historique
 // - Bouton "i" : popin d'aide (légère aura animée comme Games)
 // ============================================
 import React from "react";
@@ -20,7 +21,14 @@ type Props = {
   go: (tab: any, params?: any) => void;
 };
 
-type InfoMode = "active" | "locals" | "training" | "online" | "history" | null;
+type InfoMode =
+  | "active"
+  | "locals"
+  | "cricket"
+  | "training"
+  | "online"
+  | "history"
+  | null;
 
 export default function StatsShell({ store, go }: Props) {
   const { theme } = useTheme();
@@ -227,17 +235,18 @@ export default function StatsShell({ store, go }: Props) {
           theme={theme}
           onClick={() => {
             if (!active) return;
-            // 🔒 Vue verrouillée sur le joueur actif
             go("statsHub", {
               tab: "stats",
+              mode: "active", // 🔒 vue joueur actif
               initialPlayerId: active.id,
-              lockToInitialPlayer: true,
+              playerId: active.id,
+              initialStatsSubTab: "dashboard",
             });
           }}
           onInfo={() => setInfoMode("active")}
         />
 
-        {/* PROFILS LOCAUX — vue multi-profils (pas de verrou) */}
+        {/* PROFILS LOCAUX (liste complète, pas de verrouillage) */}
         <StatsShellCard
           title={t("statsShell.locals.title", "PROFILS LOCAUX")}
           subtitle={t(
@@ -245,13 +254,29 @@ export default function StatsShell({ store, go }: Props) {
             "Accède aux mêmes vues de stats pour tous les profils locaux."
           )}
           theme={theme}
-          onClick={() =>
+          onClick={() => {
             go("statsHub", {
               tab: "stats",
-              // pas de initialPlayerId, pas de lockToInitialPlayer
-            })
-          }
+              mode: "locals", // vue multi-profils
+              initialPlayerId: null,
+            });
+          }}
           onInfo={() => setInfoMode("locals")}
+        />
+
+        {/* CRICKET — vue dédiée stats Cricket */}
+        <StatsShellCard
+          title={t("statsShell.cricket.title", "CRICKET")}
+          subtitle={t(
+            "statsShell.cricket.subtitle",
+            "Stats détaillées de tes parties Cricket : marks, cibles, domination, bull…"
+          )}
+          theme={theme}
+          onClick={() => {
+            if (!active) return;
+            go("cricket_stats", { profileId: active.id });
+          }}
+          onInfo={() => setInfoMode("cricket")}
         />
 
         {/* TRAINING */}
@@ -616,6 +641,13 @@ function InfoOverlay({
       body = t(
         "statsShell.info.locals.body",
         "Retrouve les mêmes vues de statistiques pour tous les profils enregistrés sur cet appareil et compare leurs performances."
+      );
+      break;
+    case "cricket":
+      title = t("statsShell.info.cricket.title", "STATS — Cricket");
+      body = t(
+        "statsShell.info.cricket.body",
+        "Analyse dédiée de tes parties Cricket : marks par cible (15–20 & Bull), temps d’ouverture/fermeture, points marqués et domination sur chaque segment."
       );
       break;
     case "training":

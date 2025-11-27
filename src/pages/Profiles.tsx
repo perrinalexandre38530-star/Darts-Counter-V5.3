@@ -337,6 +337,17 @@ export default function Profiles({
                           renameProfile(active.id, n);
                         if (f) changeAvatar(active.id, f);
                       }}
+                      // 🔗 Bouton / lien "Stats Ninzalex" → StatsHub mode joueur actif
+                      onOpenStats={() => {
+                        if (!active?.id) return;
+                        go?.("statsHub", {
+                          tab: "stats",
+                          mode: "active", // ← vue "joueur actif" verrouillée
+                          initialPlayerId: active.id,
+                          playerId: active.id,
+                          initialStatsSubTab: "dashboard",
+                        });
+                      }}
                     />
                   ) : (
                     <UnifiedAuthBlock
@@ -568,7 +579,7 @@ function ProfilesMenuView({
           "profiles.menu.friends.subtitle",
           "Amis en ligne et absents."
         )}
-        onClick={onSelectFriends} // plus de go("friends") => vue interne
+        onClick={onSelectFriends}
       />
 
       <CardBtn
@@ -644,6 +655,7 @@ function ActiveProfileBlock({
   onToggleAway,
   onQuit,
   onEdit,
+  onOpenStats,
 }: {
   active: Profile;
   activeAvg3D: number | null;
@@ -651,6 +663,7 @@ function ActiveProfileBlock({
   onToggleAway: () => void;
   onQuit: () => void;
   onEdit: (name: string, avatar?: File | null) => void;
+  onOpenStats?: () => void;
 }) {
   const AVATAR = 96;
   const BORDER = 8;
@@ -741,10 +754,10 @@ function ActiveProfileBlock({
           }}
         >
           <a
-            href={`#/stats?pid=${active?.id}`}
+            href="#stats"
             onClick={(e) => {
               e.preventDefault();
-              if (active?.id) location.hash = `#/stats?pid=${active.id}`;
+              onOpenStats?.();
             }}
             style={{ color: primary, textDecoration: "none" }}
             title={t(
@@ -1825,8 +1838,7 @@ function LocalProfiles({
                 <ProfileAvatar
                   size={AVA}
                   dataUrl={p.avatarDataUrl}
-                  label={p.name?.[0]?.toUpperCase() || "?"
-                  }
+                  label={p.name?.[0]?.toUpperCase() || "?"}
                   showStars={false}
                 />
               </div>

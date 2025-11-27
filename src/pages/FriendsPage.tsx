@@ -473,8 +473,7 @@ export default function FriendsPage({ store, update, go }: Props) {
     } catch (e: any) {
       console.warn(e);
       setError(
-        e?.message ||
-          "Impossible de créer un salon online pour le moment."
+        e?.message || "Impossible de créer un salon online pour le moment."
       );
     } finally {
       setCreatingLobby(false);
@@ -567,12 +566,46 @@ export default function FriendsPage({ store, update, go }: Props) {
         style={{
           fontSize: 13,
           opacity: 0.8,
-          marginBottom: 12,
+          marginBottom: 8,
         }}
       >
         Crée ton compte online pour synchroniser ton profil entre appareils et
         jouer de vraies parties en ligne (auth Supabase + salons online).
       </p>
+
+      {/* 🔹 Messages globaux (toujours visibles, connecté ou pas) */}
+      {error && (
+        <div
+          style={{
+            marginBottom: 10,
+            padding: 8,
+            borderRadius: 10,
+            fontSize: 11.5,
+            background:
+              "linear-gradient(180deg, rgba(80,0,0,.9), rgba(40,0,0,.95))",
+            border: "1px solid rgba(255,120,120,.7)",
+            color: "#ffdede",
+          }}
+        >
+          {error}
+        </div>
+      )}
+      {!error && info && (
+        <div
+          style={{
+            marginBottom: 10,
+            padding: 8,
+            borderRadius: 10,
+            fontSize: 11.5,
+            background:
+              "linear-gradient(180deg, rgba(0,60,25,.9), rgba(0,30,15,.95))",
+            border: "1px solid rgba(140,230,180,.7)",
+            color: "#c9ffe5",
+          }}
+        >
+          {info}
+        </div>
+      )}
 
       {/* --------- BLOC INFO --------- */}
       <div
@@ -721,30 +754,7 @@ export default function FriendsPage({ store, update, go }: Props) {
             }}
           />
 
-          {/* Messages d'erreur / info */}
-          {error && (
-            <div
-              style={{
-                marginBottom: 8,
-                fontSize: 11.5,
-                color: "#ff8a8a",
-              }}
-            >
-              {error}
-            </div>
-          )}
-
-          {info && !error && (
-            <div
-              style={{
-                marginBottom: 8,
-                fontSize: 11.5,
-                color: "#8fe6aa",
-              }}
-            >
-              {info}
-            </div>
-          )}
+          {/* (plus de messages error/info ici, ils sont globaux) */}
 
           {/* BOUTONS */}
           <div
@@ -1243,8 +1253,7 @@ export default function FriendsPage({ store, update, go }: Props) {
             color: "#1c1304",
             fontWeight: 800,
             fontSize: 13,
-            cursor:
-              creatingLobby || !isSignedIn ? "default" : "pointer",
+            cursor: creatingLobby || !isSignedIn ? "default" : "pointer",
             marginBottom: 10,
             opacity: creatingLobby || !isSignedIn ? 0.6 : 1,
           }}
@@ -1309,8 +1318,7 @@ export default function FriendsPage({ store, update, go }: Props) {
               color: "#04101f",
               fontWeight: 800,
               fontSize: 13,
-              cursor:
-                joiningLobby || !isSignedIn ? "default" : "pointer",
+              cursor: joiningLobby || !isSignedIn ? "default" : "pointer",
               opacity: joiningLobby || !isSignedIn ? 0.65 : 1,
             }}
           >

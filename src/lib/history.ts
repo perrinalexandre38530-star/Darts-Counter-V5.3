@@ -42,6 +42,11 @@ export type SavedMatch = {
 };
 
 /* =========================
+   Cricket stats (nouveau)
+========================= */
+import { computeCricketLegStats, type CricketHit } from "./statsCricket";
+
+/* =========================
    Constantes
 ========================= */
 const LSK = "dc-history-v1"; // ancien storage (migration + fallback)
@@ -498,7 +503,7 @@ export async function get(id: string): Promise<SavedMatch | null> {
       // fallback
       const rows = (() => {
         try {
-          return JSON.parse(localStorage.getItem(LSK) || "[]");
+          return JSON.parse(localStorage.getItem(LSK) || "[]"); // <-- bien "[]"
         } catch {
           return [];
         }
@@ -542,8 +547,38 @@ export async function upsert(rec: SavedMatch): Promise<void> {
     // payload compressé séparé (IDB)
   };
 
+  // ---------------------------------------------
+  // 🎯 Intégration Cricket : calcul auto legStats
+  // ---------------------------------------------
+  let payloadEffective = rec.payload;
+
   try {
-    const payloadStr = rec.payload ? JSON.stringify(rec.payload) : "";
+    if (rec.kind === "cricket" && rec.payload && typeof rec.payload === "object") {
+      const base = rec.payload as any;
+      const players = Array.isArray(base.players) ? base.players : [];
+
+      const playersWithStats = players.map((p: any) => {
+        const hits: CricketHit[] = Array.isArray(p.hits) ? p.hits : [];
+        // si legStats déjà fourni, on le garde, sinon on calcule
+        const legStats =
+          p.legStats && typeof p.legStats === "object"
+            ? p.legStats
+            : computeCricketLegStats(hits);
+        return { ...p, hits, legStats };
+      });
+
+      payloadEffective = {
+        ...base,
+        mode: base.mode ?? "cricket",
+        players: playersWithStats,
+      };
+    }
+  } catch (e) {
+    console.warn("[history.upsert] cricket enrichment error:", e);
+  }
+
+  try {
+    const payloadStr = payloadEffective ? JSON.stringify(payloadEffective) : "";
     const payloadCompressed = payloadStr
       ? LZString.compressToUTF16(payloadStr)
       : "";
