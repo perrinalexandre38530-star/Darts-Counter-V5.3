@@ -58,15 +58,22 @@ type SavedMatch = {
 // Onglet principal demandé par le menu Stats
 type StatsHubMainTab = "history" | "stats" | "training";
 
+// ---------- Props ----------
 type Props = {
   go?: (tab: string, params?: any) => void;
   tab?: StatsHubMainTab;
 
   memHistory?: SavedMatch[];
 
-  // 🔥 Ajouts pour navigation depuis HistoryPage/X01PlayV3
+  // Navigation depuis StatsShell / History
   initialPlayerId?: string | null;
-  initialStatsSubTab?: "dashboard" | "x01_multi";
+  initialStatsSubTab?: "dashboard" | "x01_multi" | "cricket";
+
+  // 🔒 si true + initialPlayerId → pas de sélecteur joueurs
+  lockToInitialPlayer?: boolean;
+
+  // 👥 si true → on ajoute tous les profils locaux du store à la liste
+  useStoreProfiles?: boolean;
 };
 
 /* ---------- Helpers génériques ---------- */
@@ -3799,10 +3806,18 @@ export default function StatsHub(props: Props) {
   const mainTab: StatsHubMainTab = props.tab ?? "stats";
 
   // ====================================================
-  // 🔥 paramètres initiaux (navigation depuis History)
+  // 🔥 paramètres initiaux (navigation depuis History / StatsShell)
   // ====================================================
   const initialPlayerIdFromProps = props.initialPlayerId ?? null;
   const initialStatsSubTabFromProps = props.initialStatsSubTab ?? null;
+
+  // 🔒 si true : on ne montre PAS le sélecteur de joueurs
+  const lockToInitialPlayer = Boolean(
+    props.lockToInitialPlayer && initialPlayerIdFromProps
+  );
+
+  // 🇸🇹 si true : on utilise store.profiles comme source principale de joueurs
+  const useStoreProfilesFlag = Boolean(props.useStoreProfiles);
 
   // 0) Récupère les profils (pour enrichir avatars si manquants)
   const [storeProfiles, setStoreProfiles] = React.useState<PlayerLite[]>([]);
@@ -3883,23 +3898,45 @@ export default function StatsHub(props: Props) {
       );
   }, [persisted, mem, fromStore, storeProfiles]);
 
-  // 3) Liste des joueurs rencontrés dans l'historique
-  const players = React.useMemo<PlayerLite[]>(() => {
-    const map = new Map<string, PlayerLite>();
-    for (const r of records)
-      for (const p of toArr<PlayerLite>(r.players)) {
-        if (!p?.id) continue;
-        if (!map.has(p.id))
-          map.set(p.id, {
-            id: p.id,
-            name: p.name ?? `Joueur ${map.size + 1}`,
-            avatarDataUrl: p.avatarDataUrl ?? null,
-          });
+  // 3) Liste des joueurs (historique + éventuellement tous les profils locaux)
+const players = React.useMemo<PlayerLite[]>(() => {
+  const map = new Map<string, PlayerLite>();
+
+  // a) Joueurs vus dans l'historique
+  for (const r of records) {
+    for (const p of toArr<PlayerLite>(r.players)) {
+      if (!p?.id) continue;
+      if (!map.has(p.id)) {
+        map.set(p.id, {
+          id: p.id,
+          name: p.name ?? `Joueur ${map.size + 1}`,
+          avatarDataUrl: p.avatarDataUrl ?? null,
+        });
       }
-    return Array.from(map.values()).sort((a, b) =>
-      (a.name || "").localeCompare(b.name || "")
-    );
-  }, [records]);
+    }
+  }
+
+  // b) Profils locaux du store
+  // - toujours en mode "profils locaux" (useStoreProfiles=true)
+  // - ou en fallback si l'historique est vide (map.size === 0)
+  const useStoreProfiles = Boolean(props.useStoreProfiles);
+  if (useStoreProfiles || map.size === 0) {
+    for (const p of storeProfiles) {
+      if (!p?.id) continue;
+      if (!map.has(p.id)) {
+        map.set(p.id, {
+          id: p.id,
+          name: p.name ?? `Joueur ${map.size + 1}`,
+          avatarDataUrl: p.avatarDataUrl ?? null,
+        });
+      }
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) =>
+    (a.name || "").localeCompare(b.name || "")
+  );
+}, [records, storeProfiles, props.useStoreProfiles]);
 
   // 4) Sélection du joueur
   const [selectedPlayerId, setSelectedPlayerId] =
@@ -3907,19 +3944,19 @@ export default function StatsHub(props: Props) {
       initialPlayerIdFromProps ?? players[0]?.id ?? null
     );
 
-  // 🔄 si StatsHub est re-ouvert depuis HistoryPage
+  // Si on reçoit un initialPlayerId (depuis History / StatsShell)
   React.useEffect(() => {
     if (initialPlayerIdFromProps) {
       setSelectedPlayerId(initialPlayerIdFromProps);
     }
   }, [initialPlayerIdFromProps]);
 
-  // Fallback si aucun joueur n'était sélectionné
+  // Fallback si aucun joueur sélectionné ET pas de verrouillage
   React.useEffect(() => {
-    if (!selectedPlayerId && players[0]?.id) {
+    if (!lockToInitialPlayer && !selectedPlayerId && players[0]?.id) {
       setSelectedPlayerId(players[0].id);
     }
-  }, [players, selectedPlayerId]);
+  }, [players, selectedPlayerId, lockToInitialPlayer]);
 
   const selectedPlayer =
     players.find((p) => p.id === selectedPlayerId) || players[0];
@@ -3981,7 +4018,7 @@ export default function StatsHub(props: Props) {
   // Bloc dépliant (sélecteur joueurs)
   const [openPlayers, setOpenPlayers] = React.useState(true);
 
-  // ---------- Data agrégée pour les KPIs (même logique que StatsPlayerDashboard) ----------
+  // ---------- Data agrégée pour les KPIs ----------
   const dashboardData = React.useMemo(() => {
     if (!selectedPlayer) return null;
     return buildDashboardForPlayer(selectedPlayer, records, quick || null);
@@ -4205,69 +4242,73 @@ export default function StatsHub(props: Props) {
           </div>
 
           {/* =======================
-              LISTE JOUEURS (collapsible, style training)
+              LISTE JOUEURS (collapsible)
+              - cachée quand lockToInitialPlayer = true
               ======================= */}
-          <div style={{ ...card, marginBottom: 12 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: openPlayers ? 6 : 0,
-              }}
-            >
+          {!lockToInitialPlayer && (
+            <div style={{ ...card, marginBottom: 12 }}>
+              ...
               <div
                 style={{
-                  fontSize: 12,
-                  fontWeight: 800,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.6,
-                  color: T.gold,
-                }}
-              >
-                Joueurs ({players.length})
-              </div>
-              <GoldPill
-                active={openPlayers}
-                onClick={() => setOpenPlayers((o) => !o)}
-                style={{ fontSize: 11, padding: "4px 10px" }}
-              >
-                {openPlayers ? "Replier" : "Déplier"}
-              </GoldPill>
-            </div>
-
-            {openPlayers && (
-              <div
-                style={{
-                  marginTop: 6,
                   display: "flex",
-                  flexWrap: "wrap",
-                  gap: 8,
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: openPlayers ? 6 : 0,
                 }}
               >
-                {players.length ? (
-                  players.map((p) => (
-                    <ProfilePill
-                      key={p.id}
-                      name={p.name || "Joueur"}
-                      avatarDataUrl={p.avatarDataUrl || undefined}
-                      active={p.id === selectedPlayer?.id}
-                      onClick={() => setSelectedPlayerId(p.id)}
-                    />
-                  ))
-                ) : (
-                  <div
-                    style={{
-                      color: T.text70,
-                      fontSize: 13,
-                    }}
-                  >
-                    Aucun joueur détecté.
-                  </div>
-                )}
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 800,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.6,
+                    color: T.gold,
+                  }}
+                >
+                  Joueurs ({players.length})
+                </div>
+                <GoldPill
+                  active={openPlayers}
+                  onClick={() => setOpenPlayers((o) => !o)}
+                  style={{ fontSize: 11, padding: "4px 10px" }}
+                >
+                  {openPlayers ? "Replier" : "Déplier"}
+                </GoldPill>
               </div>
-            )}
-          </div>
+
+              {openPlayers && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                  }}
+                >
+                  {players.length ? (
+                    players.map((p) => (
+                      <ProfilePill
+                        key={p.id}
+                        name={p.name || "Joueur"}
+                        avatarDataUrl={p.avatarDataUrl || undefined}
+                        active={p.id === selectedPlayer?.id}
+                        onClick={() => setSelectedPlayerId(p.id)}
+                      />
+                    ))
+                  ) : (
+                    <div
+                      style={{
+                        color: T.text70,
+                        fontSize: 13,
+                      }}
+                    >
+                      Aucun joueur détecté.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* =======================
               SOUS-ONGLETS (Dashboard / X01 / Cricket)
@@ -4318,7 +4359,7 @@ export default function StatsHub(props: Props) {
                     )}
                   />
 
-                  {/* Petit résumé Cricket en dessous, style TrainingX01 */}
+                  {/* Petit résumé Cricket en dessous */}
                   <div style={{ ...card, marginTop: 12 }}>
                     <div
                       style={{

@@ -20,13 +20,7 @@ type Props = {
   go: (tab: any, params?: any) => void;
 };
 
-type InfoMode =
-  | "active"
-  | "locals"
-  | "training"
-  | "online"
-  | "history"
-  | null;
+type InfoMode = "active" | "locals" | "training" | "online" | "history" | null;
 
 export default function StatsShell({ store, go }: Props) {
   const { theme } = useTheme();
@@ -35,13 +29,10 @@ export default function StatsShell({ store, go }: Props) {
   const profiles = store?.profiles ?? [];
   const activeProfileId = store?.activeProfileId ?? null;
   const active =
-    profiles.find((p) => p.id === activeProfileId) ??
-    profiles[0] ??
-    null;
+    profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
 
   const playerLabel = active
-    ? t("statsShell.players.titleActivePrefix", "STATS ") +
-      active.name
+    ? t("statsShell.players.titleActivePrefix", "STATS ") + active.name
     : t("statsShell.players.titleDefault", "STATS JOUEURS");
 
   const [infoMode, setInfoMode] = React.useState<InfoMode>(null);
@@ -236,16 +227,17 @@ export default function StatsShell({ store, go }: Props) {
           theme={theme}
           onClick={() => {
             if (!active) return;
+            // 🔒 Vue verrouillée sur le joueur actif
             go("statsHub", {
               tab: "stats",
-              mode: "active",
-              playerId: active.id,
+              initialPlayerId: active.id,
+              lockToInitialPlayer: true,
             });
           }}
           onInfo={() => setInfoMode("active")}
         />
 
-        {/* PROFILS LOCAUX */}
+        {/* PROFILS LOCAUX — vue multi-profils (pas de verrou) */}
         <StatsShellCard
           title={t("statsShell.locals.title", "PROFILS LOCAUX")}
           subtitle={t(
@@ -253,7 +245,12 @@ export default function StatsShell({ store, go }: Props) {
             "Accède aux mêmes vues de stats pour tous les profils locaux."
           )}
           theme={theme}
-          onClick={() => go("statsHub", { tab: "stats", mode: "locals" })}
+          onClick={() =>
+            go("statsHub", {
+              tab: "stats",
+              // pas de initialPlayerId, pas de lockToInitialPlayer
+            })
+          }
           onInfo={() => setInfoMode("locals")}
         />
 

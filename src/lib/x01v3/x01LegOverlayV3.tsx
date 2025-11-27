@@ -21,10 +21,17 @@ type Props = {
   liveStatsByPlayer: any;
 
   onNextLeg: () => void;
-  onExitMatch?: () => void;
 
+  // Noms "anciens" (X01PlayV3 première version)
+  onExitMatch?: () => void;
   onReplaySameConfig?: () => void;
   onReplayNewConfig?: () => void;
+
+  // Noms "nouveaux" (compat patch X01PlayV3)
+  onQuit?: () => void;
+  onReplaySame?: () => void;
+  onReplayNew?: () => void;
+
   onShowSummary?: (matchId: string) => void;
   onContinueMulti?: () => void;
 };
@@ -39,6 +46,9 @@ export default function X01LegOverlayV3({
   onExitMatch,
   onReplaySameConfig,
   onReplayNewConfig,
+  onQuit,
+  onReplaySame,
+  onReplayNew,
   onShowSummary,
   onContinueMulti,
 }: Props) {
@@ -157,20 +167,24 @@ export default function X01LegOverlayV3({
     : [];
 
   // ------------------------------------------------------------
-  // Callbacks
+  // Callbacks (avec compat noms anciens / nouveaux)
   // ------------------------------------------------------------
   const nextLeg = () => onNextLeg();
 
+  const quitHandler = onExitMatch || onQuit;
+  const replaySameHandler = onReplaySameConfig || onReplaySame;
+  const replayNewHandler = onReplayNewConfig || onReplayNew;
+
   const quitMatch = () => {
-    if (onExitMatch) onExitMatch();
+    if (quitHandler) quitHandler();
   };
 
   const replaySame = () => {
-    if (onReplaySameConfig) onReplaySameConfig();
+    if (replaySameHandler) replaySameHandler();
   };
 
   const replayNew = () => {
-    if (onReplayNewConfig) onReplayNewConfig();
+    if (replayNewHandler) replayNewHandler();
   };
 
   // on appelle le callback même si matchId est vide
@@ -322,7 +336,7 @@ export default function X01LegOverlayV3({
           ) : (
             <div style={{ marginTop: 18 }}>
               {/* REJOUER (mêmes paramètres) */}
-              {onReplaySameConfig && (
+              {replaySameHandler && (
                 <button style={btnGoldFull} onClick={replaySame}>
                   🏆{" "}
                   {t(
@@ -341,7 +355,7 @@ export default function X01LegOverlayV3({
                   marginTop: 4,
                 }}
               >
-                {onReplayNewConfig && (
+                {replayNewHandler && (
                   <button style={btnGhostWide} onClick={replayNew}>
                     {t("x01.leg_overlay.new_match", "Nouvelle partie")}
                   </button>

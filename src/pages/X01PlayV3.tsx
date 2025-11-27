@@ -570,7 +570,7 @@ export default function X01PlayV3({
   }
 
   // NOUVELLE PARTIE (retour écran de config)
-  function handleReplayNewConfig() {
+  function handleReplayNewConfigInternal() {
     if (onReplayNewConfig) {
       onReplayNewConfig();
       return;
@@ -887,9 +887,14 @@ export default function X01PlayV3({
         state={state}
         liveStatsByPlayer={liveStatsByPlayer}
         onNextLeg={startNextLeg}
+        // noms anciens
         onExitMatch={handleQuit}
         onReplaySameConfig={handleReplaySameConfig}
-        onReplayNewConfig={handleReplayNewConfig}
+        onReplayNewConfig={handleReplayNewConfigInternal}
+        // et noms nouveaux pour compat totale avec le composant overlay
+        onQuit={handleQuit}
+        onReplaySame={handleReplaySameConfig}
+        onReplayNew={handleReplayNewConfigInternal}
         onShowSummary={handleShowSummary}
         onContinueMulti={players.length >= 3 ? handleContinueMulti : undefined}
       />
@@ -1468,6 +1473,46 @@ function saveX01V3MatchToHistory({
 
   const createdAt = state?.createdAt || Date.now();
 
+  // --- construit un petit summary compatible avec extractX01PlayerStats ---
+  const avg3ByPlayer: Record<string, number> = {};
+  const bestVisitByPlayer: Record<string, number> = {};
+  const bestCheckoutByPlayer: Record<string, number> = {};
+  const perPlayer: any[] = [];
+
+  for (const p of players as any[]) {
+    const pid = p.id as string;
+    const stats = liveStatsByPlayer?.[pid] ?? {};
+    const darts: number = stats.dartsThrown ?? 0;
+    const totalScore: number = stats.totalScore ?? 0;
+    const bestVisit: number = stats.bestVisit ?? 0;
+    const bestCheckout: number =
+      stats.bestCheckout ?? stats.bestFinish ?? 0;
+
+    if (darts > 0 && totalScore > 0) {
+      avg3ByPlayer[pid] = (totalScore / darts) * 3;
+    } else {
+      avg3ByPlayer[pid] = 0;
+    }
+    bestVisitByPlayer[pid] = bestVisit;
+    bestCheckoutByPlayer[pid] = bestCheckout;
+
+    perPlayer.push({
+      playerId: pid,
+      avg3: avg3ByPlayer[pid],
+      bestVisit,
+      bestCheckout,
+      dartsThrown: darts,
+      totalScore,
+    });
+  }
+
+  const summary = {
+    avg3ByPlayer,
+    bestVisitByPlayer,
+    bestCheckoutByPlayer,
+    perPlayer,
+  };
+
   // Petit snapshot très générique — à adapter si besoin à ton History
   const record: any = {
     id: matchId,
@@ -1487,6 +1532,7 @@ function saveX01V3MatchToHistory({
       profileId: p.profileId ?? null,
       isBot: !!p.isBot,
     })),
+    summary,
   };
 
   // Si ton History attend un autre shape, tu pourras ajuster ici
