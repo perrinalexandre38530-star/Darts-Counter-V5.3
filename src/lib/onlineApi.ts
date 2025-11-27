@@ -2,16 +2,12 @@
 // src/lib/onlineApi.ts
 // API Mode Online
 // - Auth / Profil / Matchs → Supabase
-// - Lobbies temps réel X01 → Cloudflare Durable Objects (REST+WS)
+// - Salons X01 (lobbies) → Supabase ("online_lobbies")
 // - Surface d'API unique pour le front
 // ============================================================
 
 import { supabase } from "./supabase";
-import type {
-  UserAuth,
-  OnlineProfile,
-  OnlineMatch,
-} from "./onlineTypes";
+import type { UserAuth, OnlineProfile, OnlineMatch } from "./onlineTypes";
 
 // --------------------------------------------
 // Types publics de l'API (auth / profils / matchs)
@@ -51,57 +47,32 @@ export type UploadMatchPayload = Omit<
 };
 
 // --------------------------------------------
-// Types Lobbies (Cloudflare DO)
+// Types Lobbies (Supabase "online_lobbies")
 // --------------------------------------------
 
-// statut de salle en temps réel
-export type LobbyStatus = "waiting" | "running" | "ended";
-
-// joueur dans un lobby temps réel
-export type LobbyPlayer = {
-  id: string;              // id "online" (ou profil local si tu veux)
-  name: string;
-  avatar?: string | null;
-  joinedAt: number;
+export type OnlineLobbySettings = {
+  start: number;
+  doubleOut: boolean;
+  [k: string]: any;
 };
 
-// Lobby temps réel (géré par Durable Object RoomDO)
 export type OnlineLobby = {
-  code: string;            // code court type "AB7F"
-  players: LobbyPlayer[];
-  hostId: string | null;
-  status: LobbyStatus;
-  engineState?: any;       // snapshot du moteur X01 (optionnel)
-};
-
-// payloads REST côté front
-export type CreateLobbyPayload = {
-  // pour l'instant on peut laisser vide (RoomDO gère tout),
-  // mais on garde le type si on veut ajouter des options plus tard
-};
-
-export type JoinLobbyPayload = {
-  code: string;
-  player: {
-    id: string;
-    name: string;
-    avatar?: string | null;
-  };
-};
-
-export type LeaveLobbyPayload = {
-  code: string;
-  playerId: string;
+  id: string;
+  code: string; // "4F9Q"
+  mode: string; // "x01"
+  maxPlayers: number;
+  hostUserId: string;
+  hostNickname: string;
+  settings: OnlineLobbySettings;
+  status: string; // "waiting" | "running" | ...
+  createdAt: string;
 };
 
 // --------------------------------------------
 // Config / helpers locaux
 // --------------------------------------------
 
-// On n'est plus en mode mock : tout passe par Supabase + Worker DO
 const USE_MOCK = false;
-
-// Clé localStorage pour garder la dernière session sérialisée
 const LS_AUTH_KEY = "dc_online_auth_supabase_v1";
 
 function now() {
@@ -170,9 +141,10 @@ function mapProfile(row: SupabaseProfileRow): OnlineProfile {
   };
 }
 
+// Table d’historique : "online_matches"
 type SupabaseMatchRow = {
   id: string;
-  user_id: string;
+  user_id?: string | null; // optionnel suivant ton schéma
   mode: string;
   payload: any;
   is_training: boolean | null;
@@ -183,12 +155,40 @@ type SupabaseMatchRow = {
 function mapMatch(row: SupabaseMatchRow): OnlineMatch {
   return {
     id: row.id,
-    userId: row.user_id,
+    userId: row.user_id ?? "",
     mode: row.mode,
     payload: row.payload,
     isTraining: row.is_training ?? false,
     startedAt: row.started_at ? Date.parse(row.started_at) : now(),
     finishedAt: row.finished_at ? Date.parse(row.finished_at) : now(),
+  };
+}
+
+// Lobbies : table "online_lobbies"
+type SupabaseLobbyRow = {
+  id: string;
+  code: string;
+  mode: string;
+  max_players: number;
+  host_user_id: string;
+  host_nickname: string;
+  settings: any;
+  status: string;
+  created_at: string;
+};
+
+function mapLobbyRow(row: SupabaseLobbyRow): OnlineLobby {
+  return {
+    id: String(row.id),
+    code: String(row.code).toUpperCase(),
+    mode: row.mode || "x01",
+    maxPlayers: Number(row.max_players ?? 2),
+    hostUserId: String(row.host_user_id),
+    hostNickname: row.host_nickname || "Hôte",
+    settings:
+      (row.settings as OnlineLobbySettings) || { start: 501, doubleOut: true },
+    status: row.status || "waiting",
+    createdAt: row.created_at || new Date().toISOString(),
   };
 }
 
@@ -215,9 +215,7 @@ async function buildAuthSessionFromSupabase(): Promise<AuthSession | null> {
       (user.user_metadata as any)?.nickname ||
       user.email ||
       "Player",
-    createdAt: user.created_at
-      ? Date.parse(user.created_at)
-      : now(),
+    createdAt: user.created_at ? Date.parse(user.created_at) : now(),
   };
 
   // Récupère (ou crée) le profil en ligne
@@ -407,7 +405,7 @@ async function uploadMatch(
   const finished = payload.finishedAt ?? now();
 
   const { data, error } = await supabase
-    .from("live_match_sessions")
+    .from("online_matches")
     .insert({
       user_id: userId,
       mode: payload.mode,
@@ -428,17 +426,9 @@ async function uploadMatch(
 }
 
 async function listMatches(limit = 50): Promise<OnlineMatch[]> {
-  const session = await restoreSession();
-  if (!session?.user) {
-    throw new Error("Non authentifié");
-  }
-
-  const userId = session.user.id;
-
   const { data, error } = await supabase
-    .from("live_match_sessions")
+    .from("online_matches")
     .select("*")
-    .eq("user_id", userId)
     .order("finished_at", { ascending: false })
     .limit(limit);
 
@@ -451,138 +441,104 @@ async function listMatches(limit = 50): Promise<OnlineMatch[]> {
 }
 
 // ============================================================
-// 2) PARTIE CLOUDFLARE DURABLE OBJECTS (Lobbies temps réel)
+// 2) Salons X01 ONLINE (Supabase "online_lobbies")
 // ============================================================
 
-// ⚙️ BASE HTTP pour les appels REST → Worker
-//    -> configure VITE_ONLINE_BASE_URL dans ton .env
-const BASE_HTTP =
-  (typeof import.meta !== "undefined" &&
-    (import.meta as any).env?.VITE_ONLINE_BASE_URL) ||
-  "https://darts-online.example.workers.dev"; // ⬅️ à remplacer
-
-// ⚙️ BASE WS pour les WebSockets
-function makeWsBase(httpBase: string): string {
-  if (httpBase.startsWith("https://")) {
-    return "wss://" + httpBase.slice("https://".length);
+function generateLobbyCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let out = "";
+  for (let i = 0; i < 4; i++) {
+    out += chars[Math.floor(Math.random() * chars.length)];
   }
-  if (httpBase.startsWith("http://")) {
-    return "ws://" + httpBase.slice("http://".length);
-  }
-  // fallback
-  return httpBase.replace(/^http/, "ws");
+  return out;
 }
-const BASE_WS = makeWsBase(BASE_HTTP);
 
-// Helpers JSON REST
-async function post(path: string, body: any) {
-  const res = await fetch(`${BASE_HTTP}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body ?? {}),
-  });
+// Création d’un salon X01
+async function createLobby(args: {
+  mode: string; // "x01"
+  maxPlayers: number;
+  settings: OnlineLobbySettings;
+}): Promise<OnlineLobby> {
+  const { mode, maxPlayers, settings } = args;
 
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    console.error("[onlineApi] POST error", path, res.status, txt);
-    throw new Error(
-      `Erreur serveur (${res.status}) sur ${path}${txt ? `: ${txt}` : ""}`
-    );
+  const { data: sessData, error: sessError } =
+    await supabase.auth.getSession();
+  if (sessError || !sessData?.session?.user) {
+    console.error("[onlineApi] createLobby no session", sessError);
+    throw new Error("Session online introuvable (reconnecte-toi).");
   }
 
-  const ct = res.headers.get("Content-Type") || "";
-  if (ct.includes("application/json")) {
-    return (await res.json()) as any;
-  }
-  return null;
-}
+  const user = sessData.session.user;
+  const meta = (user.user_metadata || {}) as any;
+  const nickname =
+    meta.nickname || meta.displayName || user.email || "Hôte";
 
-async function get(path: string) {
-  const res = await fetch(`${BASE_HTTP}${path}`);
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    console.error("[onlineApi] GET error", path, res.status, txt);
-    throw new Error(
-      `Erreur serveur (${res.status}) sur ${path}${txt ? `: ${txt}` : ""}`
-    );
-  }
-  const ct = res.headers.get("Content-Type") || "";
-  if (ct.includes("application/json")) {
-    return (await res.json()) as any;
-  }
-  return null;
-}
+  let lastError: any = null;
 
-// --------------------------------------------
-// Fonctions publiques : LOBBIES temps réel
-// (impl Cloudflare DO)
-// --------------------------------------------
+  // On tente plusieurs codes en cas de collision (clé unique sur code)
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = generateLobbyCode();
 
-// 1) CREATE LOBBY
-async function createLobbyRealtime(
-  _payload?: CreateLobbyPayload
-): Promise<{ code: string }> {
-  // Pour l'instant on ne passe rien, la RoomDO gère tout
-  return await post("/lobby/create", {});
-}
+    const { data, error } = await supabase
+      .from("online_lobbies")
+      .insert({
+        code,
+        mode,
+        max_players: maxPlayers,
+        host_user_id: user.id,
+        host_nickname: nickname,
+        settings,
+        status: "waiting",
+      })
+      .select("*")
+      .single();
 
-// 2) JOIN LOBBY
-async function joinLobbyRealtime(payload: JoinLobbyPayload): Promise<OnlineLobby> {
-  const { code, player } = payload;
-  return await post(`/lobby/${encodeURIComponent(code)}/join`, player);
-}
-
-// 3) LEAVE LOBBY
-async function leaveLobbyRealtime(payload: LeaveLobbyPayload): Promise<void> {
-  const { code, playerId } = payload;
-  await post(`/lobby/${encodeURIComponent(code)}/leave`, { playerId });
-}
-
-// 4) START MATCH (l'host démarre la partie X01)
-async function startMatchRealtime(code: string): Promise<OnlineLobby> {
-  return await post(`/lobby/${encodeURIComponent(code)}/start`, {});
-}
-
-// 5) SEND COMMAND (throw / undo / next / snapshot, etc.)
-async function sendCommandRealtime(code: string, cmd: any): Promise<void> {
-  await post(`/lobby/${encodeURIComponent(code)}/command`, cmd);
-}
-
-// 6) GET STATE (charge l'état initial du lobby)
-async function getLobbyStateRealtime(code: string): Promise<OnlineLobby> {
-  return await get(`/lobby/${encodeURIComponent(code)}/state`);
-}
-
-// 7) WebSocket temps réel
-function connectLobbyWS(
-  code: string,
-  onMessage: (msg: any) => void
-): WebSocket {
-  const url = `${BASE_WS}/lobby/${encodeURIComponent(code)}/ws`;
-  const ws = new WebSocket(url);
-
-  ws.onopen = () => {
-    console.log("[onlineApi] WS connected", code);
-  };
-
-  ws.onmessage = (evt) => {
-    try {
-      const msg = JSON.parse(evt.data);
-      onMessage(msg);
-    } catch (err) {
-      console.warn("[onlineApi] Bad WS message:", evt.data);
+    if (!error && data) {
+      return mapLobbyRow(data as SupabaseLobbyRow);
     }
-  };
 
-  ws.onclose = () => {
-    console.log("[onlineApi] WS closed");
-  };
+    lastError = error;
+    // 23505 = violation contrainte unique (code déjà pris)
+    if (error && (error as any).code === "23505") continue;
 
-  ws.onerror = (err) => {
-    console.warn("[onlineApi] WS error", err);
-  };
+    console.error("[onlineApi] createLobby error", error);
+    break;
+  }
 
-  return ws;
+  throw new Error(
+    lastError?.message || "Impossible de créer un salon online pour le moment."
+  );
+}
+
+// Rejoindre un salon par code
+async function joinLobby(args: {
+  code: string;
+  userId: string;
+  nickname: string;
+}): Promise<OnlineLobby> {
+  const codeUpper = args.code.trim().toUpperCase();
+
+  const { data, error } = await supabase
+    .from("online_lobbies")
+    .select("*")
+    .eq("code", codeUpper)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[onlineApi] joinLobby error", error);
+    throw new Error(
+      error.message || "Impossible de rejoindre ce salon pour le moment."
+    );
+  }
+
+  if (!data) {
+    throw new Error("Aucun salon trouvé avec ce code.");
+  }
+
+  // (optionnel plus tard : insérer l’invité dans une table lobby_players)
+  return mapLobbyRow(data as SupabaseLobbyRow);
 }
 
 // --------------------------------------------
@@ -603,14 +559,9 @@ export const onlineApi = {
   uploadMatch,
   listMatches,
 
-  // Lobbies temps réel (Cloudflare DO)
-  createLobbyRealtime,
-  joinLobbyRealtime,
-  leaveLobbyRealtime,
-  startMatchRealtime,
-  sendCommandRealtime,
-  getLobbyStateRealtime,
-  connectLobbyWS,
+  // Salons Supabase
+  createLobby,
+  joinLobby,
 
   // Info
   USE_MOCK,

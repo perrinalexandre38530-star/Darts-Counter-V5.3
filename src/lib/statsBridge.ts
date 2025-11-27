@@ -13,6 +13,7 @@
 // ============================================
 
 import { History } from "./history";
+import type { SavedMatch } from "./history";
 import {
   aggregateCricketProfileStats,
   type CricketLegStats,
@@ -141,6 +142,168 @@ async function loadCricketLegStatsForProfile(
   } catch {
     return [];
   }
+}
+
+/* ---------- Helper X01 : extraction tolérante des stats joueur ---------- */
+
+// --- extrait les stats X01 pour un joueur dans un match ---
+function extractX01PlayerStats(rec: SavedMatch, pid: string) {
+  const Nloc = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : 0);
+
+  let avg3 = 0;
+  let bestVisit = 0;
+  let bestCheckout = 0;
+
+  const ss: any = (rec as any).summary ?? (rec as any).payload?.summary ?? {};
+  const per: any[] =
+    ss.perPlayer ??
+    ss.players ??
+    (rec as any).payload?.summary?.perPlayer ??
+    [];
+
+  const liveStatsByPlayer: any = (rec as any).liveStatsByPlayer;
+  const live = liveStatsByPlayer?.[pid];
+
+  // 0) 🔹 V3 / snapshot direct via liveStatsByPlayer (nouveau)
+  if (live) {
+    const dartsThrown = Nloc(live.dartsThrown);
+    const totalScore = Nloc(live.totalScore);
+
+    if (dartsThrown > 0 && totalScore > 0) {
+      avg3 = (totalScore / dartsThrown) * 3;
+    }
+
+    bestVisit = Math.max(bestVisit, Nloc(live.bestVisit));
+    bestCheckout = Math.max(bestCheckout, Nloc(live.bestCheckout));
+  }
+
+  // A) 🔹 Nouveau format : maps par joueur (finalizeMatch v2)
+  if (!avg3 && ss.avg3ByPlayer && ss.avg3ByPlayer[pid] != null) {
+    avg3 = Nloc(ss.avg3ByPlayer[pid]);
+  }
+  if (ss.bestVisitByPlayer && ss.bestVisitByPlayer[pid] != null) {
+    bestVisit = Math.max(bestVisit, Nloc(ss.bestVisitByPlayer[pid]));
+  }
+  if (ss.bestCheckoutByPlayer && ss.bestCheckoutByPlayer[pid] != null) {
+    bestCheckout = Math.max(
+      bestCheckout,
+      Nloc(ss.bestCheckoutByPlayer[pid])
+    );
+  }
+
+  // B) 🔹 perPlayer (summaryPerPlayer de finalizeMatch)
+  const pstat =
+    per.find((x) => x?.playerId === pid) ??
+    (ss[pid] || ss.players?.[pid] || ss.perPlayer?.[pid]) ??
+    {};
+
+  if (!avg3) {
+    avg3 =
+      Nloc(pstat.avg3) ||
+      Nloc(pstat.avg_3) ||
+      Nloc(pstat.avg3Darts) ||
+      Nloc(pstat.average3) ||
+      Nloc(pstat.avg3D);
+  }
+
+  bestVisit = Math.max(
+    bestVisit,
+    Nloc(pstat.bestVisit),
+    Nloc(pstat.best_visit)
+  );
+  bestCheckout = Math.max(
+    bestCheckout,
+    Nloc(pstat.bestCheckout),
+    Nloc(pstat.best_co),
+    Nloc(pstat.bestFinish)
+  );
+
+  // C) 🔹 Fallback sur payload.legs (au cas où summary est pauvre)
+  if ((!avg3 || (!bestVisit && !bestCheckout)) && (rec as any).payload?.legs) {
+    const legs: any[] = Array.isArray((rec as any).payload.legs)
+      ? (rec as any).payload.legs
+      : [];
+
+    let sumAvg3 = 0;
+    let legsCount = 0;
+
+    for (const leg of legs) {
+      const plArr: any[] = Array.isArray(leg.perPlayer)
+        ? leg.perPlayer
+        : [];
+      const pl = plArr.find((x) => x?.playerId === pid);
+      if (!pl) continue;
+
+      const legAvg =
+        Nloc(pl.avg3) ||
+        Nloc(pl.avg_3) ||
+        Nloc(pl.avg3Darts) ||
+        Nloc(pl.average3) ||
+        Nloc(pl.avg3D);
+
+      if (legAvg > 0) {
+        sumAvg3 += legAvg;
+        legsCount++;
+      }
+
+      bestVisit = Math.max(
+        bestVisit,
+        Nloc(pl.bestVisit),
+        Nloc(pl.best_visit)
+      );
+      bestCheckout = Math.max(
+        bestCheckout,
+        Nloc(pl.bestCheckout),
+        Nloc(pl.best_co),
+        Nloc(pl.bestFinish)
+      );
+    }
+
+    if (legsCount > 0 && (!avg3 || avg3 === 0)) {
+      avg3 = sumAvg3 / legsCount;
+    }
+  }
+
+  // D) 🔹 Fallback ultime : payload.visits (recalcul complet)
+  if (
+    (!avg3 || (!bestVisit && !bestCheckout)) &&
+    (rec as any).payload?.visits
+  ) {
+    const visits: any[] = Array.isArray((rec as any).payload.visits)
+      ? (rec as any).payload.visits
+      : [];
+
+    let darts = 0;
+    let scored = 0;
+
+    for (const v of visits) {
+      if (v.p !== pid) continue;
+
+      const segs = Array.isArray(v.segments) ? v.segments : [];
+      const nbDarts = segs.length || 0;
+
+      darts += nbDarts;
+      scored += Nloc(v.score);
+
+      if (!v.bust) {
+        const sc = Nloc(v.score);
+        if (sc > bestVisit) bestVisit = sc;
+        if (v.isCheckout && sc > bestCheckout) {
+          bestCheckout = sc;
+        }
+      }
+    }
+
+    if (darts > 0 && (!avg3 || avg3 === 0)) {
+      avg3 = (scored / darts) * 3;
+    }
+  }
+
+  return {
+    avg3,
+    bestVisit,
+    bestCheckout,
+  };
 }
 
 /* ================================================================
@@ -577,7 +740,7 @@ export const StatsBridge = {
      getBasicProfileStatsAsync :
      - part de quick-stats (localStorage)
      - complète avec l'historique (History.list)
-       -> coTotal + winRate
+       -> coTotal + winRate + X01 avg3/bestVisit/bestCheckout
   -------------------------------------------------------------- */
   async getBasicProfileStatsAsync(
     profileId: string
@@ -587,17 +750,50 @@ export const StatsBridge = {
     let winsFromHistory = 0;
     let coTotal = 0;
 
+    let histAvgSum = 0;
+    let histAvgCount = 0;
+    let histBestVisit = 0;
+    let histBestCheckout = 0;
+
     try {
       const rows = await History.list();
-      for (const r of rows) {
-        const played = !!r.players?.some((p: any) => p.id === profileId);
+
+      for (const r of rows as SavedMatch[]) {
+        const played = !!(r as any).players?.some(
+          (p: any) => p.id === profileId
+        );
         if (!played) continue;
 
         gamesFromHistory++;
-        if (r.winnerId && r.winnerId === profileId) {
+        if ((r as any).winnerId && (r as any).winnerId === profileId) {
           winsFromHistory++;
         }
-        coTotal += Number(r.summary?.co ?? 0);
+
+        const summary: any =
+          (r as any).summary ?? (r as any).payload?.summary ?? {};
+        coTotal += Number(summary?.co ?? 0);
+
+        // On ne tire des stats X01 que sur les matchs X01 / X01V3
+        const game = (r as any).game;
+        const variant = (r as any).variant;
+        const isX01 =
+          game === "x01" ||
+          variant === "x01" ||
+          variant === "x01v3" ||
+          variant === "x01v2";
+
+        if (isX01) {
+          const x = extractX01PlayerStats(r, profileId);
+          if (x.avg3 > 0) {
+            histAvgSum += x.avg3;
+            histAvgCount++;
+          }
+          histBestVisit = Math.max(histBestVisit, x.bestVisit || 0);
+          histBestCheckout = Math.max(
+            histBestCheckout,
+            x.bestCheckout || 0
+          );
+        }
       }
     } catch {
       // si IDB indispo : on garde base
@@ -607,12 +803,28 @@ export const StatsBridge = {
     const wins = Math.max(Number(base.wins || 0), winsFromHistory);
     const winRate = games ? Math.round((wins / games) * 100) : 0;
 
+    const avgFromHistory =
+      histAvgCount > 0 ? histAvgSum / histAvgCount : 0;
+
+    const avg3 = base.avg3 || avgFromHistory || 0;
+    const bestVisit = Math.max(
+      Number(base.bestVisit || 0),
+      histBestVisit
+    );
+    const bestCheckout = Math.max(
+      Number(base.bestCheckout || 0),
+      histBestCheckout
+    );
+
     return {
       ...base,
       games,
       wins,
       coTotal,
       winRate,
+      avg3,
+      bestVisit,
+      bestCheckout,
     };
   },
 

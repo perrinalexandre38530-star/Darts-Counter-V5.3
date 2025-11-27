@@ -134,6 +134,105 @@ function RedirectToStatsTraining({ go }: { go: (tab: Tab, params?: any) => void 
   return null;
 }
 
+// Nouveau wrapper pour l'écran de détail stats (respect des hooks)
+function StatsDetailRoute({
+  store,
+  go,
+  params,
+}: {
+  store: Store;
+  go: (tab: Tab, params?: any) => void;
+  params: any;
+}) {
+  const [rec, setRec] = React.useState<any>(() => {
+    if (params?.rec) {
+      return withAvatars(params.rec, store.profiles || []);
+    }
+    const fromMem = (store.history || []).find(
+      (r: any) => r.id === params?.matchId
+    );
+    return fromMem ? withAvatars(fromMem, store.profiles || []) : null;
+  });
+
+  const matchId: string | undefined = params?.matchId;
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!matchId) return;
+      try {
+        const byId = await (History as any)?.get?.(matchId);
+        if (alive && byId) {
+          setRec(withAvatars(byId, store.profiles || []));
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [matchId, store.profiles]);
+
+  if (params?.showEnd && rec) {
+    return (
+      <X01End
+        go={go}
+        params={{
+          matchId: rec.id,
+          resumeId: rec.resumeId ?? rec.payload?.resumeId,
+          showEnd: true,
+        }}
+      />
+    );
+  }
+
+  if (rec) {
+    const when = Number(rec.updatedAt ?? rec.createdAt ?? Date.now());
+    const dateStr = new Date(when).toLocaleString();
+    const toArrLoc = (v: any) => (Array.isArray(v) ? v : []);
+    const players = toArrLoc(
+      rec.players?.length ? rec.players : rec.payload?.players
+    );
+    const names = players.map((p: any) => p?.name ?? "—").join(" · ");
+    const winnerName = rec.winnerId
+      ? (players.find((p: any) => p?.id === rec.winnerId)?.name ?? "—")
+      : null;
+
+    return (
+      <div style={{ padding: 16 }}>
+        <button
+          onClick={() => go("statsHub", { tab: "history" })}
+          style={{ marginBottom: 12 }}
+        >
+          ← Retour
+        </button>
+        <h2 style={{ margin: 0 }}>
+          {(rec.kind || "MATCH").toUpperCase()} — {dateStr}
+        </h2>
+        <div style={{ opacity: 0.85, marginTop: 8 }}>
+          Joueurs : {names || "—"}
+        </div>
+        {winnerName && (
+          <div style={{ marginTop: 6 }}>Vainqueur : 🏆 {winnerName}</div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 16 }}>
+      <button
+        onClick={() => go("statsHub", { tab: "history" })}
+        style={{ marginBottom: 12 }}
+      >
+        ← Retour
+      </button>
+      {matchId ? "Chargement..." : "Aucune donnée"}
+    </div>
+  );
+}
+
 // Store initial minimal
 const initialStore: Store = {
   profiles: [],
@@ -581,7 +680,7 @@ function App() {
         //    - si on ne précise rien → onglet "Stats joueurs"
         const initialTab = (routeParams?.tab as any) ?? "stats";
 
-        // 🔥 NOUVEAU : on récupère tous les paramètres envoyés par StatsShell
+        // 🔥 On récupère tous les paramètres envoyés par StatsShell / App
         const mode = (routeParams?.mode as any) ?? undefined;
 
         const initialPlayerId =
@@ -597,7 +696,6 @@ function App() {
             go={go}
             tab={initialTab}
             memHistory={historyForUI}
-            // nouveaux props utilisés par StatsHub
             mode={mode}
             initialPlayerId={initialPlayerId}
             initialStatsSubTab={initialStatsSubTab}
@@ -607,81 +705,21 @@ function App() {
         break;
       }
 
+      case "stats_online": {
+        // 👈 NOUVELLE ROUTE : carte ONLINE dans StatsShell
+        page = <StatsOnline />;
+        break;
+      }
+
       case "statsDetail": {
-        // Charge proprement le record demandé
-        const [rec, setRec] = React.useState<any>(() => {
-          if (routeParams?.rec) return withAvatars(routeParams.rec, store.profiles || []);
-          const fromMem = (store.history || []).find((r: any) => r.id === routeParams?.matchId);
-          return fromMem ? withAvatars(fromMem, store.profiles || []) : null;
-        });
-        const matchId: string | undefined = routeParams?.matchId;
-
-        React.useEffect(() => {
-          let alive = true;
-          (async () => {
-            if (!matchId) return;
-            try {
-              const byId = await (History as any)?.get?.(matchId);
-              if (alive && byId) setRec(withAvatars(byId, store.profiles || []));
-            } catch {}
-          })();
-          return () => {
-            alive = false;
-          };
-        }, [matchId, store.profiles]);
-
-        if (routeParams?.showEnd && rec) {
-          page = (
-            <X01End
-              go={go}
-              params={{
-                matchId: rec.id,
-                resumeId: rec.resumeId ?? rec.payload?.resumeId,
-                showEnd: true,
-              }}
-            />
-          );
-          break;
-        }
-
-        if (rec) {
-          const when = Number(rec.updatedAt ?? rec.createdAt ?? Date.now());
-          const dateStr = new Date(when).toLocaleString();
-          const toArrLoc = (v: any) => (Array.isArray(v) ? v : []);
-          const players = toArrLoc(rec.players?.length ? rec.players : rec.payload?.players);
-          const names = players.map((p: any) => p?.name ?? "—").join(" · ");
-          const winnerName = rec.winnerId
-            ? (players.find((p: any) => p?.id === rec.winnerId)?.name ?? "—")
-            : null;
-
-          page = (
-            <div style={{ padding: 16 }}>
-              <button
-                onClick={() => go("statsHub", { tab: "history" })}
-                style={{ marginBottom: 12 }}
-              >
-                ← Retour
-              </button>
-              <h2 style={{ margin: 0 }}>
-                {(rec.kind || "MATCH").toUpperCase()} — {dateStr}
-              </h2>
-              <div style={{ opacity: 0.85, marginTop: 8 }}>Joueurs : {names || "—"}</div>
-              {winnerName && <div style={{ marginTop: 6 }}>Vainqueur : 🏆 {winnerName}</div>}
-            </div>
-          );
-        } else {
-          page = (
-            <div style={{ padding: 16 }}>
-              <button
-                onClick={() => go("statsHub", { tab: "history" })}
-                style={{ marginBottom: 12 }}
-              >
-                ← Retour
-              </button>
-              {matchId ? "Chargement..." : "Aucune donnée"}
-            </div>
-          );
-        }
+        // 👈 Wrapper dédié pour respecter les Rules of Hooks
+        page = (
+          <StatsDetailRoute
+            store={store}
+            go={go}
+            params={routeParams}
+          />
+        );
         break;
       }
 
@@ -912,110 +950,109 @@ function App() {
         break;
       }
 
-            // ✅ Nouvelle page : Créateur d'avatar
-            case "avatar": {
-              const botId: string | undefined = routeParams?.botId;
-              const profileIdFromParams: string | undefined = routeParams?.profileId;
-              const backTo: Tab = (routeParams?.from as Tab) || "profiles";
-              const isBotMode = !!routeParams?.isBot;
-      
-              // --- Cas 1 : on édite l'avatar d'un BOT ---
-              if (botId) {
-                const bots = loadBotsLS();
-                const targetBot = bots.find((b) => b.id === botId) || null;
-      
-                function handleSaveAvatarBot({
-                  pngDataUrl,
-                  name,
-                }: {
-                  pngDataUrl: string;
-                  name: string;
-                }) {
-                  if (!targetBot) {
-                    console.warn("[AvatarCreator] BOT introuvable pour id", botId);
-                    go(backTo);
-                    return;
-                  }
-                  const next = bots.slice();
-                  const idx = next.findIndex((b) => b.id === targetBot.id);
-                  const updated: BotLS = {
-                    ...targetBot,
-                    name: name?.trim() || targetBot.name,
-                    avatarDataUrl: pngDataUrl,
-                  };
-                  if (idx >= 0) next[idx] = updated;
-                  else next.push(updated);
-                  saveBotsLS(next);
-                  go(backTo);
-                }
-      
-                page = (
-                  <div style={{ padding: 16 }}>
-                    <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
-                      ← Retour
-                    </button>
-                    <AvatarCreator
-                      size={512}
-                      defaultName={targetBot?.name || ""}
-                      onSave={handleSaveAvatarBot}
-                      // 👇 médaillon bleu pour les BOTS
-                      isBotMode={true}
-                    />
-                  </div>
-                );
-                break;
-              }
-      
-              // --- Cas 2 : avatar pour un profil (profilId explicite ou actif) ---
-              const targetProfile =
-                (store.profiles || []).find(
-                  (p) => p.id === (profileIdFromParams || store.activeProfileId)
-                ) || null;
-      
-              function handleSaveAvatarProfile({
-                pngDataUrl,
-                name,
-              }: {
-                pngDataUrl: string;
-                name: string;
-              }) {
-                if (!targetProfile) {
-                  console.warn("[AvatarCreator] Aucun profil cible");
-                  return;
-                }
-      
-                setProfiles((list) =>
-                  list.map((p) =>
-                    p.id === targetProfile.id
-                      ? {
-                          ...p,
-                          name: name?.trim() || p.name,
-                          avatarDataUrl: pngDataUrl,
-                        }
-                      : p
-                  )
-                );
-      
-                go(backTo);
-              }
-      
-              page = (
-                <div style={{ padding: 16 }}>
-                  <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
-                    ← Retour
-                  </button>
-                  <AvatarCreator
-                    size={512}
-                    defaultName={targetProfile?.name || ""}
-                    onSave={handleSaveAvatarProfile}
-                    // 👇 médaillon doré (humain)
-                    isBotMode={false}
-                  />
-                </div>
-              );
-              break;
+      // ✅ Nouvelle page : Créateur d'avatar
+      case "avatar": {
+        const botId: string | undefined = routeParams?.botId;
+        const profileIdFromParams: string | undefined = routeParams?.profileId;
+        const backTo: Tab = (routeParams?.from as Tab) || "profiles";
+        const isBotMode = !!routeParams?.isBot;
+
+        // --- Cas 1 : on édite l'avatar d'un BOT ---
+        if (botId) {
+          const bots = loadBotsLS();
+          const targetBot = bots.find((b) => b.id === botId) || null;
+
+          function handleSaveAvatarBot({
+            pngDataUrl,
+            name,
+          }: {
+            pngDataUrl: string;
+            name: string;
+          }) {
+            if (!targetBot) {
+              console.warn("[AvatarCreator] BOT introuvable pour id", botId);
+              go(backTo);
+              return;
             }
-      
+            const next = bots.slice();
+            const idx = next.findIndex((b) => b.id === targetBot.id);
+            const updated: BotLS = {
+              ...targetBot,
+              name: name?.trim() || targetBot.name,
+              avatarDataUrl: pngDataUrl,
+            };
+            if (idx >= 0) next[idx] = updated;
+            else next.push(updated);
+            saveBotsLS(next);
+            go(backTo);
+          }
+
+          page = (
+            <div style={{ padding: 16 }}>
+              <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
+                ← Retour
+              </button>
+              <AvatarCreator
+                size={512}
+                defaultName={targetBot?.name || ""}
+                onSave={handleSaveAvatarBot}
+                // 👇 médaillon bleu pour les BOTS
+                isBotMode={true}
+              />
+            </div>
+          );
+          break;
+        }
+
+        // --- Cas 2 : avatar pour un profil (profilId explicite ou actif) ---
+        const targetProfile =
+          (store.profiles || []).find(
+            (p) => p.id === (profileIdFromParams || store.activeProfileId)
+          ) || null;
+
+        function handleSaveAvatarProfile({
+          pngDataUrl,
+          name,
+        }: {
+          pngDataUrl: string;
+          name: string;
+        }) {
+          if (!targetProfile) {
+            console.warn("[AvatarCreator] Aucun profil cible");
+            return;
+          }
+
+          setProfiles((list) =>
+            list.map((p) =>
+              p.id === targetProfile.id
+                ? {
+                    ...p,
+                    name: name?.trim() || p.name,
+                    avatarDataUrl: pngDataUrl,
+                  }
+                : p
+            )
+          );
+
+          go(backTo);
+        }
+
+        page = (
+          <div style={{ padding: 16 }}>
+            <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
+              ← Retour
+            </button>
+            <AvatarCreator
+              size={512}
+              defaultName={targetProfile?.name || ""}
+              onSave={handleSaveAvatarProfile}
+              // 👇 médaillon doré (humain)
+              isBotMode={false}
+            />
+          </div>
+        );
+        break;
+      }
 
       default: {
         page = (

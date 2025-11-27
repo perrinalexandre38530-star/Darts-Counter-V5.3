@@ -13,6 +13,7 @@ import { useQuickStats } from "../hooks/useQuickStats";
 import HistoryPage from "./HistoryPage";
 import SparklinePro from "../components/SparklinePro";
 import TrainingRadar from "../components/TrainingRadar";
+import ProfileAvatar from "../components/ProfileAvatar";
 import type { Dart as UIDart } from "../lib/types";
 import { getCricketProfileStats } from "../lib/statsBridge";
 import type { CricketProfileStats } from "../lib/cricketStats";
@@ -3807,7 +3808,11 @@ export default function StatsHub(props: Props) {
   const mainTab: StatsHubMainTab = props.tab ?? "stats";
 
   // Mode d’affichage : "active" (joueur actif) ou "locals" (profils locaux)
-  const mode: StatsMode = (props.mode as StatsMode) ?? "locals";
+// - si on reçoit playerId mais pas mode => on considère "active"
+// - sinon => "locals" par défaut
+const mode: StatsMode =
+(props.mode as StatsMode) ??
+(props.playerId ? "active" : "locals");
 
   // ====================================================
   // 🔥 paramètres initiaux (navigation depuis History / StatsShell)
@@ -4244,14 +4249,15 @@ export default function StatsHub(props: Props) {
           {/* =======================
               LISTE JOUEURS (UNIQUEMENT EN MODE "locals")
               ======================= */}
-          {mode === "locals" && (
+           {mode === "locals" && (
             <div style={{ ...card, marginBottom: 12 }}>
+              {/* Titre */}
               <div
                 style={{
                   display: "flex",
-                  alignItems: "center",
+                  alignItems: "baseline",
                   justifyContent: "space-between",
-                  marginBottom: openPlayers ? 6 : 0,
+                  marginBottom: 8,
                 }}
               >
                 <div
@@ -4265,44 +4271,135 @@ export default function StatsHub(props: Props) {
                 >
                   Joueurs ({allPlayers.length})
                 </div>
-                <GoldPill
-                  active={openPlayers}
-                  onClick={() => setOpenPlayers((o) => !o)}
-                  style={{ fontSize: 11, padding: "4px 10px" }}
-                >
-                  {openPlayers ? "Replier" : "Déplier"}
-                </GoldPill>
-              </div>
-
-              {openPlayers && (
                 <div
                   style={{
-                    marginTop: 6,
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 8,
+                    fontSize: 11,
+                    color: T.text70,
                   }}
                 >
-                  {allPlayers.length ? (
-                    allPlayers.map((p) => (
-                      <ProfilePill
+                  Swipe horizontal pour changer
+                </div>
+              </div>
+
+              {/* Carrousel horizontal style X01ConfigV3 */}
+              {allPlayers.length ? (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 12,
+                    overflowX: "auto",
+                    paddingBottom: 4,
+                    WebkitOverflowScrolling: "touch",
+                  }}
+                >
+                  {allPlayers.map((p) => {
+                    const selected = p.id === selectedPlayer?.id;
+                    const AVA = 44;
+                    const primary = T.gold;
+
+                    return (
+                      <button
                         key={p.id}
-                        name={p.name || "Joueur"}
-                        avatarDataUrl={p.avatarDataUrl || undefined}
-                        active={p.id === selectedPlayer?.id}
+                        type="button"
                         onClick={() => setSelectedPlayerId(p.id)}
-                      />
-                    ))
-                  ) : (
-                    <div
-                      style={{
-                        color: T.text70,
-                        fontSize: 13,
-                      }}
-                    >
-                      Aucun joueur détecté.
-                    </div>
-                  )}
+                        style={{
+                          flex: "0 0 auto",
+                          minWidth: 86,
+                          maxWidth: 104,
+                          border: "none",
+                          outline: "none",
+                          background: "transparent",
+                          padding: 0,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div
+                          style={{
+                            borderRadius: 20,
+                            padding: 8,
+                            background: selected
+                              ? "rgba(0,0,0,0.85)"
+                              : "rgba(0,0,0,0.7)",
+                            border: selected
+                              ? `1px solid ${primary}`
+                              : `1px solid rgba(255,255,255,0.06)`,
+                            boxShadow: selected
+                              ? `0 0 18px ${primary}66`
+                              : "0 8px 18px rgba(0,0,0,0.6)",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                          }}
+                        >
+                          {/* Médaillon avatar façon X01ConfigV3 */}
+                          <div
+                            style={{
+                              width: AVA + 10,
+                              height: AVA + 10,
+                              borderRadius: "50%",
+                              padding: 4,
+                              background: selected
+                                ? `radial-gradient(circle at 30% 20%, ${primary}, transparent 60%)`
+                                : "radial-gradient(circle at 30% 20%, rgba(255,255,255,0.08), transparent 60%)",
+                              boxShadow: selected
+                                ? `0 0 16px ${primary}77`
+                                : "0 0 10px rgba(0,0,0,0.8)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              marginBottom: 4,
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: AVA,
+                                height: AVA,
+                                borderRadius: "50%",
+                                overflow: "hidden",
+                                border: selected
+                                  ? `1px solid ${primary}`
+                                  : "1px solid rgba(255,255,255,0.16)",
+                                background: "#050509",
+                              }}
+                            >
+                              <ProfileAvatar
+                                size={AVA}
+                                dataUrl={p.avatarDataUrl || undefined}
+                                label={p.name?.[0]?.toUpperCase() || "?"}
+                                showStars={false}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Nom */}
+                          <div
+                            style={{
+                              marginTop: 2,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              textAlign: "center",
+                              color: selected ? primary : T.text,
+                              whiteSpace: "nowrap",
+                              textOverflow: "ellipsis",
+                              overflow: "hidden",
+                              maxWidth: 84,
+                            }}
+                          >
+                            {p.name || "Joueur"}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    color: T.text70,
+                    fontSize: 13,
+                  }}
+                >
+                  Aucun joueur détecté.
                 </div>
               )}
             </div>
