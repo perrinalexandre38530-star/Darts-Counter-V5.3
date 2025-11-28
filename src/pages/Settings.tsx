@@ -130,7 +130,6 @@ const LANG_CHOICES: { id: Lang; defaultLabel: string; short: string }[] = [
 
   { id: "pl", defaultLabel: "Polski", short: "PL" },
   { id: "ro", defaultLabel: "Română", short: "RO" },
-  { id: "at", defaultLabel: "Österreichisch", short: "AT" }, // (variante DE)
   { id: "sr", defaultLabel: "Српски", short: "RS" },
   { id: "hr", defaultLabel: "Hrvatski", short: "HR" },
   { id: "cs", defaultLabel: "Čeština", short: "CZ" },
@@ -156,7 +155,6 @@ const LANG_FLAGS: Record<Lang, string> = {
   is: "🇮🇸",
   pl: "🇵🇱",
   ro: "🇷🇴",
-  at: "🇦🇹",
   sr: "🇷🇸",
   hr: "🇭🇷",
   cs: "🇨🇿",
@@ -204,7 +202,7 @@ function ThemeChoiceButton({
 
   const cardBoxShadow =
     active || hovered ? `0 0 14px ${neonColor}66` : "0 0 0 rgba(0,0,0,0)";
-  const scale = hovered ? 1.01 : 1.0; // plus discret
+  const scale = hovered ? 1.01 : 1.0;
   const borderColor = active ? neonColor : "rgba(255,255,255,0.12)";
   const titleColor = active ? neonColor : "#FFFFFF";
   const descColor = active ? neonColor : "rgba(255,255,255,0.6)";
@@ -218,7 +216,7 @@ function ThemeChoiceButton({
       style={{
         textAlign: "left",
         borderRadius: 14,
-        padding: "8px 10px", // hauteur réduite
+        padding: "8px 10px",
         background: active
           ? "rgba(255,255,255,0.05)"
           : "rgba(255,255,255,0.02)",
@@ -454,7 +452,7 @@ export default function Settings({ go }: Props) {
           className="dc-scroll-thin"
           style={{
             overflowX: "auto",
-            padding: "6px 0 10px 0", // marge en haut et en bas
+            padding: "6px 0 10px 0",
             marginTop: 4,
             marginBottom: 4,
           }}

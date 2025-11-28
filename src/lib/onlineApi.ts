@@ -141,10 +141,10 @@ function mapProfile(row: SupabaseProfileRow): OnlineProfile {
   };
 }
 
-// Table d’historique : "online_matches"
+// Table d’historique : live_match_sessions (déjà existante)
 type SupabaseMatchRow = {
   id: string;
-  user_id?: string | null; // optionnel suivant ton schéma
+  user_id?: string | null;
   mode: string;
   payload: any;
   is_training: boolean | null;
@@ -404,8 +404,9 @@ async function uploadMatch(
   const started = payload.startedAt ?? now();
   const finished = payload.finishedAt ?? now();
 
+  // ⬅️ utilisation de live_match_sessions (table déjà existante)
   const { data, error } = await supabase
-    .from("online_matches")
+    .from("live_match_sessions")
     .insert({
       user_id: userId,
       mode: payload.mode,
@@ -426,9 +427,18 @@ async function uploadMatch(
 }
 
 async function listMatches(limit = 50): Promise<OnlineMatch[]> {
+  const session = await restoreSession();
+  if (!session?.user) {
+    throw new Error("Non authentifié");
+  }
+
+  const userId = session.user.id;
+
+  // ⬅️ idem : live_match_sessions + filtre par user_id
   const { data, error } = await supabase
-    .from("online_matches")
+    .from("live_match_sessions")
     .select("*")
+    .eq("user_id", userId)
     .order("finished_at", { ascending: false })
     .limit(limit);
 

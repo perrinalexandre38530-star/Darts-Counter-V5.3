@@ -145,7 +145,6 @@ export default function SyncCenter({ store, go }: Props) {
       const parsed = JSON.parse(importJson);
 
       if (parsed.kind === "dc_store_snapshot_v1" && parsed.store) {
-        // Import complet du store
         const nextStore: Store = parsed.store;
         await saveStore(nextStore);
         setLocalMessage(
@@ -160,12 +159,13 @@ export default function SyncCenter({ store, go }: Props) {
         const current = (await loadStore()) || store;
         const list = current.profiles ?? [];
         const idx = list.findIndex((p: any) => p.id === incoming.id);
-
-        const newProfiles =
-          idx === -1
-            ? [...list, incoming]
-            : list.map((p) => (p.id === incoming.id ? incoming : p));
-
+        let newProfiles;
+        if (idx === -1) {
+          newProfiles = [...list, incoming];
+        } else {
+          newProfiles = [...list];
+          newProfiles[idx] = incoming;
+        }
         const nextStore: Store = {
           ...current,
           profiles: newProfiles,
@@ -175,16 +175,6 @@ export default function SyncCenter({ store, go }: Props) {
           t(
             "syncCenter.local.importProfileOk",
             "Profil importé et fusionné avec les profils locaux."
-          )
-        );
-      } else if (parsed.kind === "dc_peer_sync_v1" && parsed.store) {
-        // 🔁 Import PEER : device → device
-        const nextStore: Store = parsed.store;
-        await saveStore(nextStore);
-        setLocalMessage(
-          t(
-            "syncCenter.local.importPeerOk",
-            "Payload de sync importé. Relance l'app pour tout recharger proprement."
           )
         );
       } else {
@@ -385,9 +375,9 @@ export default function SyncCenter({ store, go }: Props) {
     >
       <style>{`
         .sync-center-page {
-          --title-min: 24px;
-          --title-ideal: 7.5vw;
-          --title-max: 38px;
+          --title-min: 26px;
+          --title-ideal: 8vw;
+          --title-max: 40px;
           --card-pad: 14px;
           --menu-gap: 10px;
           --menu-title: 14px;
@@ -396,9 +386,9 @@ export default function SyncCenter({ store, go }: Props) {
         }
         @media (max-height: 680px), (max-width: 360px) {
           .sync-center-page {
-            --title-min: 22px;
+            --title-min: 24px;
             --title-ideal: 7vw;
-            --title-max: 32px;
+            --title-max: 34px;
             --card-pad: 12px;
             --menu-gap: 8px;
             --menu-title: 13.5px;
@@ -406,6 +396,7 @@ export default function SyncCenter({ store, go }: Props) {
           }
         }
 
+        /* Cartes avec halo très léger, comme StatsShell */
         .sync-center-card {
           position: relative;
         }
@@ -415,15 +406,19 @@ export default function SyncCenter({ store, go }: Props) {
           inset: -2px;
           border-radius: 18px;
           background:
-            radial-gradient(circle at 15% 0%, rgba(255,255,255,.08), transparent 60%);
+            radial-gradient(circle at 15% 0%, rgba(255,255,255,.10), transparent 60%);
           opacity: 0.0;
           pointer-events: none;
-          animation: syncCardGlow 3.4s ease-in-out infinite;
+          animation: syncCardGlow 3.6s ease-in-out infinite;
           mix-blend-mode: screen;
         }
         @keyframes syncCardGlow {
-          0%, 100% { opacity: 0.02; }
-          50% { opacity: 0.11; }
+          0%, 100% {
+            opacity: 0.02;
+          }
+          50% {
+            opacity: 0.12;
+          }
         }
 
         .sync-pill-toggle {
@@ -454,7 +449,7 @@ export default function SyncCenter({ store, go }: Props) {
           min-height: 120px;
           border-radius: 10px;
           border: 1px solid ${theme.borderSoft};
-          background: rgba(0,0,0,0.75);
+          background: rgba(0,0,0,0.88);
           color: ${theme.text};
           font-size: 11.5px;
           padding: 8px;
@@ -469,30 +464,56 @@ export default function SyncCenter({ store, go }: Props) {
           maxWidth: 520,
           paddingInline: 18,
           marginBottom: 16,
-          textAlign: "center",
         }}
       >
         <div
           style={{
-            fontWeight: 900,
-            letterSpacing: 0.9,
-            textTransform: "uppercase",
-            color: theme.primary,
-            fontSize:
-              "clamp(var(--title-min), var(--title-ideal), var(--title-max))",
-            textShadow: `0 0 14px ${theme.primary}66`,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
             marginBottom: 6,
           }}
         >
-          {t("syncCenter.title", "SYNC & PARTAGE")}
+          <button
+            type="button"
+            onClick={() => go("stats")}
+            style={{
+              border: "none",
+              background: "transparent",
+              color: theme.textSoft,
+              fontSize: 14,
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            ←
+          </button>
+          <div
+            style={{
+              fontWeight: 900,
+              letterSpacing: 0.9,
+              textTransform: "uppercase",
+              color: theme.primary,
+            }}
+          >
+            <span
+              style={{
+                fontSize:
+                  "clamp(var(--title-min), var(--title-ideal), var(--title-max))",
+                textShadow: `0 0 14px ${theme.primary}66`,
+              }}
+            >
+              {t("syncCenter.title", "SYNC & PARTAGE")}
+            </span>
+          </div>
         </div>
+
         <div
           style={{
             fontSize: 13,
             lineHeight: 1.35,
             color: theme.textSoft,
             maxWidth: 340,
-            margin: "0 auto",
           }}
         >
           {t(
@@ -632,9 +653,7 @@ function SyncCard({
         position: "relative",
         borderRadius: 16,
         background: theme.card,
-        border: `1px solid ${
-          active ? theme.primary : theme.borderSoft
-        }`,
+        border: `1px solid ${active ? theme.primary : theme.borderSoft}`,
         boxShadow: `0 16px 32px rgba(0,0,0,.55), 0 0 18px ${
           active ? theme.primary : theme.primary + "22"
         }`,
@@ -685,9 +704,7 @@ function SyncCard({
             {subtitle}
           </div>
         </div>
-        <div
-          className={`sync-pill-toggle ${active ? "active" : ""}`}
-        >
+        <div className={`sync-pill-toggle ${active ? "active" : ""}`}>
           {active ? "ACTIF" : "VOIR"}
         </div>
       </button>
@@ -730,7 +747,7 @@ function LocalPanel({
         background: theme.card,
         border: `1px solid ${theme.borderSoft}`,
         padding: 12,
-        boxShadow: "0 18px 36px rgba(0,0,0,.75)",
+        boxShadow: "0 18px 40px rgba(0,0,0,.85)",
       }}
     >
       <div
@@ -769,23 +786,11 @@ function LocalPanel({
           marginBottom: 8,
         }}
       >
-        <button
-          onClick={onExportStore}
-          style={buttonSmall(theme)}
-        >
-          {t(
-            "syncCenter.local.btnExportStore",
-            "Exporter TOUT le store"
-          )}
+        <button onClick={onExportStore} style={buttonSmall(theme)}>
+          {t("syncCenter.local.btnExportStore", "Exporter TOUT le store")}
         </button>
-        <button
-          onClick={onExportActiveProfile}
-          style={buttonSmall(theme)}
-        >
-          {t(
-            "syncCenter.local.btnExportProfile",
-            "Exporter profil actif"
-          )}
+        <button onClick={onExportActiveProfile} style={buttonSmall(theme)}>
+          {t("syncCenter.local.btnExportProfile", "Exporter profil actif")}
         </button>
         <button
           onClick={onDownload}
@@ -814,11 +819,7 @@ function LocalPanel({
             "JSON d'export (tu peux aussi le copier / coller vers un autre appareil) :"
           )}
         </div>
-        <textarea
-          className="sync-textarea"
-          readOnly
-          value={exportJson}
-        />
+        <textarea className="sync-textarea" readOnly value={exportJson} />
       </div>
 
       {/* Import */}
@@ -840,10 +841,7 @@ function LocalPanel({
           className="sync-textarea"
           value={importJson}
           onChange={(e) => onChangeImport(e.target.value)}
-          placeholder={t(
-            "syncCenter.local.importPlaceholder",
-            "{ ... }"
-          )}
+          placeholder={t("syncCenter.local.importPlaceholder", "{ ... }")}
         />
         <div
           style={{
@@ -913,7 +911,7 @@ function PeerPanel({
         background: theme.card,
         border: `1px solid ${theme.borderSoft}`,
         padding: 12,
-        boxShadow: "0 18px 36px rgba(0,0,0,.75)",
+        boxShadow: "0 18px 40px rgba(0,0,0,.85)",
       }}
     >
       <div
@@ -970,7 +968,7 @@ function PeerPanel({
         <button
           onClick={() => {
             if (!payload) return;
-            const url = generateQrDataUrl(payload);
+            const url = generateQrDataUrl(payload, theme.primary);
             setQrUrl(url);
           }}
           style={buttonSmall(theme)}
@@ -1069,7 +1067,7 @@ function CloudPanel({
         background: theme.card,
         border: `1px solid ${theme.borderSoft}`,
         padding: 12,
-        boxShadow: "0 18px 36px rgba(0,0,0,.75)",
+        boxShadow: "0 18px 40px rgba(0,0,0,.85)",
       }}
     >
       <div
@@ -1189,19 +1187,6 @@ function CloudPanel({
 }
 
 /* --------------------------------------------
- * HELPER QR (simple URL vers un service public)
- * -------------------------------------------*/
-function generateQrDataUrl(payload: string): string {
-  try {
-    const encoded = encodeURIComponent(payload);
-    // Service public de génération de QR (pas d'auth, juste une URL d'image)
-    return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encoded}`;
-  } catch {
-    return "";
-  }
-}
-
-/* --------------------------------------------
  * STYLE BOUTONS
  * -------------------------------------------*/
 function buttonSmall(theme: any): React.CSSProperties {
@@ -1222,4 +1207,33 @@ function buttonSmall(theme: any): React.CSSProperties {
     justifyContent: "center",
     whiteSpace: "nowrap",
   };
+}
+
+/* --------------------------------------------
+ * QR PLACEHOLDER (SVG dans un data URL)
+ * -------------------------------------------*/
+// ⚠️ Ce n'est pas un vrai QR scannable pour l’instant, juste un placeholder visuel.
+function generateQrDataUrl(text: string, color: string): string {
+  const safe = encodeURIComponent(text.slice(0, 32));
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="black"/>
+      <stop offset="100%" stop-color="black"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="220" height="220" fill="url(#bg)"/>
+  <rect x="16" y="16" width="52" height="52" fill="none" stroke="${color}" stroke-width="6"/>
+  <rect x="24" y="24" width="36" height="36" fill="${color}22"/>
+  <rect x="152" y="16" width="52" height="52" fill="none" stroke="${color}" stroke-width="6"/>
+  <rect x="160" y="24" width="36" height="36" fill="${color}22"/>
+  <rect x="16" y="152" width="52" height="52" fill="none" stroke="${color}" stroke-width="6"/>
+  <rect x="24" y="160" width="36" height="36" fill="${color}22"/>
+  <text x="110" y="208" fill="${color}" font-size="10" text-anchor="middle">
+    DC-SYNC
+  </text>
+  <title>${safe}</title>
+</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
