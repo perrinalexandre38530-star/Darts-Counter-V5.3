@@ -437,13 +437,24 @@ export default function ActiveProfileCard({
               width: "100%",
             }}
           >
-            {/* ✅ Médaillon brut, sans halo, sans wrapper */}
-            <ProfileAvatar
-              size={78}
-              dataUrl={(profile as any)?.avatarDataUrl}
-              label={profile?.name?.[0]?.toUpperCase() || "?"}
-              showStars={false}
-            />
+            {/* ✅ Médaillon avec mask pour couper le liseré blanc */}
+            <div
+              style={{
+                width: 84,
+                height: 84,
+                WebkitMaskImage:
+                  "radial-gradient(circle, black 72%, transparent 74%)",
+                maskImage:
+                  "radial-gradient(circle, black 72%, transparent 74%)",
+              }}
+            >
+              <ProfileAvatar
+                size={84}
+                dataUrl={(profile as any)?.avatarDataUrl}
+                label={profile?.name?.[0]?.toUpperCase() || "?"}
+                showStars={false}
+              />
+            </div>
 
             <div
               style={{

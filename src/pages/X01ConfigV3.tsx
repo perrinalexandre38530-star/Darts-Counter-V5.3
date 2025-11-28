@@ -13,10 +13,18 @@ import { useLang } from "../contexts/LangContext";
 import ProfileAvatar from "../components/ProfileAvatar";
 import ProfileStarRing from "../components/ProfileStarRing";
 
+// 🔽 IMPORTS DE TOUS LES AVATARS BOTS PRO
 import avatarGreenMachine from "../assets/avatars/bots-pro/green-machine.png";
 import avatarSnakeKing from "../assets/avatars/bots-pro/snake-king.png";
 import avatarWonderKid from "../assets/avatars/bots-pro/wonder-kid.png";
 import avatarIceMan from "../assets/avatars/bots-pro/ice-man.png";
+import avatarFlyingScotsman from "../assets/avatars/bots-pro/flying-scotsman.png";
+import avatarCoolHand from "../assets/avatars/bots-pro/cool-hand.png";
+import avatarThePower from "../assets/avatars/bots-pro/the-power.png";
+import avatarBullyBoy from "../assets/avatars/bots-pro/bully-boy.png";
+import avatarTheAsp from "../assets/avatars/bots-pro/the-asp.png";
+import avatarHollywood from "../assets/avatars/bots-pro/hollywood.png";
+import avatarTheFerret from "../assets/avatars/bots-pro/the-ferret.png";
 
 type MatchModeV3 = "solo" | "multi" | "teams";
 type InModeV3 = "simple" | "double" | "master";
@@ -92,36 +100,43 @@ const PRO_BOTS: BotLite[] = [
     id: "bot_pro_anderson",
     name: "Flying Scotsman",
     botLevel: "Pro",
+    avatarDataUrl: avatarFlyingScotsman,
   },
   {
     id: "bot_pro_humphries",
     name: "Cool Hand",
     botLevel: "Pro",
+    avatarDataUrl: avatarCoolHand,
   },
   {
     id: "bot_pro_taylor",
     name: "The Power",
     botLevel: "Légende",
+    avatarDataUrl: avatarThePower,
   },
   {
     id: "bot_pro_smith",
     name: "Bully Boy",
     botLevel: "Pro",
+    avatarDataUrl: avatarBullyBoy,
   },
   {
     id: "bot_pro_aspinall",
     name: "The Asp",
     botLevel: "Fort",
+    avatarDataUrl: avatarTheAsp,
   },
   {
     id: "bot_pro_dobey",
     name: "Hollywood",
     botLevel: "Fort",
+    avatarDataUrl: avatarHollywood,
   },
   {
     id: "bot_pro_clayton",
     name: "The Ferret",
     botLevel: "Fort",
+    avatarDataUrl: avatarTheFerret,
   },
 ];
 
@@ -1001,7 +1016,7 @@ export default function X01ConfigV3({
           >
             {t(
               "x01v3.bots.subtitle",
-              "Ajoute des BOTS IA à ta partie : bots \"pro\" prédéfinis ou BOTS que tu as créés dans le menu Profils."
+              'Ajoute des BOTS IA à ta partie : bots "pro" prédéfinis ou BOTS que tu as créés dans le menu Profils.'
             )}
           </p>
 
@@ -1363,7 +1378,7 @@ function resolveBotLevel(botLevelRaw?: string | null): { level: number } {
   return { level: 1 };
 }
 
-/* Médaillon BOT bleu + ring d'étoiles */
+/* Médaillon BOT – doré pour les PRO IA, bleu pour les bots classiques */
 function BotMedallion({
   bot,
   level,
@@ -1373,19 +1388,25 @@ function BotMedallion({
   level: number; // 1..5
   active: boolean;
 }) {
-  // 🎨 Couleur BOT unique
-  const BOT_COLOR = "#00b4ff";
+  // 1) BOT PRO IA ?
+  const isPro = bot.id.startsWith("bot_pro_");
 
-  // Taille
+  // 2) Couleurs selon type
+  const COLOR = isPro ? "#f7c85c" : "#00b4ff";
+  const COLOR_GLOW = isPro
+    ? "rgba(247,200,92,0.9)"
+    : "rgba(0,172,255,0.65)";
+
+  // 3) Tailles
   const SCALE = 0.6;
   const AVATAR = 96 * SCALE;
   const MEDALLION = 104 * SCALE;
   const STAR = 18 * SCALE;
   const WRAP = MEDALLION + STAR;
 
-  // ⭐ Densité d’étoiles basée sur niveau 1..5
+  // 4) Densité d’étoiles (simple mapping 1..5)
   const lvl = Math.max(1, Math.min(5, level));
-  const fakeAvg3d = 15 + (lvl - 1) * 12; // 15, 27, 39, 51, 63
+  const fakeAvg3d = 15 + (lvl - 1) * 12;
 
   return (
     <div
@@ -1397,7 +1418,7 @@ function BotMedallion({
         overflow: "visible",
       }}
     >
-      {/* 🌟 Anneau d'étoiles (bleu) */}
+      {/* ⭐ Anneau d'étoiles */}
       <div
         aria-hidden
         style={{
@@ -1405,7 +1426,7 @@ function BotMedallion({
           inset: 0,
           pointerEvents: "none",
           zIndex: 3,
-          filter: "drop-shadow(0 0 4px #008cff88)",
+          filter: `drop-shadow(0 0 6px ${COLOR_GLOW})`,
         }}
       >
         <ProfileStarRing
@@ -1414,11 +1435,11 @@ function BotMedallion({
           starSize={STAR}
           stepDeg={10}
           avg3d={fakeAvg3d}
-          color={BOT_COLOR}
+          color={COLOR}
         />
       </div>
 
-      {/* 🟦 Anneau principal bleu */}
+      {/* Cercle principal (or si PRO, bleu sinon) */}
       <div
         style={{
           position: "absolute",
@@ -1429,29 +1450,32 @@ function BotMedallion({
           borderRadius: "50%",
           padding: 6 * SCALE,
           background: active
-            ? `linear-gradient(135deg, #7df3ff, ${BOT_COLOR})`
+            ? isPro
+              ? "linear-gradient(135deg, #fff3c2, #f7c85c)"
+              : "linear-gradient(135deg, #7df3ff, #00b4ff)"
+            : isPro
+            ? "linear-gradient(135deg, #2a2a1f, #1a1a12)"
             : "linear-gradient(135deg, #2c3640, #141b26)",
           boxShadow: active
-            ? `0 0 ${24 * SCALE}px ${BOT_COLOR}a8, inset 0 0 ${
-                10 * SCALE
-              }px rgba(0,0,0,.6)`
-            : `0 0 ${16 * SCALE}px rgba(0,0,0,0.65)`,
+            ? `0 0 24px ${COLOR_GLOW}, inset 0 0 10px rgba(0,0,0,.7)`
+            : `0 0 14px rgba(0,0,0,0.7)`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           transform: active ? "scale(1.05)" : "scale(1)",
           transition: "transform .15s ease, box-shadow .15s ease",
-          border: `2px solid ${BOT_COLOR}`,
+          border: active
+            ? `2px solid ${COLOR}`
+            : `2px solid ${
+                isPro ? "rgba(247,200,92,0.5)" : "rgba(144,228,255,0.9)"
+              }`,
         }}
       >
-        {/* 👤 Avatar BOT */}
         <ProfileAvatar
           size={AVATAR}
           dataUrl={bot.avatarDataUrl ?? undefined}
           label={bot.name?.[0]?.toUpperCase() || "B"}
           showStars={false}
-          ringColor={BOT_COLOR}
-          textColor={BOT_COLOR}
         />
       </div>
     </div>
