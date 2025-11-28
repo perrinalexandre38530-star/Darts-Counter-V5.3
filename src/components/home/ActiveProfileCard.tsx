@@ -82,7 +82,6 @@ type Props = {
 type SlideDef = {
   id: string;
   title: string;
-  subtitle?: string;
   rows: { label: string; value: string }[];
 };
 
@@ -97,13 +96,11 @@ function fmtNum(v?: MaybeNum, decimals = 1): string {
   return n % 1 === 0 ? String(n) : n.toFixed(decimals);
 }
 
-/* ============ Composant principal ============ */
+/* ============================================================
+   Composant principal
+============================================================ */
 
-export default function ActiveProfileCard({
-  profile,
-  stats,
-  status: statusProp,
-}: Props) {
+function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
   const [index, setIndex] = useState(0);
@@ -156,7 +153,7 @@ export default function ActiveProfileCard({
       ],
     });
 
-    // 2) Records — on exige au moins un record X01
+    // 2) Records — au moins un record X01 / Cricket
     if (
       (s.recordBestVisitX01 ?? 0) > 0 ||
       (s.recordBestCOX01 ?? 0) > 0 ||
@@ -304,7 +301,7 @@ export default function ActiveProfileCard({
       });
     }
 
-    // 6) Training X01 — au moins 1 session
+    // 6) Training X01 — au moins 1 hit
     if (
       (s.trainingHitsS ?? 0) +
         (s.trainingHitsD ?? 0) +
@@ -393,7 +390,11 @@ export default function ActiveProfileCard({
       "online");
 
   const statusColor =
-    status === "online" ? "#18FF6D" : status === "away" ? "#FFD95E" : "#888888";
+    status === "online"
+      ? "#18FF6D"
+      : status === "away"
+      ? "#FFD95E"
+      : "#888888";
 
   return (
     <>
@@ -437,7 +438,7 @@ export default function ActiveProfileCard({
               width: "100%",
             }}
           >
-            {/* ✅ Médaillon avec mask pour couper le liseré blanc */}
+            {/* Médaillon avec mask pour couper le liseré blanc */}
             <div
               style={{
                 width: 84,
@@ -450,7 +451,11 @@ export default function ActiveProfileCard({
             >
               <ProfileAvatar
                 size={84}
-                dataUrl={(profile as any)?.avatarDataUrl}
+                dataUrl={
+                  (profile as any).avatarDataUrl ??
+                  (profile as any).avatarUrl ??
+                  undefined
+                }
                 label={profile?.name?.[0]?.toUpperCase() || "?"}
                 showStars={false}
               />
@@ -523,7 +528,7 @@ export default function ActiveProfileCard({
             border: `1px solid ${primary}AA`,
           }}
         >
-          {/* halo externe léger pour la carte de stats (OK) */}
+          {/* halo externe léger pour la carte de stats */}
           <div
             aria-hidden
             style={{
@@ -565,7 +570,7 @@ export default function ActiveProfileCard({
                 >
                   {slide.title}
                 </div>
-                {/* pas de 1/2, 2/3 */}
+                {/* volontairement pas de 1/2, 2/3 */}
               </div>
 
               <div
@@ -658,3 +663,5 @@ function KpiCell({ label, value, primary, theme }: KpiCellProps) {
     </div>
   );
 }
+
+export default ActiveProfileCard;

@@ -22,7 +22,7 @@ import { useAuthOnline } from "../hooks/useAuthOnline";
 
 type View = "menu" | "me" | "locals" | "friends";
 
-/* ===== Helper lecture instantanée (mini-cache IDB) ===== */
+/* ===== Helper lecture instantanée (mini-cache IDB + quick-stats) ===== */
 function useBasicStats(playerId: string | undefined | null) {
   const empty = React.useMemo(
     () => ({
@@ -36,16 +36,49 @@ function useBasicStats(playerId: string | undefined | null) {
     }),
     []
   );
+
   if (!playerId) return empty;
-  const s = getBasicProfileStatsSync(playerId);
+
+  // 1) Lecture lite (IDB / localStorage "dc-lite-v1")
+  const lite = getBasicProfileStatsSync(playerId); // avg3, bestVisit, bestCheckout, winPct, coPct, legs
+
+  // 2) Lecture quick-stats (localStorage "dc-quick-stats")
+  const basic = getBasicProfileStats(playerId); // games, darts, avg3, bestVisit, bestCheckout, wins
+
+  const games = Number(
+    (basic && basic.games) ?? (lite && (lite as any).legs) ?? 0
+  );
+  const wins = Number((basic && basic.wins) ?? 0);
+  const darts = Number((basic && basic.darts) ?? 0);
+
+  // avg3 : priorité au lite (plus complet), fallback quick-stats
+  const avg3 =
+    Number.isFinite(lite?.avg3) && lite!.avg3 > 0
+      ? Number(lite!.avg3)
+      : Number((basic && basic.avg3) ?? 0);
+
+  const bestVisit = Math.max(
+    Number(lite?.bestVisit ?? 0),
+    Number(basic?.bestVisit ?? 0)
+  );
+
+  const bestCheckout = Math.max(
+    Number(lite?.bestCheckout ?? 0),
+    Number(basic?.bestCheckout ?? 0)
+  );
+
+  // winRate : si on a games/wins → on recalcule, sinon on prend winPct lite
+  const winRate =
+    games > 0 ? Math.round((wins / games) * 100) : Number(lite?.winPct ?? 0);
+
   return {
-    avg3: Number(s?.avg3 ?? 0),
-    bestVisit: Number(s?.bestVisit ?? 0),
-    bestCheckout: Number(s?.bestCheckout ?? 0),
-    wins: Number(s?.wins ?? 0),
-    games: Number(s?.games ?? 0),
-    winRate: Number(s?.winRate ?? 0),
-    darts: Number(s?.darts ?? 0),
+    avg3,
+    bestVisit,
+    bestCheckout,
+    wins,
+    games,
+    winRate,
+    darts,
   };
 }
 
@@ -759,7 +792,7 @@ function ActiveProfileBlock({
               e.preventDefault();
               onOpenStats?.();
             }}
-            style={{ color: primary, textDecoration: "none" }}
+            style={{ color: theme.primary, textDecoration: "none" }}
             title={t(
               "profiles.connected.seeStats",
               "Voir les statistiques"
