@@ -136,19 +136,17 @@ async function buildStatsForProfile(
       winrateGlobal: winRate01, // 0..1
       avg3DGlobal: avg3,
       sessionsGlobal: games,
-      favoriteNumberLabel: null, // Numéro favori : à brancher plus tard (hits par segment)
+      favoriteNumberLabel: null,
 
       // ---- Records ----
       recordBestVisitX01: bestVisit,
       recordBestCOX01: bestCheckout,
-      // Min darts 501 + meilleure moy 3D X01 demandent un scan plus fin des legs,
-      // on les complètera plus tard.
       recordMinDarts501: null,
       recordBestAvg3DX01: avg3,
       recordBestStreak: null,
       recordBestCricketScore: null,
 
-      // ---- Online (à brancher plus tard sur onlineApi / historique online) ----
+      // ---- Online ----
       onlineMatches: 0,
       onlineWinrate: 0,
       onlineAvg3D: 0,
@@ -157,15 +155,15 @@ async function buildStatsForProfile(
       onlineRank: null,
       onlineBestRank: null,
 
-      // ---- X01 Multi (on réutilise les mêmes stats X01 pour l’instant) ----
+      // ---- X01 Multi ----
       x01MultiAvg3D: avg3,
       x01MultiSessions: games,
       x01MultiWinrate: winRate01,
       x01MultiBestVisit: bestVisit,
       x01MultiBestCO: bestCheckout,
-      x01MultiMinDartsLabel: null, // ex: "18 darts (501)" quand on aura le calcul
+      x01MultiMinDartsLabel: null,
 
-      // ---- Cricket (à brancher sur CricketProfileStats) ----
+      // ---- Cricket ----
       cricketPointsPerRound: 0,
       cricketHitsTotal: 0,
       cricketCloseRate: 0,
@@ -173,7 +171,7 @@ async function buildStatsForProfile(
       cricketAvgClose201918: 0,
       cricketOpenings: 0,
 
-      // ---- Training X01 (à brancher sur TrainingX01Store) ----
+      // ---- Training X01 ----
       trainingAvg3D: 0,
       trainingHitsS: 0,
       trainingHitsD: 0,
@@ -181,7 +179,7 @@ async function buildStatsForProfile(
       trainingGoalSuccessRate: 0,
       trainingBestCO: 0,
 
-      // ---- Tour de l'Horloge (à brancher sur TrainingStore) ----
+      // ---- Tour de l'Horloge ----
       clockTargetsHit: 0,
       clockSuccessRate: 0,
       clockTotalTimeSec: 0,
@@ -195,16 +193,13 @@ async function buildStatsForProfile(
   }
 }
 
-// Bandeau arcade : messages + images différentes
+// Bandeau arcade : messages + images différentes (textes traduits via t)
 function buildArcadeItems(
   _store: Store,
   profile: Profile | null,
-  t: (k: string, d: string) => string
+  t: (k: string, d?: string) => string
 ): ArcadeTickerItem[] {
   const items: ArcadeTickerItem[] = [];
-
-  // TODO : brancher tes vrais résumés (dernier match, records, leader online, etc.)
-  // Pour l’instant, textes génériques mais les images sont déjà séparées par thème.
 
   items.push({
     id: "last-records",
@@ -314,7 +309,7 @@ export default function Home({ store, go }: Props) {
   const selfStatus: "online" | "away" | "offline" =
     anyStore.selfStatus ?? "online";
 
-  // Même logique que Profiles.tsx : si pas signed_in => toujours offline
+  // Si pas signed_in => toujours offline
   const onlineStatusForUi: "online" | "away" | "offline" =
     auth.status === "signed_in" ? selfStatus : "offline";
 
@@ -433,8 +428,7 @@ export default function Home({ store, go }: Props) {
           <ActiveProfileCard
             profile={activeProfile}
             stats={stats}
-            // Tu pourras plus tard faire évoluer ActiveProfileCard
-            // pour accepter `status={onlineStatusForUi}` si besoin.
+            status={onlineStatusForUi}
           />
         )}
 
@@ -451,46 +445,46 @@ export default function Home({ store, go }: Props) {
           }}
         >
           <HomeBigButton
-            label={t("home.profiles", "Profils")}
+            label={t("home.nav.profiles", "Profils")}
             subtitle={t(
-              "home.profiles.subtitle",
-              "Gérer tes profils, avatars, amis et BOTS"
+              "home.nav.profiles.desc",
+              "Profils locaux, avatars & BOTS"
             )}
             icon="user"
             onClick={() => go("profiles")}
           />
           <HomeBigButton
-            label={t("home.localPlay", "Jeu local")}
+            label={t("home.nav.local", "Local")}
             subtitle={t(
-              "home.localPlay.subtitle",
-              "Accéder à tous les modes de jeu locaux"
+              "home.nav.local.desc",
+              "Jouer sur cette cible en présentiel"
             )}
             icon="target"
             onClick={() => go("local")}
           />
           <HomeBigButton
-            label={t("home.online", "Online")}
+            label={t("home.nav.online", "Online")}
             subtitle={t(
-              "home.online.subtitle",
-              "Matchs en ligne, salons et classement"
+              "home.nav.online.desc",
+              "Matchs à distance avec tes amis"
             )}
             icon="globe"
             onClick={() => go("online")}
           />
           <HomeBigButton
-            label={t("home.stats", "Stats")}
+            label={t("home.nav.stats", "Stats")}
             subtitle={t(
-              "home.stats.subtitle",
-              "Tous tes dashboards de performance"
+              "home.nav.stats.desc",
+              "Dashboards, courbes, historique"
             )}
             icon="stats"
             onClick={() => go("stats")}
           />
           <HomeBigButton
-            label={t("home.settings", "Réglages")}
+            label={t("home.nav.settings", "Réglages")}
             subtitle={t(
-              "home.settings.subtitle",
-              "Thèmes, langues et options avancées"
+              "home.nav.settings.desc",
+              "Thèmes, langue, reset complet"
             )}
             icon="settings"
             onClick={() => go("settings")}

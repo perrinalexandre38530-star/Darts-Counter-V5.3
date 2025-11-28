@@ -62,32 +62,107 @@ export const fr: Dict = {
   "common.date": "Date",
   "common.time": "Heure",
 
+// -----------------------------
+// HOME — PAGE + CARTE PROFIL + BANDEAU ARCADE (FR)
+// -----------------------------
+"home.title": "Dashboard",
+"home.subtitle": "Centre de contrôle Darts Counter",
+"status.online": "En ligne",
+"status.away": "Absent",
+"status.offline": "Hors ligne",
+
+// Bandeau haut
+"home.welcome": "Bienvenue",
+"home.welcome.noProfile": "Bienvenue dans Darts Counter",
+"home.hero.tagline": "Prêt à lancer quelques fléchettes ?",
+
+// Carte profil actif
+"home.activeProfile.title": "Profil actif",
+"home.activeProfile.none": "Aucun profil sélectionné",
+"home.activeProfile.select": "Sélectionner un profil",
+"home.activeProfile.manage": "Gérer les profils",
+"home.activeProfile.status.online": "Connecté",
+"home.activeProfile.status.offline": "Hors ligne",
+"home.activeProfile.status.guest": "Invité",
+"home.activeProfile.badge.you": "Toi",
+"home.activeProfile.badge.local": "Local",
+"home.activeProfile.badge.online": "Online",
+
+// Stats dans la carte
+"home.activeProfile.stats.title": "Stats rapides",
+"home.activeProfile.stats.x01Avg": "Moyenne X01",
+"home.activeProfile.stats.cricketMpr": "MPR Cricket",
+"home.activeProfile.stats.trainingVolume": "Volume training",
+"home.activeProfile.stats.lastGame": "Dernier match",
+"home.activeProfile.stats.noGames": "Pas encore de match",
+"home.activeProfile.stats.seeAll": "Voir toutes les stats",
+
+// Actions rapides
+"home.quickActions.title": "Actions rapides",
+"home.quickActions.playX01": "Lancer un X01",
+"home.quickActions.playCricket": "Lancer un Cricket",
+"home.quickActions.training": "Accéder au Training",
+"home.quickActions.stats": "Voir les statistiques",
+
+// Carrousel / bandeau de stats
+"home.statsCarousel.title": "Stats rapides",
+"home.statsCarousel.x01": "X01",
+"home.statsCarousel.cricket": "Cricket",
+"home.statsCarousel.training": "Training",
+
+// Bandeau arcade (ArcadeTicker)
+"home.arcadeBanner.title": "Infos & nouveautés",
+"home.arcadeBanner.tapForMore": "Touchez pour en savoir plus",
+"home.arcadeBanner.empty": "Aucune info à afficher pour le moment",
+"home.arcadeBanner.tag.new": "Nouveau",
+"home.arcadeBanner.tag.tip": "Astuce",
+"home.arcadeBanner.tag.update": "Mise à jour",
+
+// Gros boutons de navigation
+"home.nav.profiles": "Profils",
+"home.nav.profiles.desc": "Profils locaux, avatars & BOTS",
+"home.nav.local": "Local",
+"home.nav.local.desc": "Joue en présentiel sur cette cible",
+"home.nav.online": "Online",
+"home.nav.online.desc": "Matchs à distance avec tes amis",
+"home.nav.training": "Training",
+"home.nav.training.desc": "Modules d’entraînement détaillés",
+"home.nav.stats": "Stats",
+"home.nav.stats.desc": "Dashboards, courbes, historique",
+"home.nav.settings": "Réglages",
+"home.nav.settings.desc": "Thèmes, langue, reset complet",
+
   // -----------------------------
-  // HOME (TABLEAU DE BORD)
+  // HOME / DASHBOARD
   // -----------------------------
-  "home.title": "Tableau de bord",
-  "home.subtitle": "Centre de contrôle Darts Counter",
-  "home.welcome": "Bienvenue",
-  "home.welcome.noProfile": "Bienvenue sur Darts Counter",
-  "home.activeProfile.title": "Profil actif",
-  "home.activeProfile.none": "Aucun profil sélectionné",
-  "home.activeProfile.select": "Sélectionner un profil",
-  "home.quickActions.title": "Actions rapides",
-  "home.quickActions.playX01": "Lancer un X01",
-  "home.quickActions.playCricket": "Lancer un Cricket",
-  "home.quickActions.training": "Démarrer un entraînement",
-  "home.quickActions.stats": "Voir les stats",
-  "home.nav.profiles": "Profils",
-  "home.nav.local": "Mode local",
-  "home.nav.online": "Mode en ligne",
-  "home.nav.training": "Entraînement",
-  "home.nav.settings": "Réglages",
-  "home.statsCarousel.title": "Stats rapides",
-  "home.statsCarousel.x01": "X01",
-  "home.statsCarousel.cricket": "Cricket",
-  "home.statsCarousel.training": "Training",
-  "home.arcadeBanner.title": "Infos & nouveautés",
-  "home.arcadeBanner.tapForMore": "Touchez pour plus de détails",
+  // Bandeau arcade / ticker
+  "home.ticker.records": "Derniers records",
+  "home.ticker.records.text":
+    "Plusieurs records battus récemment, continue sur ta lancée !",
+
+  "home.ticker.localLast": "Dernier match local",
+  "home.ticker.localLast.text":
+    "Résumé du dernier match joué en local.",
+
+  "home.ticker.onlineLast": "Dernier match online",
+  "home.ticker.onlineLast.text":
+    "Ton dernier duel online est prêt pour la revanche.",
+
+  "home.ticker.onlineLeader": "Leader du classement",
+  "home.ticker.onlineLeader.text":
+    "Découvre qui est en tête du classement online.",
+
+  "home.ticker.training": "Training du moment",
+  "home.ticker.training.text":
+    "Total des sessions Training X01 et Tour de l’Horloge.",
+
+  "home.ticker.month": "Stats du mois",
+  "home.ticker.month.text":
+    "Total des matchs et des hits pour ce mois.",
+
+  "home.ticker.tip": "Astuce du jour",
+  "home.ticker.tip.text":
+    "Ancre ta finition préférée en la rejouant régulièrement.",
 
   // -----------------------------
   // GAMES (LISTE DE JEUX LOCAUX)
