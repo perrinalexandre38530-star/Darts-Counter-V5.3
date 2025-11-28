@@ -393,4 +393,97 @@ export const pt: Dict = {
   "label.duration": "Duração",
   "label.date": "Data",
   "label.mode": "Modo",
+
+    // -----------------------------
+  // DEFINIÇÕES
+  // -----------------------------
+  "settings.back": "Voltar",
+  "settings.title": "Definições",
+  "settings.subtitle":
+    "Personaliza o tema e o idioma da aplicação",
+
+  "settings.theme": "Tema",
+  "settings.theme.group.neons": "Neons clássicos",
+  "settings.theme.group.soft": "Cores suaves",
+  "settings.theme.group.dark": "Temas escuros premium",
+
+  "settings.theme.gold.label": "Ouro neon",
+  "settings.theme.gold.desc": "Tema dourado premium",
+
+  "settings.theme.pink.label": "Rosa neon",
+  "settings.theme.pink.desc": "Ambiente arcade rosa",
+
+  "settings.theme.petrol.label": "Azul petróleo",
+  "settings.theme.petrol.desc": "Azul neon profundo",
+
+  "settings.theme.green.label": "Verde neon",
+  "settings.theme.green.desc": "Estilo de treino brilhante",
+
+  "settings.theme.magenta.label": "Magenta",
+  "settings.theme.magenta.desc": "Violeta / magenta intenso",
+
+  "settings.theme.red.label": "Vermelho",
+  "settings.theme.red.desc": "Vermelho arcade agressivo",
+
+  "settings.theme.orange.label": "Laranja",
+  "settings.theme.orange.desc": "Laranja quente e energético",
+
+  "settings.theme.white.label": "Branco",
+  "settings.theme.white.desc": "Fundo claro moderno",
+
+  "settings.theme.blueOcean.label": "Azul oceano",
+  "settings.theme.blueOcean.desc": "Azul natural de oceano / céu",
+
+  "settings.theme.limeYellow.label": "Amarelo lima",
+  "settings.theme.limeYellow.desc": "Cor lima super chamativa",
+
+  "settings.theme.sage.label": "Verde sálvia",
+  "settings.theme.sage.desc": "Tons verdes suaves e naturais",
+
+  "settings.theme.skyBlue.label": "Azul pastel",
+  "settings.theme.skyBlue.desc": "Azul muito suave e luminoso",
+
+  "settings.theme.darkTitanium.label": "Titânio escuro",
+  "settings.theme.darkTitanium.desc": "Aspeto metálico mate premium",
+
+  "settings.theme.darkCarbon.label": "Carbono",
+  "settings.theme.darkCarbon.desc": "Ambiente moderno de fibra de carbono",
+
+  "settings.theme.darkFrost.label": "Gelo escuro",
+  "settings.theme.darkFrost.desc": "Preto gelado futurista",
+
+  "settings.theme.darkObsidian.label": "Obsidiana",
+  "settings.theme.darkObsidian.desc":
+    "Preto polido premium e de boa leitura",
+
+  "settings.lang": "Idioma",
+
+  "settings.reset.title": "Repor a aplicação",
+  "settings.reset.subtitle":
+    "Apaga todos os perfis locais, BOTS, estatísticas, histórico de jogos e definições. Ação definitiva.",
+  "settings.reset.button": "Repor tudo",
+
+  // Nomes de línguas (PT)
+  "lang.fr": "Francês",
+  "lang.en": "Inglês",
+  "lang.es": "Espanhol",
+  "lang.de": "Alemão",
+  "lang.it": "Italiano",
+  "lang.pt": "Português",
+  "lang.nl": "Neerlandês",
+  "lang.ru": "Russo",
+  "lang.zh": "Chinês",
+  "lang.ja": "Japonês",
+  "lang.ar": "Árabe",
+  "lang.hi": "Hindi",
+  "lang.tr": "Turco",
+  "lang.da": "Dinamarquês",
+  "lang.no": "Norueguês",
+  "lang.sv": "Sueco",
+  "lang.is": "Islandês",
+  "lang.pl": "Polaco",
+  "lang.ro": "Romeno",
+  "lang.sr": "Sérvio",
+  "lang.hr": "Croata",
+  "lang.cs": "Checo",
 };

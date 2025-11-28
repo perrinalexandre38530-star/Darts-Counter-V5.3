@@ -393,4 +393,97 @@ export const it: Dict = {
   "label.duration": "Durata",
   "label.date": "Data",
   "label.mode": "Modalità",
+
+    // -----------------------------
+  // IMPOSTAZIONI
+  // -----------------------------
+  "settings.back": "Indietro",
+  "settings.title": "Impostazioni",
+  "settings.subtitle":
+    "Personalizza il tema e la lingua dell’app",
+
+  "settings.theme": "Tema",
+  "settings.theme.group.neons": "Neon classici",
+  "settings.theme.group.soft": "Colori soft",
+  "settings.theme.group.dark": "Temi dark premium",
+
+  "settings.theme.gold.label": "Oro neon",
+  "settings.theme.gold.desc": "Tema dorato premium",
+
+  "settings.theme.pink.label": "Rosa neon",
+  "settings.theme.pink.desc": "Atmosfera arcade rosa",
+
+  "settings.theme.petrol.label": "Blu petrolio",
+  "settings.theme.petrol.desc": "Blu neon profondo",
+
+  "settings.theme.green.label": "Verde neon",
+  "settings.theme.green.desc": "Stile allenamento luminoso",
+
+  "settings.theme.magenta.label": "Magenta",
+  "settings.theme.magenta.desc": "Viola / magenta intenso",
+
+  "settings.theme.red.label": "Rosso",
+  "settings.theme.red.desc": "Rosso arcade aggressivo",
+
+  "settings.theme.orange.label": "Arancione",
+  "settings.theme.orange.desc": "Arancione caldo ed energico",
+
+  "settings.theme.white.label": "Bianco",
+  "settings.theme.white.desc": "Sfondo chiaro moderno",
+
+  "settings.theme.blueOcean.label": "Blu oceano",
+  "settings.theme.blueOcean.desc": "Blu naturale oceano / cielo",
+
+  "settings.theme.limeYellow.label": "Giallo lime",
+  "settings.theme.limeYellow.desc": "Colore lime super acceso",
+
+  "settings.theme.sage.label": "Verde salvia",
+  "settings.theme.sage.desc": "Toni verdi morbidi e naturali",
+
+  "settings.theme.skyBlue.label": "Blu pastello",
+  "settings.theme.skyBlue.desc": "Blu molto morbido e luminoso",
+
+  "settings.theme.darkTitanium.label": "Titanio scuro",
+  "settings.theme.darkTitanium.desc": "Look metallico opaco premium",
+
+  "settings.theme.darkCarbon.label": "Carbonio",
+  "settings.theme.darkCarbon.desc": "Atmosfera moderna in fibra di carbonio",
+
+  "settings.theme.darkFrost.label": "Gelo scuro",
+  "settings.theme.darkFrost.desc": "Nero ghiacciato futuristico",
+
+  "settings.theme.darkObsidian.label": "Ossidiana",
+  "settings.theme.darkObsidian.desc":
+    "Nero lucido premium e molto leggibile",
+
+  "settings.lang": "Lingua",
+
+  "settings.reset.title": "Reimposta l’app",
+  "settings.reset.subtitle":
+    "Cancella tutti i profili locali, BOTS, statistiche, cronologia partite e impostazioni. Azione definitiva.",
+  "settings.reset.button": "Reimposta tutto",
+
+  // Nomi lingue (IT)
+  "lang.fr": "Francese",
+  "lang.en": "Inglese",
+  "lang.es": "Spagnolo",
+  "lang.de": "Tedesco",
+  "lang.it": "Italiano",
+  "lang.pt": "Portoghese",
+  "lang.nl": "Olandese",
+  "lang.ru": "Russo",
+  "lang.zh": "Cinese",
+  "lang.ja": "Giapponese",
+  "lang.ar": "Arabo",
+  "lang.hi": "Hindi",
+  "lang.tr": "Turco",
+  "lang.da": "Danese",
+  "lang.no": "Norvegese",
+  "lang.sv": "Svedese",
+  "lang.is": "Islandese",
+  "lang.pl": "Polacco",
+  "lang.ro": "Rumeno",
+  "lang.sr": "Serbo",
+  "lang.hr": "Croato",
+  "lang.cs": "Ceco",
 };

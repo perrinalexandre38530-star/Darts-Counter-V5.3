@@ -5,6 +5,7 @@
 // - Droite : carrousel auto de stats (7 slides max)
 //   Vue globale / Records / Online / X01 / Cricket / Training X01 / Horloge
 // - N'affiche que les slides qui ont des données (ex : sessions > 0)
+// - Style : mini-card thème + halo néon + valeurs qui scintillent
 // =============================================================
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -74,7 +75,6 @@ export type ActiveProfileStats = {
 type Props = {
   profile: Profile | null;
   stats: ActiveProfileStats;
-  status: "online" | "away" | "offline";
 };
 
 type SlideDef = {
@@ -94,15 +94,28 @@ function fmtNum(v?: MaybeNum, decimals = 1): string {
   return v % 1 === 0 ? String(v) : v.toFixed(decimals);
 }
 
-export default function ActiveProfileCard({ profile, stats, status }: Props) {
+export default function ActiveProfileCard({ profile, stats }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
   const [index, setIndex] = useState(0);
 
+  // Petit CSS pour les animations (titre stats + valeurs scintillantes)
+  const primary = theme.primary ?? "#F6C256";
+
+  const shimmerCss = `
+    @keyframes apcTitlePulse {
+      0%, 100% { transform: translateY(0) scale(1); text-shadow: 0 0 6px ${primary}55; }
+      50% { transform: translateY(-1px) scale(1.01); text-shadow: 0 0 12px ${primary}AA; }
+    }
+    @keyframes apcValueGlow {
+      0%, 100% { text-shadow: 0 0 6px ${primary}66; }
+      50% { text-shadow: 0 0 12px ${primary}CC; }
+    }
+  `;
+
   // ---------- Construction des slides à partir des stats ----------
   const slides = useMemo<SlideDef[]>(() => {
     const s = stats;
-
     const out: SlideDef[] = [];
 
     // 1) Vue globale — on exige au moins 1 session
@@ -287,12 +300,7 @@ export default function ActiveProfileCard({ profile, stats, status }: Props) {
     }
 
     // 6) Training X01 — au moins 1 session
-    if (
-      (s.trainingHitsS ?? 0) +
-        (s.trainingHitsD ?? 0) +
-        (s.trainingHitsT ?? 0) >
-      0
-    ) {
+    if ((s.trainingHitsS ?? 0) + (s.trainingHitsD ?? 0) + (s.trainingHitsT ?? 0) > 0) {
       out.push({
         id: "trainingx01",
         title: t("home.stats.trainingX01", "Training X01"),
@@ -366,222 +374,233 @@ export default function ActiveProfileCard({ profile, stats, status }: Props) {
     return () => clearInterval(id);
   }, [slides.length]);
 
-  if (!profile) {
-    return null;
-  }
+  if (!profile) return null;
 
   const slide = slides[index] ?? null;
 
-  // --------- Texte / couleur de statut (comme dans Profiles.tsx) ----------
-  const statusLabelKey =
-    status === "away"
-      ? "profiles.status.away"
-      : status === "offline"
-      ? "profiles.status.offline"
-      : "profiles.status.online";
-
-  const statusLabel = t(
-    statusLabelKey,
-    status === "away"
-      ? "Absent"
-      : status === "offline"
-      ? "Hors ligne"
-      : "En ligne"
-  );
+  // Statut (pour l’instant on force online si rien)
+  const status: "online" | "away" | "offline" =
+    ((profile as any).status as any) ?? "online";
 
   const statusColor =
-    status === "away"
-      ? "#F6C256"
-      : status === "offline"
-      ? "#9AA0AA"
-      : "#1FB46A";
+    status === "online" ? "#18FF6D" : status === "away" ? "#FFD95E" : "#888888";
 
   return (
-    <div
-      style={{
-        borderRadius: 24,
-        padding: 16,
-        background:
-          "radial-gradient(circle at top, rgba(255,255,255,0.06), rgba(0,0,0,0.9))",
-        border: `1px solid ${theme.borderSoft ?? "rgba(255,255,255,0.08)"}`,
-        boxShadow: `0 0 24px rgba(0,0,0,0.8), 0 0 30px ${
-          theme.primaryGlow ?? "rgba(255,215,128,0.35)"
-        }`,
-        display: "flex",
-        gap: 16,
-        alignItems: "stretch",
-      }}
-    >
-      {/* Colonne gauche : avatar + nom + statut */}
+    <>
+      <style dangerouslySetInnerHTML={{ __html: shimmerCss }} />
       <div
         style={{
-          width: 120,
-          minWidth: 120,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 8,
-        }}
-      >
-        <div
-          style={{
-            position: "relative",
-            padding: 4,
-            borderRadius: "50%",
-            background:
-              "radial-gradient(circle, rgba(0,0,0,0.3) 0%, rgba(0,0,0,1) 45%, rgba(0,0,0,0.3) 100%)",
-            boxShadow: `0 0 18px ${
-              theme.primaryGlow ?? "rgba(255,215,128,0.5)"
-            }`,
-          }}
-        >
-          <ProfileAvatar
-            profile={profile}
-            size={76}
-            glowColor={theme.primary}
-          />
-        </div>
-
-        <div
-          style={{
-            fontWeight: 800,
-            fontSize: 18,
-            marginTop: 4,
-            color: theme.textStrong ?? "#FFFFFF",
-          }}
-        >
-          {profile.name}
-        </div>
-
-        {/* Statut */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            marginTop: 2,
-          }}
-        >
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              backgroundColor: statusColor,
-              boxShadow:
-                status === "offline" ? "none" : `0 0 8px ${statusColor}`,
-            }}
-          />
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: statusColor,
-            }}
-          >
-            {statusLabel}
-          </span>
-        </div>
-      </div>
-
-      {/* Colonne droite : carrousel de stats */}
-      <div
-        style={{
-          flex: 1,
-          borderRadius: 18,
-          padding: 12,
+          borderRadius: 24,
+          padding: 16,
+          marginBottom: 14,
           background:
-            "linear-gradient(135deg, rgba(0,0,0,0.9), rgba(255,255,255,0.02))",
-          position: "relative",
-          overflow: "hidden",
+            "radial-gradient(circle at top, rgba(255,255,255,0.04), rgba(0,0,0,0.95))",
+          border: `1px solid ${theme.borderSoft ?? "rgba(255,255,255,0.10)"}`,
+          boxShadow: `0 0 24px rgba(0,0,0,0.8), 0 0 30px ${primary}33`,
+          display: "flex",
+          gap: 16,
+          alignItems: "stretch",
         }}
       >
-        {slide && (
+        {/* Colonne gauche : avatar + nom + statut */}
+        <div
+          style={{
+            width: 120,
+            minWidth: 120,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+          }}
+        >
           <div
-            key={slide.id}
             style={{
-              transition: "opacity 0.4s ease, transform 0.4s ease",
-              opacity: 1,
-              transform: "translateX(0)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
+              position: "relative",
+              padding: 4,
+              borderRadius: "50%",
+              background:
+                "radial-gradient(circle, rgba(0,0,0,0.3) 0%, rgba(0,0,0,1) 45%, rgba(0,0,0,0.3) 100%)",
+              boxShadow: `0 0 26px ${primary}66`,
             }}
           >
-            <div
+            <ProfileAvatar
+              size={76}
+              dataUrl={profile?.avatarDataUrl}
+              label={profile?.name?.[0]?.toUpperCase() || "?"}
+              showStars={false}
+            />
+          </div>
+
+          <div
+            style={{
+              fontWeight: 800,
+              fontSize: 18,
+              marginTop: 4,
+              color: theme.textStrong ?? "#FFFFFF",
+            }}
+          >
+            {profile.name}
+          </div>
+
+          {/* Statut */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              marginTop: 2,
+            }}
+          >
+            <span
               style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                backgroundColor: statusColor,
+                boxShadow:
+                  status === "offline"
+                    ? "none"
+                    : `0 0 8px ${statusColor}, 0 0 14px ${statusColor}`,
+              }}
+            />
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: theme.textSoft ?? "rgba(255,255,255,0.7)",
+              }}
+            >
+              {status === "online"
+                ? t("status.online", "En ligne")
+                : status === "away"
+                ? t("status.away", "Absent")
+                : t("status.offline", "Hors ligne")}
+            </span>
+          </div>
+        </div>
+
+        {/* Colonne droite : mini-card thème + stats */}
+        <div
+          style={{
+            flex: 1,
+            borderRadius: 18,
+            padding: 12,
+            background: `linear-gradient(135deg, ${primary}22, rgba(0,0,0,0.95))`,
+            position: "relative",
+            overflow: "hidden",
+            boxShadow: `0 0 24px ${primary}55, inset 0 0 0 1px rgba(0,0,0,0.7)`,
+            border: `1px solid ${primary}AA`,
+          }}
+        >
+          {/* halo externe */}
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: -20,
+              background: `radial-gradient(circle at top, ${primary}22, transparent 60%)`,
+              opacity: 0.6,
+              pointerEvents: "none",
+            }}
+          />
+
+          {slide && (
+            <div
+              key={slide.id}
+              style={{
+                position: "relative",
                 display: "flex",
-                justifyContent: "space-between",
-                alignItems: "baseline",
-                marginBottom: 4,
+                flexDirection: "column",
+                gap: 8,
               }}
             >
               <div
                 style={{
-                  fontSize: 14,
-                  fontWeight: 800,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.8,
-                  color: theme.primary ?? "#F6C256",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "baseline",
+                  marginBottom: 4,
                 }}
               >
-                {slide.title}
-              </div>
-              {slides.length > 1 && (
                 <div
                   style={{
-                    fontSize: 11,
-                    color:
-                      theme.textMuted ?? "rgba(255,255,255,0.6)",
+                    fontSize: 14,
+                    fontWeight: 800,
+                    letterSpacing: 0.8,
+                    color: primary,
+                    animation: "apcTitlePulse 3.2s ease-in-out infinite",
                   }}
                 >
-                  {index + 1}/{slides.length}
+                  {slide.title}
                 </div>
-              )}
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(3, minmax(0,1fr))",
-                rowGap: 6,
-                columnGap: 8,
-              }}
-            >
-              {slide.rows.map((row) => (
-                <div key={row.label} style={{ minWidth: 0 }}>
+                {slides.length > 1 && (
                   <div
                     style={{
-                      fontSize: 10,
-                      textTransform: "uppercase",
-                      letterSpacing: 0.6,
+                      fontSize: 11,
                       color:
-                        theme.textMuted ??
-                        "rgba(255,255,255,0.55)",
-                      marginBottom: 2,
+                        theme.textMuted ?? "rgba(255,255,255,0.65)",
                     }}
                   >
-                    {row.label}
+                    {index + 1}/{slides.length}
                   </div>
+                )}
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, minmax(0,1fr))",
+                  rowGap: 6,
+                  columnGap: 8,
+                }}
+              >
+                {slide.rows.map((row, idx) => (
                   <div
+                    key={row.label}
                     style={{
-                      fontSize: 15,
-                      fontWeight: 700,
-                      color: theme.textStrong ?? "#ffffff",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
+                      minWidth: 0,
+                      paddingBottom: 4,
+                      borderBottom:
+                        idx < slide.rows.length - 3
+                          ? `1px solid ${primary}33`
+                          : "none",
                     }}
                   >
-                    {row.value}
+                    <div
+                      style={{
+                        fontSize: 10,
+                        letterSpacing: 0.3,
+                        color:
+                          theme.textMuted ??
+                          "rgba(255,255,255,0.65)",
+                        marginBottom: 2,
+                        textTransform: "none", // plus de MAJUSCULES
+                      }}
+                    >
+                      {row.label}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 700,
+                        color: primary,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        animation:
+                          "apcValueGlow 2.8s ease-in-out infinite",
+                      }}
+                    >
+                      {row.value}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

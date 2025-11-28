@@ -395,4 +395,97 @@ export const nl: Dict = {
   "label.duration": "Duur",
   "label.date": "Datum",
   "label.mode": "Modus",
+
+    // -----------------------------
+  // INSTELLINGEN
+  // -----------------------------
+  "settings.back": "Terug",
+  "settings.title": "Instellingen",
+  "settings.subtitle":
+    "Pas het thema en de taal van de app aan",
+
+  "settings.theme": "Thema",
+  "settings.theme.group.neons": "Klassieke neons",
+  "settings.theme.group.soft": "Zachte kleuren",
+  "settings.theme.group.dark": "Donkere premium-thema’s",
+
+  "settings.theme.gold.label": "Neon-goud",
+  "settings.theme.gold.desc": "Premium goud thema",
+
+  "settings.theme.pink.label": "Neon-roze",
+  "settings.theme.pink.desc": "Roze arcade-sfeer",
+
+  "settings.theme.petrol.label": "Petrolblauw",
+  "settings.theme.petrol.desc": "Diep neonblauw",
+
+  "settings.theme.green.label": "Neon-groen",
+  "settings.theme.green.desc": "Fel trainings-thema",
+
+  "settings.theme.magenta.label": "Magenta",
+  "settings.theme.magenta.desc": "Intens violet / magenta",
+
+  "settings.theme.red.label": "Rood",
+  "settings.theme.red.desc": "Agressief arcade-rood",
+
+  "settings.theme.orange.label": "Oranje",
+  "settings.theme.orange.desc": "Warme, energieke oranje tint",
+
+  "settings.theme.white.label": "Wit",
+  "settings.theme.white.desc": "Modern licht thema",
+
+  "settings.theme.blueOcean.label": "Oceaanblauw",
+  "settings.theme.blueOcean.desc": "Natuurlijk oceaan-/hemelblauw",
+
+  "settings.theme.limeYellow.label": "Limegeel",
+  "settings.theme.limeYellow.desc": "Super opvallend lime-geel",
+
+  "settings.theme.sage.label": "Salie-groen",
+  "settings.theme.sage.desc": "Zachte, natuurlijke groentinten",
+
+  "settings.theme.skyBlue.label": "Pastelblauw",
+  "settings.theme.skyBlue.desc": "Heel zacht en helder blauw",
+
+  "settings.theme.darkTitanium.label": "Donker titanium",
+  "settings.theme.darkTitanium.desc": "Premium matte metaal-look",
+
+  "settings.theme.darkCarbon.label": "Carbon",
+  "settings.theme.darkCarbon.desc": "Moderne carbon-fiber stijl",
+
+  "settings.theme.darkFrost.label": "Donkere vorst",
+  "settings.theme.darkFrost.desc": "Bevroren futuristisch zwart",
+
+  "settings.theme.darkObsidian.label": "Obsidiaan",
+  "settings.theme.darkObsidian.desc":
+    "Gepolijst premium zwart, goed leesbaar",
+
+  "settings.lang": "Taal",
+
+  "settings.reset.title": "App resetten",
+  "settings.reset.subtitle":
+    "Verwijdert alle lokale profielen, BOTS, statistieken, wedstrijdgeschiedenis en instellingen. Deze actie kan niet ongedaan worden gemaakt.",
+  "settings.reset.button": "Alles resetten",
+
+  // Taalnamen (NL)
+  "lang.fr": "Frans",
+  "lang.en": "Engels",
+  "lang.es": "Spaans",
+  "lang.de": "Duits",
+  "lang.it": "Italiaans",
+  "lang.pt": "Portugees",
+  "lang.nl": "Nederlands",
+  "lang.ru": "Russisch",
+  "lang.zh": "Chinees",
+  "lang.ja": "Japans",
+  "lang.ar": "Arabisch",
+  "lang.hi": "Hindi",
+  "lang.tr": "Turks",
+  "lang.da": "Deens",
+  "lang.no": "Noors",
+  "lang.sv": "Zweeds",
+  "lang.is": "IJslands",
+  "lang.pl": "Pools",
+  "lang.ro": "Roemeens",
+  "lang.sr": "Servisch",
+  "lang.hr": "Kroatisch",
+  "lang.cs": "Tsjechisch",
 };

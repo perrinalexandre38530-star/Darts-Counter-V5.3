@@ -392,4 +392,97 @@ export const de: Dict = {
   "label.duration": "Dauer",
   "label.date": "Datum",
   "label.mode": "Modus",
+
+    // -----------------------------
+  // EINSTELLUNGEN
+  // -----------------------------
+  "settings.back": "Zurück",
+  "settings.title": "Einstellungen",
+  "settings.subtitle":
+    "Passe das App-Design und die Sprache an",
+
+  "settings.theme": "Theme",
+  "settings.theme.group.neons": "Klassische Neons",
+  "settings.theme.group.soft": "Sanfte Farben",
+  "settings.theme.group.dark": "Dunkle Premium-Themes",
+
+  "settings.theme.gold.label": "Neon-Gold",
+  "settings.theme.gold.desc": "Premium-Gold-Theme",
+
+  "settings.theme.pink.label": "Neon-Pink",
+  "settings.theme.pink.desc": "Pinkes Arcade-Feeling",
+
+  "settings.theme.petrol.label": "Petrolblau",
+  "settings.theme.petrol.desc": "Tiefes Neon-Blau",
+
+  "settings.theme.green.label": "Neon-Grün",
+  "settings.theme.green.desc": "Helles Trainings-Theme",
+
+  "settings.theme.magenta.label": "Magenta",
+  "settings.theme.magenta.desc": "Intensives Violett / Magenta",
+
+  "settings.theme.red.label": "Rot",
+  "settings.theme.red.desc": "Aggressives Arcade-Rot",
+
+  "settings.theme.orange.label": "Orange",
+  "settings.theme.orange.desc": "Warmer, energischer Orangeton",
+
+  "settings.theme.white.label": "Weiß",
+  "settings.theme.white.desc": "Modernes, helles Layout",
+
+  "settings.theme.blueOcean.label": "Ozeanblau",
+  "settings.theme.blueOcean.desc": "Natürliches Ozean-/Himmelblau",
+
+  "settings.theme.limeYellow.label": "Limettengelb",
+  "settings.theme.limeYellow.desc": "Extrem auffälliges Lime-Gelb",
+
+  "settings.theme.sage.label": "Salbeigrün",
+  "settings.theme.sage.desc": "Weiche, natürliche Grüntöne",
+
+  "settings.theme.skyBlue.label": "Pastellblau",
+  "settings.theme.skyBlue.desc": "Sehr weiches, helles Blau",
+
+  "settings.theme.darkTitanium.label": "Dunkles Titan",
+  "settings.theme.darkTitanium.desc": "Edler, matter Metall-Look",
+
+  "settings.theme.darkCarbon.label": "Carbon",
+  "settings.theme.darkCarbon.desc": "Moderner Carbon-Faser-Style",
+
+  "settings.theme.darkFrost.label": "Dunkler Frost",
+  "settings.theme.darkFrost.desc": "Gefrorenes, futuristisches Schwarz",
+
+  "settings.theme.darkObsidian.label": "Obsidian",
+  "settings.theme.darkObsidian.desc":
+    "Poliertes Premium-Schwarz mit guter Lesbarkeit",
+
+  "settings.lang": "Sprache",
+
+  "settings.reset.title": "App zurücksetzen",
+  "settings.reset.subtitle":
+    "Löscht alle lokalen Profile, BOTS, Statistiken, Spielverläufe und Einstellungen. Diese Aktion kann nicht rückgängig gemacht werden.",
+  "settings.reset.button": "Alles zurücksetzen",
+
+  // Sprachnamen (DE)
+  "lang.fr": "Französisch",
+  "lang.en": "Englisch",
+  "lang.es": "Spanisch",
+  "lang.de": "Deutsch",
+  "lang.it": "Italienisch",
+  "lang.pt": "Portugiesisch",
+  "lang.nl": "Niederländisch",
+  "lang.ru": "Russisch",
+  "lang.zh": "Chinesisch",
+  "lang.ja": "Japanisch",
+  "lang.ar": "Arabisch",
+  "lang.hi": "Hindi",
+  "lang.tr": "Türkisch",
+  "lang.da": "Dänisch",
+  "lang.no": "Norwegisch",
+  "lang.sv": "Schwedisch",
+  "lang.is": "Isländisch",
+  "lang.pl": "Polnisch",
+  "lang.ro": "Rumänisch",
+  "lang.sr": "Serbisch",
+  "lang.hr": "Kroatisch",
+  "lang.cs": "Tschechisch",
 };
