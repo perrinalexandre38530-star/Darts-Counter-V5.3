@@ -5,6 +5,7 @@
 // - Bandeau arcade (ArcadeTicker) : infos importantes avec image spécifique
 // - Gros boutons de navigation (Profils / Local / Online / Stats / Réglages)
 // - Stats du joueur actif : branchées sur statsBridge (X01 global + X01 multi)
+//   + utilisées pour remplir les bandeaux Arcade de vraies infos
 // =============================================================
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -194,80 +195,186 @@ async function buildStatsForProfile(
 }
 
 // Bandeau arcade : messages + images différentes (textes traduits via t)
+// ⚠️ Version dynamique : se base sur les stats du joueur actif
 function buildArcadeItems(
   _store: Store,
   profile: Profile | null,
+  stats: ActiveProfileStats | null | undefined,
   t: (k: string, d?: string) => string
 ): ArcadeTickerItem[] {
   const items: ArcadeTickerItem[] = [];
+  const s: ActiveProfileStats = stats ?? emptyActiveProfileStats();
 
+  const sessionsGlobal = s.sessionsGlobal ?? 0;
+  const winrateGlobalPct =
+    s.winrateGlobal != null ? Math.round(s.winrateGlobal * 100) : null;
+
+  const x01MultiSessions = s.x01MultiSessions ?? 0;
+
+  const onlineMatches = s.onlineMatches ?? 0;
+  const onlineWinratePct =
+    s.onlineWinrate != null ? Math.round(s.onlineWinrate * 100) : null;
+  const onlineBestRank = s.onlineBestRank ?? s.onlineRank ?? null;
+
+  const trainingHitsTotal =
+    (s.trainingHitsS ?? 0) +
+    (s.trainingHitsD ?? 0) +
+    (s.trainingHitsT ?? 0);
+  const trainingGoalPct =
+    s.trainingGoalSuccessRate != null
+      ? Math.round(s.trainingGoalSuccessRate * 100)
+      : null;
+
+  const clockTargets = s.clockTargetsHit ?? 0;
+
+  const hasRecordX01 =
+    (s.recordBestVisitX01 ?? 0) > 0 ||
+    (s.recordBestCOX01 ?? 0) > 0 ||
+    (s.recordMinDarts501 ?? 0) > 0 ||
+    (s.recordBestAvg3DX01 ?? 0) > 0;
+
+  // ---------- 1) Derniers records ----------
   items.push({
     id: "last-records",
     title: t("home.ticker.records", "Derniers records"),
-    text: t(
-      "home.ticker.records.text",
-      "Plusieurs records battus récemment, continue sur ta lancée !"
-    ),
-    detail: "",
+    text: hasRecordX01
+      ? t(
+          "home.ticker.records.text.dynamic",
+          "Plusieurs records X01 déjà enregistrés sur ce profil."
+        )
+      : t(
+          "home.ticker.records.text.empty",
+          "Aucun record pour l’instant, lance un premier match pour en créer."
+        ),
+    detail: hasRecordX01
+      ? [
+          s.recordBestVisitX01 != null
+            ? `Best visit : ${s.recordBestVisitX01}`
+            : null,
+          s.recordBestCOX01 != null ? `Best CO : ${s.recordBestCOX01}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : "",
     backgroundImage: "/img/ticker-records.jpg",
     accentColor: "#F6C256",
   });
 
+  // ---------- 2) Dernier match / activité locale ----------
   items.push({
     id: "last-local-match",
     title: t("home.ticker.localLast", "Dernier match local"),
-    text: t(
-      "home.ticker.localLast.text",
-      "Résumé du dernier match joué en local."
-    ),
+    text:
+      x01MultiSessions > 0
+        ? t(
+            "home.ticker.localLast.text.dynamic",
+            `Tu as déjà joué ${x01MultiSessions} matchs X01 multi en local.`
+          )
+        : t(
+            "home.ticker.localLast.text.empty",
+            "Aucun match local pour l’instant, invite des amis et lance une partie."
+          ),
+    detail:
+      x01MultiSessions > 0 ? `${x01MultiSessions} matchs X01 multi` : "",
     backgroundImage: "/img/ticker-x01.jpg",
     accentColor: "#52FFC4",
   });
 
+  // ---------- 3) Dernier match / activité online ----------
   items.push({
     id: "last-online-match",
     title: t("home.ticker.onlineLast", "Dernier match online"),
-    text: t(
-      "home.ticker.onlineLast.text",
-      "Ton dernier duel online est prêt pour la revanche."
-    ),
+    text:
+      onlineMatches > 0
+        ? t(
+            "home.ticker.onlineLast.text.dynamic",
+            `Tu as joué ${onlineMatches} matchs online.`
+          )
+        : t(
+            "home.ticker.onlineLast.text.empty",
+            "Aucun duel online pour l’instant, crée un salon pour affronter tes amis."
+          ),
+    detail:
+      onlineMatches > 0
+        ? [
+            `${onlineMatches} matchs`,
+            onlineWinratePct != null
+              ? `${onlineWinratePct}% de victoires`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        : "",
     backgroundImage: "/img/ticker-online.jpg",
     accentColor: "#5ED3FF",
   });
 
+  // ---------- 4) Leader / meilleur rang online ----------
   items.push({
     id: "online-leader",
     title: t("home.ticker.onlineLeader", "Leader du classement"),
-    text: t(
-      "home.ticker.onlineLeader.text",
-      "Découvre qui est en tête du classement online."
-    ),
+    text:
+      onlineBestRank != null
+        ? t(
+            "home.ticker.onlineLeader.text.dynamic",
+            `Ton meilleur rang online est #${onlineBestRank}.`
+          )
+        : t(
+            "home.ticker.onlineLeader.text.empty",
+            "Monte dans le classement en enchaînant les victoires online."
+          ),
     backgroundImage: "/img/ticker-leaderboard.jpg",
     accentColor: "#FF5E9E",
   });
 
+  // ---------- 5) Training X01 ----------
   items.push({
     id: "training-summary",
     title: t("home.ticker.training", "Training du moment"),
-    text: t(
-      "home.ticker.training.text",
-      "Total des sessions Training X01 et Tour de l’Horloge."
-    ),
+    text:
+      trainingHitsTotal > 0
+        ? t(
+            "home.ticker.training.text.dynamic",
+            `Tu as déjà enregistré ${trainingHitsTotal} hits en Training X01.`
+          )
+        : t(
+            "home.ticker.training.text.empty",
+            "Aucun Training X01 enregistré, lance une session pour travailler tes segments."
+          ),
+    detail:
+      trainingHitsTotal > 0 && trainingGoalPct != null
+        ? `Objectifs réussis : ${trainingGoalPct}%`
+        : "",
     backgroundImage: "/img/ticker-training.jpg",
     accentColor: "#9EFF5E",
   });
 
+  // ---------- 6) Stats globales / mois ----------
   items.push({
     id: "month-summary",
-    title: t("home.ticker.month", "Stats du mois"),
-    text: t(
-      "home.ticker.month.text",
-      "Total des matchs et des hits pour ce mois."
-    ),
+    title: t("home.ticker.month", "Stats du profil"),
+    text:
+      sessionsGlobal > 0
+        ? t(
+            "home.ticker.month.text.dynamic",
+            `Ce profil a enregistré ${sessionsGlobal} sessions au total.`
+          )
+        : t(
+            "home.ticker.month.text.empty",
+            "Aucune session enregistrée, commence par un match X01 ou un training."
+          ),
+    detail: [
+      sessionsGlobal > 0 ? `${sessionsGlobal} sessions` : null,
+      winrateGlobalPct != null ? `${winrateGlobalPct}% de victoires` : null,
+      clockTargets > 0 ? `${clockTargets} cibles à l’Horloge` : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
     backgroundImage: "/img/ticker-global.jpg",
     accentColor: "#F6C256",
   });
 
+  // ---------- 7) Astuce du jour ----------
   if (profile) {
     items.push({
       id: "tip-of-day",
@@ -315,12 +422,7 @@ export default function Home({ store, go }: Props) {
 
   const activeProfile = useMemo(() => getActiveProfile(store), [store]);
 
-  const tickerItems = useMemo(
-    () => buildArcadeItems(store, activeProfile, t),
-    [store, activeProfile, t]
-  );
-
-  // 🔢 Stats du joueur actif (chargées async pour ActiveProfileCard)
+  // 🔢 Stats du joueur actif (chargées async pour ActiveProfileCard + ArcadeTicker)
   const [stats, setStats] = useState<ActiveProfileStats>(
     () => emptyActiveProfileStats()
   );
@@ -342,6 +444,11 @@ export default function Home({ store, go }: Props) {
       cancelled = true;
     };
   }, [activeProfile?.id]);
+
+  const tickerItems = useMemo(
+    () => buildArcadeItems(store, activeProfile, stats, t),
+    [store, activeProfile, stats, t]
+  );
 
   return (
     <div
@@ -432,7 +539,7 @@ export default function Home({ store, go }: Props) {
           />
         )}
 
-        {/* ------------ Bandeau arcade (infos importantes) ------------ */}
+        {/* ------------ Bandeau arcade (infos importantes dynamiques) ------------ */}
         <ArcadeTicker items={tickerItems} />
 
         {/* ------------ Gros boutons de navigation ------------ */}
