@@ -1,8 +1,13 @@
-// src/i18n/it.ts
+// ============================================
+// src/i18n/it.ts — Dictionnaire IT complet (v1)
+// ============================================
+
 import type { Dict } from "../contexts/LangContext";
 
 export const it: Dict = {
-  // NAV
+  // -----------------------------
+  // NAVIGATION / TABS
+  // -----------------------------
   "nav.home": "Home",
   "nav.local": "Locale",
   "nav.games": "Giochi",
@@ -15,7 +20,9 @@ export const it: Dict = {
   "nav.back": "Indietro",
   "nav.close": "Chiudi",
 
+  // -----------------------------
   // COMUNE
+  // -----------------------------
   "common.ok": "OK",
   "common.cancel": "Annulla",
   "common.yes": "Sì",
@@ -52,7 +59,9 @@ export const it: Dict = {
   "common.date": "Data",
   "common.time": "Ora",
 
-  // HOME
+  // -----------------------------
+  // HOME (TABLEAU DE BORD)
+  // -----------------------------
   "home.title": "Dashboard",
   "home.subtitle": "Centro di controllo Darts Counter",
   "home.welcome": "Benvenuto",
@@ -77,7 +86,9 @@ export const it: Dict = {
   "home.arcadeBanner.title": "Novità & aggiornamenti",
   "home.arcadeBanner.tapForMore": "Tocca per maggiori dettagli",
 
+  // -----------------------------
   // GIOCHI
+  // -----------------------------
   "games.title": "Tutti i giochi",
   "games.subtitle": "Scegli una modalità",
   "games.section.classic": "Classici",
@@ -101,13 +112,16 @@ export const it: Dict = {
   "games.info.rules": "Regole",
   "games.info.tips": "Consigli",
 
+  // -----------------------------
   // PROFILI LOCALI
+  // -----------------------------
   "profiles.title": "Profili locali",
   "profiles.subtitle": "Gestisci i tuoi giocatori locali",
   "profiles.add": "Aggiungi profilo",
   "profiles.edit": "Modifica profilo",
   "profiles.delete": "Elimina profilo",
-  "profiles.confirmDelete": "Eliminare definitivamente questo profilo?",
+  "profiles.confirmDelete":
+    "Eliminare definitivamente questo profilo?",
   "profiles.name.label": "Nome giocatore",
   "profiles.name.placeholder": "Inserisci un nickname",
   "profiles.avatar.label": "Avatar",
@@ -121,9 +135,12 @@ export const it: Dict = {
   "profiles.selectActive": "Imposta come profilo attivo",
   "profiles.list.empty": "Ancora nessun profilo",
   "profiles.list.selectHint": "Tocca un profilo per selezionarlo",
-  "profiles.hint.avatarTap": "Tocca il medaglione per cambiare avatar",
+  "profiles.hint.avatarTap":
+    "Tocca il medaglione per cambiare avatar",
 
-  // AVATAR
+  // -----------------------------
+  // AVATAR CREATOR
+  // -----------------------------
   "avatar.title": "Creator avatar",
   "avatar.subtitle": "Personalizza il tuo medaglione",
   "avatar.style.label": "Stile",
@@ -137,7 +154,9 @@ export const it: Dict = {
   "avatar.keep": "Mantieni questo avatar",
   "avatar.cancel": "Annulla modifiche",
 
+  // -----------------------------
   // X01 CONFIG
+  // -----------------------------
   "x01.config.title": "Impostazioni X01",
   "x01.config.subtitle": "Prepara la partita",
   "x01.config.section.players": "Giocatori",
@@ -177,7 +196,9 @@ export const it: Dict = {
   "x01.config.startMatch": "Avvia partita",
   "x01.config.back": "Torna ai giochi",
 
+  // -----------------------------
   // X01 PLAY
+  // -----------------------------
   "x01.play.title": "X01",
   "x01.play.leg": "Leg",
   "x01.play.set": "Set",
@@ -202,7 +223,9 @@ export const it: Dict = {
   "x01.play.backToConfig": "Torna alle impostazioni",
   "x01.play.saveInHistory": "Salva nello storico",
 
+  // -----------------------------
   // CRICKET
+  // -----------------------------
   "cricket.config.title": "Impostazioni Cricket",
   "cricket.config.players": "Giocatori",
   "cricket.config.raceTo.label": "Punti o leg",
@@ -223,7 +246,9 @@ export const it: Dict = {
   "cricket.stats.gamesPlayed": "Partite giocate",
   "cricket.stats.gamesWon": "Partite vinte",
 
-  // MENU TRAINING
+  // -----------------------------
+  // TRAINING MENU
+  // -----------------------------
   "training.menu.title": "Allenamento",
   "training.menu.subtitle": "Allena i tuoi punti forti",
   "training.menu.x01Solo": "X01 Solo Training",
@@ -232,12 +257,15 @@ export const it: Dict = {
   "training.menu.clock": "Giro dell’orologio",
   "training.menu.clock.desc": "Fai il giro di tutti i bersagli.",
   "training.menu.evolution": "Curva di progresso",
-  "training.menu.evolution.desc": "Visualizza la tua progressione.",
+  "training.menu.evolution.desc":
+    "Visualizza la tua progressione.",
   "training.menu.custom": "Sessione personalizzata",
   "training.menu.resumeLast": "Riprendi ultima sessione",
   "training.menu.noSession": "Nessuna sessione salvata",
 
+  // -----------------------------
   // TRAINING X01
+  // -----------------------------
   "training.x01.title": "X01 Solo Training",
   "training.x01.subtitle": "Analisi di ogni dardo",
   "training.x01.targetScore.label": "Punteggio iniziale",
@@ -256,7 +284,9 @@ export const it: Dict = {
   "training.x01.session.confirmDelete":
     "Eliminare definitivamente questa sessione di allenamento?",
 
+  // -----------------------------
   // TRAINING CLOCK
+  // -----------------------------
   "training.clock.title": "Giro dell’orologio",
   "training.clock.subtitle": "Colpisci ogni numero in ordine",
   "training.clock.objective.label": "Obiettivo",
@@ -274,9 +304,12 @@ export const it: Dict = {
   "training.clock.currentTarget": "Bersaglio attuale",
   "training.clock.progress": "Progresso",
   "training.clock.session.save": "Salva sessione",
-  "training.clock.session.saved": "Sessione giro orologio salvata",
+  "training.clock.session.saved":
+    "Sessione giro orologio salvata",
 
-  // STATSHUB
+  // -----------------------------
+  // STATSHUB / STATS SHELL
+  // -----------------------------
   "stats.shell.title": "Centro statistiche",
   "stats.shell.tabs.local": "Profili locali",
   "stats.shell.tabs.training": "Training",
@@ -300,7 +333,9 @@ export const it: Dict = {
   "stats.hub.training.volume": "Volume di allenamento",
   "stats.hub.empty": "Nessuna statistica disponibile",
 
-  // STORICO
+  // -----------------------------
+  // HISTORY PAGE
+  // -----------------------------
   "history.title": "Storico partite",
   "history.subtitle": "Le tue ultime partite",
   "history.filter.all": "Tutte",
@@ -319,9 +354,12 @@ export const it: Dict = {
   "history.details.avg3": "Media /3 dardi",
   "history.details.checkout": "Checkout",
   "history.delete": "Elimina partita",
-  "history.confirmDelete": "Eliminare definitivamente questa partita?",
+  "history.confirmDelete":
+    "Eliminare definitivamente questa partita?",
 
-  // ONLINE
+  // -----------------------------
+  // ONLINE / MODE EN LIGNE
+  // -----------------------------
   "online.title": "Modalità online",
   "online.subtitle": "Gioca a distanza con gli amici",
   "online.login.title": "Login",
@@ -344,58 +382,8 @@ export const it: Dict = {
   "online.friends.status.away": "Assente",
   "online.friends.status.offline": "Offline",
 
-  // IMPOSTAZIONI
-  "settings.title": "Impostazioni",
-  "settings.theme.title": "Temi neon",
-  "settings.theme.subtitle": "Scegli la tua atmosfera",
-  "settings.theme.current": "Tema attuale",
-  "settings.theme.applied": "Tema applicato",
-  "settings.lang.title": "Lingua",
-  "settings.lang.subtitle": "Lingua dell’app",
-  "settings.lang.help": "I testi dell’interfaccia sono tradotti.",
-  "settings.section.language": "Lingua",
-  "settings.section.theme": "Temi",
-  "settings.section.misc": "Altre impostazioni",
-  "settings.misc.sounds": "Suoni",
-  "settings.misc.vibrations": "Vibrazioni",
-  "settings.misc.animations": "Animazioni visive",
-  "settings.misc.resetApp": "Reimposta app",
-  "settings.misc.resetConfirm":
-    "Reimpostare tutti i dati locali (profili, storico, training)?",
-
-  // SYNC
-  "sync.title": "Sync & condivisione",
-  "sync.subtitle": "Salva e condividi i tuoi dati",
-  "sync.tabs.local": "Locale",
-  "sync.tabs.peer": "Device to device",
-  "sync.tabs.cloud": "Cloud",
-  "sync.local.export.title": "Export locale",
-  "sync.local.export.desc":
-    "Copia questo JSON per salvarlo altrove.",
-  "sync.local.export.button": "Genera export",
-  "sync.local.import.title": "Import locale",
-  "sync.local.import.desc":
-    "Incolla qui un JSON esportato da un altro dispositivo.",
-  "sync.local.import.button": "Importa JSON",
-  "sync.local.import.success": "Import riuscito",
-  "sync.local.import.error": "Import non riuscito, JSON non valido.",
-  "sync.peer.soon": "Sync device to device in arrivo",
-  "sync.cloud.soon": "Sync Cloud in arrivo",
-
-  // LABELS
-  "label.points": "Punti",
-  "label.legs": "Leg",
-  "label.sets": "Set",
-  "label.avg3": "Media /3 dardi",
-  "label.mpr": "MPR",
-  "label.checkout": "Checkout",
-  "label.volume": "Volume",
-  "label.duration": "Durata",
-  "label.date": "Data",
-  "label.mode": "Modalità",
-
-    // -----------------------------
-  // IMPOSTAZIONI
+  // -----------------------------
+  // SETTINGS / RÉGLAGES
   // -----------------------------
   "settings.back": "Indietro",
   "settings.title": "Impostazioni",
@@ -432,25 +420,32 @@ export const it: Dict = {
   "settings.theme.white.desc": "Sfondo chiaro moderno",
 
   "settings.theme.blueOcean.label": "Blu oceano",
-  "settings.theme.blueOcean.desc": "Blu naturale oceano / cielo",
+  "settings.theme.blueOcean.desc":
+    "Blu naturale oceano / cielo",
 
   "settings.theme.limeYellow.label": "Giallo lime",
-  "settings.theme.limeYellow.desc": "Colore lime super acceso",
+  "settings.theme.limeYellow.desc":
+    "Colore lime super acceso",
 
   "settings.theme.sage.label": "Verde salvia",
-  "settings.theme.sage.desc": "Toni verdi morbidi e naturali",
+  "settings.theme.sage.desc":
+    "Toni verdi morbidi e naturali",
 
   "settings.theme.skyBlue.label": "Blu pastello",
-  "settings.theme.skyBlue.desc": "Blu molto morbido e luminoso",
+  "settings.theme.skyBlue.desc":
+    "Blu molto morbido e luminoso",
 
   "settings.theme.darkTitanium.label": "Titanio scuro",
-  "settings.theme.darkTitanium.desc": "Look metallico opaco premium",
+  "settings.theme.darkTitanium.desc":
+    "Look metallico opaco premium",
 
   "settings.theme.darkCarbon.label": "Carbonio",
-  "settings.theme.darkCarbon.desc": "Atmosfera moderna in fibra di carbonio",
+  "settings.theme.darkCarbon.desc":
+    "Atmosfera moderna in fibra di carbonio",
 
   "settings.theme.darkFrost.label": "Gelo scuro",
-  "settings.theme.darkFrost.desc": "Nero ghiacciato futuristico",
+  "settings.theme.darkFrost.desc":
+    "Nero ghiacciato futuristico",
 
   "settings.theme.darkObsidian.label": "Ossidiana",
   "settings.theme.darkObsidian.desc":
@@ -463,7 +458,46 @@ export const it: Dict = {
     "Cancella tutti i profili locali, BOTS, statistiche, cronologia partite e impostazioni. Azione definitiva.",
   "settings.reset.button": "Reimposta tutto",
 
-  // Nomi lingue (IT)
+  // -----------------------------
+  // SYNC CENTER
+  // -----------------------------
+  "sync.title": "Sync & condivisione",
+  "sync.subtitle": "Salva e condividi i tuoi dati",
+  "sync.tabs.local": "Locale",
+  "sync.tabs.peer": "Device to device",
+  "sync.tabs.cloud": "Cloud",
+  "sync.local.export.title": "Export locale",
+  "sync.local.export.desc":
+    "Copia questo JSON per salvarlo altrove.",
+  "sync.local.export.button": "Genera export",
+  "sync.local.import.title": "Import locale",
+  "sync.local.import.desc":
+    "Incolla qui un JSON esportato da un altro dispositivo.",
+  "sync.local.import.button": "Importa JSON",
+  "sync.local.import.success": "Import riuscito",
+  "sync.local.import.error":
+    "Import non riuscito, JSON non valido.",
+  "sync.peer.soon":
+    "Sync device to device in arrivo",
+  "sync.cloud.soon": "Sync Cloud in arrivo",
+
+  // -----------------------------
+  // LABELS / ÉTIQUETTES
+  // -----------------------------
+  "label.points": "Punti",
+  "label.legs": "Leg",
+  "label.sets": "Set",
+  "label.avg3": "Media /3 dardi",
+  "label.mpr": "MPR",
+  "label.checkout": "Checkout",
+  "label.volume": "Volume",
+  "label.duration": "Durata",
+  "label.date": "Data",
+  "label.mode": "Modalità",
+
+  // -----------------------------
+  // NOMS DE LANGUES (ITALIEN)
+  // -----------------------------
   "lang.fr": "Francese",
   "lang.en": "Inglese",
   "lang.es": "Spagnolo",
@@ -487,3 +521,5 @@ export const it: Dict = {
   "lang.hr": "Croato",
   "lang.cs": "Ceco",
 };
+
+export default it;

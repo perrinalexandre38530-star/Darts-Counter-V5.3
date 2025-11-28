@@ -1,6 +1,6 @@
 // =============================================================
 // src/pages/Home.tsx — Home v2 (dashboard futuriste)
-// - Haut de page : "Bienvenue" + logo DARTS COUNTER
+// - Haut de page : "Bienvenue" + logo DARTS COUNTER (centré + animé)
 // - Carte joueur actif (ActiveProfileCard) : avatar + statut + carrousel de stats
 // - Bandeau arcade (ArcadeTicker) : infos importantes avec image spécifique
 // - Gros boutons de navigation (Profils / Local / Online / Stats / Réglages)
@@ -108,7 +108,9 @@ function emptyActiveProfileStats(): ActiveProfileStats {
  * - Pour l’instant : branche X01 global + X01 multi + records
  *   (Online / Cricket / Training / Horloge restent à 0 → slides masquées)
  */
-async function buildStatsForProfile(profileId: string): Promise<ActiveProfileStats> {
+async function buildStatsForProfile(
+  profileId: string
+): Promise<ActiveProfileStats> {
   try {
     const base = await getBasicProfileStatsAsync(profileId);
 
@@ -296,6 +298,18 @@ export default function Home({ store, go }: Props) {
   const { t } = useLang();
   const auth = useAuthOnline();
 
+  const primary = theme.primary ?? "#F6C256";
+  const homeHeaderCss = `
+    @keyframes dcTitlePulse {
+      0%,100% { transform: scale(1); text-shadow: 0 0 8px ${primary}55; }
+      50% { transform: scale(1.03); text-shadow: 0 0 18px ${primary}AA; }
+    }
+    @keyframes dcTitleShimmer {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+  `;
+
   const anyStore = store as any;
   const selfStatus: "online" | "away" | "offline" =
     anyStore.selfStatus ?? "online";
@@ -352,7 +366,9 @@ export default function Home({ store, go }: Props) {
           maxWidth: PAGE_MAX_WIDTH,
         }}
       >
-        {/* ------------ Haut de page (conservé / stylé dashboard) ------------ */}
+        <style dangerouslySetInnerHTML={{ __html: homeHeaderCss }} />
+
+        {/* ------------ Haut de page (dashboard + titre animé) ------------ */}
         <div
           style={{
             borderRadius: 28,
@@ -364,27 +380,29 @@ export default function Home({ store, go }: Props) {
               theme.borderSoft ?? "rgba(255,255,255,0.10)"
             }`,
             boxShadow: "0 20px 40px rgba(0,0,0,0.7)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
           }}
         >
           <div
             style={{
-              alignSelf: "center",
               display: "inline-flex",
-              padding: "4px 16px",
+              padding: "5px 18px",
               borderRadius: 999,
-              border: `1px solid ${theme.primary ?? "#F6C256"}`,
+              border: `1px solid ${primary}`,
               background:
                 "linear-gradient(135deg, rgba(0,0,0,0.9), rgba(255,255,255,0.06))",
-              marginBottom: 12,
+              marginBottom: 10,
             }}
           >
             <span
               style={{
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: 700,
-                letterSpacing: 1,
+                letterSpacing: 1.1,
                 textTransform: "uppercase",
-                color: theme.primary ?? "#F6C256",
+                color: primary,
               }}
             >
               {t("home.welcome", "Bienvenue")}
@@ -393,15 +411,17 @@ export default function Home({ store, go }: Props) {
 
           <div
             style={{
-              fontSize: 26,
+              fontSize: 32,
               fontWeight: 900,
-              letterSpacing: 2.4,
+              letterSpacing: 3,
               textAlign: "center",
               textTransform: "uppercase",
-              color: theme.primary ?? "#F6C256",
-              textShadow: `0 0 14px ${
-                theme.primaryGlow ?? "rgba(246,194,86,0.55)"
-              }`,
+              backgroundImage: `linear-gradient(120deg, ${primary}, #ffffff, ${primary})`,
+              backgroundSize: "200% 100%",
+              WebkitBackgroundClip: "text",
+              color: "transparent",
+              animation:
+                "dcTitlePulse 3.6s ease-in-out infinite, dcTitleShimmer 7s linear infinite",
             }}
           >
             DARTS COUNTER
@@ -413,9 +433,8 @@ export default function Home({ store, go }: Props) {
           <ActiveProfileCard
             profile={activeProfile}
             stats={stats}
-            // (optionnel : si tu veux gérer le statut ici, tu pourras
-            //  faire évoluer ActiveProfileCard pour accepter une prop `status`)
-            // status={onlineStatusForUi}
+            // Tu pourras plus tard faire évoluer ActiveProfileCard
+            // pour accepter `status={onlineStatusForUi}` si besoin.
           />
         )}
 

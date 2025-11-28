@@ -1,7 +1,9 @@
 // ============================================
 // src/i18n/index.ts
-// Agrégateur de dictionnaires
+// Index i18n — importe toutes les langues
 // ============================================
+
+import type { Dict } from "../contexts/LangContext";
 
 import { fr } from "./fr";
 import { en } from "./en";
@@ -26,7 +28,8 @@ import { sr } from "./sr";
 import { hr } from "./hr";
 import { cs } from "./cs";
 
-export const DICT = {
+// Mapping global utilisable par LangContext
+export const DICT: Record<string, Dict> = {
   fr,
   en,
   es,
@@ -49,4 +52,4 @@ export const DICT = {
   sr,
   hr,
   cs,
-} as const;
+};
