@@ -1,8 +1,8 @@
 // ============================================
 // src/components/ProfileAvatar.tsx
 // Avatar + couronne d’étoiles dorées (moy. 3-darts)
-// - Accepte EITHER {dataUrl,label,size,avg3D,showStars}
-//   OR      {profile,size,avg3D,showStars}
+// - Accepte EITHER {dataUrl,label,size,avg3D,showStars[,ringColor,textColor]}
+//   OR      {profile,size,avg3D,showStars[,ringColor,textColor]}
 // - Aucun accès direct non-sécurisé à profile.*
 // ============================================
 import React from "react";
@@ -15,30 +15,39 @@ type ProfileLike = {
   stats?: { avg3D?: number | null; avg3?: number | null } | null;
 };
 
+/** Options visuelles communes */
+type VisualOpts = {
+  ringColor?: string;
+  textColor?: string;
+};
+
 type Props =
-  | {
+  | (VisualOpts & {
       dataUrl?: string;
       label?: string;
       size?: number;
       avg3D?: number | null;
       showStars?: boolean;
       profile?: never;
-    }
-  | {
+    })
+  | (VisualOpts & {
       profile?: ProfileLike | null;
       size?: number;
-      avg3D?: number | null;    // force/override
+      avg3D?: number | null; // force/override
       showStars?: boolean;
       dataUrl?: never;
       label?: never;
-    };
+    });
 
 export default function ProfileAvatar(props: Props) {
   const size = props.size ?? 56;
   const showStars = props.showStars ?? true;
 
   // Normalisation des données (robuste)
-  const p: ProfileLike | null = ("profile" in props ? props.profile : null) ?? null;
+  const p: ProfileLike | null =
+    ("profile" in props ? props.profile : null) ?? null;
+
+  // Priorité : dataUrl explicite (BOTS pro) > avatarDataUrl > avatarUrl
   const img =
     ("dataUrl" in props ? props.dataUrl : undefined) ??
     p?.avatarDataUrl ??
@@ -46,16 +55,18 @@ export default function ProfileAvatar(props: Props) {
     null;
 
   const name =
-    ("label" in props ? props.label : undefined) ??
-    p?.name ??
-    "P";
+    ("label" in props ? props.label : undefined) ?? p?.name ?? "P";
 
-  // Moyenne 3-darts pour les étoiles
+  // Moyenne 3-darts pour la couronne d’étoiles
   const avg3D =
     ("avg3D" in props ? props.avg3D : undefined) ??
     p?.stats?.avg3D ??
     p?.stats?.avg3 ??
     null;
+
+  // Couleurs optionnelles (utiles si tu veux adapter ailleurs)
+  const ringColor = props.ringColor ?? "rgba(255,255,255,0.28)";
+  const textColor = props.textColor ?? "#f5f5ff";
 
   return (
     <div
@@ -72,6 +83,7 @@ export default function ProfileAvatar(props: Props) {
             objectFit: "cover",
             borderRadius: "50%",
             display: "block",
+            border: `2px solid ${ringColor}`,
           }}
         />
       ) : (
@@ -83,6 +95,7 @@ export default function ProfileAvatar(props: Props) {
             fontSize: Math.max(10, size * 0.4),
             fontWeight: 700,
             borderRadius: "50%",
+            border: `2px solid ${ringColor}`,
           }}
           aria-label={name}
           title={name}
@@ -92,7 +105,9 @@ export default function ProfileAvatar(props: Props) {
       )}
 
       {/* Couronne d’étoiles (optionnelle) */}
-      {showStars && <ProfileStarRing avg3d={avg3D ?? 0} anchorSize={size} />}
+      {showStars && (
+        <ProfileStarRing avg3d={avg3D ?? 0} anchorSize={size} />
+      )}
     </div>
   );
 }

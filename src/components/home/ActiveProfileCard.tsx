@@ -575,7 +575,7 @@ export default function ActiveProfileCard({ profile, stats }: Props) {
                           theme.textMuted ??
                           "rgba(255,255,255,0.65)",
                         marginBottom: 2,
-                        textTransform: "none", // plus de MAJUSCULES
+                        textTransform: "none",
                       }}
                     >
                       {row.label}

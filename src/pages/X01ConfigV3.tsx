@@ -2,6 +2,7 @@
 // src/pages/X01ConfigV3.tsx
 // Paramètres X01 V3 — style "Cricket params" + gestion d'équipes
 // + Sélection de BOTS IA créés dans Profils (LS "dc_bots_v1")
+// + Intégration de BOTS IA "pro" prédéfinis (Green Machine, Snake King…)
 // =============================================================
 
 import React from "react";
@@ -11,6 +12,11 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import ProfileAvatar from "../components/ProfileAvatar";
 import ProfileStarRing from "../components/ProfileStarRing";
+
+import avatarGreenMachine from "../assets/avatars/bots-pro/green-machine.png";
+import avatarSnakeKing from "../assets/avatars/bots-pro/snake-king.png";
+import avatarWonderKid from "../assets/avatars/bots-pro/wonder-kid.png";
+import avatarIceMan from "../assets/avatars/bots-pro/ice-man.png";
 
 type MatchModeV3 = "solo" | "multi" | "teams";
 type InModeV3 = "simple" | "double" | "master";
@@ -51,8 +57,73 @@ type BotLite = {
   id: string;
   name: string;
   avatarDataUrl?: string | null;
-  botLevel?: string; // libellé ("Easy", "Standard", "Pro", etc.)
+  botLevel?: string; // libellé ("Easy", "Standard", "Pro", "Légende", etc.)
 };
+
+// ------------------------------------------------------
+// BOTS IA "PRO" PRÉDÉFINIS (joueurs de référence, surnoms)
+// ------------------------------------------------------
+const PRO_BOTS: BotLite[] = [
+  {
+    id: "bot_pro_mvg",
+    name: "Green Machine",
+    botLevel: "Légende",
+    avatarDataUrl: avatarGreenMachine,
+  },
+  {
+    id: "bot_pro_wright",
+    name: "Snake King",
+    botLevel: "Pro",
+    avatarDataUrl: avatarSnakeKing,
+  },
+  {
+    id: "bot_pro_littler",
+    name: "Wonder Kid",
+    botLevel: "Prodige Pro",
+    avatarDataUrl: avatarWonderKid,
+  },
+  {
+    id: "bot_pro_price",
+    name: "Ice Man",
+    botLevel: "Pro",
+    avatarDataUrl: avatarIceMan,
+  },
+  {
+    id: "bot_pro_anderson",
+    name: "Flying Scotsman",
+    botLevel: "Pro",
+  },
+  {
+    id: "bot_pro_humphries",
+    name: "Cool Hand",
+    botLevel: "Pro",
+  },
+  {
+    id: "bot_pro_taylor",
+    name: "The Power",
+    botLevel: "Légende",
+  },
+  {
+    id: "bot_pro_smith",
+    name: "Bully Boy",
+    botLevel: "Pro",
+  },
+  {
+    id: "bot_pro_aspinall",
+    name: "The Asp",
+    botLevel: "Fort",
+  },
+  {
+    id: "bot_pro_dobey",
+    name: "Hollywood",
+    botLevel: "Fort",
+  },
+  {
+    id: "bot_pro_clayton",
+    name: "The Ferret",
+    botLevel: "Fort",
+  },
+];
 
 export default function X01ConfigV3({
   profiles,
@@ -102,13 +173,36 @@ export default function X01ConfigV3({
     }
   }, []);
 
-  const botProfiles: BotLite[] = React.useMemo(() => {
-    const fromStore = (allProfiles || []).filter(
-      (p) => (p as any).isBot
-    ) as unknown as BotLite[];
-    if (fromStore.length > 0) return fromStore;
+  // Bots créés dans le store (Profils) marqués isBot
+  const userBotsFromStore: BotLite[] = React.useMemo(() => {
+    return (allProfiles || [])
+      .filter((p) => (p as any).isBot)
+      .map((p: any) => ({
+        id: p.id,
+        name: p.name || "BOT",
+        avatarDataUrl: p.avatarDataUrl ?? null,
+        botLevel:
+          p.botLevel ??
+          p.levelLabel ??
+          p.levelName ??
+          p.performanceLevel ??
+          p.performance ??
+          p.skill ??
+          p.difficulty ??
+          "",
+      }));
+  }, [allProfiles]);
+
+  // Base user bots = store ou LS
+  const userBots: BotLite[] = React.useMemo(() => {
+    if (userBotsFromStore.length > 0) return userBotsFromStore;
     return botsFromLS;
-  }, [allProfiles, botsFromLS]);
+  }, [userBotsFromStore, botsFromLS]);
+
+  // BOTS finaux = PRO + user
+  const botProfiles: BotLite[] = React.useMemo(() => {
+    return [...PRO_BOTS, ...userBots];
+  }, [userBots]);
 
   // ---- état local des paramètres ----
   const [startScore, setStartScore] =
@@ -251,7 +345,7 @@ export default function X01ConfigV3({
         alert(
           t(
             "x01v3.config.needPlayer",
-            "Sélectionne au moins un joueur local."
+            "Sélectionne au moins un joueur local ou un BOT IA."
           )
         );
         return;
@@ -288,7 +382,7 @@ export default function X01ConfigV3({
       if (!teams) return;
     }
 
-    // résout les IDs : humains d'abord, puis bots LS
+    // résout les IDs : humains d'abord, puis bots (user + pro)
     const players = selectedIds
       .map((id) => {
         const human = allProfiles.find((p) => p.id === id);
@@ -898,167 +992,121 @@ export default function X01ConfigV3({
             {t("x01v3.bots.title", "Bots IA")}
           </h3>
 
-          {botProfiles.length === 0 ? (
-            <>
-              <p
-                style={{
-                  fontSize: 12,
-                  color: "#b3b8d0",
-                  marginBottom: 12,
-                }}
-              >
-                {t(
-                  "x01v3.bots.none",
-                  "Aucun BOT IA pour l’instant. Tu peux en créer dans le menu Profils."
-                )}
-              </p>
+          <p
+            style={{
+              fontSize: 11,
+              color: "#7c80a0",
+              marginBottom: 10,
+            }}
+          >
+            {t(
+              "x01v3.bots.subtitle",
+              "Ajoute des BOTS IA à ta partie : bots \"pro\" prédéfinis ou BOTS que tu as créés dans le menu Profils."
+            )}
+          </p>
 
-              <button
-                type="button"
-                onClick={() =>
-                  go && go("profiles", { view: "create_bot" })
-                }
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 999,
-                  border: `1px solid ${primary}`,
-                  background: primarySoft,
-                  color: primary,
-                  fontWeight: 700,
-                  fontSize: 12,
-                  letterSpacing: 0.5,
-                  textTransform: "uppercase",
-                  cursor: "pointer",
-                  width: "fit-content",
-                  alignSelf: "flex-start",
-                }}
-              >
-                {t("x01v3.bots.create", "Créer BOT")}
-              </button>
-            </>
-          ) : (
-            <>
-              <p
-                style={{
-                  fontSize: 11,
-                  color: "#7c80a0",
-                  marginBottom: 10,
-                }}
-              >
-                {t(
-                  "x01v3.bots.subtitle",
-                  "Sélectionne un ou plusieurs bots créés dans ton menu Profils. Ils joueront automatiquement selon leur niveau."
-                )}
-              </p>
+          <div
+            style={{
+              display: "flex",
+              gap: 14,
+              overflowX: "auto",
+              overflowY: "visible",
+              paddingBottom: 10,
+              paddingTop: 16,
+              marginTop: 10,
+              marginBottom: 10,
+            }}
+            className="dc-scroll-thin"
+          >
+            {botProfiles.map((bot) => {
+              const { level } = resolveBotLevel(bot.botLevel);
+              const active = selectedIds.includes(bot.id);
 
-              <div
-                style={{
-                  display: "flex",
-                  gap: 14,
-                  overflowX: "auto",
-                  overflowY: "visible", // ⭐ laisse les étoiles dépasser vers le haut
-                  paddingBottom: 10,
-                  paddingTop: 16, // ⭐ marge haute pour respirer
-                  marginTop: 10, // ⭐ décale légèrement vers le bas
-                  marginBottom: 10,
-                }}
-                className="dc-scroll-thin"
-              >
-                {botProfiles.map((bot) => {
-                  const { level } = resolveBotLevel(bot.botLevel);
-                  const active = selectedIds.includes(bot.id);
+              return (
+                <button
+                  key={bot.id}
+                  type="button"
+                  onClick={() => togglePlayer(bot.id)}
+                  style={{
+                    minWidth: 96,
+                    maxWidth: 96,
+                    background: "transparent",
+                    border: "none",
+                    padding: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 6,
+                    flexShrink: 0,
+                  }}
+                >
+                  <BotMedallion bot={bot} level={level} active={active} />
 
-                  return (
-                    <button
-                      key={bot.id}
-                      type="button"
-                      onClick={() => togglePlayer(bot.id)}
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      textAlign: "center",
+                      color: active ? "#f6f2e9" : "#7e8299",
+                      maxWidth: "100%",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      marginTop: 4,
+                    }}
+                  >
+                    {bot.name}
+                  </div>
+
+                  {/* Chip BOT bleu néon */}
+                  <div
+                    style={{
+                      marginTop: 2,
+                      display: "flex",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <span
                       style={{
-                        minWidth: 96,
-                        maxWidth: 96,
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: 6,
-                        flexShrink: 0,
+                        padding: "2px 8px",
+                        borderRadius: 999,
+                        fontSize: 9,
+                        fontWeight: 800,
+                        letterSpacing: 0.7,
+                        textTransform: "uppercase",
+                        background:
+                          "radial-gradient(circle at 30% 0, #6af3ff, #008cff)",
+                        color: "#020611",
+                        boxShadow:
+                          "0 0 10px rgba(0,172,255,0.55), 0 0 18px rgba(0,172,255,0.35)",
+                        border: "1px solid rgba(144,228,255,0.9)",
+                        whiteSpace: "nowrap",
                       }}
                     >
-                      <BotMedallion
-                        bot={bot}
-                        level={level}
-                        active={active}
-                      />
+                      BOT
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
 
-                      <div
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 600,
-                          textAlign: "center",
-                          color: active ? "#f6f2e9" : "#7e8299",
-                          maxWidth: "100%",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          marginTop: 4,
-                        }}
-                      >
-                        {bot.name}
-                      </div>
-
-                      {/* Chip BOT bleu néon (sans étoiles) */}
-                      <div
-                        style={{
-                          marginTop: 2,
-                          display: "flex",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <span
-                          style={{
-                            padding: "2px 8px",
-                            borderRadius: 999,
-                            fontSize: 9,
-                            fontWeight: 800,
-                            letterSpacing: 0.7,
-                            textTransform: "uppercase",
-                            background:
-                              "radial-gradient(circle at 30% 0, #6af3ff, #008cff)",
-                            color: "#020611",
-                            boxShadow:
-                              "0 0 10px rgba(0,172,255,0.55), 0 0 18px rgba(0,172,255,0.35)",
-                            border: "1px solid rgba(144,228,255,0.9)",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          BOT
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => go && go("profiles_bots")}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border: `1px solid ${primary}`,
-                  background: "rgba(255,255,255,0.04)",
-                  color: primary,
-                  fontWeight: 600,
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                }}
-              >
-                {t("x01v3.bots.manage", "Gérer les BOTS")}
-              </button>
-            </>
-          )}
+          <button
+            type="button"
+            onClick={() => go && go("profiles_bots")}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 999,
+              border: `1px solid ${primary}`,
+              background: "rgba(255,255,255,0.04)",
+              color: primary,
+              fontWeight: 600,
+              fontSize: 11,
+              textTransform: "uppercase",
+            }}
+          >
+            {t("x01v3.bots.manage", "Gérer les BOTS")}
+          </button>
         </section>
       </div>
 
@@ -1090,7 +1138,7 @@ export default function X01ConfigV3({
               background: canStart
                 ? `linear-gradient(90deg, ${primary}, #ffe9a3)`
                 : "rgba(120,120,120,0.5)",
-              color: canStart ? "#151515" : "#2b2b2b",
+              color: canStart ? "#151515" : "#2b2bb2",
               boxShadow: canStart
                 ? "0 0 18px rgba(255, 207, 120, 0.65)"
                 : "none",
@@ -1279,8 +1327,7 @@ function resolveBotLevel(botLevelRaw?: string | null): { level: number } {
   }
 
   // Mots-clés
-  if (v.includes("legend")) return { level: 5 };
-  if (v.includes("légende")) return { level: 5 };
+  if (v.includes("legend") || v.includes("légende")) return { level: 5 };
 
   if (v.includes("pro")) return { level: 4 };
 

@@ -1,12 +1,13 @@
 // ============================================
-// src/i18n/it.ts — Dictionnaire IT complet (v1)
+// src/i18n/it.ts
+// Dizionario Italiano (IT) — v1 completo
 // ============================================
 
 import type { Dict } from "../contexts/LangContext";
 
 export const it: Dict = {
   // -----------------------------
-  // NAVIGATION / TABS
+  // NAVIGAZIONE / TABS
   // -----------------------------
   "nav.home": "Home",
   "nav.local": "Locale",
@@ -21,7 +22,7 @@ export const it: Dict = {
   "nav.close": "Chiudi",
 
   // -----------------------------
-  // COMUNE
+  // GENERICO / COMUNE
   // -----------------------------
   "common.ok": "OK",
   "common.cancel": "Annulla",
@@ -37,7 +38,7 @@ export const it: Dict = {
   "common.continue": "Continua",
   "common.resume": "Riprendi",
   "common.pause": "Pausa",
-  "common.reset": "Reimposta",
+  "common.reset": "Reset",
   "common.shuffle": "Casuale",
   "common.loading": "Caricamento…",
   "common.error": "Si è verificato un errore",
@@ -60,54 +61,132 @@ export const it: Dict = {
   "common.time": "Ora",
 
   // -----------------------------
-  // HOME (TABLEAU DE BORD)
+  // HOME
   // -----------------------------
   "home.title": "Dashboard",
   "home.subtitle": "Centro di controllo Darts Counter",
+
+  "status.online": "Online",
+  "status.away": "Assente",
+  "status.offline": "Offline",
+
   "home.welcome": "Benvenuto",
   "home.welcome.noProfile": "Benvenuto in Darts Counter",
+  "home.hero.tagline": "Pronto a lanciare qualche freccetta?",
+
+  // Profilo attivo
   "home.activeProfile.title": "Profilo attivo",
   "home.activeProfile.none": "Nessun profilo selezionato",
   "home.activeProfile.select": "Seleziona un profilo",
+  "home.activeProfile.manage": "Gestisci i profili",
+  "home.activeProfile.status.online": "Connesso",
+  "home.activeProfile.status.offline": "Offline",
+  "home.activeProfile.status.guest": "Ospite",
+  "home.activeProfile.badge.you": "Tu",
+  "home.activeProfile.badge.local": "Locale",
+  "home.activeProfile.badge.online": "Online",
+
+  // Stats rapide
+  "home.activeProfile.stats.title": "Statistiche rapide",
+  "home.activeProfile.stats.x01Avg": "Media X01",
+  "home.activeProfile.stats.cricketMpr": "MPR Cricket",
+  "home.activeProfile.stats.trainingVolume": "Volume training",
+  "home.activeProfile.stats.lastGame": "Ultima partita",
+  "home.activeProfile.stats.noGames": "Ancora nessuna partita",
+  "home.activeProfile.stats.seeAll": "Vedi tutte le statistiche",
+
+  // Azioni rapide
   "home.quickActions.title": "Azioni rapide",
   "home.quickActions.playX01": "Avvia X01",
   "home.quickActions.playCricket": "Avvia Cricket",
-  "home.quickActions.training": "Avvia allenamento",
+  "home.quickActions.training": "Apri Training",
   "home.quickActions.stats": "Vedi statistiche",
-  "home.nav.profiles": "Profili",
-  "home.nav.local": "Modalità locale",
-  "home.nav.online": "Modalità online",
-  "home.nav.training": "Allenamento",
-  "home.nav.settings": "Impostazioni",
-  "home.statsCarousel.title": "Stats rapide",
+
+  // Carosello stats
+  "home.statsCarousel.title": "Statistiche rapide",
   "home.statsCarousel.x01": "X01",
   "home.statsCarousel.cricket": "Cricket",
   "home.statsCarousel.training": "Training",
-  "home.arcadeBanner.title": "Novità & aggiornamenti",
-  "home.arcadeBanner.tapForMore": "Tocca per maggiori dettagli",
+
+  // Bandeau arcade
+  "home.arcadeBanner.title": "Info & novità",
+  "home.arcadeBanner.tapForMore": "Tocca per saperne di più",
+  "home.arcadeBanner.empty": "Nessuna informazione disponibile",
+  "home.arcadeBanner.tag.new": "Nuovo",
+  "home.arcadeBanner.tag.tip": "Consiglio",
+  "home.arcadeBanner.tag.update": "Update",
+
+  // Bottoni navigazione
+  "home.nav.profiles": "Profili",
+  "home.nav.profiles.desc": "Profili locali, avatar & BOTS",
+  "home.nav.local": "Locale",
+  "home.nav.local.desc": "Gioca dal vivo sulla tua board",
+  "home.nav.online": "Online",
+  "home.nav.online.desc": "Partite a distanza con gli amici",
+  "home.nav.training": "Training",
+  "home.nav.training.desc": "Moduli di allenamento avanzati",
+  "home.nav.stats": "Statistiche",
+  "home.nav.stats.desc": "Dashboard, grafici & storico",
+  "home.nav.settings": "Impostazioni",
+  "home.nav.settings.desc": "Temi, lingue & opzioni",
+
+  // Ticker arcade
+  "home.ticker.records": "Ultimi record",
+  "home.ticker.records.text":
+    "Diversi record battuti di recente, continua così!",
+
+  "home.ticker.localLast": "Ultima partita locale",
+  "home.ticker.localLast.text":
+    "Riepilogo dell’ultima partita giocata in locale.",
+
+  "home.ticker.onlineLast": "Ultima partita online",
+  "home.ticker.onlineLast.text":
+    "La tua ultima partita online è pronta per la rivincita.",
+
+  "home.ticker.onlineLeader": "Leader della classifica",
+  "home.ticker.onlineLeader.text":
+    "Scopri chi è in cima alla classifica online.",
+
+  "home.ticker.training": "Training attuale",
+  "home.ticker.training.text":
+    "Totale sessioni X01 Training e Giro dell’Orologio.",
+
+  "home.ticker.month": "Statistiche del mese",
+  "home.ticker.month.text":
+    "Totale delle partite e dei colpi di questo mese.",
+
+  "home.ticker.tip": "Consiglio del giorno",
+  "home.ticker.tip.text":
+    "Consolida la tua chiusura preferita ripetendola spesso.",
 
   // -----------------------------
   // GIOCHI
   // -----------------------------
   "games.title": "Tutti i giochi",
-  "games.subtitle": "Scegli una modalità",
+  "games.subtitle": "Scegli una modalità di gioco",
   "games.section.classic": "Classici",
   "games.section.training": "Allenamento",
-  "games.section.party": "Divertimento & party",
+  "games.section.party": "Party & divertimento",
   "games.section.other": "Altre modalità",
+
   "games.x01.title": "X01",
   "games.x01.desc": "301 / 501 / 701… chiudi esattamente a 0.",
+
   "games.cricket.title": "Cricket",
-  "games.cricket.desc": "Dal 15 al 20 + Bull, apri/chiudi e segna.",
+  "games.cricket.desc": "15–20 + Bull, apri/chiudi e segna.",
+
   "games.killer.title": "Killer",
-  "games.killer.desc": "Diventa killer ed elimina gli altri.",
+  "games.killer.desc": "Diventa killer ed elimina gli altri giocatori.",
+
   "games.shanghai.title": "Shanghai",
-  "games.shanghai.desc": "Un numero per turno, colpisci S / D / T.",
+  "games.shanghai.desc": "Un numero per round: colpisci S / D / T.",
+
   "games.training.menuTitle": "Training",
   "games.training.x01Solo": "X01 Solo Training",
   "games.training.clock": "Giro dell’orologio",
   "games.training.custom": "Allenamento personalizzato",
-  "games.training.evolution": "Stats di progressione",
+  "games.training.evolution": "Statistiche di evoluzione",
+
   "games.info.title": "Info gioco",
   "games.info.rules": "Regole",
   "games.info.tips": "Consigli",
@@ -116,25 +195,25 @@ export const it: Dict = {
   // PROFILI LOCALI
   // -----------------------------
   "profiles.title": "Profili locali",
-  "profiles.subtitle": "Gestisci i tuoi giocatori locali",
+  "profiles.subtitle": "Gestisci i profili locali",
   "profiles.add": "Aggiungi profilo",
   "profiles.edit": "Modifica profilo",
   "profiles.delete": "Elimina profilo",
-  "profiles.confirmDelete":
-    "Eliminare definitivamente questo profilo?",
+  "profiles.confirmDelete": "Eliminare definitivamente questo profilo?",
   "profiles.name.label": "Nome giocatore",
   "profiles.name.placeholder": "Inserisci un nickname",
   "profiles.avatar.label": "Avatar",
   "profiles.avatar.random": "Avatar casuale",
-  "profiles.stats.title": "Stats del profilo",
-  "profiles.stats.x01": "Stats X01",
-  "profiles.stats.cricket": "Stats Cricket",
-  "profiles.stats.training": "Stats Training",
+  "profiles.stats.title": "Statistiche profilo",
+  "profiles.stats.x01": "Statistiche X01",
+  "profiles.stats.cricket": "Statistiche Cricket",
+  "profiles.stats.training": "Statistiche Training",
   "profiles.status.active": "Attivo",
   "profiles.status.inactive": "Inattivo",
   "profiles.selectActive": "Imposta come profilo attivo",
-  "profiles.list.empty": "Ancora nessun profilo",
-  "profiles.list.selectHint": "Tocca un profilo per selezionarlo",
+  "profiles.list.empty": "Nessun profilo disponibile",
+  "profiles.list.selectHint":
+    "Tocca un profilo per selezionarlo",
   "profiles.hint.avatarTap":
     "Tocca il medaglione per cambiare avatar",
 
@@ -144,7 +223,7 @@ export const it: Dict = {
   "avatar.title": "Creator avatar",
   "avatar.subtitle": "Personalizza il tuo medaglione",
   "avatar.style.label": "Stile",
-  "avatar.style.realistic": "Realismo leggero",
+  "avatar.style.realic": "Realismo leggero",
   "avatar.style.comic": "Comic",
   "avatar.style.flat": "Flat design",
   "avatar.style.exaggerated": "Esagerato",
@@ -158,19 +237,19 @@ export const it: Dict = {
   // X01 CONFIG
   // -----------------------------
   "x01.config.title": "Impostazioni X01",
-  "x01.config.subtitle": "Prepara la partita",
+  "x01.config.subtitle": "Prepara la tua partita",
   "x01.config.section.players": "Giocatori",
   "x01.config.section.match": "Formato partita",
-  "x01.config.section.rules": "Impostazioni base",
+  "x01.config.section.rules": "Regole base",
   "x01.config.players.add": "Aggiungi giocatore",
   "x01.config.players.remove": "Rimuovi",
   "x01.config.players.teams": "Squadre",
-  "x01.config.mode.label": "Modalità di gioco",
+  "x01.config.mode.label": "Modalità",
   "x01.config.mode.solo": "Solo",
   "x01.config.mode.multi": "Multi",
   "x01.config.mode.teams": "Squadre",
-  "x01.config.raceToSets.label": "Set per vincere",
-  "x01.config.raceToLegs.label": "Leg per vincere",
+  "x01.config.raceToSets.label": "Set da vincere",
+  "x01.config.raceToLegs.label": "Leg da vincere",
   "x01.config.startingScore.label": "Punteggio iniziale",
   "x01.config.startingScore.301": "301",
   "x01.config.startingScore.501": "501",
@@ -202,26 +281,27 @@ export const it: Dict = {
   "x01.play.title": "X01",
   "x01.play.leg": "Leg",
   "x01.play.set": "Set",
-  "x01.play.currentPlayer": "Turno",
+  "x01.play.currentPlayer": "Turno di",
   "x01.play.scoreRemaining": "Rimanenti",
   "x01.play.lastVisit": "Ultima visita",
-  "x01.play.average3": "Media /3 dardi",
+  "x01.play.average3": "Media / 3 frecce",
   "x01.play.bestVisit": "Miglior visita",
   "x01.play.checkout": "Checkout",
-  "x01.play.dartsThrown": "Dardi lanciati",
+  "x01.play.dartsThrown": "Frecce lanciate",
   "x01.play.visits": "Visite",
   "x01.play.bust": "Bust",
   "x01.play.undo": "Annulla visita",
-  "x01.play.confirmExit": "Uscire dalla partita in corso?",
+  "x01.play.confirmExit": "Uscire dalla partita?",
   "x01.play.botThinking": "Il bot sta giocando…",
   "x01.play.noScoreYet": "Ancora nessun punteggio",
   "x01.play.matchOver": "Partita terminata",
   "x01.play.legOver": "Leg terminato",
   "x01.play.setOver": "Set terminato",
-  "x01.play.nextLeg": "Leg successivo",
-  "x01.play.nextSet": "Set successivo",
+  "x01.play.nextLeg": "Prossimo leg",
+  "x01.play.nextSet": "Prossimo set",
   "x01.play.backToConfig": "Torna alle impostazioni",
-  "x01.play.saveInHistory": "Salva nello storico",
+  "x01.play.saveInHistory":
+    "Salva nello storico",
 
   // -----------------------------
   // CRICKET
@@ -236,10 +316,10 @@ export const it: Dict = {
   "cricket.play.hits": "Colpi",
   "cricket.play.score": "Punteggio",
   "cricket.play.marksPerRound": "MPR",
-  "cricket.play.currentPlayer": "Turno",
+  "cricket.play.currentPlayer": "Turno di",
   "cricket.play.open": "Aperto",
   "cricket.play.closed": "Chiuso",
-  "cricket.stats.title": "Stats Cricket",
+  "cricket.stats.title": "Statistiche Cricket",
   "cricket.stats.profile": "Profilo Cricket",
   "cricket.stats.bestMpr": "Miglior MPR",
   "cricket.stats.averageMpr": "MPR medio",
@@ -253,23 +333,25 @@ export const it: Dict = {
   "training.menu.subtitle": "Allena i tuoi punti forti",
   "training.menu.x01Solo": "X01 Solo Training",
   "training.menu.x01Solo.desc":
-    "Monitoraggio dettagliato di ogni dardo.",
+    "Analisi dettagliata di ogni freccia.",
   "training.menu.clock": "Giro dell’orologio",
-  "training.menu.clock.desc": "Fai il giro di tutti i bersagli.",
-  "training.menu.evolution": "Curva di progresso",
+  "training.menu.clock.desc":
+    "Colpisci tutti i bersagli in ordine.",
+  "training.menu.evolution": "Curva di evoluzione",
   "training.menu.evolution.desc":
-    "Visualizza la tua progressione.",
+    "Visualizza i tuoi progressi nel tempo.",
   "training.menu.custom": "Sessione personalizzata",
-  "training.menu.resumeLast": "Riprendi ultima sessione",
-  "training.menu.noSession": "Nessuna sessione salvata",
+  "training.menu.resumeLast": "Riprendi l’ultima sessione",
+  "training.menu.noSession":
+    "Nessuna sessione salvata al momento",
 
   // -----------------------------
   // TRAINING X01
   // -----------------------------
   "training.x01.title": "X01 Solo Training",
-  "training.x01.subtitle": "Analisi di ogni dardo",
+  "training.x01.subtitle": "Analisi di ogni freccia",
   "training.x01.targetScore.label": "Punteggio iniziale",
-  "training.x01.throws": "Dardi lanciati",
+  "training.x01.throws": "Frecce lanciate",
   "training.x01.hitsBySegment": "Colpi per segmento",
   "training.x01.hits.single": "Singoli",
   "training.x01.hits.double": "Doppi",
@@ -277,12 +359,12 @@ export const it: Dict = {
   "training.x01.hits.bull": "Bull",
   "training.x01.hits.dBull": "Double bull",
   "training.x01.busts": "Bust",
-  "training.x01.avgPerDart": "Media per dardo",
+  "training.x01.avgPerDart": "Media / freccia",
   "training.x01.session.save": "Salva sessione",
   "training.x01.session.saved": "Sessione salvata",
   "training.x01.session.delete": "Elimina sessione",
   "training.x01.session.confirmDelete":
-    "Eliminare definitivamente questa sessione di allenamento?",
+    "Eliminare definitivamente questa sessione?",
 
   // -----------------------------
   // TRAINING CLOCK
@@ -308,21 +390,22 @@ export const it: Dict = {
     "Sessione giro orologio salvata",
 
   // -----------------------------
-  // STATSHUB / STATS SHELL
+  // STATSHUB
   // -----------------------------
   "stats.shell.title": "Centro statistiche",
   "stats.shell.tabs.local": "Profili locali",
   "stats.shell.tabs.training": "Training",
   "stats.shell.tabs.online": "Online",
   "stats.shell.tabs.history": "Storico",
-  "stats.shell.info": "Scegli una sezione di statistiche.",
+  "stats.shell.info":
+    "Seleziona una sezione delle statistiche.",
   "stats.hub.local.title": "Stats profili locali",
   "stats.hub.local.selectProfile":
     "Seleziona un profilo per vedere le stats",
   "stats.hub.training.title": "Stats Training",
   "stats.hub.online.title": "Stats Online",
   "stats.hub.history.title": "Storico partite",
-  "stats.hub.kpi.avg3": "Media /3 dardi",
+  "stats.hub.kpi.avg3": "Media /3 frecce",
   "stats.hub.kpi.winRate": "Win rate",
   "stats.hub.kpi.bestLeg": "Miglior leg",
   "stats.hub.kpi.checkoutRate": "Checkout %",
@@ -330,11 +413,11 @@ export const it: Dict = {
   "stats.hub.radar.skills": "Radar abilità",
   "stats.hub.training.clock": "Giro dell’orologio",
   "stats.hub.training.x01": "X01 Training",
-  "stats.hub.training.volume": "Volume di allenamento",
+  "stats.hub.training.volume": "Volume allenamento",
   "stats.hub.empty": "Nessuna statistica disponibile",
 
   // -----------------------------
-  // HISTORY PAGE
+  // HISTORY
   // -----------------------------
   "history.title": "Storico partite",
   "history.subtitle": "Le tue ultime partite",
@@ -342,7 +425,7 @@ export const it: Dict = {
   "history.filter.x01": "X01",
   "history.filter.cricket": "Cricket",
   "history.filter.training": "Training",
-  "history.empty": "Nessuna partita salvata",
+  "history.empty": "Nessuna partita registrata",
   "history.match.type.x01": "X01",
   "history.match.type.cricket": "Cricket",
   "history.match.type.training": "Allenamento",
@@ -351,14 +434,14 @@ export const it: Dict = {
   "history.details.winner": "Vincitore",
   "history.details.legs": "Leg",
   "history.details.sets": "Set",
-  "history.details.avg3": "Media /3 dardi",
+  "history.details.avg3": "Media /3 frecce",
   "history.details.checkout": "Checkout",
   "history.delete": "Elimina partita",
   "history.confirmDelete":
     "Eliminare definitivamente questa partita?",
 
   // -----------------------------
-  // ONLINE / MODE EN LIGNE
+  // ONLINE
   // -----------------------------
   "online.title": "Modalità online",
   "online.subtitle": "Gioca a distanza con gli amici",
@@ -374,7 +457,7 @@ export const it: Dict = {
   "online.profile.bio": "Bio",
   "online.lobby.title": "Lobby X01",
   "online.lobby.create": "Crea lobby",
-  "online.lobby.join": "Entra in lobby",
+  "online.lobby.join": "Entra nella lobby",
   "online.lobby.empty": "Nessuna lobby disponibile",
   "online.friends.title": "Amici",
   "online.friends.add": "Aggiungi amico",
@@ -383,18 +466,33 @@ export const it: Dict = {
   "online.friends.status.offline": "Offline",
 
   // -----------------------------
-  // SETTINGS / RÉGLAGES
+  // SETTINGS
   // -----------------------------
-  "settings.back": "Indietro",
   "settings.title": "Impostazioni",
-  "settings.subtitle":
-    "Personalizza il tema e la lingua dell’app",
+  "settings.theme.title": "Temi neon",
+  "settings.theme.subtitle": "Seleziona la tua atmosfera",
+  "settings.theme.current": "Tema attuale",
+  "settings.theme.applied": "Tema applicato",
+  "settings.lang.title": "Lingua",
+  "settings.lang.subtitle": "Lingua dell’app",
+  "settings.lang.help":
+    "Tutti i testi dell’interfaccia sono tradotti.",
+  "settings.section.language": "Lingua",
+  "settings.section.theme": "Temi",
+  "settings.section.misc": "Altre impostazioni",
+  "settings.misc.sounds": "Suoni",
+  "settings.misc.vibrations": "Vibrazioni",
+  "settings.misc.animations": "Animazioni visive",
+  "settings.misc.resetApp": "Resetta app",
+  "settings.misc.resetConfirm":
+    "Resettare tutti i dati locali (profili, storico, training)?",
 
-  "settings.theme": "Tema",
+  // Gruppi temi
   "settings.theme.group.neons": "Neon classici",
   "settings.theme.group.soft": "Colori soft",
-  "settings.theme.group.dark": "Temi dark premium",
+  "settings.theme.group.dark": "Dark premium",
 
+  // Temi
   "settings.theme.gold.label": "Oro neon",
   "settings.theme.gold.desc": "Tema dorato premium",
 
@@ -408,40 +506,39 @@ export const it: Dict = {
   "settings.theme.green.desc": "Stile allenamento luminoso",
 
   "settings.theme.magenta.label": "Magenta",
-  "settings.theme.magenta.desc": "Viola / magenta intenso",
+  "settings.theme.magenta.desc": "Viola intenso",
 
   "settings.theme.red.label": "Rosso",
-  "settings.theme.red.desc": "Rosso arcade aggressivo",
+  "settings.theme.red.desc": "Rosso aggressivo arcade",
 
   "settings.theme.orange.label": "Arancione",
-  "settings.theme.orange.desc": "Arancione caldo ed energico",
+  "settings.theme.orange.desc": "Tono caldo e energico",
 
   "settings.theme.white.label": "Bianco",
-  "settings.theme.white.desc": "Sfondo chiaro moderno",
+  "settings.theme.white.desc": "Tema chiaro moderno",
 
   "settings.theme.blueOcean.label": "Blu oceano",
   "settings.theme.blueOcean.desc":
-    "Blu naturale oceano / cielo",
+    "Blu naturale oceano/cielo",
 
   "settings.theme.limeYellow.label": "Giallo lime",
   "settings.theme.limeYellow.desc":
-    "Colore lime super acceso",
+    "Colore lime molto acceso",
 
   "settings.theme.sage.label": "Verde salvia",
   "settings.theme.sage.desc":
     "Toni verdi morbidi e naturali",
 
   "settings.theme.skyBlue.label": "Blu pastello",
-  "settings.theme.skyBlue.desc":
-    "Blu molto morbido e luminoso",
+  "settings.theme.skyBlue.desc": "Blu molto morbido",
 
   "settings.theme.darkTitanium.label": "Titanio scuro",
   "settings.theme.darkTitanium.desc":
-    "Look metallico opaco premium",
+    "Aspetto metallico premium",
 
   "settings.theme.darkCarbon.label": "Carbonio",
   "settings.theme.darkCarbon.desc":
-    "Atmosfera moderna in fibra di carbonio",
+    "Atmosfera moderna in carbonio",
 
   "settings.theme.darkFrost.label": "Gelo scuro",
   "settings.theme.darkFrost.desc":
@@ -449,22 +546,20 @@ export const it: Dict = {
 
   "settings.theme.darkObsidian.label": "Ossidiana",
   "settings.theme.darkObsidian.desc":
-    "Nero lucido premium e molto leggibile",
+    "Nero lucido premium",
 
-  "settings.lang": "Lingua",
-
-  "settings.reset.title": "Reimposta l’app",
+  "settings.reset.title": "Resetta l’app",
   "settings.reset.subtitle":
-    "Cancella tutti i profili locali, BOTS, statistiche, cronologia partite e impostazioni. Azione definitiva.",
-  "settings.reset.button": "Reimposta tutto",
+    "Cancella tutti i profili, BOTS, statistiche, storico e impostazioni. Azione definitiva.",
+  "settings.reset.button": "Reset completo",
 
   // -----------------------------
-  // SYNC CENTER
+  // SYNC
   // -----------------------------
   "sync.title": "Sync & condivisione",
   "sync.subtitle": "Salva e condividi i tuoi dati",
   "sync.tabs.local": "Locale",
-  "sync.tabs.peer": "Device to device",
+  "sync.tabs.peer": "Device-to-device",
   "sync.tabs.cloud": "Cloud",
   "sync.local.export.title": "Export locale",
   "sync.local.export.desc":
@@ -476,18 +571,17 @@ export const it: Dict = {
   "sync.local.import.button": "Importa JSON",
   "sync.local.import.success": "Import riuscito",
   "sync.local.import.error":
-    "Import non riuscito, JSON non valido.",
-  "sync.peer.soon":
-    "Sync device to device in arrivo",
+    "Import fallito, JSON non valido.",
+  "sync.peer.soon": "Sync device-to-device in arrivo",
   "sync.cloud.soon": "Sync Cloud in arrivo",
 
   // -----------------------------
-  // LABELS / ÉTIQUETTES
+  // LABELS
   // -----------------------------
   "label.points": "Punti",
   "label.legs": "Leg",
   "label.sets": "Set",
-  "label.avg3": "Media /3 dardi",
+  "label.avg3": "Media /3 frecce",
   "label.mpr": "MPR",
   "label.checkout": "Checkout",
   "label.volume": "Volume",
@@ -496,7 +590,7 @@ export const it: Dict = {
   "label.mode": "Modalità",
 
   // -----------------------------
-  // NOMS DE LANGUES (ITALIEN)
+  // NOMI DELLE LINGUE
   // -----------------------------
   "lang.fr": "Francese",
   "lang.en": "Inglese",
@@ -516,7 +610,7 @@ export const it: Dict = {
   "lang.sv": "Svedese",
   "lang.is": "Islandese",
   "lang.pl": "Polacco",
-  "lang.ro": "Rumeno",
+  "lang.ro": "Romeno",
   "lang.sr": "Serbo",
   "lang.hr": "Croato",
   "lang.cs": "Ceco",
