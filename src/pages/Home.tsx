@@ -4,8 +4,8 @@
 // - Carte joueur actif (ActiveProfileCard) : avatar + statut + carrousel de stats
 // - Bandeau arcade (ArcadeTicker) : infos importantes avec image spécifique
 // - Gros boutons de navigation (Profils / Local / Online / Stats / Réglages)
-// - Stats du joueur actif : branchées sur statsBridge (X01 global + X01 multi)
-//   + utilisées pour remplir les bandeaux Arcade de vraies infos
+// - Stats du joueur actif : branchées sur statsBridge (X01 global + X01 multi
+//   + Training X01 pour la carte + ticker)
 // =============================================================
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -48,149 +48,254 @@ function getActiveProfile(store: Store): Profile | null {
 function emptyActiveProfileStats(): ActiveProfileStats {
   return {
     // ---- Vue globale ----
-    ratingGlobal: 0,
-    winrateGlobal: 0,
-    avg3DGlobal: 0,
-    sessionsGlobal: 0,
+    ratingGlobal: null,
+    winrateGlobal: null,
+    avg3DGlobal: null,
+    sessionsGlobal: null,
     favoriteNumberLabel: null,
 
     // ---- Records ----
-    recordBestVisitX01: 0,
-    recordBestCOX01: 0,
+    recordBestVisitX01: null,
+    recordBestCOX01: null,
     recordMinDarts501: null,
-    recordBestAvg3DX01: 0,
+    recordBestAvg3DX01: null,
     recordBestStreak: null,
     recordBestCricketScore: null,
 
     // ---- Online ----
-    onlineMatches: 0,
-    onlineWinrate: 0,
-    onlineAvg3D: 0,
-    onlineBestVisit: 0,
-    onlineBestCO: 0,
+    onlineMatches: null,
+    onlineWinrate: null,
+    onlineAvg3D: null,
+    onlineBestVisit: null,
+    onlineBestCO: null,
     onlineRank: null,
     onlineBestRank: null,
 
     // ---- X01 Multi ----
-    x01MultiAvg3D: 0,
-    x01MultiSessions: 0,
-    x01MultiWinrate: 0,
-    x01MultiBestVisit: 0,
-    x01MultiBestCO: 0,
+    x01MultiAvg3D: null,
+    x01MultiSessions: null,
+    x01MultiWinrate: null,
+    x01MultiBestVisit: null,
+    x01MultiBestCO: null,
     x01MultiMinDartsLabel: null,
 
     // ---- Cricket ----
-    cricketPointsPerRound: 0,
-    cricketHitsTotal: 0,
-    cricketCloseRate: 0,
-    cricketLegsWinrate: 0,
-    cricketAvgClose201918: 0,
-    cricketOpenings: 0,
+    cricketPointsPerRound: null,
+    cricketHitsTotal: null,
+    cricketCloseRate: null,
+    cricketLegsWinrate: null,
+    cricketAvgClose201918: null,
+    cricketOpenings: null,
 
     // ---- Training X01 ----
-    trainingAvg3D: 0,
-    trainingHitsS: 0,
-    trainingHitsD: 0,
-    trainingHitsT: 0,
-    trainingGoalSuccessRate: 0,
-    trainingBestCO: 0,
+    trainingAvg3D: null,
+    trainingHitsS: null,
+    trainingHitsD: null,
+    trainingHitsT: null,
+    trainingGoalSuccessRate: null,
+    trainingBestCO: null,
 
     // ---- Tour de l'Horloge ----
-    clockTargetsHit: 0,
-    clockSuccessRate: 0,
-    clockTotalTimeSec: 0,
-    clockBestStreak: 0,
+    clockTargetsHit: null,
+    clockSuccessRate: null,
+    clockTotalTimeSec: null,
+    clockBestStreak: null,
   };
+}
+
+/* ============================================================
+   Aggreg Training X01 pour 1 profil (dc_training_x01_stats_v1)
+============================================================ */
+
+const TRAINING_X01_STATS_KEY = "dc_training_x01_stats_v1";
+
+type TrainingX01Agg = {
+  sessions: number;
+  totalDarts: number;
+  sumAvg3D: number;
+  hitsS: number;
+  hitsD: number;
+  hitsT: number;
+  bestCheckout: number | null;
+};
+
+function makeEmptyTrainingAgg(): TrainingX01Agg {
+  return {
+    sessions: 0,
+    totalDarts: 0,
+    sumAvg3D: 0,
+    hitsS: 0,
+    hitsD: 0,
+    hitsT: 0,
+    bestCheckout: null,
+  };
+}
+
+function loadTrainingAggForProfile(profileId: string): TrainingX01Agg {
+  if (typeof window === "undefined") return makeEmptyTrainingAgg();
+
+  try {
+    const raw = window.localStorage.getItem(TRAINING_X01_STATS_KEY);
+    if (!raw) return makeEmptyTrainingAgg();
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return makeEmptyTrainingAgg();
+
+    const agg = makeEmptyTrainingAgg();
+
+    for (const row of parsed) {
+      if (!row) continue;
+
+      const rowProfileId =
+        row.profileId !== undefined && row.profileId !== null
+          ? String(row.profileId)
+          : "unknown";
+
+      if (rowProfileId !== profileId) continue;
+
+      agg.sessions += 1;
+      agg.totalDarts += Number(row.darts) || 0;
+      agg.sumAvg3D += Number(row.avg3D) || 0;
+      agg.hitsS += Number(row.hitsS) || 0;
+      agg.hitsD += Number(row.hitsD) || 0;
+      agg.hitsT += Number(row.hitsT) || 0;
+
+      const bestCheckoutRaw =
+        row.bestCheckout !== undefined && row.bestCheckout !== null
+          ? row.bestCheckout
+          : row.checkout;
+
+      const bestCheckout =
+        bestCheckoutRaw === null || bestCheckoutRaw === undefined
+          ? null
+          : Number(bestCheckoutRaw) || 0;
+
+      if (
+        bestCheckout &&
+        (!agg.bestCheckout || bestCheckout > agg.bestCheckout)
+      ) {
+        agg.bestCheckout = bestCheckout;
+      }
+    }
+
+    return agg;
+  } catch (e) {
+    console.warn("[Home] loadTrainingAggForProfile failed", e);
+    return makeEmptyTrainingAgg();
+  }
 }
 
 /**
  * buildStatsForProfile(profileId)
  * - Lit les quick-stats + historique via statsBridge
- * - Pour l’instant : branche X01 global + X01 multi + records
- *   (Online / Cricket / Training / Horloge restent à 0 → slides masquées dans ActiveProfileCard)
+ * - Ajoute Training X01 (dc_training_x01_stats_v1) pour la carte
+ * - Online / Cricket / Horloge restent vides pour l’instant
+ *   (slides masquées dans ActiveProfileCard)
  */
 async function buildStatsForProfile(
   profileId: string
 ): Promise<ActiveProfileStats> {
+  const base = emptyActiveProfileStats();
+
   try {
-    const base = await getBasicProfileStatsAsync(profileId);
+    const basic: any = await getBasicProfileStatsAsync(profileId);
 
-    const games = Number(base.games || 0);
-    const wins = Number(base.wins || 0);
-    const avg3 = Number(base.avg3 || 0);
-    const bestVisit = Number(base.bestVisit || 0);
-    const bestCheckout = Number(base.bestCheckout || 0);
+    const games = Number(basic?.games ?? 0);
+    const wins = Number(basic?.wins ?? 0);
+    const darts = Number(basic?.darts ?? 0);
 
-    // winRate dans base = 0..100 (si présent)
-    const winRatePct = Number(
-      (base as any).winRate != null ? (base as any).winRate : 0
-    );
+    // avg3 : statsBridge garantit avg3, parfois avg3D / bestAvg3D
+    const avg3 =
+      typeof basic?.avg3D === "number" && basic.avg3D > 0
+        ? Number(basic.avg3D)
+        : Number(basic?.avg3 ?? 0);
+
+    const bestVisit = Number(basic?.bestVisit ?? 0);
+    const bestCheckout = Number(basic?.bestCheckout ?? 0);
+
+    const winRatePct =
+      typeof basic?.winRate === "number" ? basic.winRate : 0;
     const winRate01 =
-      winRatePct > 0 ? winRatePct / 100 : games > 0 ? wins / games : 0;
+      games > 0
+        ? wins / games
+        : winRatePct > 0
+        ? winRatePct / 100
+        : null;
 
-    // Rating global : pour l’instant, on réutilise la moy. 3D
-    const ratingGlobal = avg3;
+    const ratingGlobal =
+      typeof basic?.rating === "number" && basic.rating > 0
+        ? basic.rating
+        : avg3 || null;
 
-    const s: ActiveProfileStats = {
+    const bestLegDarts501 =
+      typeof basic?.bestLegDarts501 === "number"
+        ? basic.bestLegDarts501
+        : null;
+
+    const favoriteNumberLabel =
+      basic?.favoriteSegmentLabel ?? null;
+
+    let out: ActiveProfileStats = {
+      ...base,
+
       // ---- Vue globale (tous jeux confondus, pour l’instant X01) ----
       ratingGlobal,
-      winrateGlobal: winRate01, // 0..1
-      avg3DGlobal: avg3,
-      sessionsGlobal: games,
-      favoriteNumberLabel: null,
+      winrateGlobal: winRate01,
+      avg3DGlobal: avg3 || null,
+      sessionsGlobal: games || null,
+      favoriteNumberLabel,
 
-      // ---- Records ----
-      recordBestVisitX01: bestVisit,
-      recordBestCOX01: bestCheckout,
-      recordMinDarts501: null,
-      recordBestAvg3DX01: avg3,
-      recordBestStreak: null,
-      recordBestCricketScore: null,
-
-      // ---- Online ----
-      onlineMatches: 0,
-      onlineWinrate: 0,
-      onlineAvg3D: 0,
-      onlineBestVisit: 0,
-      onlineBestCO: 0,
-      onlineRank: null,
-      onlineBestRank: null,
+      // ---- Records X01 ----
+      recordBestVisitX01: bestVisit || null,
+      recordBestCOX01: bestCheckout || null,
+      recordMinDarts501: bestLegDarts501,
+      recordBestAvg3DX01:
+        typeof basic?.bestAvg3D === "number"
+          ? basic.bestAvg3D
+          : avg3 || null,
+      recordBestStreak: null, // pas encore calculé
+      recordBestCricketScore: null, // sera branché avec Cricket plus tard
 
       // ---- X01 Multi ----
-      x01MultiAvg3D: avg3,
-      x01MultiSessions: games,
+      x01MultiAvg3D: avg3 || null,
+      x01MultiSessions: games || null,
       x01MultiWinrate: winRate01,
-      x01MultiBestVisit: bestVisit,
-      x01MultiBestCO: bestCheckout,
-      x01MultiMinDartsLabel: null,
-
-      // ---- Cricket ----
-      cricketPointsPerRound: 0,
-      cricketHitsTotal: 0,
-      cricketCloseRate: 0,
-      cricketLegsWinrate: 0,
-      cricketAvgClose201918: 0,
-      cricketOpenings: 0,
-
-      // ---- Training X01 ----
-      trainingAvg3D: 0,
-      trainingHitsS: 0,
-      trainingHitsD: 0,
-      trainingHitsT: 0,
-      trainingGoalSuccessRate: 0,
-      trainingBestCO: 0,
-
-      // ---- Tour de l'Horloge ----
-      clockTargetsHit: 0,
-      clockSuccessRate: 0,
-      clockTotalTimeSec: 0,
-      clockBestStreak: 0,
+      x01MultiBestVisit: bestVisit || null,
+      x01MultiBestCO: bestCheckout || null,
+      x01MultiMinDartsLabel: bestLegDarts501
+        ? `${bestLegDarts501} darts (501)`
+        : null,
     };
 
-    return s;
+    // ---- Training X01 ----
+    const tAgg = loadTrainingAggForProfile(profileId);
+
+    if (tAgg.sessions > 0 || tAgg.totalDarts > 0) {
+      const trainingAvg3D =
+        tAgg.sessions > 0 ? tAgg.sumAvg3D / tAgg.sessions : null;
+
+      out = {
+        ...out,
+        trainingAvg3D,
+        trainingHitsS: tAgg.hitsS || null,
+        trainingHitsD: tAgg.hitsD || null,
+        trainingHitsT: tAgg.hitsT || null,
+        // TODO : trainingGoalSuccessRate quand on aura l’info dans le store
+        trainingGoalSuccessRate: null,
+        trainingBestCO: tAgg.bestCheckout ?? null,
+      };
+    }
+
+    // ---- Online / Cricket / Horloge ----
+    // TODO (prochaine étape) :
+    //  - Online : relecture de dc_online_matches_v1 (comme StatsOnline)
+    //  - Cricket : agrégat via getCricketProfileStats
+    //  - Horloge : futur TrainingClockStore
+
+    return out;
   } catch (err) {
-    console.warn("[Home] buildStatsForProfile error, fallback zeros:", err);
-    return emptyActiveProfileStats();
+    console.warn("[Home] buildStatsForProfile error, fallback empty:", err);
+    return base;
   }
 }
 
@@ -349,7 +454,7 @@ function buildArcadeItems(
     accentColor: "#9EFF5E",
   });
 
-  // ---------- 6) Stats globales / mois ----------
+  // ---------- 6) Stats globales / profil ----------
   items.push({
     id: "month-summary",
     title: t("home.ticker.month", "Stats du profil"),
