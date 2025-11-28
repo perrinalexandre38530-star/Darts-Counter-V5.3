@@ -10,6 +10,8 @@
 
 export type Env = {
   ROOMS: DurableObjectNamespace;
+  AVATAR_CACHE: KVNamespace; // optionnel, mais dispo si besoin
+  DC_SYNC: KVNamespace;      // ⬅️ KV utilisée par /api/sync/upload & download
   ALLOW_ORIGINS: string;
 };
 
@@ -264,7 +266,12 @@ export class RoomDO {
     }
   }
 
-  async webSocketClose(ws: ClientWs, code: number, reason: string, wasClean: boolean) {
+  async webSocketClose(
+    ws: ClientWs,
+    code: number,
+    reason: string,
+    wasClean: boolean
+  ) {
     this.clients.delete(ws);
     this.clientMeta.delete(ws);
 

@@ -1,18 +1,29 @@
 // ============================================
 // src/components/AvatarHalo.tsx
-// Halo lumineux autour de l'avatar sélectionné
+// Halo néon autour de l'avatar
+// - aucun cercle noir derrière
+// - halo très léger juste autour de l'image
 // ============================================
 
 import React from "react";
+import { useTheme } from "../contexts/ThemeContext";
 
-export default function AvatarHalo({ size = 78, children, active }) {
+type Props = {
+  size?: number;
+  active?: boolean;
+  children: React.ReactNode;
+};
+
+export default function AvatarHalo({ size = 80, active = true, children }: Props) {
+  const { theme } = useTheme();
+  const primary = theme.primary ?? "#F6C256";
+
   return (
     <div
       style={{
+        position: "relative",
         width: size,
         height: size,
-        borderRadius: "50%",
-        position: "relative",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -22,17 +33,29 @@ export default function AvatarHalo({ size = 78, children, active }) {
         <div
           style={{
             position: "absolute",
-            width: size + 18,
-            height: size + 18,
+            inset: -6, // léger dépassement autour de l'avatar
             borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(255,255,255,0.45), transparent 70%)",
-            filter: "blur(18px)",
-            zIndex: 0,
+            background: `radial-gradient(circle, ${primary}55 0, transparent 65%)`,
+            boxShadow: `0 0 16px ${primary}99`,
+            pointerEvents: "none",
           }}
         />
       )}
 
-      <div style={{ position: "relative", zIndex: 2 }}>{children}</div>
+      <div
+        style={{
+          position: "relative",
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          overflow: "hidden",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }

@@ -129,7 +129,7 @@ export default function SyncCenter({ store, go }: Props) {
     }
   }
 
-  // Import JSON collé
+  // Import JSON collé (LOCAL)
   async function handleImportFromTextarea() {
     if (!importJson.trim()) {
       setLocalMessage(
@@ -143,48 +143,13 @@ export default function SyncCenter({ store, go }: Props) {
 
     try {
       const parsed = JSON.parse(importJson);
-
-      if (parsed.kind === "dc_store_snapshot_v1" && parsed.store) {
-        const nextStore: Store = parsed.store;
-        await saveStore(nextStore);
-        setLocalMessage(
-          t(
-            "syncCenter.local.importStoreOk",
-            "Import du store complet effectué. Relance l'app pour tout recharger proprement."
-          )
-        );
-      } else if (parsed.kind === "dc_profile_snapshot_v1" && parsed.profile) {
-        // Fusion simple : on ajoute / remplace le profil par son id
-        const incoming = parsed.profile;
-        const current = (await loadStore()) || store;
-        const list = current.profiles ?? [];
-        const idx = list.findIndex((p: any) => p.id === incoming.id);
-        let newProfiles;
-        if (idx === -1) {
-          newProfiles = [...list, incoming];
-        } else {
-          newProfiles = [...list];
-          newProfiles[idx] = incoming;
-        }
-        const nextStore: Store = {
-          ...current,
-          profiles: newProfiles,
-        };
-        await saveStore(nextStore);
-        setLocalMessage(
-          t(
-            "syncCenter.local.importProfileOk",
-            "Profil importé et fusionné avec les profils locaux."
-          )
-        );
-      } else {
-        setLocalMessage(
-          t(
-            "syncCenter.local.importUnknownKind",
-            "Format d'export inconnu. Vérifie que tu as bien utilisé le bouton d'export de l'application."
-          )
-        );
-      }
+      await importParsedPayload(parsed);
+      setLocalMessage(
+        t(
+          "syncCenter.local.importStoreOk",
+          "Import effectué. Relance l'app pour tout recharger proprement."
+        )
+      );
     } catch (e) {
       console.error(e);
       setLocalMessage(
@@ -196,7 +161,7 @@ export default function SyncCenter({ store, go }: Props) {
     }
   }
 
-  // Import JSON depuis un fichier
+  // Import JSON depuis un fichier (LOCAL)
   async function handleImportFromFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -220,6 +185,48 @@ export default function SyncCenter({ store, go }: Props) {
     } finally {
       e.target.value = "";
     }
+  }
+
+  // Import générique de payload (store complet / profil), utilisé par Local + Peer
+  async function importParsedPayload(parsed: any) {
+    if (parsed.kind === "dc_store_snapshot_v1" && parsed.store) {
+      const nextStore: Store = parsed.store;
+      await saveStore(nextStore);
+      return;
+    }
+
+    if (
+      (parsed.kind === "dc_profile_snapshot_v1" ||
+        parsed.kind === "dc_peer_profile_v1") &&
+      parsed.profile
+    ) {
+      const incoming = parsed.profile;
+      const current = (await loadStore()) || store;
+      const list = current.profiles ?? [];
+      const idx = list.findIndex((p: any) => p.id === incoming.id);
+      let newProfiles;
+      if (idx === -1) {
+        newProfiles = [...list, incoming];
+      } else {
+        newProfiles = [...list];
+        newProfiles[idx] = incoming;
+      }
+      const nextStore: Store = {
+        ...current,
+        profiles: newProfiles,
+      };
+      await saveStore(nextStore);
+      return;
+    }
+
+    if (parsed.kind === "dc_peer_sync_v1" && parsed.store) {
+      const incomingStore: Store = parsed.store;
+      // Stratégie simple : on remplace tout (comme un snapshot complet)
+      await saveStore(incomingStore);
+      return;
+    }
+
+    throw new Error("Unknown payload format");
   }
 
   // Copier le JSON (export ou payload peer) dans le presse-papiers
@@ -260,6 +267,38 @@ export default function SyncCenter({ store, go }: Props) {
         "Payload de synchronisation généré. Tu peux le partager (copier, QR, etc.)."
       )
     );
+  }
+
+  // Importer directement le payload peer généré / reçu
+  async function handlePeerImportFromPayload() {
+    if (!peerPayload.trim()) {
+      setPeerStatus(
+        t(
+          "syncCenter.peer.empty",
+          "Génère ou colle d'abord un payload avant d'importer."
+        )
+      );
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(peerPayload);
+      await importParsedPayload(parsed);
+      setPeerStatus(
+        t(
+          "syncCenter.peer.importOk",
+          "Payload importé. Relance l'app pour tout recharger proprement."
+        )
+      );
+    } catch (e) {
+      console.error(e);
+      setPeerStatus(
+        t(
+          "syncCenter.peer.importError",
+          "Erreur pendant l'import du payload. Vérifie le contenu ou réessaie."
+        )
+      );
+    }
   }
 
   // =====================================================
@@ -608,6 +647,7 @@ export default function SyncCenter({ store, go }: Props) {
             status={peerStatus}
             onGenerate={handlePreparePeerPayload}
             onCopy={() => handleCopyToClipboard(peerPayload)}
+            onImport={handlePeerImportFromPayload}
           />
         )}
 
@@ -894,6 +934,7 @@ function PeerPanel({
   status,
   onGenerate,
   onCopy,
+  onImport,
 }: {
   theme: any;
   t: (k: string, f: string) => string;
@@ -901,6 +942,7 @@ function PeerPanel({
   status: string;
   onGenerate: () => void;
   onCopy: () => void;
+  onImport: () => void;
 }) {
   const [qrUrl, setQrUrl] = React.useState<string>("");
 
@@ -975,6 +1017,13 @@ function PeerPanel({
           disabled={!payload}
         >
           {t("syncCenter.peer.btnShowQr", "Afficher QR")}
+        </button>
+        <button
+          onClick={onImport}
+          style={buttonSmall(theme)}
+          disabled={!payload}
+        >
+          {t("syncCenter.peer.btnImport", "Importer ce payload")}
         </button>
       </div>
 

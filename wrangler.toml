@@ -1,7 +1,8 @@
 # =============================================
-# wrangler.toml — Worker ONLINE temps réel
+# wrangler.toml — Worker ONLINE + Sync Cloud
 # - Durable Object "RoomDO" pour les salons
-# - KV pour cache avatars IA (optionnel)
+# - KV AVATAR_CACHE (cache avatars IA)
+# - KV DC_SYNC pour les snapshots de stats
 # - CORS ALLOW_ORIGINS à adapter
 # =============================================
 
@@ -9,7 +10,7 @@ name = "darts-online"
 main = "src/online/server/worker.ts"
 compatibility_date = "2024-11-15"
 
-# ✅ Active le support WebSocket / DO
+# ✅ Active le support WebSocket / DO / Node
 compatibility_flags = ["nodejs_compat"]
 
 [durable_objects]
@@ -24,7 +25,12 @@ new_classes = ["RoomDO"]
 # ➕ KV pour le cache des avatars IA (optionnel)
 [[kv_namespaces]]
 binding = "AVATAR_CACHE"
-id = "65729b90e2d44fbe90db28bda837cd63"  # ⬅️ remplace par ton vrai ID KV
+id = "65729b90e2d44fbe90db28bda837cd63"  # ⬅️ ton ID existant
+
+# ➕ KV pour la synchronisation Cloud des stats
+[[kv_namespaces]]
+binding = "DC_SYNC"
+id = "REPLACE_ME_WITH_DC_SYNC_KV_ID"      # ⬅️ à remplacer par l’ID de la KV "dc-sync"
 
 [vars]
 # ➜ IMPORTANT : ajoute ici ton/tes domaines Front (Pages, localhost, etc.)

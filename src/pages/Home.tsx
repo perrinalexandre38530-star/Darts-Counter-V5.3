@@ -106,7 +106,7 @@ function emptyActiveProfileStats(): ActiveProfileStats {
  * buildStatsForProfile(profileId)
  * - Lit les quick-stats + historique via statsBridge
  * - Pour l’instant : branche X01 global + X01 multi + records
- *   (Online / Cricket / Training / Horloge restent à 0 → slides masquées)
+ *   (Online / Cricket / Training / Horloge restent à 0 → slides masquées dans ActiveProfileCard)
  */
 async function buildStatsForProfile(
   profileId: string
@@ -315,7 +315,12 @@ export default function Home({ store, go }: Props) {
 
   const activeProfile = useMemo(() => getActiveProfile(store), [store]);
 
-  // 🔢 Stats du joueur actif (chargées async)
+  const tickerItems = useMemo(
+    () => buildArcadeItems(store, activeProfile, t),
+    [store, activeProfile, t]
+  );
+
+  // 🔢 Stats du joueur actif (chargées async pour ActiveProfileCard)
   const [stats, setStats] = useState<ActiveProfileStats>(
     () => emptyActiveProfileStats()
   );
@@ -337,11 +342,6 @@ export default function Home({ store, go }: Props) {
       cancelled = true;
     };
   }, [activeProfile?.id]);
-
-  const tickerItems = useMemo(
-    () => buildArcadeItems(store, activeProfile, t),
-    [store, activeProfile, t]
-  );
 
   return (
     <div
@@ -423,7 +423,7 @@ export default function Home({ store, go }: Props) {
           </div>
         </div>
 
-        {/* ------------ Carte joueur actif + carrousel stats ------------ */}
+        {/* ------------ Carte joueur actif + carrousel stats (ActiveProfileCard) ------------ */}
         {activeProfile && (
           <ActiveProfileCard
             profile={activeProfile}
