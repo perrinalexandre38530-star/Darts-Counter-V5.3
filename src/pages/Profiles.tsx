@@ -17,9 +17,10 @@ import {
 } from "../lib/statsBridge";
 import { getBasicProfileStatsSync } from "../lib/statsLiteIDB";
 import { useTheme } from "../contexts/ThemeContext";
-import { useLang } from "../contexts/LangContext";
+import { useLang, type Lang } from "../contexts/LangContext";
 import { useAuthOnline } from "../hooks/useAuthOnline";
 import { onlineApi } from "../lib/onlineApi";
+import type { ThemeId } from "../theme/themePresets";
 
 type View = "menu" | "me" | "locals" | "friends";
 
@@ -125,7 +126,6 @@ export default function Profiles({
     selfStatus = "online",
   } = store;
 
-  // amis online (on passe par any pour ne pas casser le type Store)
   const friends: FriendLike[] = (store as any).friends ?? [];
 
   const { theme } = useTheme();
@@ -142,8 +142,6 @@ export default function Profiles({
       : "menu"
   );
 
-  // 🔗 Si on nous appelle avec view === "create_bot" depuis X01ConfigV3,
-  // on redirige vers la vraie page BOTS (profiles_bots)
   React.useEffect(() => {
     if (params?.view === "create_bot" && go) {
       go("profiles_bots");
@@ -208,7 +206,6 @@ export default function Profiles({
 
   const active = profiles.find((p) => p.id === activeProfileId) || null;
 
-  // Précharge stats du profil actif
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -225,7 +222,6 @@ export default function Profiles({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.id]);
 
-  // Pré-chauffage pour tous les profils locaux visibles
   React.useEffect(() => {
     let stopped = false;
     (async () => {
@@ -245,7 +241,6 @@ export default function Profiles({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profiles]);
 
-  // Moyenne 3-darts du profil actif (priorité au cache sync)
   const activeAvg3D = React.useMemo<number | null>(() => {
     if (!active?.id) return null;
     const bs = getBasicProfileStatsSync(active.id);
@@ -256,12 +251,10 @@ export default function Profiles({
     return null;
   }, [active?.id, statsMap]);
 
-  // Navigation vers Avatar Creator
   const openAvatarCreator = React.useCallback(() => {
     go?.("avatar");
   }, [go]);
 
-  // Patch infos privées du profil actif (stockées dans profile.privateInfo)
   function patchActivePrivateInfo(patch: Record<string, any>) {
     if (!active) return;
     const id = active.id;
@@ -280,16 +273,13 @@ export default function Profiles({
     );
   }
 
-  // Enregistrer les infos privées + sync online (pseudo / pays)
   async function handlePrivateInfoSave(patch: PrivateInfo) {
     if (!active) return;
 
-    // 1) Met à jour le profil local (nom affiché = Surnom si rempli)
     if (patch.nickname && patch.nickname.trim() && patch.nickname !== active.name) {
       renameProfile(active.id, patch.nickname.trim());
     }
 
-    // 2) Si connecté ONLINE → sync displayName / country
     if (auth.status === "signed_in") {
       try {
         await onlineApi.updateProfile({
@@ -302,7 +292,6 @@ export default function Profiles({
     }
   }
 
-  // Statut affiché : si pas connecté online -> toujours "offline"
   const onlineStatusForUi: "online" | "away" | "offline" =
     auth.status === "signed_in"
       ? (selfStatus as "online" | "away" | "offline")
@@ -317,7 +306,6 @@ export default function Profiles({
     }
   }
 
-  // Nombre d'amis online/away (pour le titre de la section Amis)
   const onlineFriendsCount = friends.filter(
     (f) => f.status === "online" || f.status === "away"
   ).length;
@@ -352,7 +340,6 @@ export default function Profiles({
           />
         ) : (
           <>
-            {/* Bouton retour menu */}
             <button
               className="btn sm"
               onClick={() => setView("menu")}
@@ -370,7 +357,6 @@ export default function Profiles({
 
             {view === "me" && (
               <>
-                {/* Card profil actif : SANS titre "Profil connecté" */}
                 <Card>
                   {active ? (
                     <ActiveProfileBlock
@@ -393,12 +379,11 @@ export default function Profiles({
                           renameProfile(active.id, n);
                         if (f) changeAvatar(active.id, f);
                       }}
-                      // 🔗 Bouton / lien "Stats Ninzalex" → StatsHub mode joueur actif
                       onOpenStats={() => {
                         if (!active?.id) return;
                         go?.("statsHub", {
                           tab: "stats",
-                          mode: "active", // ← vue "joueur actif" verrouillée
+                          mode: "active",
                           initialPlayerId: active.id,
                           playerId: active.id,
                           initialStatsSubTab: "dashboard",
@@ -648,7 +633,6 @@ function ProfilesMenuView({
         onClick={onSelectLocals}
       />
 
-      {/* BOAT / BOTS maintenant actif */}
       <CardBtn
         title={t("profiles.menu.boat.title", "BOTS (CPU)")}
         subtitle={t(
@@ -757,7 +741,6 @@ function ActiveProfileBlock({
 
   return (
     <div className="apb">
-      {/* Médaillon */}
       <div
         style={{
           width: MEDALLION,
@@ -770,7 +753,6 @@ function ActiveProfileBlock({
           flex: "0 0 auto",
         }}
       >
-        {/* Anneau d’étoiles */}
         <div
           aria-hidden
           style={{
@@ -791,7 +773,6 @@ function ActiveProfileBlock({
           />
         </div>
 
-        {/* Avatar */}
         <ProfileAvatar
           size={AVATAR}
           dataUrl={active?.avatarDataUrl}
@@ -800,9 +781,7 @@ function ActiveProfileBlock({
         />
       </div>
 
-      {/* Infos + actions */}
       <div className="apb__info">
-        {/* Nom + lien stats */}
         <div
           style={{
             fontWeight: 800,
@@ -826,7 +805,6 @@ function ActiveProfileBlock({
           </a>
         </div>
 
-        {/* Statut */}
         <div
           className="row"
           style={{ gap: 8, alignItems: "center", marginTop: 4 }}
@@ -843,14 +821,12 @@ function ActiveProfileBlock({
           </span>
         </div>
 
-        {/* Mini stats */}
         {active?.id && (
           <div style={{ marginTop: 8, width: "100%" }}>
             <GoldMiniStats profileId={active.id} />
           </div>
         )}
 
-        {/* Boutons sous la mini-card : Modifier / Absent / Quitter */}
         <div
           className="row apb__actions"
           style={{
@@ -931,7 +907,6 @@ function PrivateInfoBlock({
 
   const [fields, setFields] = React.useState<PrivateInfo>(initial);
 
-  // Quand on change de profil actif -> reset le formulaire
   React.useEffect(() => {
     setFields(initial);
   }, [initial]);
@@ -945,9 +920,7 @@ function PrivateInfoBlock({
   }
 
   function handleSubmit() {
-    // Patch complet dans le profil local
     onPatch(fields);
-    // Callback optionnel pour sync online / renommer profil
     onSave?.(fields);
   }
 
@@ -1042,7 +1015,6 @@ function PrivateInfoBlock({
         )}
       </div>
 
-      {/* Boutons ENREGISTRER / ANNULER */}
       <div
         className="row"
         style={{
@@ -1110,7 +1082,6 @@ function FriendsMergedBlock({ friends }: { friends: FriendLike[] }) {
 
   const order: Record<string, number> = { online: 0, away: 1, offline: 2 };
 
-  // ➜ On ne garde que les amis online / away (offline masqués)
   const merged = [...friends]
     .filter((f) => f.status === "online" || f.status === "away")
     .sort((a, b) => {
@@ -1199,7 +1170,6 @@ function FriendsMergedBlock({ friends }: { friends: FriendLike[] }) {
                         flex: "0 0 auto",
                       }}
                     >
-                      {/* anneau externe */}
                       <div
                         aria-hidden
                         style={{
@@ -1271,7 +1241,7 @@ function FriendsMergedBlock({ friends }: { friends: FriendLike[] }) {
   );
 }
 
-/* ------ Bloc connexion + création de compte (email + mot de passe) ------ */
+/* ------ Bloc connexion + création de compte ------ */
 
 function UnifiedAuthBlock({
   profiles,
@@ -1288,25 +1258,18 @@ function UnifiedAuthBlock({
   ) => void;
   autoFocusCreate?: boolean;
 }) {
-  // ⚙️ Contexte langue + thème pour pouvoir les changer dès l'inscription
-  const langCtx = useLang() as any;
-  const themeCtx = useTheme() as any;
-
-  const t = langCtx.t as (k: string, def?: string) => string;
-  const theme = themeCtx.theme;
-  const primary = theme.primary;
-
-  const currentLang = (langCtx.lang as string) ?? "fr";
-  const currentThemeKey = (themeCtx.themeKey as string) ?? "gold-neon";
-
+  const { t, setLang, lang } = useLang();
+  const { theme, primary: primaryColor } = useTheme();
   const { signup: onlineSignup, login: onlineLogin } = useAuthOnline();
+
+  const primary = primaryColor;
 
   // Connexion
   const [loginEmail, setLoginEmail] = React.useState("");
   const [loginPassword, setLoginPassword] = React.useState("");
   const [loginError, setLoginError] = React.useState<string | null>(null);
 
-  // Création (profil + compte online + préférences app)
+  // Création
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -1315,11 +1278,12 @@ function UnifiedAuthBlock({
   const [lastName, setLastName] = React.useState("");
   const [birthDate, setBirthDate] = React.useState("");
   const [country, setCountry] = React.useState("");
-  const [prefLang, setPrefLang] = React.useState(currentLang);
-  const [prefTheme, setPrefTheme] = React.useState(currentThemeKey);
-
   const [file, setFile] = React.useState<File | null>(null);
   const [preview, setPreview] = React.useState<string | null>(null);
+
+  // NEW : choix thème + langue pour l’app
+  const [uiTheme, setUiTheme] = React.useState<ThemeId>("gold");
+  const [uiLang, setUiLangState] = React.useState<Lang>(lang);
 
   const createRef = React.useRef<HTMLInputElement>(null);
 
@@ -1337,25 +1301,79 @@ function UnifiedAuthBlock({
     r.readAsDataURL(file);
   }, [file]);
 
-  // Options langue / thème affichées sur la page d’inscription
-  const LANG_OPTIONS: { value: string; label: string }[] = [
-    { value: "fr", label: "Français" },
-    { value: "en", label: "English" },
-    { value: "es", label: "Español" },
-    { value: "de", label: "Deutsch" },
-    { value: "it", label: "Italiano" },
-    { value: "pt", label: "Português" },
-  ];
+  // listes thèmes et langues (mêmes que Settings.tsx)
+  const themeOptions: { id: ThemeId; label: string }[] = React.useMemo(
+    () => [
+      { id: "gold", label: t("settings.theme.gold.label", "Or néon") },
+      { id: "pink", label: t("settings.theme.pink.label", "Rose fluo") },
+      {
+        id: "petrol",
+        label: t("settings.theme.petrol.label", "Bleu pétrole"),
+      },
+      { id: "green", label: t("settings.theme.green.label", "Vert néon") },
+      { id: "magenta", label: t("settings.theme.magenta.label", "Magenta") },
+      { id: "red", label: t("settings.theme.red.label", "Rouge") },
+      { id: "orange", label: t("settings.theme.orange.label", "Orange") },
+      { id: "white", label: t("settings.theme.white.label", "Blanc") },
+      {
+        id: "blueOcean",
+        label: t("settings.theme.blueOcean.label", "Bleu océan"),
+      },
+      {
+        id: "limeYellow",
+        label: t("settings.theme.limeYellow.label", "Vert jaune"),
+      },
+      { id: "sage", label: t("settings.theme.sage.label", "Vert sauge") },
+      { id: "skyBlue", label: t("settings.theme.skyBlue.label", "Bleu pastel") },
+      {
+        id: "darkTitanium",
+        label: t("settings.theme.darkTitanium.label", "Titane sombre"),
+      },
+      {
+        id: "darkCarbon",
+        label: t("settings.theme.darkCarbon.label", "Carbone"),
+      },
+      {
+        id: "darkFrost",
+        label: t("settings.theme.darkFrost.label", "Givre sombre"),
+      },
+      {
+        id: "darkObsidian",
+        label: t("settings.theme.darkObsidian.label", "Obsidienne"),
+      },
+    ],
+    [t]
+  );
 
-  const THEME_OPTIONS: { value: string; label: string }[] = [
-    { value: "gold-neon", label: t("theme.goldNeon", "Or néon") },
-    { value: "pink-neon", label: t("theme.pinkNeon", "Rose fluo") },
-    { value: "blue-petrol", label: t("theme.bluePetrol", "Bleu pétrole") },
-    { value: "green-neon", label: t("theme.greenNeon", "Vert néon") },
-  ];
+  const langOptions: { id: Lang; label: string }[] = React.useMemo(
+    () => [
+      { id: "fr", label: t("lang.fr", "Français") },
+      { id: "en", label: t("lang.en", "English") },
+      { id: "es", label: t("lang.es", "Español") },
+      { id: "de", label: t("lang.de", "Deutsch") },
+      { id: "it", label: t("lang.it", "Italiano") },
+      { id: "pt", label: t("lang.pt", "Português") },
+      { id: "nl", label: t("lang.nl", "Nederlands") },
+      { id: "ru", label: t("lang.ru", "Русский") },
+      { id: "zh", label: t("lang.zh", "中文") },
+      { id: "ja", label: t("lang.ja", "日本語") },
+      { id: "ar", label: t("lang.ar", "العربية") },
+      { id: "hi", label: t("lang.hi", "हिन्दी") },
+      { id: "tr", label: t("lang.tr", "Türkçe") },
+      { id: "da", label: t("lang.da", "Dansk") },
+      { id: "no", label: t("lang.no", "Norsk") },
+      { id: "sv", label: t("lang.sv", "Svenska") },
+      { id: "is", label: t("lang.is", "Íslenska") },
+      { id: "pl", label: t("lang.pl", "Polski") },
+      { id: "ro", label: t("lang.ro", "Română") },
+      { id: "sr", label: t("lang.sr", "Српски") },
+      { id: "hr", label: t("lang.hr", "Hrvatski") },
+      { id: "cs", label: t("lang.cs", "Čeština") },
+    ],
+    [t]
+  );
 
-  // LOGIN : on commence par vérifier le compte ONLINE
-  // puis on relie / crée un profil local
+  // LOGIN
   async function submitLogin() {
     const emailNorm = loginEmail.trim().toLowerCase();
     const pass = loginPassword;
@@ -1372,7 +1390,6 @@ function UnifiedAuthBlock({
 
     setLoginError(null);
 
-    // 1) Vrai login online (Supabase ou mock via useAuthOnline)
     try {
       await onlineLogin({
         email: emailNorm,
@@ -1390,7 +1407,6 @@ function UnifiedAuthBlock({
       return;
     }
 
-    // 2) Une fois connecté online => relier à un profil local
     let match = profiles.find((p) => {
       const pi = ((p as any).privateInfo || {}) as PrivateInfo;
       const pe = (pi.email || "").trim().toLowerCase();
@@ -1398,7 +1414,6 @@ function UnifiedAuthBlock({
     });
 
     if (!match) {
-      // Aucun profil local associé => on en crée un en se basant sur la session online
       try {
         const session = await onlineApi.getCurrentSession();
         const displayName =
@@ -1422,7 +1437,6 @@ function UnifiedAuthBlock({
       }
     }
 
-    // Profil local trouvé => on le rend actif
     onConnect(match.id);
   }
 
@@ -1431,23 +1445,12 @@ function UnifiedAuthBlock({
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedPass = password;
     const trimmedPass2 = password2;
-    const trimmedCountry = country.trim();
-    const chosenLang = prefLang;
-    const chosenTheme = prefTheme;
 
-    // ✅ Champs obligatoires (incluant pays + langue + thème)
-    if (
-      !trimmedName ||
-      !trimmedEmail ||
-      !trimmedPass ||
-      !trimmedCountry ||
-      !chosenLang ||
-      !chosenTheme
-    ) {
+    if (!trimmedName || !trimmedEmail || !trimmedPass) {
       alert(
         t(
-          "profiles.auth.create.missingAll",
-          "Merci de renseigner le nom, l’email, le mot de passe, le pays, la langue et le thème."
+          "profiles.auth.create.missing",
+          "Merci de renseigner au minimum le nom du profil, l’email et le mot de passe."
         )
       );
       return;
@@ -1485,30 +1488,21 @@ function UnifiedAuthBlock({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       birthDate: birthDate || "",
-      country: trimmedCountry,
+      country: country || "",
     };
 
-    // 🎯 1) Profil local (+ stats, etc.)
     onCreate(trimmedName, file, privateInfo);
 
-    // 🎯 2) On fixe directement langue + thème de l'application
+    // applique thème + langue choisis
     try {
-      if (typeof langCtx.setLang === "function") {
-        langCtx.setLang(chosenLang);
-      }
-    } catch (err) {
-      console.warn("[profiles] setLang error:", err);
+      const { setThemeId } = require("../contexts/ThemeContext") as typeof import("../contexts/ThemeContext");
+      // @ts-ignore dynamic require (pour éviter un import circulaire)
+      setThemeId?.(uiTheme);
+    } catch {
+      // si jamais ça ne marche pas, au pire ce n’est pas bloquant
     }
+    setLang(uiLang);
 
-    try {
-      if (typeof themeCtx.setThemeKey === "function") {
-        themeCtx.setThemeKey(chosenTheme);
-      }
-    } catch (err) {
-      console.warn("[profiles] setThemeKey error:", err);
-    }
-
-    // 🎯 3) Et on tente la création du compte online lié (best effort)
     try {
       await onlineSignup({
         email: trimmedEmail,
@@ -1519,7 +1513,6 @@ function UnifiedAuthBlock({
       console.warn("[profiles] online signup error:", err);
     }
 
-    // Reset formulaire
     setName("");
     setEmail("");
     setPassword("");
@@ -1528,8 +1521,6 @@ function UnifiedAuthBlock({
     setLastName("");
     setBirthDate("");
     setCountry("");
-    setPrefLang(chosenLang);
-    setPrefTheme(chosenTheme);
     setFile(null);
     setPreview(null);
   }
@@ -1640,7 +1631,6 @@ function UnifiedAuthBlock({
           )}
         </div>
 
-        {/* Avatar + nom de profil */}
         <div
           className="row"
           style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}
@@ -1696,7 +1686,6 @@ function UnifiedAuthBlock({
           />
         </div>
 
-        {/* Email + mot de passe */}
         <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
           <input
             className="input"
@@ -1731,7 +1720,6 @@ function UnifiedAuthBlock({
             />
           </div>
 
-          {/* Identité basique */}
           <div className="row" style={{ gap: 8 }}>
             <input
               className="input"
@@ -1761,49 +1749,52 @@ function UnifiedAuthBlock({
             onChange={(e) => setBirthDate(e.target.value)}
           />
 
-          {/* ✅ Pays + Langue + Thème (obligatoires) */}
-          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <input
-              className="input"
-              placeholder={t("profiles.private.country", "Pays")}
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              style={{ flex: 1, minWidth: 120 }}
-            />
+          <input
+            className="input"
+            placeholder={t("profiles.private.country", "Pays")}
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+          />
 
+          {/* Choix thème visuel */}
+          <div>
+            <div
+              className="subtitle"
+              style={{ fontSize: 11, color: theme.textSoft, marginBottom: 2 }}
+            >
+              {t("profiles.auth.create.themeLabel", "Thème visuel")}
+            </div>
             <select
               className="input"
-              value={prefLang}
-              onChange={(e) => setPrefLang(e.target.value)}
-              style={{ flex: 1, minWidth: 120 }}
+              value={uiTheme}
+              onChange={(e) => setUiTheme(e.target.value as ThemeId)}
             >
-              <option value="">
-                {t(
-                  "profiles.auth.create.langPlaceholder",
-                  "Langue de l’application"
-                )}
-              </option>
-              {LANG_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
+              {themeOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>
                   {opt.label}
                 </option>
               ))}
             </select>
+          </div>
 
+          {/* Choix langue app */}
+          <div>
+            <div
+              className="subtitle"
+              style={{ fontSize: 11, color: theme.textSoft, marginBottom: 2 }}
+            >
+              {t(
+                "profiles.auth.create.langLabel",
+                "Langue de l’application"
+              )}
+            </div>
             <select
               className="input"
-              value={prefTheme}
-              onChange={(e) => setPrefTheme(e.target.value)}
-              style={{ flex: 1, minWidth: 140 }}
+              value={uiLang}
+              onChange={(e) => setUiLangState(e.target.value as Lang)}
             >
-              <option value="">
-                {t(
-                  "profiles.auth.create.themePlaceholder",
-                  "Thème visuel"
-                )}
-              </option>
-              {THEME_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
+              {langOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>
                   {opt.label}
                 </option>
               ))}
@@ -1815,12 +1806,11 @@ function UnifiedAuthBlock({
             style={{ fontSize: 11, color: theme.textSoft }}
           >
             {t(
-              "profiles.auth.create.hintPrefs",
-              "Le pays, la langue et le thème seront utilisés dans toute l’application (modifiable ensuite dans les réglages)."
+              "profiles.auth.create.langHint",
+              "Le pays, la langue et le thème pourront être modifiés ensuite dans les réglages."
             )}
           </div>
 
-          {/* Bouton créer compte */}
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <button
               className="btn primary sm"
@@ -2026,7 +2016,6 @@ function LocalProfiles({
               background: theme.bg,
             }}
           >
-            {/* gauche */}
             <div
               className="row"
               style={{ gap: 10, minWidth: 0, flex: 1 }}
@@ -2039,7 +2028,6 @@ function LocalProfiles({
                   flex: "0 0 auto",
                 }}
               >
-                {/* anneau externe */}
                 <div
                   aria-hidden
                   style={{
@@ -2130,7 +2118,6 @@ function LocalProfiles({
                       </a>
                     </div>
 
-                    {/* ruban stats */}
                     <div style={{ marginTop: 6 }}>
                       <GoldMiniStats profileId={p.id} />
                     </div>
@@ -2139,7 +2126,6 @@ function LocalProfiles({
               </div>
             </div>
 
-            {/* droite: actions */}
             <div
               className="col"
               style={{

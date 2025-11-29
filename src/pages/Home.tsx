@@ -294,6 +294,7 @@ function loadClockAggForProfile(profileId: string): ClockAgg {
   }
 }
 
+
 /**
  * buildStatsForProfile(profileId)
  * - X01 global + X01 multi + records via statsBridge
@@ -320,7 +321,7 @@ async function buildStatsForProfile(
     const wins = Number(base?.wins || 0);
     const avg3 = Number(base?.avg3 || 0);
     const bestVisit = Number(base?.bestVisit || 0);
-    the const bestCheckout = Number(base?.bestCheckout || 0);
+    const bestCheckout = Number(base?.bestCheckout || 0);
 
     const winRatePct = Number(base?.winRate != null ? base.winRate : 0);
     const winRate01 =
