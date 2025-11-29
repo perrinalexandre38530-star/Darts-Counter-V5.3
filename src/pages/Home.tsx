@@ -4,8 +4,8 @@
 // - Carte joueur actif (ActiveProfileCard) : avatar + statut + carrousel de stats
 // - Bandeau arcade (ArcadeTicker) : infos importantes avec image spécifique
 // - Gros boutons de navigation (Profils / Local / Online / Stats / Réglages)
-// - Stats du joueur actif : branchées sur statsBridge (X01 global + X01 multi
-//   + Training X01 pour la carte + ticker)
+// - Stats du joueur actif : branchées sur statsBridge (X01 global + X01 multi)
+//   + Training X01 via TrainingStore (localStorage)
 // =============================================================
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -48,254 +48,233 @@ function getActiveProfile(store: Store): Profile | null {
 function emptyActiveProfileStats(): ActiveProfileStats {
   return {
     // ---- Vue globale ----
-    ratingGlobal: null,
-    winrateGlobal: null,
-    avg3DGlobal: null,
-    sessionsGlobal: null,
+    ratingGlobal: 0,
+    winrateGlobal: 0,
+    avg3DGlobal: 0,
+    sessionsGlobal: 0,
     favoriteNumberLabel: null,
 
     // ---- Records ----
-    recordBestVisitX01: null,
-    recordBestCOX01: null,
+    recordBestVisitX01: 0,
+    recordBestCOX01: 0,
     recordMinDarts501: null,
-    recordBestAvg3DX01: null,
+    recordBestAvg3DX01: 0,
     recordBestStreak: null,
     recordBestCricketScore: null,
 
     // ---- Online ----
-    onlineMatches: null,
-    onlineWinrate: null,
-    onlineAvg3D: null,
-    onlineBestVisit: null,
-    onlineBestCO: null,
+    onlineMatches: 0,
+    onlineWinrate: 0,
+    onlineAvg3D: 0,
+    onlineBestVisit: 0,
+    onlineBestCO: 0,
     onlineRank: null,
     onlineBestRank: null,
 
     // ---- X01 Multi ----
-    x01MultiAvg3D: null,
-    x01MultiSessions: null,
-    x01MultiWinrate: null,
-    x01MultiBestVisit: null,
-    x01MultiBestCO: null,
+    x01MultiAvg3D: 0,
+    x01MultiSessions: 0,
+    x01MultiWinrate: 0,
+    x01MultiBestVisit: 0,
+    x01MultiBestCO: 0,
     x01MultiMinDartsLabel: null,
 
     // ---- Cricket ----
-    cricketPointsPerRound: null,
-    cricketHitsTotal: null,
-    cricketCloseRate: null,
-    cricketLegsWinrate: null,
-    cricketAvgClose201918: null,
-    cricketOpenings: null,
+    cricketPointsPerRound: 0,
+    cricketHitsTotal: 0,
+    cricketCloseRate: 0,
+    cricketLegsWinrate: 0,
+    cricketAvgClose201918: 0,
+    cricketOpenings: 0,
 
     // ---- Training X01 ----
-    trainingAvg3D: null,
-    trainingHitsS: null,
-    trainingHitsD: null,
-    trainingHitsT: null,
-    trainingGoalSuccessRate: null,
-    trainingBestCO: null,
+    trainingAvg3D: 0,
+    trainingHitsS: 0,
+    trainingHitsD: 0,
+    trainingHitsT: 0,
+    trainingGoalSuccessRate: 0,
+    trainingBestCO: 0,
 
     // ---- Tour de l'Horloge ----
-    clockTargetsHit: null,
-    clockSuccessRate: null,
-    clockTotalTimeSec: null,
-    clockBestStreak: null,
+    clockTargetsHit: 0,
+    clockSuccessRate: 0,
+    clockTotalTimeSec: 0,
+    clockBestStreak: 0,
   };
 }
 
 /* ============================================================
-   Aggreg Training X01 pour 1 profil (dc_training_x01_stats_v1)
+   Training X01 — agrégat léger pour la Home
+   (même clé que StatsHub / TrainingStore)
 ============================================================ */
 
 const TRAINING_X01_STATS_KEY = "dc_training_x01_stats_v1";
 
-type TrainingX01Agg = {
+type TrainingAgg = {
   sessions: number;
-  totalDarts: number;
-  sumAvg3D: number;
+  avg3D: number;
   hitsS: number;
   hitsD: number;
   hitsT: number;
-  bestCheckout: number | null;
+  bestCheckout: number;
 };
 
-function makeEmptyTrainingAgg(): TrainingX01Agg {
-  return {
-    sessions: 0,
-    totalDarts: 0,
-    sumAvg3D: 0,
-    hitsS: 0,
-    hitsD: 0,
-    hitsT: 0,
-    bestCheckout: null,
-  };
-}
-
-function loadTrainingAggForProfile(profileId: string): TrainingX01Agg {
-  if (typeof window === "undefined") return makeEmptyTrainingAgg();
+function getTrainingAggForProfile(profileId: string): TrainingAgg | null {
+  if (typeof window === "undefined") return null;
 
   try {
     const raw = window.localStorage.getItem(TRAINING_X01_STATS_KEY);
-    if (!raw) return makeEmptyTrainingAgg();
-
+    if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return makeEmptyTrainingAgg();
+    if (!Array.isArray(parsed)) return null;
 
-    const agg = makeEmptyTrainingAgg();
+    const filtered = parsed.filter((row: any) => {
+      if (!row) return false;
+      const pid = String(row.profileId ?? "");
+      return pid === String(profileId);
+    });
 
-    for (const row of parsed) {
-      if (!row) continue;
+    if (!filtered.length) return null;
 
-      const rowProfileId =
-        row.profileId !== undefined && row.profileId !== null
-          ? String(row.profileId)
-          : "unknown";
+    let sessions = 0;
+    let sumAvg3D = 0;
+    let hitsS = 0;
+    let hitsD = 0;
+    let hitsT = 0;
+    let bestCheckout = 0;
 
-      if (rowProfileId !== profileId) continue;
+    for (const row of filtered) {
+      sessions += 1;
 
-      agg.sessions += 1;
-      agg.totalDarts += Number(row.darts) || 0;
-      agg.sumAvg3D += Number(row.avg3D) || 0;
-      agg.hitsS += Number(row.hitsS) || 0;
-      agg.hitsD += Number(row.hitsD) || 0;
-      agg.hitsT += Number(row.hitsT) || 0;
+      const avg3D = Number(row.avg3D) || 0;
+      sumAvg3D += avg3D;
+
+      hitsS += Number(row.hitsS) || 0;
+      hitsD += Number(row.hitsD) || 0;
+      hitsT += Number(row.hitsT) || 0;
 
       const bestCheckoutRaw =
         row.bestCheckout !== undefined && row.bestCheckout !== null
           ? row.bestCheckout
           : row.checkout;
 
-      const bestCheckout =
+      const bestCoVal =
         bestCheckoutRaw === null || bestCheckoutRaw === undefined
-          ? null
+          ? 0
           : Number(bestCheckoutRaw) || 0;
 
-      if (
-        bestCheckout &&
-        (!agg.bestCheckout || bestCheckout > agg.bestCheckout)
-      ) {
-        agg.bestCheckout = bestCheckout;
-      }
+      if (bestCoVal > bestCheckout) bestCheckout = bestCoVal;
     }
 
-    return agg;
+    const avg3Global = sessions > 0 ? sumAvg3D / sessions : 0;
+
+    return {
+      sessions,
+      avg3D: avg3Global,
+      hitsS,
+      hitsD,
+      hitsT,
+      bestCheckout,
+    };
   } catch (e) {
-    console.warn("[Home] loadTrainingAggForProfile failed", e);
-    return makeEmptyTrainingAgg();
+    console.warn("[Home] getTrainingAggForProfile failed", e);
+    return null;
   }
 }
 
 /**
  * buildStatsForProfile(profileId)
- * - Lit les quick-stats + historique via statsBridge
- * - Ajoute Training X01 (dc_training_x01_stats_v1) pour la carte
- * - Online / Cricket / Horloge restent vides pour l’instant
- *   (slides masquées dans ActiveProfileCard)
+ * - Lit les quick-stats via statsBridge (X01 global + X01 multi + records)
+ * - Complète avec Training X01 (localStorage dc_training_x01_stats_v1)
+ * - Online / Cricket / Horloge restent à 0 pour l’instant
+ *   → slides masquées tant qu’il n’y a pas de données réelles
  */
 async function buildStatsForProfile(
   profileId: string
 ): Promise<ActiveProfileStats> {
-  const base = emptyActiveProfileStats();
-
   try {
-    const basic: any = await getBasicProfileStatsAsync(profileId);
+    const base = await getBasicProfileStatsAsync(profileId);
 
-    const games = Number(basic?.games ?? 0);
-    const wins = Number(basic?.wins ?? 0);
-    const darts = Number(basic?.darts ?? 0);
+    const games = Number(base.games || 0);
+    const wins = Number(base.wins || 0);
+    const avg3 = Number(base.avg3 || 0);
+    const bestVisit = Number(base.bestVisit || 0);
+    const bestCheckout = Number(base.bestCheckout || 0);
 
-    // avg3 : statsBridge garantit avg3, parfois avg3D / bestAvg3D
-    const avg3 =
-      typeof basic?.avg3D === "number" && basic.avg3D > 0
-        ? Number(basic.avg3D)
-        : Number(basic?.avg3 ?? 0);
-
-    const bestVisit = Number(basic?.bestVisit ?? 0);
-    const bestCheckout = Number(basic?.bestCheckout ?? 0);
-
-    const winRatePct =
-      typeof basic?.winRate === "number" ? basic.winRate : 0;
+    // winRate dans base = 0..100 (si présent)
+    const winRatePct = Number(
+      (base as any).winRate != null ? (base as any).winRate : 0
+    );
     const winRate01 =
-      games > 0
-        ? wins / games
-        : winRatePct > 0
-        ? winRatePct / 100
-        : null;
+      winRatePct > 0 ? winRatePct / 100 : games > 0 ? wins / games : 0;
 
-    const ratingGlobal =
-      typeof basic?.rating === "number" && basic.rating > 0
-        ? basic.rating
-        : avg3 || null;
+    // Rating global : pour l’instant, on réutilise la moy. 3D
+    const ratingGlobal = avg3;
 
-    const bestLegDarts501 =
-      typeof basic?.bestLegDarts501 === "number"
-        ? basic.bestLegDarts501
-        : null;
+    // 🔹 Training X01 (agrégat localStorage par profil)
+    const trainingAgg = getTrainingAggForProfile(profileId);
 
-    const favoriteNumberLabel =
-      basic?.favoriteSegmentLabel ?? null;
-
-    let out: ActiveProfileStats = {
-      ...base,
-
+    const s: ActiveProfileStats = {
       // ---- Vue globale (tous jeux confondus, pour l’instant X01) ----
       ratingGlobal,
-      winrateGlobal: winRate01,
-      avg3DGlobal: avg3 || null,
-      sessionsGlobal: games || null,
-      favoriteNumberLabel,
+      winrateGlobal: winRate01, // 0..1
+      avg3DGlobal: avg3,
+      sessionsGlobal: games,
+      favoriteNumberLabel: null,
 
-      // ---- Records X01 ----
-      recordBestVisitX01: bestVisit || null,
-      recordBestCOX01: bestCheckout || null,
-      recordMinDarts501: bestLegDarts501,
-      recordBestAvg3DX01:
-        typeof basic?.bestAvg3D === "number"
-          ? basic.bestAvg3D
-          : avg3 || null,
-      recordBestStreak: null, // pas encore calculé
-      recordBestCricketScore: null, // sera branché avec Cricket plus tard
+      // ---- Records ----
+      recordBestVisitX01: bestVisit,
+      recordBestCOX01: bestCheckout,
+      recordMinDarts501: null,
+      recordBestAvg3DX01: avg3,
+      recordBestStreak: null,
+      recordBestCricketScore: null,
+
+      // ---- Online (non branché pour l’instant) ----
+      onlineMatches: 0,
+      onlineWinrate: 0,
+      onlineAvg3D: 0,
+      onlineBestVisit: 0,
+      onlineBestCO: 0,
+      onlineRank: null,
+      onlineBestRank: null,
 
       // ---- X01 Multi ----
-      x01MultiAvg3D: avg3 || null,
-      x01MultiSessions: games || null,
+      x01MultiAvg3D: avg3,
+      x01MultiSessions: games,
       x01MultiWinrate: winRate01,
-      x01MultiBestVisit: bestVisit || null,
-      x01MultiBestCO: bestCheckout || null,
-      x01MultiMinDartsLabel: bestLegDarts501
-        ? `${bestLegDarts501} darts (501)`
-        : null,
+      x01MultiBestVisit: bestVisit,
+      x01MultiBestCO: bestCheckout,
+      x01MultiMinDartsLabel: null,
+
+      // ---- Cricket (branché plus tard) ----
+      cricketPointsPerRound: 0,
+      cricketHitsTotal: 0,
+      cricketCloseRate: 0,
+      cricketLegsWinrate: 0,
+      cricketAvgClose201918: 0,
+      cricketOpenings: 0,
+
+      // ---- Training X01 (agrégat réel) ----
+      trainingAvg3D: trainingAgg?.avg3D ?? 0,
+      trainingHitsS: trainingAgg?.hitsS ?? 0,
+      trainingHitsD: trainingAgg?.hitsD ?? 0,
+      trainingHitsT: trainingAgg?.hitsT ?? 0,
+      // pour l’instant pas d’objectifs stockés → on laisse 0 => "—" dans la carte
+      trainingGoalSuccessRate: 0,
+      trainingBestCO: trainingAgg?.bestCheckout ?? 0,
+
+      // ---- Tour de l'Horloge (sera branché ensuite) ----
+      clockTargetsHit: 0,
+      clockSuccessRate: 0,
+      clockTotalTimeSec: 0,
+      clockBestStreak: 0,
     };
 
-    // ---- Training X01 ----
-    const tAgg = loadTrainingAggForProfile(profileId);
-
-    if (tAgg.sessions > 0 || tAgg.totalDarts > 0) {
-      const trainingAvg3D =
-        tAgg.sessions > 0 ? tAgg.sumAvg3D / tAgg.sessions : null;
-
-      out = {
-        ...out,
-        trainingAvg3D,
-        trainingHitsS: tAgg.hitsS || null,
-        trainingHitsD: tAgg.hitsD || null,
-        trainingHitsT: tAgg.hitsT || null,
-        // TODO : trainingGoalSuccessRate quand on aura l’info dans le store
-        trainingGoalSuccessRate: null,
-        trainingBestCO: tAgg.bestCheckout ?? null,
-      };
-    }
-
-    // ---- Online / Cricket / Horloge ----
-    // TODO (prochaine étape) :
-    //  - Online : relecture de dc_online_matches_v1 (comme StatsOnline)
-    //  - Cricket : agrégat via getCricketProfileStats
-    //  - Horloge : futur TrainingClockStore
-
-    return out;
+    return s;
   } catch (err) {
-    console.warn("[Home] buildStatsForProfile error, fallback empty:", err);
-    return base;
+    console.warn("[Home] buildStatsForProfile error, fallback zeros:", err);
+    return emptyActiveProfileStats();
   }
 }
 
@@ -454,7 +433,7 @@ function buildArcadeItems(
     accentColor: "#9EFF5E",
   });
 
-  // ---------- 6) Stats globales / profil ----------
+  // ---------- 6) Stats globales / mois ----------
   items.push({
     id: "month-summary",
     title: t("home.ticker.month", "Stats du profil"),
