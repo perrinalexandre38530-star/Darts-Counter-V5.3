@@ -3,10 +3,9 @@
 // - Haut de page : "Bienvenue" + logo DARTS COUNTER (centré + animé)
 // - Carte joueur actif (ActiveProfileCard) : avatar + statut + carrousel de stats
 // - Bandeau arcade (ArcadeTicker) : infos importantes avec image spécifique
-// - Bloc détail du ticker : 2 mini-cards synchronisées via index interne
+// - Bloc détail du ticker : 2 mini-cards
 //   • Card gauche  : stats liées au slide (KPIs si dispo)
-//   • Card droite  : Astuce / Pub / Nouveauté auto, image dédiée
-//   • Auto-slide bas + swipe manuel gauche/droite
+//   • Card droite  : mini-carousel Astuce / Pub / Nouveauté (rotation indépendante)
 // - Gros boutons de navigation (Profils / Local / Online / Stats / Réglages)
 // =============================================================
 
@@ -36,6 +35,7 @@ type Props = {
 
 const PAGE_MAX_WIDTH = 520;
 const DETAIL_INTERVAL_MS = 7000;
+const TIP_SWIPE_THRESHOLD = 25;
 
 // ------------------------------------------------------------
 // Tickers : images multiples par thème (choix aléatoire)
@@ -44,7 +44,7 @@ const DETAIL_INTERVAL_MS = 7000;
 const GH_IMG_BASE =
   "https://raw.githubusercontent.com/perrinalexandre38530-star/Darts-Counter-V5.3/main/public/img/";
 
-// ⚠️ Tu pourras créer les fichiers correspondants dans /public/img
+// ⚠️ Assure-toi d’avoir ces fichiers dans /public/img :
 const TICKER_IMAGES = {
   // bandeaux principaux (haut + thème stats)
   records: ["ticker-records.jpg", "ticker-records-2.jpg"],
@@ -55,7 +55,7 @@ const TICKER_IMAGES = {
   global: ["ticker-global.jpg", "ticker-global-2.jpg"],
   tip: ["ticker-tip.jpg", "ticker-tip-2.jpg"],
 
-  // familles dédiées pour le bloc Astuce / Pub / Nouveauté
+  // familles dédiées pour Astuces / Pubs / Nouveautés
   tipAdvice: ["ticker-tip-advice.jpg", "ticker-tip-advice-2.jpg"], // ASTUCES
   tipAds: ["ticker-tip-ads.jpg", "ticker-tip-ads-2.jpg"], // PUBS
   tipNews: ["ticker-tip-news.jpg", "ticker-tip-news-2.jpg"], // NOUVEAUTÉS
@@ -601,25 +601,71 @@ function pickStatsBackgroundForTicker(tickerId: string): string {
   }
 }
 
-// Image de fond pour la mini-card ASTUCE / PUB / NOUVEAUTÉ (droite)
-function pickTipBackgroundForTicker(tickerId: string): string {
-  switch (tickerId) {
-    case "last-records":
-      return pickTickerImage("tipAdvice"); // astuce records
-    case "last-local-match":
-      return pickTickerImage("tipAds"); // pub local / BOTS / friends
-    case "last-online-match":
-      return pickTickerImage("tipAdvice"); // astuce online
-    case "online-leader":
-      return pickTickerImage("tipNews"); // nouveauté classement
-    case "training-summary":
-      return pickTickerImage("tipAdvice"); // astuce training
-    case "month-summary":
-      return pickTickerImage("tipNews"); // nouveautés globales
-    case "tip-of-day":
-    default:
-      return pickTickerImage("tipAdvice");
-  }
+// -------- Mini-carousel pour ASTUCES / PUBS / NOUVEAUTÉS (droite) --------
+
+type TipSlide = {
+  id: string;
+  kind: "tip" | "ad" | "news";
+  title: string;
+  text: string;
+  backgroundImage: string;
+};
+
+function buildTipSlides(
+  t: (k: string, d?: string) => string
+): TipSlide[] {
+  return [
+    {
+      id: "tip-training",
+      kind: "tip",
+      title: t("home.tip.training.title", "Astuce Training X01"),
+      text: t(
+        "home.tip.training.text",
+        "Travaille toujours la même finition pendant quelques minutes, puis change de cible pour rester focus."
+      ),
+      backgroundImage: pickTickerImage("tipAdvice"),
+    },
+    {
+      id: "tip-bots",
+      kind: "ad",
+      title: t("home.tip.bots.title", "Crée un BOT local"),
+      text: t(
+        "home.tip.bots.text",
+        "Ajoute un BOT dans tes profils pour t’entraîner en conditions réelles, même si tu es seul."
+      ),
+      backgroundImage: pickTickerImage("tipAds"),
+    },
+    {
+      id: "tip-news",
+      kind: "news",
+      title: t("home.tip.news.title", "Nouveautés Darts Counter"),
+      text: t(
+        "home.tip.news.text",
+        "Découvre les nouveaux thèmes néon, les stats Horloge et bientôt les classements Online."
+      ),
+      backgroundImage: pickTickerImage("tipNews"),
+    },
+    {
+      id: "tip-clock",
+      kind: "tip",
+      title: t("home.tip.clock.title", "Astuce Tour de l’Horloge"),
+      text: t(
+        "home.tip.clock.text",
+        "Sur le Tour de l’Horloge, vise toujours un repère visuel précis sur le segment pour gagner en régularité."
+      ),
+      backgroundImage: pickTickerImage("tipAdvice"),
+    },
+    {
+      id: "tip-stats",
+      kind: "news",
+      title: t("home.tip.stats.title", "Lis tes stats"),
+      text: t(
+        "home.tip.stats.text",
+        "Va dans l’onglet Stats pour suivre ton avg 3D, tes records et l’évolution de ton niveau."
+      ),
+      backgroundImage: pickTickerImage("tipNews"),
+    },
+  ];
 }
 
 /* ============================================================
@@ -913,11 +959,12 @@ export default function Home({ store, go }: Props) {
     () => emptyActiveProfileStats()
   );
 
-  // index du ticker pour le bloc détail (notre état interne)
+  // index du ticker pour le bloc détail (synchronisé sur ArcadeTicker)
   const [tickerIndex, setTickerIndex] = useState(0);
 
-  // swipe (touch) pour le bloc bas
-  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  // mini-carousel Astuce/Pub/News
+  const [tipIndex, setTipIndex] = useState(0);
+  const [tipTouchStartX, setTipTouchStartX] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -951,17 +998,6 @@ export default function Home({ store, go }: Props) {
     setTickerIndex((i) => (i >= tickerItems.length ? 0 : i));
   }, [tickerItems.length]);
 
-  // 🔁 Auto-slide du bloc détail (indépendant, même tempo que le bandeau)
-  useEffect(() => {
-    if (!tickerItems.length) return;
-    const id = window.setInterval(() => {
-      setTickerIndex((i) =>
-        tickerItems.length ? (i + 1) % tickerItems.length : 0
-      );
-    }, DETAIL_INTERVAL_MS);
-    return () => window.clearInterval(id);
-  }, [tickerItems.length]);
-
   const currentTicker: ArcadeTickerItem | null =
     tickerItems.length > 0
       ? tickerItems[Math.min(tickerIndex, tickerItems.length - 1)]
@@ -987,51 +1023,65 @@ export default function Home({ store, go }: Props) {
         "Tes stats détaillées apparaîtront ici dès que tu auras joué quelques matchs ou trainings."
       );
 
-  // Card droite : Astuce / Pub / Nouveauté auto
-  const tipTitle = t(
-    "home.detail.tip.title",
-    "Astuce, pub & nouveautés du moment"
-  );
-  const tipText = t(
-    "home.detail.tip.text",
-    "Découvre les nouveautés, astuces ou pubs liées à cette section. Garde toujours ton profil actif pour des recommandations plus pertinentes."
-  );
-
   const statsBackgroundImage = currentTicker
     ? pickStatsBackgroundForTicker(currentTicker.id)
     : "";
-  const tipBackgroundImage = currentTicker
-    ? pickTipBackgroundForTicker(currentTicker.id)
-    : pickTickerImage("tipAdvice");
 
-  // Handlers swipe sur le bloc bas
-  const handleDetailTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (!tickerItems.length) return;
-    setTouchStartX(e.touches[0].clientX);
-  };
+  // -------- Mini-carousel Astuces / Pubs / News (droite) --------
+  const tipSlides = useMemo(() => buildTipSlides(t), [t]);
 
-  const handleDetailTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (!tickerItems.length || touchStartX == null) {
-      setTouchStartX(null);
+  // clamp tipIndex si la taille change
+  useEffect(() => {
+    if (!tipSlides.length) {
+      setTipIndex(0);
       return;
     }
-    const endX = e.changedTouches[0].clientX;
-    const dx = endX - touchStartX;
-    const threshold = 40; // px
+    setTipIndex((i) => (i >= tipSlides.length ? 0 : i));
+  }, [tipSlides.length]);
 
-    if (Math.abs(dx) > threshold) {
-      setTickerIndex((i) => {
-        const len = tickerItems.length || 1;
-        if (dx < 0) {
-          // swipe gauche -> slide suivant
-          return (i + 1) % len;
-        }
-        // swipe droite -> slide précédent
-        return (i - 1 + len) % len;
-      });
+  // Auto-slide du mini-carousel Astuce/Pub/News
+  useEffect(() => {
+    if (!tipSlides.length) return;
+    const id = window.setInterval(() => {
+      setTipIndex((i) =>
+        tipSlides.length ? (i + 1) % tipSlides.length : 0
+      );
+    }, DETAIL_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [tipSlides.length]);
+
+  const currentTip: TipSlide | null =
+    tipSlides.length > 0
+      ? tipSlides[Math.min(tipIndex, tipSlides.length - 1)]
+      : null;
+
+  const handleTipTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    const x = e.touches[0]?.clientX;
+    if (x != null) setTipTouchStartX(x);
+  };
+
+  const handleTipTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (tipTouchStartX == null || !tipSlides.length) return;
+    const x = e.changedTouches[0]?.clientX ?? tipTouchStartX;
+    const dx = x - tipTouchStartX;
+
+    if (Math.abs(dx) < TIP_SWIPE_THRESHOLD) {
+      setTipTouchStartX(null);
+      return;
     }
 
-    setTouchStartX(null);
+    setTipIndex((prev) => {
+      if (!tipSlides.length) return 0;
+      if (dx < 0) {
+        // swipe gauche => slide suivant
+        return (prev + 1) % tipSlides.length;
+      } else {
+        // swipe droite => slide précédent
+        return (prev - 1 + tipSlides.length) % tipSlides.length;
+      }
+    });
+
+    setTipTouchStartX(null);
   };
 
   return (
@@ -1123,8 +1173,19 @@ export default function Home({ store, go }: Props) {
           />
         )}
 
-        {/* Petit bandeau arcade (auto interne à ArcadeTicker) */}
-        <ArcadeTicker items={tickerItems} intervalMs={DETAIL_INTERVAL_MS} />
+        {/* Petit bandeau arcade (auto-slide interne) */}
+        <ArcadeTicker
+          items={tickerItems}
+          intervalMs={DETAIL_INTERVAL_MS}
+          onActiveIndexChange={(index) => {
+            if (!tickerItems.length) return;
+            const safe = Math.min(
+              Math.max(index, 0),
+              tickerItems.length - 1
+            );
+            setTickerIndex(safe);
+          }}
+        />
 
         {/* Bloc détail du ticker : 2 mini-cards côte à côte */}
         {currentTicker && (
@@ -1141,8 +1202,6 @@ export default function Home({ store, go }: Props) {
               background:
                 "radial-gradient(circle at top, rgba(255,255,255,0.06), rgba(3,4,10,1))",
             }}
-            onTouchStart={handleDetailTouchStart}
-            onTouchEnd={handleDetailTouchEnd}
           >
             <div
               style={{
@@ -1228,7 +1287,7 @@ export default function Home({ store, go }: Props) {
                 </div>
               </div>
 
-              {/* --------- Card droite : ASTUCE / PUB / NOUVEAUTÉ --------- */}
+              {/* --------- Card droite : ASTUCE / PUB / NOUVEAUTÉ (mini-carousel) --------- */}
               <div
                 style={{
                   flex: 1,
@@ -1237,12 +1296,14 @@ export default function Home({ store, go }: Props) {
                   position: "relative",
                   minHeight: 96,
                   backgroundColor: "#05060C",
-                  backgroundImage: tipBackgroundImage
-                    ? `url("${tipBackgroundImage}")`
+                  backgroundImage: currentTip?.backgroundImage
+                    ? `url("${currentTip.backgroundImage}")`
                     : undefined,
                   backgroundSize: "cover",
                   backgroundPosition: "center",
                 }}
+                onTouchStart={handleTipTouchStart}
+                onTouchEnd={handleTipTouchEnd}
               >
                 <div
                   aria-hidden
@@ -1274,7 +1335,11 @@ export default function Home({ store, go }: Props) {
                         marginBottom: 3,
                       }}
                     >
-                      {tipTitle}
+                      {currentTip?.title ??
+                        t(
+                          "home.detail.tip.title",
+                          "Astuce, pub & nouveautés du moment"
+                        )}
                     </div>
                     <div
                       style={{
@@ -1283,7 +1348,11 @@ export default function Home({ store, go }: Props) {
                         color: theme.textSoft ?? "rgba(255,255,255,0.9)",
                       }}
                     >
-                      {tipText}
+                      {currentTip?.text ??
+                        t(
+                          "home.detail.tip.text",
+                          "Découvre les nouveautés, astuces ou pubs liées à cette section."
+                        )}
                     </div>
                   </div>
 
@@ -1298,7 +1367,7 @@ export default function Home({ store, go }: Props) {
                   >
                     {t(
                       "home.detail.tip.hint",
-                      "Astuce / pub / nouveauté liée à la section active"
+                      "Astuces, pubs et nouveautés qui défilent automatiquement"
                     )}
                   </div>
                 </div>
