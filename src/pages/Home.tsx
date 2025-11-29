@@ -611,10 +611,9 @@ export default function Home({ store, go }: Props) {
     };
   }, [activeProfile?.id]);
 
-  const tickerItems = useMemo(
-    () => buildArcadeItems(store, activeProfile, stats, t),
-    [store, activeProfile, stats, t]
-  );
+ // On laisse tourner le random à chaque render (au moins à chaque reload)
+const tickerItems = buildArcadeItems(store, activeProfile, stats, t);
+
 
   return (
     <div

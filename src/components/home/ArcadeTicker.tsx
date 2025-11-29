@@ -1,170 +1,186 @@
 // =============================================================
 // src/components/home/ArcadeTicker.tsx
-// Bandeau arcade sous la carte joueur :
-// - Suite de cartes horizontales qui glissent toutes les X secondes
-// - Chaque carte a : titre, texte, image de fond différente, couleur d'accent
-// - Style "dashboard futuriste" (sobre + lisible)
+// Bandeau arcade — version "image bien visible"
+// - Affiche 1 item à la fois (auto-carrousel)
+// - Image de fond full-width, bien contrastée
+// - Texte sur panneau semi-transparent + blur
 // =============================================================
 
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { useTheme } from "../../contexts/ThemeContext";
+import { useLang } from "../../contexts/LangContext";
 
 export type ArcadeTickerItem = {
   id: string;
   title: string;
   text: string;
   detail?: string;
-  // chemin vers une image de fond (tu peux les créer ensuite dans /public/img)
-  // ex: "/img/ticker-global.jpg", "/img/ticker-online.jpg", ...
-  backgroundImage: string;
-  accentColor?: string; // sinon theme.primary
+  backgroundImage?: string;
+  accentColor?: string;
 };
 
 type Props = {
   items: ArcadeTickerItem[];
-  intervalMs?: number;
 };
 
-export default function ArcadeTicker({
-  items,
-  intervalMs = 4000,
-}: Props) {
+export default function ArcadeTicker({ items }: Props) {
   const { theme } = useTheme();
-  const [index, setIndex] = useState(0);
+  const { t } = useLang();
+  const [index, setIndex] = React.useState(0);
 
-  useEffect(() => {
+  if (!items || items.length === 0) return null;
+
+  // Auto-carrousel toutes les 7s
+  React.useEffect(() => {
     if (items.length <= 1) return;
-    const id = setInterval(
-      () => setIndex((i) => (i + 1) % items.length),
-      intervalMs
-    );
-    return () => clearInterval(id);
-  }, [items.length, intervalMs]);
+    const id = window.setInterval(() => {
+      setIndex((i) => (i + 1) % items.length);
+    }, 7000);
+    return () => window.clearInterval(id);
+  }, [items.length]);
 
-  if (!items.length) return null;
+  const item = items[index] ?? items[0];
 
-  const item = items[index];
+  const accent = item.accentColor ?? theme.primary ?? "#F6C256";
+
+  const bgImage = item.backgroundImage || "";
+  const hasBg = !!bgImage;
 
   return (
     <div
       style={{
-        marginTop: 14,
-        borderRadius: 16,
-        overflow: "hidden",
-        position: "relative",
-        height: 72,
-        border: `1px solid ${theme.borderSoft ?? "rgba(255,255,255,0.12)"}`,
-        boxShadow: "0 16px 30px rgba(0,0,0,0.65)",
+        marginTop: 10,
+        marginBottom: 8,
       }}
     >
-      {/* Fond image + overlay */}
       <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          backgroundImage: `url("${item.backgroundImage}")`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          filter: "blur(0.5px) brightness(0.55)",
-          transform: "scale(1.03)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "linear-gradient(90deg, rgba(2,4,10,0.9), rgba(2,4,10,0.6), rgba(2,4,10,0.9))",
-        }}
-      />
-
-      {/* Contenu */}
-      <div
-        key={item.id}
         style={{
           position: "relative",
-          zIndex: 1,
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          padding: "0 14px",
-          gap: 12,
-          animation: "dcTickerSlideIn 0.35s ease",
+          overflow: "hidden",
+          borderRadius: 18,
+          border: `1px solid ${theme.borderSoft ?? "rgba(255,255,255,0.12)"}`,
+          boxShadow: "0 16px 32px rgba(0,0,0,0.75)",
+          height: 92, // 🔥 plus haut que la version précédente
+          backgroundColor: "#05060C",
+          backgroundImage: hasBg
+            ? `url("${bgImage}")`
+            : "radial-gradient(circle at top, #333, #000)"
+          ,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
         }}
       >
+        {/* Voile léger pour garder l’image très visible */}
+        {hasBg && (
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "linear-gradient(90deg, rgba(0,0,0,0.45), rgba(0,0,0,0.75))",
+            }}
+          />
+        )}
+
+        {/* Panneau texte */}
         <div
           style={{
-            width: 6,
-            borderRadius: 999,
-            alignSelf: "stretch",
-            background: `linear-gradient(180deg, ${
-              item.accentColor ?? theme.primary ?? "#F6C256"
-            }, transparent)`,
+            position: "relative",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            padding: "10px 14px",
           }}
-        />
-        <div style={{ flex: 1, minWidth: 0 }}>
+        >
           <div
             style={{
-              fontSize: 12,
-              fontWeight: 800,
-              letterSpacing: 0.8,
-              textTransform: "uppercase",
-              color: item.accentColor ?? theme.primary ?? "#F6C256",
-              marginBottom: 2,
+              maxWidth: "100%",
+              padding: "6px 10px",
+              borderRadius: 14,
+              background: "rgba(0,0,0,0.55)",
+              backdropFilter: "blur(4px)",
+              WebkitBackdropFilter: "blur(4px)",
+              boxShadow: "0 8px 20px rgba(0,0,0,0.8)",
             }}
           >
-            {item.title}
-          </div>
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: theme.textSoft ?? "rgba(235,240,255,0.8)",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {item.text}
-          </div>
-          {item.detail && (
             <div
               style={{
                 fontSize: 11,
-                marginTop: 2,
-                color:
-                  theme.textMuted ?? "rgba(200,210,230,0.75)",
+                fontWeight: 800,
+                letterSpacing: 0.9,
+                textTransform: "uppercase",
+                color: accent,
+                marginBottom: 2,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
-              {item.detail}
+              {item.title}
             </div>
-          )}
+            <div
+              style={{
+                fontSize: 11,
+                lineHeight: 1.3,
+                color: theme.textSoft ?? "rgba(255,255,255,0.85)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+              }}
+            >
+              {item.text}
+            </div>
+            {item.detail && (
+              <div
+                style={{
+                  marginTop: 3,
+                  fontSize: 10,
+                  color: "rgba(255,255,255,0.75)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {item.detail}
+              </div>
+            )}
+          </div>
         </div>
-        <div
-          style={{
-            fontSize: 10,
-            color: theme.textMuted ?? "rgba(180,190,210,0.7)",
-            textTransform: "uppercase",
-          }}
-        >
-          {index + 1}/{items.length}
-        </div>
-      </div>
 
-      <style>
-        {`
-          @keyframes dcTickerSlideIn {
-            from {
-              opacity: 0;
-              transform: translateX(10px);
-            }
-            to {
-              opacity: 1;
-              transform: translateX(0);
-            }
-          }
-        `}
-      </style>
+        {/* Petites pastilles de pagination en bas à droite */}
+        {items.length > 1 && (
+          <div
+            style={{
+              position: "absolute",
+              right: 10,
+              bottom: 8,
+              display: "flex",
+              gap: 4,
+            }}
+          >
+            {items.map((it, i) => (
+              <span
+                key={it.id}
+                style={{
+                  width: i === index ? 10 : 6,
+                  height: 6,
+                  borderRadius: 999,
+                  backgroundColor:
+                    i === index
+                      ? accent
+                      : "rgba(255,255,255,0.35)",
+                  opacity: i === index ? 1 : 0.6,
+                  transition: "all 0.25s ease-out",
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
