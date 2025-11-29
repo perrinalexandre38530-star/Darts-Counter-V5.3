@@ -32,18 +32,16 @@ export type LoginPayload = {
 };
 
 export type UpdateProfilePayload = Partial<
-  Pick<
-    OnlineProfile,
-    "displayName" | "avatarUrl" | "country" | "bio" | "stats"
-  >
+  Pick<OnlineProfile, "displayName" | "avatarUrl" | "country">
 >;
 
 export type UploadMatchPayload = Omit<
   OnlineMatch,
-  "id" | "userId" | "startedAt" | "finishedAt"
+  "id" | "userId" | "startedAt" | "finishedAt" | "isTraining"
 > & {
   startedAt?: number;
   finishedAt?: number;
+  isTraining?: boolean;
 };
 
 // --------------------------------------------
@@ -111,56 +109,61 @@ function saveAuthToLS(session: AuthSession | null) {
 // Mapping Supabase -> types de l'app
 // --------------------------------------------
 
+// Schéma actuel Supabase :
+// profiles_online (id, display_name, country, avatar_url, created_at, updated_at)
 type SupabaseProfileRow = {
   id: string;
-  user_id: string;
   display_name: string | null;
   avatar_url: string | null;
   country: string | null;
-  bio: string | null;
-  stats: any | null;
+  created_at: string | null;
   updated_at: string | null;
+  // on tolère bio / stats au cas où tu les ajoutes plus tard
+  bio?: string | null;
+  stats?: any | null;
 };
 
 function mapProfile(row: SupabaseProfileRow): OnlineProfile {
   return {
     id: row.id,
-    userId: row.user_id,
+    // 🔑 on utilise id comme userId, puisqu’il n’y a pas de colonne user_id
+    userId: row.id,
     displayName: row.display_name ?? "",
     avatarUrl: row.avatar_url ?? undefined,
     country: row.country ?? undefined,
-    bio: row.bio ?? "",
-    stats: row.stats ?? {
-      totalMatches: 0,
-      totalLegs: 0,
-      avg3: 0,
-      bestVisit: 0,
-      bestCheckout: 0,
-    },
+    bio: (row as any).bio ?? "",
+    stats:
+      (row as any).stats ?? {
+        totalMatches: 0,
+        totalLegs: 0,
+        avg3: 0,
+        bestVisit: 0,
+        bestCheckout: 0,
+      },
     updatedAt: row.updated_at ? Date.parse(row.updated_at) : now(),
   };
 }
 
-// Table d’historique : live_match_sessions (déjà existante)
+// Table d’historique actuelle : "matches_online"
+// id, user_id, mode, payload, created_at
 type SupabaseMatchRow = {
   id: string;
-  user_id?: string | null;
+  user_id: string;
   mode: string;
   payload: any;
-  is_training: boolean | null;
-  started_at: string | null;
-  finished_at: string | null;
+  created_at: string | null;
 };
 
 function mapMatch(row: SupabaseMatchRow): OnlineMatch {
+  const ts = row.created_at ? Date.parse(row.created_at) : now();
   return {
     id: row.id,
-    userId: row.user_id ?? "",
+    userId: row.user_id,
     mode: row.mode,
     payload: row.payload,
-    isTraining: row.is_training ?? false,
-    startedAt: row.started_at ? Date.parse(row.started_at) : now(),
-    finishedAt: row.finished_at ? Date.parse(row.finished_at) : now(),
+    isTraining: false,
+    startedAt: ts,
+    finishedAt: ts,
   };
 }
 
@@ -212,17 +215,16 @@ async function buildAuthSessionFromSupabase(): Promise<AuthSession | null> {
     id: user.id,
     email: user.email ?? undefined,
     nickname:
-      (user.user_metadata as any)?.nickname ||
-      user.email ||
-      "Player",
+      (user.user_metadata as any)?.nickname || user.email || "Player",
     createdAt: user.created_at ? Date.parse(user.created_at) : now(),
   };
 
   // Récupère (ou crée) le profil en ligne
   const { data: profileRow, error: profileError } = await supabase
     .from("profiles_online")
+    // 🔑 on filtre sur id (pas de colonne user_id dans ton schéma)
     .select("*")
-    .eq("user_id", user.id)
+    .eq("id", user.id)
     .limit(1)
     .maybeSingle();
 
@@ -237,7 +239,8 @@ async function buildAuthSessionFromSupabase(): Promise<AuthSession | null> {
     const { data: created, error: createError } = await supabase
       .from("profiles_online")
       .insert({
-        user_id: user.id,
+        // 🔑 on force id = auth.user.id pour recoller à ton schéma actuel
+        id: user.id,
         display_name: userAuth.nickname,
       })
       .select()
@@ -345,6 +348,41 @@ async function logout(): Promise<void> {
 }
 
 // --------------------------------------------
+// Fonctions publiques : GESTION COMPTE
+// --------------------------------------------
+
+// Demander un mail de réinitialisation de mot de passe
+async function requestPasswordReset(email: string): Promise<void> {
+  const trimmed = email.trim();
+  if (!trimmed) {
+    throw new Error("Adresse mail requise pour réinitialiser le mot de passe.");
+  }
+  const { error } = await supabase.auth.resetPasswordForEmail(trimmed);
+  if (error) {
+    console.error("[onlineApi] requestPasswordReset error", error);
+    throw new Error(error.message);
+  }
+}
+
+// Mettre à jour l'email du compte courant
+async function updateEmail(newEmail: string): Promise<void> {
+  const trimmed = newEmail.trim();
+  if (!trimmed) {
+    throw new Error("Nouvelle adresse mail invalide.");
+  }
+  const { error } = await supabase.auth.updateUser({ email: trimmed });
+  if (error) {
+    console.error("[onlineApi] updateEmail error", error);
+    throw new Error(error.message);
+  }
+}
+
+// Récupérer la session courante (helper pratique)
+async function getCurrentSession(): Promise<AuthSession | null> {
+  return await restoreSession();
+}
+
+// --------------------------------------------
 // Fonctions publiques : PROFIL
 // --------------------------------------------
 
@@ -358,17 +396,18 @@ async function updateProfile(
 
   const userId = session.user.id;
 
+  // On ne met à jour que les colonnes qui existent vraiment
+  const dbPatch: any = {
+    updated_at: new Date().toISOString(),
+  };
+  if (patch.displayName !== undefined) dbPatch.display_name = patch.displayName;
+  if (patch.avatarUrl !== undefined) dbPatch.avatar_url = patch.avatarUrl;
+  if (patch.country !== undefined) dbPatch.country = patch.country;
+
   const { data, error } = await supabase
     .from("profiles_online")
-    .update({
-      display_name: patch.displayName,
-      avatar_url: patch.avatarUrl,
-      country: patch.country,
-      bio: patch.bio,
-      stats: patch.stats,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("user_id", userId)
+    .update(dbPatch)
+    .eq("id", userId)
     .select()
     .single();
 
@@ -401,19 +440,13 @@ async function uploadMatch(
   }
 
   const userId = session.user.id;
-  const started = payload.startedAt ?? now();
-  const finished = payload.finishedAt ?? now();
 
-  // ⬅️ utilisation de live_match_sessions (table déjà existante)
   const { data, error } = await supabase
-    .from("live_match_sessions")
+    .from("matches_online") // 🔄 nom réel de la table
     .insert({
       user_id: userId,
       mode: payload.mode,
       payload: payload.payload,
-      is_training: (payload as any).isTraining ?? false,
-      started_at: new Date(started).toISOString(),
-      finished_at: new Date(finished).toISOString(),
     })
     .select()
     .single();
@@ -427,19 +460,10 @@ async function uploadMatch(
 }
 
 async function listMatches(limit = 50): Promise<OnlineMatch[]> {
-  const session = await restoreSession();
-  if (!session?.user) {
-    throw new Error("Non authentifié");
-  }
-
-  const userId = session.user.id;
-
-  // ⬅️ idem : live_match_sessions + filtre par user_id
   const { data, error } = await supabase
-    .from("live_match_sessions")
+    .from("matches_online") // 🔄 nom réel de la table
     .select("*")
-    .eq("user_id", userId)
-    .order("finished_at", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(limit);
 
   if (error) {
@@ -561,6 +585,11 @@ export const onlineApi = {
   login,
   restoreSession,
   logout,
+
+  // Gestion compte
+  requestPasswordReset,
+  updateEmail,
+  getCurrentSession,
 
   // Profil
   updateProfile,

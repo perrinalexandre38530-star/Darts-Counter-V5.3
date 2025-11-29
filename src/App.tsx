@@ -7,6 +7,8 @@
 // + Stats Online : StatsOnline (détails ONLINE)
 // + Stats Cricket : StatsCricket (vue dédiée Cricket)
 // + SyncCenter : export/import des stats locales
+// + Account bridge : au premier lancement sans profil actif,
+//   on redirige vers Profils > Mon profil (connexion / création compte).
 // ============================================
 import React from "react";
 import BottomNav from "./components/BottomNav";
@@ -66,6 +68,7 @@ import SyncCenter from "./pages/SyncCenter";
 // Contexts
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { LangProvider } from "./contexts/LangContext";
+import { AuthOnlineProvider } from "./hooks/useAuthOnline";
 
 // Dev helper
 import { installHistoryProbe } from "./dev/devHistoryProbe";
@@ -366,7 +369,7 @@ function App() {
     } catch {}
   }, []);
 
-  /* Restore online session */
+  /* Restore online session (pour Supabase côté SDK) */
   React.useEffect(() => {
     onlineApi.restoreSession().catch(() => {});
   }, []);
@@ -389,7 +392,7 @@ function App() {
     setTab(next);
   }
 
-  /* Load store from IDB at boot */
+  /* Load store from IDB at boot + gate "Se connecter / Créer un compte" */
   React.useEffect(() => {
     let mounted = true;
     (async () => {
@@ -409,18 +412,28 @@ function App() {
           base = { ...initialStore };
         }
 
-        // Démo si aucun profil
-        if (!base.profiles || base.profiles.length === 0) {
-          const demoProfiles: Profile[] = [
-            { id: "demo_ninzalex", name: "Ninzalex", avatarDataUrl: null } as any,
-            { id: "demo_neven", name: "Neven", avatarDataUrl: null } as any,
-          ];
-          base.profiles = demoProfiles;
-          base.activeProfileId = demoProfiles[0].id;
-        }
+        if (mounted) {
+          setStore(base);
 
-        if (mounted) setStore(base);
+          const hasProfiles = (base.profiles ?? []).length > 0;
+          const hasActive = !!base.activeProfileId;
+
+          // 🔐 Si aucun profil actif (et généralement aucun profil),
+          // on force le passage par Profils > "Mon profil"
+          // avec le bloc UnifiedAuthBlock (connexion / création).
+          if (!hasProfiles || !hasActive) {
+            setRouteParams({ view: "me", autoCreate: true });
+            setTab("profiles");
+          } else {
+            setTab("home");
+          }
+        }
       } catch {
+        if (mounted) {
+          setStore(initialStore);
+          setTab("profiles");
+          setRouteParams({ view: "me", autoCreate: true });
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -571,7 +584,9 @@ function App() {
             store={store}
             update={update}
             go={go}
-            onConnect={() => go("profiles")}
+            onConnect={() =>
+              go("profiles", { view: "me", autoCreate: true })
+            }
           />
         );
         break;
@@ -587,6 +602,7 @@ function App() {
             update={update}
             setProfiles={setProfiles}
             go={go}
+            params={routeParams}
           />
         );
         break;
@@ -649,7 +665,14 @@ function App() {
 
       /* ---------- SYNC / PARTAGE ---------- */
       case "sync_center":
-        page = <SyncCenter store={store} go={go} />;
+        page = (
+          <SyncCenter
+            store={store}
+            go={go}
+            // profileId optionnel pour cibler un joueur précis
+            profileId={routeParams?.profileId ?? null}
+          />
+        );
         break;
 
       /* ---------- X01 SETUP (v1) ---------- */
@@ -993,7 +1016,9 @@ function App() {
             store={store}
             update={update}
             go={go}
-            onConnect={() => go("profiles")}
+            onConnect={() =>
+              go("profiles", { view: "me", autoCreate: true })
+            }
           />
         );
     }
@@ -1018,7 +1043,9 @@ export default function AppRoot() {
   return (
     <ThemeProvider>
       <LangProvider>
-        <App />
+        <AuthOnlineProvider>
+          <App />
+        </AuthOnlineProvider>
       </LangProvider>
     </ThemeProvider>
   );

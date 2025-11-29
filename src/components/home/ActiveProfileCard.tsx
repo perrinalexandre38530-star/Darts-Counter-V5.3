@@ -125,7 +125,7 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
     const s = stats;
     const out: SlideDef[] = [];
 
-    // 1) Vue globale — TOUJOURS AFFICHÉE
+    // 1) Vue globale — TOUJOURS AFFICHÉE (même si toutes les valeurs sont à 0)
     out.push({
       id: "global",
       title: t("home.stats.global", "Vue globale"),
@@ -369,16 +369,27 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
       });
     }
 
-    return out;
+    // Sécurité : toujours au moins 1 slide (global)
+    return out.length > 0 ? out : [];
   }, [stats, t]);
 
-  // --------- Auto-carrousel 5s ----------
+  // Quand la liste de slides change (changement de profil ou de stats),
+  // on remet l'index à 0 et on le borne pour éviter les crashs.
+  useEffect(() => {
+    if (!slides.length) {
+      setIndex(0);
+      return;
+    }
+    setIndex((i) => (i >= slides.length ? 0 : i));
+  }, [slides.length]);
+
+  // --------- Auto-carrousel 7s ----------
   useEffect(() => {
     if (slides.length <= 1) return;
-    const id = setInterval(() => {
+    const id = window.setInterval(() => {
       setIndex((i) => (i + 1) % slides.length);
-    }, 5000);
-    return () => clearInterval(id);
+    }, 7000);
+    return () => window.clearInterval(id);
   }, [slides.length]);
 
   const slide = slides[index] ?? slides[0];
@@ -395,6 +406,12 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
       : status === "away"
       ? "#FFD95E"
       : "#888888";
+
+  // Handler tap pour passer manuellement au slide suivant
+  const handleNextSlide = () => {
+    if (!slides.length || slides.length <= 1) return;
+    setIndex((i) => (i + 1) % slides.length);
+  };
 
   return (
     <>
@@ -517,6 +534,7 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
 
         {/* Colonne droite : mini-card thème + KPIs centrés */}
         <div
+          onClick={handleNextSlide}
           style={{
             flex: 1,
             borderRadius: 18,
@@ -526,6 +544,7 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
             overflow: "hidden",
             boxShadow: `0 0 24px ${primary}55, inset 0 0 0 1px rgba(0,0,0,0.8)`,
             border: `1px solid ${primary}AA`,
+            cursor: slides.length > 1 ? "pointer" : "default",
           }}
         >
           {/* halo externe léger pour la carte de stats */}

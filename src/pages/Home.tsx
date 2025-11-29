@@ -3,11 +3,10 @@
 // - Haut de page : "Bienvenue" + logo DARTS COUNTER (centré + animé)
 // - Carte joueur actif (ActiveProfileCard) : avatar + statut + carrousel de stats
 // - Bandeau arcade (ArcadeTicker) : infos importantes avec image spécifique
+// - Bloc détail du ticker : 2 mini-cards synchronisées avec le slide actif
+//   • Card gauche  : stats liées au slide (KPIs si dispo)
+//   • Card droite  : Astuce / Pub / Nouveauté auto, image dédiée
 // - Gros boutons de navigation (Profils / Local / Online / Stats / Réglages)
-// - Stats du joueur actif :
-//     • X01 global + X01 multi via statsBridge
-//     • Training X01 via TrainingStore (localStorage, legacy inclus)
-//     • Cricket via getCricketProfileStats (profil)
 // =============================================================
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -35,6 +34,7 @@ type Props = {
 };
 
 const PAGE_MAX_WIDTH = 520;
+const DETAIL_INTERVAL_MS = 7000;
 
 // ------------------------------------------------------------
 // Tickers : images multiples par thème (choix aléatoire)
@@ -43,36 +43,21 @@ const PAGE_MAX_WIDTH = 520;
 const GH_IMG_BASE =
   "https://raw.githubusercontent.com/perrinalexandre38530-star/Darts-Counter-V5.3/main/public/img/";
 
+// ⚠️ Tu pourras créer les fichiers correspondants dans /public/img :
 const TICKER_IMAGES = {
-  records: [
-    "ticker-records.jpg",
-    // "ticker-records-2.jpg",
-    // "ticker-records-3.jpg",
-  ],
-  local: [
-    "ticker-x01.jpg",
-    // "ticker-x01-2.jpg",
-  ],
-  onlineLast: [
-    "ticker-online.jpg",
-    // "ticker-online-2.jpg",
-  ],
-  leaderboard: [
-    "ticker-leaderboard.jpg",
-    // "ticker-leaderboard-2.jpg",
-  ],
-  training: [
-    "ticker-training.jpg",
-    // "ticker-training-2.jpg",
-  ],
-  global: [
-    "ticker-global.jpg",
-    // "ticker-global-2.jpg",
-  ],
-  tip: [
-    "ticker-tip.jpg",
-    // "ticker-tip-2.jpg",
-  ],
+  // bandeaux principaux (haut + thème stats)
+  records: ["ticker-records.jpg", "ticker-records-2.jpg"],
+  local: ["ticker-x01.jpg", "ticker-x01-2.jpg"],
+  onlineLast: ["ticker-online.jpg", "ticker-online-2.jpg"],
+  leaderboard: ["ticker-leaderboard.jpg", "ticker-leaderboard-2.jpg"],
+  training: ["ticker-training.jpg", "ticker-training-2.jpg"],
+  global: ["ticker-global.jpg", "ticker-global-2.jpg"],
+  tip: ["ticker-tip.jpg", "ticker-tip-2.jpg"],
+
+  // familles dédiées pour le bloc Astuce / Pub / Nouveauté
+  tipAdvice: ["ticker-tip-advice.jpg", "ticker-tip-advice-2.jpg"], // ASTUCES
+  tipAds: ["ticker-tip-ads.jpg", "ticker-tip-ads-2.jpg"], // PUBS
+  tipNews: ["ticker-tip-news.jpg", "ticker-tip-news-2.jpg"], // NOUVEAUTÉS
 } as const;
 
 function pickTickerImage<K extends keyof typeof TICKER_IMAGES>(key: K): string {
@@ -198,10 +183,7 @@ function loadTrainingAggForProfile(profileId: string): TrainingX01Agg {
     for (const row of parsed) {
       if (!row) continue;
 
-      // ⚠️ Compat ancien format :
-      // - si profileId présent ➜ on filtre dessus
-      // - si PAS de profileId ➜ on considère que c'est du "legacy"
-      //   et on l'inclut pour tous les profils (donc aussi l'actif)
+      // ⚠️ Compat ancien format
       const hasProfileId =
         row.profileId !== undefined &&
         row.profileId !== null &&
@@ -211,7 +193,6 @@ function loadTrainingAggForProfile(profileId: string): TrainingX01Agg {
         continue;
       }
 
-      // ➜ Ici : soit c'est bien ce profil, soit c'est du legacy sans profilId
       agg.sessions += 1;
       agg.totalDarts += Number(row.darts) || 0;
       agg.sumAvg3D += Number(row.avg3D) || 0;
@@ -244,13 +225,82 @@ function loadTrainingAggForProfile(profileId: string): TrainingX01Agg {
   }
 }
 
+/* ============================================================
+   Aggreg Tour de l’Horloge pour 1 profil (dc_training_clock_stats_v1)
+   - Format agrégé par run :
+     { profileId, targetsHit, attempts, totalTimeSec, bestStreak }
+============================================================ */
+
+const TRAINING_CLOCK_STATS_KEY = "dc_training_clock_stats_v1";
+
+type ClockAgg = {
+  runs: number;
+  targetsHitTotal: number;
+  attemptsTotal: number;
+  totalTimeSec: number;
+  bestStreak: number;
+};
+
+function makeEmptyClockAgg(): ClockAgg {
+  return {
+    runs: 0,
+    targetsHitTotal: 0,
+    attemptsTotal: 0,
+    totalTimeSec: 0,
+    bestStreak: 0,
+  };
+}
+
+function loadClockAggForProfile(profileId: string): ClockAgg {
+  if (typeof window === "undefined") return makeEmptyClockAgg();
+
+  try {
+    const raw = window.localStorage.getItem(TRAINING_CLOCK_STATS_KEY);
+    if (!raw) return makeEmptyClockAgg();
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return makeEmptyClockAgg();
+
+    const agg = makeEmptyClockAgg();
+
+    for (const row of parsed) {
+      if (!row) continue;
+
+      const hasProfileId =
+        row.profileId !== undefined &&
+        row.profileId !== null &&
+        String(row.profileId) !== "";
+
+      if (hasProfileId && String(row.profileId) !== profileId) {
+        continue;
+      }
+
+      const targetsHit = Number(row.targetsHit ?? row.hits ?? 0) || 0;
+      const attempts = Number(row.attempts ?? row.throws ?? 0) || 0;
+      const timeSec = Number(row.totalTimeSec ?? row.timeSec ?? 0) || 0;
+      const streak = Number(row.bestStreak ?? row.streak ?? 0) || 0;
+
+      agg.runs += 1;
+      agg.targetsHitTotal += targetsHit;
+      agg.attemptsTotal += attempts;
+      agg.totalTimeSec += timeSec;
+      if (streak > agg.bestStreak) agg.bestStreak = streak;
+    }
+
+    return agg;
+  } catch (e) {
+    console.warn("[Home] loadClockAggForProfile failed", e);
+    return makeEmptyClockAgg();
+  }
+}
+
 /**
  * buildStatsForProfile(profileId)
  * - X01 global + X01 multi + records via statsBridge
  * - Complète avec Training X01 (localStorage dc_training_x01_stats_v1)
- *   en incluant aussi les sessions legacy (sans profileId)
  * - Complète avec Cricket profil via getCricketProfileStats
- * - Online / Horloge restent à 0 pour l’instant
+ * - Complète avec Tour de l’Horloge (localStorage dc_training_clock_stats_v1)
+ * - Online reste à 0 pour l’instant
  */
 async function buildStatsForProfile(
   profileId: string
@@ -258,7 +308,7 @@ async function buildStatsForProfile(
   try {
     const base: any = await getBasicProfileStatsAsync(profileId);
 
-    // Cricket : on sécurise avec un try interne au cas où
+    // Cricket
     let cricket: any = null;
     try {
       cricket = await getCricketProfileStats(profileId);
@@ -270,36 +320,38 @@ async function buildStatsForProfile(
     const wins = Number(base?.wins || 0);
     const avg3 = Number(base?.avg3 || 0);
     const bestVisit = Number(base?.bestVisit || 0);
-    const bestCheckout = Number(base?.bestCheckout || 0);
+    the const bestCheckout = Number(base?.bestCheckout || 0);
 
-    // winRate dans base = 0..100 (si présent)
     const winRatePct = Number(base?.winRate != null ? base.winRate : 0);
     const winRate01 =
       winRatePct > 0 ? winRatePct / 100 : games > 0 ? wins / games : 0;
 
-    // Rating global : pour l’instant, on réutilise la moy. 3D
     const ratingGlobal = avg3;
 
-    // 🔹 Training X01 (agrégat localStorage par profil + legacy)
+    // Training X01 (agrégat localStorage par profil + legacy)
     const tAgg = loadTrainingAggForProfile(profileId);
     const trainingAvg3D =
       tAgg.sessions > 0 ? tAgg.sumAvg3D / tAgg.sessions : 0;
 
-    // 🔹 Cricket (profil) — mapping macro pour débloquer le slide
+    // Cricket (profil)
     const cricketMatches = Number(cricket?.matchesTotal ?? 0);
     const cricketBestPoints = Number(cricket?.bestPointsInMatch ?? 0);
-    const cricketWinsSolo = Number(cricket?.winsSolo ?? 0);
-    const cricketWinsTeams = Number(cricket?.winsTeams ?? 0);
-    const cricketWinsGeneric = Number(cricket?.wins ?? 0);
-    const cricketWins =
-      cricketWinsSolo + cricketWinsTeams + cricketWinsGeneric;
+    const cricketWinsTotal = Number(cricket?.winsTotal ?? 0);
     const cricketWinRate =
-      cricketMatches > 0 ? cricketWins / cricketMatches : 0;
+      cricketMatches > 0 ? cricketWinsTotal / cricketMatches : 0;
+
+    // Tour de l’Horloge (agrégat localStorage)
+    const cAgg = loadClockAggForProfile(profileId);
+    const clockTargetsHit = cAgg.targetsHitTotal;
+    const clockSuccessRate =
+      cAgg.attemptsTotal > 0 ? cAgg.targetsHitTotal / cAgg.attemptsTotal : 0;
+    const clockTotalTimeSec = cAgg.totalTimeSec;
+    const clockBestStreak = cAgg.bestStreak;
 
     const s: ActiveProfileStats = {
-      // ---- Vue globale (tous jeux confondus, pour l’instant X01) ----
+      // ---- Vue globale ----
       ratingGlobal,
-      winrateGlobal: winRate01, // 0..1
+      winrateGlobal: winRate01,
       avg3DGlobal: avg3,
       sessionsGlobal: games,
       favoriteNumberLabel: null,
@@ -329,28 +381,27 @@ async function buildStatsForProfile(
       x01MultiBestCO: bestCheckout,
       x01MultiMinDartsLabel: null,
 
-      // ---- Cricket (macro profil) ----
-      cricketPointsPerRound: cricketBestPoints || 0, // record points / match
-      cricketHitsTotal: cricketMatches || 0, // nb de parties jouées
+      // ---- Cricket ----
+      cricketPointsPerRound: cricketBestPoints || 0,
+      cricketHitsTotal: cricketMatches || 0,
       cricketCloseRate: cricketWinRate || 0,
       cricketLegsWinrate: cricketWinRate || 0,
       cricketAvgClose201918: 0,
       cricketOpenings: cricketMatches || 0,
 
-      // ---- Training X01 (agrégat réel) ----
+      // ---- Training X01 ----
       trainingAvg3D,
       trainingHitsS: tAgg.hitsS || 0,
       trainingHitsD: tAgg.hitsD || 0,
       trainingHitsT: tAgg.hitsT || 0,
-      // pour l’instant pas d’objectifs stockés → on laisse 0 => "—" dans la carte
       trainingGoalSuccessRate: 0,
       trainingBestCO: tAgg.bestCheckout ?? 0,
 
-      // ---- Tour de l'Horloge (sera branché ensuite) ----
-      clockTargetsHit: 0,
-      clockSuccessRate: 0,
-      clockTotalTimeSec: 0,
-      clockBestStreak: 0,
+      // ---- Tour de l'Horloge ----
+      clockTargetsHit,
+      clockSuccessRate,
+      clockTotalTimeSec,
+      clockBestStreak,
     };
 
     return s;
@@ -360,8 +411,278 @@ async function buildStatsForProfile(
   }
 }
 
+// Petite mise en forme locale pour le bloc détail
+type DetailRow = { label: string; value: string };
+
+function fmtNumHome(v?: number | null, decimals = 1): string {
+  if (v == null || Number.isNaN(v)) return "—";
+  const n = Number(v);
+  return n % 1 === 0 ? String(n) : n.toFixed(decimals);
+}
+function fmtPctHome(v?: number | null): string {
+  if (v == null || Number.isNaN(v)) return "—";
+  return `${(v * 100).toFixed(0)}%`;
+}
+
+// Génère les KPIs du gros bloc en fonction du slide
+function buildTickerDetailRows(
+  tickerId: string,
+  s: ActiveProfileStats,
+  t: (k: string, d?: string) => string
+): DetailRow[] {
+  const rows: DetailRow[] = [];
+
+  const trainingHitsTotal =
+    (s.trainingHitsS ?? 0) +
+    (s.trainingHitsD ?? 0) +
+    (s.trainingHitsT ?? 0);
+
+  switch (tickerId) {
+    case "last-records": {
+      if ((s.recordBestVisitX01 ?? 0) > 0) {
+        rows.push({
+          label: t("home.detail.bestVisit", "best visit x01"),
+          value: fmtNumHome(s.recordBestVisitX01, 0),
+        });
+      }
+      if ((s.recordBestCOX01 ?? 0) > 0) {
+        rows.push({
+          label: t("home.detail.bestCO", "best checkout"),
+          value: fmtNumHome(s.recordBestCOX01, 0),
+        });
+      }
+      if ((s.recordBestAvg3DX01 ?? 0) > 0) {
+        rows.push({
+          label: t("home.detail.bestAvg3d", "best avg 3d"),
+          value: fmtNumHome(s.recordBestAvg3DX01, 2),
+        });
+      }
+      if ((s.recordBestCricketScore ?? 0) > 0) {
+        rows.push({
+          label: t("home.detail.bestCricket", "best cricket"),
+          value: fmtNumHome(s.recordBestCricketScore, 0),
+        });
+      }
+      break;
+    }
+
+    case "last-local-match": {
+      if ((s.x01MultiSessions ?? 0) > 0) {
+        rows.push(
+          {
+            label: t("home.detail.localSessions", "matchs x01 multi"),
+            value: fmtNumHome(s.x01MultiSessions, 0),
+          },
+          {
+            label: t("home.detail.localWinrate", "win% local"),
+            value: fmtPctHome(s.x01MultiWinrate ?? 0),
+          },
+          {
+            label: t("home.detail.localAvg3d", "moy. 3d"),
+            value: fmtNumHome(s.x01MultiAvg3D, 2),
+          },
+          {
+            label: t("home.detail.localBestVisit", "best visit"),
+            value: fmtNumHome(s.x01MultiBestVisit, 0),
+          },
+          {
+            label: t("home.detail.localBestCO", "best co"),
+            value: fmtNumHome(s.x01MultiBestCO, 0),
+          }
+        );
+      }
+      break;
+    }
+
+    case "training-summary": {
+      if (trainingHitsTotal > 0) {
+        rows.push(
+          {
+            label: t("home.detail.trainingHits", "hits total"),
+            value: fmtNumHome(trainingHitsTotal, 0),
+          },
+          {
+            label: t("home.detail.trainingAvg3d", "moy. 3d"),
+            value: fmtNumHome(s.trainingAvg3D ?? 0, 2),
+          },
+          {
+            label: t("home.detail.trainingHitsS", "hits S"),
+            value: fmtNumHome(s.trainingHitsS ?? 0, 0),
+          },
+          {
+            label: t("home.detail.trainingHitsD", "hits D"),
+            value: fmtNumHome(s.trainingHitsD ?? 0, 0),
+          },
+          {
+            label: t("home.detail.trainingHitsT", "hits T"),
+            value: fmtNumHome(s.trainingHitsT ?? 0, 0),
+          },
+          {
+            label: t("home.detail.trainingBestCO", "best co"),
+            value: fmtNumHome(s.trainingBestCO ?? 0, 0),
+          }
+        );
+      }
+      break;
+    }
+
+    case "month-summary": {
+      if ((s.sessionsGlobal ?? 0) > 0) {
+        rows.push(
+          {
+            label: t("home.detail.globalSessions", "sessions"),
+            value: fmtNumHome(s.sessionsGlobal ?? 0, 0),
+          },
+          {
+            label: t("home.detail.globalWinrate", "win%"),
+            value: fmtPctHome(s.winrateGlobal ?? 0),
+          },
+          {
+            label: t("home.detail.globalAvg3d", "moy. 3d"),
+            value: fmtNumHome(s.avg3DGlobal ?? 0, 2),
+          },
+          {
+            label: t("home.detail.rating", "rating"),
+            value: fmtNumHome(s.ratingGlobal ?? 0, 1),
+          }
+        );
+
+        // Ajout Horloge si dispo
+        if ((s.clockTargetsHit ?? 0) > 0) {
+          rows.push(
+            {
+              label: t("home.detail.clockTargets", "cibles horloge"),
+              value: fmtNumHome(s.clockTargetsHit ?? 0, 0),
+            },
+            {
+              label: t("home.detail.clockBestStreak", "meilleure série"),
+              value: fmtNumHome(s.clockBestStreak ?? 0, 0),
+            }
+          );
+        }
+      }
+      break;
+    }
+
+    // Online / leader / tip : pas encore de KPIs dédiés
+    case "last-online-match":
+    case "online-leader":
+    case "tip-of-day":
+    default:
+      break;
+  }
+
+  return rows;
+}
+
+/* ============================================================
+   Blocs visuels pour les 2 mini-cards
+============================================================ */
+
+// Image de fond pour la mini-card STATS (gauche) — différente du bandeau
+function pickStatsBackgroundForTicker(tickerId: string): string {
+  switch (tickerId) {
+    case "last-records":
+      return pickTickerImage("leaderboard"); // bandeau = records
+    case "last-local-match":
+      return pickTickerImage("training"); // bandeau = local
+    case "last-online-match":
+      return pickTickerImage("leaderboard"); // bandeau = onlineLast
+    case "online-leader":
+      return pickTickerImage("onlineLast"); // bandeau = leaderboard
+    case "training-summary":
+      return pickTickerImage("global"); // bandeau = training
+    case "month-summary":
+      return pickTickerImage("training"); // bandeau = global
+    case "tip-of-day":
+    default:
+      return pickTickerImage("global"); // bandeau = tip
+  }
+}
+
+// Image de fond pour la mini-card ASTUCE / PUB / NOUVEAUTÉ (droite)
+function pickTipBackgroundForTicker(tickerId: string): string {
+  switch (tickerId) {
+    case "last-records":
+      return pickTickerImage("tipAdvice"); // astuce records
+    case "last-local-match":
+      return pickTickerImage("tipAds"); // pub local / BOTS / friends
+    case "last-online-match":
+      return pickTickerImage("tipAdvice"); // astuce online
+    case "online-leader":
+      return pickTickerImage("tipNews"); // nouveauté classement
+    case "training-summary":
+      return pickTickerImage("tipAdvice"); // astuce training
+    case "month-summary":
+      return pickTickerImage("tipNews"); // nouveautés globales
+    case "tip-of-day":
+    default:
+      return pickTickerImage("tipAdvice");
+  }
+}
+
+/* ============================================================
+   Petit bloc KPI pour le détail du ticker
+============================================================ */
+type DetailKpiProps = {
+  label: string;
+  value: string;
+  primary: string;
+  theme: any;
+};
+
+function DetailKpi({ label, value, primary, theme }: DetailKpiProps) {
+  return (
+    <div
+      style={{
+        borderRadius: 14,
+        padding: "6px 8px 8px",
+        background:
+          "radial-gradient(circle at 0% 0%, rgba(255,255,255,0.06), rgba(5,7,16,0.96))",
+        border: `1px solid ${theme.borderSoft ?? "rgba(255,255,255,0.18)"}`,
+        boxShadow: "0 10px 22px rgba(0,0,0,0.75)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        textAlign: "center",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9,
+          letterSpacing: 0.4,
+          opacity: 0.8,
+          marginBottom: 3,
+          textTransform: "lowercase",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          height: 2,
+          width: 26,
+          borderRadius: 999,
+          marginBottom: 4,
+          background: `linear-gradient(90deg, transparent, ${primary}, transparent)`,
+          boxShadow: `0 0 6px ${primary}66`,
+        }}
+      />
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 900,
+          color: primary,
+          lineHeight: 1.1,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
 // Bandeau arcade : messages + images différentes (textes traduits via t)
-// ⚠️ Version dynamique : se base sur les stats du joueur actif
 function buildArcadeItems(
   _store: Store,
   profile: Profile | null,
@@ -515,7 +836,7 @@ function buildArcadeItems(
     accentColor: "#9EFF5E",
   });
 
-  // ---------- 6) Stats globales / mois ----------
+  // ---------- 6) Stats globales / profil ----------
   items.push({
     id: "month-summary",
     title: t("home.ticker.month", "Stats du profil"),
@@ -557,7 +878,7 @@ function buildArcadeItems(
   return items;
 }
 
-/* ============================================================
+/* =============================================================
    Component
 ============================================================ */
 
@@ -582,16 +903,17 @@ export default function Home({ store, go }: Props) {
   const selfStatus: "online" | "away" | "offline" =
     anyStore.selfStatus ?? "online";
 
-  // Si pas signed_in => toujours offline
   const onlineStatusForUi: "online" | "away" | "offline" =
     auth.status === "signed_in" ? selfStatus : "offline";
 
   const activeProfile = useMemo(() => getActiveProfile(store), [store]);
 
-  // 🔢 Stats du joueur actif (chargées async pour ActiveProfileCard + ArcadeTicker)
   const [stats, setStats] = useState<ActiveProfileStats>(
     () => emptyActiveProfileStats()
   );
+
+  // index du ticker pour le bloc détail (synchronisé sur ArcadeTicker)
+  const [tickerIndex, setTickerIndex] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -611,9 +933,61 @@ export default function Home({ store, go }: Props) {
     };
   }, [activeProfile?.id]);
 
- // On laisse tourner le random à chaque render (au moins à chaque reload)
-const tickerItems = buildArcadeItems(store, activeProfile, stats, t);
+  const tickerItems = useMemo(
+    () => buildArcadeItems(store, activeProfile, stats, t),
+    [store, activeProfile, stats, t]
+  );
 
+  // clamp / reset l'index quand la liste change
+  useEffect(() => {
+    if (!tickerItems.length) {
+      setTickerIndex(0);
+      return;
+    }
+    setTickerIndex((i) => (i >= tickerItems.length ? 0 : i));
+  }, [tickerItems.length]);
+
+  const currentTicker: ArcadeTickerItem | null =
+    tickerItems.length > 0
+      ? tickerItems[Math.min(tickerIndex, tickerItems.length - 1)]
+      : null;
+
+  const detailRows: DetailRow[] = useMemo(() => {
+    if (!currentTicker) return [];
+    return buildTickerDetailRows(currentTicker.id, stats, t);
+  }, [currentTicker?.id, stats, t]);
+
+  const hasDetailStats = detailRows.length > 0;
+  const detailAccent =
+    currentTicker?.accentColor ?? theme.primary ?? "#F6C256";
+
+  // Si pas de stats => card gauche = message général
+  const statsTitle = hasDetailStats
+    ? currentTicker?.title ?? ""
+    : t("home.detail.stats.title", "Stats du profil");
+  const statsText = hasDetailStats
+    ? currentTicker?.text ?? ""
+    : t(
+        "home.detail.stats.text",
+        "Tes stats détaillées apparaîtront ici dès que tu auras joué quelques matchs ou trainings."
+      );
+
+  // Card droite : Astuce / Pub / Nouveauté auto
+  const tipTitle = t(
+    "home.detail.tip.title",
+    "Astuce, pub & nouveautés du moment"
+  );
+  const tipText = t(
+    "home.detail.tip.text",
+    "Découvre les nouveautés, astuces ou pubs liées à cette section. Garde toujours ton profil actif pour des recommandations plus pertinentes."
+  );
+
+  const statsBackgroundImage = currentTicker
+    ? pickStatsBackgroundForTicker(currentTicker.id)
+    : "";
+  const tipBackgroundImage = currentTicker
+    ? pickTipBackgroundForTicker(currentTicker.id)
+    : pickTickerImage("tipAdvice");
 
   return (
     <div
@@ -635,7 +1009,7 @@ const tickerItems = buildArcadeItems(store, activeProfile, stats, t);
       >
         <style dangerouslySetInnerHTML={{ __html: homeHeaderCss }} />
 
-        {/* ------------ Haut de page (dashboard + titre animé) ------------ */}
+        {/* Haut de page */}
         <div
           style={{
             borderRadius: 28,
@@ -695,7 +1069,7 @@ const tickerItems = buildArcadeItems(store, activeProfile, stats, t);
           </div>
         </div>
 
-        {/* ------------ Carte joueur actif + carrousel stats (ActiveProfileCard) ------------ */}
+        {/* Carte joueur actif */}
         {activeProfile && (
           <ActiveProfileCard
             profile={activeProfile}
@@ -704,10 +1078,199 @@ const tickerItems = buildArcadeItems(store, activeProfile, stats, t);
           />
         )}
 
-        {/* ------------ Bandeau arcade (infos importantes dynamiques) ------------ */}
-        <ArcadeTicker items={tickerItems} />
+        {/* Petit bandeau arcade (auto-slide interne + synchro détail) */}
+        <ArcadeTicker
+          items={tickerItems}
+          intervalMs={DETAIL_INTERVAL_MS}
+          onActiveIndexChange={(index) => {
+            if (!tickerItems.length) return;
+            const len = tickerItems.length;
+            // gestion valeurs négatives / > len
+            const safe = ((index % len) + len) % len;
+            setTickerIndex(safe);
+          }}
+        />
 
-        {/* ------------ Gros boutons de navigation ------------ */}
+        {/* Bloc détail du ticker : 2 mini-cards côte à côte */}
+        {currentTicker && (
+          <div
+            style={{
+              marginTop: 10,
+              marginBottom: 10,
+              borderRadius: 22,
+              border: `1px solid ${
+                theme.borderSoft ?? "rgba(255,255,255,0.12)"
+              }`,
+              boxShadow: "0 18px 40px rgba(0,0,0,0.85)",
+              padding: 8,
+              background:
+                "radial-gradient(circle at top, rgba(255,255,255,0.06), rgba(3,4,10,1))",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+              }}
+            >
+              {/* --------- Card gauche : STATS du slide --------- */}
+              <div
+                style={{
+                  flex: 1,
+                  borderRadius: 18,
+                  overflow: "hidden",
+                  position: "relative",
+                  minHeight: 96,
+                  backgroundColor: "#05060C",
+                  backgroundImage: statsBackgroundImage
+                    ? `url("${statsBackgroundImage}")`
+                    : undefined,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                }}
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background:
+                      "linear-gradient(130deg, rgba(0,0,0,0.85), rgba(0,0,0,0.45))",
+                  }}
+                />
+                <div
+                  style={{
+                    position: "relative",
+                    padding: "8px 9px 9px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 800,
+                      letterSpacing: 0.8,
+                      textTransform: "uppercase",
+                      color: detailAccent,
+                    }}
+                  >
+                    {statsTitle}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      lineHeight: 1.35,
+                      color: theme.textSoft ?? "rgba(255,255,255,0.9)",
+                    }}
+                  >
+                    {statsText}
+                  </div>
+
+                  {hasDetailStats && (
+                    <div
+                      style={{
+                        marginTop: 4,
+                        display: "grid",
+                        gridTemplateColumns: "repeat(2, minmax(0,1fr))",
+                        gap: 6,
+                      }}
+                    >
+                      {detailRows.map((row) => (
+                        <DetailKpi
+                          key={row.label}
+                          label={row.label}
+                          value={row.value}
+                          primary={detailAccent}
+                          theme={theme}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* --------- Card droite : ASTUCE / PUB / NOUVEAUTÉ --------- */}
+              <div
+                style={{
+                  flex: 1,
+                  borderRadius: 18,
+                  overflow: "hidden",
+                  position: "relative",
+                  minHeight: 96,
+                  backgroundColor: "#05060C",
+                  backgroundImage: tipBackgroundImage
+                    ? `url("${tipBackgroundImage}")`
+                    : undefined,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                }}
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background:
+                      "linear-gradient(230deg, rgba(0,0,0,0.9), rgba(0,0,0,0.4))",
+                  }}
+                />
+                <div
+                  style={{
+                    position: "relative",
+                    padding: "8px 9px 9px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    height: "100%",
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        letterSpacing: 0.8,
+                        textTransform: "uppercase",
+                        color: theme.accent1 ?? "#FFD980",
+                        marginBottom: 3,
+                      }}
+                    >
+                      {tipTitle}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        lineHeight: 1.35,
+                        color: theme.textSoft ?? "rgba(255,255,255,0.9)",
+                      }}
+                    >
+                      {tipText}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 9,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.6,
+                      opacity: 0.8,
+                      marginTop: 4,
+                    }}
+                  >
+                    {t(
+                      "home.detail.tip.hint",
+                      "Astuce / pub / nouveauté liée à la section active"
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Gros boutons de navigation */}
         <div
           style={{
             marginTop: 22,

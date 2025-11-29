@@ -1,9 +1,11 @@
 // ============================================
-// src/pages/Settings.tsx — Thème + Langue + Reset App
+// src/pages/Settings.tsx — Thème + Langue + Compte + Reset App
 // Fond toujours sombre (ne varie pas avec le thème)
 // Les thèmes ne changent que les néons / accents / textes
 // + Drapeaux pour les langues
 // + Catégories + carrousels horizontaux pour les thèmes
+// + Bloc "Compte & sécurité" inline (gestion du compte connecté)
+// + Bloc "Notifications & communications"
 // + Bouton "Tout réinitialiser" (nukeAll + reload)
 // ============================================
 
@@ -12,6 +14,8 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useLang, type Lang } from "../contexts/LangContext";
 import { THEMES, type ThemeId, type AppTheme } from "../theme/themePresets";
 import { nukeAll } from "../lib/storage";
+import { useAuthOnline } from "../hooks/useAuthOnline";
+import { supabase } from "../lib/supabase";
 
 type Props = { go?: (tab: any, params?: any) => void };
 
@@ -334,6 +338,570 @@ function LanguageChoiceButton({
   );
 }
 
+// ---------------- Constantes de page & prefs ----------------
+
+const PAGE_BG = "#050712";
+const CARD_BG = "rgba(8, 10, 20, 0.98)";
+const LS_ACCOUNT_PREFS = "dc_account_prefs_v1";
+
+type AccountPrefs = {
+  emailsNews: boolean;
+  emailsStats: boolean;
+  inAppNotifs: boolean;
+};
+
+const DEFAULT_PREFS: AccountPrefs = {
+  emailsNews: true,
+  emailsStats: true,
+  inAppNotifs: true,
+};
+
+// ---------------- Bloc Compte & sécurité (gestion du compte) ----------------
+
+function AccountSecurityBlock() {
+  const { theme } = useTheme();
+  const { t } = useLang();
+  const auth = useAuthOnline();
+
+  const [displayName, setDisplayName] = React.useState(
+    auth.profile?.displayName || auth.user?.nickname || ""
+  );
+  const [country, setCountry] = React.useState(auth.profile?.country || "");
+  const [savingProfile, setSavingProfile] = React.useState(false);
+  const [resettingPwd, setResettingPwd] = React.useState(false);
+  const [message, setMessage] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const [prefs, setPrefs] = React.useState<AccountPrefs>(DEFAULT_PREFS);
+
+  // Sync quand le profil change (connexion / refresh)
+  React.useEffect(() => {
+    setDisplayName(auth.profile?.displayName || auth.user?.nickname || "");
+    setCountry(auth.profile?.country || "");
+  }, [auth.profile, auth.user]);
+
+  // Chargement des préférences (localStorage)
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(LS_ACCOUNT_PREFS);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<AccountPrefs>;
+      setPrefs({ ...DEFAULT_PREFS, ...parsed });
+    } catch (e) {
+      console.warn("[settings] prefs parse error", e);
+    }
+  }, []);
+
+  // Sauvegarde auto des prefs
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(LS_ACCOUNT_PREFS, JSON.stringify(prefs));
+    } catch (e) {
+      console.warn("[settings] prefs save error", e);
+    }
+  }, [prefs]);
+
+  async function handleSaveProfile() {
+    if (auth.status !== "signed_in") return;
+    setSavingProfile(true);
+    setMessage(null);
+    setError(null);
+
+    try {
+      await auth.updateProfile({
+        displayName: displayName.trim() || undefined,
+        country: country.trim() || undefined,
+      });
+      setMessage(
+        t(
+          "settings.account.save.ok",
+          "Informations de compte mises à jour."
+        )
+      );
+    } catch (e: any) {
+      console.warn("[settings] updateProfile error", e);
+      setError(
+        e?.message ||
+          t(
+            "settings.account.save.error",
+            "Impossible de mettre à jour le compte pour le moment."
+          )
+      );
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  async function handlePasswordReset() {
+    if (auth.status !== "signed_in" || !auth.user?.email) {
+      setError(
+        t(
+          "settings.account.reset.noEmail",
+          "Impossible d’envoyer un lien de réinitialisation : aucune adresse mail n’est associée."
+        )
+      );
+      return;
+    }
+
+    setResettingPwd(true);
+    setMessage(null);
+    setError(null);
+
+    try {
+      await supabase.auth.resetPasswordForEmail(auth.user.email, {
+        redirectTo: window.location.origin,
+      });
+      setMessage(
+        t(
+          "settings.account.reset.sent",
+          "Un email de réinitialisation de mot de passe vient d’être envoyé."
+        )
+      );
+    } catch (e: any) {
+      console.warn("[settings] resetPassword error", e);
+      setError(
+        e?.message ||
+          t(
+            "settings.account.reset.error",
+            "Impossible d’envoyer l’email de réinitialisation pour le moment."
+          )
+      );
+    } finally {
+      setResettingPwd(false);
+    }
+  }
+
+  const emailLabel = auth.user?.email || "—";
+
+  return (
+    <section
+      style={{
+        background: CARD_BG,
+        borderRadius: 18,
+        border: `1px solid ${theme.borderSoft}`,
+        padding: 16,
+        marginBottom: 16,
+      }}
+    >
+      <h2
+        style={{
+          margin: 0,
+          marginBottom: 6,
+          fontSize: 18,
+          color: theme.primary,
+        }}
+      >
+        {t("settings.account.titleShort", "Compte & sécurité")}
+      </h2>
+      <p
+        className="subtitle"
+        style={{
+          fontSize: 12,
+          color: theme.textSoft,
+          marginBottom: 10,
+          lineHeight: 1.4,
+        }}
+      >
+        {t(
+          "settings.account.subtitleShort",
+          "Gère ici l’email, le pseudo en ligne, le pays, tes notifications et la sécurité de ton compte Darts Counter."
+        )}
+      </p>
+
+      {/* Statut du compte */}
+      <div
+        style={{
+          padding: 10,
+          borderRadius: 12,
+          border: `1px solid ${theme.borderSoft}`,
+          background: "rgba(0,0,0,0.3)",
+          marginBottom: 12,
+          fontSize: 13,
+        }}
+      >
+        <div style={{ marginBottom: 4, fontWeight: 700 }}>
+          {t("settings.account.status", "Statut du compte")}
+        </div>
+
+        {auth.status === "checking" ? (
+          <div style={{ color: theme.textSoft }}>
+            {t(
+              "settings.account.checking",
+              "Vérification de la session en cours…"
+            )}
+          </div>
+        ) : auth.status === "signed_in" ? (
+          <>
+            <div style={{ color: theme.textSoft }}>
+              {t(
+                "settings.account.connectedAs",
+                "Connecté en tant que"
+              )}{" "}
+              <strong>{emailLabel}</strong>
+            </div>
+            <div
+              className="subtitle"
+              style={{
+                fontSize: 11,
+                color: theme.textSoft,
+                marginTop: 4,
+              }}
+            >
+              {t(
+                "settings.account.connectedHint",
+                "Tu retrouveras ce compte et tes stats online en te reconnectant sur un autre appareil."
+              )}
+            </div>
+          </>
+        ) : (
+          <div style={{ color: theme.textSoft }}>
+            {t(
+              "settings.account.notConnected.expl",
+              "Aucun compte online n’est connecté. Tu peux associer un compte depuis la page Profils."
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Si pas connecté, on ne montre que l’explication, pas de formulaire ici */}
+      {auth.status !== "signed_in" && (
+        <p
+          className="subtitle"
+          style={{
+            fontSize: 11,
+            color: theme.textSoft,
+            marginBottom: 0,
+          }}
+        >
+          {t(
+            "settings.account.noInlineAuthHint",
+            "La création / connexion de compte se fait dans la section Profils. Ici tu gères surtout un compte déjà connecté."
+          )}
+        </p>
+      )}
+
+      {auth.status === "signed_in" && (
+        <>
+          {/* Formulaire de gestion du profil online */}
+          <div
+            style={{
+              display: "grid",
+              gap: 8,
+              marginTop: 6,
+              marginBottom: 10,
+            }}
+          >
+            <label
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+                fontSize: 12,
+              }}
+            >
+              <span style={{ color: theme.textSoft }}>
+                {t("settings.account.email", "Email (lecture seule)")}
+              </span>
+              <input
+                className="input"
+                value={emailLabel}
+                disabled
+                style={{ opacity: 0.7 }}
+              />
+            </label>
+
+            <label
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+                fontSize: 12,
+              }}
+            >
+              <span style={{ color: theme.textSoft }}>
+                {t(
+                  "settings.account.displayName",
+                  "Pseudo en ligne (display name)"
+                )}
+              </span>
+              <input
+                className="input"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+            </label>
+
+            <label
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+                fontSize: 12,
+              }}
+            >
+              <span style={{ color: theme.textSoft }}>
+                {t("settings.account.country", "Pays (optionnel)")}
+              </span>
+              <input
+                className="input"
+                value={country}
+                onChange={(e) => setCountry(e.target.value)}
+              />
+            </label>
+          </div>
+
+          {message && (
+            <div
+              className="subtitle"
+              style={{ color: "#5ad57a", fontSize: 11, marginBottom: 4 }}
+            >
+              {message}
+            </div>
+          )}
+          {error && (
+            <div
+              className="subtitle"
+              style={{ color: "#ff6666", fontSize: 11, marginBottom: 4 }}
+            >
+              {error}
+            </div>
+          )}
+
+          {/* Actions compte : déconnexion / reset / save */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 8,
+              flexWrap: "wrap",
+              marginBottom: 10,
+            }}
+          >
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => auth.logout()}
+            >
+              {t("settings.account.btn.logout", "Se déconnecter")}
+            </button>
+
+            <button
+              type="button"
+              className="btn sm"
+              onClick={handlePasswordReset}
+              disabled={resettingPwd}
+              style={{
+                borderColor: theme.primary,
+              }}
+            >
+              {resettingPwd
+                ? t(
+                    "settings.account.reset.loading",
+                    "Envoi du lien…"
+                  )
+                : t(
+                    "settings.account.reset.btn",
+                    "Réinitialiser / récupérer mon mot de passe"
+                  )}
+            </button>
+
+            <button
+              type="button"
+              className="btn primary sm"
+              onClick={handleSaveProfile}
+              disabled={savingProfile}
+              style={{
+                background: `linear-gradient(180deg, ${theme.primary}, ${theme.primary}AA)`,
+                color: "#000",
+                fontWeight: 700,
+                minWidth: 140,
+              }}
+            >
+              {savingProfile
+                ? t("settings.account.save.loading", "Enregistrement…")
+                : t(
+                    "settings.account.save.btn",
+                    "Enregistrer les changements"
+                  )}
+            </button>
+          </div>
+
+          {/* Bloc Notifications & communications */}
+          <div
+            style={{
+              marginTop: 8,
+              paddingTop: 10,
+              borderTop: `1px dashed ${theme.borderSoft}`,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                marginBottom: 6,
+                color: theme.primary,
+              }}
+            >
+              {t(
+                "settings.account.notifications.title",
+                "Notifications & communications"
+              )}
+            </div>
+            <p
+              className="subtitle"
+              style={{
+                fontSize: 11,
+                color: theme.textSoft,
+                marginBottom: 8,
+              }}
+            >
+              {t(
+                "settings.account.notifications.subtitle",
+                "Choisis les mails et notifications que tu souhaites recevoir."
+              )}
+            </p>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                fontSize: 12,
+              }}
+            >
+              <ToggleRow
+                label={t(
+                  "settings.account.notifications.emailsNews",
+                  "Emails de nouveautés / promotions"
+                )}
+                help={t(
+                  "settings.account.notifications.emailsNewsHelp",
+                  "Actualités majeures, nouvelles fonctionnalités, offres spéciales."
+                )}
+                checked={prefs.emailsNews}
+                onChange={(v) =>
+                  setPrefs((p) => ({ ...p, emailsNews: v }))
+                }
+              />
+
+              <ToggleRow
+                label={t(
+                  "settings.account.notifications.emailsStats",
+                  "Emails de résumé de stats & conseils"
+                )}
+                help={t(
+                  "settings.account.notifications.emailsStatsHelp",
+                  "Récapitulatif occasionnel de tes stats avec quelques tips."
+                )}
+                checked={prefs.emailsStats}
+                onChange={(v) =>
+                  setPrefs((p) => ({ ...p, emailsStats: v }))
+                }
+              />
+
+              <ToggleRow
+                label={t(
+                  "settings.account.notifications.inAppNotifs",
+                  "Notifications dans l’app (sons / messages info)"
+                )}
+                help={t(
+                  "settings.account.notifications.inAppNotifsHelp",
+                  "Contrôle les sons d’alerte et les petits messages d’infos dans l’application."
+                )}
+                checked={prefs.inAppNotifs}
+                onChange={(v) =>
+                  setPrefs((p) => ({ ...p, inAppNotifs: v }))
+                }
+              />
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+// Petit composant ligne toggle
+function ToggleRow({
+  label,
+  help,
+  checked,
+  onChange,
+}: {
+  label: string;
+  help?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  const { theme } = useTheme();
+  const primary = theme.primary;
+
+  return (
+    <label
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: 10,
+        padding: "6px 8px",
+        borderRadius: 10,
+        background: "rgba(255,255,255,0.02)",
+        border: `1px solid ${theme.borderSoft}`,
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 600, marginBottom: 2 }}>{label}</div>
+        {help && (
+          <div
+            className="subtitle"
+            style={{ fontSize: 11, color: theme.textSoft }}
+          >
+            {help}
+          </div>
+        )}
+      </div>
+      <div style={{ flexShrink: 0 }}>
+        <button
+          type="button"
+          onClick={() => onChange(!checked)}
+          style={{
+            width: 44,
+            height: 24,
+            borderRadius: 999,
+            background: checked
+              ? primary
+              : "rgba(255,255,255,0.08)",
+            border: `1px solid ${
+              checked ? primary : theme.borderSoft
+            }`,
+            display: "flex",
+            alignItems: "center",
+            padding: 2,
+            boxSizing: "border-box",
+            cursor: "pointer",
+            boxShadow: checked
+              ? `0 0 10px ${primary}66`
+              : "none",
+          }}
+        >
+          <div
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: "#050712",
+              transform: `translateX(${checked ? 18 : 0}px)`,
+              transition: "transform 0.18s ease-out",
+            }}
+          />
+        </button>
+      </div>
+    </label>
+  );
+}
+
 // ---------------- Composant principal ----------------
 
 export default function Settings({ go }: Props) {
@@ -363,9 +931,6 @@ export default function Settings({ go }: Props) {
         );
       });
   }
-
-  const PAGE_BG = "#050712";
-  const CARD_BG = "rgba(8, 10, 20, 0.98)";
 
   return (
     <div
@@ -408,9 +973,12 @@ export default function Settings({ go }: Props) {
       <div style={{ fontSize: 14, color: theme.textSoft, marginBottom: 16 }}>
         {t(
           "settings.subtitle",
-          "Personnalise le thème et la langue de l'application"
+          "Personnalise le thème, la langue et ton compte Darts Counter."
         )}
       </div>
+
+      {/* ---------- COMPTE & SÉCURITÉ + PREFS ---------- */}
+      <AccountSecurityBlock />
 
       {/* ---------- BLOC THEME AVEC CARROUSELS ---------- */}
 

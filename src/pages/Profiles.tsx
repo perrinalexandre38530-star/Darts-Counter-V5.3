@@ -19,6 +19,7 @@ import { getBasicProfileStatsSync } from "../lib/statsLiteIDB";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import { useAuthOnline } from "../hooks/useAuthOnline";
+import { onlineApi } from "../lib/onlineApi";
 
 type View = "menu" | "me" | "locals" | "friends";
 
@@ -279,6 +280,28 @@ export default function Profiles({
     );
   }
 
+  // Enregistrer les infos privées + sync online (pseudo / pays)
+  async function handlePrivateInfoSave(patch: PrivateInfo) {
+    if (!active) return;
+
+    // 1) Met à jour le profil local (nom affiché = Surnom si rempli)
+    if (patch.nickname && patch.nickname.trim() && patch.nickname !== active.name) {
+      renameProfile(active.id, patch.nickname.trim());
+    }
+
+    // 2) Si connecté ONLINE → sync displayName / country
+    if (auth.status === "signed_in") {
+      try {
+        await onlineApi.updateProfile({
+          displayName: patch.nickname?.trim() || active.name || undefined,
+          country: patch.country?.trim() || undefined,
+        });
+      } catch (err) {
+        console.warn("[profiles] updateProfile online error:", err);
+      }
+    }
+  }
+
   // Statut affiché : si pas connecté online -> toujours "offline"
   const onlineStatusForUi: "online" | "away" | "offline" =
     auth.status === "signed_in"
@@ -401,6 +424,7 @@ export default function Profiles({
                   <PrivateInfoBlock
                     active={active}
                     onPatch={patchActivePrivateInfo}
+                    onSave={handlePrivateInfoSave}
                   />
                 </Card>
               </>
@@ -880,9 +904,11 @@ type PrivateInfo = {
 function PrivateInfoBlock({
   active,
   onPatch,
+  onSave,
 }: {
   active: Profile | null;
   onPatch: (patch: Partial<PrivateInfo>) => void;
+  onSave?: (full: PrivateInfo) => void;
 }) {
   const { theme } = useTheme();
   const { t } = useLang();
@@ -905,6 +931,7 @@ function PrivateInfoBlock({
 
   const [fields, setFields] = React.useState<PrivateInfo>(initial);
 
+  // Quand on change de profil actif -> reset le formulaire
   React.useEffect(() => {
     setFields(initial);
   }, [initial]);
@@ -913,8 +940,15 @@ function PrivateInfoBlock({
     setFields((f) => ({ ...f, [key]: value }));
   }
 
-  function handleBlur<K extends keyof PrivateInfo>(key: K) {
-    onPatch({ [key]: fields[key] } as Partial<PrivateInfo>);
+  function handleCancel() {
+    setFields(initial);
+  }
+
+  function handleSubmit() {
+    // Patch complet dans le profil local
+    onPatch(fields);
+    // Callback optionnel pour sync online / renommer profil
+    onSave?.(fields);
   }
 
   if (!active) {
@@ -951,58 +985,49 @@ function PrivateInfoBlock({
           label={t("profiles.private.nickname", "Surnom")}
           value={fields.nickname || ""}
           onChange={(v) => handleChange("nickname", v)}
-          onBlur={() => handleBlur("nickname")}
         />
         <PrivateField
           label={t("profiles.private.lastName", "Nom")}
           value={fields.lastName || ""}
           onChange={(v) => handleChange("lastName", v)}
-          onBlur={() => handleBlur("lastName")}
         />
         <PrivateField
           label={t("profiles.private.firstName", "Prénom")}
           value={fields.firstName || ""}
           onChange={(v) => handleChange("firstName", v)}
-          onBlur={() => handleBlur("firstName")}
         />
         <PrivateField
           label={t("profiles.private.birthDate", "Date de naissance")}
           value={fields.birthDate || ""}
           onChange={(v) => handleChange("birthDate", v)}
-          onBlur={() => handleBlur("birthDate")}
           type="date"
         />
         <PrivateField
           label={t("profiles.private.country", "Pays")}
           value={fields.country || ""}
           onChange={(v) => handleChange("country", v)}
-          onBlur={() => handleBlur("country")}
         />
         <PrivateField
           label={t("profiles.private.city", "Ville")}
           value={fields.city || ""}
           onChange={(v) => handleChange("city", v)}
-          onBlur={() => handleBlur("city")}
         />
         <PrivateField
           label={t("profiles.private.email", "Adresse mail")}
           value={fields.email || ""}
           onChange={(v) => handleChange("email", v)}
-          onBlur={() => handleBlur("email")}
           type="email"
         />
         <PrivateField
           label={t("profiles.private.phone", "Téléphone")}
           value={fields.phone || ""}
           onChange={(v) => handleChange("phone", v)}
-          onBlur={() => handleBlur("phone")}
           type="tel"
         />
         <PrivateField
           label={t("profiles.private.password", "Mot de passe")}
           value={fields.password || ""}
           onChange={(v) => handleChange("password", v)}
-          onBlur={() => handleBlur("password")}
           type="password"
         />
       </div>
@@ -1016,6 +1041,28 @@ function PrivateInfoBlock({
           "En cas d’oubli, tu pourras redéfinir un mot de passe depuis cette page (stocké uniquement sur cet appareil)."
         )}
       </div>
+
+      {/* Boutons ENREGISTRER / ANNULER */}
+      <div
+        className="row"
+        style={{
+          marginTop: 4,
+          justifyContent: "flex-end",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        <button className="btn sm" onClick={handleCancel}>
+          {t("common.cancel", "Annuler")}
+        </button>
+        <button
+          className="btn ok sm"
+          onClick={handleSubmit}
+          style={{ fontWeight: 800 }}
+        >
+          {t("common.save", "Enregistrer")}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1024,13 +1071,11 @@ function PrivateField({
   label,
   value,
   onChange,
-  onBlur,
   type = "text",
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  onBlur: () => void;
   type?: string;
 }) {
   const { theme } = useTheme();
@@ -1049,7 +1094,6 @@ function PrivateField({
         className="input"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onBlur={onBlur}
         style={{ fontSize: 13 }}
       />
     </label>
@@ -1244,9 +1288,17 @@ function UnifiedAuthBlock({
   ) => void;
   autoFocusCreate?: boolean;
 }) {
-  const { t } = useLang();
-  const { theme } = useTheme();
+  // ⚙️ Contexte langue + thème pour pouvoir les changer dès l'inscription
+  const langCtx = useLang() as any;
+  const themeCtx = useTheme() as any;
+
+  const t = langCtx.t as (k: string, def?: string) => string;
+  const theme = themeCtx.theme;
   const primary = theme.primary;
+
+  const currentLang = (langCtx.lang as string) ?? "fr";
+  const currentThemeKey = (themeCtx.themeKey as string) ?? "gold-neon";
+
   const { signup: onlineSignup, login: onlineLogin } = useAuthOnline();
 
   // Connexion
@@ -1254,7 +1306,7 @@ function UnifiedAuthBlock({
   const [loginPassword, setLoginPassword] = React.useState("");
   const [loginError, setLoginError] = React.useState<string | null>(null);
 
-  // Création
+  // Création (profil + compte online + préférences app)
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -1262,6 +1314,10 @@ function UnifiedAuthBlock({
   const [firstName, setFirstName] = React.useState("");
   const [lastName, setLastName] = React.useState("");
   const [birthDate, setBirthDate] = React.useState("");
+  const [country, setCountry] = React.useState("");
+  const [prefLang, setPrefLang] = React.useState(currentLang);
+  const [prefTheme, setPrefTheme] = React.useState(currentThemeKey);
+
   const [file, setFile] = React.useState<File | null>(null);
   const [preview, setPreview] = React.useState<string | null>(null);
 
@@ -1281,6 +1337,25 @@ function UnifiedAuthBlock({
     r.readAsDataURL(file);
   }, [file]);
 
+  // Options langue / thème affichées sur la page d’inscription
+  const LANG_OPTIONS: { value: string; label: string }[] = [
+    { value: "fr", label: "Français" },
+    { value: "en", label: "English" },
+    { value: "es", label: "Español" },
+    { value: "de", label: "Deutsch" },
+    { value: "it", label: "Italiano" },
+    { value: "pt", label: "Português" },
+  ];
+
+  const THEME_OPTIONS: { value: string; label: string }[] = [
+    { value: "gold-neon", label: t("theme.goldNeon", "Or néon") },
+    { value: "pink-neon", label: t("theme.pinkNeon", "Rose fluo") },
+    { value: "blue-petrol", label: t("theme.bluePetrol", "Bleu pétrole") },
+    { value: "green-neon", label: t("theme.greenNeon", "Vert néon") },
+  ];
+
+  // LOGIN : on commence par vérifier le compte ONLINE
+  // puis on relie / crée un profil local
   async function submitLogin() {
     const emailNorm = loginEmail.trim().toLowerCase();
     const pass = loginPassword;
@@ -1295,40 +1370,60 @@ function UnifiedAuthBlock({
       return;
     }
 
-    // On cherche le profil local qui correspond à cet email/mot de passe
-    const match = profiles.find((p) => {
-      const pi = ((p as any).privateInfo || {}) as PrivateInfo;
-      const pe = (pi.email || "").trim().toLowerCase();
-      const pw = pi.password || "";
-      return pe === emailNorm && pw === pass;
-    });
+    setLoginError(null);
 
-    if (!match) {
+    // 1) Vrai login online (Supabase ou mock via useAuthOnline)
+    try {
+      await onlineLogin({
+        email: emailNorm,
+        password: pass,
+        nickname: undefined,
+      });
+    } catch (err) {
+      console.warn("[profiles] online login error:", err);
       setLoginError(
         t(
           "profiles.auth.login.error",
-          "Email ou mot de passe incorrect."
+          "Email ou mot de passe incorrect, ou compte inexistant."
         )
       );
       return;
     }
 
-    // ✅ On lie le profil actif avec le compte online (FriendsPage)
-    //    ➜ activeProfileId = id du profil local
-    //    ➜ onlineLogin avec le même email + pseudo => même joueur online
-    setLoginError(null);
-    onConnect(match.id);
+    // 2) Une fois connecté online => relier à un profil local
+    let match = profiles.find((p) => {
+      const pi = ((p as any).privateInfo || {}) as PrivateInfo;
+      const pe = (pi.email || "").trim().toLowerCase();
+      return pe === emailNorm;
+    });
 
-    // Essayer aussi de connecter le compte online (mock ou backend)
-    try {
-      await onlineLogin({
-        email: emailNorm || undefined,
-        nickname: match.name || undefined,
-        password: pass || undefined,
-      });
-    } catch (err) {
-      console.warn("[profiles] online login error:", err);
+    if (!match) {
+      // Aucun profil local associé => on en crée un en se basant sur la session online
+      try {
+        const session = await onlineApi.getCurrentSession();
+        const displayName =
+          session?.user.nickname || session?.user.email || emailNorm;
+
+        const privateInfo: Partial<PrivateInfo> = {
+          email: emailNorm,
+          password: pass,
+        };
+
+        onCreate(displayName, null, privateInfo);
+        return;
+      } catch (err) {
+        console.warn("[profiles] getCurrentSession after login error:", err);
+        const privateInfo: Partial<PrivateInfo> = {
+          email: emailNorm,
+          password: pass,
+        };
+        onCreate(emailNorm, null, privateInfo);
+        return;
+      }
     }
+
+    // Profil local trouvé => on le rend actif
+    onConnect(match.id);
   }
 
   async function submitCreate() {
@@ -1336,12 +1431,23 @@ function UnifiedAuthBlock({
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedPass = password;
     const trimmedPass2 = password2;
+    const trimmedCountry = country.trim();
+    const chosenLang = prefLang;
+    const chosenTheme = prefTheme;
 
-    if (!trimmedName || !trimmedEmail || !trimmedPass) {
+    // ✅ Champs obligatoires (incluant pays + langue + thème)
+    if (
+      !trimmedName ||
+      !trimmedEmail ||
+      !trimmedPass ||
+      !trimmedCountry ||
+      !chosenLang ||
+      !chosenTheme
+    ) {
       alert(
         t(
-          "profiles.auth.create.missing",
-          "Merci de renseigner au minimum le nom du profil, l’email et le mot de passe."
+          "profiles.auth.create.missingAll",
+          "Merci de renseigner le nom, l’email, le mot de passe, le pays, la langue et le thème."
         )
       );
       return;
@@ -1379,13 +1485,30 @@ function UnifiedAuthBlock({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       birthDate: birthDate || "",
+      country: trimmedCountry,
     };
 
-    // Profil local (+ stats, etc.)
-    // ➜ Le nouveau profil sera actif via addProfile()
+    // 🎯 1) Profil local (+ stats, etc.)
     onCreate(trimmedName, file, privateInfo);
 
-    // Et on tente la création du compte online lié
+    // 🎯 2) On fixe directement langue + thème de l'application
+    try {
+      if (typeof langCtx.setLang === "function") {
+        langCtx.setLang(chosenLang);
+      }
+    } catch (err) {
+      console.warn("[profiles] setLang error:", err);
+    }
+
+    try {
+      if (typeof themeCtx.setThemeKey === "function") {
+        themeCtx.setThemeKey(chosenTheme);
+      }
+    } catch (err) {
+      console.warn("[profiles] setThemeKey error:", err);
+    }
+
+    // 🎯 3) Et on tente la création du compte online lié (best effort)
     try {
       await onlineSignup({
         email: trimmedEmail,
@@ -1396,6 +1519,7 @@ function UnifiedAuthBlock({
       console.warn("[profiles] online signup error:", err);
     }
 
+    // Reset formulaire
     setName("");
     setEmail("");
     setPassword("");
@@ -1403,6 +1527,9 @@ function UnifiedAuthBlock({
     setFirstName("");
     setLastName("");
     setBirthDate("");
+    setCountry("");
+    setPrefLang(chosenLang);
+    setPrefTheme(chosenTheme);
     setFile(null);
     setPreview(null);
   }
@@ -1513,6 +1640,7 @@ function UnifiedAuthBlock({
           )}
         </div>
 
+        {/* Avatar + nom de profil */}
         <div
           className="row"
           style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}
@@ -1568,6 +1696,7 @@ function UnifiedAuthBlock({
           />
         </div>
 
+        {/* Email + mot de passe */}
         <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
           <input
             className="input"
@@ -1602,6 +1731,7 @@ function UnifiedAuthBlock({
             />
           </div>
 
+          {/* Identité basique */}
           <div className="row" style={{ gap: 8 }}>
             <input
               className="input"
@@ -1631,6 +1761,66 @@ function UnifiedAuthBlock({
             onChange={(e) => setBirthDate(e.target.value)}
           />
 
+          {/* ✅ Pays + Langue + Thème (obligatoires) */}
+          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <input
+              className="input"
+              placeholder={t("profiles.private.country", "Pays")}
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
+              style={{ flex: 1, minWidth: 120 }}
+            />
+
+            <select
+              className="input"
+              value={prefLang}
+              onChange={(e) => setPrefLang(e.target.value)}
+              style={{ flex: 1, minWidth: 120 }}
+            >
+              <option value="">
+                {t(
+                  "profiles.auth.create.langPlaceholder",
+                  "Langue de l’application"
+                )}
+              </option>
+              {LANG_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="input"
+              value={prefTheme}
+              onChange={(e) => setPrefTheme(e.target.value)}
+              style={{ flex: 1, minWidth: 140 }}
+            >
+              <option value="">
+                {t(
+                  "profiles.auth.create.themePlaceholder",
+                  "Thème visuel"
+                )}
+              </option>
+              {THEME_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div
+            className="subtitle"
+            style={{ fontSize: 11, color: theme.textSoft }}
+          >
+            {t(
+              "profiles.auth.create.hintPrefs",
+              "Le pays, la langue et le thème seront utilisés dans toute l’application (modifiable ensuite dans les réglages)."
+            )}
+          </div>
+
+          {/* Bouton créer compte */}
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <button
               className="btn primary sm"
@@ -1655,7 +1845,11 @@ function UnifiedAuthBlock({
 function AddLocalProfile({
   onCreate,
 }: {
-  onCreate: (name: string, file?: File | null, privateInfo?: Partial<PrivateInfo>) => void;
+  onCreate: (
+    name: string,
+    file?: File | null,
+    privateInfo?: Partial<PrivateInfo>
+  ) => void;
 }) {
   const [name, setName] = React.useState("");
   const [file, setFile] = React.useState<File | null>(null);

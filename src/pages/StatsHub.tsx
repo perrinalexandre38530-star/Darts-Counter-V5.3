@@ -19,6 +19,7 @@ import { getCricketProfileStats } from "../lib/statsBridge";
 import type { CricketProfileStats } from "../lib/cricketStats";
 import StatsCricketDashboard from "../components/StatsCricketDashboard";
 import StatsX01MultiDashboard, { type X01MultiPlayer,} from "../components/StatsX01MultiDashboard";
+import StatsTrainingSummary from "../components/stats/StatsTrainingSummary";
 // ❌ IMPORTANT : plus d'import TrainingX01Session ici
 
 /* ---------- Thème ---------- */
@@ -3825,11 +3826,10 @@ export default function StatsHub(props: Props) {
   const mainTab: StatsHubMainTab = props.tab ?? "stats";
 
   // Mode d’affichage : "active" (joueur actif) ou "locals" (profils locaux)
-// - si on reçoit playerId mais pas mode => on considère "active"
-// - sinon => "locals" par défaut
-const mode: StatsMode =
-(props.mode as StatsMode) ??
-(props.playerId ? "active" : "locals");
+  // - si on reçoit playerId mais pas mode => on considère "active"
+  // - sinon => "locals" par défaut
+  const mode: StatsMode =
+    (props.mode as StatsMode) ?? (props.playerId ? "active" : "locals");
 
   // ====================================================
   // 🔥 paramètres initiaux (navigation depuis History / StatsShell)
@@ -4098,181 +4098,212 @@ const mode: StatsMode =
       {mainTab === "stats" && (
         <>
           {/* =======================
-              HEADER STAT JOUEUR
-              (style proche TrainingX01)
-              ======================= */}
-          <div
-            style={{
-              ...card,
-              marginBottom: 12,
-              padding: 16,
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-            }}
-          >
-            <div
-              style={{
-                ...goldNeon,
-                fontSize: 18,
-                textAlign: "center",
-              }}
-            >
-              {mode === "active" ? "Stats joueur actif" : "Stats joueurs"}
-            </div>
+    HEADER STAT JOUEUR
+    (style proche TrainingX01)
+    ======================= */}
+<div
+  style={{
+    ...card,
+    marginBottom: 12,
+    padding: 16,
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  }}
+>
+  <div
+    style={{
+      ...goldNeon,
+      fontSize: 18,
+      textAlign: "center",
+    }}
+  >
+    {mode === "active" ? "Stats joueur actif" : "Stats joueurs"}
+  </div>
 
-            {/* Ligne : joueur sélectionné + résumé global */}
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "row",
-                gap: 12,
-                alignItems: "center",
-                justifyContent: "space-between",
-                flexWrap: "wrap",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    textTransform: "uppercase",
-                    letterSpacing: 0.6,
-                    color: T.text70,
-                  }}
-                >
-                  Joueur sélectionné
-                </div>
-                <div
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 900,
-                    color: "#FFFFFF",
-                    textShadow:
-                      "0 0 8px rgba(255,255,255,.45), 0 0 18px rgba(0,0,0,.85)",
-                  }}
-                >
-                  {selectedPlayer?.name || "—"}
-                </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: T.text70,
-                  }}
-                >
-                  {records.length} matchs au total (X01 + autres modes)
-                </div>
-              </div>
+  {/* Ligne : joueur sélectionné + résumé global */}
+  <div
+    style={{
+      display: "flex",
+      flexDirection: "row",
+      gap: 12,
+      alignItems: "center",
+      justifyContent: "space-between",
+      flexWrap: "wrap",
+    }}
+  >
+    {/* Colonne gauche : joueur + bouton Sync */}
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        minWidth: 0,
+      }}
+    >
+      {/* Label + bouton Sync profil */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            textTransform: "uppercase",
+            letterSpacing: 0.6,
+            color: T.text70,
+          }}
+        >
+          Joueur sélectionné
+        </div>
 
-              {/* Petits KPIs résumé (comme TrainingX01) */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(2, minmax(90px, 1fr))",
-                  gap: 8,
-                  flex: 1,
-                  minWidth: 180,
-                }}
-              >
-                {/* Moyenne 3D */}
-                <div
-                  style={{
-                    ...kpiBox,
-                    borderColor: "rgba(255,184,222,.6)",
-                    boxShadow:
-                      "0 0 0 1px rgba(255,184,222,.16), 0 0 12px rgba(255,184,222,.55)",
-                  }}
-                >
-                  <div style={kpiLabel}>Moy. 3D globale</div>
-                  <div
-                    style={{
-                      ...kpiValueMain,
-                      color: "#FFB8DE",
-                    }}
-                  >
-                    {avg3Overall.toFixed(1)}
-                  </div>
-                </div>
+        {/* Bouton Sync profil → ouvre SyncCenter avec CE joueur */}
+        <GoldPill
+          active={false}
+          onClick={() => {
+            if (!selectedPlayer) return;
+            // On passe le profileId pour que SyncCenter sache quel profil exporter
+            go("sync_center", { profileId: selectedPlayer.id });
+          }}
+        >
+          Sync profil
+        </GoldPill>
+      </div>
 
-                {/* Winrate */}
-                <div
-                  style={{
-                    ...kpiBox,
-                    borderColor: "rgba(124,255,154,.6)",
-                    boxShadow:
-                      "0 0 0 1px rgba(124,255,154,.16), 0 0 12px rgba(124,255,154,.55)",
-                  }}
-                >
-                  <div style={kpiLabel}>Winrate global</div>
-                  <div
-                    style={{
-                      ...kpiValueMain,
-                      color: "#7CFF9A",
-                    }}
-                  >
-                    {winRate.toFixed(1)}%
-                  </div>
-                </div>
+      {/* Nom du joueur */}
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 900,
+          color: "#FFFFFF",
+          textShadow:
+            "0 0 8px rgba(255,255,255,.45), 0 0 18px rgba(0,0,0,.85)",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          maxWidth: 220,
+        }}
+      >
+        {selectedPlayer?.name || "—"}
+      </div>
 
-                {/* Best visit */}
-                <div
-                  style={{
-                    ...kpiBox,
-                    borderColor: "rgba(71,181,255,.6)",
-                    boxShadow:
-                      "0 0 0 1px rgba(71,181,255,.16), 0 0 12px rgba(71,181,255,.55)",
-                  }}
-                >
-                  <div style={kpiLabel}>Best Visit</div>
-                  <div
-                    style={{
-                      ...kpiValueMain,
-                      color: "#47B5FF",
-                    }}
-                  >
-                    {bestVisit || 0}
-                  </div>
-                </div>
+      {/* Petit résumé nombre de matchs */}
+      <div
+        style={{
+          fontSize: 11,
+          color: T.text70,
+        }}
+      >
+        {records.length} matchs au total (X01 + autres modes)
+      </div>
+    </div>
 
-                {/* Best CO */}
-                <div
-                  style={{
-                    ...kpiBox,
-                    borderColor: "rgba(246,194,86,.9)",
-                    boxShadow:
-                      "0 0 0 1px rgba(246,194,86,.35), 0 0 14px rgba(246,194,86,.7)",
-                  }}
-                >
-                  <div style={kpiLabel}>Best Checkout</div>
-                  <div
-                    style={{
-                      ...kpiValueMain,
-                      color: T.gold,
-                    }}
-                  >
-                    {bestCheckout || 0}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+    {/* Petits KPIs résumé (comme TrainingX01) */}
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(2, minmax(90px, 1fr))",
+        gap: 8,
+        flex: 1,
+        minWidth: 180,
+      }}
+    >
+      {/* Moyenne 3D */}
+      <div
+        style={{
+          ...kpiBox,
+          borderColor: "rgba(255,184,222,.6)",
+          boxShadow:
+            "0 0 0 1px rgba(255,184,222,.16), 0 0 12px rgba(255,184,222,.55)",
+        }}
+      >
+        <div style={kpiLabel}>Moy. 3D globale</div>
+        <div
+          style={{
+            ...kpiValueMain,
+            color: "#FFB8DE",
+          }}
+        >
+          {avg3Overall.toFixed(1)}
+        </div>
+      </div>
+
+      {/* Winrate */}
+      <div
+        style={{
+          ...kpiBox,
+          borderColor: "rgba(124,255,154,.6)",
+          boxShadow:
+            "0 0 0 1px rgba(124,255,154,.16), 0 0 12px rgba(124,255,154,.55)",
+        }}
+      >
+        <div style={kpiLabel}>Winrate global</div>
+        <div
+          style={{
+            ...kpiValueMain,
+            color: "#7CFF9A",
+          }}
+        >
+          {winRate.toFixed(1)}%
+        </div>
+      </div>
+
+      {/* Best visit */}
+      <div
+        style={{
+          ...kpiBox,
+          borderColor: "rgba(71,181,255,.6)",
+          boxShadow:
+            "0 0 0 1px rgba(71,181,255,.16), 0 0 12px rgba(71,181,255,.55)",
+        }}
+      >
+        <div style={kpiLabel}>Best Visit</div>
+        <div
+          style={{
+            ...kpiValueMain,
+            color: "#47B5FF",
+          }}
+        >
+          {bestVisit || 0}
+        </div>
+      </div>
+
+      {/* Best CO */}
+      <div
+        style={{
+          ...kpiBox,
+          borderColor: "rgba(246,194,86,.9)",
+          boxShadow:
+            "0 0 0 1px rgba(246,194,86,.35), 0 0 14px rgba(246,194,86,.7)",
+        }}
+      >
+        <div style={kpiLabel}>Best Checkout</div>
+        <div
+          style={{
+            ...kpiValueMain,
+            color: T.gold,
+          }}
+        >
+          {bestCheckout || 0}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
           {/* =======================
               LISTE JOUEURS (UNIQUEMENT EN MODE "locals")
               ======================= */}
-           {mode === "locals" && (
+          {mode === "locals" && (
             <div style={{ ...card, marginBottom: 12 }}>
-              {/* Titre */}
+              {/* Titre + texte + SYNC */}
               <div
                 style={{
                   display: "flex",
-                  alignItems: "baseline",
+                  alignItems: "center",
                   justifyContent: "space-between",
                   marginBottom: 8,
                 }}
@@ -4288,13 +4319,31 @@ const mode: StatsMode =
                 >
                   Joueurs ({allPlayers.length})
                 </div>
+
                 <div
                   style={{
-                    fontSize: 11,
-                    color: T.text70,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
                   }}
                 >
-                  Swipe horizontal pour changer
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: T.text70,
+                    }}
+                  >
+                    Swipe horizontal pour changer
+                  </div>
+
+                  {/* 🔁 SYNC depuis la vue profils locaux */}
+                  <GoldPill
+                    active={false}
+                    onClick={() => go("sync_center")}
+                    style={{ fontSize: 11, padding: "4px 10px" }}
+                  >
+                    SYNC
+                  </GoldPill>
                 </div>
               </div>
 
@@ -4459,119 +4508,123 @@ const mode: StatsMode =
               CONTENU SELON SOUS-ONGLET
               ======================= */}
           {statsSubTab === "dashboard" && (
-            <>
-              {selectedPlayer ? (
-                <>
-                  {/* Stats globales joueur */}
-                  <StatsPlayerDashboard
-                    data={buildDashboardForPlayer(
-                      selectedPlayer,
-                      records,
-                      quick || null
-                    )}
-                  />
-
-                  {/* Petit résumé Cricket */}
-                  <div style={{ ...card, marginTop: 12 }}>
-                    <div
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 800,
-                        textTransform: "uppercase",
-                        color: T.gold,
-                        textShadow:
-                          "0 0 6px rgba(246,194,86,.9), 0 0 14px rgba(246,194,86,.45)",
-                        letterSpacing: 0.8,
-                        marginBottom: 6,
-                      }}
-                    >
-                      Cricket
-                    </div>
-
-                    {cricketLoading && (
-                      <div style={{ fontSize: 12, color: T.text70 }}>
-                        Chargement des stats Cricket...
-                      </div>
-                    )}
-
-                    {!cricketLoading && !cricketStats && (
-                      <div style={{ fontSize: 12, color: T.text70 }}>
-                        Aucune partie Cricket enregistrée pour ce joueur.
-                      </div>
-                    )}
-
-                    {!cricketLoading && cricketStats && (
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: 8,
-                          fontSize: 12,
-                          color: T.text70,
-                        }}
-                      >
-                        <div>
-                          <div>Parties totales</div>
-                          <div style={{ fontWeight: 800, color: "#FFF" }}>
-                            {cricketStats.matchesTotal}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div>Record points / partie</div>
-                          <div style={{ fontWeight: 800, color: "#FFF" }}>
-                            {cricketStats.bestPointsInMatch ?? 0}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div>Solo (V / D)</div>
-                          <div style={{ fontWeight: 800, color: "#7CFF9A" }}>
-                            {cricketStats.winsSolo} /{" "}
-                            {cricketStats.lossesSolo}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div>Équipes (V / D)</div>
-                          <div style={{ fontWeight: 800, color: "#7CFF9A" }}>
-                            {cricketStats.winsTeams} /{" "}
-                            {cricketStats.lossesTeams}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div style={card}>
-                  Sélectionne un joueur pour afficher ses stats.
-                </div>
-              )}
-            </>
-          )}
-
-{statsSubTab === "x01_multi" && (
   <>
     {selectedPlayer ? (
-      <StatsX01MultiDashboard
-        records={records}
-        activePlayer={
-          {
-            id: selectedPlayer.id,
-            name: selectedPlayer.name,
-            avatarDataUrl: (selectedPlayer as any).avatarDataUrl ?? null,
-          } as X01MultiPlayer
-        }
-        allPlayers={allPlayers as unknown as X01MultiPlayer[]}
-      />
+      <>
+        {/* Stats globales joueur */}
+        <StatsPlayerDashboard
+          data={buildDashboardForPlayer(
+            selectedPlayer,
+            records,
+            quick || null
+          )}
+        />
+
+        {/* Résumé Training (X01 + Horloge) */}
+        <div style={{ marginTop: 12 }}>
+          <StatsTrainingSummary profileId={selectedPlayer.id} />
+        </div>
+
+        {/* Petit résumé Cricket */}
+        <div style={{ ...card, marginTop: 12 }}>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 800,
+              textTransform: "uppercase",
+              color: T.gold,
+              textShadow:
+                "0 0 6px rgba(246,194,86,.9), 0 0 14px rgba(246,194,86,.45)",
+              letterSpacing: 0.8,
+              marginBottom: 6,
+            }}
+          >
+            Cricket
+          </div>
+
+          {cricketLoading && (
+            <div style={{ fontSize: 12, color: T.text70 }}>
+              Chargement des stats Cricket...
+            </div>
+          )}
+
+          {!cricketLoading && !cricketStats && (
+            <div style={{ fontSize: 12, color: T.text70 }}>
+              Aucune partie Cricket enregistrée pour ce joueur.
+            </div>
+          )}
+
+          {!cricketLoading && cricketStats && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+                fontSize: 12,
+                color: T.text70,
+              }}
+            >
+              <div>
+                <div>Parties totales</div>
+                <div style={{ fontWeight: 800, color: "#FFF" }}>
+                  {cricketStats.matchesTotal}
+                </div>
+              </div>
+
+              <div>
+                <div>Record points / partie</div>
+                <div style={{ fontWeight: 800, color: "#FFF" }}>
+                  {cricketStats.bestPointsInMatch ?? 0}
+                </div>
+              </div>
+
+              <div>
+                <div>Solo (V / D)</div>
+                <div style={{ fontWeight: 800, color: "#7CFF9A" }}>
+                  {cricketStats.winsSolo} / {cricketStats.lossesSolo}
+                </div>
+              </div>
+
+              <div>
+                <div>Équipes (V / D)</div>
+                <div style={{ fontWeight: 800, color: "#7CFF9A" }}>
+                  {cricketStats.winsTeams} / {cricketStats.lossesTeams}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </>
     ) : (
       <div style={card}>
-        Sélectionne un joueur pour afficher ses stats X01.
+        Sélectionne un joueur pour afficher ses stats.
       </div>
     )}
   </>
 )}
+
+          {statsSubTab === "x01_multi" && (
+            <>
+              {selectedPlayer ? (
+                <StatsX01MultiDashboard
+                  records={records}
+                  activePlayer={
+                    {
+                      id: selectedPlayer.id,
+                      name: selectedPlayer.name,
+                      avatarDataUrl:
+                        (selectedPlayer as any).avatarDataUrl ?? null,
+                    } as X01MultiPlayer
+                  }
+                  allPlayers={allPlayers as unknown as X01MultiPlayer[]}
+                />
+              ) : (
+                <div style={card}>
+                  Sélectionne un joueur pour afficher ses stats X01.
+                </div>
+              )}
+            </>
+          )}
 
           {statsSubTab === "cricket" && (
             <>

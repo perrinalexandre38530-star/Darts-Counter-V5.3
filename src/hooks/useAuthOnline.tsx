@@ -1,9 +1,9 @@
 // ============================================
 // src/hooks/useAuthOnline.tsx
-// Auth Online SIMPLE + 100% compatible MOCK
-// - Pas d’email / pas de mot de passe requis
-// - Pseudo uniquement
-// - Utilise onlineApi (mock ou backend futur)
+// Auth Online unifiée (MOCK ou Supabase réel)
+// - Compatible ancien code (user/profile/status/loading/...)
+// - En mode réel : email + mot de passe requis
+// - En mode mock : pseudo uniquement
 // ============================================
 
 import React from "react";
@@ -26,9 +26,12 @@ export type AuthOnlineContextValue = {
   login: (p: { nickname?: string; email?: string; password?: string }) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (patch: UpdateProfilePayload) => Promise<void>;
+  refresh: () => Promise<void>;
 };
 
-const AuthOnlineContext = React.createContext<AuthOnlineContextValue | null>(null);
+const AuthOnlineContext = React.createContext<AuthOnlineContextValue | null>(
+  null
+);
 
 // ============================================
 // Provider
@@ -40,7 +43,7 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
   const [user, setUser] = React.useState<UserAuth | null>(null);
   const [profile, setProfile] = React.useState<OnlineProfile | null>(null);
 
-  // Applique une session
+  // Applique une session (ou null)
   const applySession = React.useCallback((session: AuthSession | null) => {
     if (!session) {
       setStatus("signed_out");
@@ -59,6 +62,7 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
 
     async function restore() {
       try {
+        setStatus("checking");
         const session = await onlineApi.restoreSession();
         if (!cancelled) applySession(session);
       } catch (e) {
@@ -73,28 +77,72 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
     };
   }, [applySession]);
 
-  // SIGNUP (pseudo only)
-  async function signup(params: { nickname: string; email?: string; password?: string }) {
-    const nickname = params.nickname.trim();
-    if (!nickname) throw new Error("Pseudo requis");
+  // SIGNUP
+  async function signup(params: {
+    nickname: string;
+    email?: string;
+    password?: string;
+  }) {
+    const nickname = params.nickname?.trim();
+    const email = params.email?.trim();
+    const password = params.password?.trim();
 
     setLoading(true);
     try {
-      const session = await onlineApi.signup({ nickname });
+      // Mode MOCK : pseudo seulement
+      if (onlineApi.USE_MOCK) {
+        if (!nickname) throw new Error("Pseudo requis");
+        const session = await onlineApi.signup({ nickname });
+        applySession(session);
+        return;
+      }
+
+      // Mode Supabase réel : email + mot de passe obligatoires
+      if (!email || !password) {
+        throw new Error("Email et mot de passe sont requis pour créer un compte.");
+      }
+
+      const session = await onlineApi.signup({
+        email,
+        password,
+        nickname: nickname || email,
+      });
       applySession(session);
     } finally {
       setLoading(false);
     }
   }
 
-  // LOGIN (pseudo only)
-  async function login(params: { nickname?: string; email?: string; password?: string }) {
+  // LOGIN
+  async function login(params: {
+    nickname?: string;
+    email?: string;
+    password?: string;
+  }) {
     const nickname = params.nickname?.trim();
-    if (!nickname) throw new Error("Pseudo requis");
+    const email = params.email?.trim();
+    const password = params.password?.trim();
 
     setLoading(true);
     try {
-      const session = await onlineApi.login({ nickname });
+      // Mode MOCK : pseudo seulement
+      if (onlineApi.USE_MOCK) {
+        if (!nickname) throw new Error("Pseudo requis");
+        const session = await onlineApi.login({ nickname });
+        applySession(session);
+        return;
+      }
+
+      // Mode Supabase réel : email + mot de passe obligatoires
+      if (!email || !password) {
+        throw new Error("Email et mot de passe sont requis pour se connecter.");
+      }
+
+      const session = await onlineApi.login({
+        email,
+        password,
+        nickname: nickname || undefined,
+      });
       applySession(session);
     } finally {
       setLoading(false);
@@ -112,12 +160,23 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
     }
   }
 
-  // UPDATE PROFILE
+  // UPDATE PROFILE (online)
   async function updateProfile(patch: UpdateProfilePayload) {
     setLoading(true);
     try {
       const newProfile = await onlineApi.updateProfile(patch);
       setProfile(newProfile);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // REFRESH (re-lire la session depuis Supabase / localStorage)
+  async function refresh() {
+    setLoading(true);
+    try {
+      const session = await onlineApi.restoreSession();
+      applySession(session);
     } finally {
       setLoading(false);
     }
@@ -135,6 +194,7 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
         login,
         logout,
         updateProfile,
+        refresh,
       }}
     >
       {children}

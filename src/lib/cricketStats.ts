@@ -3,18 +3,18 @@
 // Système de stats pour CRICKET
 // - Event par fléchette (CricketDartEvent)
 // - Stats par manche (CricketLegStats)
-// - Agrégat profil (CricketProfileStats)
+// - Agrégat profil (CricketProfileStats) + KPIs globaux
 // ============================================
 
 // Segments utiles en Cricket
 export type CricketSegmentId = 15 | 16 | 17 | 18 | 19 | 20 | 25; // 25 = Bull
 
 export type CricketRing =
-  | "S"   // simple
-  | "D"   // double
-  | "T"   // triple
-  | "SB"  // single bull (25)
-  | "DB"  // double bull (50)
+  | "S" // simple
+  | "D" // double
+  | "T" // triple
+  | "SB" // single bull (25)
+  | "DB" // double bull (50)
   | "MISS";
 
 export type CricketPlayerId = string;
@@ -27,25 +27,25 @@ export type CricketDartEvent = {
   matchId?: string;
 
   playerId: CricketPlayerId;
-  visitIndex: number;   // 0,1,2... (volée)
+  visitIndex: number; // 0,1,2... (volée)
   dartIndex: 0 | 1 | 2; // 0..2 dans la volée
 
   segment: CricketSegmentId | "MISS";
   ring: CricketRing;
 
   // LOGIQUE CRICKET
-  marks: number;        // 0..3 (DB = 2 marks sur bull)
-  rawScore: number;     // points théoriques (ex: T20 => 60)
+  marks: number; // 0..3 (DB = 2 marks sur bull)
+  rawScore: number; // points théoriques (ex: T20 => 60)
   scoredPoints: number; // points réellement ajoutés (0 si pas de score)
 
   // Infos de clôture
-  beforeMarksOnSegment: number;   // 0..3 (chez ce joueur)
-  afterMarksOnSegment: number;    // 0..3
-  closedSegmentNow: boolean;      // true si cette fléchette a fermé le segment pour ce joueur
+  beforeMarksOnSegment: number; // 0..3 (chez ce joueur)
+  afterMarksOnSegment: number; // 0..3
+  closedSegmentNow: boolean; // true si cette fléchette a fermé le segment pour ce joueur
 
   // Contexte partie (optionnel mais utile)
-  leadingBeforeThrow?: boolean;   // était-il en tête en points avant cette fléchette ?
-  winningThrow?: boolean;         // true si cette fléchette termine la manche
+  leadingBeforeThrow?: boolean; // était-il en tête en points avant cette fléchette ?
+  winningThrow?: boolean; // true si cette fléchette termine la manche
 
   timestamp: number;
 };
@@ -54,11 +54,11 @@ export type CricketDartEvent = {
 
 export type CricketSegmentStats = {
   segment: CricketSegmentId;
-  marks: number;                  // total marks sur ce segment (0..3 ou plus si points)
-  closes: number;                 // 0 ou 1 (fermé au moins une fois)
-  firstHitVisitIndex?: number;    // première volée où il touche ce segment
-  firstCloseVisitIndex?: number;  // volée où il ferme ce segment
-  pointsScored: number;           // points obtenus sur ce segment
+  marks: number; // total marks sur ce segment (0..3 ou plus si points)
+  closes: number; // 0 ou 1 (fermé au moins une fois)
+  firstHitVisitIndex?: number; // première volée où il touche ce segment
+  firstCloseVisitIndex?: number; // volée où il ferme ce segment
+  pointsScored: number; // points obtenus sur ce segment
 };
 
 // ----------- STATS PAR MANCHE ----------------
@@ -72,34 +72,34 @@ export type CricketLegStats = {
 
   // Contexte de jeu
   mode: "solo" | "teams"; // SOLO vs ÉQUIPES
-  teamId?: string;        // ex: "gold" / "blue"
-  teamName?: string;      // ex: "Team Gold"
+  teamId?: string; // ex: "gold" / "blue"
+  teamName?: string; // ex: "Team Gold"
 
   // Volume
   darts: number;
   visits: number;
   totalMarks: number;
-  totalPoints: number;     // total de points marqués pendant cette manche
+  totalPoints: number; // total de points marqués pendant cette manche
 
   // Efficacité
-  mpr: number;             // totalMarks / visits
-  hitRate: number;         // (flèches non MISS) / darts
-  scoringRate: number;     // (flèches qui marquent des points) / darts
+  mpr: number; // totalMarks / visits
+  hitRate: number; // (flèches non MISS) / darts
+  scoringRate: number; // (flèches qui marquent des points) / darts
 
   // Résultat
   won: boolean;
-  winningDartIndex: number;   // index global fléchette (0..darts-1)
+  winningDartIndex: number; // index global fléchette (0..darts-1)
   winningVisitIndex: number;
 
   // Adversité
-  opponentTotalPoints: number;  // points totaux adverses
-  opponentLabel?: string;       // "Paul", "Team Blue", etc. (rempli par le moteur)
+  opponentTotalPoints: number; // points totaux adverses
+  opponentLabel?: string; // "Paul", "Team Blue", etc. (rempli par le moteur)
 
   // Segments
   perSegment: Record<CricketSegmentId, CricketSegmentStats>;
 
   // Volées / rythme
-  bestVisitMarks: number;      // max marks sur une volée
+  bestVisitMarks: number; // max marks sur une volée
   avgMarksWhenScoring: number; // moyenne de marks sur les volées où il touche
 
   // Ordre de fermeture (15..20 + Bull)
@@ -199,9 +199,10 @@ export function computeCricketLegStats(
     ? marksWhenScoring.reduce((a, b) => a + b, 0) / marksWhenScoring.length
     : 0;
 
-  const startedAt = options?.startedAt ?? (playerEvents[0]?.timestamp ?? Date.now());
+  const startedAt =
+    options?.startedAt ?? playerEvents[0]?.timestamp ?? Date.now();
   const endedAt =
-    options?.endedAt ?? (playerEvents[playerEvents.length - 1]?.timestamp ?? startedAt);
+    options?.endedAt ?? playerEvents[playerEvents.length - 1]?.timestamp ?? startedAt;
   const durationMs = Math.max(0, endedAt - startedAt);
 
   return {
@@ -247,38 +248,51 @@ export function computeCricketLegStats(
 export type CricketMatchHistoryItem = {
   legId: string;
   matchId?: string;
-  ts: number;                 // timestamp (endedAt)
+  ts: number; // timestamp (endedAt)
   mode: "solo" | "teams";
-  opponentLabel: string;      // "Paul", "Team Blue", etc.
-  pointsFor: number;          // totalPoints du joueur
-  pointsAgainst: number;      // opponentTotalPoints
+  opponentLabel: string; // "Paul", "Team Blue", etc.
+  pointsFor: number; // totalPoints du joueur
+  pointsAgainst: number; // opponentTotalPoints
   won: boolean;
 };
 
 // Agrégat global pour un profil
 export type CricketProfileStats = {
   // Volume global
-  matchesTotal: number;    // nb de manches Cricket jouées
-  matchesSolo: number;     // nb de manches solo
-  matchesTeams: number;    // nb de manches en équipes
+  matchesTotal: number; // nb de manches Cricket jouées
+  matchesSolo: number; // nb de manches solo
+  matchesTeams: number; // nb de manches en équipes
 
   // Résultats
   winsTotal: number;
   lossesTotal: number;
 
-  winsSolo: number;        // victoires en solo
-  lossesSolo: number;      // défaites en solo
+  winsSolo: number; // victoires en solo
+  lossesSolo: number; // défaites en solo
 
-  winsTeams: number;       // victoires en équipes
-  lossesTeams: number;     // défaites en équipes
+  winsTeams: number; // victoires en équipes
+  lossesTeams: number; // défaites en équipes
 
   // Records
-  bestPointsInMatch: number;     // record de points sur une manche
+  bestPointsInMatch: number; // record de points sur une manche
   bestPointsMatchId?: string;
   bestPointsLegId?: string;
 
   // Historique des scores (dernières parties Cricket)
   history: CricketMatchHistoryItem[];
+
+  // ---------- KPIs globaux supplémentaires (pour Home / dashboards) ----------
+  totalPointsFor: number;
+  totalPointsAgainst: number;
+  avgPointsFor: number;
+  avgPointsAgainst: number;
+
+  totalDarts: number;
+  totalMarks: number;
+
+  globalMpr: number; // marks par volée global
+  globalHitRate: number; // proportion de flèches non MISS (0..1)
+  globalScoringRate: number; // proportion de flèches qui scorent (0..1)
 };
 
 export function aggregateCricketProfileStats(
@@ -309,6 +323,17 @@ export function aggregateCricketProfileStats(
 
   const history: CricketMatchHistoryItem[] = [];
 
+  // Nouveaux accumulateurs globaux
+  let totalPointsFor = 0;
+  let totalPointsAgainst = 0;
+
+  let totalDarts = 0;
+  let totalMarks = 0;
+  let totalVisits = 0;
+
+  let sumHits = 0;
+  let sumScoringHits = 0;
+
   // Tri par date pour un historique "du plus récent au plus ancien"
   const sorted = [...legs].sort((a, b) => b.endedAt - a.endedAt);
 
@@ -338,6 +363,18 @@ export function aggregateCricketProfileStats(
       bestPointsLegId = leg.legId;
     }
 
+    // Accumulateurs globaux
+    totalPointsFor += leg.totalPoints;
+    totalPointsAgainst += leg.opponentTotalPoints ?? 0;
+
+    totalDarts += leg.darts;
+    totalMarks += leg.totalMarks;
+    totalVisits += leg.visits;
+
+    // hitRate / scoringRate sont rapportés à la fléchette
+    sumHits += leg.hitRate * leg.darts;
+    sumScoringHits += leg.scoringRate * leg.darts;
+
     // Historique (limité à maxHistoryItems)
     if (history.length < maxHistoryItems) {
       history.push({
@@ -353,6 +390,20 @@ export function aggregateCricketProfileStats(
       });
     }
   }
+
+  const avgPointsFor =
+    matchesTotal > 0 ? totalPointsFor / matchesTotal : 0;
+  const avgPointsAgainst =
+    matchesTotal > 0 ? totalPointsAgainst / matchesTotal : 0;
+
+  const globalMpr =
+    totalVisits > 0 ? totalMarks / totalVisits : 0;
+
+  const globalHitRate =
+    totalDarts > 0 ? sumHits / totalDarts : 0;
+
+  const globalScoringRate =
+    totalDarts > 0 ? sumScoringHits / totalDarts : 0;
 
   return {
     matchesTotal,
@@ -373,5 +424,16 @@ export function aggregateCricketProfileStats(
     bestPointsLegId,
 
     history,
+
+    totalPointsFor,
+    totalPointsAgainst,
+    avgPointsFor,
+    avgPointsAgainst,
+
+    totalDarts,
+    totalMarks,
+    globalMpr,
+    globalHitRate,
+    globalScoringRate,
   };
 }

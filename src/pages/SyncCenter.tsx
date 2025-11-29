@@ -2,11 +2,13 @@
 // src/pages/SyncCenter.tsx
 // HUB SYNC & PARTAGE (Option C avancée)
 // - Export / Import JSON (profil / tout le store)
-// - Préparation Sync device-à-device (QR / lien court)
-// - Préparation Sync Cloud (token / lien, via backend CF)
+// - Sync device-à-device (profil ciblé → QR / message / scan QR)
+// - Sync Cloud (token / lien, via backend CF)
 // - UI full thème + textes via LangContext
 // ============================================
 import React from "react";
+import QRCode from "qrcode"; // ✅ QR local (génération)
+import jsQR from "jsqr"; // ✅ Scan QR (caméra)
 import type { Store } from "../lib/types";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
@@ -15,11 +17,13 @@ import { loadStore, saveStore } from "../lib/storage";
 type Props = {
   store: Store;
   go: (tab: any, params?: any) => void;
+  // 🔹 optionnel : permet de cibler un profil précis (StatsHub → Sync profil)
+  profileId?: string | null;
 };
 
 type PanelMode = "none" | "local" | "peer" | "cloud";
 
-export default function SyncCenter({ store, go }: Props) {
+export default function SyncCenter({ store, go, profileId }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
 
@@ -48,7 +52,53 @@ export default function SyncCenter({ store, go }: Props) {
   };
 
   // =====================================================
-  // 1) EXPORT LOCAL (tout le store)
+  // IMPORT GÉNÉRIQUE — store complet / profil / peer
+  // =====================================================
+  async function importParsedPayload(parsed: any) {
+    // Store complet
+    if (parsed.kind === "dc_store_snapshot_v1" && parsed.store) {
+      const nextStore: Store = parsed.store;
+      await saveStore(nextStore);
+      return;
+    }
+
+    // Profil unique (local ou peer)
+    if (
+      (parsed.kind === "dc_profile_snapshot_v1" ||
+        parsed.kind === "dc_peer_profile_v1") &&
+      parsed.profile
+    ) {
+      const incoming = parsed.profile;
+      const current = (await loadStore()) || store;
+      const list = current.profiles ?? [];
+      const idx = list.findIndex((p: any) => p.id === incoming.id);
+      let newProfiles;
+      if (idx === -1) {
+        newProfiles = [...list, incoming];
+      } else {
+        newProfiles = [...list];
+        newProfiles[idx] = incoming;
+      }
+      const nextStore: Store = {
+        ...current,
+        profiles: newProfiles,
+      };
+      await saveStore(nextStore);
+      return;
+    }
+
+    // Payload peer ancien (snapshot complet)
+    if (parsed.kind === "dc_peer_sync_v1" && parsed.store) {
+      const incomingStore: Store = parsed.store;
+      await saveStore(incomingStore);
+      return;
+    }
+
+    throw new Error("Unknown payload format");
+  }
+
+  // =====================================================
+  // 1) EXPORT LOCAL (tout le store / profil)
   // =====================================================
   async function handleExportFullStore() {
     try {
@@ -78,12 +128,16 @@ export default function SyncCenter({ store, go }: Props) {
     }
   }
 
-  // (Optionnel) export uniquement du profil actif
+  // (Optionnel) export uniquement du profil ciblé
   async function handleExportActiveProfile() {
     const profiles = store?.profiles ?? [];
-    const activeProfileId = store?.activeProfileId ?? null;
+    // Priorité : profileId reçu en param → sinon profil actif → sinon premier profil
+    const targetId = profileId ?? store?.activeProfileId ?? null;
+
     const active =
-      profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
+      (targetId && profiles.find((p) => p.id === targetId)) ??
+      profiles[0] ??
+      null;
 
     if (!active) {
       setLocalMessage(
@@ -106,7 +160,7 @@ export default function SyncCenter({ store, go }: Props) {
     setLocalMessage(
       t(
         "syncCenter.local.exportProfileSuccess",
-        "Export du profil actif généré ci-dessous."
+        "Export du profil sélectionné généré ci-dessous."
       )
     );
   }
@@ -187,48 +241,6 @@ export default function SyncCenter({ store, go }: Props) {
     }
   }
 
-  // Import générique de payload (store complet / profil), utilisé par Local + Peer
-  async function importParsedPayload(parsed: any) {
-    if (parsed.kind === "dc_store_snapshot_v1" && parsed.store) {
-      const nextStore: Store = parsed.store;
-      await saveStore(nextStore);
-      return;
-    }
-
-    if (
-      (parsed.kind === "dc_profile_snapshot_v1" ||
-        parsed.kind === "dc_peer_profile_v1") &&
-      parsed.profile
-    ) {
-      const incoming = parsed.profile;
-      const current = (await loadStore()) || store;
-      const list = current.profiles ?? [];
-      const idx = list.findIndex((p: any) => p.id === incoming.id);
-      let newProfiles;
-      if (idx === -1) {
-        newProfiles = [...list, incoming];
-      } else {
-        newProfiles = [...list];
-        newProfiles[idx] = incoming;
-      }
-      const nextStore: Store = {
-        ...current,
-        profiles: newProfiles,
-      };
-      await saveStore(nextStore);
-      return;
-    }
-
-    if (parsed.kind === "dc_peer_sync_v1" && parsed.store) {
-      const incomingStore: Store = parsed.store;
-      // Stratégie simple : on remplace tout (comme un snapshot complet)
-      await saveStore(incomingStore);
-      return;
-    }
-
-    throw new Error("Unknown payload format");
-  }
-
   // Copier le JSON (export ou payload peer) dans le presse-papiers
   async function handleCopyToClipboard(value: string) {
     if (!value) return;
@@ -248,17 +260,35 @@ export default function SyncCenter({ store, go }: Props) {
   }
 
   // =====================================================
-  // 2) PEER SYNC — Device à device (préparation)
+  // 2) PEER SYNC — Device à device (profil ciblé via QR)
   // =====================================================
   function handlePreparePeerPayload() {
+    const profiles = store?.profiles ?? [];
+    const targetId = profileId ?? store?.activeProfileId ?? null;
+
+    const active =
+      (targetId && profiles.find((p) => p.id === targetId)) ??
+      profiles[0] ??
+      null;
+
+    if (!active) {
+      setPeerPayload("");
+      setPeerStatus(
+        t(
+          "syncCenter.peer.noActiveProfile",
+          "Aucun profil à synchroniser. Crée ou sélectionne un profil."
+        )
+      );
+      return;
+    }
+
     const payload = {
-      kind: "dc_peer_sync_v1",
+      kind: "dc_peer_profile_v1",
       createdAt: new Date().toISOString(),
       app: "darts-counter-v5",
-      // Pour l’instant : snapshot du store complet
-      // (évolution possible : ne prendre qu’un match / qu’un profil / qu’un mode)
-      store,
+      profile: active,
     };
+
     const json = safeStringify(payload);
     setPeerPayload(json);
     setPeerStatus(
@@ -296,6 +326,31 @@ export default function SyncCenter({ store, go }: Props) {
         t(
           "syncCenter.peer.importError",
           "Erreur pendant l'import du payload. Vérifie le contenu ou réessaie."
+        )
+      );
+    }
+  }
+
+  // ✅ Import automatique quand on scanne un QR
+  async function handleScanPayload(scanned: string) {
+    if (!scanned) return;
+    setPeerPayload(scanned);
+
+    try {
+      const parsed = JSON.parse(scanned);
+      await importParsedPayload(parsed);
+      setPeerStatus(
+        t(
+          "syncCenter.peer.importOkFromQr",
+          "Payload importé via QR. Relance l'app pour tout recharger proprement."
+        )
+      );
+    } catch (e) {
+      console.error(e);
+      setPeerStatus(
+        t(
+          "syncCenter.peer.importErrorFromQr",
+          "QR scanné, mais le contenu ne semble pas valide. Tu peux ajuster le JSON puis réessayer."
         )
       );
     }
@@ -597,7 +652,7 @@ export default function SyncCenter({ store, go }: Props) {
           )}
           subtitle={t(
             "syncCenter.card.peer.subtitle",
-            "Prépare un payload à partager par QR ou message pour fusionner vos stats."
+            "Partage ton profil actif via un QR ou un message."
           )}
         />
 
@@ -648,6 +703,7 @@ export default function SyncCenter({ store, go }: Props) {
             onGenerate={handlePreparePeerPayload}
             onCopy={() => handleCopyToClipboard(peerPayload)}
             onImport={handlePeerImportFromPayload}
+            onScan={handleScanPayload}
           />
         )}
 
@@ -935,6 +991,7 @@ function PeerPanel({
   onGenerate,
   onCopy,
   onImport,
+  onScan,
 }: {
   theme: any;
   t: (k: string, f: string) => string;
@@ -943,8 +1000,10 @@ function PeerPanel({
   onGenerate: () => void;
   onCopy: () => void;
   onImport: () => void;
+  onScan: (scanned: string) => void;
 }) {
   const [qrUrl, setQrUrl] = React.useState<string>("");
+  const [showScanner, setShowScanner] = React.useState(false);
 
   return (
     <div
@@ -982,7 +1041,7 @@ function PeerPanel({
       >
         {t(
           "syncCenter.peer.desc",
-          "Génère un payload que tu pourras partager via QR code, message ou e-mail. Sur l'appareil de ton ami, il suffira d'importer ce payload pour fusionner les stats."
+          "Génère un payload de ton profil actif que tu pourras partager via QR code, message ou e-mail. Sur l'autre appareil, scanne le QR ou importe le payload pour récupérer le profil."
         )}
       </div>
 
@@ -1008,15 +1067,33 @@ function PeerPanel({
           )}
         </button>
         <button
-          onClick={() => {
+          onClick={async () => {
             if (!payload) return;
-            const url = generateQrDataUrl(payload, theme.primary);
-            setQrUrl(url);
+            try {
+              const url = await QRCode.toDataURL(payload, {
+                width: 260,
+                margin: 1,
+                color: {
+                  dark: "#000000",
+                  light: "#ffffff",
+                },
+              });
+              setQrUrl(url);
+            } catch (err) {
+              console.error("QR generation failed", err);
+              setQrUrl("");
+            }
           }}
           style={buttonSmall(theme)}
           disabled={!payload}
         >
           {t("syncCenter.peer.btnShowQr", "Afficher QR")}
+        </button>
+        <button
+          onClick={() => setShowScanner(true)}
+          style={buttonSmall(theme)}
+        >
+          {t("syncCenter.peer.btnScanQr", "Scanner un QR")}
         </button>
         <button
           onClick={onImport}
@@ -1055,6 +1132,8 @@ function PeerPanel({
               margin: "0 auto",
               borderRadius: 12,
               boxShadow: `0 0 18px ${theme.primary}55`,
+              background: "#ffffff",
+              padding: 6,
             }}
           />
         </div>
@@ -1082,8 +1161,255 @@ function PeerPanel({
       >
         {t(
           "syncCenter.peer.todo",
-          "TODO technique : ajouter un module de scan QR pour importer automatiquement ce payload sur l'autre appareil."
+          "Depuis un autre appareil : ouvre ce menu, appuie sur « Scanner un QR », vise le code généré, et le profil sera importé automatiquement."
         )}
+      </div>
+
+      {showScanner && (
+        <QrScannerOverlay
+          theme={theme}
+          t={t}
+          onClose={() => setShowScanner(false)}
+          onResult={(text) => {
+            onScan(text);
+            setShowScanner(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* --------------------------------------------
+ * OVERLAY SCANNEUR QR (caméra)
+ * -------------------------------------------*/
+function QrScannerOverlay({
+  theme,
+  t,
+  onClose,
+  onResult,
+}: {
+  theme: any;
+  t: (k: string, f: string) => string;
+  onClose: () => void;
+  onResult: (text: string) => void;
+}) {
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const [error, setError] = React.useState<string>("");
+
+  React.useEffect(() => {
+    let stream: MediaStream | null = null;
+    let rafId: number | null = null;
+    let cancelled = false;
+
+    async function startCamera() {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          setError(
+            t(
+              "syncCenter.peer.cameraUnavailable",
+              "Caméra non disponible sur cet appareil."
+            )
+          );
+          return;
+        }
+
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+        });
+
+        const video = videoRef.current;
+        if (!video) return;
+        video.srcObject = stream;
+        await video.play();
+
+        const scan = () => {
+          if (cancelled) return;
+          const v = videoRef.current;
+          const c = canvasRef.current;
+          if (!v || !c) {
+            rafId = requestAnimationFrame(scan);
+            return;
+          }
+
+          const w = v.videoWidth;
+          const h = v.videoHeight;
+          if (!w || !h) {
+            rafId = requestAnimationFrame(scan);
+            return;
+          }
+
+          c.width = w;
+          c.height = h;
+          const ctx = c.getContext("2d");
+          if (!ctx) {
+            rafId = requestAnimationFrame(scan);
+            return;
+          }
+
+          ctx.drawImage(v, 0, 0, w, h);
+          const imageData = ctx.getImageData(0, 0, w, h);
+
+          // @ts-ignore jsQR types
+          const code = jsQR(imageData.data, w, h);
+          if (code && code.data) {
+            onResult(code.data);
+            stopCamera();
+            onClose();
+            return;
+          }
+
+          rafId = requestAnimationFrame(scan);
+        };
+
+        scan();
+      } catch (e) {
+        console.error(e);
+        setError(
+          t(
+            "syncCenter.peer.cameraError",
+            "Impossible d'accéder à la caméra. Vérifie les autorisations."
+          )
+        );
+      }
+    }
+
+    function stopCamera() {
+      cancelled = true;
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      if (stream) {
+        stream.getTracks().forEach((tr) => tr.stop());
+        stream = null;
+      }
+    }
+
+    startCamera();
+
+    return () => {
+      stopCamera();
+    };
+  }, [onClose, onResult, t]);
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.85)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+        padding: 16,
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 420,
+          width: "100%",
+          borderRadius: 18,
+          background: theme.card,
+          border: `1px solid ${theme.borderSoft}`,
+          boxShadow: "0 18px 40px rgba(0,0,0,.85)",
+          padding: 14,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 800,
+            color: theme.primary,
+            marginBottom: 6,
+            textTransform: "uppercase",
+            letterSpacing: 0.6,
+          }}
+        >
+          {t("syncCenter.peer.scanTitle", "Scanner un QR")}
+        </div>
+        <div
+          style={{
+            fontSize: 12.5,
+            lineHeight: 1.4,
+            color: theme.textSoft,
+            marginBottom: 10,
+          }}
+        >
+          {t(
+            "syncCenter.peer.scanDesc",
+            "Vise le QR de synchronisation depuis l'autre appareil. Le profil sera importé automatiquement sur celui-ci."
+          )}
+        </div>
+
+        <div
+          style={{
+            borderRadius: 16,
+            overflow: "hidden",
+            border: `1px solid ${theme.primary}55`,
+            boxShadow: `0 0 18px ${theme.primary}55`,
+            marginBottom: 10,
+            background: "#000",
+            aspectRatio: "3 / 4",
+            position: "relative",
+          }}
+        >
+          <video
+            ref={videoRef}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
+            muted
+            playsInline
+          />
+          <div
+            style={{
+              position: "absolute",
+              inset: "15%",
+              borderRadius: 16,
+              border: `2px solid ${theme.primary}`,
+              boxShadow: `0 0 24px ${theme.primary}AA`,
+              pointerEvents: "none",
+            }}
+          />
+        </div>
+
+        <canvas ref={canvasRef} style={{ display: "none" }} />
+
+        {error && (
+          <div
+            style={{
+              fontSize: 11.5,
+              color: "#ff7c7c",
+              marginBottom: 8,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div style={{ textAlign: "right" }}>
+          <button
+            onClick={onClose}
+            style={{
+              borderRadius: 999,
+              border: "none",
+              padding: "6px 16px",
+              fontSize: 12.5,
+              fontWeight: 700,
+              background: theme.primary,
+              color: "#000",
+              cursor: "pointer",
+              boxShadow: `0 0 14px ${theme.primary}55`,
+            }}
+          >
+            {t("syncCenter.peer.scanCancel", "Fermer")}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1256,33 +1582,4 @@ function buttonSmall(theme: any): React.CSSProperties {
     justifyContent: "center",
     whiteSpace: "nowrap",
   };
-}
-
-/* --------------------------------------------
- * QR PLACEHOLDER (SVG dans un data URL)
- * -------------------------------------------*/
-// ⚠️ Ce n'est pas un vrai QR scannable pour l’instant, juste un placeholder visuel.
-function generateQrDataUrl(text: string, color: string): string {
-  const safe = encodeURIComponent(text.slice(0, 32));
-  const svg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="black"/>
-      <stop offset="100%" stop-color="black"/>
-    </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="220" height="220" fill="url(#bg)"/>
-  <rect x="16" y="16" width="52" height="52" fill="none" stroke="${color}" stroke-width="6"/>
-  <rect x="24" y="24" width="36" height="36" fill="${color}22"/>
-  <rect x="152" y="16" width="52" height="52" fill="none" stroke="${color}" stroke-width="6"/>
-  <rect x="160" y="24" width="36" height="36" fill="${color}22"/>
-  <rect x="16" y="152" width="52" height="52" fill="none" stroke="${color}" stroke-width="6"/>
-  <rect x="24" y="160" width="36" height="36" fill="${color}22"/>
-  <text x="110" y="208" fill="${color}" font-size="10" text-anchor="middle">
-    DC-SYNC
-  </text>
-  <title>${safe}</title>
-</svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }

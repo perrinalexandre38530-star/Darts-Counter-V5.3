@@ -183,36 +183,67 @@ export default function StatsShell({ store, go }: Props) {
           maxWidth: 520,
           paddingInline: 18,
           marginBottom: 16,
-          textAlign: "center",
         }}
       >
         <div
           style={{
-            fontWeight: 900,
-            letterSpacing: 0.9,
-            textTransform: "uppercase",
-            color: theme.primary,
-            fontSize:
-              "clamp(var(--title-min), var(--title-ideal), var(--title-max))",
-            textShadow: `0 0 14px ${theme.primary}66`,
-            marginBottom: 6,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
           }}
         >
-          {t("statsShell.title", "STATS")}
-        </div>
-        <div
-          style={{
-            fontSize: 13,
-            lineHeight: 1.35,
-            color: theme.textSoft,
-            maxWidth: 320,
-            margin: "0 auto",
-          }}
-        >
-          {t(
-            "statsShell.subtitle",
-            "Analyse tes performances, ton training, ton historique et synchronise tes stats."
-          )}
+          <div style={{ textAlign: "left" }}>
+            <div
+              style={{
+                fontWeight: 900,
+                letterSpacing: 0.9,
+                textTransform: "uppercase",
+                color: theme.primary,
+                fontSize:
+                  "clamp(var(--title-min), var(--title-ideal), var(--title-max))",
+                textShadow: `0 0 14px ${theme.primary}66`,
+                marginBottom: 4,
+              }}
+            >
+              {t("statsShell.title", "STATS")}
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                lineHeight: 1.35,
+                color: theme.textSoft,
+                maxWidth: 260,
+              }}
+            >
+              {t(
+                "statsShell.subtitle",
+                "Analyse tes performances, ton training, ton historique et synchronise tes stats."
+              )}
+            </div>
+          </div>
+
+          {/* 🔗 Bouton SYNC & PARTAGE (accès rapide au SyncCenter) */}
+          <button
+            onClick={() => go("sync_center")}
+            style={{
+              borderRadius: 999,
+              border: `1px solid ${theme.primary}`,
+              padding: "6px 12px",
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: 0.5,
+              textTransform: "uppercase",
+              background: theme.card,
+              color: theme.primary,
+              boxShadow: `0 0 12px ${theme.primary}55`,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
+          >
+            {t("statsShell.syncButton", "Sync & partage")}
+          </button>
         </div>
       </div>
 
@@ -300,7 +331,7 @@ export default function StatsShell({ store, go }: Props) {
           onInfo={() => setInfoMode("history")}
         />
 
-        {/* SYNC & PARTAGE */}
+        {/* SYNC & PARTAGE (carte dédiée aussi) */}
         <StatsShellCard
           title={t("statsShell.sync.title", "SYNC & PARTAGE")}
           subtitle={t(

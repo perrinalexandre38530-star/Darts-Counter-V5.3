@@ -1,9 +1,11 @@
 // =============================================================
 // src/components/home/ArcadeTicker.tsx
 // Bandeau arcade — image très visible + texte léger
+// Version avec défilement automatique toutes les 7 sec
+// (garde exactement ton style existant)
 // =============================================================
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useLang } from "../../contexts/LangContext";
 
@@ -18,25 +20,38 @@ export type ArcadeTickerItem = {
 
 type Props = {
   items: ArcadeTickerItem[];
+  activeIndex?: number; // optionnel, si Home contrôle manuellement
 };
 
-export default function ArcadeTicker({ items }: Props) {
+export default function ArcadeTicker({ items, activeIndex }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
-  const [index, setIndex] = React.useState(0);
 
   if (!items || items.length === 0) return null;
 
-  // Auto-carrousel toutes les 7s
-  React.useEffect(() => {
-    if (items.length <= 1) return;
-    const id = window.setInterval(() => {
-      setIndex((i) => (i + 1) % items.length);
-    }, 7000);
-    return () => window.clearInterval(id);
-  }, [items.length]);
+  // -------------------------------
+  // 💡 Index interne (auto-défilement)
+  // -------------------------------
+  const [autoIndex, setAutoIndex] = useState(0);
 
-  const item = items[index] ?? items[0];
+  // Si Home fournit un activeIndex → on l’utilise
+  const safeIndex =
+    activeIndex != null
+      ? Math.min(Math.max(activeIndex, 0), items.length - 1)
+      : autoIndex;
+
+  // Auto-scroll toutes les 7s (si Home ne pilote pas l’index)
+  useEffect(() => {
+    if (activeIndex != null) return; // mode contrôlé → pas d’auto défilement
+
+    const timer = setInterval(() => {
+      setAutoIndex((prev) => (prev + 1) % items.length);
+    }, 7000); // ⏱️ 7 secondes
+
+    return () => clearInterval(timer);
+  }, [activeIndex, items.length]);
+
+  const item = items[safeIndex];
   const accent = item.accentColor ?? theme.primary ?? "#F6C256";
   const bgImage = item.backgroundImage || "";
   const hasBg = !!bgImage;
@@ -60,7 +75,7 @@ export default function ArcadeTicker({ items }: Props) {
           backgroundRepeat: "no-repeat",
         }}
       >
-        {/* Voile léger (garde l’image bien visible) */}
+        {/* voile léger */}
         {hasBg && (
           <div
             aria-hidden
@@ -73,7 +88,7 @@ export default function ArcadeTicker({ items }: Props) {
           />
         )}
 
-        {/* ----------- Panneau texte ULTRA transparent ----------- */}
+        {/* texte */}
         <div
           style={{
             position: "relative",
@@ -88,10 +103,10 @@ export default function ArcadeTicker({ items }: Props) {
               maxWidth: "100%",
               padding: "6px 10px",
               borderRadius: 14,
-              background: "rgba(0,0,0,0.25)", // 🔥 plus transparent
-              backdropFilter: "blur(2px)", // blur plus léger
+              background: "rgba(0,0,0,0.25)",
+              backdropFilter: "blur(2px)",
               WebkitBackdropFilter: "blur(2px)",
-              boxShadow: "0 6px 14px rgba(0,0,0,0.45)", // ombre allégée
+              boxShadow: "0 6px 14px rgba(0,0,0,0.45)",
             }}
           >
             <div
@@ -131,9 +146,9 @@ export default function ArcadeTicker({ items }: Props) {
                   marginTop: 3,
                   fontSize: 10,
                   color: "rgba(255,255,255,0.75)",
+                  whiteSpace: "nowrap",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
                 }}
               >
                 {item.detail}
@@ -142,7 +157,7 @@ export default function ArcadeTicker({ items }: Props) {
           </div>
         </div>
 
-        {/* Pagination */}
+        {/* pagination */}
         {items.length > 1 && (
           <div
             style={{
@@ -157,14 +172,14 @@ export default function ArcadeTicker({ items }: Props) {
               <span
                 key={it.id}
                 style={{
-                  width: i === index ? 10 : 6,
+                  width: i === safeIndex ? 10 : 6,
                   height: 6,
                   borderRadius: 999,
                   backgroundColor:
-                    i === index
+                    i === safeIndex
                       ? accent
                       : "rgba(255,255,255,0.35)",
-                  opacity: i === index ? 1 : 0.6,
+                  opacity: i === safeIndex ? 1 : 0.6,
                   transition: "all 0.25s ease-out",
                 }}
               />
