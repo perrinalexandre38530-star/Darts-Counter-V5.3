@@ -42,6 +42,9 @@ export default function SyncCenter({ store, go, profileId }: Props) {
   const [peerPayload, setPeerPayload] = React.useState<string>("");
   const [peerStatus, setPeerStatus] = React.useState<string>("");
 
+  // --- Aide ---
+  const [showHelp, setShowHelp] = React.useState(false);
+
   // Helpers
   const safeStringify = (data: any) => {
     try {
@@ -564,42 +567,65 @@ export default function SyncCenter({ store, go, profileId }: Props) {
           style={{
             display: "flex",
             alignItems: "center",
+            justifyContent: "space-between",
             gap: 8,
             marginBottom: 6,
           }}
         >
-          <button
-            type="button"
-            onClick={() => go("stats")}
-            style={{
-              border: "none",
-              background: "transparent",
-              color: theme.textSoft,
-              fontSize: 14,
-              cursor: "pointer",
-              padding: 0,
-            }}
-          >
-            ←
-          </button>
-          <div
-            style={{
-              fontWeight: 900,
-              letterSpacing: 0.9,
-              textTransform: "uppercase",
-              color: theme.primary,
-            }}
-          >
-            <span
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => go("stats")}
               style={{
-                fontSize:
-                  "clamp(var(--title-min), var(--title-ideal), var(--title-max))",
-                textShadow: `0 0 14px ${theme.primary}66`,
+                border: "none",
+                background: "transparent",
+                color: theme.textSoft,
+                fontSize: 14,
+                cursor: "pointer",
+                padding: 0,
               }}
             >
-              {t("syncCenter.title", "SYNC & PARTAGE")}
-            </span>
+              ←
+            </button>
+            <div
+              style={{
+                fontWeight: 900,
+                letterSpacing: 0.9,
+                textTransform: "uppercase",
+                color: theme.primary,
+              }}
+            >
+              <span
+                style={{
+                  fontSize:
+                    "clamp(var(--title-min), var(--title-ideal), var(--title-max))",
+                  textShadow: `0 0 14px ${theme.primary}66`,
+                }}
+              >
+                {t("syncCenter.title", "SYNC & PARTAGE")}
+              </span>
+            </div>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setShowHelp((v) => !v)}
+            style={{
+              borderRadius: 999,
+              border: `1px solid ${theme.borderSoft}`,
+              background: "rgba(0,0,0,0.7)",
+              color: theme.textSoft,
+              padding: "5px 12px",
+              fontSize: 11.5,
+              fontWeight: 700,
+              letterSpacing: 0.4,
+              textTransform: "uppercase",
+              cursor: "pointer",
+              boxShadow: `0 0 10px ${theme.primary}33`,
+            }}
+          >
+            {t("syncCenter.help.button", "Aide")}
+          </button>
         </div>
 
         <div
@@ -615,6 +641,8 @@ export default function SyncCenter({ store, go, profileId }: Props) {
             "Export, import et synchronisation entre appareils ou via le cloud, sans perdre tes stats."
           )}
         </div>
+
+        {showHelp && <HelpBlock theme={theme} t={t} />}
       </div>
 
       {/* ===== CARDS (choix du mode) ===== */}
@@ -722,6 +750,212 @@ export default function SyncCenter({ store, go, profileId }: Props) {
 
       {/* Espace BottomNav */}
       <div style={{ height: 80 }} />
+    </div>
+  );
+}
+
+/* --------------------------------------------
+ * BLOC D'AIDE — GUIDE ÉTAPE PAR ÉTAPE
+ * -------------------------------------------*/
+function HelpBlock({
+  theme,
+  t,
+}: {
+  theme: any;
+  t: (k: string, f: string) => string;
+}) {
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        padding: 10,
+        borderRadius: 14,
+        border: `1px solid ${theme.borderSoft}`,
+        background:
+          "linear-gradient(145deg, rgba(0,0,0,0.85), rgba(40,40,40,0.85))",
+        boxShadow: "0 14px 32px rgba(0,0,0,.75)",
+        fontSize: 11.5,
+        lineHeight: 1.45,
+        color: theme.textSoft,
+      }}
+    >
+      <div
+        style={{
+          fontWeight: 800,
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+          marginBottom: 6,
+          color: theme.primary,
+        }}
+      >
+        {t("syncCenter.help.title", "Comment utiliser la synchronisation ?")}
+      </div>
+
+      {/* 1) EXPORT / IMPORT LOCAL */}
+      <div
+        style={{
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+          fontSize: 11.5,
+          marginBottom: 2,
+          color: theme.text,
+        }}
+      >
+        1. {t("syncCenter.help.sectionLocal", "Export / Import local")}
+      </div>
+      <ol
+        style={{
+          paddingLeft: 18,
+          marginTop: 0,
+          marginBottom: 6,
+        }}
+      >
+        <li>
+          {t(
+            "syncCenter.help.local.step1",
+            "Choisis le bloc « Export / Import local » dans la liste."
+          )}
+        </li>
+        <li>
+          {t(
+            "syncCenter.help.local.step2",
+            "Appuie sur « Exporter TOUT le store » pour sauvegarder toutes tes stats, ou sur « Exporter profil actif » pour ne sauvegarder qu’un profil."
+          )}
+        </li>
+        <li>
+          {t(
+            "syncCenter.help.local.step3",
+            "Le JSON apparaît dans la zone du haut. Tu peux soit le copier / coller, soit appuyer sur « Télécharger (.dcstats.json) » pour récupérer un fichier."
+          )}
+        </li>
+        <li>
+          {t(
+            "syncCenter.help.local.step4",
+            "Sur un autre appareil : ouvre cette même page, va dans « Export / Import local », colle le JSON dans la zone prévue OU appuie sur « Choisir un fichier » pour importer le fichier .dcstats.json."
+          )}
+        </li>
+        <li>
+          {t(
+            "syncCenter.help.local.step5",
+            "Appuie sur « Importer JSON ». Lorsque c’est terminé, relance l’app pour recharger toutes les données proprement."
+          )}
+        </li>
+      </ol>
+
+      {/* 2) SYNC DIRECTE AVEC UN AMI */}
+      <div
+        style={{
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+          fontSize: 11.5,
+          marginBottom: 2,
+          color: theme.text,
+        }}
+      >
+        2.{" "}
+        {t(
+          "syncCenter.help.sectionPeer",
+          "Sync directe avec un ami (device à device)"
+        )}
+      </div>
+      <ol
+        style={{
+          paddingLeft: 18,
+          marginTop: 0,
+          marginBottom: 6,
+        }}
+      >
+        <li>
+          {t(
+            "syncCenter.help.peer.step1",
+            "Sur l’appareil QUI ENVOIE le profil : choisis le bloc « Sync directe avec un ami »."
+          )}
+        </li>
+        <li>
+          {t(
+            "syncCenter.help.peer.step2",
+            "Appuie sur « Générer payload de sync ». Le profil ciblé (profil actif ou profil passé en paramètre) est transformé en JSON."
+          )}
+        </li>
+        <li>
+          {t(
+            "syncCenter.help.peer.step3",
+            "Pour partager : soit tu appuies sur « Copier pour partage » pour envoyer le JSON par message, soit tu appuies sur « Afficher QR » pour générer un QR Code à montrer à ton ami."
+          )}
+        </li>
+        <li>
+          {t(
+            "syncCenter.help.peer.step4",
+            "Sur l’appareil QUI REÇOIT : ouvre cette page, va dans « Sync directe avec un ami », puis appuie sur « Scanner un QR » et vise le QR affiché sur le premier appareil."
+          )}
+        </li>
+        <li>
+          {t(
+            "syncCenter.help.peer.step5",
+            "Le profil est importé automatiquement. Tu peux aussi coller le JSON reçu dans la zone « Payload généré » et appuyer sur « Importer ce payload »."
+          )}
+        </li>
+      </ol>
+
+      {/* 3) SYNC CLOUD (CODE) */}
+      <div
+        style={{
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+          fontSize: 11.5,
+          marginBottom: 2,
+          color: theme.text,
+        }}
+      >
+        3. {t("syncCenter.help.sectionCloud", "Sync Cloud (code)")}
+      </div>
+      <ol
+        style={{
+          paddingLeft: 18,
+          marginTop: 0,
+          marginBottom: 6,
+        }}
+      >
+        <li>
+          {t(
+            "syncCenter.help.cloud.step1",
+            "Sur l’appareil source : choisis le bloc « Sync Cloud (code) » puis appuie sur « Envoyer snapshot »."
+          )}
+        </li>
+        <li>
+          {t(
+            "syncCenter.help.cloud.step2",
+            "Un code de synchronisation est généré (ex : 7FQ9-L2KD-8ZP3). Note-le ou envoie-le à ton autre appareil."
+          )}
+        </li>
+        <li>
+          {t(
+            "syncCenter.help.cloud.step3",
+            "Sur l’appareil cible : ouvre aussi « Sync Cloud (code) », tape le code reçu dans le champ prévu puis appuie sur « Récupérer avec ce code »."
+          )}
+        </li>
+        <li>
+          {t(
+            "syncCenter.help.cloud.step4",
+            "Une fois la récupération terminée, relance l’app pour recharger toutes les stats synchronisées."
+          )}
+        </li>
+      </ol>
+
+      <div
+        style={{
+          marginTop: 4,
+          opacity: 0.8,
+        }}
+      >
+        {t(
+          "syncCenter.help.tip",
+          "Astuce : après n’importe quel import (local, QR ou cloud), un redémarrage de l’application garantit que toutes les stats et profils sont bien à jour."
+        )}
+      </div>
     </div>
   );
 }
@@ -1099,13 +1333,9 @@ function PeerPanel({
                 },
               });
               setQrUrl(url);
-              // on efface un éventuel ancien message d'erreur
-              // (le status global est géré dans SyncCenter via setPeerStatus)
             } catch (err) {
               console.error("QR generation failed", err);
               setQrUrl("");
-              // message d'erreur lisible dans l'UI
-              // (on utilise t ici pour garder la même clé que plus haut)
             }
           }}
           style={buttonSmall(theme)}
