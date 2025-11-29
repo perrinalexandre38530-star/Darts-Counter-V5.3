@@ -20,7 +20,6 @@ import type { CricketProfileStats } from "../lib/cricketStats";
 import StatsCricketDashboard from "../components/StatsCricketDashboard";
 import StatsX01MultiDashboard, { type X01MultiPlayer,} from "../components/StatsX01MultiDashboard";
 import StatsTrainingSummary from "../components/stats/StatsTrainingSummary";
-import TrainingX01StatsTabFull from "../components/stats/TrainingX01StatsTabFull";
 // ❌ IMPORTANT : plus d'import TrainingX01Session ici
 
 /* ---------- Thème ---------- */
@@ -4091,7 +4090,7 @@ export default function StatsHub(props: Props) {
       {/* ===============================
           2) MODE "TRAINING" SEUL
           =============================== */}
-      {mainTab === "training" && <TrainingX01StatsTabFull />}
+      {mainTab === "training" && <TrainingX01StatsTab />}
 
       {/* ===============================
           3) MODE "STATS JOUEURS" SEUL
