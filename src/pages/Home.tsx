@@ -3,9 +3,10 @@
 // - Haut de page : "Bienvenue" + logo DARTS COUNTER (centré + animé)
 // - Carte joueur actif (ActiveProfileCard) : avatar + statut + carrousel de stats
 // - Bandeau arcade (ArcadeTicker) : infos importantes avec image spécifique
-// - Bloc détail du ticker : 2 mini-cards synchronisées avec le slide actif
+// - Bloc détail du ticker : 2 mini-cards synchronisées via index interne
 //   • Card gauche  : stats liées au slide (KPIs si dispo)
 //   • Card droite  : Astuce / Pub / Nouveauté auto, image dédiée
+//   • Auto-slide bas + swipe manuel gauche/droite
 // - Gros boutons de navigation (Profils / Local / Online / Stats / Réglages)
 // =============================================================
 
@@ -43,7 +44,7 @@ const DETAIL_INTERVAL_MS = 7000;
 const GH_IMG_BASE =
   "https://raw.githubusercontent.com/perrinalexandre38530-star/Darts-Counter-V5.3/main/public/img/";
 
-// ⚠️ Tu pourras créer les fichiers correspondants dans /public/img :
+// ⚠️ Tu pourras créer les fichiers correspondants dans /public/img
 const TICKER_IMAGES = {
   // bandeaux principaux (haut + thème stats)
   records: ["ticker-records.jpg", "ticker-records-2.jpg"],
@@ -293,7 +294,6 @@ function loadClockAggForProfile(profileId: string): ClockAgg {
     return makeEmptyClockAgg();
   }
 }
-
 
 /**
  * buildStatsForProfile(profileId)
@@ -913,8 +913,11 @@ export default function Home({ store, go }: Props) {
     () => emptyActiveProfileStats()
   );
 
-  // index du ticker pour le bloc détail (synchronisé sur ArcadeTicker)
+  // index du ticker pour le bloc détail (notre état interne)
   const [tickerIndex, setTickerIndex] = useState(0);
+
+  // swipe (touch) pour le bloc bas
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -946,6 +949,17 @@ export default function Home({ store, go }: Props) {
       return;
     }
     setTickerIndex((i) => (i >= tickerItems.length ? 0 : i));
+  }, [tickerItems.length]);
+
+  // 🔁 Auto-slide du bloc détail (indépendant, même tempo que le bandeau)
+  useEffect(() => {
+    if (!tickerItems.length) return;
+    const id = window.setInterval(() => {
+      setTickerIndex((i) =>
+        tickerItems.length ? (i + 1) % tickerItems.length : 0
+      );
+    }, DETAIL_INTERVAL_MS);
+    return () => window.clearInterval(id);
   }, [tickerItems.length]);
 
   const currentTicker: ArcadeTickerItem | null =
@@ -989,6 +1003,36 @@ export default function Home({ store, go }: Props) {
   const tipBackgroundImage = currentTicker
     ? pickTipBackgroundForTicker(currentTicker.id)
     : pickTickerImage("tipAdvice");
+
+  // Handlers swipe sur le bloc bas
+  const handleDetailTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!tickerItems.length) return;
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleDetailTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!tickerItems.length || touchStartX == null) {
+      setTouchStartX(null);
+      return;
+    }
+    const endX = e.changedTouches[0].clientX;
+    const dx = endX - touchStartX;
+    const threshold = 40; // px
+
+    if (Math.abs(dx) > threshold) {
+      setTickerIndex((i) => {
+        const len = tickerItems.length || 1;
+        if (dx < 0) {
+          // swipe gauche -> slide suivant
+          return (i + 1) % len;
+        }
+        // swipe droite -> slide précédent
+        return (i - 1 + len) % len;
+      });
+    }
+
+    setTouchStartX(null);
+  };
 
   return (
     <div
@@ -1079,220 +1123,189 @@ export default function Home({ store, go }: Props) {
           />
         )}
 
-        {/* Petit bandeau arcade (auto-slide interne + synchro détail) */}
-        <ArcadeTicker
-          items={tickerItems}
-          intervalMs={DETAIL_INTERVAL_MS}
-          onActiveIndexChange={(index) => {
-            if (!tickerItems.length) return;
-            const len = tickerItems.length;
-            // gestion valeurs négatives / > len
-            const safe = ((index % len) + len) % len;
-            setTickerIndex(safe);
-          }}
-        />
+        {/* Petit bandeau arcade (auto interne à ArcadeTicker) */}
+        <ArcadeTicker items={tickerItems} intervalMs={DETAIL_INTERVAL_MS} />
 
-        {/* Bloc détail du ticker : 2 mini-cards côte à côte, avec auto-slide + swipe */}
-{currentTicker && (
-  <div
-    style={{
-      marginTop: 10,
-      marginBottom: 10,
-      borderRadius: 22,
-      border: `1px solid ${
-        theme.borderSoft ?? "rgba(255,255,255,0.12)"
-      }`,
-      boxShadow: "0 18px 40px rgba(0,0,0,0.85)",
-      padding: 8,
-      background:
-        "radial-gradient(circle at top, rgba(255,255,255,0.06), rgba(3,4,10,1))",
-      touchAction: "pan-y",
-    }}
-    onTouchStart={(e) => {
-      window.__swipeStartX = e.touches[0].clientX;
-    }}
-    onTouchEnd={(e) => {
-      const dx = e.changedTouches[0].clientX - window.__swipeStartX;
-      if (Math.abs(dx) < 50) return; // ignore petits mouvements
-
-      if (dx < 0) {
-        // swipe gauche → next
-        setTickerIndex((i) =>
-          (i + 1) % (tickerItems.length || 1)
-        );
-      } else {
-        // swipe droite → prev
-        setTickerIndex((i) =>
-          (i - 1 + tickerItems.length) % tickerItems.length
-        );
-      }
-    }}
-  >
-    <div
-      style={{
-        display: "flex",
-        gap: 8,
-        transition: "opacity 0.25s",
-      }}
-    >
-      {/* --------- CARD GAUCHE : STATS --------- */}
-      <div
-        style={{
-          flex: 1,
-          borderRadius: 18,
-          overflow: "hidden",
-          position: "relative",
-          minHeight: 96,
-          backgroundColor: "#05060C",
-          backgroundImage: statsBackgroundImage
-            ? `url("${statsBackgroundImage}")`
-            : undefined,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }}
-      >
-        <div
-          aria-hidden
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(130deg, rgba(0,0,0,0.85), rgba(0,0,0,0.45))",
-          }}
-        />
-        <div
-          style={{
-            position: "relative",
-            padding: "8px 9px 9px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-          }}
-        >
+        {/* Bloc détail du ticker : 2 mini-cards côte à côte */}
+        {currentTicker && (
           <div
             style={{
-              fontSize: 10,
-              fontWeight: 800,
-              letterSpacing: 0.8,
-              textTransform: "uppercase",
-              color: detailAccent,
+              marginTop: 10,
+              marginBottom: 10,
+              borderRadius: 22,
+              border: `1px solid ${
+                theme.borderSoft ?? "rgba(255,255,255,0.12)"
+              }`,
+              boxShadow: "0 18px 40px rgba(0,0,0,0.85)",
+              padding: 8,
+              background:
+                "radial-gradient(circle at top, rgba(255,255,255,0.06), rgba(3,4,10,1))",
             }}
+            onTouchStart={handleDetailTouchStart}
+            onTouchEnd={handleDetailTouchEnd}
           >
-            {statsTitle}
-          </div>
-
-          <div
-            style={{
-              fontSize: 11,
-              lineHeight: 1.35,
-              color: theme.textSoft ?? "rgba(255,255,255,0.9)",
-            }}
-          >
-            {statsText}
-          </div>
-
-          {hasDetailStats && (
             <div
               style={{
-                marginTop: 4,
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0,1fr))",
-                gap: 6,
+                display: "flex",
+                gap: 8,
               }}
             >
-              {detailRows.map((row) => (
-                <DetailKpi
-                  key={row.label}
-                  label={row.label}
-                  value={row.value}
-                  primary={detailAccent}
-                  theme={theme}
+              {/* --------- Card gauche : STATS du slide --------- */}
+              <div
+                style={{
+                  flex: 1,
+                  borderRadius: 18,
+                  overflow: "hidden",
+                  position: "relative",
+                  minHeight: 96,
+                  backgroundColor: "#05060C",
+                  backgroundImage: statsBackgroundImage
+                    ? `url("${statsBackgroundImage}")`
+                    : undefined,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                }}
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background:
+                      "linear-gradient(130deg, rgba(0,0,0,0.85), rgba(0,0,0,0.45))",
+                  }}
                 />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+                <div
+                  style={{
+                    position: "relative",
+                    padding: "8px 9px 9px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 800,
+                      letterSpacing: 0.8,
+                      textTransform: "uppercase",
+                      color: detailAccent,
+                    }}
+                  >
+                    {statsTitle}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      lineHeight: 1.35,
+                      color: theme.textSoft ?? "rgba(255,255,255,0.9)",
+                    }}
+                  >
+                    {statsText}
+                  </div>
 
-      {/* --------- CARD DROITE : ASTUCE / PUB / NEWS --------- */}
-      <div
-        style={{
-          flex: 1,
-          borderRadius: 18,
-          overflow: "hidden",
-          position: "relative",
-          minHeight: 96,
-          backgroundColor: "#05060C",
-          backgroundImage: tipBackgroundImage
-            ? `url("${tipBackgroundImage}")`
-            : undefined,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }}
-      >
-        <div
-          aria-hidden
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(210deg, rgba(0,0,0,0.88), rgba(0,0,0,0.45))",
-          }}
-        />
+                  {hasDetailStats && (
+                    <div
+                      style={{
+                        marginTop: 4,
+                        display: "grid",
+                        gridTemplateColumns: "repeat(2, minmax(0,1fr))",
+                        gap: 6,
+                      }}
+                    >
+                      {detailRows.map((row) => (
+                        <DetailKpi
+                          key={row.label}
+                          label={row.label}
+                          value={row.value}
+                          primary={detailAccent}
+                          theme={theme}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
 
-        <div
-          style={{
-            position: "relative",
-            padding: "8px 9px 9px",
-            display: "flex",
-            flexDirection: "column",
-            height: "100%",
-            justifyContent: "space-between",
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: 10,
-                fontWeight: 800,
-                letterSpacing: 0.8,
-                textTransform: "uppercase",
-                color: theme.accent1 ?? "#FFD980",
-                marginBottom: 3,
-              }}
-            >
-              {tipTitle}
-            </div>
+              {/* --------- Card droite : ASTUCE / PUB / NOUVEAUTÉ --------- */}
+              <div
+                style={{
+                  flex: 1,
+                  borderRadius: 18,
+                  overflow: "hidden",
+                  position: "relative",
+                  minHeight: 96,
+                  backgroundColor: "#05060C",
+                  backgroundImage: tipBackgroundImage
+                    ? `url("${tipBackgroundImage}")`
+                    : undefined,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                }}
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background:
+                      "linear-gradient(230deg, rgba(0,0,0,0.9), rgba(0,0,0,0.4))",
+                  }}
+                />
+                <div
+                  style={{
+                    position: "relative",
+                    padding: "8px 9px 9px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    height: "100%",
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        letterSpacing: 0.8,
+                        textTransform: "uppercase",
+                        color: theme.accent1 ?? "#FFD980",
+                        marginBottom: 3,
+                      }}
+                    >
+                      {tipTitle}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        lineHeight: 1.35,
+                        color: theme.textSoft ?? "rgba(255,255,255,0.9)",
+                      }}
+                    >
+                      {tipText}
+                    </div>
+                  </div>
 
-            <div
-              style={{
-                fontSize: 11,
-                lineHeight: 1.35,
-                color: theme.textSoft ?? "rgba(255,255,255,0.9)",
-              }}
-            >
-              {tipText}
+                  <div
+                    style={{
+                      fontSize: 9,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.6,
+                      opacity: 0.8,
+                      marginTop: 4,
+                    }}
+                  >
+                    {t(
+                      "home.detail.tip.hint",
+                      "Astuce / pub / nouveauté liée à la section active"
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-
-          <div
-            style={{
-              fontSize: 9,
-              opacity: 0.7,
-              textTransform: "uppercase",
-              letterSpacing: 0.6,
-            }}
-          >
-            {t(
-              "home.detail.tip.hint",
-              "Astuce / pub / nouveauté liée à la section active"
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
+        )}
 
         {/* Gros boutons de navigation */}
         <div

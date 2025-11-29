@@ -875,6 +875,9 @@ type PrivateInfo = {
   email?: string;
   phone?: string;
   password?: string;
+  // prefs app
+  appLang?: Lang;
+  appTheme?: ThemeId;
 };
 
 function PrivateInfoBlock({
@@ -902,6 +905,8 @@ function PrivateInfoBlock({
       email: pi.email || "",
       phone: pi.phone || "",
       password: pi.password || "",
+      appLang: pi.appLang,
+      appTheme: pi.appTheme,
     };
   }, [active]);
 
@@ -1259,10 +1264,10 @@ function UnifiedAuthBlock({
   autoFocusCreate?: boolean;
 }) {
   const { t, setLang, lang } = useLang();
-  const { theme, primary: primaryColor } = useTheme();
+  const { theme, themeId, setThemeId } = useTheme() as any;
   const { signup: onlineSignup, login: onlineLogin } = useAuthOnline();
 
-  const primary = primaryColor;
+  const primary = theme.primary as string;
 
   // Connexion
   const [loginEmail, setLoginEmail] = React.useState("");
@@ -1281,8 +1286,10 @@ function UnifiedAuthBlock({
   const [file, setFile] = React.useState<File | null>(null);
   const [preview, setPreview] = React.useState<string | null>(null);
 
-  // NEW : choix thème + langue pour l’app
-  const [uiTheme, setUiTheme] = React.useState<ThemeId>("gold");
+  // thème + langue appliqués à l’app
+  const [uiTheme, setUiTheme] = React.useState<ThemeId>(
+    (themeId as ThemeId) || "gold"
+  );
   const [uiLang, setUiLangState] = React.useState<Lang>(lang);
 
   const createRef = React.useRef<HTMLInputElement>(null);
@@ -1466,6 +1473,16 @@ function UnifiedAuthBlock({
       return;
     }
 
+    if (!country.trim()) {
+      alert(
+        t(
+          "profiles.auth.create.countryMissing",
+          "Merci de renseigner ton pays."
+        )
+      );
+      return;
+    }
+
     const already = profiles.find((p) => {
       const pi = ((p as any).privateInfo || {}) as PrivateInfo;
       const pe = (pi.email || "").trim().toLowerCase();
@@ -1489,20 +1506,22 @@ function UnifiedAuthBlock({
       lastName: lastName.trim(),
       birthDate: birthDate || "",
       country: country || "",
+      appLang: uiLang,
+      appTheme: uiTheme,
     };
 
+    // Profil local (+ stats, etc.)
     onCreate(trimmedName, file, privateInfo);
 
-    // applique thème + langue choisis
+    // Applique immédiatement thème + langue à l’app
     try {
-      const { setThemeId } = require("../contexts/ThemeContext") as typeof import("../contexts/ThemeContext");
-      // @ts-ignore dynamic require (pour éviter un import circulaire)
-      setThemeId?.(uiTheme);
-    } catch {
-      // si jamais ça ne marche pas, au pire ce n’est pas bloquant
-    }
-    setLang(uiLang);
+      setLang(uiLang);
+    } catch {}
+    try {
+      setThemeId(uiTheme);
+    } catch {}
 
+    // Et on tente la création du compte online lié
     try {
       await onlineSignup({
         email: trimmedEmail,

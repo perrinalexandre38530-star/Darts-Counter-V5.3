@@ -1,7 +1,8 @@
 // ============================================================
 // src/components/stats/TrainingX01StatsTabFull.tsx
-// FULL Training X01 stats tab (copie du diamant depuis StatsHub)
-// - Logique identique, juste isolée dans un composant externe
+// FULL Training X01 stats tab (clone du diamant depuis StatsHub)
+// - Logique complète Training X01 isolée dans un composant externe
+// - L'ancien bloc dans StatsHub reste intact / non touché
 // ============================================================
 
 import React from "react";
@@ -254,14 +255,18 @@ function loadTrainingSessions(): TrainingX01Session[] {
   }
 }
 
-/* ---------- composant principal (copie TrainingX01StatsTab) ---------- */
+/* ---------- constantes segments ---------- */
 
-const SEGMENTS_FOR_RADAR: (number | "MISS")[] = [
+const HITS_SEGMENTS: (number | "MISS")[] = [
   1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
   11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
   25,
   "MISS",
 ];
+
+const SEGMENTS_FOR_RADAR: (number | "MISS")[] = HITS_SEGMENTS;
+
+/* ---------- normalisation dart ---------- */
 
 function normalizeTrainingDart(raw: any): UIDart | null {
   if (!raw) return null;
@@ -291,6 +296,10 @@ function normalizeTrainingDart(raw: any): UIDart | null {
 
   return { v: vNum, mult: mNum as 0 | 1 | 2 | 3 };
 }
+
+/* ===========================================================
+   Composant principal
+   =========================================================== */
 
 export default function TrainingX01StatsTabFull() {
   const [sessions, setSessions] = React.useState<TrainingX01Session[]>([]);
@@ -596,13 +605,6 @@ export default function TrainingX01StatsTabFull() {
     else if (mult === 3) segSDTMap[key].T++;
   }
 
-  const HITS_SEGMENTS: (number | "MISS")[] = [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-    11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-    25,
-    "MISS",
-  ];
-
   const maxStackHits = HITS_SEGMENTS.reduce((max, seg) => {
     if (seg === "MISS") {
       return chartMissCount > max ? chartMissCount : max;
@@ -646,7 +648,7 @@ export default function TrainingX01StatsTabFull() {
   const favoriteSimpleDisplay = labelForSegment(favSimpleKey);
   const favoriteDoubleDisplay = labelForSegment(favDoubleKey);
   const favoriteTripleDisplay = labelForSegment(favTripleKey);
-  const leastHitDisplay = labelForSegment(leastHitKey); // (pas affiché actuellement mais dispo)
+  const leastHitDisplay = labelForSegment(leastHitKey); // dispo si tu veux l'afficher
 
   // sparkline
   function valueForMetric(
@@ -1080,6 +1082,8 @@ export default function TrainingX01StatsTabFull() {
     }
   }
 
+  // ------------------- RENDER -------------------
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Filtres J/S/M/A/ALL */}
@@ -1130,7 +1134,7 @@ export default function TrainingX01StatsTabFull() {
         </div>
       </div>
 
-      {/* KPI carrousels (identiques) */}
+      {/* KPI carrousels */}
       {totalSessions > 0 && hasAnyKpi && (
         <div
           style={{
@@ -1289,7 +1293,7 @@ export default function TrainingX01StatsTabFull() {
             color: T.gold,
           }}
         >
-          <span>Session</span>
+          <span>Sessions</span>
           <span
             style={{
               fontWeight: 900,
@@ -1304,15 +1308,720 @@ export default function TrainingX01StatsTabFull() {
         </div>
       </div>
 
-      {/* Stats détaillées (table + moyennes + favoris) */}
-      {/* ... ici tu retrouves exactement le même bloc que dans StatsHub,
-          mais je ne le re-réduis pas encore pour ne pas te perdre.
-          Comme la réponse est déjà énorme, je m'arrête là en structure :
-          le reste du rendu détaillé / radar / barres / liste / modal
-          est IDENTIQUE à ton bloc actuel, que tu peux recopier ici
-          à l’identique si tu veux le dédoubler 100%. */}
-      {/* Si tu préfères, on peut faire un 2e patch juste pour coller la fin,
-          mais la mécanique de split et de branchement est prête. */}
+      {totalSessions === 0 && (
+        <div style={{ ...card, fontSize: 13, color: T.text70 }}>
+          Aucune session Training X01 trouvée pour cette période.
+        </div>
+      )}
+
+      {totalSessions > 0 && (
+        <>
+          {/* Sparkline + choix de métrique */}
+          <div style={{ ...card }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 10,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6,
+                  color: T.text70,
+                  fontWeight: 700,
+                }}
+              >
+                Évolution des sessions
+              </div>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {metricKeys.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    style={{
+                      ...metricPill,
+                      borderColor:
+                        metric === m ? T.gold : "rgba(255,255,255,.18)",
+                      boxShadow:
+                        metric === m
+                          ? "0 0 10px rgba(246,194,86,.7)"
+                          : "none",
+                      color: metric === m ? T.gold : T.text70,
+                    }}
+                    onClick={() => {
+                      setMetric(m);
+                      setMetricLocked(true);
+                    }}
+                  >
+                    {m === "darts" && "Darts"}
+                    {m === "avg3D" && "Moy.3D"}
+                    {m === "pctS" && "%S"}
+                    {m === "pctD" && "%D"}
+                    {m === "pctT" && "%T"}
+                    {m === "BV" && "Best Visit"}
+                    {m === "CO" && "Checkout"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {sparkSeries.length > 1 ? (
+              <div style={{ marginTop: 4 }}>
+                {/* Signature supposée de SparklinePro :
+                    points = [{ x: timestamp, y: value }]
+                 */}
+                <SparklinePro
+                  points={sparkSeries.map((p) => ({
+                    x: p.x,
+                    y: p.y,
+                  }))}
+                />
+              </div>
+            ) : (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: T.text70,
+                  marginTop: 4,
+                }}
+              >
+                Il faut au moins 2 sessions pour afficher une courbe.
+              </div>
+            )}
+          </div>
+
+          {/* Radar + hits par segment + Mots du coach */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+          >
+            {/* Radar + résumé segments */}
+            <div style={{ ...card }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6,
+                  color: T.text70,
+                  fontWeight: 700,
+                  marginBottom: 8,
+                }}
+              >
+                Radar de précision
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "row",
+                  gap: 10,
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* Signature supposée : darts = UIDart[] */}
+                  <TrainingRadar darts={trainingDartsAll} />
+                </div>
+                <div
+                  style={{
+                    flexBasis: 130,
+                    fontSize: 12,
+                    color: T.text70,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                  }}
+                >
+                  <div style={{ fontWeight: 700, color: T.gold }}>
+                    Segments clés
+                  </div>
+                  <div>
+                    Hit préféré :{" "}
+                    <span style={{ color: "#7CFF9A" }}>
+                      {favoriteHitDisplay ?? "-"}
+                    </span>
+                  </div>
+                  <div>
+                    Simple favori :{" "}
+                    <span style={{ color: "#47B5FF" }}>
+                      {favoriteSimpleDisplay ?? "-"}
+                    </span>
+                  </div>
+                  <div>
+                    Double favori :{" "}
+                    <span style={{ color: "#FFB8DE" }}>
+                      {favoriteDoubleDisplay ?? "-"}
+                    </span>
+                  </div>
+                  <div>
+                    Triple favori :{" "}
+                    <span style={{ color: "#FF9F43" }}>
+                      {favoriteTripleDisplay ?? "-"}
+                    </span>
+                  </div>
+                  <div>
+                    Moins joué :{" "}
+                    <span style={{ color: "#AAAAAA" }}>
+                      {leastHitDisplay ?? "-"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Hits par segment (stack S/D/T) */}
+            <div style={{ ...card }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6,
+                  color: T.text70,
+                  fontWeight: 700,
+                  marginBottom: 8,
+                }}
+              >
+                Hits par segment (S / D / T)
+              </div>
+
+              {maxStackHits > 0 || chartMissCount > 0 ? (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-end",
+                    gap: 4,
+                    height: 120,
+                    marginBottom: 6,
+                    overflowX: "auto",
+                    paddingBottom: 6,
+                  }}
+                >
+                  {HITS_SEGMENTS.map((seg) => {
+                    const label =
+                      seg === "MISS"
+                        ? "MISS"
+                        : seg === 25
+                        ? "25"
+                        : String(seg);
+                    if (seg === "MISS") {
+                      const h =
+                        maxStackHits > 0 || chartMissCount > 0
+                          ? (chartMissCount / Math.max(maxStackHits, chartMissCount)) *
+                            100
+                          : 0;
+                      return (
+                        <div
+                          key={label}
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            minWidth: 20,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 10,
+                              height: `${h}%`,
+                              borderRadius: 4,
+                              background:
+                                "linear-gradient(180deg,#555,#999)",
+                              boxShadow:
+                                h > 0
+                                  ? "0 0 8px rgba(255,255,255,.4)"
+                                  : "none",
+                            }}
+                          />
+                          <div
+                            style={{
+                              fontSize: 8,
+                              marginTop: 2,
+                              color: T.text70,
+                            }}
+                          >
+                            {label}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    const key = String(seg);
+                    const data = segSDTMap[key] || { S: 0, D: 0, T: 0 };
+                    const total = data.S + data.D + data.T;
+                    const base = maxStackHits || 1;
+                    const hS = (data.S / base) * 100;
+                    const hD = (data.D / base) * 100;
+                    const hT = (data.T / base) * 100;
+
+                    return (
+                      <div
+                        key={label}
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          minWidth: 20,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 12,
+                            display: "flex",
+                            flexDirection: "column-reverse",
+                            borderRadius: 4,
+                            overflow: "hidden",
+                            boxShadow:
+                              total > 0
+                                ? "0 0 8px rgba(255,255,255,.4)"
+                                : "none",
+                          }}
+                        >
+                          {hS > 0 && (
+                            <div
+                              style={{
+                                height: `${hS}%`,
+                                background:
+                                  "linear-gradient(180deg,#47B5FF,#1F5F9F)",
+                              }}
+                            />
+                          )}
+                          {hD > 0 && (
+                            <div
+                              style={{
+                                height: `${hD}%`,
+                                background:
+                                  "linear-gradient(180deg,#FF6FB5,#8F2B64)",
+                              }}
+                            />
+                          )}
+                          {hT > 0 && (
+                            <div
+                              style={{
+                                height: `${hT}%`,
+                                background:
+                                  "linear-gradient(180deg,#FF9F43,#C25B0F)",
+                              }}
+                            />
+                          )}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 8,
+                            marginTop: 2,
+                            color: T.text70,
+                          }}
+                        >
+                          {label}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: T.text70,
+                  }}
+                >
+                  Pas assez de données pour afficher les hits par segment.
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  gap: 10,
+                  marginTop: 4,
+                  fontSize: 10,
+                  color: T.text70,
+                }}
+              >
+                <div>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 8,
+                      height: 8,
+                      borderRadius: 3,
+                      marginRight: 4,
+                      background:
+                        "linear-gradient(180deg,#47B5FF,#1F5F9F)",
+                    }}
+                  />
+                  S
+                </div>
+                <div>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 8,
+                      height: 8,
+                      borderRadius: 3,
+                      marginRight: 4,
+                      background:
+                        "linear-gradient(180deg,#FF6FB5,#8F2B64)",
+                    }}
+                  />
+                  D
+                </div>
+                <div>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 8,
+                      height: 8,
+                      borderRadius: 3,
+                      marginRight: 4,
+                      background:
+                        "linear-gradient(180deg,#FF9F43,#C25B0F)",
+                    }}
+                  />
+                  T
+                </div>
+                <div>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 8,
+                      height: 8,
+                      borderRadius: 3,
+                      marginRight: 4,
+                      background:
+                        "linear-gradient(180deg,#555,#999)",
+                    }}
+                  />
+                  Miss
+                </div>
+              </div>
+            </div>
+
+            {/* Mots du coach */}
+            <div style={{ ...card }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6,
+                  color: T.text70,
+                  fontWeight: 700,
+                  marginBottom: 6,
+                }}
+              >
+                {summaryTitle}
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: T.text70,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                }}
+              >
+                {summaryLines.map((line, idx) => (
+                  <div key={idx}>• {line}</div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Liste des sessions */}
+          <div style={{ ...card }}>
+            <div
+              style={{
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: 0.6,
+                color: T.text70,
+                fontWeight: 700,
+                marginBottom: 6,
+              }}
+            >
+              Historique des sessions
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
+              {pagedSessions.map((s) => {
+                const hits = s.hitsS + s.hitsD + s.hitsT;
+                const throws = hits + s.miss;
+                const pctHitsSession =
+                  throws > 0 ? (hits / throws) * 100 : null;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setSelected(s)}
+                    style={{
+                      textAlign: "left",
+                      borderRadius: 14,
+                      border: "1px solid rgba(255,255,255,.08)",
+                      padding: "8px 10px",
+                      background:
+                        "linear-gradient(180deg,#15171B,#0F1013)",
+                      color: T.text,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: 2,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: T.text70,
+                        }}
+                      >
+                        {formatShortDate(s.date)}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: T.gold,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {s.avg3D.toFixed(1)} de moy. 3D
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: 11,
+                        color: T.text70,
+                      }}
+                    >
+                      <div>
+                        Darts:{" "}
+                        <span style={{ color: "#E5FFEF" }}>
+                          {s.darts}
+                        </span>
+                      </div>
+                      <div>
+                        Hits:{" "}
+                        <span style={{ color: "#7CFF9A" }}>{hits}</span>
+                        {pctHitsSession !== null && (
+                          <span> ({pctHitsSession.toFixed(1)}%)</span>
+                        )}
+                      </div>
+                      <div>
+                        BV:{" "}
+                        <span style={{ color: "#FFB8DE" }}>
+                          {s.bestVisit}
+                        </span>
+                      </div>
+                      <div>
+                        CO:{" "}
+                        <span style={{ color: "#FF9F43" }}>
+                          {s.bestCheckout ?? "-"}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div
+                style={{
+                  marginTop: 8,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  fontSize: 11,
+                  color: T.text70,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(255,255,255,.2)",
+                    background: "rgba(0,0,0,.4)",
+                    color: page <= 1 ? "#666" : T.text,
+                    cursor: page <= 1 ? "default" : "pointer",
+                  }}
+                >
+                  ◀
+                </button>
+                <div>
+                  Page{" "}
+                  <span style={{ color: T.gold }}>{page}</span> /{" "}
+                  <span>{totalPages}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPage((p) => Math.min(totalPages, p + 1))
+                  }
+                  disabled={page >= totalPages}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(255,255,255,.2)",
+                    background: "rgba(0,0,0,.4)",
+                    color: page >= totalPages ? "#666" : T.text,
+                    cursor: page >= totalPages ? "default" : "pointer",
+                  }}
+                >
+                  ▶
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Modal détail session */}
+      {selected && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.75)",
+            zIndex: 999,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 16,
+          }}
+          onClick={() => setSelected(null)}
+        >
+          <div
+            style={{
+              maxWidth: 420,
+              width: "100%",
+              borderRadius: 22,
+              background:
+                "linear-gradient(180deg,#18181C,#0D0E11)",
+              border: "1px solid rgba(255,255,255,.18)",
+              boxShadow: "0 18px 40px rgba(0,0,0,.7)",
+              padding: 16,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6,
+                  color: T.text70,
+                  fontWeight: 700,
+                }}
+              >
+                Session du {formatShortDate(selected.date)}
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                style={{
+                  borderRadius: 999,
+                  border: "1px solid rgba(255,255,255,.3)",
+                  background: "rgba(0,0,0,.4)",
+                  color: T.text,
+                  fontSize: 12,
+                  padding: "2px 8px",
+                  cursor: "pointer",
+                }}
+              >
+                Fermer
+              </button>
+            </div>
+
+            <div
+              style={{
+                fontSize: 12,
+                color: T.text70,
+                marginBottom: 8,
+              }}
+            >
+              Moyenne 3D :{" "}
+              <span style={{ color: T.gold, fontWeight: 700 }}>
+                {selected.avg3D.toFixed(1)}
+              </span>{" "}
+              — Moyenne 1D :{" "}
+              <span style={{ color: "#7CFF9A", fontWeight: 700 }}>
+                {selected.avg1D.toFixed(2)}
+              </span>
+            </div>
+
+            <div>
+              <div style={statRowBox}>
+                <span>Darts</span>
+                <span>{selected.darts}</span>
+              </div>
+              <div style={statRowBox}>
+                <span>Hits S</span>
+                <span>{selected.hitsS}</span>
+              </div>
+              <div style={statRowBox}>
+                <span>Hits D</span>
+                <span>{selected.hitsD}</span>
+              </div>
+              <div style={statRowBox}>
+                <span>Hits T</span>
+                <span>{selected.hitsT}</span>
+              </div>
+              <div style={statRowBox}>
+                <span>Miss</span>
+                <span>{selected.miss}</span>
+              </div>
+              <div style={statRowBox}>
+                <span>Bull / DBull</span>
+                <span>
+                  {selected.bull} / {selected.dBull}
+                </span>
+              </div>
+              <div style={statRowBox}>
+                <span>Bust</span>
+                <span>{selected.bust}</span>
+              </div>
+              <div style={statRowBox}>
+                <span>Best Visit</span>
+                <span>{selected.bestVisit}</span>
+              </div>
+              <div style={statRowBox}>
+                <span>Best Checkout</span>
+                <span>{selected.bestCheckout ?? "-"}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
