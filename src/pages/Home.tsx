@@ -340,7 +340,8 @@ function buildArcadeItems(
           .filter(Boolean)
           .join(" · ")
       : "",
-    backgroundImage: "/img/ticker-records.jpg",
+    backgroundImage:
+      "https://raw.githubusercontent.com/perrinalexandre38530-star/Darts-Counter-V5.3/main/public/img/ticker-records.jpg",
     accentColor: "#F6C256",
   });
 
@@ -360,7 +361,8 @@ function buildArcadeItems(
           ),
     detail:
       x01MultiSessions > 0 ? `${x01MultiSessions} matchs X01 multi` : "",
-    backgroundImage: "/img/ticker-x01.jpg",
+    backgroundImage:
+      "https://raw.githubusercontent.com/perrinalexandre38530-star/Darts-Counter-V5.3/main/public/img/ticker-x01.jpg",
     accentColor: "#52FFC4",
   });
 
@@ -389,7 +391,8 @@ function buildArcadeItems(
             .filter(Boolean)
             .join(" · ")
         : "",
-    backgroundImage: "/img/ticker-online.jpg",
+    backgroundImage:
+      "https://raw.githubusercontent.com/perrinalexandre38530-star/Darts-Counter-V5.3/main/public/img/ticker-lastonline.jpg",
     accentColor: "#5ED3FF",
   });
 
@@ -407,7 +410,8 @@ function buildArcadeItems(
             "home.ticker.onlineLeader.text.empty",
             "Monte dans le classement en enchaînant les victoires online."
           ),
-    backgroundImage: "/img/ticker-leaderboard.jpg",
+    backgroundImage:
+      "https://raw.githubusercontent.com/perrinalexandre38530-star/Darts-Counter-V5.3/main/public/img/ticker-leaderboard.jpg",
     accentColor: "#FF5E9E",
   });
 
@@ -429,7 +433,8 @@ function buildArcadeItems(
       trainingHitsTotal > 0 && trainingGoalPct != null
         ? `Objectifs réussis : ${trainingGoalPct}%`
         : "",
-    backgroundImage: "/img/ticker-training.jpg",
+    backgroundImage:
+      "https://raw.githubusercontent.com/perrinalexandre38530-star/Darts-Counter-V5.3/main/public/img/ticker-training.jpg",
     accentColor: "#9EFF5E",
   });
 
@@ -454,7 +459,8 @@ function buildArcadeItems(
     ]
       .filter(Boolean)
       .join(" · "),
-    backgroundImage: "/img/ticker-global.jpg",
+    backgroundImage:
+      "https://raw.githubusercontent.com/perrinalexandre38530-star/Darts-Counter-V5.3/main/public/img/ticker-global.jpg",
     accentColor: "#F6C256",
   });
 
@@ -467,7 +473,8 @@ function buildArcadeItems(
         "home.ticker.tip.text",
         "Ancre ta finition préférée en la rejouant régulièrement."
       ),
-      backgroundImage: "/img/ticker-tip.jpg",
+      backgroundImage:
+        "https://raw.githubusercontent.com/perrinalexandre38530-star/Darts-Counter-V5.3/main/public/img/ticker-tip.jpg",
       accentColor: "#FFFFFF",
     });
   }
