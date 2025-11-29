@@ -1041,7 +1041,7 @@ export default function Home({ store, go }: Props) {
 
   // Auto-slide du mini-carousel Astuce/Pub/News
   useEffect(() => {
-    if (!tipSlides.length) return;
+    if (typeof window === "undefined" || !tipSlides.length) return;
     const id = window.setInterval(() => {
       setTipIndex((i) =>
         tipSlides.length ? (i + 1) % tipSlides.length : 0
@@ -1354,21 +1354,6 @@ export default function Home({ store, go }: Props) {
                           "Découvre les nouveautés, astuces ou pubs liées à cette section."
                         )}
                     </div>
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 9,
-                      textTransform: "uppercase",
-                      letterSpacing: 0.6,
-                      opacity: 0.8,
-                      marginTop: 4,
-                    }}
-                  >
-                    {t(
-                      "home.detail.tip.hint",
-                      "Astuces, pubs et nouveautés qui défilent automatiquement"
-                    )}
                   </div>
                 </div>
               </div>

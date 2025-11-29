@@ -22,6 +22,8 @@ import { useAuthOnline } from "../hooks/useAuthOnline";
 import { onlineApi } from "../lib/onlineApi";
 import type { ThemeId } from "../theme/themePresets";
 
+import { sha256 } from "../lib/crypto";
+
 type View = "menu" | "me" | "locals" | "friends";
 
 /* ===== Helper lecture instantanée (mini-cache IDB + quick-stats) ===== */
@@ -128,8 +130,8 @@ export default function Profiles({
 
   const friends: FriendLike[] = (store as any).friends ?? [];
 
-  const { theme } = useTheme();
-  const { t } = useLang();
+  const { theme, themeId, setThemeId } = useTheme() as any;
+  const { t, setLang, lang } = useLang();
   const auth = useAuthOnline();
 
   const [view, setView] = React.useState<View>(
@@ -153,7 +155,33 @@ export default function Profiles({
   >({});
 
   function setActiveProfile(id: string | null) {
+    // 1) on met à jour le store
     update((s) => ({ ...s, activeProfileId: id }));
+
+    // 2) si un profil est sélectionné → on applique ses prefs app (lang + thème)
+    if (!id) return;
+    const p = profiles.find((p) => p.id === id);
+    if (!p) return;
+
+    const pi = ((p as any).privateInfo || {}) as {
+      appLang?: Lang;
+      appTheme?: ThemeId;
+    };
+
+    if (pi.appLang) {
+      try {
+        setLang(pi.appLang);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (pi.appTheme) {
+      try {
+        setThemeId(pi.appTheme);
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   function renameProfile(id: string, name: string) {
@@ -205,6 +233,25 @@ export default function Profiles({
   }
 
   const active = profiles.find((p) => p.id === activeProfileId) || null;
+
+  // NEW : au chargement de la page, si un profil actif a des prefs app, on les applique
+  React.useEffect(() => {
+    if (!active) return;
+    const pi = ((active as any).privateInfo || {}) as {
+      appLang?: Lang;
+      appTheme?: ThemeId;
+    };
+    if (pi.appLang && pi.appLang !== lang) {
+      try {
+        setLang(pi.appLang);
+      } catch {}
+    }
+    if (pi.appTheme && pi.appTheme !== themeId) {
+      try {
+        setThemeId(pi.appTheme);
+      } catch {}
+    }
+  }, [active, lang, themeId, setLang, setThemeId]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -863,7 +910,7 @@ function ActiveProfileBlock({
   );
 }
 
-/* ------ Bloc INFOS PERSONNELLES ------ */
+/* ------ Bloc INFOS PERSONNELLES + SÉCURITÉ ------ */
 
 type PrivateInfo = {
   nickname?: string;
@@ -911,6 +958,12 @@ function PrivateInfoBlock({
   }, [active]);
 
   const [fields, setFields] = React.useState<PrivateInfo>(initial);
+  const [showPassword, setShowPassword] = React.useState(false);
+
+  // sécurité
+  const [newPass, setNewPass] = React.useState("");
+  const [newPass2, setNewPass2] = React.useState("");
+  const [passError, setPassError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setFields(initial);
@@ -922,124 +975,150 @@ function PrivateInfoBlock({
 
   function handleCancel() {
     setFields(initial);
+    setShowPassword(false);
+    setNewPass("");
+    setNewPass2("");
+    setPassError(null);
   }
 
   function handleSubmit() {
-    onPatch(fields);
-    onSave?.(fields);
+    const patch: Partial<PrivateInfo> = { ...fields };
+
+    // === Nouveau mot de passe ?
+    if (newPass || newPass2) {
+      if (newPass !== newPass2) {
+        setPassError(t("profiles.private.passMismatch","Les mots de passe ne correspondent pas."));
+        return;
+      }
+      if (newPass.length < 6) {
+        setPassError(t("profiles.private.passTooShort","Mot de passe trop court (min. 6 caractères)."));
+        return;
+      }
+
+      patch.password = newPass;
+    }
+
+    setPassError(null);
+
+    onPatch(patch);
+    onSave?.(patch);
+
+    setNewPass("");
+    setNewPass2("");
   }
 
   if (!active) {
     return (
       <div className="subtitle">
-        {t(
-          "profiles.private.noActive",
-          "Aucun profil n’est actuellement sélectionné."
-        )}
+        {t("profiles.private.noActive","Aucun profil n’est actuellement sélectionné.")}
       </div>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div
-        className="subtitle"
-        style={{ fontSize: 12, color: theme.textSoft }}
-      >
-        {t(
-          "profiles.private.hint",
-          "Ces informations restent privées et sont liées à ton profil. Elles ne sont pas partagées en ligne."
-        )}
+    <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+      
+      {/* ====== INFOS PERSONNELLES ====== */}
+      <div className="subtitle" style={{fontSize:12, color:theme.textSoft}}>
+        {t("profiles.private.hint","Ces informations restent locales et privées.")}
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0,1fr)",
-          gap: 10,
-        }}
-      >
-        <PrivateField
-          label={t("profiles.private.nickname", "Surnom")}
-          value={fields.nickname || ""}
-          onChange={(v) => handleChange("nickname", v)}
+      <div style={{display:"grid", gap:10}}>
+        <PrivateField label={t("profiles.private.nickname","Surnom")}
+          value={fields.nickname||""}
+          onChange={(v)=>handleChange("nickname",v)}
         />
-        <PrivateField
-          label={t("profiles.private.lastName", "Nom")}
-          value={fields.lastName || ""}
-          onChange={(v) => handleChange("lastName", v)}
+        <PrivateField label={t("profiles.private.firstName","Prénom")}
+          value={fields.firstName||""}
+          onChange={(v)=>handleChange("firstName",v)}
         />
-        <PrivateField
-          label={t("profiles.private.firstName", "Prénom")}
-          value={fields.firstName || ""}
-          onChange={(v) => handleChange("firstName", v)}
+        <PrivateField label={t("profiles.private.lastName","Nom")}
+          value={fields.lastName||""}
+          onChange={(v)=>handleChange("lastName",v)}
         />
-        <PrivateField
-          label={t("profiles.private.birthDate", "Date de naissance")}
-          value={fields.birthDate || ""}
-          onChange={(v) => handleChange("birthDate", v)}
+        <PrivateField label={t("profiles.private.birthDate","Date de naissance")}
           type="date"
+          value={fields.birthDate||""}
+          onChange={(v)=>handleChange("birthDate",v)}
         />
-        <PrivateField
-          label={t("profiles.private.country", "Pays")}
-          value={fields.country || ""}
-          onChange={(v) => handleChange("country", v)}
+        <PrivateField label={t("profiles.private.country","Pays")}
+          value={fields.country||""}
+          onChange={(v)=>handleChange("country",v)}
         />
-        <PrivateField
-          label={t("profiles.private.city", "Ville")}
-          value={fields.city || ""}
-          onChange={(v) => handleChange("city", v)}
+        <PrivateField label={t("profiles.private.city","Ville")}
+          value={fields.city||""}
+          onChange={(v)=>handleChange("city",v)}
         />
-        <PrivateField
-          label={t("profiles.private.email", "Adresse mail")}
-          value={fields.email || ""}
-          onChange={(v) => handleChange("email", v)}
+        <PrivateField label={t("profiles.private.email","Email")}
           type="email"
+          value={fields.email||""}
+          onChange={(v)=>handleChange("email",v)}
         />
-        <PrivateField
-          label={t("profiles.private.phone", "Téléphone")}
-          value={fields.phone || ""}
-          onChange={(v) => handleChange("phone", v)}
+        <PrivateField label={t("profiles.private.phone","Téléphone")}
           type="tel"
+          value={fields.phone||""}
+          onChange={(v)=>handleChange("phone",v)}
         />
-        <PrivateField
-          label={t("profiles.private.password", "Mot de passe")}
-          value={fields.password || ""}
-          onChange={(v) => handleChange("password", v)}
-          type="password"
-        />
+
+        {/* mot de passe actuel */}
+        <label style={{display:"flex", flexDirection:"column", gap:4}}>
+          <span style={{color:theme.textSoft}}>
+            {t("profiles.private.password","Mot de passe actuel")}
+          </span>
+          <div style={{display:"flex", gap:6, alignItems:"center"}}>
+            <input
+              type={showPassword ? "text" : "password"}
+              className="input"
+              value={fields.password || ""}
+              onChange={(e)=>handleChange("password", e.target.value)}
+              style={{flex:1}}
+            />
+            <button
+              className="btn sm"
+              onClick={()=>setShowPassword(v=>!v)}
+            >
+              {showPassword ? t("common.hide","Masquer") : t("common.show","Afficher")}
+            </button>
+          </div>
+        </label>
       </div>
 
-      <div
-        className="subtitle"
-        style={{ fontSize: 11, color: theme.textSoft }}
-      >
-        {t(
-          "profiles.private.passwordHint",
-          "En cas d’oubli, tu pourras redéfinir un mot de passe depuis cette page (stocké uniquement sur cet appareil)."
+      {/* ====== SÉCURITÉ ====== */}
+      <div style={{marginTop:6, fontWeight:800, fontSize:13, color:theme.primary}}>
+        {t("profiles.private.security","Sécurité")}
+      </div>
+
+      <div style={{display:"grid", gap:10}}>
+        <PrivateField
+          label={t("profiles.private.newPassword","Nouveau mot de passe")}
+          type="password"
+          value={newPass}
+          onChange={(v)=>setNewPass(v)}
+        />
+        <PrivateField
+          label={t("profiles.private.newPasswordConfirm","Confirmer nouveau mot de passe")}
+          type="password"
+          value={newPass2}
+          onChange={(v)=>setNewPass2(v)}
+        />
+
+        {passError && (
+          <div style={{fontSize:11, color:"#ff6666"}}>
+            {passError}
+          </div>
         )}
       </div>
 
-      <div
-        className="row"
-        style={{
-          marginTop: 4,
-          justifyContent: "flex-end",
-          gap: 8,
-          flexWrap: "wrap",
-        }}
-      >
+      {/* BOUTONS */}
+      <div style={{display:"flex", justifyContent:"flex-end", gap:8}}>
         <button className="btn sm" onClick={handleCancel}>
-          {t("common.cancel", "Annuler")}
+          {t("common.cancel","Annuler")}
         </button>
-        <button
-          className="btn ok sm"
-          onClick={handleSubmit}
-          style={{ fontWeight: 800 }}
-        >
-          {t("common.save", "Enregistrer")}
+        <button className="btn ok sm" onClick={handleSubmit}>
+          {t("common.save","Enregistrer")}
         </button>
       </div>
+
     </div>
   );
 }
