@@ -1092,184 +1092,207 @@ export default function Home({ store, go }: Props) {
           }}
         />
 
-        {/* Bloc détail du ticker : 2 mini-cards côte à côte */}
-        {currentTicker && (
+        {/* Bloc détail du ticker : 2 mini-cards côte à côte, avec auto-slide + swipe */}
+{currentTicker && (
+  <div
+    style={{
+      marginTop: 10,
+      marginBottom: 10,
+      borderRadius: 22,
+      border: `1px solid ${
+        theme.borderSoft ?? "rgba(255,255,255,0.12)"
+      }`,
+      boxShadow: "0 18px 40px rgba(0,0,0,0.85)",
+      padding: 8,
+      background:
+        "radial-gradient(circle at top, rgba(255,255,255,0.06), rgba(3,4,10,1))",
+      touchAction: "pan-y",
+    }}
+    onTouchStart={(e) => {
+      window.__swipeStartX = e.touches[0].clientX;
+    }}
+    onTouchEnd={(e) => {
+      const dx = e.changedTouches[0].clientX - window.__swipeStartX;
+      if (Math.abs(dx) < 50) return; // ignore petits mouvements
+
+      if (dx < 0) {
+        // swipe gauche → next
+        setTickerIndex((i) =>
+          (i + 1) % (tickerItems.length || 1)
+        );
+      } else {
+        // swipe droite → prev
+        setTickerIndex((i) =>
+          (i - 1 + tickerItems.length) % tickerItems.length
+        );
+      }
+    }}
+  >
+    <div
+      style={{
+        display: "flex",
+        gap: 8,
+        transition: "opacity 0.25s",
+      }}
+    >
+      {/* --------- CARD GAUCHE : STATS --------- */}
+      <div
+        style={{
+          flex: 1,
+          borderRadius: 18,
+          overflow: "hidden",
+          position: "relative",
+          minHeight: 96,
+          backgroundColor: "#05060C",
+          backgroundImage: statsBackgroundImage
+            ? `url("${statsBackgroundImage}")`
+            : undefined,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        }}
+      >
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(130deg, rgba(0,0,0,0.85), rgba(0,0,0,0.45))",
+          }}
+        />
+        <div
+          style={{
+            position: "relative",
+            padding: "8px 9px 9px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
           <div
             style={{
-              marginTop: 10,
-              marginBottom: 10,
-              borderRadius: 22,
-              border: `1px solid ${
-                theme.borderSoft ?? "rgba(255,255,255,0.12)"
-              }`,
-              boxShadow: "0 18px 40px rgba(0,0,0,0.85)",
-              padding: 8,
-              background:
-                "radial-gradient(circle at top, rgba(255,255,255,0.06), rgba(3,4,10,1))",
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: 0.8,
+              textTransform: "uppercase",
+              color: detailAccent,
             }}
           >
+            {statsTitle}
+          </div>
+
+          <div
+            style={{
+              fontSize: 11,
+              lineHeight: 1.35,
+              color: theme.textSoft ?? "rgba(255,255,255,0.9)",
+            }}
+          >
+            {statsText}
+          </div>
+
+          {hasDetailStats && (
             <div
               style={{
-                display: "flex",
-                gap: 8,
+                marginTop: 4,
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0,1fr))",
+                gap: 6,
               }}
             >
-              {/* --------- Card gauche : STATS du slide --------- */}
-              <div
-                style={{
-                  flex: 1,
-                  borderRadius: 18,
-                  overflow: "hidden",
-                  position: "relative",
-                  minHeight: 96,
-                  backgroundColor: "#05060C",
-                  backgroundImage: statsBackgroundImage
-                    ? `url("${statsBackgroundImage}")`
-                    : undefined,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                }}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    background:
-                      "linear-gradient(130deg, rgba(0,0,0,0.85), rgba(0,0,0,0.45))",
-                  }}
+              {detailRows.map((row) => (
+                <DetailKpi
+                  key={row.label}
+                  label={row.label}
+                  value={row.value}
+                  primary={detailAccent}
+                  theme={theme}
                 />
-                <div
-                  style={{
-                    position: "relative",
-                    padding: "8px 9px 9px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 800,
-                      letterSpacing: 0.8,
-                      textTransform: "uppercase",
-                      color: detailAccent,
-                    }}
-                  >
-                    {statsTitle}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      lineHeight: 1.35,
-                      color: theme.textSoft ?? "rgba(255,255,255,0.9)",
-                    }}
-                  >
-                    {statsText}
-                  </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
-                  {hasDetailStats && (
-                    <div
-                      style={{
-                        marginTop: 4,
-                        display: "grid",
-                        gridTemplateColumns: "repeat(2, minmax(0,1fr))",
-                        gap: 6,
-                      }}
-                    >
-                      {detailRows.map((row) => (
-                        <DetailKpi
-                          key={row.label}
-                          label={row.label}
-                          value={row.value}
-                          primary={detailAccent}
-                          theme={theme}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
+      {/* --------- CARD DROITE : ASTUCE / PUB / NEWS --------- */}
+      <div
+        style={{
+          flex: 1,
+          borderRadius: 18,
+          overflow: "hidden",
+          position: "relative",
+          minHeight: 96,
+          backgroundColor: "#05060C",
+          backgroundImage: tipBackgroundImage
+            ? `url("${tipBackgroundImage}")`
+            : undefined,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        }}
+      >
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(210deg, rgba(0,0,0,0.88), rgba(0,0,0,0.45))",
+          }}
+        />
 
-              {/* --------- Card droite : ASTUCE / PUB / NOUVEAUTÉ --------- */}
-              <div
-                style={{
-                  flex: 1,
-                  borderRadius: 18,
-                  overflow: "hidden",
-                  position: "relative",
-                  minHeight: 96,
-                  backgroundColor: "#05060C",
-                  backgroundImage: tipBackgroundImage
-                    ? `url("${tipBackgroundImage}")`
-                    : undefined,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                }}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    background:
-                      "linear-gradient(230deg, rgba(0,0,0,0.9), rgba(0,0,0,0.4))",
-                  }}
-                />
-                <div
-                  style={{
-                    position: "relative",
-                    padding: "8px 9px 9px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    height: "100%",
-                  }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 800,
-                        letterSpacing: 0.8,
-                        textTransform: "uppercase",
-                        color: theme.accent1 ?? "#FFD980",
-                        marginBottom: 3,
-                      }}
-                    >
-                      {tipTitle}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        lineHeight: 1.35,
-                        color: theme.textSoft ?? "rgba(255,255,255,0.9)",
-                      }}
-                    >
-                      {tipText}
-                    </div>
-                  </div>
+        <div
+          style={{
+            position: "relative",
+            padding: "8px 9px 9px",
+            display: "flex",
+            flexDirection: "column",
+            height: "100%",
+            justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 800,
+                letterSpacing: 0.8,
+                textTransform: "uppercase",
+                color: theme.accent1 ?? "#FFD980",
+                marginBottom: 3,
+              }}
+            >
+              {tipTitle}
+            </div>
 
-                  <div
-                    style={{
-                      fontSize: 9,
-                      textTransform: "uppercase",
-                      letterSpacing: 0.6,
-                      opacity: 0.8,
-                      marginTop: 4,
-                    }}
-                  >
-                    {t(
-                      "home.detail.tip.hint",
-                      "Astuce / pub / nouveauté liée à la section active"
-                    )}
-                  </div>
-                </div>
-              </div>
+            <div
+              style={{
+                fontSize: 11,
+                lineHeight: 1.35,
+                color: theme.textSoft ?? "rgba(255,255,255,0.9)",
+              }}
+            >
+              {tipText}
             </div>
           </div>
-        )}
+
+          <div
+            style={{
+              fontSize: 9,
+              opacity: 0.7,
+              textTransform: "uppercase",
+              letterSpacing: 0.6,
+            }}
+          >
+            {t(
+              "home.detail.tip.hint",
+              "Astuce / pub / nouveauté liée à la section active"
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
 
         {/* Gros boutons de navigation */}
         <div

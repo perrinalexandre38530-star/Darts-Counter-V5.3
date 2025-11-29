@@ -7,7 +7,7 @@
 // - UI full thème + textes via LangContext
 // ============================================
 import React from "react";
-import QRCode from "qrcode"; // ✅ QR local (génération)
+import QRCode from "qrcode"; // ✅ Lib QR (mais forme ESM/CJS variable)
 import jsQR from "jsqr"; // ✅ Scan QR (caméra)
 import type { Store } from "../lib/types";
 import { useTheme } from "../contexts/ThemeContext";
@@ -98,7 +98,7 @@ export default function SyncCenter({ store, go, profileId }: Props) {
   }
 
   // =====================================================
-  // 1) EXPORT LOCAL (tout le store / profil)
+  // 1) EXPORT LOCAL (tout le store / profil ciblé)
   // =====================================================
   async function handleExportFullStore() {
     try {
@@ -1004,6 +1004,51 @@ function PeerPanel({
 }) {
   const [qrUrl, setQrUrl] = React.useState<string>("");
   const [showScanner, setShowScanner] = React.useState(false);
+  const [qrError, setQrError] = React.useState<string>("");
+
+  async function handleShowQr() {
+    if (!payload) return;
+
+    setQrError("");
+
+    try {
+      const anyQRCode: any = QRCode as any;
+      const qrToDataURL =
+        anyQRCode.toDataURL ||
+        (anyQRCode.default && anyQRCode.default.toDataURL);
+
+      if (!qrToDataURL) {
+        console.error("QR lib shape:", anyQRCode);
+        setQrUrl("");
+        setQrError(
+          t(
+            "syncCenter.peer.qrErrorNoFn",
+            "Librairie QR non disponible (toDataURL introuvable). Vérifie l'installation de 'qrcode'."
+          )
+        );
+        return;
+      }
+
+      const url = await qrToDataURL(payload, {
+        width: 260,
+        margin: 1,
+        color: {
+          dark: "#000000",
+          light: "#ffffff",
+        },
+      });
+      setQrUrl(url);
+    } catch (err) {
+      console.error("QR generation failed", err);
+      setQrUrl("");
+      setQrError(
+        t(
+          "syncCenter.peer.qrError",
+          "Impossible de générer le QR code. Regarde la console pour le détail."
+        )
+      );
+    }
+  }
 
   return (
     <div
@@ -1041,7 +1086,7 @@ function PeerPanel({
       >
         {t(
           "syncCenter.peer.desc",
-          "Génère un payload de ton profil actif que tu pourras partager via QR code, message ou e-mail. Sur l'autre appareil, scanne le QR ou importe le payload pour récupérer le profil."
+          "Génère un payload de ton profil ciblé que tu pourras partager via QR code, message ou e-mail. Sur l'autre appareil, scanne le QR ou importe le payload pour récupérer le profil."
         )}
       </div>
 
@@ -1067,23 +1112,7 @@ function PeerPanel({
           )}
         </button>
         <button
-          onClick={async () => {
-            if (!payload) return;
-            try {
-              const url = await QRCode.toDataURL(payload, {
-                width: 260,
-                margin: 1,
-                color: {
-                  dark: "#000000",
-                  light: "#ffffff",
-                },
-              });
-              setQrUrl(url);
-            } catch (err) {
-              console.error("QR generation failed", err);
-              setQrUrl("");
-            }
-          }}
+          onClick={handleShowQr}
           style={buttonSmall(theme)}
           disabled={!payload}
         >
@@ -1136,6 +1165,18 @@ function PeerPanel({
               padding: 6,
             }}
           />
+        </div>
+      )}
+
+      {qrError && (
+        <div
+          style={{
+            marginTop: 4,
+            fontSize: 11,
+            color: "#ff7c7c",
+          }}
+        >
+          {qrError}
         </div>
       )}
 
