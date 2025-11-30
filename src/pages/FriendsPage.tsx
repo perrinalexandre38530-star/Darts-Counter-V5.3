@@ -11,8 +11,10 @@
 // - Affiche le DRAPEAU du pays du profil actif (privateInfo.country)
 //   via getCountryFlag() (src/lib/countryNames.ts)
 // - Bouton TEST SUPABASE (juste pour vérifier la connexion)
-// - Bouton "Lancer une partie X01 Online" qui ouvre x01_online_setup
-// - Salle d’attente ONLINE (affiche le code et infos host/joueur local)
+// - Bloc "Salons online" AU-DESSUS de l’historique
+// - Historique online compact (plus de gros JSON moches 🤮)
+// - Bouton "Lancer maintenant" qui ouvre x01_online_setup
+//   avec le lobbyCode (salle d’attente temps réel via Worker DO).
 // ============================================
 
 import React from "react";
@@ -327,6 +329,21 @@ export default function FriendsPage({ store, update, go }: Props) {
       hour: "2-digit",
       minute: "2-digit",
     });
+  }
+
+  function getMatchPlayersLabel(m: OnlineMatch): string {
+    const players = (m.players || []) as any[];
+    if (!players.length) return "Joueurs inconnus";
+    if (players.length === 1) return players[0].name || "Solo";
+    if (players.length === 2) return `${players[0].name} vs ${players[1].name}`;
+    return players.map((p) => p.name).join(" · ");
+  }
+
+  function getMatchWinnerLabel(m: OnlineMatch): string | null {
+    const winnerId = (m as any).winnerId;
+    if (!winnerId) return null;
+    const found = (m.players || []).find((p: any) => p.id === winnerId);
+    return found?.name || null;
   }
 
   /* -------------------------------------------------
@@ -1034,10 +1051,10 @@ export default function FriendsPage({ store, update, go }: Props) {
         </div>
       </div>
 
-      {/* --------- BLOC : Salons online (réels) --------- */}
+      {/* --------- BLOC : Salons online (réels) — AU-DESSUS de l’historique --------- */}
       <div
         style={{
-          marginTop: 10,
+          marginTop: 16,
           padding: 14,
           borderRadius: 14,
           border: "1px solid rgba(255,255,255,.12)",
@@ -1178,132 +1195,6 @@ export default function FriendsPage({ store, update, go }: Props) {
             </div>
           )}
         </div>
-      </div>
-
-      {/* --------- HISTORIQUE ONLINE (serveur) --------- */}
-      <div
-        style={{
-          marginTop: 12,
-          fontSize: 11.5,
-          padding: 10,
-          borderRadius: 12,
-          border: "1px solid rgba(255,255,255,.10)",
-          background:
-            "linear-gradient(180deg, rgba(26,26,34,.96), rgba(8,8,12,.98))",
-        }}
-      >
-        <div
-          style={{
-            fontWeight: 700,
-            marginBottom: 4,
-          }}
-        >
-          Historique Online
-        </div>
-
-        {loadingMatches ? (
-          <div style={{ opacity: 0.85 }}>Chargement…</div>
-        ) : !isSignedIn ? (
-          <div style={{ opacity: 0.85 }}>
-            Connecte-toi pour voir ton historique online.
-          </div>
-        ) : matches.length === 0 ? (
-          <div style={{ opacity: 0.85 }}>
-            Aucun match online enregistré pour le moment.
-          </div>
-        ) : (
-          <>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-                marginTop: 4,
-              }}
-            >
-              {matches.map((m) => {
-                const title = getMatchTitle(m);
-                const isTraining =
-                  (m as any).isTraining === true ||
-                  (m.payload as any)?.kind === "training_x01";
-
-                return (
-                  <div
-                    key={m.id}
-                    style={{
-                      padding: 8,
-                      borderRadius: 10,
-                      background: "linear-gradient(180deg,#181820,#0c0c12)",
-                      border: "1px solid rgba(255,255,255,.12)",
-                      boxShadow: "0 8px 18px rgba(0,0,0,.55)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginBottom: 2,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontWeight: 700,
-                          fontSize: 12,
-                        }}
-                      >
-                        {title}
-                      </div>
-
-                      <span
-                        style={{
-                          padding: "2px 8px",
-                          borderRadius: 999,
-                          fontSize: 10,
-                          fontWeight: 700,
-                          background: isTraining
-                            ? "linear-gradient(180deg,#35c86d,#23a958)"
-                            : "linear-gradient(180deg,#ffc63a,#ffaf00)",
-                          color: isTraining ? "#031509" : "#221600",
-                        }}
-                      >
-                        {isTraining ? "Training" : "Match"}
-                      </span>
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: 10.5,
-                        opacity: 0.8,
-                      }}
-                    >
-                      {formatMatchDate(m)}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <button
-              type="button"
-              onClick={handleClearOnlineHistory}
-              style={{
-                marginTop: 8,
-                width: "100%",
-                borderRadius: 999,
-                padding: "6px 10px",
-                border: "none",
-                fontWeight: 800,
-                fontSize: 12,
-                background: "linear-gradient(180deg,#ff5a5a,#e01f1f)",
-                color: "#fff",
-                cursor: "pointer",
-              }}
-            >
-              Effacer le cache local
-            </button>
-          </>
-        )}
       </div>
 
       {/* ---------- WAITING ROOM ONLINE ---------- */}
@@ -1535,6 +1426,149 @@ export default function FriendsPage({ store, update, go }: Props) {
           )}
         </div>
       )}
+
+      {/* --------- HISTORIQUE ONLINE (serveur) — SANS GROS JSON --------- */}
+      <div
+        style={{
+          marginTop: 16,
+          fontSize: 11.5,
+          padding: 10,
+          borderRadius: 12,
+          border: "1px solid rgba(255,255,255,.10)",
+          background:
+            "linear-gradient(180deg, rgba(26,26,34,.96), rgba(8,8,12,.98))",
+        }}
+      >
+        <div
+          style={{
+            fontWeight: 700,
+            marginBottom: 4,
+          }}
+        >
+          Historique Online
+        </div>
+
+        {loadingMatches ? (
+          <div style={{ opacity: 0.85 }}>Chargement…</div>
+        ) : !isSignedIn ? (
+          <div style={{ opacity: 0.85 }}>
+            Connecte-toi pour voir ton historique online.
+          </div>
+        ) : matches.length === 0 ? (
+          <div style={{ opacity: 0.85 }}>
+            Aucun match online enregistré pour le moment.
+          </div>
+        ) : (
+          <>
+            {matches.map((m) => {
+              const title = getMatchTitle(m);
+              const isTraining =
+                (m as any).isTraining === true ||
+                (m.payload as any)?.kind === "training_x01";
+              const playersLabel = getMatchPlayersLabel(m);
+              const winner = getMatchWinnerLabel(m);
+
+              return (
+                <div
+                  key={m.id}
+                  style={{
+                    marginTop: 8,
+                    padding: 8,
+                    borderRadius: 10,
+                    background: "linear-gradient(180deg,#181820,#0c0c12)",
+                    border: "1px solid rgba(255,255,255,.12)",
+                    boxShadow: "0 8px 18px rgba(0,0,0,.55)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 12,
+                      }}
+                    >
+                      {title}
+                    </div>
+
+                    <span
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: 999,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        background: isTraining
+                          ? "linear-gradient(180deg,#35c86d,#23a958)"
+                          : "linear-gradient(180deg,#ffc63a,#ffaf00)",
+                        color: isTraining ? "#031509" : "#221600",
+                      }}
+                    >
+                      {isTraining ? "Training" : "Match"}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 10.5,
+                      opacity: 0.8,
+                      marginBottom: 2,
+                    }}
+                  >
+                    {formatMatchDate(m)}
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 10.5,
+                      opacity: 0.85,
+                      marginBottom: 2,
+                    }}
+                  >
+                    {playersLabel}
+                  </div>
+
+                  {winner && (
+                    <div
+                      style={{
+                        fontSize: 10.5,
+                        opacity: 0.9,
+                        color: "#ffcf57",
+                      }}
+                    >
+                      Vainqueur : <b>{winner}</b>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={handleClearOnlineHistory}
+              style={{
+                marginTop: 8,
+                width: "100%",
+                borderRadius: 999,
+                padding: "6px 10px",
+                border: "none",
+                fontWeight: 800,
+                fontSize: 12,
+                background: "linear-gradient(180deg,#ff5a5a,#e01f1f)",
+                color: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              Effacer le cache local
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

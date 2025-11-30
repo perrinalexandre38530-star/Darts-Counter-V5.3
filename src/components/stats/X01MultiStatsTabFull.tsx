@@ -891,7 +891,6 @@ export default function X01MultiStatsTabFull({ records, playerId }: Props) {
       if (!finished) continue;
 
       const kind = (rec as any).game ?? (rec as any).kind ?? "";
-      const kindStr = String(kind).toLowerCase();
 
       const s = extractX01PlayerStats(rec, playerId);
 

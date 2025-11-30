@@ -3,6 +3,89 @@
 // Dashboard joueur — Verre dépoli OR (responsive sans dépassement)
 // ============================================
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useTheme } from "../contexts/ThemeContext";
+
+// CSS global : pulse + reflets type "DARTS COUNTER"
+const playerNamePulseCss = `
+@keyframes dcPlayerNamePulse {
+  0% {
+    transform: scale(1);
+    text-shadow:
+      0 0 4px rgba(255,255,255,.6),
+      0 0 10px rgba(255,255,255,.35);
+  }
+  45% {
+    transform: scale(1.06);
+    text-shadow:
+      0 0 8px rgba(255,255,255,.95),
+      0 0 20px rgba(255,255,255,.75),
+      0 0 32px rgba(255,255,255,.55);
+  }
+  100% {
+    transform: scale(1.02);
+    text-shadow:
+      0 0 6px rgba(255,255,255,.8),
+      0 0 16px rgba(255,255,255,.5);
+  }
+}
+
+@keyframes dcPlayerNameShine {
+  0% {
+    transform: translateX(-150%) skewX(-20deg);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.0;
+  }
+  40% {
+    opacity: 0.75;
+  }
+  60% {
+    transform: translateX(150%) skewX(-20deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(150%) skewX(-20deg);
+    opacity: 0;
+  }
+}
+
+.dc-player-name {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+}
+
+.dc-player-name::after {
+  content: "";
+  position: absolute;
+  top: -40%;
+  left: -30%;
+  width: 60%;
+  height: 180%;
+  background: linear-gradient(
+    120deg,
+    transparent,
+    rgba(255,255,255,.9),
+    transparent
+  );
+  opacity: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  animation: dcPlayerNameShine 4.2s ease-in-out infinite;
+}
+`;
+
+function useInjectPlayerNameCss() {
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (document.getElementById("dc-player-name-css")) return;
+    const style = document.createElement("style");
+    style.id = "dc-player-name-css";
+    style.innerHTML = playerNamePulseCss;
+    document.head.appendChild(style);
+  }, []);
+}
 
 /* ---------- Types ---------- */
 export type VisitBucket = "0-59" | "60-99" | "100+" | "140+" | "180";
@@ -290,7 +373,13 @@ function LineChart({
 
           {xTicks.map((t, i) =>
             i % Math.max(1, Math.ceil(xTicks.length / 6)) === 0 ? (
-              <text key={i} x={t.x} y={height - (padding - 12)} textAnchor="middle" style={{ fontSize: 10, fill: "rgba(255,255,255,.65)" }}>
+              <text
+                key={i}
+                x={t.x}
+                y={height - (padding - 12)}
+                textAnchor="middle"
+                style={{ fontSize: 10, fill: "rgba(255,255,255,.65)" }}
+              >
                 {t.label}
               </text>
             ) : null
@@ -364,7 +453,12 @@ function BarChart({
               <g key={b}>
                 <rect x={x} y={y} width={barW} height={h} rx={12} fill={T.gold} />
                 <rect x={x} y={y} width={barW} height={h} rx={12} fill="transparent" stroke="rgba(122,90,22,.35)" />
-                <text x={x + barW / 2} y={height - (padding - 14)} textAnchor="middle" style={{ fontSize: 11, fill: "rgba(255,255,255,.85)" }}>
+                <text
+                  x={x + barW / 2}
+                  y={height - (padding - 14)}
+                  textAnchor="middle"
+                  style={{ fontSize: 11, fill: "rgba(255,255,255,.85)" }}
+                >
                   {b}
                 </text>
               </g>
@@ -378,6 +472,12 @@ function BarChart({
 
 /* ---------- Composant principal ---------- */
 export default function StatsPlayerDashboard({ data }: { data: PlayerDashboardStats }) {
+  // Injection CSS pour l'anim du nom de joueur
+  useInjectPlayerNameCss();
+
+  const { theme } = useTheme();
+  const accent = theme?.primary ?? T.gold;
+
   // Sécurité : si jamais "data" n'arrive pas
   if (!data) {
     return (
@@ -394,6 +494,17 @@ export default function StatsPlayerDashboard({ data }: { data: PlayerDashboardSt
       </div>
     );
   }
+
+  // Glow + pulse + reflets sur le nom du joueur (couleur thème)
+  const playerNameStyle: React.CSSProperties = {
+    color: accent,
+    fontWeight: 900,
+    letterSpacing: 0.6,
+    textShadow: `0 0 8px ${accent}, 0 0 18px ${accent}80`,
+    animation: "dcPlayerNamePulse 2.8s ease-in-out infinite alternate",
+    transformOrigin: "center",
+    textTransform: "uppercase",
+  };
 
   // --- Normalisation : plus AUCUNE valeur par défaut cachée ---
   const avg3 =
@@ -436,7 +547,12 @@ export default function StatsPlayerDashboard({ data }: { data: PlayerDashboardSt
             <IconBars color={T.gold} />
           </div>
           <div>
-            <H1>Statistiques — {data.playerName}</H1>
+            <H1>
+              Statistiques —{" "}
+              <span className="dc-player-name" style={playerNameStyle}>
+                {data.playerName}
+              </span>
+            </H1>
             <Sub>Analyse des performances par joueur — X01, Cricket & entraînements</Sub>
           </div>
         </div>
