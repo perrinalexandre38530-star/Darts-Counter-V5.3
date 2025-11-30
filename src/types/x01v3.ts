@@ -46,8 +46,8 @@ export interface X01ConfigV3 {
 
   gameMode: X01GameMode;
 
-  players: X01PlayerV3[]; // multi / solo
-  teams?: X01TeamV3[] | null; // teams
+  players: X01PlayerV3[];      // multi / solo
+  teams?: X01TeamV3[] | null;  // teams
 
   // Format Sets / Legs
   legsPerSet: 1 | 3 | 5 | 7 | 9 | 11 | 13;
@@ -91,10 +91,10 @@ export interface X01MatchStateV3 {
    Une visite (volée de 3 fléchettes)
 ----------------------------------------------- */
 export interface X01VisitStateV3 {
-  dartsLeft: 0 | 1 | 2 | 3; // fléchettes restantes
-  startingScore: number; // score avant la volée
-  currentScore: number; // score après chaque dart
-  darts: X01DartV3[]; // données des fléchettes
+  dartsLeft: 0 | 1 | 2 | 3;   // fléchettes restantes
+  startingScore: number;      // score avant la volée
+  currentScore: number;       // score après chaque dart
+  darts: X01DartV3[];         // données des fléchettes
   checkoutSuggestion: X01CheckoutSuggestionV3 | null;
 }
 
@@ -102,9 +102,9 @@ export interface X01VisitStateV3 {
    Un lancer de fléchette
 ----------------------------------------------- */
 export interface X01DartV3 {
-  segment: number | 25; // 1-20 ou 25 pour bull
+  segment: number | 25;      // 1-20 ou 25 pour bull
   multiplier: 0 | 1 | 2 | 3; // 0=miss, 1=S, 2=D, 3=T
-  score: number; // segment * multiplier
+  score: number;             // segment * multiplier
 }
 
 /* -----------------------------------------------
@@ -123,27 +123,16 @@ export interface X01CheckoutDartV3 {
 /* -----------------------------------------------
    Stats LIVE (par leg)
 ----------------------------------------------- */
-
-// Hits S/D/T pour un segment donné
-export interface X01SegmentHits {
-  S: number; // simple
-  D: number; // double
-  T: number; // triple
-}
-
 export interface X01StatsLiveV3 {
-  // -------- Stats classiques --------
   dartsThrown: number;
   visits: number;
   totalScore: number;
 
   bestVisit: number;
 
-  // Miss + bust (toutes flèches confondues)
   miss: number;
   bust: number;
 
-  // Résumé global des hits (ancienne structure)
   hits: {
     S: number;
     D: number;
@@ -152,80 +141,8 @@ export interface X01StatsLiveV3 {
     DBull: number;
   };
 
-  // Ancienne structure par segment (toujours utile pour compat)
+  // Pour stats graphiques
   bySegment: Record<string, { S: number; D: number; T: number }>;
-
-  // -------- PATCH STATS COMPLETES (RADAR + HITS DÉTAILLÉS) --------
-
-  // Hits par segment 1..20 + 25 (bull)
-  hitsBySegment: Record<number, X01SegmentHits>;
-
-  // Nombre de coups simples / doubles / triples
-  hitsSingle: number;
-  hitsDouble: number;
-  hitsTriple: number;
-
-  // Pourcentages
-  pctMiss: number; // % de miss sur l'ensemble des darts
-  pctS: number;    // % des hits qui sont des simples
-  pctD: number;    // % des hits qui sont des doubles
-  pctT: number;    // % des hits qui sont des triples
-
-  // Détail complet des darts : [{ v, m }]
-  dartsDetail: Array<{ v: number; m: number }>;
-
-  // Score total par visite (pour graph "score per visit")
-  scorePerVisit: number[];
-}
-
-
-export interface X01StatsLiveV3 {
-  // -------- Stats classiques --------
-  dartsThrown: number;
-  visits: number;
-  totalScore: number;
-  bestVisit: number;
-
-  // (peut être calculé à partir de dartsThrown + totalScore)
-  avg3?: number;
-
-  // Miss + bust (toutes flèches confondues)
-  miss: number;
-  bust: number;
-
-  // Résumé global des hits (ancienne structure)
-  hits: {
-    S: number;
-    D: number;
-    T: number;
-    Bull: number;
-    DBull: number;
-  };
-
-  // Ancienne structure par segment (toujours utile pour compat)
-  bySegment: Record<string, { S: number; D: number; T: number }>;
-
-  // -------- PATCH STATS COMPLETES (RADAR + HITS DÉTAILLÉS) --------
-
-  // Hits par segment 1..20 + 25 (bull)
-  hitsBySegment: Record<number, X01SegmentHits>;
-
-  // Nombre de coups simples / doubles / triples
-  hitsSingle: number;
-  hitsDouble: number;
-  hitsTriple: number;
-
-  // Pourcentages
-  pctMiss: number; // % de miss sur l'ensemble des darts
-  pctS: number; // % des hits qui sont des simples
-  pctD: number; // % des hits qui sont des doubles
-  pctT: number; // % des hits qui sont des triples
-
-  // Détail complet des darts : [{ v, m }]
-  dartsDetail: Array<{ v: number; m: number }>;
-
-  // Score total par visite (pour graph "score per visit")
-  scorePerVisit: number[];
 }
 
 /* -----------------------------------------------
