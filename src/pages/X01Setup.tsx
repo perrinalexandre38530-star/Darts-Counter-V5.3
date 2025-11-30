@@ -2,6 +2,7 @@
 // src/pages/X01Setup.tsx
 // Paramètres X01 (pré-match) + Couronne d’étoiles autour des avatars
 // + Intégration BOTS (dc_bots_v1) dans la liste des joueurs
+// + Prise en compte de defaults (start / doubleOut) venant d'App.tsx
 // ============================================
 import React from "react";
 import type { Profile } from "../lib/types";
@@ -22,6 +23,12 @@ type SetupProps = {
     legsPerSet: number; // 1/3/5/7
     randomOrder: boolean;
   }) => void;
+
+  // 👇 nouveau : valeurs par défaut venant du store (getX01DefaultStart / settings.doubleOut)
+  defaults?: {
+    start?: 301 | 501 | 701 | 901;
+    doubleOut?: boolean;
+  };
 };
 
 const SCORE_CHOICES: Array<301 | 501 | 701 | 901> = [301, 501, 701, 901];
@@ -187,23 +194,39 @@ function useAvgMap(profiles: Profile[]) {
   return map;
 }
 
-export default function X01Setup({ profiles, onCancel, onStart }: SetupProps) {
-  // On merge une fois : defaults + valeurs sauvegardées
+export default function X01Setup({ profiles, onCancel, onStart, defaults }: SetupProps) {
+  // On merge une fois : defaults locaux (localStorage) + valeurs globales (props.defaults) + fallback
   const rawSaved = React.useMemo(loadSettings, []);
   const saved = React.useMemo(
     () => ({ ...DEFAULT_SETTINGS_X01, ...rawSaved }),
     [rawSaved]
   );
 
-  const [start, setStart] = React.useState<301 | 501 | 701 | 901>(
-    saved.start ?? DEFAULT_SETTINGS_X01.start ?? 501
-  );
-  const [outMode, setOutMode] = React.useState<"simple" | "double" | "master">(
-    saved.outMode ?? DEFAULT_SETTINGS_X01.outMode ?? "double"
-  );
+  // START : saved > defaults.start > DEFAULT_SETTINGS_X01 > 501
+  const [start, setStart] = React.useState<301 | 501 | 701 | 901>(() => {
+    return (
+      (saved.start as 301 | 501 | 701 | 901 | undefined) ??
+      (defaults?.start as 301 | 501 | 701 | 901 | undefined) ??
+      (DEFAULT_SETTINGS_X01.start as 301 | 501 | 701 | 901 | undefined) ??
+      501
+    );
+  });
+
+  // OUT MODE : saved.outMode > defaults.doubleOut (→ "double"/"simple") > default config
+  const [outMode, setOutMode] = React.useState<"simple" | "double" | "master">(() => {
+    if (saved.outMode) return saved.outMode;
+    if (defaults && typeof defaults.doubleOut === "boolean") {
+      return defaults.doubleOut ? "double" : "simple";
+    }
+    return (DEFAULT_SETTINGS_X01.outMode as "simple" | "double" | "master") ?? "double";
+  });
+
   const [inMode, setInMode] = React.useState<"simple" | "double" | "master">(
-    saved.inMode ?? DEFAULT_SETTINGS_X01.inMode ?? "simple"
+    (saved.inMode as "simple" | "double" | "master") ??
+      (DEFAULT_SETTINGS_X01.inMode as "simple" | "double" | "master") ??
+      "simple"
   );
+
   const [setsToWin, setSetsToWin] = React.useState<number>(
     saved.setsToWin ?? DEFAULT_SETTINGS_X01.setsToWin ?? 3
   );

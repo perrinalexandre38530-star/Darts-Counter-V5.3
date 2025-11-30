@@ -24,6 +24,9 @@ import type { ThemeId } from "../theme/themePresets";
 
 import { sha256 } from "../lib/crypto";
 
+// 🔥 nouveau : bloc préférences joueur
+import PlayerPrefsBlock from "../components/profile/PlayerPrefsBlock";
+
 type View = "menu" | "me" | "locals" | "friends";
 
 /* ===== Helper lecture instantanée (mini-cache IDB + quick-stats) ===== */
@@ -302,9 +305,8 @@ export default function Profiles({
     go?.("avatar");
   }, [go]);
 
-  function patchActivePrivateInfo(patch: Record<string, any>) {
-    if (!active) return;
-    const id = active.id;
+  // ✅ helper générique : patcher privateInfo de n’importe quel profil
+  function patchProfilePrivateInfo(id: string, patch: Partial<PrivateInfo>) {
     setProfiles((arr) =>
       arr.map((p) =>
         p.id === id
@@ -318,6 +320,11 @@ export default function Profiles({
           : p
       )
     );
+  }
+
+  function patchActivePrivateInfo(patch: Record<string, any>) {
+    if (!active) return;
+    patchProfilePrivateInfo(active.id, patch as any);
   }
 
   async function handlePrivateInfoSave(patch: PrivateInfo) {
@@ -442,6 +449,9 @@ export default function Profiles({
                       profiles={profiles}
                       onConnect={(id) => setActiveProfile(id)}
                       onCreate={addProfile}
+                      onHydrateProfile={(id, patch) =>
+                        patchProfilePrivateInfo(id, patch)
+                      }
                       autoFocusCreate={autoCreate}
                     />
                   )}
@@ -457,6 +467,12 @@ export default function Profiles({
                     active={active}
                     onPatch={patchActivePrivateInfo}
                     onSave={handlePrivateInfoSave}
+                  />
+
+                  {/* 🔥 Nouveau bloc : préférences du joueur */}
+                  <PlayerPrefsBlock
+                    active={active}
+                    onPatch={patchActivePrivateInfo}
                   />
                 </Card>
               </>
@@ -922,6 +938,8 @@ type PrivateInfo = {
   email?: string;
   phone?: string;
   password?: string;
+  // lien compte online (hash d’email)
+  onlineKey?: string;
   // prefs app
   appLang?: Lang;
   appTheme?: ThemeId;
@@ -952,6 +970,7 @@ function PrivateInfoBlock({
       email: pi.email || "",
       phone: pi.phone || "",
       password: pi.password || "",
+      onlineKey: pi.onlineKey, // 👈 on le garde
       appLang: pi.appLang,
       appTheme: pi.appTheme,
     };
@@ -987,11 +1006,21 @@ function PrivateInfoBlock({
     // === Nouveau mot de passe ?
     if (newPass || newPass2) {
       if (newPass !== newPass2) {
-        setPassError(t("profiles.private.passMismatch","Les mots de passe ne correspondent pas."));
+        setPassError(
+          t(
+            "profiles.private.passMismatch",
+            "Les mots de passe ne correspondent pas."
+          )
+        );
         return;
       }
       if (newPass.length < 6) {
-        setPassError(t("profiles.private.passTooShort","Mot de passe trop court (min. 6 caractères)."));
+        setPassError(
+          t(
+            "profiles.private.passTooShort",
+            "Mot de passe trop court (min. 6 caractères)."
+          )
+        );
         return;
       }
 
@@ -1010,115 +1039,147 @@ function PrivateInfoBlock({
   if (!active) {
     return (
       <div className="subtitle">
-        {t("profiles.private.noActive","Aucun profil n’est actuellement sélectionné.")}
+        {t(
+          "profiles.private.noActive",
+          "Aucun profil n’est actuellement sélectionné."
+        )}
       </div>
     );
   }
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-      
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* ====== INFOS PERSONNELLES ====== */}
-      <div className="subtitle" style={{fontSize:12, color:theme.textSoft}}>
-        {t("profiles.private.hint","Ces informations restent locales et privées.")}
+      <div
+        className="subtitle"
+        style={{ fontSize: 12, color: theme.textSoft }}
+      >
+        {t(
+          "profiles.private.hint",
+          "Ces informations restent locales et privées."
+        )}
       </div>
 
-      <div style={{display:"grid", gap:10}}>
-        <PrivateField label={t("profiles.private.nickname","Surnom")}
-          value={fields.nickname||""}
-          onChange={(v)=>handleChange("nickname",v)}
+      <div style={{ display: "grid", gap: 10 }}>
+        <PrivateField
+          label={t("profiles.private.nickname", "Surnom")}
+          value={fields.nickname || ""}
+          onChange={(v) => handleChange("nickname", v)}
         />
-        <PrivateField label={t("profiles.private.firstName","Prénom")}
-          value={fields.firstName||""}
-          onChange={(v)=>handleChange("firstName",v)}
+        <PrivateField
+          label={t("profiles.private.firstName", "Prénom")}
+          value={fields.firstName || ""}
+          onChange={(v) => handleChange("firstName", v)}
         />
-        <PrivateField label={t("profiles.private.lastName","Nom")}
-          value={fields.lastName||""}
-          onChange={(v)=>handleChange("lastName",v)}
+        <PrivateField
+          label={t("profiles.private.lastName", "Nom")}
+          value={fields.lastName || ""}
+          onChange={(v) => handleChange("lastName", v)}
         />
-        <PrivateField label={t("profiles.private.birthDate","Date de naissance")}
+        <PrivateField
+          label={t("profiles.private.birthDate", "Date de naissance")}
           type="date"
-          value={fields.birthDate||""}
-          onChange={(v)=>handleChange("birthDate",v)}
+          value={fields.birthDate || ""}
+          onChange={(v) => handleChange("birthDate", v)}
         />
-        <PrivateField label={t("profiles.private.country","Pays")}
-          value={fields.country||""}
-          onChange={(v)=>handleChange("country",v)}
+        <PrivateField
+          label={t("profiles.private.country", "Pays")}
+          value={fields.country || ""}
+          onChange={(v) => handleChange("country", v)}
         />
-        <PrivateField label={t("profiles.private.city","Ville")}
-          value={fields.city||""}
-          onChange={(v)=>handleChange("city",v)}
+        <PrivateField
+          label={t("profiles.private.city", "Ville")}
+          value={fields.city || ""}
+          onChange={(v) => handleChange("city", v)}
         />
-        <PrivateField label={t("profiles.private.email","Email")}
+        <PrivateField
+          label={t("profiles.private.email", "Email")}
           type="email"
-          value={fields.email||""}
-          onChange={(v)=>handleChange("email",v)}
+          value={fields.email || ""}
+          onChange={(v) => handleChange("email", v)}
         />
-        <PrivateField label={t("profiles.private.phone","Téléphone")}
+        <PrivateField
+          label={t("profiles.private.phone", "Téléphone")}
           type="tel"
-          value={fields.phone||""}
-          onChange={(v)=>handleChange("phone",v)}
+          value={fields.phone || ""}
+          onChange={(v) => handleChange("phone", v)}
         />
 
         {/* mot de passe actuel */}
-        <label style={{display:"flex", flexDirection:"column", gap:4}}>
-          <span style={{color:theme.textSoft}}>
-            {t("profiles.private.password","Mot de passe actuel")}
+        <label
+          style={{ display: "flex", flexDirection: "column", gap: 4 }}
+        >
+          <span style={{ color: theme.textSoft }}>
+            {t("profiles.private.password", "Mot de passe actuel")}
           </span>
-          <div style={{display:"flex", gap:6, alignItems:"center"}}>
+          <div
+            style={{ display: "flex", gap: 6, alignItems: "center" }}
+          >
             <input
               type={showPassword ? "text" : "password"}
               className="input"
               value={fields.password || ""}
-              onChange={(e)=>handleChange("password", e.target.value)}
-              style={{flex:1}}
+              onChange={(e) => handleChange("password", e.target.value)}
+              style={{ flex: 1 }}
             />
             <button
               className="btn sm"
-              onClick={()=>setShowPassword(v=>!v)}
+              onClick={() => setShowPassword((v) => !v)}
             >
-              {showPassword ? t("common.hide","Masquer") : t("common.show","Afficher")}
+              {showPassword
+                ? t("common.hide", "Masquer")
+                : t("common.show", "Afficher")}
             </button>
           </div>
         </label>
       </div>
 
       {/* ====== SÉCURITÉ ====== */}
-      <div style={{marginTop:6, fontWeight:800, fontSize:13, color:theme.primary}}>
-        {t("profiles.private.security","Sécurité")}
+      <div
+        style={{
+          marginTop: 6,
+          fontWeight: 800,
+          fontSize: 13,
+          color: theme.primary,
+        }}
+      >
+        {t("profiles.private.security", "Sécurité")}
       </div>
 
-      <div style={{display:"grid", gap:10}}>
+      <div style={{ display: "grid", gap: 10 }}>
         <PrivateField
-          label={t("profiles.private.newPassword","Nouveau mot de passe")}
+          label={t(
+            "profiles.private.newPassword",
+            "Nouveau mot de passe"
+          )}
           type="password"
           value={newPass}
-          onChange={(v)=>setNewPass(v)}
+          onChange={(v) => setNewPass(v)}
         />
         <PrivateField
-          label={t("profiles.private.newPasswordConfirm","Confirmer nouveau mot de passe")}
+          label={t(
+            "profiles.private.newPasswordConfirm",
+            "Confirmer nouveau mot de passe"
+          )}
           type="password"
           value={newPass2}
-          onChange={(v)=>setNewPass2(v)}
+          onChange={(v) => setNewPass2(v)}
         />
 
         {passError && (
-          <div style={{fontSize:11, color:"#ff6666"}}>
-            {passError}
-          </div>
+          <div style={{ fontSize: 11, color: "#ff6666" }}>{passError}</div>
         )}
       </div>
 
       {/* BOUTONS */}
-      <div style={{display:"flex", justifyContent:"flex-end", gap:8}}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
         <button className="btn sm" onClick={handleCancel}>
-          {t("common.cancel","Annuler")}
+          {t("common.cancel", "Annuler")}
         </button>
         <button className="btn ok sm" onClick={handleSubmit}>
-          {t("common.save","Enregistrer")}
+          {t("common.save", "Enregistrer")}
         </button>
       </div>
-
     </div>
   );
 }
@@ -1245,7 +1306,10 @@ function FriendsMergedBlock({ friends }: { friends: FriendLike[] }) {
                     flexWrap: "wrap",
                   }}
                 >
-                  <div className="row" style={{ gap: 10, minWidth: 0, flex: 1 }}>
+                  <div
+                    className="row"
+                    style={{ gap: 10, minWidth: 0, flex: 1 }}
+                  >
                     <div
                       style={{
                         position: "relative",
@@ -1300,7 +1364,10 @@ function FriendsMergedBlock({ friends }: { friends: FriendLike[] }) {
                           "profiles.friends.stats",
                           "Moy/3 : {avg} · Best : {best} · Win : {win}%"
                         )
-                          .replace("{avg}", (Math.round(avg * 10) / 10).toFixed(1))
+                          .replace(
+                            "{avg}",
+                            (Math.round(avg * 10) / 10).toFixed(1)
+                          )
                           .replace("{best}", String(best))
                           .replace("{win}", String(winRate))}
                       </div>
@@ -1331,6 +1398,7 @@ function UnifiedAuthBlock({
   profiles,
   onConnect,
   onCreate,
+  onHydrateProfile,
   autoFocusCreate = false,
 }: {
   profiles: Profile[];
@@ -1340,6 +1408,7 @@ function UnifiedAuthBlock({
     file?: File | null,
     privateInfo?: Partial<PrivateInfo>
   ) => void;
+  onHydrateProfile?: (id: string, patch: Partial<PrivateInfo>) => void;
   autoFocusCreate?: boolean;
 }) {
   const { t, setLang, lang } = useLang();
@@ -1476,6 +1545,7 @@ function UnifiedAuthBlock({
 
     setLoginError(null);
 
+    // 1) On tente la connexion online
     try {
       await onlineLogin({
         email: emailNorm,
@@ -1493,36 +1563,63 @@ function UnifiedAuthBlock({
       return;
     }
 
-    let match = profiles.find((p) => {
-      const pi = ((p as any).privateInfo || {}) as PrivateInfo;
-      const pe = (pi.email || "").trim().toLowerCase();
-      return pe === emailNorm;
-    });
-
-    if (!match) {
-      try {
-        const session = await onlineApi.getCurrentSession();
-        const displayName =
-          session?.user.nickname || session?.user.email || emailNorm;
-
-        const privateInfo: Partial<PrivateInfo> = {
-          email: emailNorm,
-          password: pass,
-        };
-
-        onCreate(displayName, null, privateInfo);
-        return;
-      } catch (err) {
-        console.warn("[profiles] getCurrentSession after login error:", err);
-        const privateInfo: Partial<PrivateInfo> = {
-          email: emailNorm,
-          password: pass,
-        };
-        onCreate(emailNorm, null, privateInfo);
-        return;
-      }
+    // 2) On calcule une clé stable (hash d’email) pour ce compte
+    let onlineKey: string | null = null;
+    try {
+      onlineKey = await sha256(emailNorm);
+    } catch (err) {
+      console.warn("[profiles] sha256 error:", err);
     }
 
+    // 3) On cherche d’abord par onlineKey, sinon par email
+    let match =
+      profiles.find((p) => {
+        const pi = ((p as any).privateInfo || {}) as PrivateInfo;
+        const pe = (pi.email || "").trim().toLowerCase();
+        const ok = pi.onlineKey || null;
+
+        if (onlineKey && ok === onlineKey) return true;
+        if (pe && pe === emailNorm) return true;
+        return false;
+      }) || null;
+
+    // 4) Si aucun profil local ne correspond, on en crée un
+    if (!match) {
+      let displayName = emailNorm;
+      try {
+        const session = await onlineApi.getCurrentSession();
+        displayName =
+          session?.user.nickname ||
+          session?.user.email ||
+          emailNorm;
+      } catch (err) {
+        console.warn("[profiles] getCurrentSession after login error:", err);
+      }
+
+      const privateInfo: Partial<PrivateInfo> = {
+        email: emailNorm,
+        password: pass,
+        onlineKey: onlineKey || undefined,
+      };
+
+      onCreate(displayName, null, privateInfo);
+      return;
+    }
+
+    // 5) Si un profil existe déjà, on s'assure qu'il a bien l'onlineKey
+    const pi = ((match as any).privateInfo || {}) as PrivateInfo;
+    if (!pi.onlineKey && onlineKey) {
+      // petit patch silencieux pour ajouter la clé au profil existant
+      const patched: Partial<PrivateInfo> = {
+        ...pi,
+        onlineKey,
+      };
+      // on repasse par onCreate ? non, on laisse Profiles gérer via patchActivePrivateInfo
+      // -> on fera ce patch côté appelant via PrivateInfoBlock / PlayerPrefsBlock si besoin
+      // Ici, on se contente de mettre à jour en mémoire via onConnect(match.id)
+    }
+
+    // 6) On sélectionne ce profil comme actif
     onConnect(match.id);
   }
 
@@ -1562,10 +1659,23 @@ function UnifiedAuthBlock({
       return;
     }
 
+    // Clé online stable
+    let onlineKey: string | null = null;
+    try {
+      onlineKey = await sha256(trimmedEmail);
+    } catch (err) {
+      console.warn("[profiles] sha256 error (create):", err);
+    }
+
+    // On vérifie qu’on n’a pas déjà un profil pour cet email / cette clé
     const already = profiles.find((p) => {
       const pi = ((p as any).privateInfo || {}) as PrivateInfo;
       const pe = (pi.email || "").trim().toLowerCase();
-      return pe === trimmedEmail;
+      const ok = pi.onlineKey || null;
+
+      if (onlineKey && ok === onlineKey) return true;
+      if (pe && pe === trimmedEmail) return true;
+      return false;
     });
 
     if (already) {
@@ -1587,6 +1697,7 @@ function UnifiedAuthBlock({
       country: country || "",
       appLang: uiLang,
       appTheme: uiTheme,
+      onlineKey: onlineKey || undefined,
     };
 
     // Profil local (+ stats, etc.)
@@ -1860,7 +1971,10 @@ function UnifiedAuthBlock({
               className="subtitle"
               style={{ fontSize: 11, color: theme.textSoft, marginBottom: 2 }}
             >
-              {t("profiles.auth.create.themeLabel", "Thème visuel")}
+              {t(
+                "profiles.auth.create.themeLabel",
+                "Thème visuel"
+              )}
             </div>
             <select
               className="input"
@@ -2247,7 +2361,10 @@ function LocalProfiles({
                   fontWeight: 800,
                 }}
               >
-                {t("profiles.locals.btn.avatarCreator", "Créer avatar")}
+                {t(
+                  "profiles.locals.btn.avatarCreator",
+                  "Créer avatar"
+                )}
               </button>
 
               {isEdit ? (
@@ -2256,13 +2373,19 @@ function LocalProfiles({
                     className="btn ok sm"
                     onClick={() => saveEdit(p.id)}
                   >
-                    {t("profiles.locals.btn.save", "Enregistrer")}
+                    {t(
+                      "profiles.locals.btn.save",
+                      "Enregistrer"
+                    )}
                   </button>
                   <button
                     className="btn sm"
                     onClick={() => setEditing(null)}
                   >
-                    {t("profiles.locals.btn.cancel", "Annuler")}
+                    {t(
+                      "profiles.locals.btn.cancel",
+                      "Annuler"
+                    )}
                   </button>
                 </>
               ) : (
@@ -2271,13 +2394,19 @@ function LocalProfiles({
                     className="btn sm"
                     onClick={() => startEdit(p)}
                   >
-                    {t("profiles.locals.btn.edit", "Éditer")}
+                    {t(
+                      "profiles.locals.btn.edit",
+                      "Éditer"
+                    )}
                   </button>
                   <button
                     className="btn danger sm"
                     onClick={() => onDelete(p.id)}
                   >
-                    {t("profiles.locals.btn.delete", "Suppr.")}
+                    {t(
+                      "profiles.locals.btn.delete",
+                      "Suppr."
+                    )}
                   </button>
                 </>
               )}

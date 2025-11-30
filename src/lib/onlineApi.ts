@@ -126,14 +126,15 @@ type SupabaseProfileRow = {
 function mapProfile(row: SupabaseProfileRow): OnlineProfile {
   return {
     id: row.id,
-    // 🔑 on utilise id comme userId, puisqu’il n’y a pas de colonne user_id
+    // Dans notre app, OnlineProfile.userId = id Supabase (auth user)
     userId: row.id,
     displayName: row.display_name ?? "",
     avatarUrl: row.avatar_url ?? undefined,
     country: row.country ?? undefined,
-    bio: (row as any).bio ?? "",
+    // Ces champs restent pour compat si tu ajoutes les colonnes plus tard
+    bio: row.bio ?? "",
     stats:
-      (row as any).stats ?? {
+      row.stats ?? {
         totalMatches: 0,
         totalLegs: 0,
         avg3: 0,
@@ -142,10 +143,10 @@ function mapProfile(row: SupabaseProfileRow): OnlineProfile {
       },
     updatedAt: row.updated_at ? Date.parse(row.updated_at) : now(),
   };
-}
+};
 
 // Table d’historique actuelle : "matches_online"
-// id, user_id, mode, payload, created_at
+// (id, user_id, mode, payload, created_at)
 type SupabaseMatchRow = {
   id: string;
   user_id: string;
@@ -155,15 +156,15 @@ type SupabaseMatchRow = {
 };
 
 function mapMatch(row: SupabaseMatchRow): OnlineMatch {
-  const ts = row.created_at ? Date.parse(row.created_at) : now();
+  const t = row.created_at ? Date.parse(row.created_at) : now();
   return {
     id: row.id,
     userId: row.user_id,
     mode: row.mode,
     payload: row.payload,
     isTraining: false,
-    startedAt: ts,
-    finishedAt: ts,
+    startedAt: t,
+    finishedAt: t,
   };
 }
 
@@ -215,14 +216,15 @@ async function buildAuthSessionFromSupabase(): Promise<AuthSession | null> {
     id: user.id,
     email: user.email ?? undefined,
     nickname:
-      (user.user_metadata as any)?.nickname || user.email || "Player",
+      (user.user_metadata as any)?.nickname ||
+      user.email ||
+      "Player",
     createdAt: user.created_at ? Date.parse(user.created_at) : now(),
   };
 
-  // Récupère (ou crée) le profil en ligne
+  // On lit / crée le profil en utilisant id = user.id (FK vers auth.users)
   const { data: profileRow, error: profileError } = await supabase
     .from("profiles_online")
-    // 🔑 on filtre sur id (pas de colonne user_id dans ton schéma)
     .select("*")
     .eq("id", user.id)
     .limit(1)
@@ -235,13 +237,14 @@ async function buildAuthSessionFromSupabase(): Promise<AuthSession | null> {
   } else if (profileRow) {
     profile = mapProfile(profileRow as unknown as SupabaseProfileRow);
   } else {
-    // Pas encore de profil -> on en crée un minimal
+    // Pas encore de profil -> on en crée un minimal avec id = user.id
     const { data: created, error: createError } = await supabase
       .from("profiles_online")
       .insert({
-        // 🔑 on force id = auth.user.id pour recoller à ton schéma actuel
         id: user.id,
         display_name: userAuth.nickname,
+        country: null,
+        avatar_url: null,
       })
       .select()
       .single();

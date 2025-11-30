@@ -17,6 +17,8 @@ import BottomNav from "./components/BottomNav";
 import { loadStore, saveStore } from "./lib/storage";
 // OPFS / StorageManager — demande la persistance une fois au boot
 import { ensurePersisted } from "./lib/deviceStore";
+// 🔒 Garde-fou localStorage (purge legacy si trop plein)
+import { purgeLegacyLocalStorageIfNeeded } from "./lib/storageQuota";
 
 // 🚀 warmUp lite aggregator
 import { warmAggOnce } from "./boot/warmAgg";
@@ -87,7 +89,8 @@ function withAvatars(rec: any, profiles: any[]) {
       };
     });
 
-  const players = rec?.players?.length ? rec.players : rec?.payload?.players || [];
+  const players =
+    rec?.players?.length ? rec.players : rec?.payload?.players || [];
   const filled = get(players);
 
   return {
@@ -130,7 +133,11 @@ type Tab =
   | "sync_center";
 
 /* redirect TrainingStats → StatsHub */
-function RedirectToStatsTraining({ go }: { go: (tab: Tab, params?: any) => void }) {
+function RedirectToStatsTraining({
+  go,
+}: {
+  go: (tab: Tab, params?: any) => void;
+}) {
   React.useEffect(() => {
     go("statsHub", { tab: "training" });
   }, [go]);
@@ -226,6 +233,41 @@ const initialStore: Store = {
   } as any,
   history: [],
 } as any;
+
+/* --------------------------------------------
+   Préférences X01 par profil actif
+-------------------------------------------- */
+function getX01DefaultStart(store: Store): 301 | 501 | 701 | 901 {
+  const profiles = store.profiles ?? [];
+  const active =
+    profiles.find((p) => p.id === store.activeProfileId) ?? null;
+
+  const settingsDefault =
+    (store.settings.defaultX01 as 301 | 501 | 701 | 901) || 501;
+
+  if (!active) {
+    return settingsDefault;
+  }
+
+  const pi = ((active as any).privateInfo || {}) as {
+    prefX01StartScore?: number;
+    prefAutoApplyPrefs?: boolean;
+  };
+
+  // Si l’auto-apply n’est pas activé → on reste sur le réglage global
+  if (!pi.prefAutoApplyPrefs) {
+    return settingsDefault;
+  }
+
+  const pref = Number(pi.prefX01StartScore ?? 0);
+  const allowed: (301 | 501 | 701 | 901)[] = [301, 501, 701, 901];
+
+  if (allowed.includes(pref as any)) {
+    return pref as 301 | 501 | 701 | 901;
+  }
+
+  return settingsDefault;
+}
 
 /* BOTS LS */
 const LS_BOTS_KEY = "dc_bots_v1";
@@ -357,13 +399,15 @@ function App() {
   const [routeParams, setRouteParams] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
 
-  /* Persistence request */
+  /* Boot: persistance + nettoyage localStorage + warm-up */
   React.useEffect(() => {
+    // Demande de persistance (IndexedDB / OPFS si possible)
     ensurePersisted().catch(() => {});
-  }, []);
 
-  /* Warm-up aggregator */
-  React.useEffect(() => {
+    // 🔒 Nettoyage localStorage si trop plein / legacy
+    purgeLegacyLocalStorageIfNeeded();
+
+    // Warm-up agrégateur (stats lite)
     try {
       warmAggOnce();
     } catch {}
@@ -681,63 +725,36 @@ function App() {
           <X01Setup
             profiles={store.profiles}
             defaults={{
-              start: store.settings.defaultX01,
+              start: getX01DefaultStart(store),
               doubleOut: store.settings.doubleOut,
             }}
-            onStart={(ids, start, doubleOut) => {
+            onCancel={() => go("games")}
+            onStart={(opts) => {
               const players = store.settings.randomOrder
-                ? ids.slice().sort(() => Math.random() - 0.5)
-                : ids;
-
-              setX01Config({ playerIds: players, start, doubleOut });
-              go("x01", { resumeId: null, fresh: Date.now() });
-            }}
-            onBack={() => go("games")}
-          />
-        );
-        break;
-
-      /* ---------- X01 ONLINE SETUP (mock) ---------- */
-      case "x01_online_setup": {
-        const activeProfile =
-          store.profiles.find((p) => p.id === store.activeProfileId) ?? null;
-
-        const lobbyCode = routeParams?.lobbyCode ?? null;
-
-        page = (
-          <X01OnlineSetup
-            profile={activeProfile}
-            defaults={{
-              start:
-                (store.settings.defaultX01 as 301 | 501 | 701 | 1001) ?? 501,
-              doubleOut: store.settings.doubleOut,
-            }}
-            lobbyCode={lobbyCode}
-            onBack={() => go("friends")}
-            onStart={({ start, doubleOut }) => {
-              if (!activeProfile) {
-                alert("Aucun profil actif sélectionné.");
-                return;
-              }
+                ? opts.playerIds.slice().sort(() => Math.random() - 0.5)
+                : opts.playerIds;
 
               setX01Config({
-                start,
-                doubleOut,
-                playerIds: [activeProfile.id],
+                playerIds: players,
+                start: opts.start,
+                doubleOut: opts.doubleOut,
               });
-
-              go("x01", {
-                resumeId: null,
-                fresh: Date.now(),
-                from: "online_mock",
-                lobbyCode,
-                online: true,
-              });
+              go("x01", { resumeId: null, fresh: Date.now() });
             }}
           />
         );
         break;
-      }
+
+      /* ---------- X01 ONLINE SETUP (FULLWEB / Worker DO) ---------- */
+      case "x01_online_setup":
+        page = (
+          <X01OnlineSetup
+            store={store}
+            go={go}
+            params={routeParams}
+          />
+        );
+        break;
 
       /* ---------- X01 PLAY (v1) ---------- */
       case "x01": {
@@ -753,13 +770,13 @@ function App() {
             store.profiles[0] ??
             null;
 
-          const startDefault =
-            (store.settings.defaultX01 as 301 | 501 | 701 | 1001) || 501;
+          const startDefault = getX01DefaultStart(store);
+
           const start =
             startDefault === 301 ||
             startDefault === 501 ||
             startDefault === 701 ||
-            startDefault === 1001
+            startDefault === 901
               ? startDefault
               : 501;
 
@@ -783,8 +800,7 @@ function App() {
         }
 
         const rawStart =
-          effectiveConfig?.start ??
-          (store.settings.defaultX01 as 301 | 501 | 701 | 1001);
+          effectiveConfig?.start ?? getX01DefaultStart(store);
 
         const startClamped: 301 | 501 | 701 | 901 =
           rawStart >= 901 ? 901 : (rawStart as 301 | 501 | 701 | 901);

@@ -22,16 +22,16 @@ bindings = [
 tag = "v1"
 new_classes = ["RoomDO"]
 
-# ➕ KV pour le cache des avatars IA (optionnel)
+# ➕ KV pour le cache des avatars IA (existant)
 [[kv_namespaces]]
 binding = "AVATAR_CACHE"
-id = "65729b90e2d44fbe90db28bda837cd63"  # ⬅️ ton ID existant
+id = "65729b90e2d44fbe90db28bda837cd63"
 
-# ➕ KV pour la synchronisation Cloud des stats
+# ➕ KV pour la synchronisation Cloud des stats (dc-sync)
 [[kv_namespaces]]
 binding = "DC_SYNC"
-id = "REPLACE_ME_WITH_DC_SYNC_KV_ID"      # ⬅️ à remplacer par l’ID de la KV "dc-sync"
+id = "96adf0e2754949f88153f796c053d2cef"
 
 [vars]
-# ➜ IMPORTANT : ajoute ici ton/tes domaines Front (Pages, localhost, etc.)
-ALLOW_ORIGINS = "http://localhost:5173,https://ton-domaine.pages.dev"
+# ➜ Front : ton Pages + ton dev local
+ALLOW_ORIGINS = "http://localhost:5173,https://darts-counter-v5-3.pages.dev"

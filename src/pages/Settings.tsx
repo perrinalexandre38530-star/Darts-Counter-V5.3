@@ -980,6 +980,25 @@ export default function Settings({ go }: Props) {
       {/* ---------- COMPTE & SÉCURITÉ + PREFS ---------- */}
       <AccountSecurityBlock />
 
+      {/* ➜ Lien vers page "Compte" avancée */}
+      <div style={{ marginBottom: 16 }}>
+        <button
+          type="button"
+          className="btn primary sm"
+          onClick={() => go?.("profiles", { view: "me" })}
+          style={{
+            marginTop: 4,
+            borderRadius: 999,
+            padding: "6px 14px",
+            background: `linear-gradient(180deg, ${theme.primary}, ${theme.primary}AA)`,
+            color: "#000",
+            fontWeight: 700,
+          }}
+        >
+          {t("settings.account.btn", "Gérer mon compte en ligne")}
+        </button>
+      </div>
+
       {/* ---------- BLOC THEME AVEC CARROUSELS ---------- */}
 
       <section

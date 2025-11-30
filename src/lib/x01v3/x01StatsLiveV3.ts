@@ -5,25 +5,47 @@
 // - miss, bust
 // - hits S/D/T + Bull/DBull
 // - bySegment pour graphes
+// - PATCH : hitsBySegment + détails S/D/T + dartsDetail + scorePerVisit
 // - helpers avg3, %miss, %bust
 // =======================================================
 
 import type {
   X01StatsLiveV3,
   X01VisitStateV3,
+  X01SegmentHits,
 } from "../../types/x01v3";
 
 /* -------------------------------------------------------
    Création d'un objet stats LIVE vide
 ------------------------------------------------------- */
 export function createEmptyLiveStatsV3(): X01StatsLiveV3 {
+  // Nouveau : structure complète pour hitsBySegment 1..20 + 25
+  const hitsBySegment: Record<number, X01SegmentHits> = {};
+  for (let i = 1; i <= 20; i++) {
+    hitsBySegment[i] = { S: 0, D: 0, T: 0 };
+  }
+  hitsBySegment[25] = { S: 0, D: 0, T: 0 };
+
+  // Ancienne structure bySegment pour compat (clé string)
+  const bySegment: Record<string, { S: number; D: number; T: number }> = {};
+  for (let i = 1; i <= 20; i++) {
+    bySegment[String(i)] = { S: 0, D: 0, T: 0 };
+  }
+  bySegment["25"] = { S: 0, D: 0, T: 0 };
+
   return {
+    // Stats de base
     dartsThrown: 0,
     visits: 0,
     totalScore: 0,
     bestVisit: 0,
+    avg3: 0,
+
+    // Miss / bust
     miss: 0,
     bust: 0,
+
+    // Résumé global des hits
     hits: {
       S: 0,
       D: 0,
@@ -31,7 +53,24 @@ export function createEmptyLiveStatsV3(): X01StatsLiveV3 {
       Bull: 0,
       DBull: 0,
     },
-    bySegment: {},
+
+    // Ancienne map (graphes déjà existants)
+    bySegment,
+
+    // -------- PATCH STATS COMPLETES --------
+    hitsBySegment, // 1..20 + 25
+
+    hitsSingle: 0,
+    hitsDouble: 0,
+    hitsTriple: 0,
+
+    pctMiss: 0,
+    pctS: 0,
+    pctD: 0,
+    pctT: 0,
+
+    dartsDetail: [],
+    scorePerVisit: [],
   };
 }
 
