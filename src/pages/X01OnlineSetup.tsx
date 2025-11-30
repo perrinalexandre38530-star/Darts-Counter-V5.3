@@ -1,92 +1,57 @@
 // =============================================================
 // src/pages/X01OnlineSetup.tsx
 // Pré-salle X01 Online (FULLWEB)
-// - Reçoit un lobbyCode depuis FriendsPage
+// - Reçoit un lobbyCode depuis FriendsPage (props.lobbyCode)
 // - Se connecte au Worker Cloudflare via useOnlineRoom
 // - Affiche le code, l'état de connexion et la liste des joueurs
-// - Boutons pour : ping, join, démarrer une manche X01 501,
-//   envoyer une visite de test, undo, etc.
-// - Mode "debug" repliable pour ne pas polluer l'UX joueur.
-// - Prochaine étape : brancher un vrai écran X01OnlinePlay
-//   avec Keypad, scores, etc. à partir du match DO.
+// - Bouton "Démarrer X01" :
+//     • envoie startX01Match au Worker (ordre des joueurs)
+//     • appelle onStart(...) pour lancer le X01 local (X01Play)
+// - Bouton debug pour afficher l'état brut RoomState (JSON)
 // =============================================================
 
 import React from "react";
-import type { Store } from "../lib/types";
+import type { Profile } from "../lib/types";
 import { useOnlineRoom } from "../online/client/useOnlineRoom";
 
-type Props = {
-  store: Store | null | undefined;
-  go: (tab: any, params?: any) => void;
-  params?: {
-    lobbyCode?: string | null;
-  };
+type StartOpts = {
+  start: 301 | 501 | 701 | 901;
+  doubleOut: boolean;
 };
 
-export default function X01OnlineSetup({ store, go, params }: Props) {
-  // Si pour une raison quelconque le store est manquant, on évite de tout faire crasher
-  if (!store) {
-    return (
-      <div
-        className="container"
-        style={{
-          padding: 16,
-          paddingBottom: 96,
-          color: "#f5f5f7",
-        }}
-      >
-        <h2
-          style={{
-            fontSize: 20,
-            fontWeight: 800,
-            marginBottom: 8,
-          }}
-        >
-          X01 Online — Salle d’attente
-        </h2>
-        <div style={{ fontSize: 13, opacity: 0.8 }}>
-          Store indisponible (props.store est undefined). Vérifie le wiring de
-          l&apos;onglet <code>x01_online_setup</code> dans App.tsx.
-        </div>
-        <button
-          type="button"
-          onClick={() => go("friends")}
-          style={{
-            marginTop: 16,
-            width: "100%",
-            borderRadius: 999,
-            padding: "8px 12px",
-            border: "none",
-            fontWeight: 800,
-            fontSize: 13,
-            background: "linear-gradient(180deg,#444,#262626)",
-            color: "#f5f5f7",
-            cursor: "pointer",
-          }}
-        >
-          ⬅️ Retour Mode Online & Amis
-        </button>
-      </div>
-    );
-  }
+type Props = {
+  profile: Profile | null;
+  defaults?: StartOpts; // ⚠️ peut être undefined, on gère en interne
+  lobbyCode?: string | null;
+  onBack: () => void;
+  onStart: (opts: StartOpts) => void;
+};
 
-  // --- Profil local actif (id + nom + avatar)
-  const profiles = store.profiles || [];
-  const activeProfile =
-    profiles.find((p) => p.id === store.activeProfileId) ||
-    profiles[0] ||
-    null;
+export default function X01OnlineSetup({
+  profile,
+  defaults,
+  lobbyCode,
+  onBack,
+  onStart,
+}: Props) {
+  const activeProfile = profile;
 
-  const lobbyCode = (params?.lobbyCode || "")
-    .toString()
-    .trim()
-    .toUpperCase();
+  const rawCode = (lobbyCode || "").toString().trim().toUpperCase();
+  const effectiveCode = rawCode || "----";
 
-  // Si pas de code => on affiche juste un placeholder
-  const effectiveCode = lobbyCode || "----";
+  // --------------------------------------------
+  // Sécurisation des defaults
+  // --------------------------------------------
+  const allowedStarts: StartOpts["start"][] = [301, 501, 701, 901];
 
-  // Mode debug (pour cacher/afficher les blocs de dev)
-  const [showDebug, setShowDebug] = React.useState(false);
+  const defaultStartFromProps = defaults?.start;
+  const startScore: StartOpts["start"] = allowedStarts.includes(
+    defaultStartFromProps as any
+  )
+    ? (defaultStartFromProps as StartOpts["start"])
+    : 501;
+
+  const defaultDoubleOut: boolean = defaults?.doubleOut ?? true;
 
   // Hook WebSocket temps réel
   const {
@@ -102,7 +67,7 @@ export default function X01OnlineSetup({ store, go, params }: Props) {
     sendVisit,
     undoLast,
   } = useOnlineRoom({
-    roomCode: lobbyCode || "default",
+    roomCode: rawCode || "default",
     playerId: (activeProfile?.id as any) || "local",
     playerName: activeProfile?.name || "Joueur",
     autoJoin: true,
@@ -128,22 +93,35 @@ export default function X01OnlineSetup({ store, go, params }: Props) {
       ? "#ffd56a"
       : "#ff8a8a";
 
-  const clients = roomState?.clients || [];
-  const match: any = roomState?.match || null;
+      const clients = roomState?.clients || [];
+      const match: any = roomState?.match || null;
+    
+      // Exemple d'ordre par défaut pour démarrer une manche
+      const defaultOrder =
+        clients.length > 0
+          ? clients.map((c) => ({ id: c.id, name: c.name }))
+          : [
+              {
+                id: (activeProfile?.id as any) || "local",
+                name: activeProfile?.name || "Joueur",
+              },
+            ];
 
-  // Exemple d'ordre par défaut pour démarrer une manche
-  const defaultOrder =
-    clients.length > 0
-      ? clients.map((c) => ({ id: c.id, name: c.name }))
-      : activeProfile
-      ? [{ id: activeProfile.id as any, name: activeProfile.name }]
-      : [];
+  const [showDebug, setShowDebug] = React.useState(false);
 
-  function handleStartMatch501() {
+  function handleStartMatch() {
     if (!defaultOrder.length) return;
+
+    // 1) Démarre la manche côté Worker (ordre des joueurs)
     startX01Match({
-      startScore: 501,
+      startScore,
       order: defaultOrder,
+    });
+
+    // 2) Lance le X01 local (X01Play) via App.tsx
+    onStart({
+      start: startScore,
+      doubleOut: defaultDoubleOut,
     });
   }
 
@@ -203,8 +181,8 @@ export default function X01OnlineSetup({ store, go, params }: Props) {
           fontSize: 18,
           fontWeight: 800,
           textAlign: "center",
-          color: lobbyCode ? "#ffd56a" : "#888",
-          boxShadow: lobbyCode
+          color: rawCode ? "#ffd56a" : "#888",
+          boxShadow: rawCode
             ? "0 0 12px rgba(255,215,80,.25)"
             : "0 0 8px rgba(0,0,0,.6)",
         }}
@@ -255,7 +233,7 @@ export default function X01OnlineSetup({ store, go, params }: Props) {
                 color: "#ff8a8a",
               }}
             >
-              {lastError}
+              Erreur WebSocket : {lastError}
             </div>
           )}
         </div>
@@ -381,10 +359,10 @@ export default function X01OnlineSetup({ store, go, params }: Props) {
         )}
       </div>
 
-      {/* Boutons actions principales (utiles en prod pour l'instant) */}
+      {/* Bloc "Lancer la manche X01" */}
       <div
         style={{
-          marginBottom: 10,
+          marginBottom: 16,
           padding: 10,
           borderRadius: 12,
           border: "1px solid rgba(255,255,255,.12)",
@@ -404,12 +382,12 @@ export default function X01OnlineSetup({ store, go, params }: Props) {
 
         <button
           type="button"
-          onClick={handleStartMatch501}
+          onClick={handleStartMatch}
           disabled={!defaultOrder.length}
           style={{
             width: "100%",
             borderRadius: 999,
-            padding: "8px 12px",
+            padding: "9px 12px",
             border: "none",
             fontSize: 13,
             fontWeight: 800,
@@ -419,225 +397,179 @@ export default function X01OnlineSetup({ store, go, params }: Props) {
             color: "#1c1304",
             cursor: defaultOrder.length ? "pointer" : "default",
             opacity: defaultOrder.length ? 1 : 0.5,
-            marginBottom: 8,
+            marginBottom: 6,
           }}
         >
-          🚀 Démarrer X01 (501)
+          ⭐ Démarrer X01 ({startScore})
         </button>
 
         <div
           style={{
             fontSize: 11,
-            opacity: 0.8,
+            opacity: 0.85,
           }}
         >
-          Pour l&apos;instant, cette action démarre la manche côté Worker
-          (Cloudflare) et tu peux voir l&apos;état dans le mode debug ci-dessous.
-          La prochaine étape sera d&apos;afficher un vrai écran de jeu à partir du
-          state DO.
+          Pour l’instant, cette action démarre la manche côté Worker Cloudflare{" "}
+          <b>ET</b> ouvre un écran X01 local (même paramètres) sur ton
+          appareil. Plus tard, cet écran sera entièrement synchronisé avec le
+          state envoyé par le Worker.
         </div>
       </div>
 
-      {/* Toggle debug */}
+      {/* Bouton debug DO */}
       <button
         type="button"
         onClick={() => setShowDebug((v) => !v)}
         style={{
-          marginBottom: showDebug ? 10 : 6,
+          marginBottom: 10,
           width: "100%",
           borderRadius: 999,
-          padding: "7px 12px",
+          padding: "8px 12px",
           border: "none",
           fontWeight: 700,
           fontSize: 12,
-          background: showDebug
-            ? "linear-gradient(180deg,#555,#333)"
-            : "linear-gradient(180deg,#4fb4ff,#1c78d5)",
-          color: "#f5f5f7",
+          background: "linear-gradient(180deg,#4fb4ff,#1c78d5)",
+          color: "#04101f",
           cursor: "pointer",
         }}
       >
-        {showDebug ? "Masquer le mode debug" : "Afficher le mode debug (DO)"}
+        {showDebug ? "Masquer le mode debug (DO)" : "Afficher le mode debug (DO)"}
       </button>
 
-      {/* ---------- BLOCS DEBUG (DO) ---------- */}
+      {/* Affichage brut de l'état Room / Match (debug) */}
       {showDebug && (
-        <>
-          {/* Boutons actions "debug" DO */}
+        <div
+          style={{
+            fontSize: 11,
+            padding: 10,
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,.10)",
+            background: "rgba(0,0,0,0.8)",
+            maxHeight: 260,
+            overflow: "auto",
+            marginBottom: 10,
+          }}
+        >
           <div
             style={{
-              marginBottom: 16,
-              padding: 10,
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,.12)",
-              background:
-                "linear-gradient(180deg, rgba(30,30,40,.96), rgba(10,10,14,.98))",
-              fontSize: 12,
+              fontWeight: 700,
+              marginBottom: 4,
             }}
           >
-            <div
-              style={{
-                fontWeight: 700,
-                marginBottom: 6,
-              }}
-            >
-              Actions DO (debug)
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 8,
-              }}
-            >
-              <button
-                type="button"
-                onClick={sendPing}
-                style={{
-                  borderRadius: 999,
-                  padding: "6px 10px",
-                  border: "none",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  background: "linear-gradient(180deg,#666,#444)",
-                  color: "#f5f5f7",
-                  cursor: "pointer",
-                }}
-              >
-                Ping
-              </button>
-
-              <button
-                type="button"
-                onClick={joinRoom}
-                style={{
-                  borderRadius: 999,
-                  padding: "6px 10px",
-                  border: "none",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  background: "linear-gradient(180deg,#35c86d,#23a958)",
-                  color: "#03140a",
-                  cursor: "pointer",
-                }}
-              >
-                join_room
-              </button>
-
-              <button
-                type="button"
-                onClick={leaveRoom}
-                style={{
-                  borderRadius: 999,
-                  padding: "6px 10px",
-                  border: "none",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  background: "linear-gradient(180deg,#ff8a5a,#e0491f)",
-                  color: "#fff",
-                  cursor: "pointer",
-                }}
-              >
-                leave_room
-              </button>
-
-              <button
-                type="button"
-                onClick={handleStartMatch501}
-                disabled={!defaultOrder.length}
-                style={{
-                  borderRadius: 999,
-                  padding: "6px 10px",
-                  border: "none",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  background: defaultOrder.length
-                    ? "linear-gradient(180deg,#ffd56a,#e9a93d)"
-                    : "linear-gradient(180deg,#444,#333)",
-                  color: "#1c1304",
-                  cursor: defaultOrder.length ? "pointer" : "default",
-                  opacity: defaultOrder.length ? 1 : 0.5,
-                }}
-              >
-                Démarrer X01 (501)
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSendDemoVisit}
-                style={{
-                  borderRadius: 999,
-                  padding: "6px 10px",
-                  border: "none",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  background: "linear-gradient(180deg,#4fb4ff,#1c78d5)",
-                  color: "#04101f",
-                  cursor: "pointer",
-                }}
-              >
-                Envoyer visite T20-20-miss
-              </button>
-
-              <button
-                type="button"
-                onClick={undoLast}
-                style={{
-                  borderRadius: 999,
-                  padding: "6px 10px",
-                  border: "none",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  background: "linear-gradient(180deg,#888,#555)",
-                  color: "#f5f5f7",
-                  cursor: "pointer",
-                }}
-              >
-                Undo last
-              </button>
-            </div>
+            État RoomState (debug)
           </div>
+          <pre
+            style={{
+              margin: 0,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}
+          >
+            {JSON.stringify(roomState, null, 2)}
+          </pre>
 
-          {/* Affichage brut de l'état Room / Match (debug) */}
           <div
             style={{
-              fontSize: 11,
-              padding: 10,
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,.10)",
-              background: "rgba(0,0,0,0.8)",
-              maxHeight: 260,
-              overflow: "auto",
+              marginTop: 6,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
             }}
           >
-            <div
+            <button
+              type="button"
+              onClick={sendPing}
               style={{
+                borderRadius: 999,
+                padding: "4px 8px",
+                border: "none",
+                fontSize: 10,
                 fontWeight: 700,
-                marginBottom: 4,
+                background: "linear-gradient(180deg,#666,#444)",
+                color: "#f5f5f7",
+                cursor: "pointer",
               }}
             >
-              État RoomState (debug)
-            </div>
-            <pre
+              Ping
+            </button>
+
+            <button
+              type="button"
+              onClick={joinRoom}
               style={{
-                margin: 0,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
+                borderRadius: 999,
+                padding: "4px 8px",
+                border: "none",
+                fontSize: 10,
+                fontWeight: 700,
+                background: "linear-gradient(180deg,#35c86d,#23a958)",
+                color: "#03140a",
+                cursor: "pointer",
               }}
             >
-              {JSON.stringify(roomState, null, 2)}
-            </pre>
+              join_room
+            </button>
+
+            <button
+              type="button"
+              onClick={leaveRoom}
+              style={{
+                borderRadius: 999,
+                padding: "4px 8px",
+                border: "none",
+                fontSize: 10,
+                fontWeight: 700,
+                background: "linear-gradient(180deg,#ff8a5a,#e0491f)",
+                color: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              leave_room
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSendDemoVisit}
+              style={{
+                borderRadius: 999,
+                padding: "4px 8px",
+                border: "none",
+                fontSize: 10,
+                fontWeight: 700,
+                background: "linear-gradient(180deg,#4fb4ff,#1c78d5)",
+                color: "#04101f",
+                cursor: "pointer",
+              }}
+            >
+              Visite T20-20-miss
+            </button>
+
+            <button
+              type="button"
+              onClick={undoLast}
+              style={{
+                borderRadius: 999,
+                padding: "4px 8px",
+                border: "none",
+                fontSize: 10,
+                fontWeight: 700,
+                background: "linear-gradient(180deg,#888,#555)",
+                color: "#f5f5f7",
+                cursor: "pointer",
+              }}
+            >
+              Undo last
+            </button>
           </div>
-        </>
+        </div>
       )}
 
       {/* Retour Friends / Home */}
       <button
         type="button"
-        onClick={() => go("friends")}
+        onClick={onBack}
         style={{
-          marginTop: 14,
+          marginTop: 4,
           width: "100%",
           borderRadius: 999,
           padding: "8px 12px",

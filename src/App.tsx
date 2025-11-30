@@ -746,15 +746,61 @@ function App() {
         break;
 
       /* ---------- X01 ONLINE SETUP (FULLWEB / Worker DO) ---------- */
-      case "x01_online_setup":
+      case "x01_online_setup": {
+        // On sécurise d'abord un profil actif
+        const activeProfile =
+          store.profiles.find((p) => p.id === store.activeProfileId) ??
+          store.profiles[0] ??
+          null;
+
+        const lobbyCode = routeParams?.lobbyCode ?? null;
+
+        // Si vraiment aucun profil => message plutôt que crash / écran noir
+        if (!activeProfile) {
+          page = (
+            <div className="container" style={{ padding: 16 }}>
+              <p style={{ marginBottom: 8 }}>
+                Aucun profil local n’est configuré pour lancer une manche
+                online.
+              </p>
+              <button
+                onClick={() =>
+                  go("profiles", { view: "me", autoCreate: true })
+                }
+                style={{
+                  borderRadius: 999,
+                  padding: "8px 12px",
+                  border: "none",
+                  fontWeight: 800,
+                  fontSize: 13,
+                  background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
+                  color: "#1b1508",
+                  cursor: "pointer",
+                }}
+              >
+                Créer / choisir un profil
+              </button>
+            </div>
+          );
+          break;
+        }
+
+        // On passe un store "overridé" pour que X01OnlineSetup
+        // voie bien ce profil comme actif, même si activeProfileId était nul.
+        const storeForOnline: Store = {
+          ...store,
+          activeProfileId: activeProfile.id,
+        } as Store;
+
         page = (
           <X01OnlineSetup
-            store={store}
+            store={storeForOnline}
             go={go}
-            params={routeParams}
+            params={{ ...(routeParams || {}), lobbyCode }}
           />
         );
         break;
+      }
 
       /* ---------- X01 PLAY (v1) ---------- */
       case "x01": {

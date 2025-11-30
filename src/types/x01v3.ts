@@ -46,8 +46,10 @@ export interface X01ConfigV3 {
 
   gameMode: X01GameMode;
 
-  players: X01PlayerV3[]; // multi / solo
-  teams?: X01TeamV3[] | null; // teams
+  // multi / solo
+  players: X01PlayerV3[];
+  // teams
+  teams?: X01TeamV3[] | null;
 
   // Format Sets / Legs
   legsPerSet: 1 | 3 | 5 | 7 | 9 | 11 | 13;
@@ -80,8 +82,8 @@ export interface X01MatchStateV3 {
   teamLegsWon?: Record<X01TeamId, number>;
   teamSetsWon?: Record<X01TeamId, number>;
 
-  // Visite en cours
-  visit: X01VisitStateV3;
+  // Visite en cours (peut être null entre deux legs / au boot)
+  visit: X01VisitStateV3 | null;
 
   // Statut global du match
   status: "playing" | "leg_end" | "set_end" | "match_end";
@@ -99,12 +101,27 @@ export interface X01VisitStateV3 {
 }
 
 /* -----------------------------------------------
-   Un lancer de fléchette
+   Un lancer de fléchette (état moteur)
 ----------------------------------------------- */
 export interface X01DartV3 {
   segment: number | 25; // 1-20 ou 25 pour bull
   multiplier: 0 | 1 | 2 | 3; // 0=miss, 1=S, 2=D, 3=T
   score: number; // segment * multiplier
+}
+
+/* -----------------------------------------------
+   Input fléchette (UI → moteur)
+   (on laisse large pour compatibilité)
+----------------------------------------------- */
+export interface X01DartInputV3 {
+  segment?: number | 25;
+  multiplier?: 0 | 1 | 2 | 3;
+  score?: number;
+
+  // Compat anciens formats
+  value?: number;
+  mult?: 0 | 1 | 2 | 3;
+  type?: "S" | "D" | "T" | "MISS";
 }
 
 /* -----------------------------------------------
@@ -136,54 +153,6 @@ export interface X01StatsLiveV3 {
   dartsThrown: number;
   visits: number;
   totalScore: number;
-
-  bestVisit: number;
-
-  // Miss + bust (toutes flèches confondues)
-  miss: number;
-  bust: number;
-
-  // Résumé global des hits (ancienne structure)
-  hits: {
-    S: number;
-    D: number;
-    T: number;
-    Bull: number;
-    DBull: number;
-  };
-
-  // Ancienne structure par segment (toujours utile pour compat)
-  bySegment: Record<string, { S: number; D: number; T: number }>;
-
-  // -------- PATCH STATS COMPLETES (RADAR + HITS DÉTAILLÉS) --------
-
-  // Hits par segment 1..20 + 25 (bull)
-  hitsBySegment: Record<number, X01SegmentHits>;
-
-  // Nombre de coups simples / doubles / triples
-  hitsSingle: number;
-  hitsDouble: number;
-  hitsTriple: number;
-
-  // Pourcentages
-  pctMiss: number; // % de miss sur l'ensemble des darts
-  pctS: number;    // % des hits qui sont des simples
-  pctD: number;    // % des hits qui sont des doubles
-  pctT: number;    // % des hits qui sont des triples
-
-  // Détail complet des darts : [{ v, m }]
-  dartsDetail: Array<{ v: number; m: number }>;
-
-  // Score total par visite (pour graph "score per visit")
-  scorePerVisit: number[];
-}
-
-
-export interface X01StatsLiveV3 {
-  // -------- Stats classiques --------
-  dartsThrown: number;
-  visits: number;
-  totalScore: number;
   bestVisit: number;
 
   // (peut être calculé à partir de dartsThrown + totalScore)
@@ -208,24 +177,24 @@ export interface X01StatsLiveV3 {
   // -------- PATCH STATS COMPLETES (RADAR + HITS DÉTAILLÉS) --------
 
   // Hits par segment 1..20 + 25 (bull)
-  hitsBySegment: Record<number, X01SegmentHits>;
+  hitsBySegment?: Record<number, X01SegmentHits>;
 
   // Nombre de coups simples / doubles / triples
-  hitsSingle: number;
-  hitsDouble: number;
-  hitsTriple: number;
+  hitsSingle?: number;
+  hitsDouble?: number;
+  hitsTriple?: number;
 
-  // Pourcentages
-  pctMiss: number; // % de miss sur l'ensemble des darts
-  pctS: number; // % des hits qui sont des simples
-  pctD: number; // % des hits qui sont des doubles
-  pctT: number; // % des hits qui sont des triples
+  // Pourcentages (calculés lors du finalize)
+  pctMiss?: number; // % de miss sur l'ensemble des darts
+  pctS?: number; // % des hits qui sont des simples
+  pctD?: number; // % des hits qui sont des doubles
+  pctT?: number; // % des hits qui sont des triples
 
   // Détail complet des darts : [{ v, m }]
-  dartsDetail: Array<{ v: number; m: number }>;
+  dartsDetail?: Array<{ v: number; m: number }>;
 
   // Score total par visite (pour graph "score per visit")
-  scorePerVisit: number[];
+  scorePerVisit?: number[];
 }
 
 /* -----------------------------------------------
@@ -276,14 +245,14 @@ export interface X01EngineEventsV3 {
   onSetWin?: (playerIdOrTeamId: string) => void;
   onMatchWin?: (playerIdOrTeamId: string) => void;
 
-  onVisitChange?: (visit: X01VisitStateV3) => void;
+  onVisitChange?: (visit: X01VisitStateV3 | null) => void;
 }
 
 /* -----------------------------------------------
    Commandes de moteur (local + online)
 ----------------------------------------------- */
 export type X01CommandV3 =
-  | { type: "throw"; dart: X01DartV3 }
+  | { type: "throw"; dart: X01DartInputV3 }
   | { type: "undo" }
   | { type: "next" }
   | { type: "force_next_player" }

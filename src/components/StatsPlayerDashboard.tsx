@@ -5,47 +5,37 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../contexts/ThemeContext";
 
-// CSS global : pulse + reflets type "DARTS COUNTER"
+// CSS global : pulse + reflets type logo Home (version sobre)
 const playerNamePulseCss = `
 @keyframes dcPlayerNamePulse {
   0% {
     transform: scale(1);
-    text-shadow:
-      0 0 4px rgba(255,255,255,.6),
-      0 0 10px rgba(255,255,255,.35);
   }
-  45% {
-    transform: scale(1.06);
-    text-shadow:
-      0 0 8px rgba(255,255,255,.95),
-      0 0 20px rgba(255,255,255,.75),
-      0 0 32px rgba(255,255,255,.55);
+  50% {
+    transform: scale(1.04);
   }
   100% {
-    transform: scale(1.02);
-    text-shadow:
-      0 0 6px rgba(255,255,255,.8),
-      0 0 16px rgba(255,255,255,.5);
+    transform: scale(1.01);
   }
 }
 
 @keyframes dcPlayerNameShine {
   0% {
-    transform: translateX(-150%) skewX(-20deg);
+    transform: translateX(-140%) skewX(-18deg);
     opacity: 0;
   }
-  20% {
-    opacity: 0.0;
+  35% {
+    opacity: 0;
   }
-  40% {
-    opacity: 0.75;
+  45% {
+    opacity: 0.65;
   }
   60% {
-    transform: translateX(150%) skewX(-20deg);
+    transform: translateX(140%) skewX(-18deg);
     opacity: 0;
   }
   100% {
-    transform: translateX(150%) skewX(-20deg);
+    transform: translateX(140%) skewX(-18deg);
     opacity: 0;
   }
 }
@@ -60,19 +50,19 @@ const playerNamePulseCss = `
   content: "";
   position: absolute;
   top: -40%;
-  left: -30%;
-  width: 60%;
+  left: -40%;
+  width: 70%;
   height: 180%;
   background: linear-gradient(
     120deg,
     transparent,
-    rgba(255,255,255,.9),
+    rgba(255,255,255,0.9),
     transparent
   );
   opacity: 0;
   pointer-events: none;
   mix-blend-mode: screen;
-  animation: dcPlayerNameShine 4.2s ease-in-out infinite;
+  animation: dcPlayerNameShine 5.2s ease-in-out infinite;
 }
 `;
 
@@ -253,7 +243,9 @@ export function ProfilePill({
 const H1 = ({ children }: { children: React.ReactNode }) => (
   <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.2, color: T.text }}>{children}</div>
 );
-const Sub = ({ children }: { children: React.ReactNode }) => <div style={{ fontSize: 13, color: T.text70 }}>{children}</div>;
+const Sub = ({ children }: { children: React.ReactNode }) => (
+  <div style={{ fontSize: 13, color: T.text70 }}>{children}</div>
+);
 
 /* ---------- Hook largeur conteneur ---------- */
 function useContainerWidth<T extends HTMLElement>(min = 300): [React.RefObject<T>, number] {
@@ -302,8 +294,7 @@ function LineChart({
   padding?: number;
   width: number; // largeur mesurée du conteneur
 }) {
-  // enlever le padding interne horizontal (on le gère via "padding" du graph)
-  const svgW = Math.max(220, width - 32); // ← évite +32px des paddings éventuels
+  const svgW = Math.max(220, width - 32);
   const pts =
     points.length >= 2
       ? points
@@ -325,6 +316,7 @@ function LineChart({
       return { y: y(val), label: Math.round(val).toString() };
     });
 
+    // 🔧 FIX : on renvoie bien "a" et pas "area"
     return { path: d, area: a, xTicks, yTicks };
   }, [pts, height, padding, svgW]);
 
@@ -340,7 +332,6 @@ function LineChart({
         </div>
       </div>
 
-      {/* pas de padding horizontal ici */}
       <div style={{ padding: "0 0 12px" }}>
         <svg
           width={svgW}
@@ -362,7 +353,12 @@ function LineChart({
           {yTicks.map((t, i) => (
             <g key={i}>
               <line x1={padding} y1={t.y} x2={svgW - padding} y2={t.y} stroke={T.grid} />
-              <text x={padding - 10} y={t.y + 4} textAnchor="end" style={{ fontSize: 10, fill: "rgba(255,255,255,.65)" }}>
+              <text
+                x={padding - 10}
+                y={t.y + 4}
+                textAnchor="end"
+                style={{ fontSize: 10, fill: "rgba(255,255,255,.65)" }}
+              >
                 {t.label}
               </text>
             </g>
@@ -390,6 +386,7 @@ function LineChart({
   );
 }
 
+
 /* ---------- Bar chart (responsive, no overflow) ---------- */
 function BarChart({
   data,
@@ -402,7 +399,7 @@ function BarChart({
   padding?: number;
   width: number;
 }) {
-  const svgW = Math.max(220, width - 32); // ← même correction
+  const svgW = Math.max(220, width - 32);
   const buckets: VisitBucket[] = ["0-59", "60-99", "100+", "140+", "180"];
   const vals = buckets.map((b) => data[b] ?? 0);
   const max = niceMax(Math.max(1, ...vals));
@@ -437,7 +434,12 @@ function BarChart({
             return (
               <g key={i}>
                 <line x1={padding} y1={y} x2={svgW - padding} y2={y} stroke={T.grid} />
-                <text x={padding - 10} y={y + 4} textAnchor="end" style={{ fontSize: 10, fill: "rgba(255,255,255,.65)" }}>
+                <text
+                  x={padding - 10}
+                  y={y + 4}
+                  textAnchor="end"
+                  style={{ fontSize: 10, fill: "rgba(255,255,255,.65)" }}
+                >
                   {label}
                 </text>
               </g>
@@ -495,18 +497,22 @@ export default function StatsPlayerDashboard({ data }: { data: PlayerDashboardSt
     );
   }
 
-  // Glow + pulse + reflets sur le nom du joueur (couleur thème)
+  // Glow simple + légère pulsation, couleur = theme.primary
   const playerNameStyle: React.CSSProperties = {
-    color: accent,
     fontWeight: 900,
-    letterSpacing: 0.6,
-    textShadow: `0 0 8px ${accent}, 0 0 18px ${accent}80`,
-    animation: "dcPlayerNamePulse 2.8s ease-in-out infinite alternate",
+    letterSpacing: 0.8,
+    color: accent,
+    textShadow: `
+      0 0 4px ${accent}aa,
+      0 0 10px ${accent}88,
+      0 0 18px ${accent}55
+    `,
+    animation: "dcPlayerNamePulse 3.4s ease-in-out infinite",
     transformOrigin: "center",
-    textTransform: "uppercase",
+    whiteSpace: "nowrap",
   };
 
-  // --- Normalisation : plus AUCUNE valeur par défaut cachée ---
+  // --- Normalisation stats ---
   const avg3 =
     Number.isFinite(Number(data.avg3Overall)) && Number(data.avg3Overall) >= 0 ? Number(data.avg3Overall) : 0;
   const bestVisit =
