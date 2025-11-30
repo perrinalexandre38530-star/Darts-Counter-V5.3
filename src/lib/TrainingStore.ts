@@ -13,7 +13,7 @@ const TRAINING_HITS_KEY = "dc_training_hits_v1";
 const TRAINING_SESSIONS_KEY = "dc_training_sessions_v1";
 
 // Training X01 (stats complètes X01 solo)
-const TRAINING_X01_STATS_KEY = "dc_training_x01_stats_v1";
+const TRAINING_X01_STATS_KEY = "dc_training_x01_full_v1";
 
 function safeParse<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
