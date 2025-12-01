@@ -1,29 +1,29 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
+    "target": "ESNext",
     "useDefineForClassFields": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "module": "ESNext",
-    "types": ["vite/client"],
+    "moduleResolution": "node",
+    "types": ["node", "vite/client"],
     "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
 
-    /* Bundler mode */
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "moduleDetection": "force",
+    /* Mode bundler / Vite */
+    "resolveJsonModule": true,
+    "isolatedModules": true,
     "noEmit": true,
+
+    /* React / JSX */
     "jsx": "react-jsx",
 
-    /* Linting */
+    /* Linting / Strictness */
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
+    "noUncheckedIndexedAccess": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+
+    /* On calme les erreurs de variables non utilisées côté TS */
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
   },
   "include": ["src"]
 }
