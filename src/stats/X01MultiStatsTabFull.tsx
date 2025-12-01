@@ -17,6 +17,108 @@ import { GoldPill } from "../components/StatsPlayerDashboard";
 import { History } from "../lib/history";
 import type { Dart as UIDart } from "../lib/types";
 
+// ------ Helpers locaux : classement multi pour un joueur ------
+
+type MultiRankStats = {
+  first: number;
+  second: number;
+  third: number;
+  place4: number;
+  place5: number;
+  place6: number;
+  place7: number;
+  place8: number;
+  place9: number;
+  place10plus: number;
+};
+
+function makeEmptyMultiRankStats(): MultiRankStats {
+  return {
+    first: 0,
+    second: 0,
+    third: 0,
+    place4: 0,
+    place5: 0,
+    place6: 0,
+    place7: 0,
+    place8: 0,
+    place9: 0,
+    place10plus: 0,
+  };
+}
+
+function asArray<T>(v: T | T[] | null | undefined): T[] {
+  if (!v) return [];
+  return Array.isArray(v) ? v : [v];
+}
+
+// Essaie de retrouver le rang du joueur dans un enregistrement de match
+function getPlayerRankInRecord(rec: any, playerId: string | null): number | null {
+  if (!playerId) return null;
+  const pid = String(playerId);
+
+  const candidates =
+    asArray<any>(rec.ranks) ||
+    asArray<any>(rec.standings) ||
+    asArray<any>(rec.leaderboard) ||
+    asArray<any>(rec.players);
+
+  if (!candidates.length) return null;
+
+  for (const p of candidates) {
+    const idStr = String(
+      p.id ?? p.playerId ?? p.profileId ?? p.pid ?? ""
+    );
+    if (!idStr || idStr !== pid) continue;
+
+    const rawRank = p.rank ?? p.place ?? p.position ?? p.standing ?? null;
+    if (rawRank == null) return null;
+
+    const n =
+      typeof rawRank === "number"
+        ? rawRank
+        : parseInt(String(rawRank), 10);
+
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n;
+  }
+
+  return null;
+}
+
+// Calcule les stats de classement multi (1er / 2e / 3e / 4e→10+)
+function computeMultiRankStats(
+  records: any[],
+  playerId: string | null
+): MultiRankStats {
+  const stats = makeEmptyMultiRankStats();
+  if (!playerId) return stats;
+
+  for (const rec of records) {
+    if (!rec) continue;
+
+    // On ne garde que les matchs "multi" (≃ 3 joueurs ou plus)
+    const players = asArray<any>(rec.players);
+    if (players.length < 3) continue;
+
+    const rank = getPlayerRankInRecord(rec, playerId);
+    if (!rank || rank < 1) continue;
+
+    if (rank === 1) stats.first += 1;
+    else if (rank === 2) stats.second += 1;
+    else if (rank === 3) stats.third += 1;
+    else if (rank === 4) stats.place4 += 1;
+    else if (rank === 5) stats.place5 += 1;
+    else if (rank === 6) stats.place6 += 1;
+    else if (rank === 7) stats.place7 += 1;
+    else if (rank === 8) stats.place8 += 1;
+    else if (rank === 9) stats.place9 += 1;
+    else stats.place10plus += 1; // 10e et plus
+  }
+
+  return stats;
+}
+
 // ---------- Thème local ----------
 const T = {
   gold: "#F6C256",
@@ -52,10 +154,10 @@ type TimeRange = "all" | "day" | "week" | "month" | "year";
  * Ligne de stats = 1 joueur sur 1 match X01
  */
 export type X01MultiSession = {
-  id: string; // matchId + playerId
+  id: string; // matchId + selectedPlayerId
   matchId: string;
   date: number;
-  playerId: string;
+  selectedPlayerId: string;
   playerName: string;
 
   darts: number;
@@ -84,6 +186,9 @@ export type X01MultiSession = {
   setsWon?: number;
   finishes?: number;
   isTeam?: boolean;
+
+  // ➕ rang du joueur sur le match (multi)
+  rank?: number | null;
 };
 
 type Props = {
@@ -153,13 +258,13 @@ function buildSessionFromSummary(
   pid: string
 ): Omit<
   X01MultiSession,
-  "id" | "matchId" | "date" | "playerId" | "playerName"
+  "id" | "matchId" | "date" | "selectedPlayerId" | "playerName"
 > | null {
   const summary = match.summary || {};
   const perPlayer: any[] = summary.perPlayer || [];
   const detailedByPlayer = summary.detailedByPlayer || {};
 
-  const row = perPlayer.find((p) => p.playerId === pid) || {};
+  const row = perPlayer.find((p) => p.selectedPlayerId === pid) || {};
   const detail = detailedByPlayer[pid] || {};
 
   const darts =
@@ -247,6 +352,25 @@ const finishes = numOr0(
   (detail as any).finishCount
 );
 
+// 🔢 RANG FINAL (si dispo dans le summary)
+const rawRank =
+  (row as any).rank ??
+  (row as any).position ??
+  (row as any).place ??
+  (row as any).standing ??
+  (detail as any).rank ??
+  (detail as any).position ??
+  null;
+
+let rank: number | null = null;
+if (rawRank !== null && rawRank !== undefined) {
+  const n =
+    typeof rawRank === "number"
+      ? rawRank
+      : parseInt(String(rawRank), 10);
+  rank = Number.isFinite(n) && n > 0 ? n : null;
+}
+
 return {
   darts,
   avg3D,
@@ -271,7 +395,10 @@ return {
   setsPlayed,
   setsWon,
   finishes,
-  };
+
+  // ➕➕ rang multi
+  rank,
+};
 }
 
 /**
@@ -360,15 +487,15 @@ async function loadX01MultiSessions(
             .includes(w)
         ) || !!(player as any).teamId;
 
-      out.push({
-        id: `${matchId}:${pid}`,
-        matchId,
-        date: createdAt,
-        playerId: pid,
-        playerName: player.name || "Player",
-        isTeam,
-        ...base,
-      });
+        out.push({
+          id: `${matchId}:${pid}`,
+          matchId,
+          date: createdAt,
+          selectedPlayerId: pid,     // ✅ bon champ
+          playerName: player.name || "Player",
+          isTeam,
+          ...base,
+        });
     } else {
       // Pas de profileId => TOUTES les lignes pour ce match
       for (const player of players) {
@@ -475,6 +602,140 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
     () => filterByRange(sessions, range).sort((a, b) => a.date - b.date),
     [sessions, range]
   );
+
+  // Classements multi pour le joueur (ou tous si profileId absent)
+  const multiRanks = React.useMemo(() => {
+    const stats = makeEmptyMultiRankStats();
+    if (!filtered.length) return stats;
+
+    // Regroupe les lignes par match
+    const byMatch = new Map<string, X01MultiSession[]>();
+    for (const s of filtered) {
+      if (!s.matchId) continue;
+      const arr = byMatch.get(s.matchId) || [];
+      arr.push(s);
+      byMatch.set(s.matchId, arr);
+    }
+
+    for (const [, arr] of byMatch) {
+      // Multi = au moins 3 joueurs sur le match
+      if (arr.length < 3) continue;
+
+      for (const s of arr) {
+        // Si profileId est fourni, on ne compte que ce profil
+        if (profileId && s.selectedPlayerId !== profileId) continue;
+
+        const r = s.rank ?? null;
+        if (!r || r < 1) continue;
+
+        if (r === 1) stats.first++;
+        else if (r === 2) stats.second++;
+        else if (r === 3) stats.third++;
+        else if (r === 4) stats.place4++;
+        else if (r === 5) stats.place5++;
+        else if (r === 6) stats.place6++;
+        else if (r === 7) stats.place7++;
+        else if (r === 8) stats.place8++;
+        else if (r === 9) stats.place9++;
+        else stats.place10plus++;
+      }
+    }
+
+    return stats;
+  }, [filtered, profileId]);
+
+  // --- AGRÉGATION RÉELLE DES MATCHS PAR TYPE ---
+
+// Regroupe les sessions par matchId (une ligne par joueur)
+const matchGroups = new Map<string, X01MultiSession[]>();
+for (const s of filtered) {
+  if (!s.matchId) continue;
+  const arr = matchGroups.get(s.matchId) || [];
+  arr.push(s);
+  matchGroups.set(s.matchId, arr);
+}
+
+let duoTotal = 0,
+  duoWins = 0,
+  duoLegsWon = 0,
+  duoLegsPlayed = 0,
+  duoSetsWon = 0,
+  duoSetsPlayed = 0;
+
+let multiTotal = 0,
+  multiWins = 0,
+  multiLegsWon = 0,
+  multiLegsPlayed = 0;
+
+let teamTotal = 0,
+  teamWins = 0,
+  teamLegsWon = 0,
+  teamLegsPlayed = 0,
+  teamSetsWon = 0,
+  teamSetsPlayed = 0;
+
+// Pour chaque match → on ne lit QUE la ligne du joueur sélectionné
+for (const [, arr] of matchGroups) {
+  const playerLine = profileId
+    ? arr.find((s) => s.selectedPlayerId === profileId)
+    : arr[0]; // fallback
+
+  if (!playerLine) continue;
+
+  const isTeam = playerLine.isTeam === true;
+  const numPlayers = arr.length;
+  const isDuo = !isTeam && numPlayers === 2;
+  const isMulti = !isTeam && numPlayers >= 3;
+
+  // ---- DUO ----
+  if (isDuo) {
+    duoTotal++;
+    if (playerLine.isWin) duoWins++;
+
+    duoLegsWon += playerLine.legsWon ?? 0;
+    duoLegsPlayed += playerLine.legsPlayed ?? 0;
+
+    duoSetsWon += playerLine.setsWon ?? 0;
+    duoSetsPlayed += playerLine.setsPlayed ?? 0;
+  }
+
+  // ---- MULTI ----
+  if (isMulti) {
+    multiTotal++;
+    if (playerLine.isWin) multiWins++;
+
+    multiLegsWon += playerLine.legsWon ?? 0;
+    multiLegsPlayed += playerLine.legsPlayed ?? 0;
+  }
+
+  // ---- TEAM ----
+  if (isTeam) {
+    teamTotal++;
+    if (playerLine.isWin) teamWins++;
+
+    teamLegsWon += playerLine.legsWon ?? 0;
+    teamLegsPlayed += playerLine.legsPlayed ?? 0;
+
+    teamSetsWon += playerLine.setsWon ?? 0;
+    teamSetsPlayed += playerLine.setsPlayed ?? 0;
+  }
+}
+
+// --- Calculs finaux ---
+
+const pct = (num: number, den: number) =>
+  den > 0 ? ((num / den) * 100).toFixed(1) : "0.0";
+
+const duoPctWin = pct(duoWins, duoTotal);
+const multiPctWin = pct(multiWins, multiTotal);
+const teamPctWin = pct(teamWins, teamTotal);
+
+const duoPctLegs = pct(duoLegsWon, duoLegsPlayed);
+const multiPctLegs = pct(multiLegsWon, multiLegsPlayed);
+const teamPctLegs = pct(teamLegsWon, teamLegsPlayed);
+
+const duoPctSets = pct(duoSetsWon, duoSetsPlayed);
+const teamPctSets = pct(teamSetsWon, teamSetsPlayed);
 
   const totalSessions = filtered.length;
   const totalDarts = filtered.reduce((s, x) => s + x.darts, 0);
@@ -778,8 +1039,10 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
     if (seg === "MISS") {
       return chartMissCount > max ? chartMissCount : max;
     }
+  
     const data = segSDTMap[String(seg)];
     const tot = data ? data.S + data.D + data.T : 0;
+  
     return tot > max ? tot : max;
   }, 0);
 
@@ -1848,170 +2111,186 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
           </div>
 
 
-            {/* ====== STATS MATCHS X01 — DUO / MULTI / TEAM ====== */}
-<div style={{ ...card }}>
-  <div
-    style={{
-      fontSize: 12,
-      textTransform: "uppercase",
-      color: T.text70,
-      letterSpacing: 0.6,
-      fontWeight: 700,
-      marginBottom: 8,
-    }}
-  >
-    Stats matchs X01 (tous modes)
-  </div>
-
-  {/* Bloc DUO */}
-  <div style={{ marginBottom: 12 }}>
-    <div
-      style={{
-        fontSize: 11,
-        textTransform: "uppercase",
-        color: "#FFB74D",
-        fontWeight: 700,
-        marginBottom: 4,
-      }}
-    >
-      Matchs DUO
-    </div>
-
-    {/* Header */}
-    <div
-      style={{
-        ...statRowBox,
-        borderTop: "none",
-        fontSize: 11,
-        color: T.text70,
-        fontWeight: 700,
-      }}
-    >
-      <span style={{ flex: 2, textAlign: "left" }}>Intitulé</span>
-      <span style={{ flex: 1, textAlign: "right" }}>Total / Win</span>
-      <span style={{ flex: 1, textAlign: "right" }}>%Win</span>
-    </div>
-
-    {/* Lignes DUO */}
-    {["Matchs duo", "Sets duo", "Legs duo"].map((label) => (
-      <div key={label} style={statRowBox}>
-        <span style={{ flex: 2, textAlign: "left" }}>{label}</span>
-        <span
+                  {/* ====== STATS MATCHS X01 — DUO / MULTI / TEAM ====== */}
+      <div style={{ ...card }}>
+        <div
           style={{
-            flex: 1,
-            textAlign: "right",
-            color: "#E5FFEF",
+            fontSize: 12,
+            textTransform: "uppercase",
+            color: T.text70,
+            letterSpacing: 0.6,
+            fontWeight: 700,
+            marginBottom: 8,
           }}
         >
-          0 / 0
-        </span>
-        <span
-          style={{
-            flex: 1,
-            textAlign: "right",
-            color: "#7CFF9A",
-          }}
-        >
-          0.0%
-        </span>
-      </div>
-    ))}
-  </div>
-
-  {/* Bloc MULTI */}
-  <div style={{ marginBottom: 12 }}>
-    <div
-      style={{
-        fontSize: 11,
-        textTransform: "uppercase",
-        color: "#FFB74D",
-        fontWeight: 700,
-        marginBottom: 4,
-      }}
-    >
-      Matchs MULTI
-    </div>
-
-    {/* Header */}
-    <div
-      style={{
-        ...statRowBox,
-        borderTop: "none",
-        fontSize: 11,
-        color: T.text70,
-        fontWeight: 700,
-      }}
-    >
-      <span style={{ flex: 2, textAlign: "left" }}>Intitulé</span>
-      <span style={{ flex: 1, textAlign: "right" }}>Total / Win</span>
-      <span style={{ flex: 1, textAlign: "right" }}>%Win</span>
-    </div>
-
-    {/* Lignes MULTI */}
-    {["Matchs multi", "Legs Win multi", "Finish (legs terminés à 0)"].map(
-      (label) => (
-        <div key={label} style={statRowBox}>
-          <span style={{ flex: 2, textAlign: "left" }}>{label}</span>
-          <span
-            style={{
-              flex: 1,
-              textAlign: "right",
-              color: "#E5FFEF",
-            }}
-          >
-            0 / 0
-          </span>
-          <span
-            style={{
-              flex: 1,
-              textAlign: "right",
-              color: "#7CFF9A",
-            }}
-          >
-            0.0%
-          </span>
+          Stats matchs X01 (tous modes)
         </div>
-      )
-    )}
 
-    {/* PODIUMS 1er / 2e / 3e */}
-    <div
-      style={{
-        marginTop: 8,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 10,
-          textTransform: "uppercase",
-          color: T.text70,
-          marginBottom: 4,
-        }}
-      >
-        Podiums
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 8,
-        }}
-      >
-        {[
-          { label: "1er", color: T.gold },
-          { label: "2e", color: "#E0E0E0" },
-          { label: "3e", color: "#B0BEC5" },
-        ].map((rank) => (
+        {/* Bloc DUO */}
+        <div style={{ marginBottom: 12 }}>
           <div
-            key={rank.label}
             style={{
-              flex: 1,
-              borderRadius: 14,
-              padding: "6px 8px",
+              fontSize: 11,
+              textTransform: "uppercase",
+              color: "#FFB74D",
+              fontWeight: 700,
+              marginBottom: 4,
+            }}
+          >
+            Matchs DUO
+          </div>
+
+          {/* Header */}
+          <div
+            style={{
+              ...statRowBox,
+              borderTop: "none",
+              fontSize: 11,
+              color: T.text70,
+              fontWeight: 700,
+            }}
+          >
+            <span style={{ flex: 2, textAlign: "left" }}>Intitulé</span>
+            <span style={{ flex: 1, textAlign: "right" }}>Total / Win</span>
+            <span style={{ flex: 1, textAlign: "right" }}>%Win</span>
+          </div>
+
+          {/* Lignes DUO (placeholder pour l’instant) */}
+          {["Matchs duo", "Sets duo", "Legs duo"].map((label) => (
+            <div key={label} style={statRowBox}>
+              <span style={{ flex: 2, textAlign: "left" }}>{label}</span>
+              <span
+                style={{
+                  flex: 1,
+                  textAlign: "right",
+                  color: "#E5FFEF",
+                }}
+              >
+                0 / 0
+              </span>
+              <span
+                style={{
+                  flex: 1,
+                  textAlign: "right",
+                  color: "#7CFF9A",
+                }}
+              >
+                0.0%
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Bloc MULTI */}
+        <div style={{ marginBottom: 12 }}>
+          <div
+            style={{
+              fontSize: 11,
+              textTransform: "uppercase",
+              color: "#FFB74D",
+              fontWeight: 700,
+              marginBottom: 4,
+            }}
+          >
+            Matchs MULTI
+          </div>
+
+          {/* Header */}
+          <div
+            style={{
+              ...statRowBox,
+              borderTop: "none",
+              fontSize: 11,
+              color: T.text70,
+              fontWeight: 700,
+            }}
+          >
+            <span style={{ flex: 2, textAlign: "left" }}>Intitulé</span>
+            <span style={{ flex: 1, textAlign: "right" }}>Total / Win</span>
+            <span style={{ flex: 1, textAlign: "right" }}>%Win</span>
+          </div>
+
+          {/* Lignes MULTI (encore statiques pour l’instant) */}
+          {["Matchs multi", "Legs Win multi"].map((label) => (
+            <div key={label} style={statRowBox}>
+              <span style={{ flex: 2, textAlign: "left" }}>{label}</span>
+              <span
+                style={{
+                  flex: 1,
+                  textAlign: "right",
+                  color: "#E5FFEF",
+                }}
+              >
+                0 / 0
+              </span>
+              <span
+                style={{
+                  flex: 1,
+                  textAlign: "right",
+                  color: "#7CFF9A",
+                }}
+              >
+                0.0%
+              </span>
+            </div>
+          ))}
+
+          {/* PODIUMS multi (données réelles via multiRanks) */}
+          <div
+            style={{
+              marginTop: 8,
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 8,
+            }}
+          >
+            {[
+              { label: "1er", color: T.gold, value: multiRanks.first },
+              { label: "2e", color: "#E0E0E0", value: multiRanks.second },
+              { label: "3e", color: "#B0BEC5", value: multiRanks.third },
+            ].map((rank) => (
+              <div
+                key={rank.label}
+                style={{
+                  flex: 1,
+                  borderRadius: 14,
+                  padding: "6px 8px",
+                  background: "rgba(0,0,0,.45)",
+                  border: "1px solid rgba(255,255,255,.12)",
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    color: T.text70,
+                    marginBottom: 2,
+                  }}
+                >
+                  {rank.label}
+                </div>
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 800,
+                    color: rank.color,
+                  }}
+                >
+                  {rank.value}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* TABLEAU 4e → 10+ */}
+          <div
+            style={{
+              marginTop: 8,
+              borderRadius: 12,
+              padding: "6px 10px 8px",
               background: "rgba(0,0,0,.45)",
-              border: "1px solid rgba(255,255,255,.12)",
-              textAlign: "center",
+              border: "1px solid rgba(255,255,255,.08)",
             }}
           >
             <div
@@ -2019,157 +2298,115 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
                 fontSize: 10,
                 textTransform: "uppercase",
                 color: T.text70,
+                marginBottom: 4,
+              }}
+            >
+              Multi / classements
+            </div>
+
+            {/* Header */}
+            <div
+              style={{
+                display: "flex",
+                fontSize: 10,
+                color: T.text70,
                 marginBottom: 2,
               }}
             >
-              {rank.label}
+              <div style={{ flex: 1, textAlign: "left" }}>Place</div>
+              <div style={{ width: 60, textAlign: "right" }}>Total</div>
             </div>
-            <div
-              style={{
-                fontSize: 14,
-                fontWeight: 800,
-                color: rank.color,
-              }}
-            >
-              0
-            </div>
+
+            {[
+              { label: "4e", value: multiRanks.place4 },
+              { label: "5e", value: multiRanks.place5 },
+              { label: "6e", value: multiRanks.place6 },
+              { label: "7e", value: multiRanks.place7 },
+              { label: "8e", value: multiRanks.place8 },
+              { label: "9e", value: multiRanks.place9 },
+              { label: "10+", value: multiRanks.place10plus },
+            ].map((row) => (
+              <div
+                key={row.label}
+                style={{
+                  display: "flex",
+                  fontSize: 10,
+                  color: T.text,
+                  lineHeight: 1.5,
+                }}
+              >
+                <div style={{ flex: 1, textAlign: "left" }}>{row.label}</div>
+                <div style={{ width: 60, textAlign: "right" }}>
+                  {row.value}
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-    </div>
-
-    {/* Tableau classements 4e → 10e + finish, juste sous les PODIUMS */}
-    <div
-      style={{
-        marginTop: 8,
-        borderRadius: 12,
-        padding: "6px 10px 8px",
-        background: "rgba(0,0,0,.45)",
-        border: "1px solid rgba(255,255,255,.08)",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 10,
-          textTransform: "uppercase",
-          color: T.text70,
-          marginBottom: 4,
-        }}
-      >
-        Multi / classements &amp; finish
-      </div>
-
-      {/* Header mini-tableau */}
-      <div
-        style={{
-          display: "flex",
-          fontSize: 10,
-          color: T.text70,
-          marginBottom: 2,
-        }}
-      >
-        <div style={{ flex: 1, textAlign: "left" }}>Place</div>
-        <div style={{ width: 60, textAlign: "right" }}>Total</div>
-      </div>
-
-      {/* Lignes 4e → 10e */}
-      {[4, 5, 6, 7, 8, 9, 10].map((rank) => (
-        <div
-          key={rank}
-          style={{
-            display: "flex",
-            fontSize: 10,
-            color: T.text,
-            lineHeight: 1.5,
-          }}
-        >
-          <div style={{ flex: 1, textAlign: "left" }}>{rank}e</div>
-          <div style={{ width: 60, textAlign: "right" }}>0</div>
         </div>
-      ))}
 
-      {/* Ligne FINISH */}
-      <div
-        style={{
-          marginTop: 6,
-          paddingTop: 4,
-          borderTop: "1px solid rgba(255,255,255,.06)",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          fontSize: 10,
-          color: T.text70,
-        }}
-      >
-        <span>Finish (0 atteint)</span>
-        <span style={{ color: "#7CFF9A", fontWeight: 700 }}>0 — 0.0%</span>
+        {/* Bloc TEAM */}
+        <div>
+          <div
+            style={{
+              fontSize: 11,
+              textTransform: "uppercase",
+              color: "#FFB74D",
+              fontWeight: 700,
+              marginBottom: 4,
+            }}
+          >
+            Matchs TEAM
+          </div>
+
+          {/* Header */}
+          <div
+            style={{
+              ...statRowBox,
+              borderTop: "none",
+              fontSize: 11,
+              color: T.text70,
+              fontWeight: 700,
+            }}
+          >
+            <span style={{ flex: 2, textAlign: "left" }}>Intitulé</span>
+            <span style={{ flex: 1, textAlign: "right" }}>Total / Win</span>
+            <span style={{ flex: 1, textAlign: "right" }}>%Win</span>
+          </div>
+
+          {[
+            "Matchs team",
+            "Sets Win team",
+            "Legs Win team",
+            "Matchs 2v2",
+            "Matchs 3v3",
+            "Matchs 4v4",
+            "Matchs 2v2v2",
+            "Matchs 2v2v2v2",
+          ].map((label) => (
+            <div key={label} style={statRowBox}>
+              <span style={{ flex: 2, textAlign: "left" }}>{label}</span>
+              <span
+                style={{
+                  flex: 1,
+                  textAlign: "right",
+                  color: "#E5FFEF",
+                }}
+              >
+                0 / 0
+              </span>
+              <span
+                style={{
+                  flex: 1,
+                  textAlign: "right",
+                  color: "#7CFF9A",
+                }}
+              >
+                0.0%
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
-  </div>
-
-  {/* Bloc TEAM */}
-  <div>
-    <div
-      style={{
-        fontSize: 11,
-        textTransform: "uppercase",
-        color: "#FFB74D",
-        fontWeight: 700,
-        marginBottom: 4,
-      }}
-    >
-      Matchs TEAM
-    </div>
-
-    {/* Header */}
-    <div
-      style={{
-        ...statRowBox,
-        borderTop: "none",
-        fontSize: 11,
-        color: T.text70,
-        fontWeight: 700,
-      }}
-    >
-      <span style={{ flex: 2, textAlign: "left" }}>Intitulé</span>
-      <span style={{ flex: 1, textAlign: "right" }}>Total / Win</span>
-      <span style={{ flex: 1, textAlign: "right" }}>%Win</span>
-    </div>
-
-    {[
-      "Matchs team",
-      "Sets Win team",
-      "Legs Win team",
-      "Matchs 2v2",
-      "Matchs 3v3",
-      "Matchs 4v4",
-      "Matchs 2v2v2",
-      "Matchs 2v2v2v2",
-    ].map((label) => (
-      <div key={label} style={statRowBox}>
-        <span style={{ flex: 2, textAlign: "left" }}>{label}</span>
-        <span
-          style={{
-            flex: 1,
-            textAlign: "right",
-            color: "#E5FFEF",
-          }}
-        >
-          0 / 0
-        </span>
-        <span
-          style={{
-            flex: 1,
-            textAlign: "right",
-            color: "#7CFF9A",
-          }}
-        >
-          0.0%
-        </span>
-      </div>
-    ))}
-  </div>
-</div>
 
 {/* ====== MOYENNES / RECORDS / FAVORIS — MATCHS (présentation en colonnes) ====== */}
 <div style={{ ...card, marginTop: 12 }}>
@@ -2514,55 +2751,6 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
     </div>
   </div>
 </div>
-
-            {/* ==================== CLASSEMENTS MULTI ==================== */}
-            <div style={{ marginTop: 12 }}>
-              <div
-                style={{
-                  fontSize: 10,
-                  color: "#BBBBBB",
-                  textTransform: "uppercase",
-                  marginBottom: 4,
-                }}
-              >
-                Multi / Classements & Finish
-              </div>
-
-              <div
-                style={{
-                  borderRadius: 12,
-                  padding: 8,
-                  background: "rgba(255,255,255,.04)",
-                }}
-              >
-                {[1, 2, 3, 4, 5, 6].map((rank) => (
-                  <div
-                    key={rank}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      fontSize: 11,
-                    }}
-                  >
-                    <span>{rank}e</span>
-                    <span style={{ color: "#E5FFEF" }}>0</span>
-                  </div>
-                ))}
-
-                <div
-                  style={{
-                    borderTop: "1px solid rgba(255,255,255,.08)",
-                    marginTop: 6,
-                    paddingTop: 4,
-                    display: "flex",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <span>Finish (0 atteint)</span>
-                  <span style={{ color: "#7CFF9A" }}>0 — 0.0%</span>
-                </div>
-              </div>
-            </div>
 
           {/* Sparkline + choix de métrique */}
           <div style={{ ...card }}>

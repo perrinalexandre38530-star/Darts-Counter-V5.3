@@ -30,12 +30,10 @@ const statsNameCss = `
   font-weight: 900;
 }
 
-/* couche de base, couleur thème */
+/* couche de base, couleur thème — SANS GROS HALO LUMINEUX */
 .dc-stats-name-base {
   color: var(--dc-accent, #f6c256);
-  text-shadow:
-    0 0 6px rgba(0,0,0,0.8),
-    0 0 14px rgba(0,0,0,0.9);
+  text-shadow: none !important;
 }
 
 /* couche animée : gradient qui défile à l'intérieur des lettres */
@@ -43,18 +41,22 @@ const statsNameCss = `
   position: absolute;
   inset: 0;
   color: transparent;
+
+  /* GRADIENT SANS OPACITÉS QUI DÉBORDENT */
   background-image: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255,255,255,0.15) 35%,
-    rgba(255,255,255,0.95) 50%,
-    rgba(255,255,255,0.15) 65%,
+    rgba(255,255,255,0.08) 40%,
+    rgba(255,255,255,0.55) 50%,
+    rgba(255,255,255,0.08) 60%,
     transparent 100%
   );
+
   background-size: 200% 100%;
   background-position: 0% 0%;
   -webkit-background-clip: text;
   background-clip: text;
+
   animation: dcStatsNameShimmer 2.4s linear infinite;
   pointer-events: none;
 }
@@ -103,8 +105,18 @@ const T = {
   gold: "#F6C256",
   text: "#FFFFFF",
   text70: "rgba(255,255,255,.70)",
+  text30: "rgba(255,255,255,.30)",
+
   edge: "rgba(255,255,255,.10)",
   card: "linear-gradient(180deg,rgba(17,18,20,.94),rgba(13,14,17,.92))",
+
+  // 🔥 Ajout des clés manquantes utilisées partout dans StatsHub
+  accent: "#F6C256",
+  accent20: "rgba(246,194,86,.20)",
+  accent30: "rgba(246,194,86,.30)",
+  accent40: "rgba(246,194,86,.40)",
+  accent50: "rgba(246,194,86,.50)",
+  accentGlow: "rgba(246,194,86,.60)",
 };
 
 const goldNeon = {
