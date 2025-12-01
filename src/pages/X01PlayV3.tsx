@@ -1564,6 +1564,132 @@ type X01V3HistoryPayload = {
   liveStatsByPlayer: any;
 };
 
+/* -------------------------------------------------------------
+   Helpers : extraction des stats détaillées depuis liveStatsByPlayer
+   Objectif : hitsS / hitsD / hitsT / miss / bull / dBull / bust
+   + bySegmentS / bySegmentD / bySegmentT
+------------------------------------------------------------- */
+
+function numOr0(...values: any[]): number {
+  for (const v of values) {
+    if (v === undefined || v === null) continue;
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
+function cloneNumberMap(obj: any | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!obj || typeof obj !== "object") return out;
+  for (const [k, v] of Object.entries(obj)) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n !== 0) {
+      out[String(k)] = n;
+    }
+  }
+  return out;
+}
+
+function extractSegmentMapsFromLive(live: any) {
+  // 1) Si on a déjà bySegmentS/D/T, on les clone tels quels
+  let bySegmentS = cloneNumberMap(
+    live?.bySegmentS ??
+      live?.segmentsS ??
+      live?.hitsBySegmentS
+  );
+  let bySegmentD = cloneNumberMap(
+    live?.bySegmentD ??
+      live?.segmentsD ??
+      live?.hitsBySegmentD
+  );
+  let bySegmentT = cloneNumberMap(
+    live?.bySegmentT ??
+      live?.segmentsT ??
+      live?.hitsBySegmentT
+  );
+
+  // 2) Fallback : structure combinée { [seg]: {S,D,T} }
+  const combined =
+    live?.bySegment ??
+    live?.segmentHits ??
+    live?.segmentsAll ??
+    undefined;
+
+  if (combined && typeof combined === "object") {
+    for (const [segStr, entry] of Object.entries(combined)) {
+      const segKey = String(segStr);
+      if (!entry || typeof entry !== "object") continue;
+      const e: any = entry;
+      const s = numOr0(e.S, e.s, e.single, e.singles);
+      const d = numOr0(e.D, e.d, e.double, e.doubles);
+      const t = numOr0(e.T, e.t, e.triple, e.triples);
+      if (s) bySegmentS[segKey] = (bySegmentS[segKey] || 0) + s;
+      if (d) bySegmentD[segKey] = (bySegmentD[segKey] || 0) + d;
+      if (t) bySegmentT[segKey] = (bySegmentT[segKey] || 0) + t;
+    }
+  }
+
+  return { bySegmentS, bySegmentD, bySegmentT };
+}
+
+function extractDetailedStatsFromLive(live: any) {
+  const hitsS = numOr0(live?.hitsS, live?.S, live?.singles);
+  const hitsD = numOr0(live?.hitsD, live?.D, live?.doubles);
+  const hitsT = numOr0(live?.hitsT, live?.T, live?.triples);
+
+  const miss = numOr0(
+    live?.miss,
+    live?.misses,
+    live?.missCount,
+    live?.nbMiss
+  );
+  const bull = numOr0(
+    live?.bull,
+    live?.bulls,
+    live?.bullHits,
+    live?.hitsBull
+  );
+  const dBull = numOr0(
+    live?.dBull,
+    live?.doubleBull,
+    live?.dbulls,
+    live?.bullDoubleHits
+  );
+  const bust = numOr0(
+    live?.bust,
+    live?.busts,
+    live?.bustCount,
+    live?.nbBust
+  );
+
+  let darts = numOr0(
+    live?.dartsThrown,
+    live?.darts,
+    live?.totalDarts
+  );
+  if (!darts) {
+    darts = hitsS + hitsD + hitsT + miss; // fallback minimum
+  }
+
+  const { bySegmentS, bySegmentD, bySegmentT } =
+    extractSegmentMapsFromLive(live);
+
+  return {
+    darts,
+    hitsS,
+    hitsD,
+    hitsT,
+    miss,
+    bull,
+    dBull,
+    bust,
+    bySegmentS,
+    bySegmentD,
+    bySegmentT,
+  };
+}
+
 function saveX01V3MatchToHistory({
   config,
   state,
@@ -1585,6 +1711,7 @@ function saveX01V3MatchToHistory({
   const bestVisitByPlayer: Record<string, number> = {};
   const bestCheckoutByPlayer: Record<string, number> = {};
   const perPlayer: any[] = [];
+  const detailedByPlayer: Record<string, any> = {};
 
   let winnerId: string | null = null;
 
@@ -1609,11 +1736,27 @@ function saveX01V3MatchToHistory({
     bestVisitByPlayer[pid] = bestVisit;
     bestCheckoutByPlayer[pid] = bestCheckout;
 
+    // 🔍 Stats détaillées (hits S/D/T, miss, bull, etc.)
+    const detail = extractDetailedStatsFromLive(live);
+
+    detailedByPlayer[pid] = detail;
+
     perPlayer.push({
       playerId: pid,
       avg3,
       bestVisit,
       bestCheckout,
+      darts: detail.darts,
+      hitsS: detail.hitsS,
+      hitsD: detail.hitsD,
+      hitsT: detail.hitsT,
+      miss: detail.miss,
+      bull: detail.bull,
+      dBull: detail.dBull,
+      bust: detail.bust,
+      bySegmentS: detail.bySegmentS,
+      bySegmentD: detail.bySegmentD,
+      bySegmentT: detail.bySegmentT,
     });
 
     // Gagnant simple : score à 0
@@ -1627,6 +1770,8 @@ function saveX01V3MatchToHistory({
     bestVisitByPlayer,
     bestCheckoutByPlayer,
     perPlayer,
+    // 🧩 Nouveau : map directe par joueur pour les stats avancées
+    detailedByPlayer,
   };
 
   // -------------------------

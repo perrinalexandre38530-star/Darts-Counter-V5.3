@@ -2,8 +2,6 @@
 // src/pages/StatsHub.tsx — Stats + Historique + Training (v2 complet)
 // ============================================
 import React from "react";
-import { buildTrainingX01Aggregates } from "../stats/trainingX01Stats";
-import { useCurrentProfile } from "../hooks/useCurrentProfile";
 import { History } from "../lib/history";
 import { loadStore } from "../lib/storage";
 import StatsPlayerDashboard, {
@@ -20,10 +18,77 @@ import type { Dart as UIDart } from "../lib/types";
 import { getCricketProfileStats } from "../lib/statsBridge";
 import type { CricketProfileStats } from "../lib/cricketStats";
 import StatsCricketDashboard from "../components/StatsCricketDashboard";
-import StatsX01MultiDashboard, { type X01MultiPlayer,} from "../components/StatsX01MultiDashboard";
-import X01MultiStatsTabFull from "../components/stats/X01MultiStatsTabFull";
+// Nouvelle version FULL X01 multi
+import X01MultiStatsTabFull from "../stats/X01MultiStatsTabFull";
 import StatsTrainingSummary from "../components/stats/StatsTrainingSummary";
-// ❌ IMPORTANT : plus d'import TrainingX01Session ici
+
+// Effet "shimmer" à l’intérieur des lettres du nom joueur
+const statsNameCss = `
+.dc-stats-name-cartoon {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 4px rgba(0,0,0,0.6),
+    0 0 12px currentColor;
+  display: inline-block;
+  position: relative;
+  color: currentColor;
+}
+
+/* couche brillante qui se balade à l'intérieur des lettres */
+.dc-stats-name-cartoon::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.0) 0%,
+    rgba(255,255,255,0.7) 45%,
+    rgba(255,255,255,0.0) 90%
+  );
+  background-size: 180% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: dcStatsNameShimmer 2.6s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes dcStatsNameShimmer {
+  0%   { background-position: -60% 0; }
+  100% { background-position: 160% 0; }
+}
+`;
+
+function useInjectStatsNameCss() {
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (document.getElementById("dc-stats-name-css")) return;
+    const style = document.createElement("style");
+    style.id = "dc-stats-name-css";
+    style.innerHTML = statsNameCss;
+    document.head.appendChild(style);
+  }, []);
+}
+
+// ================== Modes principaux du centre de stats ==================
+type StatsMainMode =
+  | "dashboard"
+  | "x01_multi"
+  | "cricket"
+  | "battle_royale"
+  | "history";
+
+const STATS_MAIN_MODES: { id: StatsMainMode; label: string }[] = [
+  { id: "dashboard", label: "Dashboard (vue globale)" },
+  { id: "x01_multi", label: "X01 Multi" },
+  { id: "cricket", label: "Cricket" },
+  { id: "battle_royale", label: "Battle Royale" },
+  { id: "history", label: "Historique" },
+];
 
 /* ---------- Thème ---------- */
 const T = {
@@ -432,26 +497,18 @@ function useStoreHistory(): SavedMatch[] {
 function buildDashboardForPlayer(
   player: PlayerLite,
   records: SavedMatch[],
-  quick?
-):
-  | {
-      avg3: number;
-      bestVisit: number;
-      bestCheckout?: number;
-      winRatePct: number;
-      buckets: Record<string, number>;
-    }
-  | null
-{
+  quick: any
+): PlayerDashboardStats | null {
   const pid = player.id;
+  if (!pid) return null;
 
-  let fbAvg3 = 0,
-    fbBestVisit = 0,
-    fbBestCO = 0,
-    fbWins = 0,
-    fbMatches = 0;
+  let fbAvg3 = 0;
+  let fbBestVisit = 0;
+  let fbBestCO = 0;
+  let fbWins = 0;
+  let fbMatches = 0;
 
-  const fbBuckets = {
+  const fbBuckets: Record<string, number> = {
     "0-59": 0,
     "60-99": 0,
     "100+": 0,
@@ -475,7 +532,10 @@ function buildDashboardForPlayer(
 
     const ss: any = r.summary ?? r.payload?.summary ?? {};
     const per: any[] =
-      ss.perPlayer ?? ss.players ?? r.payload?.summary?.perPlayer ?? [];
+      ss.perPlayer ??
+      ss.players ??
+      r.payload?.summary?.perPlayer ??
+      [];
 
     const pstat =
       per.find((x) => x?.playerId === pid) ??
@@ -526,6 +586,9 @@ function buildDashboardForPlayer(
   const fbAvg3Mean = fbMatches > 0 ? fbAvg3 / fbMatches : 0;
   const fbWinPct =
     fbMatches > 0 ? Math.round((fbWins / fbMatches) * 1000) / 10 : 0;
+
+  // Si aucun match et aucune quick-stat dispo → on laisse le composant gérer
+  if (!fbMatches && !quick) return null;
 
   return {
     playerId: pid,
@@ -2333,7 +2396,7 @@ const maxStackHits = HITS_SEGMENTS.reduce(
       marginBottom: 6,
     }}
   >
-    RADAR HITS
+    RADAR HITS (TEST)
   </div>
 
   {trainingDartsAll.length ? (
@@ -3229,850 +3292,596 @@ function TrainingHitsBySegment({ sessions }: TrainingHitsBySegmentProps) {
     </div>
   );
 }
+export default function StatsHub({
+  go,
+  tab, // plus utilisé mais gardé pour compat
+  memHistory,
+  initialPlayerId,
+  initialStatsSubTab,
+  mode = "active",
+  playerId,
+}: Props) {
+  // Injection du CSS shimmer pour le nom du joueur
+  useInjectStatsNameCss();
 
-/* ---------- Page ---------- */
-export default function StatsHub(props: Props) {
-  const go = props.go ?? (() => {});
+  // ---------- 0) Helper pour reconnaître un BOT ----------
+  function isBotPlayer(p: PlayerLite): boolean {
+    const name = (p.name ?? "").toLowerCase();
+    const id = (p.id ?? "").toLowerCase();
+    return (
+      id.startsWith("bot_") ||
+      id.startsWith("bot:") ||
+      name.includes("bot") ||
+      name.includes("[bot]")
+    );
+  }
 
-    const profile = useCurrentProfile();
-    const profileId = profile?.id ?? null;
-  
-    const trainingAgg = buildTrainingX01Aggregates(profileId);
-    const trainingHasData = trainingAgg.countSessions > 0;
-  
+  // ---------- 1) Carrousel "modes" style X01 MULTI ----------
+  const modeDefs = React.useMemo(
+    () => [
+      { key: "dashboard", label: "Dashboard global" },
+      { key: "x01_multi", label: "X01 multi" },
+      { key: "cricket", label: "Cricket" },
+      { key: "history", label: "Historique" },
+    ],
+    []
+  );
+  const totalModes = modeDefs.length;
 
-  // Onglet principal piloté par le menu StatsShell
-  const mainTab: StatsHubMainTab = props.tab ?? "stats";
+  const [modeIndex, setModeIndex] = React.useState(0);
+  const currentMode = modeDefs[modeIndex]?.key ?? "dashboard";
+  const currentModeLabel =
+    modeDefs[modeIndex]?.label ?? "Dashboard global";
 
-  // Mode d’affichage : "active" (joueur actif) ou "locals" (profils locaux)
-  // - si on reçoit playerId mais pas mode => on considère "active"
-  // - sinon => "locals" par défaut
-  const mode: StatsMode =
-    (props.mode as StatsMode) ?? (props.playerId ? "active" : "locals");
+  const goPrevMode = React.useCallback(() => {
+    if (totalModes <= 1) return;
+    setModeIndex((i) => (i - 1 + totalModes) % totalModes);
+  }, [totalModes]);
 
-  // ============================================
-  // 🔥 Paramètres initiaux (navigation depuis History / StatsShell)
-  // ============================================
-  const initialPlayerIdFromProps =
-    props.initialPlayerId ?? props.playerId ?? null;
-  const initialStatsSubTabFromProps = props.initialStatsSubTab ?? null;
+  const goNextMode = React.useCallback(() => {
+    if (totalModes <= 1) return;
+    setModeIndex((i) => (i + 1) % totalModes);
+  }, [totalModes]);
 
-  // 🔒 En mode "active" on verrouille le joueur initial
-  const lockToInitialPlayer =
-    mode === "active" && Boolean(initialPlayerIdFromProps);
+  const canScrollModes = totalModes > 1;
 
-  // ============================================
-  // 0) Récupère les profils (pour enrichir avatars + fallback joueurs)
-  // ============================================
+  // ---------- 2) Historiques ----------
+  const storeHistory = useStoreHistory();
+  const apiHistory = useHistoryAPI();
+
+  // Profils (pour avatars / noms stockés en local)
   const [storeProfiles, setStoreProfiles] = React.useState<PlayerLite[]>([]);
+
   React.useEffect(() => {
+    let mounted = true;
     (async () => {
       try {
-        const s: any = await loadStore<any>();
-        setStoreProfiles(toArr<PlayerLite>(s?.profiles));
+        const store: any = await loadStore<any>();
+        if (!mounted) return;
+
+        const arr: PlayerLite[] = Array.isArray(store?.profiles)
+          ? store.profiles.map((p: any) => ({
+              id: String(p.id),
+              name: p.name,
+              avatarDataUrl: p.avatarDataUrl ?? null,
+            }))
+          : [];
+
+        setStoreProfiles(arr);
       } catch {
+        if (!mounted) return;
         setStoreProfiles([]);
       }
     })();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  // ============================================
-  // 1) Sources d'historique (persisté / mémoire / store)
-  // ============================================
-  const persisted = useHistoryAPI();
-  const mem = toArr<SavedMatch>(props.memHistory);
-  const fromStore = useStoreHistory();
+  // Fusion des différentes sources d'historique
+  const combinedHistory = React.useMemo(() => {
+    const mem = toArr<SavedMatch>(memHistory);
+    const all = [...mem, ...apiHistory, ...storeHistory];
 
-  // 2) Fusion & déduplication (par id) — on garde la version à summary le plus riche
-  const records = React.useMemo(() => {
     const byId = new Map<string, SavedMatch>();
 
-    const qualityOf = (rec: SavedMatch | undefined): number => {
-      if (!rec) return -1;
-      const ss: any = rec.summary ?? rec.payload?.summary ?? {};
-      if (!ss) return 0;
+    for (const r of all) {
+      const id = String(r.id ?? "");
+      if (!id) continue;
 
-      if (
-        Array.isArray(ss.perPlayer) ||
-        ss.avg3ByPlayer ||
-        ss.bestVisitByPlayer ||
-        ss.bestCheckoutByPlayer
-      ) {
-        return 2;
+      const existing = byId.get(id);
+      if (!existing) {
+        byId.set(id, r);
+        continue;
       }
 
-      if (Object.keys(ss).length > 0) return 1;
-      return 0;
-    };
+      const tNew = r.updatedAt ?? r.createdAt ?? 0;
+      const tOld = existing.updatedAt ?? existing.createdAt ?? 0;
+      if (tNew >= tOld) byId.set(id, r);
+    }
 
-    const push = (raw: any) => {
-      const rec = toObj<SavedMatch>(raw);
-      if (!rec.id) return;
+    return Array.from(byId.values()).sort(
+      (a, b) =>
+        (b.updatedAt ?? b.createdAt ?? 0) -
+        (a.updatedAt ?? a.createdAt ?? 0)
+    );
+  }, [memHistory, apiHistory, storeHistory]);
 
-      const prev = byId.get(rec.id);
-      if (!prev) {
-        byId.set(rec.id, rec);
-        return;
-      }
+  // Normalisation (joueurs, X01V3 → game="x01", avatars, etc.)
+  const records = React.useMemo(
+    () =>
+      combinedHistory.map((r) =>
+        normalizeRecordPlayers(r, storeProfiles)
+      ),
+    [combinedHistory, storeProfiles]
+  );
 
-      const prevQ = qualityOf(prev);
-      const curQ = qualityOf(rec);
-
-      if (curQ > prevQ) {
-        byId.set(rec.id, rec);
-        return;
-      }
-      if (curQ < prevQ) return;
-
-      const curT = N(rec.updatedAt ?? rec.createdAt, 0);
-      const prevT = N(prev.updatedAt ?? prev.createdAt, -1);
-      if (curT > prevT) byId.set(rec.id, rec);
-    };
-
-    persisted.forEach(push);
-    mem.forEach(push);
-    fromStore.forEach(push);
-
-    return Array.from(byId.values())
-      .map((r) => normalizeRecordPlayers(r, storeProfiles))
-      .sort(
-        (a, b) =>
-          N(b.updatedAt ?? b.createdAt, 0) -
-          N(a.updatedAt ?? a.createdAt, 0)
-      );
-  }, [persisted, mem, fromStore, storeProfiles]);
-
-  // ============================================
-  // 3) Joueurs vus dans l'historique
-  // ============================================
-  const playersFromHistory = React.useMemo<PlayerLite[]>(() => {
+  // ---------- 3) Liste unique de joueurs trouvés dans l'historique ----------
+  const players = React.useMemo(() => {
     const map = new Map<string, PlayerLite>();
+
     for (const r of records) {
       for (const p of toArr<PlayerLite>(r.players)) {
         if (!p?.id) continue;
         if (!map.has(p.id)) {
           map.set(p.id, {
             id: p.id,
-            name: p.name ?? `Joueur ${map.size + 1}`,
+            name: p.name ?? "",
             avatarDataUrl: p.avatarDataUrl ?? null,
           });
         }
       }
     }
+
     return Array.from(map.values());
   }, [records]);
 
-  // 3bis) Fusion historique + profils du store (pour toujours avoir tes profils)
-  const allPlayers = React.useMemo<PlayerLite[]>(() => {
-    const map = new Map<string, PlayerLite>();
+  // ---------- 4) Sélection joueur + option BOTS ----------
+  const [showBots, setShowBots] = React.useState(false);
 
-    for (const p of playersFromHistory) {
-      if (p?.id) map.set(p.id, p);
-    }
+  // Liste filtrée (option BOTS) + tri alpha
+  const filteredPlayers = React.useMemo(() => {
+    if (!players.length) return [];
+    return players
+      .slice()
+      .sort((a, b) =>
+        (a.name ?? "").localeCompare(b.name ?? "", "fr", {
+          sensitivity: "base",
+        })
+      )
+      .filter((p) => showBots || !isBotPlayer(p));
+  }, [players, showBots]);
 
-    for (const p of storeProfiles) {
-      if (!p?.id) continue;
-      if (!map.has(p.id)) {
-        map.set(p.id, {
-          id: p.id,
-          name: p.name ?? `Joueur ${map.size + 1}`,
-          avatarDataUrl: p.avatarDataUrl ?? null,
-        });
-      }
-    }
-
-    return Array.from(map.values()).sort((a, b) =>
-      (a.name || "").localeCompare(b.name || "")
-    );
-  }, [playersFromHistory, storeProfiles]);
-
-  // ============================================
-  // 4) Sélection du joueur
-  // ============================================
   const [selectedPlayerId, setSelectedPlayerId] =
-    React.useState<string | null>(initialPlayerIdFromProps ?? null);
+    React.useState<string | null>(
+      initialPlayerId ?? playerId ?? null
+    );
 
-  // Si on verrouille un joueur initial (mode "active"), on force sa sélection
+  // Si le parent change initialPlayerId / playerId → on suit
   React.useEffect(() => {
-    if (lockToInitialPlayer && initialPlayerIdFromProps) {
-      setSelectedPlayerId(initialPlayerIdFromProps);
+    if (initialPlayerId || playerId) {
+      setSelectedPlayerId(initialPlayerId ?? playerId ?? null);
     }
-  }, [lockToInitialPlayer, initialPlayerIdFromProps]);
+  }, [initialPlayerId, playerId]);
 
-  // Fallback auto sur le premier joueur disponible (uniquement en mode "locals")
+  // Si rien de sélectionné OU joueur filtré (ex: on décoche les BOTS)
+  // on prend le 1er dispo dans filteredPlayers
   React.useEffect(() => {
-    if (!lockToInitialPlayer && !selectedPlayerId && allPlayers[0]?.id) {
-      setSelectedPlayerId(allPlayers[0].id);
+    if (!filteredPlayers.length) {
+      setSelectedPlayerId(null);
+      return;
     }
-  }, [allPlayers, selectedPlayerId, lockToInitialPlayer]);
-
-  const selectedPlayer: PlayerLite | undefined =
-    allPlayers.find((p) => p.id === selectedPlayerId) ||
-    (!lockToInitialPlayer ? allPlayers[0] : undefined);
-
-  const quick = useQuickStats(selectedPlayer?.id || null);
-
-  // ---------- Stats Cricket pour le joueur sélectionné ----------
-  const [cricketStats, setCricketStats] =
-    React.useState<CricketProfileStats | null>(null);
-  const [cricketLoading, setCricketLoading] = React.useState(false);
-
-  React.useEffect(() => {
-    let cancelled = false;
-
-    async function loadCricket() {
-      if (!selectedPlayer?.id) {
-        setCricketStats(null);
-        return;
-      }
-
-      setCricketLoading(true);
-      try {
-        const cs = await getCricketProfileStats(selectedPlayer.id);
-        if (!cancelled) {
-          setCricketStats(cs);
-        }
-      } catch {
-        if (!cancelled) {
-          setCricketStats(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setCricketLoading(false);
-        }
-      }
+    if (!selectedPlayerId) {
+      setSelectedPlayerId(filteredPlayers[0].id);
+      return;
     }
+    const exists = filteredPlayers.some((p) => p.id === selectedPlayerId);
+    if (!exists) {
+      setSelectedPlayerId(filteredPlayers[0].id);
+    }
+  }, [filteredPlayers, selectedPlayerId]);
 
-    loadCricket();
-    return () => {
-      cancelled = true;
-    };
+  const selectedPlayer = React.useMemo(
+    () =>
+      filteredPlayers.find((p) => p.id === selectedPlayerId) ?? null,
+    [filteredPlayers, selectedPlayerId]
+  );
+
+  const currentPlayerIndex = React.useMemo(() => {
+    if (!selectedPlayer) return -1;
+    return filteredPlayers.findIndex((p) => p.id === selectedPlayer.id);
+  }, [filteredPlayers, selectedPlayer]);
+
+  const canScrollPlayers = filteredPlayers.length > 1;
+
+  const goPrevPlayer = React.useCallback(() => {
+    if (!canScrollPlayers || !filteredPlayers.length) return;
+    const idx =
+      currentPlayerIndex >= 0 ? currentPlayerIndex : 0;
+    const nextIndex =
+      (idx - 1 + filteredPlayers.length) % filteredPlayers.length;
+    setSelectedPlayerId(filteredPlayers[nextIndex].id);
+  }, [canScrollPlayers, filteredPlayers, currentPlayerIndex]);
+
+  const goNextPlayer = React.useCallback(() => {
+    if (!canScrollPlayers || !filteredPlayers.length) return;
+    const idx =
+      currentPlayerIndex >= 0 ? currentPlayerIndex : 0;
+    const nextIndex =
+      (idx + 1) % filteredPlayers.length;
+    setSelectedPlayerId(filteredPlayers[nextIndex].id);
+  }, [canScrollPlayers, filteredPlayers, currentPlayerIndex]);
+
+  // ---------- 5) Quick-stats & Cricket ----------
+  const quick = useQuickStats(selectedPlayer?.id ?? null);
+
+  const cricketStats: CricketProfileStats | null = React.useMemo(() => {
+    if (!selectedPlayer?.id) return null;
+    try {
+      return getCricketProfileStats(selectedPlayer.id);
+    } catch {
+      return null;
+    }
   }, [selectedPlayer?.id]);
 
-  // ============================================
-  // Sous-onglets dans "Stats joueurs"
-  // ============================================
-  type StatsSubTab = "dashboard" | "x01_multi" | "cricket";
-
-  const [statsSubTab, setStatsSubTab] =
-    React.useState<StatsSubTab>(
-      (initialStatsSubTabFromProps as StatsSubTab) ?? "dashboard"
-    );
-
-  // 🔄 si une autre page force l'ouverture d’un sous-onglet
-  React.useEffect(() => {
-    if (initialStatsSubTabFromProps) {
-      setStatsSubTab(initialStatsSubTabFromProps as StatsSubTab);
-    }
-  }, [initialStatsSubTabFromProps]);
-
-  // Bloc dépliant (sélecteur joueurs) — seulement utile en mode "locals"
-  const [openPlayers, setOpenPlayers] = React.useState(true);
-
-  // ---------- Data agrégée pour les KPIs (même logique que StatsPlayerDashboard) ----------
-  const dashboardData = React.useMemo(() => {
-    if (!selectedPlayer) return null;
-    return buildDashboardForPlayer(selectedPlayer, records, quick || null);
-  }, [selectedPlayer, records, quick]);
-
-  const avg3Overall = dashboardData?.avg3Overall ?? 0;
-  const winRate = dashboardData?.winRatePct ?? 0;
-  const bestVisit = dashboardData?.bestVisit ?? 0;
-  const bestCheckout = dashboardData?.bestCheckout ?? 0;
-
-  // Styles locaux (repris de TrainingX01)
-  const kpiBox: React.CSSProperties = {
-    borderRadius: 18,
-    padding: 10,
-    background: "linear-gradient(180deg,#18181A,#0F0F12)",
-    border: "1px solid rgba(255,255,255,.16)",
-    boxShadow: "0 10px 24px rgba(0,0,0,.55)",
-    display: "flex",
-    flexDirection: "column",
-    gap: 2,
-    minHeight: 70,
-  };
-
-  const kpiLabel: React.CSSProperties = {
-    fontSize: 10,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    color: T.text70,
-  };
-
-  const kpiValueMain: React.CSSProperties = {
-    fontSize: 18,
-    fontWeight: 900,
-  };
-
-  // ============================================
-  // RENDER
-  // ============================================
+  // ---------- 6) RENDER ----------
   return (
-    <div
-      className="container"
-      style={{ padding: 12, maxWidth: 1100, color: T.text }}
-    >
-      {/* ===============================
-          1) MODE "HISTORIQUE" SEUL
-          =============================== */}
-      {mainTab === "history" && (
-        <HistoryPage store={{ history: records } as any} go={go} />
-      )}
+    <div style={{ padding: 16, paddingBottom: 80 }}>
+      {/* HEADER : titre centré + carrousel modes */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 12,
+        }}
+      >
+        {/* Titre centré */}
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 900,
+            textTransform: "uppercase",
+            letterSpacing: 1.1,
+            color: T.accent ?? T.gold,
+            textShadow: `
+              0 0 10px ${T.accent ?? T.gold},
+              0 0 22px ${T.accentGlow ?? T.gold}
+            `,
+          }}
+        >
+          Centre de statistiques
+        </div>
 
-      {/* ===============================
-          2) MODE "TRAINING" SEUL
-          =============================== */}
-      {mainTab === "training" && <TrainingX01StatsTab />}
-
-      {/* ===============================
-          3) MODE "STATS JOUEURS" SEUL
-          =============================== */}
-      {mainTab === "stats" && (
-        <>
-          {/* =======================
-              HEADER STAT JOUEUR (style proche TrainingX01)
-              ======================= */}
-          <div
+        {/* Carrousel modes */}
+        <div
+          style={{
+            marginTop: 2,
+            padding: 8,
+            borderRadius: 18,
+            border: `1px solid ${T.accent30}`,
+            background:
+              "linear-gradient(180deg,rgba(18,18,22,.98),rgba(9,9,12,.96))",
+            boxShadow: `
+              0 0 0 1px ${T.accent20},
+              0 8px 20px rgba(0,0,0,.55)
+            `,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 6,
+            width: "100%",
+          }}
+        >
+          {/* Flèche gauche */}
+          <button
+            type="button"
+            onClick={goPrevMode}
+            disabled={!canScrollModes}
             style={{
-              ...card,
-              marginBottom: 12,
-              padding: 16,
+              width: 26,
+              height: 26,
+              borderRadius: 999,
+              border: `1px solid ${T.accent50}`,
+              background: canScrollModes
+                ? `radial-gradient(circle at 30% 30%, ${T.accent40}, transparent 55%)`
+                : "rgba(0,0,0,.45)",
+              color: T.accent,
               display: "flex",
-              flexDirection: "column",
-              gap: 10,
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: canScrollModes ? "pointer" : "default",
+              fontSize: 13,
             }}
           >
-            <div
-              style={{
-                ...goldNeon,
-                fontSize: 18,
-                textAlign: "center",
-              }}
-            >
-              {mode === "active" ? "Stats joueur actif" : "Stats joueurs"}
-            </div>
+            ◀
+          </button>
 
-            {/* Ligne : joueur sélectionné + résumé global */}
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "row",
-                gap: 12,
-                alignItems: "center",
-                justifyContent: "space-between",
-                flexWrap: "wrap",
-              }}
-            >
-              {/* Colonne gauche : joueur + bouton Sync */}
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 6,
-                  minWidth: 0,
-                }}
-              >
-                {/* Label + bouton Sync profil */}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      textTransform: "uppercase",
-                      letterSpacing: 0.6,
-                      color: T.text70,
-                    }}
-                  >
-                    Joueur sélectionné
-                  </div>
-
-                  {/* Bouton Sync profil → ouvre SyncCenter avec CE joueur */}
-                  <GoldPill
-                    active={false}
-                    onClick={() => {
-                      if (!selectedPlayer) return;
-                      // On passe le profileId pour que SyncCenter sache quel profil exporter
-                      go("sync_center", { profileId: selectedPlayer.id });
-                    }}
-                  >
-                    Sync profil
-                  </GoldPill>
-                </div>
-
-                {/* Nom du joueur */}
-                <div
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 900,
-                    color: "#FFFFFF",
-                    textShadow:
-                      "0 0 8px rgba(255,255,255,.45), 0 0 18px rgba(0,0,0,.85)",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    maxWidth: 220,
-                  }}
-                >
-                  {selectedPlayer?.name || "—"}
-                </div>
-
-                {/* Petit résumé nombre de matchs */}
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: T.text70,
-                  }}
-                >
-                  {records.length} matchs au total (X01 + autres modes)
-                </div>
-              </div>
-
-              {/* Petits KPIs résumé (comme TrainingX01) */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(2, minmax(90px, 1fr))",
-                  gap: 8,
-                  flex: 1,
-                  minWidth: 180,
-                }}
-              >
-                {/* Moyenne 3D */}
-                <div
-                  style={{
-                    ...kpiBox,
-                    borderColor: "rgba(255,184,222,.6)",
-                    boxShadow:
-                      "0 0 0 1px rgba(255,184,222,.16), 0 0 12px rgba(255,184,222,.55)",
-                  }}
-                >
-                  <div style={kpiLabel}>Moy. 3D globale</div>
-                  <div
-                    style={{
-                      ...kpiValueMain,
-                      color: "#FFB8DE",
-                    }}
-                  >
-                    {avg3Overall.toFixed(1)}
-                  </div>
-                </div>
-
-                {/* Winrate */}
-                <div
-                  style={{
-                    ...kpiBox,
-                    borderColor: "rgba(124,255,154,.6)",
-                    boxShadow:
-                      "0 0 0 1px rgba(124,255,154,.16), 0 0 12px rgba(124,255,154,.55)",
-                  }}
-                >
-                  <div style={kpiLabel}>Winrate global</div>
-                  <div
-                    style={{
-                      ...kpiValueMain,
-                      color: "#7CFF9A",
-                    }}
-                  >
-                    {winRate.toFixed(1)}%
-                  </div>
-                </div>
-
-                {/* Best visit */}
-                <div
-                  style={{
-                    ...kpiBox,
-                    borderColor: "rgba(71,181,255,.6)",
-                    boxShadow:
-                      "0 0 0 1px rgba(71,181,255,.16), 0 0 12px rgba(71,181,255,.55)",
-                  }}
-                >
-                  <div style={kpiLabel}>Best Visit</div>
-                  <div
-                    style={{
-                      ...kpiValueMain,
-                      color: "#47B5FF",
-                    }}
-                  >
-                    {bestVisit || 0}
-                  </div>
-                </div>
-
-                {/* Best CO */}
-                <div
-                  style={{
-                    ...kpiBox,
-                    borderColor: "rgba(246,194,86,.9)",
-                    boxShadow:
-                      "0 0 0 1px rgba(246,194,86,.35), 0 0 14px rgba(246,194,86,.7)",
-                  }}
-                >
-                  <div style={kpiLabel}>Best Checkout</div>
-                  <div
-                    style={{
-                      ...kpiValueMain,
-                      color: T.gold,
-                    }}
-                  >
-                    {bestCheckout || 0}
-                  </div>
-                </div>
-              </div>
-            </div>
+          {/* Pilule centrale */}
+          <div
+            style={{
+              flex: 1,
+              padding: "7px 10px",
+              borderRadius: 999,
+              border: `1px solid ${T.accent}`,
+              background: `radial-gradient(circle at 0% 0%, ${T.accent40}, transparent 65%)`,
+              textAlign: "center",
+              fontSize: 13,
+              fontWeight: 900,
+              textTransform: "uppercase",
+              letterSpacing: 0.9,
+              color: T.accent,
+              textShadow: `
+                0 0 8px ${T.accent},
+                0 0 16px ${T.accentGlow ?? T.accent}
+              `,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {currentModeLabel}
           </div>
 
-          {/* =======================
-              LISTE JOUEURS (UNIQUEMENT EN MODE "locals")
-              ======================= */}
-          {mode === "locals" && (
-            <div style={{ ...card, marginBottom: 12 }}>
-              {/* Titre + texte + SYNC */}
+          {/* Flèche droite */}
+          <button
+            type="button"
+            onClick={goNextMode}
+            disabled={!canScrollModes}
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 999,
+              border: `1px solid ${T.accent50}`,
+              background: canScrollModes
+                ? `radial-gradient(circle at 70% 30%, ${T.accent40}, transparent 55%)`
+                : "rgba(0,0,0,.45)",
+              color: T.accent,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: canScrollModes ? "pointer" : "default",
+              fontSize: 13,
+            }}
+          >
+            ▶
+          </button>
+        </div>
+      </div>
+
+      {/* CONTENU PRINCIPAL : carrousel profil + panels pilotés par currentMode */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "flex-column" as any,
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
+        {/* --------- CARROUSEL PROFIL --------- */}
+        <div style={card}>
+          {filteredPlayers.length ? (
+            <>
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  marginBottom: 8,
+                  gap: 8,
                 }}
               >
-                <div
+                {/* Flèche gauche */}
+                <button
+                  type="button"
+                  onClick={goPrevPlayer}
+                  disabled={!canScrollPlayers}
                   style={{
-                    fontSize: 12,
-                    fontWeight: 800,
-                    textTransform: "uppercase",
-                    letterSpacing: 0.6,
-                    color: T.gold,
-                  }}
-                >
-                  Joueurs ({allPlayers.length})
-                </div>
-
-                <div
-                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: 999,
+                    border: `1px solid ${T.text30}`,
+                    background: canScrollPlayers
+                      ? `radial-gradient(circle at 30% 30%, ${T.text30}, transparent 55%)`
+                      : "rgba(0,0,0,.45)",
+                    color: T.text,
                     display: "flex",
                     alignItems: "center",
-                    gap: 8,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: T.text70,
-                    }}
-                  >
-                    Swipe horizontal pour changer
-                  </div>
-
-                  {/* 🔁 SYNC depuis la vue profils locaux */}
-                  <GoldPill
-                    active={false}
-                    onClick={() => go("sync_center")}
-                    style={{ fontSize: 11, padding: "4px 10px" }}
-                  >
-                    SYNC
-                  </GoldPill>
-                </div>
-              </div>
-
-              {/* Carrousel horizontal style X01ConfigV3 */}
-              {allPlayers.length ? (
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 12,
-                    overflowX: "auto",
-                    paddingBottom: 4,
-                    WebkitOverflowScrolling: "touch",
-                  }}
-                >
-                  {allPlayers.map((p) => {
-                    const selected = p.id === selectedPlayer?.id;
-                    const AVA = 44;
-                    const primary = T.gold;
-
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setSelectedPlayerId(p.id)}
-                        style={{
-                          flex: "0 0 auto",
-                          minWidth: 86,
-                          maxWidth: 104,
-                          border: "none",
-                          outline: "none",
-                          background: "transparent",
-                          padding: 0,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div
-                          style={{
-                            borderRadius: 20,
-                            padding: 8,
-                            background: selected
-                              ? "rgba(0,0,0,0.85)"
-                              : "rgba(0,0,0,0.7)",
-                            border: selected
-                              ? `1px solid ${primary}`
-                              : `1px solid rgba(255,255,255,0.06)`,
-                            boxShadow: selected
-                              ? `0 0 18px ${primary}66`
-                              : "0 8px 18px rgba(0,0,0,0.6)",
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
-                          }}
-                        >
-                          {/* Médaillon avatar façon X01ConfigV3 */}
-                          <div
-                            style={{
-                              width: AVA + 10,
-                              height: AVA + 10,
-                              borderRadius: "50%",
-                              padding: 4,
-                              background: selected
-                                ? `radial-gradient(circle at 30% 20%, ${primary}, transparent 60%)`
-                                : "radial-gradient(circle at 30% 20%, rgba(255,255,255,0.08), transparent 60%)",
-                              boxShadow: selected
-                                ? `0 0 16px ${primary}77`
-                                : "0 0 10px rgba(0,0,0,0.8)",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              marginBottom: 4,
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: AVA,
-                                height: AVA,
-                                borderRadius: "50%",
-                                overflow: "hidden",
-                                border: selected
-                                  ? `1px solid ${primary}`
-                                  : "1px solid rgba(255,255,255,0.16)",
-                                background: "#050509",
-                              }}
-                            >
-                              <ProfileAvatar
-                                size={AVA}
-                                dataUrl={p.avatarDataUrl || undefined}
-                                label={p.name?.[0]?.toUpperCase() || "?"}
-                                showStars={false}
-                              />
-                            </div>
-                          </div>
-
-                          {/* Nom */}
-                          <div
-                            style={{
-                              marginTop: 2,
-                              fontSize: 11,
-                              fontWeight: 700,
-                              textAlign: "center",
-                              color: selected ? primary : T.text,
-                              whiteSpace: "nowrap",
-                              textOverflow: "ellipsis",
-                              overflow: "hidden",
-                              maxWidth: 84,
-                            }}
-                          >
-                            {p.name || "Joueur"}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div
-                  style={{
-                    color: T.text70,
+                    justifyContent: "center",
+                    cursor: canScrollPlayers ? "pointer" : "default",
                     fontSize: 13,
                   }}
                 >
-                  Aucun joueur détecté.
+                  ◀
+                </button>
+
+                {/* Avatar XXL + nom (shimmer cartoon) */}
+                <div
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    justifyContent: "center",
+                    minWidth: 0,
+                  }}
+                >
+                  {selectedPlayer && (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 110,
+                          height: 110,
+                          borderRadius: "50%",
+                          overflow: "hidden",
+                          boxShadow: `0 0 18px ${T.accent}`,
+                        }}
+                      >
+                        <ProfileAvatar
+                          size={110}
+                          dataUrl={
+                            selectedPlayer.avatarDataUrl ?? undefined
+                          }
+                        />
+                      </div>
+
+                      <span
+                        className="dc-stats-name-cartoon"
+                        data-text={selectedPlayer?.name ?? "Joueur"}
+                        style={{
+                          marginTop: 2,
+                          color: T.accent,
+                          maxWidth: 220,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          textAlign: "center",
+                        }}
+                      >
+                        {selectedPlayer?.name ?? "Joueur"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Flèche droite */}
+                <button
+                  type="button"
+                  onClick={goNextPlayer}
+                  disabled={!canScrollPlayers}
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: 999,
+                    border: `1px solid ${T.text30}`,
+                    background: canScrollPlayers
+                      ? `radial-gradient(circle at 70% 30%, ${T.text30}, transparent 55%)`
+                      : "rgba(0,0,0,.45)",
+                    color: T.text,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: canScrollPlayers ? "pointer" : "default",
+                    fontSize: 13,
+                  }}
+                >
+                  ▶
+                </button>
+              </div>
+
+              {/* Option BOTS */}
+              <div
+                style={{
+                  marginTop: 6,
+                  display: "flex",
+                  justifyContent: "flex-end",
+                }}
+              >
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontSize: 10,
+                    color: T.text70,
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={showBots}
+                    onChange={(e) => setShowBots(e.target.checked)}
+                    style={{
+                      width: 12,
+                      height: 12,
+                      accentColor: T.accent,
+                    }}
+                  />
+                  <span>Inclure les BOTS</span>
+                </label>
+              </div>
+            </>
+          ) : (
+            <span style={{ color: T.text70, fontSize: 13 }}>
+              Aucun joueur trouvé.
+            </span>
+          )}
+        </div>
+
+        {/* ========= CONTENU PILOTÉ PAR LE CARROUSEL DE MODES ========= */}
+        {currentMode === "dashboard" && (
+          <>
+            <div style={row}>
+              {selectedPlayer ? (
+                <StatsPlayerDashboard
+                  data={buildDashboardForPlayer(
+                    selectedPlayer,
+                    records,
+                    quick || null
+                  )}
+                />
+              ) : (
+                <div style={{ color: T.text70, fontSize: 13 }}>
+                  Sélectionne un joueur pour afficher le dashboard.
                 </div>
               )}
             </div>
-          )}
 
-          {/* =======================
-              SOUS-ONGLETS (Dashboard / X01 / Cricket)
-              ======================= */}
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              marginBottom: 10,
-              flexWrap: "wrap",
-            }}
-          >
-            <GoldPill
-              active={statsSubTab === "dashboard"}
-              onClick={() => setStatsSubTab("dashboard")}
-            >
-              Vue générale
-            </GoldPill>
+            {/* RÉSUMÉ TRAINING (X01 + Horloge) */}
+            {selectedPlayer && (
+              <div style={{ ...card, marginTop: 8 }}>
+                <StatsTrainingSummary profileId={selectedPlayer.id} />
+              </div>
+            )}
 
-            <GoldPill
-              active={statsSubTab === "x01_multi"}
-              onClick={() => setStatsSubTab("x01_multi")}
-            >
-              X01 multi
-            </GoldPill>
+            {/* RÉSUMÉ CRICKET */}
+            {selectedPlayer && cricketStats && (
+              <div style={{ ...card, marginTop: 8 }}>
+                <StatsCricketDashboard stats={cricketStats} />
+              </div>
+            )}
+          </>
+        )}
 
-            <GoldPill
-              active={statsSubTab === "cricket"}
-              onClick={() => setStatsSubTab("cricket")}
-            >
-              Cricket
-            </GoldPill>
+        {currentMode === "x01_multi" && (
+          <div style={card}>
+            {selectedPlayer ? (
+              <X01MultiStatsTabFull
+                records={records}
+                playerId={selectedPlayer.id}
+              />
+            ) : (
+              <div style={{ color: T.text70, fontSize: 13 }}>
+                Sélectionne un joueur pour afficher les stats X01 multi.
+              </div>
+            )}
           </div>
+        )}
 
-          {/* =======================
-              CONTENU SELON SOUS-ONGLET
-              ======================= */}
-          {statsSubTab === "dashboard" && (
-            <>
-              {selectedPlayer ? (
-                <>
-                  {/* Stats globales joueur */}
-                  <StatsPlayerDashboard
-                    data={buildDashboardForPlayer(
-                      selectedPlayer,
-                      records,
-                      quick || null
-                    )}
-                  />
+        {currentMode === "cricket" && (
+          <div style={card}>
+            {cricketStats ? (
+              <StatsCricketDashboard stats={cricketStats} />
+            ) : (
+              <div style={{ color: T.text70, fontSize: 13 }}>
+                Aucune statistique Cricket disponible.
+              </div>
+            )}
+          </div>
+        )}
 
-                  {/* Résumé Training (X01 + Horloge) */}
-                  <div style={{ marginTop: 12 }}>
-                    <StatsTrainingSummary profileId={selectedPlayer.id} />
-                  </div>
-
-                  {/* Petit résumé Cricket */}
-                  <div style={{ ...card, marginTop: 12 }}>
-                    <div
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 800,
-                        textTransform: "uppercase",
-                        color: T.gold,
-                        textShadow:
-                          "0 0 6px rgba(246,194,86,.9), 0 0 14px rgba(246,194,86,.45)",
-                        letterSpacing: 0.8,
-                        marginBottom: 6,
-                      }}
-                    >
-                      Cricket
-                    </div>
-
-                    {cricketLoading && (
-                      <div style={{ fontSize: 12, color: T.text70 }}>
-                        Chargement des stats Cricket...
-                      </div>
-                    )}
-
-                    {!cricketLoading && !cricketStats && (
-                      <div style={{ fontSize: 12, color: T.text70 }}>
-                        Aucune partie Cricket enregistrée pour ce joueur.
-                      </div>
-                    )}
-
-                    {!cricketLoading && cricketStats && (
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: 8,
-                          fontSize: 12,
-                          color: T.text70,
-                        }}
-                      >
-                        <div>
-                          <div>Parties totales</div>
-                          <div style={{ fontWeight: 800, color: "#FFF" }}>
-                            {cricketStats.matchesTotal}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div>Record points / partie</div>
-                          <div style={{ fontWeight: 800, color: "#FFF" }}>
-                            {cricketStats.bestPointsInMatch ?? 0}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div>Solo (V / D)</div>
-                          <div style={{ fontWeight: 800, color: "#7CFF9A" }}>
-                            {cricketStats.winsSolo} / {cricketStats.lossesSolo}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div>Équipes (V / D)</div>
-                          <div style={{ fontWeight: 800, color: "#7CFF9A" }}>
-                            {cricketStats.winsTeams} / {cricketStats.lossesTeams}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div style={card}>
-                  Sélectionne un joueur pour afficher ses stats.
-                </div>
-              )}
-            </>
-          )}
-
-{statsSubTab === "x01_multi" && (
-  selectedPlayer ? (
-    <X01MultiStatsTabFull
-      records={records}
-      playerId={selectedPlayer.id}
-    />
-  ) : (
-    <div
-      style={{
-        padding: 16,
-        borderRadius: 16,
-        border: "1px solid rgba(255,255,255,.1)",
-        background:
-          "linear-gradient(180deg,#15171B,#0F1013)",
-        fontSize: 12,
-        color: "rgba(255,255,255,.7)",
-        textAlign: "center",
-      }}
-    >
-      Sélectionne un joueur pour afficher ses stats X01.
-    </div>
-  )
-)}
-
-          {statsSubTab === "cricket" && (
-            <>
-              {selectedPlayer ? (
-                <StatsCricketDashboard profileId={selectedPlayer.id} />
-              ) : (
-                <div style={card}>
-                  Sélectionne un joueur pour afficher ses stats Cricket.
-                </div>
-              )}
-            </>
-          )}
-        </>
-      )}
+        {currentMode === "history" && (
+          <div style={card}>
+            <HistoryPage go={go} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
-

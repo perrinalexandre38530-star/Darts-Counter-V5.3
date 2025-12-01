@@ -1,57 +1,58 @@
 // =============================================================
 // src/pages/X01OnlineSetup.tsx
 // Pré-salle X01 Online (FULLWEB)
-// - Reçoit un lobbyCode depuis FriendsPage (props.lobbyCode)
+// - Appelé depuis App.tsx comme :
+//     <X01OnlineSetup store={store} go={go} params={routeParams} />
+// - Lit le lobbyCode dans params.lobbyCode
+// - Calcule les defaults à partir de store.settings
 // - Se connecte au Worker Cloudflare via useOnlineRoom
 // - Affiche le code, l'état de connexion et la liste des joueurs
 // - Bouton "Démarrer X01" :
 //     • envoie startX01Match au Worker (ordre des joueurs)
-//     • appelle onStart(...) pour lancer le X01 local (X01Play)
+//     • fait go("x01", { online: true, lobbyCode, fresh: ... })
 // - Bouton debug pour afficher l'état brut RoomState (JSON)
 // =============================================================
 
 import React from "react";
-import type { Profile } from "../lib/types";
+import type { Store } from "../lib/types";
 import { useOnlineRoom } from "../online/client/useOnlineRoom";
 
-type StartOpts = {
-  start: 301 | 501 | 701 | 901;
-  doubleOut: boolean;
-};
+type StartScore = 301 | 501 | 701 | 901;
 
 type Props = {
-  profile: Profile | null;
-  defaults?: StartOpts; // ⚠️ peut être undefined, on gère en interne
-  lobbyCode?: string | null;
-  onBack: () => void;
-  onStart: (opts: StartOpts) => void;
+  store: Store;
+  go: (tab: any, params?: any) => void;
+  params?: any;
 };
 
-export default function X01OnlineSetup({
-  profile,
-  defaults,
-  lobbyCode,
-  onBack,
-  onStart,
-}: Props) {
-  const activeProfile = profile;
+export default function X01OnlineSetup({ store, go, params }: Props) {
+  // Profil actif (ou premier profil en fallback)
+  const activeProfile =
+    (store.profiles || []).find((p) => p.id === store.activeProfileId) ||
+    (store.profiles || [])[0] ||
+    null;
 
-  const rawCode = (lobbyCode || "").toString().trim().toUpperCase();
+  // Code salon reçu via params.lobbyCode
+  const rawCode = (params?.lobbyCode || "").toString().trim().toUpperCase();
   const effectiveCode = rawCode || "----";
 
   // --------------------------------------------
-  // Sécurisation des defaults
+  // Defaults start / double-out
   // --------------------------------------------
-  const allowedStarts: StartOpts["start"][] = [301, 501, 701, 901];
+  const allowedStarts: StartScore[] = [301, 501, 701, 901];
 
-  const defaultStartFromProps = defaults?.start;
-  const startScore: StartOpts["start"] = allowedStarts.includes(
-    defaultStartFromProps as any
-  )
-    ? (defaultStartFromProps as StartOpts["start"])
+  const startRaw: number =
+    (params?.start as number | undefined) ??
+    (store.settings?.defaultX01 as number | undefined) ??
+    501;
+
+  const startScore: StartScore = allowedStarts.includes(startRaw as any)
+    ? (startRaw as StartScore)
     : 501;
 
-  const defaultDoubleOut: boolean = defaults?.doubleOut ?? true;
+  const defaultDoubleOut: boolean =
+    (params?.doubleOut as boolean | undefined) ??
+    (store.settings?.doubleOut ?? true);
 
   // Hook WebSocket temps réel
   const {
@@ -93,19 +94,19 @@ export default function X01OnlineSetup({
       ? "#ffd56a"
       : "#ff8a8a";
 
-      const clients = roomState?.clients || [];
-      const match: any = roomState?.match || null;
-    
-      // Exemple d'ordre par défaut pour démarrer une manche
-      const defaultOrder =
-        clients.length > 0
-          ? clients.map((c) => ({ id: c.id, name: c.name }))
-          : [
-              {
-                id: (activeProfile?.id as any) || "local",
-                name: activeProfile?.name || "Joueur",
-              },
-            ];
+  const clients = roomState?.clients || [];
+  const match: any = roomState?.match || null; // gardé pour le debug futur
+
+  // Exemple d'ordre par défaut pour démarrer une manche
+  const defaultOrder =
+    clients.length > 0
+      ? clients.map((c) => ({ id: c.id, name: c.name }))
+      : [
+          {
+            id: (activeProfile?.id as any) || "local",
+            name: activeProfile?.name || "Joueur",
+          },
+        ];
 
   const [showDebug, setShowDebug] = React.useState(false);
 
@@ -119,9 +120,14 @@ export default function X01OnlineSetup({
     });
 
     // 2) Lance le X01 local (X01Play) via App.tsx
-    onStart({
-      start: startScore,
-      doubleOut: defaultDoubleOut,
+    //    → App n'a plus besoin de onStart, il va créer la config
+    //      en mode ONLINE quand on passe { online: true }.
+    go("x01", {
+      resumeId: null,
+      fresh: Date.now(),
+      online: true,
+      lobbyCode: rawCode || null,
+      from: "online_fullweb",
     });
   }
 
@@ -567,7 +573,7 @@ export default function X01OnlineSetup({
       {/* Retour Friends / Home */}
       <button
         type="button"
-        onClick={onBack}
+        onClick={() => go("friends")}
         style={{
           marginTop: 4,
           width: "100%",
