@@ -3314,11 +3314,11 @@ function TrainingHitsBySegment({ sessions }: TrainingHitsBySegmentProps) {
 }
 export default function StatsHub({
   go,
-  tab, // plus utilisé mais gardé pour compat
+  tab, // "stats" | "training" | "history"
   memHistory,
   initialPlayerId,
   initialStatsSubTab,
-  mode = "active",
+  mode = "active", // "active" = joueur actif, "locals" = profils locaux + bots
   playerId,
 }: Props) {
   // Injection du CSS shimmer pour le nom du joueur
@@ -3348,7 +3348,14 @@ export default function StatsHub({
   );
   const totalModes = modeDefs.length;
 
-  const [modeIndex, setModeIndex] = React.useState(0);
+  // Permettre à StatsShell de pré-sélectionner un sous-onglet (dashboard / x01_multi)
+  const initialModeIndex = React.useMemo(() => {
+    if (!initialStatsSubTab) return 0;
+    const idx = modeDefs.findIndex((m) => m.key === initialStatsSubTab);
+    return idx >= 0 ? idx : 0;
+  }, [initialStatsSubTab, modeDefs]);
+
+  const [modeIndex, setModeIndex] = React.useState(initialModeIndex);
   const currentMode = modeDefs[modeIndex]?.key ?? "dashboard";
   const currentModeLabel =
     modeDefs[modeIndex]?.label ?? "Dashboard global";
@@ -3438,7 +3445,7 @@ export default function StatsHub({
   );
 
   // ---------- 3) Liste unique de joueurs trouvés dans l'historique ----------
-  const players = React.useMemo(() => {
+  const allPlayers = React.useMemo(() => {
     const map = new Map<string, PlayerLite>();
 
     for (const r of records) {
@@ -3457,36 +3464,65 @@ export default function StatsHub({
     return Array.from(map.values());
   }, [records]);
 
-  // ---------- 4) Sélection joueur + option BOTS ----------
+  // ---------- 4) Sélection joueur + option BOTS / mode actif vs locaux ----------
+
+  // Id du joueur actif transmis par StatsShell
+  const activePlayerId = playerId ?? initialPlayerId ?? null;
+
+  // Liste de joueurs selon le mode :
+  // - "active"  => un seul joueur : le joueur actif
+  // - "locals"  => tous les autres joueurs (sans le joueur actif)
+  // - fallback  => allPlayers
+  const playersForMode = React.useMemo(() => {
+    if (!allPlayers.length) return [];
+
+    if (mode === "active" && activePlayerId) {
+      const found = allPlayers.find((p) => p.id === activePlayerId);
+      return found ? [found] : [];
+    }
+
+    if (mode === "locals" && activePlayerId) {
+      return allPlayers.filter((p) => p.id !== activePlayerId);
+    }
+
+    return allPlayers;
+  }, [allPlayers, mode, activePlayerId]);
+
+  // Toggle "Inclure les BOTS" : ne sert vraiment que pour le mode "locals"
   const [showBots, setShowBots] = React.useState(false);
 
-  // Liste filtrée (option BOTS) + tri alpha
+  // Liste finale visible dans le carrousel
   const filteredPlayers = React.useMemo(() => {
-    if (!players.length) return [];
-    return players
+    if (!playersForMode.length) return [];
+    return playersForMode
       .slice()
       .sort((a, b) =>
         (a.name ?? "").localeCompare(b.name ?? "", "fr", {
           sensitivity: "base",
         })
       )
-      .filter((p) => showBots || !isBotPlayer(p));
-  }, [players, showBots]);
+      .filter((p) => {
+        // En mode "active", pas de notion de bots ici : on ne filtre pas
+        if (mode === "active") return true;
+        // En mode "locals", on laisse l'utilisateur décider avec showBots
+        return showBots || !isBotPlayer(p);
+      });
+  }, [playersForMode, showBots, mode]);
 
+  // Sélection courante
   const [selectedPlayerId, setSelectedPlayerId] =
     React.useState<string | null>(
-      initialPlayerId ?? playerId ?? null
+      activePlayerId ?? null
     );
 
   // Si le parent change initialPlayerId / playerId → on suit
   React.useEffect(() => {
-    if (initialPlayerId || playerId) {
-      setSelectedPlayerId(initialPlayerId ?? playerId ?? null);
+    if (activePlayerId) {
+      setSelectedPlayerId(activePlayerId);
     }
-  }, [initialPlayerId, playerId]);
+  }, [activePlayerId]);
 
-  // Si rien de sélectionné OU joueur filtré (ex: on décoche les BOTS)
-  // on prend le 1er dispo dans filteredPlayers
+  // Si rien de sélectionné OU joueur filtré → 1er dispo
   React.useEffect(() => {
     if (!filteredPlayers.length) {
       setSelectedPlayerId(null);
@@ -3513,7 +3549,9 @@ export default function StatsHub({
     return filteredPlayers.findIndex((p) => p.id === selectedPlayer.id);
   }, [filteredPlayers, selectedPlayer]);
 
-  const canScrollPlayers = filteredPlayers.length > 1;
+  // 👉 IMPORTANT : en mode "active", on coupe le slide !
+  const canScrollPlayers =
+    mode === "locals" && filteredPlayers.length > 1;
 
   const goPrevPlayer = React.useCallback(() => {
     if (!canScrollPlayers || !filteredPlayers.length) return;
@@ -3555,7 +3593,41 @@ export default function StatsHub({
   if (nameLen > 22) nameFontSize = 16;
   if (nameLen > 28) nameFontSize = 14;
 
-  // ---------- 6) RENDER ----------
+  // ============================================================
+  //  ROUTAGE PRINCIPAL PAR "tab" (StatsShell)
+  //  - tab = "training"  → plein écran TrainingX01StatsTab
+  //  - tab = "history"   → plein écran Historique
+  //  - tab = "stats" | undefined → centre de stats (code existant)
+  // ============================================================
+
+  if (tab === "training") {
+    // 🔁 Vue Training full : on affiche UNIQUEMENT les stats Training
+    return (
+      <div style={{ padding: 16, paddingBottom: 80 }}>
+        <TrainingX01StatsTab />
+      </div>
+    );
+  }
+
+  if (tab === "history") {
+    // 🔁 Vue Historique full : uniquement HistoryPage
+    return (
+      <div style={{ padding: 16, paddingBottom: 80 }}>
+        <div style={card}>
+          <HistoryPage go={go} />
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================
+  //  VUE PAR DÉFAUT : "STATS"
+  //  - ici les modes dashboard / x01_multi / cricket / history
+  //  - et c'est ici que StatsShell envoie :
+  //      • mode="active"  → Stats NOM DU JOUEUR (pas de slide, pas de BOTS)
+  //      • mode="locals"  → Stats profils locaux (BOTS possibles, sans joueur actif)
+  // ============================================================
+
   return (
     <div style={{ padding: 16, paddingBottom: 80 }}>
       {/* HEADER : titre centré + carrousel modes */}
@@ -3578,7 +3650,7 @@ export default function StatsHub({
             color: T.accent ?? T.gold,
             textShadow: `
               0 0 10px ${T.accent ?? T.gold},
-              0 0 22px ${T.accentGlow ?? T.gold}
+             0 0 22px ${T.accentGlow ?? T.gold}
             `,
           }}
         >
@@ -3685,7 +3757,6 @@ export default function StatsHub({
       <div
         style={{
           display: "flex",
-          flexDirection: "flex-column" as any,
           flexDirection: "column",
           gap: 12,
         }}
@@ -3837,37 +3908,39 @@ export default function StatsHub({
                 </button>
               </div>
 
-              {/* Option BOTS */}
-              <div
-                style={{
-                  marginTop: 6,
-                  display: "flex",
-                  justifyContent: "flex-end",
-                }}
-              >
-                <label
+              {/* Option BOTS — UNIQUEMENT en mode "locals" */}
+              {mode === "locals" && (
+                <div
                   style={{
+                    marginTop: 6,
                     display: "flex",
-                    alignItems: "center",
-                    gap: 4,
-                    fontSize: 10,
-                    color: T.text70,
-                    cursor: "pointer",
+                    justifyContent: "flex-end",
                   }}
                 >
-                  <input
-                    type="checkbox"
-                    checked={showBots}
-                    onChange={(e) => setShowBots(e.target.checked)}
+                  <label
                     style={{
-                      width: 12,
-                      height: 12,
-                      accentColor: T.accent,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      fontSize: 10,
+                      color: T.text70,
+                      cursor: "pointer",
                     }}
-                  />
-                  <span>Inclure les BOTS</span>
-                </label>
-              </div>
+                  >
+                    <input
+                      type="checkbox"
+                      checked={showBots}
+                      onChange={(e) => setShowBots(e.target.checked)}
+                      style={{
+                        width: 12,
+                        height: 12,
+                        accentColor: T.accent,
+                      }}
+                    />
+                    <span>Inclure les BOTS</span>
+                  </label>
+                </div>
+              )}
             </>
           ) : (
             <span style={{ color: T.text70, fontSize: 13 }}>
