@@ -22,44 +22,51 @@ import StatsCricketDashboard from "../components/StatsCricketDashboard";
 import X01MultiStatsTabFull from "../stats/X01MultiStatsTabFull";
 import StatsTrainingSummary from "../components/stats/StatsTrainingSummary";
 
-// Effet "shimmer" à l’intérieur des lettres du nom joueur
+// Effet "shimmer" à l'intérieur des lettres du nom du joueur
 const statsNameCss = `
-.dc-stats-name-cartoon {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-weight: 900;
-  font-size: 22px;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  text-shadow:
-    0 0 4px rgba(0,0,0,0.6),
-    0 0 12px currentColor;
-  display: inline-block;
+.dc-stats-name-wrapper {
   position: relative;
-  color: currentColor;
+  display: inline-block;
+  font-weight: 900;
 }
 
-/* couche brillante qui se balade à l'intérieur des lettres */
-.dc-stats-name-cartoon::before {
-  content: attr(data-text);
+/* couche de base, couleur thème */
+.dc-stats-name-base {
+  color: var(--dc-accent, #f6c256);
+  text-shadow:
+    0 0 6px rgba(0,0,0,0.8),
+    0 0 14px rgba(0,0,0,0.9);
+}
+
+/* couche animée : gradient qui défile à l'intérieur des lettres */
+.dc-stats-name-shimmer {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
+  color: transparent;
+  background-image: linear-gradient(
     90deg,
-    rgba(255,255,255,0.0) 0%,
-    rgba(255,255,255,0.7) 45%,
-    rgba(255,255,255,0.0) 90%
+    transparent 0%,
+    rgba(255,255,255,0.15) 35%,
+    rgba(255,255,255,0.95) 50%,
+    rgba(255,255,255,0.15) 65%,
+    transparent 100%
   );
-  background-size: 180% auto;
+  background-size: 200% 100%;
+  background-position: 0% 0%;
   -webkit-background-clip: text;
   background-clip: text;
-  color: transparent;
-  animation: dcStatsNameShimmer 2.6s linear infinite;
+  animation: dcStatsNameShimmer 2.4s linear infinite;
   pointer-events: none;
 }
 
+/* animation du balayage gauche -> droite */
 @keyframes dcStatsNameShimmer {
-  0%   { background-position: -60% 0; }
-  100% { background-position: 160% 0; }
+  0% {
+    background-position: -80% 0%;
+  }
+  100% {
+    background-position: 120% 0%;
+  }
 }
 `;
 
@@ -67,6 +74,7 @@ function useInjectStatsNameCss() {
   React.useEffect(() => {
     if (typeof document === "undefined") return;
     if (document.getElementById("dc-stats-name-css")) return;
+
     const style = document.createElement("style");
     style.id = "dc-stats-name-css";
     style.innerHTML = statsNameCss;
@@ -3696,57 +3704,84 @@ export default function StatsHub({
                   ◀
                 </button>
 
-                {/* Avatar XXL + nom (shimmer cartoon) */}
-                <div
-                  style={{
-                    flex: 1,
-                    display: "flex",
-                    justifyContent: "center",
-                    minWidth: 0,
-                  }}
-                >
-                  {selectedPlayer && (
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 110,
-                          height: 110,
-                          borderRadius: "50%",
-                          overflow: "hidden",
-                          boxShadow: `0 0 18px ${T.accent}`,
-                        }}
-                      >
-                        <ProfileAvatar
-                          size={110}
-                          dataUrl={
-                            selectedPlayer.avatarDataUrl ?? undefined
-                          }
-                        />
-                      </div>
+                {/* Avatar XXL + nom (shimmer) */}
+<div
+  style={{
+    flex: 1,
+    display: "flex",
+    justifyContent: "center",
+    minWidth: 0,
+  }}
+>
+  {selectedPlayer && (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 4,
+      }}
+    >
+      <div
+        style={{
+          width: 110,
+          height: 110,
+          borderRadius: "50%",
+          overflow: "hidden",
+          boxShadow: `0 0 18px ${T.accent}`,
+        }}
+      >
+        <ProfileAvatar
+          size={110}
+          dataUrl={selectedPlayer.avatarDataUrl ?? undefined}
+        />
+      </div>
 
-                      <span
-                        className="dc-stats-name-cartoon"
-                        data-text={selectedPlayer?.name ?? "Joueur"}
-                        style={{
-                          marginTop: 2,
-                          color: T.accent,
-                          maxWidth: 220,
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          textAlign: "center",
-                        }}
-                      >
-                        {selectedPlayer?.name ?? "Joueur"}
-                      </span>
-                    </div>
+      <span
+        className="dc-stats-name-wrapper"
+        style={
+          {
+            "--dc-accent": T.accent,
+            "--dc-accent-soft": T.accent20,
+            maxWidth: 200,
+          } as React.CSSProperties
+        }
+      >
+        {/* couche base couleur thème (police plus cartoon / épaisse) */}
+        <span
+          className="dc-stats-name-base"
+          style={{
+            fontSize: 18,
+            fontWeight: 900,
+            fontFamily: '"Luckiest Guy","Impact","system-ui",sans-serif',
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            display: "block",
+            textAlign: "center",
+          }}
+        >
+          {selectedPlayer.name}
+        </span>
+
+        {/* couche shimmer à l’intérieur des lettres */}
+        <span
+          className="dc-stats-name-shimmer"
+          style={{
+            fontSize: 18,
+            fontWeight: 900,
+            fontFamily: '"Luckiest Guy","Impact","system-ui",sans-serif',
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            display: "block",
+            textAlign: "center",
+          }}
+        >
+          {selectedPlayer.name}
+        </span>
+      </span>
+    </div>
                   )}
                 </div>
 
