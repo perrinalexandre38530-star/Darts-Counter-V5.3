@@ -5,74 +5,69 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../contexts/ThemeContext";
 
-// CSS global : pulse + reflets type logo Home (version sobre)
-const playerNamePulseCss = `
-@keyframes dcPlayerNamePulse {
-  0% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.04);
-  }
-  100% {
-    transform: scale(1.01);
-  }
-}
-
-@keyframes dcPlayerNameShine {
-  0% {
-    transform: translateX(-140%) skewX(-18deg);
-    opacity: 0;
-  }
-  35% {
-    opacity: 0;
-  }
-  45% {
-    opacity: 0.65;
-  }
-  60% {
-    transform: translateX(140%) skewX(-18deg);
-    opacity: 0;
-  }
-  100% {
-    transform: translateX(140%) skewX(-18deg);
-    opacity: 0;
-  }
-}
-
-.dc-player-name {
+/* CSS global : shimmer + zoom léger, même logique que StatsHub/Home */
+const statsNameCss = `
+.dc-stats-name-wrapper {
   position: relative;
-  display: inline-block;
-  overflow: hidden;
+  isolation: isolate;
 }
 
-.dc-player-name::after {
-  content: "";
+.dc-stats-name-base,
+.dc-stats-name-shimmer {
+  position: relative;
+}
+
+.dc-stats-name-base {
+  color: var(--dc-accent, #f6c256);
+  text-shadow:
+    0 0 4px rgba(0,0,0,0.9),
+    0 0 10px var(--dc-accent-soft, rgba(246,194,86,0.4)),
+    0 0 18px var(--dc-accent-soft, rgba(246,194,86,0.4));
+}
+
+.dc-stats-name-shimmer {
   position: absolute;
-  top: -40%;
-  left: -40%;
-  width: 70%;
-  height: 180%;
+  inset: 0;
   background: linear-gradient(
     120deg,
-    transparent,
-    rgba(255,255,255,0.9),
-    transparent
+    transparent 0%,
+    rgba(255,255,255,0.1) 20%,
+    rgba(255,255,255,0.95) 50%,
+    rgba(255,255,255,0.15) 80%,
+    transparent 100%
   );
-  opacity: 0;
-  pointer-events: none;
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  opacity: 0.9;
   mix-blend-mode: screen;
-  animation: dcPlayerNameShine 5.2s ease-in-out infinite;
+  animation: dcStatsNameShimmer 3.6s ease-in-out infinite;
+}
+
+@keyframes dcStatsNameShimmer {
+  0% {
+    background-position: -80% 0;
+    transform: scale(1);
+  }
+  45% {
+    background-position: 130% 0;
+    transform: scale(1.05);
+  }
+  100% {
+    background-position: 130% 0;
+    transform: scale(1);
+  }
 }
 `;
 
-function useInjectPlayerNameCss() {
+function useInjectStatsNameCss() {
   React.useEffect(() => {
     if (typeof document === "undefined") return;
-    if (document.getElementById("dc-player-name-css")) return;
+    if (document.getElementById("dc-stats-name-css")) return;
     const style = document.createElement("style");
-    style.id = "dc-player-name-css";
-    style.innerHTML = playerNamePulseCss;
+    style.id = "dc-stats-name-css";
+    style.innerHTML = statsNameCss;
     document.head.appendChild(style);
   }, []);
 }
@@ -316,7 +311,6 @@ function LineChart({
       return { y: y(val), label: Math.round(val).toString() };
     });
 
-    // 🔧 FIX : on renvoie bien "a" et pas "area"
     return { path: d, area: a, xTicks, yTicks };
   }, [pts, height, padding, svgW]);
 
@@ -385,7 +379,6 @@ function LineChart({
     </section>
   );
 }
-
 
 /* ---------- Bar chart (responsive, no overflow) ---------- */
 function BarChart({
@@ -474,11 +467,12 @@ function BarChart({
 
 /* ---------- Composant principal ---------- */
 export default function StatsPlayerDashboard({ data }: { data: PlayerDashboardStats }) {
-  // Injection CSS pour l'anim du nom de joueur
-  useInjectPlayerNameCss();
+  // Injection CSS shimmer nom joueur
+  useInjectStatsNameCss();
 
   const { theme } = useTheme();
   const accent = theme?.primary ?? T.gold;
+  const accentSoft = (theme as any)?.accent20 ?? `${accent}33`;
 
   // Sécurité : si jamais "data" n'arrive pas
   if (!data) {
@@ -497,20 +491,7 @@ export default function StatsPlayerDashboard({ data }: { data: PlayerDashboardSt
     );
   }
 
-  // Glow simple + légère pulsation, couleur = theme.primary
-  const playerNameStyle: React.CSSProperties = {
-    fontWeight: 900,
-    letterSpacing: 0.8,
-    color: accent,
-    textShadow: `
-      0 0 4px ${accent}aa,
-      0 0 10px ${accent}88,
-      0 0 18px ${accent}55
-    `,
-    animation: "dcPlayerNamePulse 3.4s ease-in-out infinite",
-    transformOrigin: "center",
-    whiteSpace: "nowrap",
-  };
+  const profileName = data.playerName?.trim() || "—";
 
   // --- Normalisation stats ---
   const avg3 =
@@ -555,8 +536,48 @@ export default function StatsPlayerDashboard({ data }: { data: PlayerDashboardSt
           <div>
             <H1>
               Statistiques —{" "}
-              <span className="dc-player-name" style={playerNameStyle}>
-                {data.playerName}
+              <span
+                className="dc-stats-name-wrapper"
+                style={
+                  {
+                    "--dc-accent": accent,
+                    "--dc-accent-soft": accentSoft,
+                    maxWidth: "80vw",
+                    display: "inline-block",
+                  } as React.CSSProperties
+                }
+              >
+                <span
+                  className="dc-stats-name-base"
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 900,
+                    fontFamily:
+                      '"Luckiest Guy","Impact","system-ui",sans-serif',
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    display: "block",
+                  }}
+                >
+                  {profileName}
+                </span>
+
+                <span
+                  className="dc-stats-name-shimmer"
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 900,
+                    fontFamily:
+                      '"Luckiest Guy","Impact","system-ui",sans-serif',
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    display: "block",
+                  }}
+                >
+                  {profileName}
+                </span>
               </span>
             </H1>
             <Sub>Analyse des performances par joueur — X01, Cricket & entraînements</Sub>

@@ -1847,6 +1847,7 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
             })()}
           </div>
 
+
             {/* ====== STATS MATCHS X01 — DUO / MULTI / TEAM ====== */}
 <div style={{ ...card }}>
   <div
@@ -1892,11 +1893,7 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
     </div>
 
     {/* Lignes DUO */}
-    {[
-      "Matchs duo",
-      "Sets duo",
-      "Legs duo",
-    ].map((label) => (
+    {["Matchs duo", "Sets duo", "Legs duo"].map((label) => (
       <div key={label} style={statRowBox}>
         <span style={{ flex: 2, textAlign: "left" }}>{label}</span>
         <span
@@ -1951,80 +1948,162 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
     </div>
 
     {/* Lignes MULTI */}
-    {[
-      "Matchs multi",
-      "Legs Win multi",
-      "Finish (legs terminés à 0)",
-    ].map((label) => (
-      <div key={label} style={statRowBox}>
-        <span style={{ flex: 2, textAlign: "left" }}>{label}</span>
-        <span
-          style={{
-            flex: 1,
-            textAlign: "right",
-            color: "#E5FFEF",
-          }}
-        >
-          0 / 0
-        </span>
-        <span
-          style={{
-            flex: 1,
-            textAlign: "right",
-            color: "#7CFF9A",
-          }}
-        >
-          0.0%
-        </span>
-      </div>
-    ))}
+    {["Matchs multi", "Legs Win multi", "Finish (legs terminés à 0)"].map(
+      (label) => (
+        <div key={label} style={statRowBox}>
+          <span style={{ flex: 2, textAlign: "left" }}>{label}</span>
+          <span
+            style={{
+              flex: 1,
+              textAlign: "right",
+              color: "#E5FFEF",
+            }}
+          >
+            0 / 0
+          </span>
+          <span
+            style={{
+              flex: 1,
+              textAlign: "right",
+              color: "#7CFF9A",
+            }}
+          >
+            0.0%
+          </span>
+        </div>
+      )
+    )}
 
-    {/* Classements 1er / 2e / 3e */}
+    {/* PODIUMS 1er / 2e / 3e */}
     <div
       style={{
         marginTop: 8,
-        display: "flex",
-        justifyContent: "space-between",
-        gap: 8,
       }}
     >
-      {[
-        { label: "1er", color: T.gold },
-        { label: "2e", color: "#E0E0E0" },
-        { label: "3e", color: "#B0BEC5" },
-      ].map((rank) => (
+      <div
+        style={{
+          fontSize: 10,
+          textTransform: "uppercase",
+          color: T.text70,
+          marginBottom: 4,
+        }}
+      >
+        Podiums
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
+        {[
+          { label: "1er", color: T.gold },
+          { label: "2e", color: "#E0E0E0" },
+          { label: "3e", color: "#B0BEC5" },
+        ].map((rank) => (
+          <div
+            key={rank.label}
+            style={{
+              flex: 1,
+              borderRadius: 14,
+              padding: "6px 8px",
+              background: "rgba(0,0,0,.45)",
+              border: "1px solid rgba(255,255,255,.12)",
+              textAlign: "center",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 10,
+                textTransform: "uppercase",
+                color: T.text70,
+                marginBottom: 2,
+              }}
+            >
+              {rank.label}
+            </div>
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 800,
+                color: rank.color,
+              }}
+            >
+              0
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    {/* Tableau classements 4e → 10e + finish, juste sous les PODIUMS */}
+    <div
+      style={{
+        marginTop: 8,
+        borderRadius: 12,
+        padding: "6px 10px 8px",
+        background: "rgba(0,0,0,.45)",
+        border: "1px solid rgba(255,255,255,.08)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          textTransform: "uppercase",
+          color: T.text70,
+          marginBottom: 4,
+        }}
+      >
+        Multi / classements &amp; finish
+      </div>
+
+      {/* Header mini-tableau */}
+      <div
+        style={{
+          display: "flex",
+          fontSize: 10,
+          color: T.text70,
+          marginBottom: 2,
+        }}
+      >
+        <div style={{ flex: 1, textAlign: "left" }}>Place</div>
+        <div style={{ width: 60, textAlign: "right" }}>Total</div>
+      </div>
+
+      {/* Lignes 4e → 10e */}
+      {[4, 5, 6, 7, 8, 9, 10].map((rank) => (
         <div
-          key={rank.label}
+          key={rank}
           style={{
-            flex: 1,
-            borderRadius: 14,
-            padding: "6px 8px",
-            background: "rgba(0,0,0,.45)",
-            border: "1px solid rgba(255,255,255,.12)",
-            textAlign: "center",
+            display: "flex",
+            fontSize: 10,
+            color: T.text,
+            lineHeight: 1.5,
           }}
         >
-          <div
-            style={{
-              fontSize: 10,
-              textTransform: "uppercase",
-              color: T.text70,
-              marginBottom: 2,
-            }}
-          >
-            {rank.label}
-          </div>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 800,
-              color: rank.color,
-            }}
-          >
-            0
-          </div>
+          <div style={{ flex: 1, textAlign: "left" }}>{rank}e</div>
+          <div style={{ width: 60, textAlign: "right" }}>0</div>
         </div>
       ))}
+
+      {/* Ligne FINISH */}
+      <div
+        style={{
+          marginTop: 6,
+          paddingTop: 4,
+          borderTop: "1px solid rgba(255,255,255,.06)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          fontSize: 10,
+          color: T.text70,
+        }}
+      >
+        <span>Finish (0 atteint)</span>
+        <span style={{ color: "#7CFF9A", fontWeight: 700 }}>0 — 0.0%</span>
+      </div>
     </div>
   </div>
 
@@ -2092,7 +2171,7 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
   </div>
 </div>
 
-            {/* ====== MOYENNES / RECORDS / FAVORIS — MATCHS (présentation en colonnes) ====== */}
+{/* ====== MOYENNES / RECORDS / FAVORIS — MATCHS (présentation en colonnes) ====== */}
 <div style={{ ...card, marginTop: 12 }}>
   <div
     style={{
@@ -2263,6 +2342,89 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
             }}
           >
             - / -
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* FAVORIS */}
+    <div>
+      <div
+        style={{
+          fontSize: 11,
+          textTransform: "uppercase",
+          color: "#4DB2FF",
+          fontWeight: 800,
+          marginBottom: 8,
+        }}
+      >
+        FAVORIS
+      </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <div
+            style={{
+              fontSize: 9,
+              color: T.text70,
+              textTransform: "uppercase",
+            }}
+          >
+            Adversaire favori
+          </div>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 800,
+              color: "#4DB2FF",
+            }}
+          >
+            -
+          </div>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div
+            style={{
+              fontSize: 9,
+              color: T.text70,
+              textTransform: "uppercase",
+            }}
+          >
+            Pire adversaire
+          </div>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 800,
+              color: "#4DB2FF",
+            }}
+          >
+            -
+          </div>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div
+            style={{
+              fontSize: 9,
+              color: T.text70,
+              textTransform: "uppercase",
+            }}
+          >
+            Coéquipier favori
+          </div>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 800,
+              color: "#4DB2FF",
+            }}
+          >
+            -
           </div>
         </div>
       </div>

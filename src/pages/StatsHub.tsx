@@ -3533,6 +3533,16 @@ export default function StatsHub({
     }
   }, [selectedPlayer?.id]);
 
+  // Taille du nom en fonction de la longueur
+  const selectedName = selectedPlayer?.name ?? "";
+  const nameLen = selectedName.length;
+  let nameFontSize = 22;
+
+  if (nameLen > 12) nameFontSize = 20;
+  if (nameLen > 16) nameFontSize = 18;
+  if (nameLen > 22) nameFontSize = 16;
+  if (nameLen > 28) nameFontSize = 14;
+
   // ---------- 6) RENDER ----------
   return (
     <div style={{ padding: 16, paddingBottom: 80 }}>
@@ -3705,83 +3715,88 @@ export default function StatsHub({
                 </button>
 
                 {/* Avatar XXL + nom (shimmer) */}
-<div
-  style={{
-    flex: 1,
-    display: "flex",
-    justifyContent: "center",
-    minWidth: 0,
-  }}
->
-  {selectedPlayer && (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 4,
-      }}
-    >
-      <div
-        style={{
-          width: 110,
-          height: 110,
-          borderRadius: "50%",
-          overflow: "hidden",
-          boxShadow: `0 0 18px ${T.accent}`,
-        }}
-      >
-        <ProfileAvatar
-          size={110}
-          dataUrl={selectedPlayer.avatarDataUrl ?? undefined}
-        />
-      </div>
+                <div
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    justifyContent: "center",
+                    minWidth: 0,
+                  }}
+                >
+                  {selectedPlayer && (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 110,
+                          height: 110,
+                          borderRadius: "50%",
+                          overflow: "hidden",
+                          boxShadow: `0 0 18px ${T.accent}`,
+                        }}
+                      >
+                        <ProfileAvatar
+                          size={110}
+                          dataUrl={
+                            selectedPlayer.avatarDataUrl ?? undefined
+                          }
+                        />
+                      </div>
 
-      <span
-        className="dc-stats-name-wrapper"
-        style={
-          {
-            "--dc-accent": T.accent,
-            "--dc-accent-soft": T.accent20,
-            maxWidth: 200,
-          } as React.CSSProperties
-        }
-      >
-        {/* couche base couleur thème (police plus cartoon / épaisse) */}
-        <span
-          className="dc-stats-name-base"
-          style={{
-            fontSize: 18,
-            fontWeight: 900,
-            fontFamily: '"Luckiest Guy","Impact","system-ui",sans-serif',
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            display: "block",
-            textAlign: "center",
-          }}
-        >
-          {selectedPlayer.name}
-        </span>
+                      <span
+                        className="dc-stats-name-wrapper"
+                        style={
+                          {
+                            "--dc-accent": T.accent,
+                            "--dc-accent-soft": T.accent20,
+                            maxWidth: "80vw", // ne dépasse pas l'écran
+                            display: "block",
+                          } as React.CSSProperties
+                        }
+                      >
+                        {/* couche base couleur thème, police bien épaisse */}
+                        <span
+                          className="dc-stats-name-base"
+                          style={{
+                            fontSize: nameFontSize,
+                            fontWeight: 900,
+                            fontFamily:
+                              '"Luckiest Guy","Impact","system-ui",sans-serif',
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            display: "block",
+                            textAlign: "center",
+                          }}
+                        >
+                          {selectedName}
+                        </span>
 
-        {/* couche shimmer à l’intérieur des lettres */}
-        <span
-          className="dc-stats-name-shimmer"
-          style={{
-            fontSize: 18,
-            fontWeight: 900,
-            fontFamily: '"Luckiest Guy","Impact","system-ui",sans-serif',
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            display: "block",
-            textAlign: "center",
-          }}
-        >
-          {selectedPlayer.name}
-        </span>
-      </span>
-    </div>
+                        {/* couche shimmer à l’intérieur des lettres */}
+                        <span
+                          className="dc-stats-name-shimmer"
+                          style={{
+                            fontSize: nameFontSize,
+                            fontWeight: 900,
+                            fontFamily:
+                              '"Luckiest Guy","Impact","system-ui",sans-serif',
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            display: "block",
+                            textAlign: "center",
+                          }}
+                        >
+                          {selectedName}
+                        </span>
+                      </span>
+                    </div>
                   )}
                 </div>
 

@@ -97,6 +97,76 @@ function fmtNum(v?: MaybeNum, decimals = 1): string {
 }
 
 /* ============================================================
+   CSS shimmer du nom (même logique que StatsHub)
+============================================================ */
+
+const statsNameCss = `
+.dc-stats-name-wrapper {
+  position: relative;
+  isolation: isolate;
+}
+
+.dc-stats-name-base,
+.dc-stats-name-shimmer {
+  position: relative;
+}
+
+.dc-stats-name-base {
+  color: var(--dc-accent, #f6c256);
+  text-shadow:
+    0 0 4px rgba(0,0,0,0.9),
+    0 0 10px var(--dc-accent-soft, rgba(246,194,86,0.4)),
+    0 0 18px var(--dc-accent-soft, rgba(246,194,86,0.4));
+}
+
+.dc-stats-name-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255,255,255,0.1) 20%,
+    rgba(255,255,255,0.95) 50%,
+    rgba(255,255,255,0.15) 80%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  opacity: 0.9;
+  mix-blend-mode: screen;
+  animation: dcStatsNameShimmer 3.6s ease-in-out infinite;
+}
+
+@keyframes dcStatsNameShimmer {
+  0% {
+    background-position: -80% 0;
+    transform: scale(1);
+  }
+  45% {
+    background-position: 130% 0;
+    transform: scale(1.05);
+  }
+  100% {
+    background-position: 130% 0;
+    transform: scale(1);
+  }
+}
+`;
+
+function useInjectStatsNameCss() {
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (document.getElementById("dc-stats-name-css")) return;
+    const style = document.createElement("style");
+    style.id = "dc-stats-name-css";
+    style.innerHTML = statsNameCss;
+    document.head.appendChild(style);
+  }, []);
+}
+
+/* ============================================================
    Composant principal
 ============================================================ */
 
@@ -104,6 +174,8 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
   const [index, setIndex] = useState(0);
+
+  useInjectStatsNameCss();
 
   if (!profile) return null;
 
@@ -120,7 +192,6 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
     }
   `;
 
-  // ---------- Construction des slides à partir des stats ----------
   const slides = useMemo<SlideDef[]>(() => {
     const s = stats;
     const out: SlideDef[] = [];
@@ -369,12 +440,10 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
       });
     }
 
-    // Sécurité : toujours au moins 1 slide (global)
     return out.length > 0 ? out : [];
   }, [stats, t]);
 
-  // Quand la liste de slides change (changement de profil ou de stats),
-  // on remet l'index à 0 et on le borne pour éviter les crashs.
+  // Reset index quand les slides changent
   useEffect(() => {
     if (!slides.length) {
       setIndex(0);
@@ -383,7 +452,7 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
     setIndex((i) => (i >= slides.length ? 0 : i));
   }, [slides.length]);
 
-  // --------- Auto-carrousel 7s ----------
+  // Auto-carrousel 7s
   useEffect(() => {
     if (slides.length <= 1) return;
     const id = window.setInterval(() => {
@@ -406,6 +475,14 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
       : status === "away"
       ? "#FFD95E"
       : "#888888";
+
+  // Accent pour le shimmer du nom (lié au thème)
+  const accent = (theme as any).accent ?? primary;
+  const accentSoft =
+    (theme as any).accent20 ?? `${primary}33`;
+
+  const profileName =
+    profile.name?.trim() || t("home.noName", "Joueur");
 
   // Handler tap pour passer manuellement au slide suivant
   const handleNextSlide = () => {
@@ -478,20 +555,58 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
               />
             </div>
 
+            {/* NOM AVEC EFFET STATS (wrapper base + shimmer) */}
             <div
               style={{
-                fontWeight: 900,
-                fontSize: 18,
                 marginTop: 2,
-                color: theme.textStrong ?? "#FFFFFF",
                 maxWidth: "100%",
-                textAlign: "center",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
               }}
             >
-              {profile.name}
+              <span
+                className="dc-stats-name-wrapper"
+                style={
+                  {
+                    "--dc-accent": accent,
+                    "--dc-accent-soft": accentSoft,
+                    maxWidth: "100%",
+                    display: "block",
+                  } as React.CSSProperties
+                }
+              >
+                <span
+                  className="dc-stats-name-base"
+                  style={{
+                    fontSize: 20,
+                    fontWeight: 900,
+                    fontFamily:
+                      '"Luckiest Guy","Impact","system-ui",sans-serif',
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    display: "block",
+                    textAlign: "center",
+                  }}
+                >
+                  {profileName}
+                </span>
+
+                <span
+                  className="dc-stats-name-shimmer"
+                  style={{
+                    fontSize: 20,
+                    fontWeight: 900,
+                    fontFamily:
+                      '"Luckiest Guy","Impact","system-ui",sans-serif',
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    display: "block",
+                    textAlign: "center",
+                  }}
+                >
+                  {profileName}
+                </span>
+              </span>
             </div>
 
             {/* Statut */}
