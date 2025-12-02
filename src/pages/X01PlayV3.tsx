@@ -1795,16 +1795,30 @@ function saveX01V3MatchToHistory({
     players: lightPlayers as any,
   };
 
-  const payload = {
-    mode: "x01v3",
-    variant: "x01v3",
-    game: "x01",
-    startScore: config.startScore,
-    config: lightConfig,
-    finalScores: scores,
-    legsWon: state?.legsWon ?? {},
-    setsWon: state?.setsWon ?? {},
-  };
+   // Détermine un mode compatible avec les anciens agrégateurs
+   const isSolo = players.length === 1;
+   const hasTeams =
+     Array.isArray((config as any).teams) &&
+     (config as any).teams.length > 0;
+ 
+   let gameMode: "x01_solo" | "x01_multi" | "x01_teams" = "x01_multi";
+   if (isSolo) gameMode = "x01_solo";
+   else if (hasTeams) gameMode = "x01_teams";
+ 
+   const payload = {
+     // 👇 ancien champ utilisé par tes agrégateurs
+     mode: gameMode,           // "x01_solo" | "x01_multi" | "x01_teams"
+ 
+     // 👇 nouvelle info pour distinguer la V3
+     variant: "x01_v3",
+ 
+     game: "x01",
+     startScore: config.startScore,
+     config: lightConfig,
+     finalScores: scores,
+     legsWon: state?.legsWon ?? {},
+     setsWon: state?.setsWon ?? {},
+   };
 
   // -------------------------
   // Record History (léger)
