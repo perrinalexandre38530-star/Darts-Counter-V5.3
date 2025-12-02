@@ -319,17 +319,45 @@ function buildSessionFromSummary(
     row.bestVisit
   );
 
-  // ===== CO (Checkout) — PATCH CO COMPLET =====
-  const rawCO = summary.bestCheckoutByPlayer?.[pidStr];
+  // ===== CO (Checkout) — version ultra tolérante =====
+  const rawCOByPlayer =
+    summary.bestCheckoutByPlayer?.[pidStr] ??
+    summary.bestFinishByPlayer?.[pidStr] ??
+    summary.bestCoByPlayer?.[pidStr];
+
+  const genericSummaryCO =
+    summary.bestCheckout ??
+    summary.bestCo ??
+    summary.bestFinish ??
+    null;
 
   const bestCheckoutRaw =
+    // per-player row
     row?.bestCheckout ??
-    rawCO ??
+    row?.bestCO ??
+    row?.bestCo ??
+    row?.bestFinish ??
+    row?.checkout ??
+    row?.co ??
+    // summary.*ByPlayer[pid]
+    rawCOByPlayer ??
+    // summary global
+    genericSummaryCO ??
+    // detailedByPlayer[pid]
     detail?.bestCheckout ??
+    detail?.bestCO ??
+    detail?.bestCo ??
+    detail?.bestFinish ??
+    detail?.checkout ??
+    detail?.co ??
+    // éventuellement sur le match lui-même
+    match?.bestCheckout ??
+    match?.bestCo ??
+    match?.bestFinish ??
     null;
 
   let bestCheckout = 0;
-  if (bestCheckoutRaw !== null && bestCheckoutRaw !== undefined) {
+  if (bestCheckoutRaw != null) {
     const parsed = Number(bestCheckoutRaw);
     bestCheckout = Number.isFinite(parsed) ? parsed : 0;
   }
@@ -856,7 +884,7 @@ const teamPctSets = pct(teamSetsWon, teamSetsPlayed);
       ? filtered.reduce((s: any, x: any) => s + x.avg1D, 0) / totalSessions
       : 0;
 
-   // Agrégats hits / miss / bull etc.
+  // Agrégats hits / miss / bull etc.
   // (on réutilise totalSessions = filtered.length; défini juste au-dessus)
 
   let gHitsS = 0,
@@ -884,7 +912,13 @@ const teamPctSets = pct(teamSetsWon, teamSetsPlayed);
     minBull: number | null = null,
     maxBull: number | null = null,
     minDBull: number | null = null,
-    maxDBull: number | null = null;
+    maxDBull: number | null = null,
+    // 🔥 nouveau : stats CO (bestCheckout par session > 0)
+    minCO: number | null = null,
+    maxCO: number | null = null;
+
+  // nombre de sessions où il y a AU MOINS un checkout
+  let sessionsWithCO = 0;
 
   for (const s of filtered) {
     const darts = s.darts || 0;
@@ -896,6 +930,7 @@ const teamPctSets = pct(teamSetsWon, teamSetsPlayed);
     const sDBull = s.dBull ?? 0;
     const sBust = s.bust ?? 0;
     const sHits = sS + sD + sT;
+    const sCO = (s.bestCheckout ?? 0) || 0; // 🔥 best CO pour cette session
 
     const hasCounters =
       sS + sD + sT + sMiss + sBull + sDBull + sBust > 0;
@@ -937,6 +972,13 @@ const teamPctSets = pct(teamSetsWon, teamSetsPlayed);
 
       if (minDBull === null || sDBull < minDBull) minDBull = sDBull;
       if (maxDBull === null || sDBull > maxDBull) maxDBull = sDBull;
+
+      // --- CO (bestCheckout par session) ---
+      if (sCO > 0) {
+        sessionsWithCO++;
+        if (minCO === null || sCO < minCO) minCO = sCO;
+        if (maxCO === null || sCO > maxCO) maxCO = sCO;
+      }
     }
   }
 
@@ -984,6 +1026,9 @@ const teamPctSets = pct(teamSetsWon, teamSetsPlayed);
     totalDarts > 0 ? (gDBull / totalDarts) * 100 : null;
   const pctBustGlobal =
     totalThrows > 0 ? (gBust / totalThrows) * 100 : null;
+     // 🔥 % de sessions avec au moins un checkout (CO)
+  const pctCOGlobal =
+  totalSessions > 0 ? (sessionsWithCO / totalSessions) * 100 : null;
 
 // ================== AGRÉGATS MATCHS (tous modes) ==================
 const distinctMatchIds = new Set<string>();
@@ -1998,15 +2043,15 @@ for (const tm in teammateStats) {
                 },
                 {
                   label: "Bull",
-                  min: null,
-                  max: null,
+                  min: minBull,
+                  max: maxBull,
                   total: totalBullRow,
                   pct: (totalBullRow / throws) * 100,
                 },
                 {
                   label: "DBull",
-                  min: null,
-                  max: null,
+                  min: minDBull,
+                  max: maxDBull,
                   total: totalDBullRow,
                   pct: (totalDBullRow / throws) * 100,
                 },
@@ -2016,6 +2061,16 @@ for (const tm in teammateStats) {
                   max: maxBust,
                   total: totalBustRow,
                   pct: (totalBustRow / throws) * 100,
+                },
+                // 🔥 Nouvelle ligne CO
+                {
+                  label: "CO",
+                  min: minCO,
+                  max: maxCO,
+                  // on compte le nombre de sessions avec au moins un checkout
+                  total: sessionsWithCO,
+                  // % de sessions avec au moins un CO
+                  pct: pctCOGlobal ?? null,
                 },
               ];
 
