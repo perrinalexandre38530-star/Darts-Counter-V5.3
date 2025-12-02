@@ -86,7 +86,10 @@ function isValidFinisher(dart: DartDef, outMode: X01OutModeV3): boolean {
 
 // ----------- Conversion en suggestion -----------
 
-function toSuggestion(darts: DartDef[], score: number): X01CheckoutSuggestionV3 {
+function toSuggestion(
+  darts: DartDef[],
+  score: number
+): X01CheckoutSuggestionV3 {
   return {
     score,
     darts: darts.map((d) => ({
@@ -162,3 +165,15 @@ export function getAdaptiveCheckoutSuggestionV3(params: {
  * getAdaptiveCheckoutSuggestion.
  */
 export const getAdaptiveCheckoutSuggestion = getAdaptiveCheckoutSuggestionV3;
+
+/**
+ * Petit adaptateur pratique pour le moteur X01 V3.
+ * (tu peux l’appeler depuis useX01EngineV3.ts)
+ */
+export function extAdaptCheckoutSuggestion(params: {
+  score: number;
+  dartsLeft: number;
+  outMode: X01OutModeV3;
+}): X01CheckoutSuggestionV3 | null {
+  return getAdaptiveCheckoutSuggestionV3(params);
+}

@@ -1594,19 +1594,13 @@ function cloneNumberMap(obj: any | undefined): Record<string, number> {
 function extractSegmentMapsFromLive(live: any) {
   // 1) Si on a déjà bySegmentS/D/T, on les clone tels quels
   let bySegmentS = cloneNumberMap(
-    live?.bySegmentS ??
-      live?.segmentsS ??
-      live?.hitsBySegmentS
+    live?.bySegmentS ?? live?.segmentsS ?? live?.hitsBySegmentS
   );
   let bySegmentD = cloneNumberMap(
-    live?.bySegmentD ??
-      live?.segmentsD ??
-      live?.hitsBySegmentD
+    live?.bySegmentD ?? live?.segmentsD ?? live?.hitsBySegmentD
   );
   let bySegmentT = cloneNumberMap(
-    live?.bySegmentT ??
-      live?.segmentsT ??
-      live?.hitsBySegmentT
+    live?.bySegmentT ?? live?.segmentsT ?? live?.hitsBySegmentT
   );
 
   // 2) Fallback : structure combinée { [seg]: {S,D,T} }
@@ -1634,9 +1628,9 @@ function extractSegmentMapsFromLive(live: any) {
 }
 
 function extractDetailedStatsFromLive(live: any) {
-  const hitsS = numOr0(live?.hitsS, live?.S, live?.singles);
-  const hitsD = numOr0(live?.hitsD, live?.D, live?.doubles);
-  const hitsT = numOr0(live?.hitsT, live?.T, live?.triples);
+  const hitsS = numOr0(live?.hitsS, live?.S, live?.singles, live?.hitsSingle);
+  const hitsD = numOr0(live?.hitsD, live?.D, live?.doubles, live?.hitsDouble);
+  const hitsT = numOr0(live?.hitsT, live?.T, live?.triples, live?.hitsTriple);
 
   const miss = numOr0(
     live?.miss,
@@ -1689,6 +1683,13 @@ function extractDetailedStatsFromLive(live: any) {
     bySegmentT,
   };
 }
+
+/* -------------------------------------------------------------
+   Sauvegarde X01 V3 dans l'Historique
+   - summary : toutes les stats utiles pour StatsHub / X01Multi
+   - payload : VERSION LÉGÈRE (sans engineState ni liveStatsByPlayer)
+     => évite les erreurs de quota (dbv2-autosave)
+------------------------------------------------------------- */
 
 function saveX01V3MatchToHistory({
   config,
@@ -1770,29 +1771,39 @@ function saveX01V3MatchToHistory({
     bestVisitByPlayer,
     bestCheckoutByPlayer,
     perPlayer,
-    // 🧩 Nouveau : map directe par joueur pour les stats avancées
+    // 🧩 Map par joueur pour les stats avancées X01Multi
     detailedByPlayer,
   };
 
   // -------------------------
-  // Payload "lourd" compressé
+  // Payload "léger" pour l'historique
+  //  -> PAS de engineState complet
+  //  -> PAS de liveStatsByPlayer complet
   // -------------------------
+
+  const lightPlayers = players.map((p: any) => ({
+    id: p.id,
+    name: p.name,
+    profileId: p.profileId ?? null,
+    isBot: !!p.isBot,
+    botLevel: p.botLevel ?? null,
+    avatarDataUrl: p.avatarDataUrl ?? null,
+  }));
+
+  const lightConfig: X01ConfigV3 = {
+    ...config,
+    players: lightPlayers as any,
+  };
+
   const payload = {
     mode: "x01v3",
     variant: "x01v3",
     game: "x01",
     startScore: config.startScore,
-    config,
-    engineState: state,
-    liveStatsByPlayer,
-    scores,
-    players: players.map((p: any) => ({
-      id: p.id,
-      name: p.name,
-      profileId: p.profileId ?? null,
-      isBot: !!p.isBot,
-      avatarDataUrl: p.avatarDataUrl ?? null,
-    })),
+    config: lightConfig,
+    finalScores: scores,
+    legsWon: state?.legsWon ?? {},
+    setsWon: state?.setsWon ?? {},
   };
 
   // -------------------------
@@ -1803,15 +1814,20 @@ function saveX01V3MatchToHistory({
     kind: "x01",
     status: "finished",
     createdAt,
-    players: payload.players.map((p: any) => ({
+    players: lightPlayers.map((p) => ({
       id: p.id,
       name: p.name,
-      avatarDataUrl: p.avatarDataUrl ?? null,
+      avatarDataUrl: p.avatarDataUrl,
     })),
     winnerId,
     summary,
     payload,
   };
 
-  History.upsert(record);
+  try {
+    History.upsert(record);
+  } catch (err) {
+    console.warn("[X01PlayV3] History.upsert failed (probably quota)", err);
+  }
 }
+

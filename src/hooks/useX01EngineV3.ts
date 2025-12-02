@@ -3,6 +3,7 @@
 // Moteur X01 V3 — VERSION FIXÉE (stats 100% correctes)
 // - Stats LIVE correctes (darts, visits, bestVisit, totalScore)
 // - PATCH COMPLET HITS/MISS/SEGMENTS (radar + hits S/D/T + détail)
+// - Agrégat summary.detailedByPlayer pour les matchs X01 multi
 // - Une seule MAJ des stats par VOLÉE
 // - Checkout adaptatif V3
 // - Status : playing / leg_end / set_end / match_end
@@ -38,7 +39,7 @@ import {
   applyVisitToLiveStatsV3,
 } from "../lib/x01v3/x01StatsLiveV3";
 
-import { getAdaptiveCheckoutSuggestion } from "../lib/x01v3/x01CheckoutV3";
+import { extAdaptCheckoutSuggestion } from "../lib/x01v3/x01CheckoutV3";
 
 // -------------------------------------------------------------
 // Helpers internes
@@ -76,7 +77,7 @@ function createInitialMatchState(config: X01ConfigV3): X01MatchStateV3 {
 
   startNewVisitV3(state);
   if (state.visit) {
-    state.visit.checkoutSuggestion = getAdaptiveCheckoutSuggestion({
+    state.visit.checkoutSuggestion = extAdaptCheckoutSuggestion({
       score: state.visit.currentScore,
       dartsLeft: state.visit.dartsLeft,
       outMode: config.outMode,
@@ -174,6 +175,64 @@ function finalizeStatsFor(st: X01StatsLiveV3) {
     totalHits > 0 ? ((st.hitsTriple || 0) / totalHits) * 100 : 0;
 }
 
+// ===========================================================
+// AGRÉGATION MATCH : summary.detailedByPlayer
+// ===========================================================
+
+function buildAggregatedStats(
+  live: Record<X01PlayerId, X01StatsLiveV3> | undefined
+) {
+  const out: Record<
+    X01PlayerId,
+    {
+      darts: number;
+      avg3: number;
+      totalScore: number;
+      bestVisit: number;
+      hits: { S: number; D: number; T: number; M: number };
+      hitsBySegment: NonNullable<X01StatsLiveV3["hitsBySegment"]>;
+      scorePerVisit: number[];
+    }
+  > = {} as any;
+
+  if (!live) return out;
+
+  for (const pid of Object.keys(live) as X01PlayerId[]) {
+    const st = live[pid];
+    if (!st) continue;
+
+    const dartsCount =
+      (st.hitsSingle || 0) +
+      (st.hitsDouble || 0) +
+      (st.hitsTriple || 0) +
+      (st.miss || 0);
+
+    const totalScore = st.totalScore || 0;
+
+    const avg3 =
+      dartsCount > 0 ? (totalScore / dartsCount) * 3 : 0;
+
+    const bestVisit = Math.max(...(st.scorePerVisit || [0]));
+
+    out[pid] = {
+      darts: dartsCount,
+      avg3,
+      totalScore,
+      bestVisit,
+      hits: {
+        S: st.hitsSingle || 0,
+        D: st.hitsDouble || 0,
+        T: st.hitsTriple || 0,
+        M: st.miss || 0,
+      },
+      hitsBySegment: st.hitsBySegment || {},
+      scorePerVisit: st.scorePerVisit || [],
+    };
+  }
+
+  return out;
+}
+
 // -------------------------------------------------------------
 // Hook principal
 // -------------------------------------------------------------
@@ -216,7 +275,7 @@ export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
         if (!visitEnded) {
           // Checkout adaptatif tant que la visite continue
           if (!result.bust && visit.dartsLeft > 0 && result.scoreAfter > 1) {
-            visit.checkoutSuggestion = getAdaptiveCheckoutSuggestion({
+            visit.checkoutSuggestion = extAdaptCheckoutSuggestion({
               score: visit.currentScore,
               dartsLeft: visit.dartsLeft,
               outMode: config.outMode,
@@ -258,12 +317,29 @@ export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
           finalizeStatsFor(st);
 
           ns[pid] = st;
+
+          // 🔗 on garde aussi une copie dans l'état du match
+          (m as any).liveStatsByPlayer = ns;
+
           return ns;
         });
 
         // ---------- Fin de leg / set / match ----------
         const legWinner = checkLegWinV3(config, m);
         if (legWinner) {
+          // Agrégation des stats live -> summary.detailedByPlayer
+          const detailedByPlayer = buildAggregatedStats(
+            (m as any).liveStatsByPlayer as Record<
+              X01PlayerId,
+              X01StatsLiveV3
+            >
+          );
+
+          (m as any).summary = {
+            ...(m as any).summary,
+            detailedByPlayer,
+          };
+
           applyLegWinV3(config, m, legWinner);
 
           if (legWinner.winnerPlayerId) {
@@ -294,7 +370,7 @@ export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
 
         startNewVisitV3(m);
         if (m.visit) {
-          m.visit.checkoutSuggestion = getAdaptiveCheckoutSuggestion({
+          m.visit.checkoutSuggestion = extAdaptCheckoutSuggestion({
             score: m.visit.currentScore,
             dartsLeft: m.visit.dartsLeft,
             outMode: config.outMode,
@@ -349,6 +425,8 @@ export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
         for (const p of config.players) {
           out[p.id] = createEmptyLiveStatsV3();
         }
+        // on purge aussi la copie côté match
+        (m as any).liveStatsByPlayer = out;
         return out;
       });
 
@@ -358,7 +436,7 @@ export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
 
       startNewVisitV3(m);
       if (m.visit) {
-        m.visit.checkoutSuggestion = getAdaptiveCheckoutSuggestion({
+        m.visit.checkoutSuggestion = extAdaptCheckoutSuggestion({
           score: m.visit.currentScore,
           dartsLeft: m.visit.dartsLeft,
           outMode: config.outMode,
