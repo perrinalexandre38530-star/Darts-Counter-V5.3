@@ -220,65 +220,162 @@ function randomInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function computeBotVisit(level: BotLevel, currentScore: number): UIDart[] {
+type BotStyle = "balanced" | "aggressive" | "safe" | "clutch";
+
+function computeBotVisit(
+  level: BotLevel,
+  currentScore: number,
+  doubleOut: boolean,
+  styleOverride?: BotStyle
+): UIDart[] {
   const darts: UIDart[] = [];
   const lvl = level || "easy";
 
-  let hitProb: number;
-  let preferTriple: number; // 0..1
+  // -----------------------------
+  // Profils de précision par niveau
+  // -----------------------------
+  type EffLevel = "easy" | "medium" | "hard" | "pro" | "legend";
 
-  switch (lvl) {
-    case "legend":
-      hitProb = 0.92;
-      preferTriple = 0.9;
-      break;
-    case "pro":
-      hitProb = 0.82;
-      preferTriple = 0.8;
-      break;
-    case "hard":
-      hitProb = 0.7;
-      preferTriple = 0.7;
-      break;
-    case "medium":
-      hitProb = 0.55;
-      preferTriple = 0.5;
-      break;
-    case "easy":
-    default:
-      hitProb = 0.38;
-      preferTriple = 0.25;
-      break;
+  type BotSkillProfile = {
+    miss: number;   // probabilité de MISS
+    single: number; // prob S
+    double: number; // prob D
+    triple: number; // prob T
+  };
+
+  const BOT_SKILL: Record<EffLevel, BotSkillProfile> = {
+    easy:   { miss: 0.45, single: 0.40, double: 0.10, triple: 0.05 },
+    medium: { miss: 0.30, single: 0.40, double: 0.20, triple: 0.10 },
+    hard:   { miss: 0.18, single: 0.35, double: 0.25, triple: 0.22 },
+    pro:    { miss: 0.12, single: 0.33, double: 0.25, triple: 0.30 },
+    legend: { miss: 0.06, single: 0.29, double: 0.25, triple: 0.40 },
+  };
+
+  const effLevel: EffLevel =
+    lvl === "medium" ||
+    lvl === "hard" ||
+    lvl === "pro" ||
+    lvl === "legend"
+      ? (lvl as EffLevel)
+      : "easy";
+
+  const skill = BOT_SKILL[effLevel];
+
+  // -----------------------------
+  // Style (pas besoin de le stocker en dur, on dérive du niveau)
+  // -----------------------------
+  const style: BotStyle =
+    styleOverride ??
+    (effLevel === "easy"
+      ? "safe"
+      : effLevel === "medium"
+      ? "balanced"
+      : effLevel === "hard"
+      ? "aggressive"
+      : effLevel === "pro"
+      ? "aggressive"
+      : "clutch"); // legend
+
+  // Segments favoris pour le scoring (T20/T19 privilégiés)
+  const preferredSegs = [20, 20, 20, 19, 19, 18, 17, 16];
+
+  let remaining = currentScore;
+
+  // Helper: calcul valeur d'une fléchette
+  const dartVal = (d: UIDart) =>
+    d.v === 25 && d.mult === 2 ? 50 : d.v * d.mult;
+
+  // Helper: choix d'un dart de checkout (simple mais efficace)
+  function tryCheckout(remainingScore: number): UIDart | null {
+    if (!doubleOut) return null;
+
+    // Checkouts 1 dart
+    if (remainingScore === 50) {
+      return { v: 25, mult: 2 }; // DBULL
+    }
+    if (remainingScore <= 40 && remainingScore % 2 === 0) {
+      return { v: remainingScore / 2, mult: 2 };
+    }
+
+    // Petits setups "safe" pour laisser 32 ou 40
+    if (remainingScore > 40 && remainingScore <= 80) {
+      // laisser 40 (D20)
+      if (remainingScore - 40 > 0 && (remainingScore - 40) <= 20) {
+        return { v: remainingScore - 40, mult: 1 };
+      }
+      // laisser 32 (D16)
+      if (remainingScore - 32 > 0 && (remainingScore - 32) <= 20) {
+        return { v: remainingScore - 32, mult: 1 };
+      }
+    }
+
+    return null;
   }
 
-  const baseSegs = [20, 19, 18, 17];
-
   for (let i = 0; i < 3; i++) {
-    // Miss occasionnelle
-    if (Math.random() > hitProb) {
+    if (remaining <= 0) break;
+
+    // 1) Probabilité de MISS, modulée par le style
+    let missThreshold = skill.miss;
+    if (style === "clutch" && remaining <= 80) {
+      missThreshold *= 0.5; // les legends ratent beaucoup moins en fin de leg
+    } else if (style === "safe" && remaining > 200) {
+      missThreshold *= 1.1; // safe un peu plus brouillon loin du finish
+    }
+
+    const rMiss = Math.random();
+    if (rMiss < missThreshold) {
       darts.push({ v: 0, mult: 1 });
       continue;
     }
 
-    // Petite tentative de finish si possible
-    if (currentScore <= 40 && currentScore % 2 === 0) {
-      const target = currentScore / 2;
-      darts.push({ v: target, mult: 2 });
-      currentScore = 0;
-      continue;
+    // 2) Tentative checkout / setup si on est dans la zone 0–110
+    if (remaining <= 110) {
+      const finisher = tryCheckout(remaining);
+      if (finisher) {
+        darts.push(finisher);
+        remaining -= dartVal(finisher);
+        continue;
+      }
     }
 
-    // Sinon scoring
+    // 3) Sinon, on score
     const seg =
-      currentScore > 60
-        ? baseSegs[randomInt(0, baseSegs.length - 1)]
-        : baseSegs[randomInt(1, baseSegs.length - 1)];
+      remaining > 170
+        ? 20 // très loin -> full T20
+        : preferredSegs[randomInt(0, preferredSegs.length - 1)];
 
-    const useTriple = Math.random() < preferTriple && currentScore > 60;
-    const mult: 1 | 2 | 3 = useTriple ? 3 : 1;
+    // Base sur le profil
+    const r = Math.random();
+    const singleThreshold = skill.single;
+    const doubleThreshold = skill.single + skill.double;
+    let mult: 1 | 2 | 3;
 
-    darts.push({ v: seg, mult });
-    currentScore = Math.max(currentScore - seg * mult, 0);
+    if (r < singleThreshold) mult = 1;
+    else if (r < doubleThreshold) mult = 2;
+    else mult = 3;
+
+    // Modulation par style
+    if (style === "aggressive" && remaining > 120 && mult === 1) {
+      // prend plus souvent le risque du T20/T19
+      if (Math.random() < 0.6) mult = 3;
+    }
+
+    if (style === "safe" && remaining <= 120 && mult === 3) {
+      // en dessous de 120, il évite les triples trop dangereux
+      if (Math.random() < 0.7) mult = 1;
+    }
+
+    // Protector anti-bust débile quand on approche du finish
+    const potential = seg * mult;
+    if (doubleOut && remaining <= 80 && remaining - potential < 2) {
+      // si ça bust ou laisse 1, on passe en simple
+      mult = 1;
+    }
+
+    const d: UIDart = { v: seg, mult };
+    darts.push(d);
+    remaining = Math.max(remaining - dartVal(d), 0);
   }
 
   return darts;
@@ -711,17 +808,13 @@ export default function X01PlayV3({
   // BOT : tour auto si joueur courant est un BOT
   // =====================================================
 
-  const botTurnRef = React.useRef<string | null>(null);
   const isBotTurn = !!(activePlayer && (activePlayer as any).isBot);
-
   const currentSetIndex = (state as any).currentSet ?? 1;
   const currentLegIndex = (state as any).currentLeg ?? 1;
 
   React.useEffect(() => {
     // Pendant la reprise depuis autosave, on NE JOUE PAS les bots
-    if (isReplayingRef.current) {
-      return;
-    }
+    if (isReplayingRef.current) return;
 
     if (
       !activePlayer ||
@@ -730,24 +823,21 @@ export default function X01PlayV3({
       status === "set_end" ||
       status === "match_end"
     ) {
-      // reset de la clé pour le prochain tour BOT
-      botTurnRef.current = null;
       return;
     }
 
     const pid = activePlayer.id;
     const scoreNow = scores[pid] ?? config.startScore;
-
-    const turnKey = `${pid}-${currentSetIndex}-${currentLegIndex}-${scoreNow}`;
-    if (botTurnRef.current === turnKey) return;
-    botTurnRef.current = turnKey;
-
     const level = ((activePlayer as any).botLevel as BotLevel) ?? "easy";
 
-    const timeout = setTimeout(() => {
-      const visit = computeBotVisit(level, scoreNow);
+// style optionnel côté profil (sinon dérivé du niveau)
+const style =
+  ((activePlayer as any).botStyle as BotStyle) ?? undefined;
 
-      // UI : mémorise la volée du BOT pour les pastilles
+const timeout = setTimeout(() => {
+  const visit = computeBotVisit(level, scoreNow, doubleOut, style);
+
+  // UI : mémorise la volée du BOT ...
       setLastVisitsByPlayer((m) => ({
         ...m,
         [pid]: visit,
@@ -766,6 +856,7 @@ export default function X01PlayV3({
           throwDart(inputMiss);
           return;
         }
+
         const input: X01DartInputV3 = {
           segment: d.v === 25 ? 25 : d.v,
           multiplier: d.mult as 1 | 2 | 3,
@@ -782,7 +873,6 @@ export default function X01PlayV3({
     return () => clearTimeout(timeout);
   }, [
     activePlayer,
-    activePlayerId,
     status,
     scores,
     config.startScore,

@@ -107,6 +107,10 @@ function ensureExtendedStatsFor(st: X01StatsLiveV3) {
   if (st.miss == null) st.miss = 0;
   if (st.bust == null) st.bust = 0;
 
+  // Bulls
+  if ((st as any).bull == null) (st as any).bull = 0;
+  if ((st as any).dBull == null) (st as any).dBull = 0;
+
   if (st.totalScore == null) st.totalScore = 0;
   if (st.visits == null) st.visits = 0;
 
@@ -126,9 +130,18 @@ function recordDartOn(st: X01StatsLiveV3, v: number, m: number) {
   const score = v * m;
   st.totalScore! += score;
 
+  // Compteurs S / D / T
   if (m === 1) st.hitsSingle!++;
   if (m === 2) st.hitsDouble!++;
   if (m === 3) st.hitsTriple!++;
+
+  // Bulls (25 / DBULL = 25 x2)
+  if (v === 25) {
+    (st as any).bull = ((st as any).bull || 0) + 1;
+    if (m === 2) {
+      (st as any).dBull = ((st as any).dBull || 0) + 1;
+    }
+  }
 
   // 🔒 bucket local pour satisfaire TS et être sûr que le segment existe
   const bucket =
