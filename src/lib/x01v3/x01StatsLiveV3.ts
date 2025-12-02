@@ -1,7 +1,7 @@
 // =======================================================
 // src/lib/x01v3/x01StatsLiveV3.ts
 // Stats LIVE X01 V3 (par joueur, par leg)
-// - dartsThrown, visits, totalScore, bestVisit
+// - dartsThrown, visits, totalScore, bestVisit, bestCheckout
 // - miss, bust
 // - hits S/D/T + Bull/DBull
 // - bySegment pour graphes
@@ -39,6 +39,7 @@ export function createEmptyLiveStatsV3(): X01StatsLiveV3 {
     visits: 0,
     totalScore: 0,
     bestVisit: 0,
+    bestCheckout: 0, // ✅ nouveau : meilleur checkout sur le leg
     avg3: 0,
 
     // Miss / bust
@@ -69,6 +70,11 @@ export function createEmptyLiveStatsV3(): X01StatsLiveV3 {
     pctD: 0,
     pctT: 0,
 
+    // Bulls explicites
+    bull: 0,
+    dBull: 0,
+
+    // Détail des fléchettes + score par volée
     dartsDetail: [],
     scorePerVisit: [],
   };
@@ -77,10 +83,7 @@ export function createEmptyLiveStatsV3(): X01StatsLiveV3 {
 /* -------------------------------------------------------
    Helper interne : assure l'entrée bySegment["N"]
 ------------------------------------------------------- */
-function ensureSegmentBucket(
-  stats: X01StatsLiveV3,
-  segment: number | 25
-) {
+function ensureSegmentBucket(stats: X01StatsLiveV3, segment: number | 25) {
   const key = String(segment);
   if (!stats.bySegment[key]) {
     stats.bySegment[key] = { S: 0, D: 0, T: 0 };
@@ -91,11 +94,13 @@ function ensureSegmentBucket(
    Appliquer une VISIT complète aux stats LIVE
    - visit : la volée terminée (bust ou non)
    - wasBust : true si la volée est un bust
+   - isCheckout : true si cette volée termine le leg (score 0)
 ------------------------------------------------------- */
 export function applyVisitToLiveStatsV3(
   stats: X01StatsLiveV3,
   visit: X01VisitStateV3,
-  wasBust: boolean
+  wasBust: boolean,
+  isCheckout: boolean
 ): X01StatsLiveV3 {
   // On modifie en place et on renvoie (pour chainage)
   stats.visits += 1;
@@ -108,6 +113,13 @@ export function applyVisitToLiveStatsV3(
 
   if (visitScore > stats.bestVisit) {
     stats.bestVisit = visitScore;
+  }
+
+  // ✅ Meilleur checkout (uniquement si la volée finit le leg)
+  if (!wasBust && isCheckout && visitScore > 0) {
+    if (!stats.bestCheckout || visitScore > stats.bestCheckout) {
+      stats.bestCheckout = visitScore;
+    }
   }
 
   if (wasBust) {
@@ -130,8 +142,11 @@ export function applyVisitToLiveStatsV3(
     if (seg === 25) {
       if (dart.multiplier === 1) {
         stats.hits.Bull += 1;
+        stats.bull += 1;
       } else if (dart.multiplier === 2) {
         stats.hits.DBull += 1;
+        stats.bull += 1;
+        stats.dBull += 1;
       }
 
       // On enregistre quand même dans bySegment["25"] (S/D)
@@ -168,25 +183,19 @@ export function applyVisitToLiveStatsV3(
 
 // ✅ Moyenne par volée (Moy/3D) = totalScore / visits
 // → 1 seule volée à 170 pts → Moy/3D = 170
-export function getAvg3FromLiveStatsV3(
-  stats: X01StatsLiveV3
-): number {
+export function getAvg3FromLiveStatsV3(stats: X01StatsLiveV3): number {
   if (stats.visits === 0) return 0;
   return stats.totalScore / stats.visits;
 }
 
 // % de bust par VISIT
-export function getBustRateFromLiveStatsV3(
-  stats: X01StatsLiveV3
-): number {
+export function getBustRateFromLiveStatsV3(stats: X01StatsLiveV3): number {
   if (stats.visits === 0) return 0;
   return (stats.bust / stats.visits) * 100;
 }
 
 // % de miss par DART
-export function getMissRateFromLiveStatsV3(
-  stats: X01StatsLiveV3
-): number {
+export function getMissRateFromLiveStatsV3(stats: X01StatsLiveV3): number {
   if (stats.dartsThrown === 0) return 0;
   return (stats.miss / stats.dartsThrown) * 100;
 }

@@ -111,6 +111,9 @@ function ensureExtendedStatsFor(st: X01StatsLiveV3) {
   if ((st as any).bull == null) (st as any).bull = 0;
   if ((st as any).dBull == null) (st as any).dBull = 0;
 
+  // Checkout
+  if ((st as any).bestCheckout == null) (st as any).bestCheckout = 0;
+
   if (st.totalScore == null) st.totalScore = 0;
   if (st.visits == null) st.visits = 0;
 
@@ -202,6 +205,7 @@ function buildAggregatedStats(
       avg3: number;
       totalScore: number;
       bestVisit: number;
+      bestCheckout: number;
       hits: { S: number; D: number; T: number; M: number };
       hitsBySegment: NonNullable<X01StatsLiveV3["hitsBySegment"]>;
       scorePerVisit: number[];
@@ -221,17 +225,16 @@ function buildAggregatedStats(
       (st.miss || 0);
 
     const totalScore = st.totalScore || 0;
-
-    const avg3 =
-      dartsCount > 0 ? (totalScore / dartsCount) * 3 : 0;
-
+    const avg3 = dartsCount > 0 ? (totalScore / dartsCount) * 3 : 0;
     const bestVisit = Math.max(...(st.scorePerVisit || [0]));
+    const bestCheckout = (st as any).bestCheckout || 0;
 
     out[pid] = {
       darts: dartsCount,
       avg3,
       totalScore,
       bestVisit,
+      bestCheckout,
       hits: {
         S: st.hitsSingle || 0,
         D: st.hitsDouble || 0,
@@ -316,13 +319,15 @@ export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
             prev
           );
 
+          const isCheckout = !result.bust && result.scoreAfter === 0;
+
           const base = ns[pid] ?? createEmptyLiveStatsV3();
           const st: X01StatsLiveV3 = structuredClone(
             base
           ) as X01StatsLiveV3;
 
           // Stats live "classiques"
-          applyVisitToLiveStatsV3(st, visit as any, result.bust);
+          applyVisitToLiveStatsV3(st, visit as any, result.bust, isCheckout);
 
           // Patch étendu : hits/miss/segments
           ensureExtendedStatsFor(st);
@@ -341,16 +346,23 @@ export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
         const legWinner = checkLegWinV3(config, m);
         if (legWinner) {
           // Agrégation des stats live -> summary.detailedByPlayer
-          const detailedByPlayer = buildAggregatedStats(
+          const aggregated = buildAggregatedStats(
             (m as any).liveStatsByPlayer as Record<
               X01PlayerId,
               X01StatsLiveV3
             >
           );
 
+          const bestCheckoutByPlayer: Record<string, number> = {};
+          for (const pid of Object.keys(aggregated)) {
+            const bc = aggregated[pid].bestCheckout || 0;
+            if (bc > 0) bestCheckoutByPlayer[pid] = bc;
+          }
+
           (m as any).summary = {
             ...(m as any).summary,
-            detailedByPlayer,
+            detailedByPlayer: aggregated,
+            bestCheckoutByPlayer,
           };
 
           applyLegWinV3(config, m, legWinner);
