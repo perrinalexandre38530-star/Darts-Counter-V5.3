@@ -225,157 +225,312 @@ type BotStyle = "balanced" | "aggressive" | "safe" | "clutch";
 function computeBotVisit(
   level: BotLevel,
   currentScore: number,
-  doubleOut: boolean,
-  styleOverride?: BotStyle
+  doubleOut: boolean
 ): UIDart[] {
   const darts: UIDart[] = [];
   const lvl = level || "easy";
 
   // -----------------------------
-  // Profils de précision par niveau
+  // 1) NIVEAUX BOT
   // -----------------------------
   type EffLevel = "easy" | "medium" | "hard" | "pro" | "legend";
 
   type BotSkillProfile = {
-    miss: number;   // probabilité de MISS
-    single: number; // prob S
-    double: number; // prob D
-    triple: number; // prob T
+    // scoring (T20, T19, etc.)
+    scoringExact: number;
+    scoringRing: number;
+    scoringNeighbor: number;
+    scoringBigMiss: number;
+
+    // doubles / checkouts
+    doubleExact: number;
+    doubleRing: number;
+    doubleNeighbor: number;
+    doubleBigMiss: number;
   };
 
-  const BOT_SKILL: Record<EffLevel, BotSkillProfile> = {
-    easy:   { miss: 0.45, single: 0.40, double: 0.10, triple: 0.05 },
-    medium: { miss: 0.30, single: 0.40, double: 0.20, triple: 0.10 },
-    hard:   { miss: 0.18, single: 0.35, double: 0.25, triple: 0.22 },
-    pro:    { miss: 0.12, single: 0.33, double: 0.25, triple: 0.30 },
-    legend: { miss: 0.06, single: 0.29, double: 0.25, triple: 0.40 },
+  const SKILL: Record<EffLevel, BotSkillProfile> = {
+    easy: {
+      scoringExact: 0.35,
+      scoringRing: 0.20,
+      scoringNeighbor: 0.20,
+      scoringBigMiss: 0.25,
+      doubleExact: 0.25,
+      doubleRing: 0.25,
+      doubleNeighbor: 0.20,
+      doubleBigMiss: 0.30,
+    },
+    medium: {
+      scoringExact: 0.45,
+      scoringRing: 0.25,
+      scoringNeighbor: 0.18,
+      scoringBigMiss: 0.12,
+      doubleExact: 0.40,
+      doubleRing: 0.25,
+      doubleNeighbor: 0.20,
+      doubleBigMiss: 0.15,
+    },
+    hard: {
+      scoringExact: 0.55,
+      scoringRing: 0.25,
+      scoringNeighbor: 0.15,
+      scoringBigMiss: 0.05,
+      doubleExact: 0.60,
+      doubleRing: 0.20,
+      doubleNeighbor: 0.15,
+      doubleBigMiss: 0.05,
+    },
+    pro: {
+      // 🔥 PRO : très peu de gros MISS, bons sur les doubles
+      scoringExact: 0.70,
+      scoringRing: 0.20,
+      scoringNeighbor: 0.08,
+      scoringBigMiss: 0.02,
+      doubleExact: 0.80, // ~ 4 doubles sur 5
+      doubleRing: 0.12,
+      doubleNeighbor: 0.06,
+      doubleBigMiss: 0.02,
+    },
+    legend: {
+      // 🔥 LÉGENDE : quasi jamais loin de la cible
+      scoringExact: 0.80,
+      scoringRing: 0.15,
+      scoringNeighbor: 0.04,
+      scoringBigMiss: 0.01,
+      doubleExact: 0.90, // ~ 9 doubles sur 10
+      doubleRing: 0.06,
+      doubleNeighbor: 0.03,
+      doubleBigMiss: 0.01,
+    },
   };
 
-  const effLevel: EffLevel =
-    lvl === "medium" ||
-    lvl === "hard" ||
-    lvl === "pro" ||
-    lvl === "legend"
-      ? (lvl as EffLevel)
-      : "easy";
+  let effLevel: EffLevel = "easy";
+  if (lvl === "medium") effLevel = "medium";
+  else if (lvl === "hard") effLevel = "hard";
+  else if (lvl === "pro") effLevel = "pro";
+  else if (lvl === "legend") effLevel = "legend";
 
-  const skill = BOT_SKILL[effLevel];
+  const skill = SKILL[effLevel];
 
   // -----------------------------
-  // Style (pas besoin de le stocker en dur, on dérive du niveau)
+  // 2) NEIGHBORS RÉELS DE LA CIBLE (ordre de la board)
   // -----------------------------
-  const style: BotStyle =
-    styleOverride ??
-    (effLevel === "easy"
-      ? "safe"
-      : effLevel === "medium"
-      ? "balanced"
-      : effLevel === "hard"
-      ? "aggressive"
-      : effLevel === "pro"
-      ? "aggressive"
-      : "clutch"); // legend
+  const BOARD_ORDER = [
+    20, 1, 18, 4, 13, 6, 10, 15, 2, 17,
+    3, 19, 7, 16, 8, 11, 14, 9, 12, 5,
+  ];
 
-  // Segments favoris pour le scoring (T20/T19 privilégiés)
-  const preferredSegs = [20, 20, 20, 19, 19, 18, 17, 16];
+  const NEIGHBORS: Record<number, [number, number]> = {
+    20: [5, 1],
+    1: [20, 18],
+    18: [1, 4],
+    4: [18, 13],
+    13: [4, 6],
+    6: [13, 10],
+    10: [6, 15],
+    15: [10, 2],
+    2: [15, 17],
+    17: [2, 3],
+    3: [17, 19],
+    19: [3, 7],
+    7: [19, 16],
+    16: [7, 8],
+    8: [16, 11],
+    11: [8, 14],
+    14: [11, 9],
+    9: [14, 12],
+    12: [9, 5],
+    5: [12, 20],
+  };
 
-  let remaining = currentScore;
+  const allSingles = BOARD_ORDER.slice();
 
-  // Helper: calcul valeur d'une fléchette
-  const dartVal = (d: UIDart) =>
-    d.v === 25 && d.mult === 2 ? 50 : d.v * d.mult;
-
-  // Helper: choix d'un dart de checkout (simple mais efficace)
-  function tryCheckout(remainingScore: number): UIDart | null {
-    if (!doubleOut) return null;
-
-    // Checkouts 1 dart
-    if (remainingScore === 50) {
-      return { v: 25, mult: 2 }; // DBULL
-    }
-    if (remainingScore <= 40 && remainingScore % 2 === 0) {
-      return { v: remainingScore / 2, mult: 2 };
-    }
-
-    // Petits setups "safe" pour laisser 32 ou 40
-    if (remainingScore > 40 && remainingScore <= 80) {
-      // laisser 40 (D20)
-      if (remainingScore - 40 > 0 && (remainingScore - 40) <= 20) {
-        return { v: remainingScore - 40, mult: 1 };
-      }
-      // laisser 32 (D16)
-      if (remainingScore - 32 > 0 && (remainingScore - 32) <= 20) {
-        return { v: remainingScore - 32, mult: 1 };
-      }
-    }
-
-    return null;
+  function dartScore(d: UIDart): number {
+    if (d.v === 25 && d.mult === 2) return 50;
+    return d.v * d.mult;
   }
+
+  // -----------------------------
+  // 3) CHOIX D’UN "PLAN" / CIBLE LOGIQUE
+  // -----------------------------
+  function chooseIdealTarget(remaining: number, dartsLeft: number): UIDart {
+    // Cas sans double-out : on score surtout T20, mais on reste cohérent
+    if (!doubleOut) {
+      if (remaining > 100) return { v: 20, mult: 3 };
+      if (remaining > 60) return { v: 20, mult: 3 };
+      if (remaining > 40) return { v: 20, mult: 2 };
+      if (remaining > 20) return { v: 20, mult: 1 };
+      return { v: remaining, mult: 1 };
+    }
+
+    // DOUBLE-OUT : vraie stratégie
+    // 1) Finish direct si <= 50
+    if (remaining === 50) {
+      // DBULL
+      return { v: 25, mult: 2 };
+    }
+    if (remaining <= 40 && remaining >= 2 && remaining % 2 === 0) {
+      // D20, D16, D8, etc.
+      return { v: remaining / 2, mult: 2 };
+    }
+
+    // 2) Zone 51–110 : on essaie de préparer un finish propre (40, 32, etc.)
+    if (remaining > 50 && remaining <= 110 && dartsLeft >= 2) {
+      const candidateScores = [60, 57, 54, 51, 50, 48, 45, 40, 36, 32];
+      const SCORE_TO_TARGET: Record<number, UIDart> = {
+        60: { v: 20, mult: 3 }, // T20
+        57: { v: 19, mult: 3 }, // T19
+        54: { v: 18, mult: 3 }, // T18
+        51: { v: 17, mult: 3 }, // T17
+        50: { v: 25, mult: 2 }, // DBULL
+        48: { v: 16, mult: 3 }, // T16
+        45: { v: 15, mult: 3 }, // T15
+        40: { v: 20, mult: 2 }, // D20
+        36: { v: 18, mult: 2 }, // D18
+        32: { v: 16, mult: 2 }, // D16
+      };
+
+      for (const score of candidateScores) {
+        if (score >= remaining) continue;
+        const newRemaining = remaining - score;
+
+        if (
+          (newRemaining === 50) ||
+          (newRemaining <= 40 &&
+            newRemaining >= 2 &&
+            newRemaining % 2 === 0)
+        ) {
+          return SCORE_TO_TARGET[score];
+        }
+      }
+    }
+
+    // 3) Loin du finish : scoring lourd T20/T19
+    if (remaining > 170) {
+      return { v: 20, mult: 3 };
+    }
+
+    // 4) Zone 111–170 : on continue à bourriner T20
+    return { v: 20, mult: 3 };
+  }
+
+  // -----------------------------
+  // 4) "SCATTER" : COMMENT IL RÂTE AUTOUR DE LA CIBLE
+  // -----------------------------
+  function applyScatter(
+    target: UIDart,
+    mode: "scoring" | "double"
+  ): UIDart {
+    const s = skill;
+
+    let pExact: number;
+    let pRing: number;
+    let pNeighbor: number;
+    let pBig: number;
+
+    if (mode === "double") {
+      pExact = s.doubleExact;
+      pRing = s.doubleRing;
+      pNeighbor = s.doubleNeighbor;
+      pBig = s.doubleBigMiss;
+    } else {
+      pExact = s.scoringExact;
+      pRing = s.scoringRing;
+      pNeighbor = s.scoringNeighbor;
+      pBig = s.scoringBigMiss;
+    }
+
+    const r = Math.random();
+
+    // EXACT
+    if (r < pExact) {
+      return target;
+    }
+
+    // MÊME NOMBRE, AUTRE ANNEAU (simple au lieu de double, etc.)
+    if (r < pExact + pRing) {
+      // Bull à part
+      if (target.v === 25) {
+        if (target.mult === 2) {
+          // DBULL -> BULL
+          return { v: 25, mult: 1 };
+        }
+        // BULL raté -> complètement à côté
+        return { v: 0, mult: 1 };
+      }
+
+      let ringOptions: number[];
+      if (target.mult === 3) {
+        ringOptions = [1, 2]; // peut finir en simple ou double
+      } else if (target.mult === 2) {
+        ringOptions = [1]; // D -> S
+      } else {
+        // visait simple
+        ringOptions = mode === "double" ? [2] : [1, 2, 3];
+      }
+
+      const mult =
+        ringOptions[randomInt(0, ringOptions.length - 1)] as 1 | 2 | 3;
+
+      return { v: target.v, mult };
+    }
+
+    // NEIGHBORS (cases à côté, ex: vise 17 mais touche 2 ou 3)
+    if (r < pExact + pRing + pNeighbor) {
+      if (target.v === 25) {
+        // raté bull -> random simple sur la board
+        const v =
+          allSingles[randomInt(0, allSingles.length - 1)];
+        return { v, mult: 1 };
+      }
+
+      const neigh = NEIGHBORS[target.v] ?? [target.v, target.v];
+      const v = neigh[randomInt(0, neigh.length - 1)];
+
+      // Pour les doubles, le miss crédible c'est le simple voisin
+      const mult =
+        mode === "double"
+          ? 1
+          : target.mult === 1
+          ? 1
+          : target.mult;
+
+      return { v, mult };
+    }
+
+    // GROS MISS : complètement à côté
+    if (Math.random() < 0.5) {
+      return { v: 0, mult: 1 };
+    }
+    const v = allSingles[randomInt(0, allSingles.length - 1)];
+    return { v, mult: 1 };
+  }
+
+  // -----------------------------
+  // 5) BOUCLE SUR LES 3 FLÉCHETTES
+  // -----------------------------
+  let remaining = currentScore;
 
   for (let i = 0; i < 3; i++) {
     if (remaining <= 0) break;
 
-    // 1) Probabilité de MISS, modulée par le style
-    let missThreshold = skill.miss;
-    if (style === "clutch" && remaining <= 80) {
-      missThreshold *= 0.5; // les legends ratent beaucoup moins en fin de leg
-    } else if (style === "safe" && remaining > 200) {
-      missThreshold *= 1.1; // safe un peu plus brouillon loin du finish
-    }
+    const dartsLeft = 3 - i;
 
-    const rMiss = Math.random();
-    if (rMiss < missThreshold) {
-      darts.push({ v: 0, mult: 1 });
-      continue;
-    }
+    const ideal = chooseIdealTarget(remaining, dartsLeft);
 
-    // 2) Tentative checkout / setup si on est dans la zone 0–110
-    if (remaining <= 110) {
-      const finisher = tryCheckout(remaining);
-      if (finisher) {
-        darts.push(finisher);
-        remaining -= dartVal(finisher);
-        continue;
-      }
-    }
+    // Si on vise un double -> on applique la précision "double"
+    const mode: "scoring" | "double" =
+      ideal.mult === 2 ? "double" : "scoring";
 
-    // 3) Sinon, on score
-    const seg =
-      remaining > 170
-        ? 20 // très loin -> full T20
-        : preferredSegs[randomInt(0, preferredSegs.length - 1)];
+    const hit = applyScatter(ideal, mode);
 
-    // Base sur le profil
-    const r = Math.random();
-    const singleThreshold = skill.single;
-    const doubleThreshold = skill.single + skill.double;
-    let mult: 1 | 2 | 3;
+    darts.push(hit);
 
-    if (r < singleThreshold) mult = 1;
-    else if (r < doubleThreshold) mult = 2;
-    else mult = 3;
+    const scored = dartScore(hit);
 
-    // Modulation par style
-    if (style === "aggressive" && remaining > 120 && mult === 1) {
-      // prend plus souvent le risque du T20/T19
-      if (Math.random() < 0.6) mult = 3;
-    }
-
-    if (style === "safe" && remaining <= 120 && mult === 3) {
-      // en dessous de 120, il évite les triples trop dangereux
-      if (Math.random() < 0.7) mult = 1;
-    }
-
-    // Protector anti-bust débile quand on approche du finish
-    const potential = seg * mult;
-    if (doubleOut && remaining <= 80 && remaining - potential < 2) {
-      // si ça bust ou laisse 1, on passe en simple
-      mult = 1;
-    }
-
-    const d: UIDart = { v: seg, mult };
-    darts.push(d);
-    remaining = Math.max(remaining - dartVal(d), 0);
+    // On ne simule pas les busts ultra précisément ici,
+    // on s'aligne juste sur un plan cohérent
+    remaining = Math.max(remaining - scored, 0);
   }
 
   return darts;
@@ -835,7 +990,7 @@ const style =
   ((activePlayer as any).botStyle as BotStyle) ?? undefined;
 
 const timeout = setTimeout(() => {
-  const visit = computeBotVisit(level, scoreNow, doubleOut, style);
+  const visit = computeBotVisit(level, scoreNow, doubleOut);
 
   // UI : mémorise la volée du BOT ...
       setLastVisitsByPlayer((m) => ({
@@ -845,25 +1000,31 @@ const timeout = setTimeout(() => {
 
       const inputs: X01DartInputV3[] = [];
 
-      visit.forEach((d) => {
-        if (d.v <= 0) {
-          // MISS = dart de valeur 0
-          const inputMiss: X01DartInputV3 = {
-            segment: 0 as any,
-            multiplier: 1,
-          };
-          inputs.push(inputMiss);
-          throwDart(inputMiss);
-          return;
-        }
+      // AU LIEU DE TOUT JOUER D'UN COUP → ON JOUE UNE FLÉCHETTE APRÈS L'AUTRE
+visit.forEach((d, index) => {
+  setTimeout(() => {
+    let input: X01DartInputV3;
 
-        const input: X01DartInputV3 = {
-          segment: d.v === 25 ? 25 : d.v,
-          multiplier: d.mult as 1 | 2 | 3,
-        };
-        inputs.push(input);
-        throwDart(input);
-      });
+    if (d.v <= 0) {
+      // MISS
+      input = { segment: 0, multiplier: 1 };
+    } else {
+      input = {
+        segment: d.v === 25 ? 25 : d.v,
+        multiplier: d.mult as 1 | 2 | 3,
+      };
+    }
+
+    inputs.push(input);
+    throwDart(input);
+
+    // Quand la dernière fléchette est jouée → autosave
+    if (index === visit.length - 1) {
+      replayDartsRef.current = replayDartsRef.current.concat(inputs);
+      persistAutosave();
+    }
+  }, index * 550); // ⏱ délai entre chaque dart (550ms)
+});
 
       // Autosave : on enregistre aussi les volées des bots
       replayDartsRef.current = replayDartsRef.current.concat(inputs);
@@ -880,6 +1041,7 @@ const timeout = setTimeout(() => {
     currentLegIndex,
     throwDart,
     persistAutosave,
+    doubleOut,
   ]);
 
   // =====================================================
@@ -1651,7 +1813,7 @@ type X01V3HistoryPayload = {
   config: X01ConfigV3;
   state: any;
   scores: Record<string, number>;
-  liveStatsByPlayer: any;
+  liveStatsByPlayer: Record<string, any>;
 };
 
 /* -------------------------------------------------------------
@@ -1718,9 +1880,24 @@ function extractSegmentMapsFromLive(live: any) {
 }
 
 function extractDetailedStatsFromLive(live: any) {
-  const hitsS = numOr0(live?.hitsS, live?.S, live?.singles, live?.hitsSingle);
-  const hitsD = numOr0(live?.hitsD, live?.D, live?.doubles, live?.hitsDouble);
-  const hitsT = numOr0(live?.hitsT, live?.T, live?.triples, live?.hitsTriple);
+  const hitsS = numOr0(
+    live?.hitsS,
+    live?.S,
+    live?.singles,
+    live?.hitsSingle
+  );
+  const hitsD = numOr0(
+    live?.hitsD,
+    live?.D,
+    live?.doubles,
+    live?.hitsDouble
+  );
+  const hitsT = numOr0(
+    live?.hitsT,
+    live?.T,
+    live?.triples,
+    live?.hitsTriple
+  );
 
   const miss = numOr0(
     live?.miss,
@@ -1753,7 +1930,8 @@ function extractDetailedStatsFromLive(live: any) {
     live?.totalDarts
   );
   if (!darts) {
-    darts = hitsS + hitsD + hitsT + miss; // fallback minimum
+    // fallback minimal si pas de compteur global
+    darts = hitsS + hitsD + hitsT + miss;
   }
 
   const { bySegmentS, bySegmentD, bySegmentT } =
@@ -1778,7 +1956,7 @@ function extractDetailedStatsFromLive(live: any) {
    Sauvegarde X01 V3 dans l'Historique
    - summary : toutes les stats utiles pour StatsHub / X01Multi
    - payload : VERSION LÉGÈRE (sans engineState ni liveStatsByPlayer)
-     => évite les erreurs de quota (dbv2-autosave)
+     => évite les erreurs de quota
 ------------------------------------------------------------- */
 
 function saveX01V3MatchToHistory({
@@ -1791,7 +1969,9 @@ function saveX01V3MatchToHistory({
 
   const matchId =
     state?.matchId ||
-    `x01v3-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    `x01v3-${Date.now()}-${Math.random()
+      .toString(16)
+      .slice(2)}`;
 
   const createdAt = state?.createdAt || Date.now();
 
@@ -1832,23 +2012,32 @@ function saveX01V3MatchToHistory({
 
     detailedByPlayer[pid] = detail;
 
-    perPlayer.push({
-      playerId: pid,
-      avg3,
-      bestVisit,
-      bestCheckout,
-      darts: detail.darts,
-      hitsS: detail.hitsS,
-      hitsD: detail.hitsD,
-      hitsT: detail.hitsT,
-      miss: detail.miss,
-      bull: detail.bull,
-      dBull: detail.dBull,
-      bust: detail.bust,
-      bySegmentS: detail.bySegmentS,
-      bySegmentD: detail.bySegmentD,
-      bySegmentT: detail.bySegmentT,
-    });
+    // Reformatage compatible V2/V1 pour StatsHub et tous les dashboards
+const segments = {
+  S: detail.bySegmentS,
+  D: detail.bySegmentD,
+  T: detail.bySegmentT,
+};
+
+const hits = {
+  S: detail.hitsS,
+  D: detail.hitsD,
+  T: detail.hitsT,
+  M: detail.miss,
+};
+
+perPlayer.push({
+  playerId: pid,
+  avg3,
+  bestVisit,
+  bestCheckout,
+  darts: detail.darts,
+  hits,
+  bull: detail.bull,
+  dBull: detail.dBull,
+  bust: detail.bust,
+  segments,
+});
 
     // Gagnant simple : score à 0
     if (scoreNow === 0 && !winnerId) {
@@ -1885,30 +2074,30 @@ function saveX01V3MatchToHistory({
     players: lightPlayers as any,
   };
 
-   // Détermine un mode compatible avec les anciens agrégateurs
-   const isSolo = players.length === 1;
-   const hasTeams =
-     Array.isArray((config as any).teams) &&
-     (config as any).teams.length > 0;
- 
-   let gameMode: "x01_solo" | "x01_multi" | "x01_teams" = "x01_multi";
-   if (isSolo) gameMode = "x01_solo";
-   else if (hasTeams) gameMode = "x01_teams";
- 
-   const payload = {
-     // 👇 ancien champ utilisé par tes agrégateurs
-     mode: gameMode,           // "x01_solo" | "x01_multi" | "x01_teams"
- 
-     // 👇 nouvelle info pour distinguer la V3
-     variant: "x01_v3",
- 
-     game: "x01",
-     startScore: config.startScore,
-     config: lightConfig,
-     finalScores: scores,
-     legsWon: state?.legsWon ?? {},
-     setsWon: state?.setsWon ?? {},
-   };
+  // Détermine un mode compatible avec les anciens agrégateurs
+  const isSolo = players.length === 1;
+  const hasTeams =
+    Array.isArray((config as any).teams) &&
+    (config as any).teams.length > 0;
+
+  let gameMode: "x01_solo" | "x01_multi" | "x01_teams" = "x01_multi";
+  if (isSolo) gameMode = "x01_solo";
+  else if (hasTeams) gameMode = "x01_teams";
+
+  const payload = {
+    // 👇 ancien champ utilisé par tes agrégateurs
+    mode: gameMode, // "x01_solo" | "x01_multi" | "x01_teams"
+
+    // 👇 nouvelle info pour distinguer la V3
+    variant: "x01_v3",
+
+    game: "x01",
+    startScore: config.startScore,
+    config: lightConfig,
+    finalScores: scores,
+    legsWon: state?.legsWon ?? {},
+    setsWon: state?.setsWon ?? {},
+  };
 
   // -------------------------
   // Record History (léger)
@@ -1931,7 +2120,9 @@ function saveX01V3MatchToHistory({
   try {
     History.upsert(record);
   } catch (err) {
-    console.warn("[X01PlayV3] History.upsert failed (probably quota)", err);
+    console.warn(
+      "[X01PlayV3] History.upsert failed (probably quota)",
+      err
+    );
   }
 }
-

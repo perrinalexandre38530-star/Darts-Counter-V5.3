@@ -251,8 +251,11 @@ function numOr0(...values: any[]): number {
 }
 
 /**
- * Détail live => X01MultiSession partiel (sans playerName / meta)
- * Utilise summary.detailedByPlayer + perPlayer (avg3, BV, CO)
+ * Détail summary => X01MultiSession partiel (sans meta)
+ * Utilise en priorité :
+ *  - summary.detailedByPlayer[pid] (notre nouveau format)
+ *  - summary.avg3ByPlayer / bestVisitByPlayer / bestCheckoutByPlayer
+ *  - summary.perPlayer (compat anciens matchs)
  */
 function buildSessionFromSummary(
   match: any,
@@ -262,144 +265,206 @@ function buildSessionFromSummary(
   "id" | "matchId" | "date" | "selectedPlayerId" | "playerName"
 > | null {
   const summary = match.summary || {};
-  const perPlayer: any[] = summary.perPlayer || [];
   const detailedByPlayer = summary.detailedByPlayer || {};
+  const perPlayer: any[] = Array.isArray(summary.perPlayer)
+    ? summary.perPlayer
+    : [];
 
-  const row = perPlayer.find((p) => p.selectedPlayerId === pid) || {};
-  const detail = detailedByPlayer[pid] || {};
+  const pidStr = String(pid);
 
-  const darts =
-    numOr0(row.darts, detail.darts) ||
-    numOr0(detail.hitsS, detail.hitsD, detail.hitsT, detail.miss);
+  // Ligne "perPlayer" qui correspond à ce joueur (compat tous formats)
+  const row =
+    perPlayer.find((p) => {
+      const candidates = [
+        p.playerId,
+        p.selectedPlayerId,
+        p.profileId,
+        p.id,
+        p.pid,
+      ]
+        .filter(Boolean)
+        .map((x: any) => String(x));
+      return candidates.includes(pidStr);
+    }) || {};
 
-  const avg3D = numOr0(row.avg3, row.avg3D);
+  // Détail agrégé par joueur (format X01 V3)
+  const detail: any = detailedByPlayer[pid] || {};
+
+  // ---------- Darts ----------
+  let darts = numOr0(detail.darts, row.darts);
+  if (!darts) {
+    darts =
+      numOr0(detail.hitsS, detail.hitsD, detail.hitsT, detail.miss) ||
+      numOr0(row.hitsS, row.hitsD, row.hitsT, row.miss);
+  }
+
+  // ---------- Moyennes ----------
+  const avg3D = numOr0(
+    summary.avg3ByPlayer?.[pidStr],
+    detail.avg3,
+    detail.avg3D,
+    row.avg3,
+    row.avg3D
+  );
+
   const avg1D =
-    darts > 0 && avg3D > 0 ? avg3D / 3 : numOr0(row.avg1D, detail.avg1D);
+    darts > 0 && avg3D > 0
+      ? avg3D / 3
+      : numOr0(detail.avg1D, row.avg1D);
 
-  const bestVisit = numOr0(row.bestVisit, detail.bestVisit);
-  const bestCheckoutRaw =
-    row.bestCheckout !== undefined && row.bestCheckout !== null
-      ? row.bestCheckout
-      : detail.bestCheckout;
+  // ---------- Records BV / CO ----------
+  const bestVisit = numOr0(
+    summary.bestVisitByPlayer?.[pidStr],
+    detail.bestVisit,
+    row.bestVisit
+  );
+
+  const bestCheckoutVal = numOr0(
+    summary.bestCheckoutByPlayer?.[pidStr],
+    detail.bestCheckout,
+    row.bestCheckout
+  );
   const bestCheckout =
-    bestCheckoutRaw === null || bestCheckoutRaw === undefined
-      ? null
-      : Number(bestCheckoutRaw) || 0;
+    bestCheckoutVal > 0
+      ? bestCheckoutVal
+      : row.bestCheckout ?? detail.bestCheckout ?? null;
 
-  const hitsS = numOr0(row.hitsS, detail.hitsS);
-  const hitsD = numOr0(row.hitsD, detail.hitsD);
-  const hitsT = numOr0(row.hitsT, detail.hitsT);
-  const miss = numOr0(row.miss, detail.miss);
-  const bull = numOr0(row.bull, detail.bull);
-  const dBull = numOr0(row.dBull, detail.dBull);
-  const bust = numOr0(row.bust, detail.bust);
+  // ---------- Hits / Miss / Bull / Bust ----------
+  const hitsS = numOr0(detail.hitsS, row.hitsS);
+  const hitsD = numOr0(detail.hitsD, row.hitsD);
+  const hitsT = numOr0(detail.hitsT, row.hitsT);
+  const miss = numOr0(detail.miss, row.miss);
+  const bull = numOr0(detail.bull, row.bull);
+  const dBull = numOr0(detail.dBull, row.dBull);
+  const bust = numOr0(detail.bust, row.bust);
 
-  const bySegmentS =
+  // ---------- bySegment S / D / T ----------
+  const bySegmentS: Record<string, number> =
     (detail.bySegmentS && typeof detail.bySegmentS === "object"
-      ? (detail.bySegmentS as Record<string, any>)
-      : undefined) || {};
+      ? detail.bySegmentS
+      : row.bySegmentS) || {};
 
-  const bySegmentD =
+  const bySegmentD: Record<string, number> =
     (detail.bySegmentD && typeof detail.bySegmentD === "object"
-      ? (detail.bySegmentD as Record<string, any>)
-      : undefined) || {};
+      ? detail.bySegmentD
+      : row.bySegmentD) || {};
 
-  const bySegmentT =
+  const bySegmentT: Record<string, number> =
     (detail.bySegmentT && typeof detail.bySegmentT === "object"
-      ? (detail.bySegmentT as Record<string, any>)
-      : undefined) || {};
+      ? detail.bySegmentT
+      : row.bySegmentT) || {};
 
-      // --- infos match / legs / sets / victoire (best effort, très défensif) ---
-  const isWin =
-  row.isWinner === true ||
-  row.won === true ||
-  row.win === true ||
-  row.victory === true ||
-  row.result === "win" ||
-  row.outcome === "win" ||
-  (typeof row.rank === "number" && row.rank === 1) ||
-  (typeof row.position === "number" && row.position === 1);
+  // ---------- Win / legs / sets / finishes ----------
+  // isWin : on commence par winnerId au niveau du match, puis fallback sur flags éventuels
+  const isWinExplicit =
+    match.winnerId && String(match.winnerId) === pidStr;
 
-const legsPlayed = numOr0(
-  (row as any).legsPlayed,
-  (row as any).legs,
-  (row as any).totalLegs,
-  (detail as any).legsPlayed,
-  (detail as any).legs
-);
-const legsWon = numOr0(
-  (row as any).legsWon,
-  (row as any).legsWin,
-  (row as any).wonLegs,
-  (detail as any).legsWon
-);
-const setsPlayed = numOr0(
-  (row as any).setsPlayed,
-  (row as any).sets,
-  (row as any).totalSets,
-  (detail as any).setsPlayed,
-  (detail as any).sets
-);
-const setsWon = numOr0(
-  (row as any).setsWon,
-  (row as any).setsWin,
-  (row as any).wonSets,
-  (detail as any).setsWon
-);
-const finishes = numOr0(
-  (row as any).finishes,
-  (row as any).finishCount,
-  (detail as any).finishes,
-  (detail as any).finishCount
-);
+  const isWinHeuristic =
+    row.isWinner === true ||
+    row.won === true ||
+    row.win === true ||
+    row.victory === true ||
+    row.result === "win" ||
+    row.outcome === "win" ||
+    (typeof row.rank === "number" && row.rank === 1) ||
+    (typeof row.position === "number" && row.position === 1);
 
-// 🔢 RANG FINAL (si dispo dans le summary)
-const rawRank =
-  (row as any).rank ??
-  (row as any).position ??
-  (row as any).place ??
-  (row as any).standing ??
-  (detail as any).rank ??
-  (detail as any).position ??
-  null;
+  const isWin = isWinExplicit || isWinHeuristic;
 
-let rank: number | null = null;
-if (rawRank !== null && rawRank !== undefined) {
-  const n =
-    typeof rawRank === "number"
-      ? rawRank
-      : parseInt(String(rawRank), 10);
-  rank = Number.isFinite(n) && n > 0 ? n : null;
-}
+  // legsWon / setsWon depuis payload/summary si possible
+  const legsWon = numOr0(
+    row.legsWon,
+    detail.legsWon,
+    match?.payload?.legsWon?.[pidStr],
+    match?.legsWon?.[pidStr]
+  );
+  const setsWon = numOr0(
+    row.setsWon,
+    detail.setsWon,
+    match?.payload?.setsWon?.[pidStr],
+    match?.setsWon?.[pidStr]
+  );
 
-return {
-  darts,
-  avg3D,
-  avg1D,
-  bestVisit,
-  bestCheckout,
-  hitsS,
-  hitsD,
-  hitsT,
-  miss,
-  bull,
-  dBull,
-  bust,
-  bySegmentS,
-  bySegmentD,
-  bySegmentT,
+  // legsPlayed / setsPlayed : best effort
+  let legsPlayed = numOr0(row.legsPlayed, detail.legsPlayed);
+  if (!legsPlayed) {
+    const legsMap =
+      match?.payload?.legsWon || match?.legsWon || undefined;
+    if (legsMap && typeof legsMap === "object") {
+      const totalLegs = Object.values(legsMap).reduce(
+        (sum: number, v: any) => sum + numOr0(v),
+        0
+      );
+      if (totalLegs > 0) legsPlayed = totalLegs;
+    }
+  }
 
-  // ➕ nouveaux champs
-  isWin,
-  legsPlayed,
-  legsWon,
-  setsPlayed,
-  setsWon,
-  finishes,
+  let setsPlayed = numOr0(row.setsPlayed, detail.setsPlayed);
+  if (!setsPlayed) {
+    const setsMap =
+      match?.payload?.setsWon || match?.setsWon || undefined;
+    if (setsMap && typeof setsMap === "object") {
+      const totalSets = Object.values(setsMap).reduce(
+        (sum: number, v: any) => sum + numOr0(v),
+        0
+      );
+      if (totalSets > 0) setsPlayed = totalSets;
+    }
+  }
 
-  // ➕➕ rang multi
-  rank,
-};
+  const finishes = numOr0(
+    (row as any).finishes,
+    (row as any).finishCount,
+    (detail as any).finishes,
+    (detail as any).finishCount
+  );
+
+  // ---------- Rang multi ----------
+  const rawRank =
+    (row as any).rank ??
+    (row as any).position ??
+    (row as any).place ??
+    (row as any).standing ??
+    (detail as any).rank ??
+    (detail as any).position ??
+    null;
+
+  let rank: number | null = null;
+  if (rawRank !== null && rawRank !== undefined) {
+    const n =
+      typeof rawRank === "number"
+        ? rawRank
+        : parseInt(String(rawRank), 10);
+    rank = Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  // Si on n'a vraiment rien, on zappe ce match
+  if (!darts && !hitsS && !hitsD && !hitsT && !miss) return null;
+
+  return {
+    darts,
+    avg3D,
+    avg1D,
+    bestVisit,
+    bestCheckout,
+    hitsS,
+    hitsD,
+    hitsT,
+    miss,
+    bull,
+    dBull,
+    bust,
+    bySegmentS,
+    bySegmentD,
+    bySegmentT,
+    isWin,
+    legsPlayed,
+    legsWon,
+    setsPlayed,
+    setsWon,
+    finishes,
+    rank,
+  };
 }
 
 /**
@@ -760,162 +825,181 @@ const teamPctSets = pct(teamSetsWon, teamSetsPlayed);
       ? filtered.reduce((s: any, x: any) => s + x.avg1D, 0) / totalSessions
       : 0;
 
-  // Agrégats hits / miss / bull etc.
-  let gHitsS = 0,
-    gHitsD = 0,
-    gHitsT = 0,
-    gMiss = 0,
-    gBull = 0,
-    gDBull = 0,
-    gBust = 0;
+// Agrégats hits / miss / bull etc.
+let gHitsS = 0,
+  gHitsD = 0,
+  gHitsT = 0,
+  gMiss = 0,
+  gBull = 0,
+  gDBull = 0,
+  gBust = 0;
 
-  let minDarts: number | null = null,
-    maxDarts: number | null = null,
-    minHits: number | null = null,
-    maxHits: number | null = null,
-    minS: number | null = null,
-    maxS: number | null = null,
-    minD: number | null = null,
-    maxD: number | null = null,
-    minT: number | null = null,
-    maxT: number | null = null,
-    minMiss: number | null = null,
-    maxMiss: number | null = null,
-    minBust: number | null = null,
-    maxBust: number | null = null;
+let
+  minDarts: number | null = null,
+  maxDarts: number | null = null,
+  minHits: number | null = null,
+  maxHits: number | null = null,
+  minS: number | null = null,
+  maxS: number | null = null,
+  minD: number | null = null,
+  maxD: number | null = null,
+  minT: number | null = null,
+  maxT: number | null = null,
+  minMiss: number | null = null,
+  maxMiss: number | null = null,
+  minBust: number | null = null,
+  maxBust: number | null = null,
+  minBull: number | null = null,
+  maxBull: number | null = null,
+  minDBull: number | null = null,
+  maxDBull: number | null = null;
 
-  for (const s of filtered) {
-    const darts = s.darts || 0;
-    const sS = s.hitsS ?? 0;
-    const sD = s.hitsD ?? 0;
-    const sT = s.hitsT ?? 0;
-    const sMiss = s.miss ?? 0;
-    const sBull = s.bull ?? 0;
-    const sDBull = s.dBull ?? 0;
-    const sBust = s.bust ?? 0;
-    const sHits = sS + sD + sT;
+for (const s of filtered) {
+  const darts = s.darts || 0;
+  const sS = s.hitsS ?? 0;
+  const sD = s.hitsD ?? 0;
+  const sT = s.hitsT ?? 0;
+  const sMiss = s.miss ?? 0;
+  const sBull = s.bull ?? 0;
+  const sDBull = s.dBull ?? 0;
+  const sBust = s.bust ?? 0;
 
-    const hasCounters = sS + sD + sT + sMiss + sBull + sDBull + sBust > 0;
+  const sHits = sS + sD + sT;
 
-    if (hasCounters) {
-      gHitsS += sS;
-      gHitsD += sD;
-      gHitsT += sT;
-      gMiss += sMiss;
-      gBull += sBull;
-      gDBull += sDBull;
-      gBust += sBust;
+  const hasCounters =
+    sS + sD + sT + sMiss + sBull + sDBull + sBust > 0;
 
-      if (darts > 0) {
-        if (minDarts === null || darts < minDarts) minDarts = darts;
-        if (maxDarts === null || darts > maxDarts) maxDarts = darts;
+  if (hasCounters) {
+    gHitsS += sS;
+    gHitsD += sD;
+    gHitsT += sT;
+    gMiss += sMiss;
+    gBull += sBull;
+    gDBull += sDBull;
+    gBust += sBust;
 
-        if (minHits === null || sHits < minHits) minHits = sHits;
-        if (maxHits === null || sHits > maxHits) maxHits = sHits;
+    if (darts > 0) {
+      if (minDarts === null || darts < minDarts) minDarts = darts;
+      if (maxDarts === null || darts > maxDarts) maxDarts = darts;
 
-        if (minS === null || sS < minS) minS = sS;
-        if (maxS === null || sS > maxS) maxS = sS;
+      if (minHits === null || sHits < minHits) minHits = sHits;
+      if (maxHits === null || sHits > maxHits) maxHits = sHits;
 
-        if (minD === null || sD < minD) minD = sD;
-        if (maxD === null || sD > maxD) maxD = sD;
+      if (minS === null || sS < minS) minS = sS;
+      if (maxS === null || sS > maxS) maxS = sS;
 
-        if (minT === null || sT < minT) minT = sT;
-        if (maxT === null || sT > maxT) maxT = sT;
+      if (minD === null || sD < minD) minD = sD;
+      if (maxD === null || sD > maxD) maxD = sD;
 
-        if (minMiss === null || sMiss < minMiss) minMiss = sMiss;
-        if (maxMiss === null || sMiss > maxMiss) maxMiss = sMiss;
+      if (minT === null || sT < minT) minT = sT;
+      if (maxT === null || sT > maxT) maxT = sT;
 
-        if (minBust === null || sBust < minBust) minBust = sBust;
-        if (maxBust === null || sBust > maxBust) maxBust = sBust;
-      }
-      continue;
+      if (minMiss === null || sMiss < minMiss) minMiss = sMiss;
+      if (maxMiss === null || sMiss > maxMiss) maxMiss = sMiss;
+
+      if (minBust === null || sBust < minBust) minBust = sBust;
+      if (maxBust === null || sBust > maxBust) maxBust = sBust;
+
+      // 🔥 AJOUT : calcul min / max Bull & DBull
+      if (minBull === null || sBull < minBull) minBull = sBull;
+      if (maxBull === null || sBull > maxBull) maxBull = sBull;
+
+      if (minDBull === null || sDBull < minDBull) minDBull = sDBull;
+      if (maxDBull === null || sDBull > maxDBull) maxDBull = sDBull;
     }
+
+    continue;
   }
+}
 
-  const totalHits = gHitsS + gHitsD + gHitsT;
-  const totalThrows = totalHits + gMiss;
+const totalHits = gHitsS + gHitsD + gHitsT;
+const totalThrows = totalHits + gMiss;
 
-  const hitsPercent = totalThrows > 0 ? (totalHits / totalThrows) * 100 : 0;
-  const simplePercent = totalHits > 0 ? (gHitsS / totalHits) * 100 : 0;
-  const doublePercent = totalHits > 0 ? (gHitsD / totalHits) * 100 : 0;
-  const triplePercent = totalHits > 0 ? (gHitsT / totalHits) * 100 : 0;
+const hitsPercent = totalThrows > 0 ? (totalHits / totalThrows) * 100 : 0;
+const simplePercent = totalHits > 0 ? (gHitsS / totalHits) * 100 : 0;
+const doublePercent = totalHits > 0 ? (gHitsD / totalHits) * 100 : 0;
+const triplePercent = totalHits > 0 ? (gHitsT / totalHits) * 100 : 0;
 
-  const avgHitsSPerSession = totalSessions > 0 ? gHitsS / totalSessions : 0;
-  const avgHitsDPerSession = totalSessions > 0 ? gHitsD / totalSessions : 0;
-  const avgHitsTPerSession = totalSessions > 0 ? gHitsT / totalSessions : 0;
-  const avgMissPerSession = totalSessions > 0 ? gMiss / totalSessions : 0;
-  const avgBustPerSession = totalSessions > 0 ? gBust / totalSessions : 0;
-  const avgBullPerSession = totalSessions > 0 ? gBull / totalSessions : 0;
-  const avgDBullPerSession = totalSessions > 0 ? gDBull / totalSessions : 0;
-  const bestAvg3DSession =
-    totalSessions > 0 ? Math.max(...filtered.map((x: any) => x.avg3D || 0)) : 0;
+const avgHitsSPerSession = totalSessions > 0 ? gHitsS / totalSessions : 0;
+const avgHitsDPerSession = totalSessions > 0 ? gHitsD / totalSessions : 0;
+const avgHitsTPerSession = totalSessions > 0 ? gHitsT / totalSessions : 0;
+const avgMissPerSession = totalSessions > 0 ? gMiss / totalSessions : 0;
+const avgBustPerSession = totalSessions > 0 ? gBust / totalSessions : 0;
+const avgBullPerSession = totalSessions > 0 ? gBull / totalSessions : 0;
+const avgDBullPerSession = totalSessions > 0 ? gDBull / totalSessions : 0;
 
-  const pctHitsGlobal = totalThrows > 0 ? hitsPercent : null;
-  const pctMissGlobal = totalThrows > 0 ? (gMiss / totalThrows) * 100 : null;
-  const pctSimpleGlobal = totalHits > 0 ? (gHitsS / totalHits) * 100 : null;
-  const pctDoubleGlobal = totalHits > 0 ? (gHitsD / totalHits) * 100 : null;
-  const pctTripleGlobal = totalHits > 0 ? (gHitsT / totalHits) * 100 : null;
+const bestAvg3DSession =
+  totalSessions > 0
+    ? Math.max(...filtered.map((x: any) => x.avg3D || 0))
+    : 0;
 
-  const pctBullGlobal = totalDarts > 0 ? (gBull / totalDarts) * 100 : null;
-  const pctDBullGlobal = totalDarts > 0 ? (gDBull / totalDarts) * 100 : null;
-  const pctBustGlobal = totalThrows > 0 ? (gBust / totalThrows) * 100 : null;
+const pctHitsGlobal = totalThrows > 0 ? hitsPercent : null;
+const pctMissGlobal = totalThrows > 0 ? (gMiss / totalThrows) * 100 : null;
+const pctSimpleGlobal = totalHits > 0 ? (gHitsS / totalHits) * 100 : null;
+const pctDoubleGlobal = totalHits > 0 ? (gHitsD / totalHits) * 100 : null;
+const pctTripleGlobal = totalHits > 0 ? (gHitsT / totalHits) * 100 : null;
 
-  // ================== AGRÉGATS MATCHS (tous modes) ==================
-  // matches distincts dans la période (tous joueurs confondus)
-  const distinctMatchIds = new Set<string>();
-  for (const s of filtered) {
-    if (s.matchId) distinctMatchIds.add(s.matchId);
-  }
-  const totalMatchesAllModes = distinctMatchIds.size;
+const pctBullGlobal = totalDarts > 0 ? (gBull / totalDarts) * 100 : null;
+const pctDBullGlobal = totalDarts > 0 ? (gDBull / totalDarts) * 100 : null;
+const pctBustGlobal = totalThrows > 0 ? (gBust / totalThrows) * 100 : null;
 
-  // Ici ce tab ne charge que du X01 → on considère tout comme X01
-  const filteredX01 = filtered;
-  const filteredX01Solo = filteredX01.filter((s: any) => !(s as any).isTeam);
-  const filteredX01Team = filteredX01.filter((s: any) => !!(s as any).isTeam);
+// ================== AGRÉGATS MATCHS (tous modes) ==================
+const distinctMatchIds = new Set<string>();
+for (const s of filtered) {
+  if (s.matchId) distinctMatchIds.add(s.matchId);
+}
+const totalMatchesAllModes = distinctMatchIds.size;
 
-  const matchesX01Solo = new Set(filteredX01Solo.map((s: any) => s.matchId)).size;
-  const matchesX01Team = new Set(filteredX01Team.map((s: any) => s.matchId)).size;
-  const matchesX01Total = matchesX01Solo + matchesX01Team;
+const filteredX01 = filtered;
+const filteredX01Solo = filteredX01.filter((s: any) => !(s as any).isTeam);
+const filteredX01Team = filteredX01.filter((s: any) => !!(s as any).isTeam);
 
-  const winsX01Solo = filteredX01Solo.filter((s: any) => (s as any).isWin).length;
-  const winsX01Team = filteredX01Team.filter((s: any) => (s as any).isWin).length;
-  const winsX01Total = winsX01Solo + winsX01Team;
+const matchesX01Solo =
+  new Set(filteredX01Solo.map((s: any) => s.matchId)).size;
+const matchesX01Team =
+  new Set(filteredX01Team.map((s: any) => s.matchId)).size;
+const matchesX01Total = matchesX01Solo + matchesX01Team;
 
-  const pctMatchesX01 =
-    totalMatchesAllModes > 0
-      ? (matchesX01Total / totalMatchesAllModes) * 100
-      : 0;
+const winsX01Solo = filteredX01Solo.filter((s: any) => (s as any).isWin).length;
+const winsX01Team = filteredX01Team.filter((s: any) => (s as any).isWin).length;
+const winsX01Total = winsX01Solo + winsX01Team;
 
-  const pctWinX01 =
-    matchesX01Total > 0 ? (winsX01Total / matchesX01Total) * 100 : 0;
+const pctMatchesX01 =
+  totalMatchesAllModes > 0
+    ? (matchesX01Total / totalMatchesAllModes) * 100
+    : 0;
 
-  // Legs / sets pour X01 (solo + team)
-  const legsPlayedX01 = filteredX01.reduce(
-    (sum: any, s: any) => sum + numOr0((s as any).legsPlayed),
-    0
-  );
-  const legsWonX01 = filteredX01.reduce(
-    (sum: any, s: any) => sum + numOr0((s as any).legsWon),
-    0
-  );
-  const pctLegsWinX01 =
-    legsPlayedX01 > 0 ? (legsWonX01 / legsPlayedX01) * 100 : 0;
+const pctWinX01 =
+  matchesX01Total > 0
+    ? (winsX01Total / matchesX01Total) * 100
+    : 0;
 
-  const setsPlayedX01 = filteredX01.reduce(
-    (sum: any, s: any) => sum + numOr0((s as any).setsPlayed),
-    0
-  );
-  const setsWonX01 = filteredX01.reduce(
-    (sum: any, s: any) => sum + numOr0((s as any).setsWon),
-    0
-  );
-  const pctSetsWinX01 =
-    setsPlayedX01 > 0 ? (setsWonX01 / setsPlayedX01) * 100 : 0;
+const legsPlayedX01 = filteredX01.reduce(
+  (sum: any, s: any) => sum + numOr0((s as any).legsPlayed),
+  0
+);
+const legsWonX01 = filteredX01.reduce(
+  (sum: any, s: any) => sum + numOr0((s as any).legsWon),
+  0
+);
+const pctLegsWinX01 =
+  legsPlayedX01 > 0 ? (legsWonX01 / legsPlayedX01) * 100 : 0;
 
-  const finishesX01 = filteredX01.reduce(
-    (sum: any, s: any) => sum + numOr0((s as any).finishes),
-    0
-  );
+const setsPlayedX01 = filteredX01.reduce(
+  (sum: any, s: any) => sum + numOr0((s as any).setsPlayed),
+  0
+);
+const setsWonX01 = filteredX01.reduce(
+  (sum: any, s: any) => sum + numOr0((s as any).setsWon),
+  0
+);
+const pctSetsWinX01 =
+  setsPlayedX01 > 0 ? (setsWonX01 / setsPlayedX01) * 100 : 0;
+
+const finishesX01 = filteredX01.reduce(
+  (sum: any, s: any) => sum + numOr0((s as any).finishes),
+  0
+);
 
   // Pour l’instant on n’a pas encore branché Cricket → 0
   const matchesCricketSolo = 0;
@@ -2282,7 +2366,7 @@ for (const tm in teammateStats) {
 
   <div style={{ ...statRowBox, borderTop: "none", fontSize: 11, color: T.text70, fontWeight: 700 }}>
     <span style={{ flex: 2 }}>Intitulé</span>
-    <span style={{ flex: 1, textAlign: "right" }}>Total / Win</span>
+    <span style={{ flex: 1, textAlign: "right" }}>Win / Total</span>
     <span style={{ flex: 1, textAlign: "right" }}>%Win</span>
   </div>
 
@@ -2317,7 +2401,7 @@ for (const tm in teammateStats) {
 
   <div style={{ ...statRowBox, borderTop: "none", fontSize: 11, color: T.text70, fontWeight: 700 }}>
     <span style={{ flex: 2 }}>Intitulé</span>
-    <span style={{ flex: 1, textAlign: "right" }}>Total / Win</span>
+    <span style={{ flex: 1, textAlign: "right" }}>Win / Total</span>
     <span style={{ flex: 1, textAlign: "right" }}>%Win</span>
   </div>
 
@@ -2404,7 +2488,7 @@ for (const tm in teammateStats) {
 
   <div style={{ ...statRowBox, borderTop: "none", fontSize: 11, color: T.text70, fontWeight: 700 }}>
     <span style={{ flex: 2 }}>Intitulé</span>
-    <span style={{ flex: 1, textAlign: "right" }}>Total / Win</span>
+    <span style={{ flex: 1, textAlign: "right" }}>Win / Total</span>
     <span style={{ flex: 1, textAlign: "right" }}>%Win</span>
   </div>
 
