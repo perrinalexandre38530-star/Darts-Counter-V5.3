@@ -272,7 +272,7 @@ function buildSessionFromSummary(
 
   const pidStr = String(pid);
 
-  // Ligne "perPlayer" qui correspond à ce joueur (compat tous formats)
+  // Ligne perPlayer qui correspond à ce joueur
   const row =
     perPlayer.find((p) => {
       const candidates = [
@@ -287,7 +287,7 @@ function buildSessionFromSummary(
       return candidates.includes(pidStr);
     }) || {};
 
-  // Détail agrégé par joueur (format X01 V3)
+  // Détail V3
   const detail: any = detailedByPlayer[pid] || {};
 
   // ---------- Darts ----------
@@ -312,30 +312,34 @@ function buildSessionFromSummary(
       ? avg3D / 3
       : numOr0(detail.avg1D, row.avg1D);
 
-  // ---------- Records BV / CO ----------
+  // ---------- Records BV ----------
   const bestVisit = numOr0(
     summary.bestVisitByPlayer?.[pidStr],
     detail.bestVisit,
     row.bestVisit
   );
 
-  const bestCheckoutVal = numOr0(
-    summary.bestCheckoutByPlayer?.[pidStr],
-    detail.bestCheckout,
-    row.bestCheckout
-  );
-  const bestCheckout =
-    bestCheckoutVal > 0
-      ? bestCheckoutVal
-      : row.bestCheckout ?? detail.bestCheckout ?? null;
+  // ===== CO (Checkout) — PATCH CO COMPLET =====
+  const rawCO = summary.bestCheckoutByPlayer?.[pidStr];
 
-  // ---------- Hits / Miss / Bull / Bust ----------
+  const bestCheckoutRaw =
+    row?.bestCheckout ??
+    rawCO ??
+    detail?.bestCheckout ??
+    null;
+
+  let bestCheckout = 0;
+  if (bestCheckoutRaw !== null && bestCheckoutRaw !== undefined) {
+    const parsed = Number(bestCheckoutRaw);
+    bestCheckout = Number.isFinite(parsed) ? parsed : 0;
+  }
+  // ============================================
+
+  // ---------- Hits / Miss / Bust (hors Bull) ----------
   const hitsS = numOr0(detail.hitsS, row.hitsS);
   const hitsD = numOr0(detail.hitsD, row.hitsD);
   const hitsT = numOr0(detail.hitsT, row.hitsT);
   const miss = numOr0(detail.miss, row.miss);
-  const bull = numOr0(detail.bull, row.bull);
-  const dBull = numOr0(detail.dBull, row.dBull);
   const bust = numOr0(detail.bust, row.bust);
 
   // ---------- bySegment S / D / T ----------
@@ -354,8 +358,20 @@ function buildSessionFromSummary(
       ? detail.bySegmentT
       : row.bySegmentT) || {};
 
-  // ---------- Win / legs / sets / finishes ----------
-  // isWin : on commence par winnerId au niveau du match, puis fallback sur flags éventuels
+  // ---------- Bull / DBull (d’abord champs, puis fallback segments 25) ----------
+  const bull = numOr0(
+    detail.bull,
+    row.bull,
+    (bySegmentS && (bySegmentS["25"] ?? (bySegmentS as any)[25])) ?? 0
+  );
+
+  const dBull = numOr0(
+    detail.dBull,
+    row.dBull,
+    (bySegmentD && (bySegmentD["25"] ?? (bySegmentD as any)[25])) ?? 0
+  );
+
+  // ---------- Win / legs / sets ----------
   const isWinExplicit =
     match.winnerId && String(match.winnerId) === pidStr;
 
@@ -371,7 +387,6 @@ function buildSessionFromSummary(
 
   const isWin = isWinExplicit || isWinHeuristic;
 
-  // legsWon / setsWon depuis payload/summary si possible
   const legsWon = numOr0(
     row.legsWon,
     detail.legsWon,
@@ -385,7 +400,6 @@ function buildSessionFromSummary(
     match?.setsWon?.[pidStr]
   );
 
-  // legsPlayed / setsPlayed : best effort
   let legsPlayed = numOr0(row.legsPlayed, detail.legsPlayed);
   if (!legsPlayed) {
     const legsMap =
@@ -438,10 +452,11 @@ function buildSessionFromSummary(
     rank = Number.isFinite(n) && n > 0 ? n : null;
   }
 
-  // Si on n'a vraiment rien, on zappe ce match
+  // Si vraiment rien → on ignore ce match
   if (!darts && !hitsS && !hitsD && !hitsT && !miss) return null;
 
   return {
+    playerId: pidStr,          // 🔥 OBLIGATOIRE sinon toutes les stats se mélangent !
     darts,
     avg3D,
     avg1D,
@@ -466,7 +481,6 @@ function buildSessionFromSummary(
     rank,
   };
 }
-
 /**
  * Chargement des matchs X01 depuis History
  * - match X01 détecté même si kind / game / mode / variant = "x01v3" etc.
@@ -553,15 +567,15 @@ async function loadX01MultiSessions(
             .includes(w)
         ) || !!(player as any).teamId;
 
-        out.push({
-          id: `${matchId}:${pid}`,
-          matchId,
-          date: createdAt,
-          selectedPlayerId: pid,     // ✅ bon champ
-          playerName: player.name || "Player",
-          isTeam,
-          ...base,
-        });
+      out.push({
+        id: `${matchId}:${pid}`,
+        matchId,
+        date: createdAt,
+        selectedPlayerId: pid, // ✅ bon champ
+        playerName: player.name || "Player",
+        isTeam,
+        ...base,
+      });
     } else {
       // Pas de profileId => TOUTES les lignes pour ce match
       for (const player of players) {
@@ -612,13 +626,29 @@ function normalizeX01Dart(v: number, mult: number): UIDart | null {
 // Composant principal
 // ===========================================================
 
-export default function X01MultiStatsTabFull({ profileId }: Props) {
+// ⚠️ On accepte maintenant playerId en plus de profileId
+export default function X01MultiStatsTabFull({
+  profileId,
+  playerId,
+}: {
+  profileId?: string | null;
+  playerId?: string | null;
+}) {
+  // 👉 ID effectivement utilisé pour filtrer les sessions :
+  //    - priorité au playerId (venant de StatsHub / carrousel)
+  //    - fallback sur profileId (anciens appels)
+  const effectiveProfileId = React.useMemo(
+    () => playerId ?? profileId ?? null,
+    [playerId, profileId]
+  );
+
   const [sessions, setSessions] = React.useState<X01MultiSession[]>([]);
   const [range, setRange] = React.useState<TimeRange>("all");
   const [selected, setSelected] = React.useState<X01MultiSession | null>(null);
 
-  const metricKeys: Array<"darts" | "avg3D" | "pctS" | "pctD" | "pctT" | "BV" | "CO"> =
-    ["darts", "avg3D", "pctS", "pctD", "pctT", "BV", "CO"];
+  const metricKeys: Array<
+    "darts" | "avg3D" | "pctS" | "pctD" | "pctT" | "BV" | "CO"
+  > = ["darts", "avg3D", "pctS", "pctD", "pctT", "BV", "CO"];
 
   const [metric, setMetric] = React.useState<
     "darts" | "avg3D" | "pctS" | "pctD" | "pctT" | "BV" | "CO"
@@ -627,11 +657,11 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
   const [metricLocked, setMetricLocked] = React.useState(false);
   const [page, setPage] = React.useState(1);
 
-  // Chargement des matchs (une fois + quand profileId change)
+  // Chargement des matchs (une fois + quand l’ID effectif change)
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      const data = await loadX01MultiSessions(profileId);
+      const data = await loadX01MultiSessions(effectiveProfileId);
       if (!cancelled) {
         setSessions(data);
       }
@@ -639,7 +669,7 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [profileId]);
+  }, [effectiveProfileId]);
 
   // Auto-défilement métriques
   React.useEffect(() => {
@@ -669,7 +699,7 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
     [sessions, range]
   );
 
-  // Classements multi pour le joueur (ou tous si profileId absent)
+  // Classements multi pour le joueur (ou tous si aucun ID fourni)
   const multiRanks = React.useMemo(() => {
     const stats = makeEmptyMultiRankStats();
     if (!filtered.length) return stats;
@@ -688,8 +718,9 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
       if (arr.length < 3) continue;
 
       for (const s of arr) {
-        // Si profileId est fourni, on ne compte que ce profil
-        if (profileId && s.selectedPlayerId !== profileId) continue;
+        // Si un ID est fourni, on ne compte que ce joueur
+        if (effectiveProfileId && s.selectedPlayerId !== effectiveProfileId)
+          continue;
 
         const r = s.rank ?? null;
         if (!r || r < 1) continue;
@@ -708,7 +739,7 @@ export default function X01MultiStatsTabFull({ profileId }: Props) {
     }
 
     return stats;
-  }, [filtered, profileId]);
+  }, [filtered, effectiveProfileId]);
 
   // --- AGRÉGATION RÉELLE DES MATCHS PAR TYPE ---
 
@@ -825,51 +856,52 @@ const teamPctSets = pct(teamSetsWon, teamSetsPlayed);
       ? filtered.reduce((s: any, x: any) => s + x.avg1D, 0) / totalSessions
       : 0;
 
-// Agrégats hits / miss / bull etc.
-let gHitsS = 0,
-  gHitsD = 0,
-  gHitsT = 0,
-  gMiss = 0,
-  gBull = 0,
-  gDBull = 0,
-  gBust = 0;
+   // Agrégats hits / miss / bull etc.
+  // (on réutilise totalSessions = filtered.length; défini juste au-dessus)
 
-let
-  minDarts: number | null = null,
-  maxDarts: number | null = null,
-  minHits: number | null = null,
-  maxHits: number | null = null,
-  minS: number | null = null,
-  maxS: number | null = null,
-  minD: number | null = null,
-  maxD: number | null = null,
-  minT: number | null = null,
-  maxT: number | null = null,
-  minMiss: number | null = null,
-  maxMiss: number | null = null,
-  minBust: number | null = null,
-  maxBust: number | null = null,
-  minBull: number | null = null,
-  maxBull: number | null = null,
-  minDBull: number | null = null,
-  maxDBull: number | null = null;
+  let gHitsS = 0,
+    gHitsD = 0,
+    gHitsT = 0,
+    gMiss = 0,
+    gBull = 0,
+    gDBull = 0,
+    gBust = 0;
 
-for (const s of filtered) {
-  const darts = s.darts || 0;
-  const sS = s.hitsS ?? 0;
-  const sD = s.hitsD ?? 0;
-  const sT = s.hitsT ?? 0;
-  const sMiss = s.miss ?? 0;
-  const sBull = s.bull ?? 0;
-  const sDBull = s.dBull ?? 0;
-  const sBust = s.bust ?? 0;
+  let minDarts: number | null = null,
+    maxDarts: number | null = null,
+    minHits: number | null = null,
+    maxHits: number | null = null,
+    minS: number | null = null,
+    maxS: number | null = null,
+    minD: number | null = null,
+    maxD: number | null = null,
+    minT: number | null = null,
+    maxT: number | null = null,
+    minMiss: number | null = null,
+    maxMiss: number | null = null,
+    minBust: number | null = null,
+    maxBust: number | null = null,
+    minBull: number | null = null,
+    maxBull: number | null = null,
+    minDBull: number | null = null,
+    maxDBull: number | null = null;
 
-  const sHits = sS + sD + sT;
+  for (const s of filtered) {
+    const darts = s.darts || 0;
+    const sS = s.hitsS ?? 0;
+    const sD = s.hitsD ?? 0;
+    const sT = s.hitsT ?? 0;
+    const sMiss = s.miss ?? 0;
+    const sBull = s.bull ?? 0;
+    const sDBull = s.dBull ?? 0;
+    const sBust = s.bust ?? 0;
+    const sHits = sS + sD + sT;
 
-  const hasCounters =
-    sS + sD + sT + sMiss + sBull + sDBull + sBust > 0;
+    const hasCounters =
+      sS + sD + sT + sMiss + sBull + sDBull + sBust > 0;
 
-  if (hasCounters) {
+    if (!hasCounters) continue;
+
     gHitsS += sS;
     gHitsD += sD;
     gHitsT += sT;
@@ -900,48 +932,58 @@ for (const s of filtered) {
       if (minBust === null || sBust < minBust) minBust = sBust;
       if (maxBust === null || sBust > maxBust) maxBust = sBust;
 
-      // 🔥 AJOUT : calcul min / max Bull & DBull
       if (minBull === null || sBull < minBull) minBull = sBull;
       if (maxBull === null || sBull > maxBull) maxBull = sBull;
 
       if (minDBull === null || sDBull < minDBull) minDBull = sDBull;
       if (maxDBull === null || sDBull > maxDBull) maxDBull = sDBull;
     }
-
-    continue;
   }
-}
 
-const totalHits = gHitsS + gHitsD + gHitsT;
-const totalThrows = totalHits + gMiss;
+  const totalHits = gHitsS + gHitsD + gHitsT;
+  const totalThrows = totalHits + gMiss;
 
-const hitsPercent = totalThrows > 0 ? (totalHits / totalThrows) * 100 : 0;
-const simplePercent = totalHits > 0 ? (gHitsS / totalHits) * 100 : 0;
-const doublePercent = totalHits > 0 ? (gHitsD / totalHits) * 100 : 0;
-const triplePercent = totalHits > 0 ? (gHitsT / totalHits) * 100 : 0;
+  const hitsPercent = totalThrows > 0 ? (totalHits / totalThrows) * 100 : 0;
+  const simplePercent = totalHits > 0 ? (gHitsS / totalHits) * 100 : 0;
+  const doublePercent = totalHits > 0 ? (gHitsD / totalHits) * 100 : 0;
+  const triplePercent = totalHits > 0 ? (gHitsT / totalHits) * 100 : 0;
 
-const avgHitsSPerSession = totalSessions > 0 ? gHitsS / totalSessions : 0;
-const avgHitsDPerSession = totalSessions > 0 ? gHitsD / totalSessions : 0;
-const avgHitsTPerSession = totalSessions > 0 ? gHitsT / totalSessions : 0;
-const avgMissPerSession = totalSessions > 0 ? gMiss / totalSessions : 0;
-const avgBustPerSession = totalSessions > 0 ? gBust / totalSessions : 0;
-const avgBullPerSession = totalSessions > 0 ? gBull / totalSessions : 0;
-const avgDBullPerSession = totalSessions > 0 ? gDBull / totalSessions : 0;
+  const avgHitsSPerSession =
+    totalSessions > 0 ? gHitsS / totalSessions : 0;
+  const avgHitsDPerSession =
+    totalSessions > 0 ? gHitsD / totalSessions : 0;
+  const avgHitsTPerSession =
+    totalSessions > 0 ? gHitsT / totalSessions : 0;
+  const avgMissPerSession =
+    totalSessions > 0 ? gMiss / totalSessions : 0;
+  const avgBustPerSession =
+    totalSessions > 0 ? gBust / totalSessions : 0;
+  const avgBullPerSession =
+    totalSessions > 0 ? gBull / totalSessions : 0;
+  const avgDBullPerSession =
+    totalSessions > 0 ? gDBull / totalSessions : 0;
 
-const bestAvg3DSession =
-  totalSessions > 0
-    ? Math.max(...filtered.map((x: any) => x.avg3D || 0))
-    : 0;
+  const bestAvg3DSession =
+    totalSessions > 0
+      ? Math.max(...filtered.map((x: any) => x.avg3D || 0))
+      : 0;
 
-const pctHitsGlobal = totalThrows > 0 ? hitsPercent : null;
-const pctMissGlobal = totalThrows > 0 ? (gMiss / totalThrows) * 100 : null;
-const pctSimpleGlobal = totalHits > 0 ? (gHitsS / totalHits) * 100 : null;
-const pctDoubleGlobal = totalHits > 0 ? (gHitsD / totalHits) * 100 : null;
-const pctTripleGlobal = totalHits > 0 ? (gHitsT / totalHits) * 100 : null;
+  const pctHitsGlobal = totalThrows > 0 ? hitsPercent : null;
+  const pctMissGlobal =
+    totalThrows > 0 ? (gMiss / totalThrows) * 100 : null;
+  const pctSimpleGlobal =
+    totalHits > 0 ? (gHitsS / totalHits) * 100 : null;
+  const pctDoubleGlobal =
+    totalHits > 0 ? (gHitsD / totalHits) * 100 : null;
+  const pctTripleGlobal =
+    totalHits > 0 ? (gHitsT / totalHits) * 100 : null;
 
-const pctBullGlobal = totalDarts > 0 ? (gBull / totalDarts) * 100 : null;
-const pctDBullGlobal = totalDarts > 0 ? (gDBull / totalDarts) * 100 : null;
-const pctBustGlobal = totalThrows > 0 ? (gBust / totalThrows) * 100 : null;
+  const pctBullGlobal =
+    totalDarts > 0 ? (gBull / totalDarts) * 100 : null;
+  const pctDBullGlobal =
+    totalDarts > 0 ? (gDBull / totalDarts) * 100 : null;
+  const pctBustGlobal =
+    totalThrows > 0 ? (gBust / totalThrows) * 100 : null;
 
 // ================== AGRÉGATS MATCHS (tous modes) ==================
 const distinctMatchIds = new Set<string>();

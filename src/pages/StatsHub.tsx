@@ -21,6 +21,7 @@ import StatsCricketDashboard from "../components/StatsCricketDashboard";
 // Nouvelle version FULL X01 multi
 import X01MultiStatsTabFull from "../stats/X01MultiStatsTabFull";
 import StatsTrainingSummary from "../components/stats/StatsTrainingSummary";
+import { useCurrentProfile } from "../hooks/useCurrentProfile";
 
 // Effet "shimmer" à l'intérieur des lettres du nom du joueur
 const statsNameCss = `
@@ -3312,6 +3313,7 @@ function TrainingHitsBySegment({ sessions }: TrainingHitsBySegmentProps) {
     </div>
   );
 }
+
 export default function StatsHub({
   go,
   tab, // "stats" | "training" | "history"
@@ -3321,10 +3323,10 @@ export default function StatsHub({
   mode = "active", // "active" = joueur actif, "locals" = profils locaux + bots
   playerId,
 }: Props) {
-  // Injection du CSS shimmer pour le nom du joueur
+  // CSS shimmer
   useInjectStatsNameCss();
 
-  // ---------- 0) Helper pour reconnaître un BOT ----------
+  // -- 0) BOT helper --
   function isBotPlayer(p: PlayerLite): boolean {
     const name = (p.name ?? "").toLowerCase();
     const id = (p.id ?? "").toLowerCase();
@@ -3336,7 +3338,11 @@ export default function StatsHub({
     );
   }
 
-  // ---------- 1) Carrousel "modes" style X01 MULTI ----------
+  // -- 0 bis) PROFIL ACTUEL (via hook, safe) --
+  const cp = useCurrentProfile();
+  const profile = cp?.profile ?? null;
+
+  // -- 1) Carrousel des modes --
   const modeDefs = React.useMemo(
     () => [
       { key: "dashboard", label: "Dashboard global" },
@@ -3346,9 +3352,9 @@ export default function StatsHub({
     ],
     []
   );
+
   const totalModes = modeDefs.length;
 
-  // Permettre à StatsShell de pré-sélectionner un sous-onglet (dashboard / x01_multi)
   const initialModeIndex = React.useMemo(() => {
     if (!initialStatsSubTab) return 0;
     const idx = modeDefs.findIndex((m) => m.key === initialStatsSubTab);
@@ -3357,8 +3363,7 @@ export default function StatsHub({
 
   const [modeIndex, setModeIndex] = React.useState(initialModeIndex);
   const currentMode = modeDefs[modeIndex]?.key ?? "dashboard";
-  const currentModeLabel =
-    modeDefs[modeIndex]?.label ?? "Dashboard global";
+  const currentModeLabel = modeDefs[modeIndex]?.label ?? "Dashboard global";
 
   const goPrevMode = React.useCallback(() => {
     if (totalModes <= 1) return;
@@ -3372,15 +3377,15 @@ export default function StatsHub({
 
   const canScrollModes = totalModes > 1;
 
-  // ---------- 2) Historiques ----------
+  // -- 2) Historiques --
   const storeHistory = useStoreHistory();
   const apiHistory = useHistoryAPI();
 
-  // Profils (pour avatars / noms stockés en local)
   const [storeProfiles, setStoreProfiles] = React.useState<PlayerLite[]>([]);
 
   React.useEffect(() => {
     let mounted = true;
+
     (async () => {
       try {
         const store: any = await loadStore<any>();
@@ -3406,13 +3411,12 @@ export default function StatsHub({
     };
   }, []);
 
-  // Fusion des différentes sources d'historique
+  // Fusion en éliminant doublons
   const combinedHistory = React.useMemo(() => {
     const mem = toArr<SavedMatch>(memHistory);
     const all = [...mem, ...apiHistory, ...storeHistory];
 
     const byId = new Map<string, SavedMatch>();
-
     for (const r of all) {
       const id = String(r.id ?? "");
       if (!id) continue;
@@ -3420,14 +3424,12 @@ export default function StatsHub({
       const existing = byId.get(id);
       if (!existing) {
         byId.set(id, r);
-        continue;
+      } else {
+        const tNew = r.updatedAt ?? r.createdAt ?? 0;
+        const tOld = existing.updatedAt ?? existing.createdAt ?? 0;
+        if (tNew >= tOld) byId.set(id, r);
       }
-
-      const tNew = r.updatedAt ?? r.createdAt ?? 0;
-      const tOld = existing.updatedAt ?? existing.createdAt ?? 0;
-      if (tNew >= tOld) byId.set(id, r);
     }
-
     return Array.from(byId.values()).sort(
       (a, b) =>
         (b.updatedAt ?? b.createdAt ?? 0) -
@@ -3435,7 +3437,7 @@ export default function StatsHub({
     );
   }, [memHistory, apiHistory, storeHistory]);
 
-  // Normalisation (joueurs, X01V3 → game="x01", avatars, etc.)
+  // Normalisation
   const records = React.useMemo(
     () =>
       combinedHistory.map((r) =>
@@ -3444,10 +3446,9 @@ export default function StatsHub({
     [combinedHistory, storeProfiles]
   );
 
-  // ---------- 3) Liste unique de joueurs trouvés dans l'historique ----------
+  // -- 3) Liste unique de tous les joueurs vus --
   const allPlayers = React.useMemo(() => {
     const map = new Map<string, PlayerLite>();
-
     for (const r of records) {
       for (const p of toArr<PlayerLite>(r.players)) {
         if (!p?.id) continue;
@@ -3460,14 +3461,13 @@ export default function StatsHub({
         }
       }
     }
-
     return Array.from(map.values());
   }, [records]);
 
   // ---------- 4) Sélection joueur + option BOTS / mode actif vs locaux ----------
 
   // Id du joueur actif transmis par StatsShell
-  const activePlayerId = playerId ?? initialPlayerId ?? null;
+  const activePlayerId = playerId ?? initialPlayerId ?? profile?.id ?? null;
 
   // Liste de joueurs selon le mode :
   // - "active"  => un seul joueur : le joueur actif
@@ -3511,9 +3511,7 @@ export default function StatsHub({
 
   // Sélection courante
   const [selectedPlayerId, setSelectedPlayerId] =
-    React.useState<string | null>(
-      activePlayerId ?? null
-    );
+    React.useState<string | null>(activePlayerId ?? null);
 
   // Si le parent change initialPlayerId / playerId → on suit
   React.useEffect(() => {
@@ -3555,8 +3553,7 @@ export default function StatsHub({
 
   const goPrevPlayer = React.useCallback(() => {
     if (!canScrollPlayers || !filteredPlayers.length) return;
-    const idx =
-      currentPlayerIndex >= 0 ? currentPlayerIndex : 0;
+    const idx = currentPlayerIndex >= 0 ? currentPlayerIndex : 0;
     const nextIndex =
       (idx - 1 + filteredPlayers.length) % filteredPlayers.length;
     setSelectedPlayerId(filteredPlayers[nextIndex].id);
@@ -3564,10 +3561,8 @@ export default function StatsHub({
 
   const goNextPlayer = React.useCallback(() => {
     if (!canScrollPlayers || !filteredPlayers.length) return;
-    const idx =
-      currentPlayerIndex >= 0 ? currentPlayerIndex : 0;
-    const nextIndex =
-      (idx + 1) % filteredPlayers.length;
+    const idx = currentPlayerIndex >= 0 ? currentPlayerIndex : 0;
+    const nextIndex = (idx + 1) % filteredPlayers.length;
     setSelectedPlayerId(filteredPlayers[nextIndex].id);
   }, [canScrollPlayers, filteredPlayers, currentPlayerIndex]);
 
@@ -3595,13 +3590,9 @@ export default function StatsHub({
 
   // ============================================================
   //  ROUTAGE PRINCIPAL PAR "tab" (StatsShell)
-  //  - tab = "training"  → plein écran TrainingX01StatsTab
-  //  - tab = "history"   → plein écran Historique
-  //  - tab = "stats" | undefined → centre de stats (code existant)
   // ============================================================
 
   if (tab === "training") {
-    // 🔁 Vue Training full : on affiche UNIQUEMENT les stats Training
     return (
       <div style={{ padding: 16, paddingBottom: 80 }}>
         <TrainingX01StatsTab />
@@ -3610,7 +3601,6 @@ export default function StatsHub({
   }
 
   if (tab === "history") {
-    // 🔁 Vue Historique full : uniquement HistoryPage
     return (
       <div style={{ padding: 16, paddingBottom: 80 }}>
         <div style={card}>
@@ -3622,10 +3612,6 @@ export default function StatsHub({
 
   // ============================================================
   //  VUE PAR DÉFAUT : "STATS"
-  //  - ici les modes dashboard / x01_multi / cricket / history
-  //  - et c'est ici que StatsShell envoie :
-  //      • mode="active"  → Stats NOM DU JOUEUR (pas de slide, pas de BOTS)
-  //      • mode="locals"  → Stats profils locaux (BOTS possibles, sans joueur actif)
   // ============================================================
 
   return (
@@ -3838,12 +3824,11 @@ export default function StatsHub({
                           {
                             "--dc-accent": T.accent,
                             "--dc-accent-soft": T.accent20,
-                            maxWidth: "80vw", // ne dépasse pas l'écran
+                            maxWidth: "80vw",
                             display: "block",
                           } as React.CSSProperties
                         }
                       >
-                        {/* couche base couleur thème, police bien épaisse */}
                         <span
                           className="dc-stats-name-base"
                           style={{
@@ -3861,7 +3846,6 @@ export default function StatsHub({
                           {selectedName}
                         </span>
 
-                        {/* couche shimmer à l’intérieur des lettres */}
                         <span
                           className="dc-stats-name-shimmer"
                           style={{
