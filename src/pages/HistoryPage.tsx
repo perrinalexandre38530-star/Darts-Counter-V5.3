@@ -1,5 +1,9 @@
 // ============================================
 // src/pages/HistoryPage.tsx — Historique V2 Neon Deluxe
+// - KPIs (sauvegardées / terminées / en cours)
+// - Filtres J / S / M / A / ARV
+// - Cartes stylées : mode, statut, format, scores
+// - Décodage payload (base64 + gzip) pour récupérer config/summary
 // ============================================
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -8,9 +12,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import { History, type SavedMatch } from "../lib/history";
 
-/* ---------------------------------------------
-   Icons
---------------------------------------------- */
+/* ---------- Icônes ---------- */
 
 const Icon = {
   Trophy: (p: any) => (
@@ -44,34 +46,31 @@ const Icon = {
   ),
 };
 
-/* ---------------------------------------------
-   Types
---------------------------------------------- */
+/* ---------- Types ---------- */
 
 export type SavedEntry = SavedMatch & {
   resumeId?: string;
-  game?: { mode?: string; startScore?: number; teams?: any[] };
+  game?: { mode?: string; startScore?: number };
+  summary?: any;
   winnerName?: string | null;
+  decoded?: any; // payload décodé
 };
 
-/* ---------------------------------------------
-   Helpers : player & avatar
---------------------------------------------- */
+/* ---------- Helpers players / avatars ---------- */
 
 function getId(v: any): string {
   if (!v) return "";
   if (typeof v === "string") return v;
   return String(v.id || v.playerId || v.profileId || v._id || "");
 }
-
 function getName(v: any): string {
   if (!v) return "";
   if (typeof v === "string") return v;
   return String(v.name || v.displayName || v.username || "");
 }
-
 function getAvatarUrl(store: Store, v: any): string | null {
-  if (v && typeof v === "object" && v.avatarDataUrl) return String(v.avatarDataUrl);
+  if (v && typeof v === "object" && v.avatarDataUrl)
+    return String(v.avatarDataUrl);
   const id = getId(v);
   const anyStore: any = store as any;
   const list: any[] = Array.isArray(anyStore?.profiles)
@@ -83,9 +82,7 @@ function getAvatarUrl(store: Store, v: any): string | null {
   return hit?.avatarDataUrl ?? null;
 }
 
-/* ---------------------------------------------
-   Mode + params
---------------------------------------------- */
+/* ---------- Mode / status ---------- */
 
 function baseMode(e: SavedEntry) {
   const k = (e.kind || "").toLowerCase();
@@ -94,81 +91,14 @@ function baseMode(e: SavedEntry) {
   return k || m || "x01";
 }
 
-// trouve un startScore 301 / 501 / 701 / 901 n'importe où dans l'objet
-function deepFindStart(obj: any, depth = 4): number | undefined {
-  if (!obj || depth < 0) return undefined;
-  if (typeof obj !== "object") return undefined;
-
-  const candidates = new Set<number>();
-
-  function walk(o: any, d: number) {
-    if (!o || d < 0) return;
-    if (typeof o !== "object") return;
-
-    for (const [, val] of Object.entries(o)) {
-      if (typeof val === "number") {
-        if ([301, 501, 701, 901].includes(val)) {
-          candidates.add(val);
-        }
-      } else if (typeof val === "string") {
-        const trimmed = val.trim();
-        if (/^\d{3}$/.test(trimmed)) {
-          const n = Number(trimmed);
-          if ([301, 501, 701, 901].includes(n)) {
-            candidates.add(n);
-          }
-        }
-      } else if (Array.isArray(val)) {
-        for (const it of val) walk(it, d - 1);
-      } else if (typeof val === "object") {
-        walk(val, d - 1);
-      }
-    }
-  }
-
-  walk(obj, depth);
-
-  if (candidates.size === 0) return undefined;
-  // on choisit un des classiques, priorité 301 puis 501, etc.
-  const order = [301, 501, 701, 901];
-  for (const v of order) {
-    if (candidates.has(v)) return v;
-  }
-  return undefined;
-}
-
-function getStartScore(e: SavedEntry): number {
-  const anyE: any = e;
-
-  const paths = [
-    anyE.game?.startScore,
-    anyE.summary?.game?.startScore,
-    anyE.payload?.game?.startScore,
-
-    anyE.config?.startScore,
-    anyE.summary?.config?.startScore,
-    anyE.payload?.config?.startScore,
-
-    anyE.config?.start,
-    anyE.summary?.config?.start,
-    anyE.payload?.config?.start,
-
-    anyE.payload?.x01?.startScore,
-    anyE.payload?.x01?.start,
-    anyE.summary?.x01?.startScore,
-    anyE.summary?.x01?.start,
-
-    anyE.engineConfig?.startScore,
-    anyE.engineConfig?.start,
-  ];
-
-  for (const v of paths) {
-    if (typeof v === "number" && [301, 501, 701, 901].includes(v)) {
-      return v;
-    }
-  }
-
-  return 501; // fallback
+function statusOf(e: SavedEntry): "finished" | "in_progress" {
+  const s = (e.status || "").toLowerCase();
+  if (s === "finished") return "finished";
+  if (s === "inprogress" || s === "in_progress") return "in_progress";
+  const sum: any = e.summary || e.payload || {};
+  if (sum?.finished === true || sum?.result?.finished === true)
+    return "finished";
+  return "in_progress";
 }
 
 function modeLabel(e: SavedEntry) {
@@ -180,22 +110,7 @@ function modeLabel(e: SavedEntry) {
   return m.toUpperCase();
 }
 
-/* ---------------------------------------------
-   Status
---------------------------------------------- */
-
-function statusOf(e: SavedEntry): "finished" | "in_progress" {
-  const s = (e.status || "").toLowerCase();
-  if (s === "finished") return "finished";
-  if (s === "inprogress" || s === "in_progress") return "in_progress";
-  const sum: any = e.summary || e.payload || {};
-  if (sum?.finished === true || sum?.result?.finished === true) return "finished";
-  return "in_progress";
-}
-
-/* ---------------------------------------------
-   Match Link
---------------------------------------------- */
+/* ---------- Match link ---------- */
 
 function matchLink(e: SavedEntry): string | undefined {
   return (
@@ -207,135 +122,31 @@ function matchLink(e: SavedEntry): string | undefined {
   );
 }
 
-/* ---------------------------------------------
-   Team Format
---------------------------------------------- */
+/* ---------- Décodage payload (base64 + gzip) ---------- */
 
-function detectFormat(e: SavedEntry): string {
-  const cfg: any = (e as any)?.game || (e as any)?.payload?.game;
-  if (!cfg) return "Solo";
+async function decodePayload(raw: any): Promise<any | null> {
+  if (!raw || typeof raw !== "string") return null;
+  try {
+    const bin = atob(raw);
+    const buf = Uint8Array.from(bin, (c) => c.charCodeAt(0));
 
-  const teams = cfg?.teams;
-  if (!teams || teams.length <= 1) return "Solo";
+    // navigateur moderne : DecompressionStream dispo
+    const DS: any = (window as any).DecompressionStream;
+    if (typeof DS === "function") {
+      const ds = new DS("gzip");
+      const stream = new Blob([buf]).stream().pipeThrough(ds);
+      const resp = new Response(stream);
+      return await resp.json();
+    }
 
-  const sizes = teams.map((t: any) => t.players?.length || 1);
-  if (sizes.every((s) => s === sizes[0])) return sizes[0] + "v" + sizes[0];
-
-  return sizes.join("v");
-}
-
-/* ---------------------------------------------
-   Score Summary (classement)
---------------------------------------------- */
-
-function cleanName(raw: any): string | undefined {
-  if (typeof raw !== "string") return undefined;
-  const name = raw.trim();
-  if (!name) return undefined;
-  // on évite d'afficher des IDs type uuid
-  if (name.length > 24 && name.includes("-")) return undefined;
-  return name;
-}
-
-function cleanScore(raw: any): string | undefined {
-  if (typeof raw === "number") return String(raw);
-  if (typeof raw !== "string") return undefined;
-  const s = raw.trim();
-  if (!/^\d+(\.\d+)?$/.test(s)) return undefined;
-  return s;
-}
-
-function summarizeScore(e: SavedEntry): string {
-  const data: any = e.summary || e.payload || {};
-  const result = data.result || {};
-
-  // 1) rankings / players / standings
-  const rankings =
-    data.rankings ||
-    result.rankings ||
-    result.players ||
-    data.players ||
-    result.standings;
-
-  if (Array.isArray(rankings)) {
-    const parts = rankings
-      .map((r: any) => {
-        const name =
-          cleanName(r.name || r.playerName || r.label || r.id || r.playerId) ||
-          undefined;
-        const score =
-          cleanScore(
-            r.score ??
-              r.legsWon ??
-              r.legs ??
-              r.setsWon ??
-              r.sets ??
-              r.points ??
-              r.total,
-          ) ||
-          (typeof r.avg3 === "number" ? r.avg3.toFixed(1) : undefined);
-
-        if (!name && !score) return null;
-        if (name && score) return `${name}: ${score}`;
-        return name || score || null;
-      })
-      .filter(Boolean) as string[];
-
-    if (parts.length) return parts.join(" • ");
+    // fallback : tenter du JSON direct
+    return JSON.parse(bin);
+  } catch {
+    return null;
   }
-
-  // 2) detailedByPlayer / byPlayer (X01 V3)
-  const detailed = data.detailedByPlayer || data.byPlayer;
-  if (detailed && typeof detailed === "object") {
-    const parts = Object.entries(detailed)
-      .map(([rawName, val]: [string, any]) => {
-        const name = cleanName(rawName);
-        const legs = cleanScore(val.legsWon ?? val.legs);
-        const avg =
-          typeof val.avg3 === "number" ? val.avg3.toFixed(1) : undefined;
-
-        if (!name && !legs && !avg) return null;
-
-        const sub = [];
-        if (legs) sub.push(`${legs}L`);
-        if (avg) sub.push(avg);
-
-        if (name && sub.length) return `${name}: ${sub.join(" • ")}`;
-        if (name) return name;
-        if (sub.length) return sub.join(" • ");
-        return null;
-      })
-      .filter(Boolean) as string[];
-
-    if (parts.length) return parts.join(" • ");
-  }
-
-  // 3) on NE TOUCHE PLUS aux objets generic scores pour éviter les IDs chelous
-
-  return "";
 }
 
-/* ---------------------------------------------
-   Mode colors
---------------------------------------------- */
-
-const modeColor: Record<string, string> = {
-  x01: "#e4c06b",
-  cricket: "#4da84d",
-  clock: "#ff40b4",
-  training: "#71c9ff",
-  killer: "#ff6a3c",
-  default: "#888",
-};
-
-function getModeColor(e: SavedEntry) {
-  const m = baseMode(e);
-  return modeColor[m] || modeColor.default;
-}
-
-/* ---------------------------------------------
-   Dedup & Filter
---------------------------------------------- */
+/* ---------- Dédup + range ---------- */
 
 function better(a: SavedEntry, b: SavedEntry): SavedEntry {
   const ta = a.updatedAt || a.createdAt || 0;
@@ -362,18 +173,18 @@ function sameBucket(a: SavedEntry, b: SavedEntry): boolean {
 function dedupe(list: SavedEntry[]): SavedEntry[] {
   const byLink = new Map<string, SavedEntry>();
   const rest: SavedEntry[] = [];
-
   for (const e of list) {
     const link = matchLink(e);
-    if (link) byLink.set(link, byLink.has(link) ? better(byLink.get(link)!, e) : e);
+    if (link)
+      byLink.set(link, byLink.has(link) ? better(byLink.get(link)!, e) : e);
     else rest.push(e);
   }
-
   const base = [...byLink.values(), ...rest];
   const buckets: { rep: SavedEntry }[] = [];
-
   for (const e of base.sort(
-    (a, b) => (a.updatedAt || a.createdAt || 0) - (b.updatedAt || b.createdAt || 0)
+    (a, b) =>
+      (a.updatedAt || a.createdAt || 0) -
+      (b.updatedAt || b.createdAt || 0)
   )) {
     let ok = false;
     for (const bkt of buckets) {
@@ -389,13 +200,12 @@ function dedupe(list: SavedEntry[]): SavedEntry[] {
     .map((b) => b.rep)
     .sort(
       (a, b) =>
-        (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)
+        (b.updatedAt || b.createdAt || 0) -
+        (a.updatedAt || a.createdAt || 0)
     );
 }
 
-/* ---------------------------------------------
-   Range Filters
---------------------------------------------- */
+/* ---------- Range filters ---------- */
 
 type RangeKey = "today" | "week" | "month" | "year" | "archives";
 
@@ -426,24 +236,191 @@ function inRange(ts: number, key: RangeKey): boolean {
   return t >= startOf(key);
 }
 
-/* ---------------------------------------------
-   History API Wrapper
---------------------------------------------- */
+/* ---------- Mode colors ---------- */
+
+const modeColor: Record<string, string> = {
+  x01: "#e4c06b",
+  cricket: "#4da84d",
+  clock: "#ff40b4",
+  training: "#71c9ff",
+  killer: "#ff6a3c",
+  default: "#888",
+};
+
+function getModeColor(e: SavedEntry) {
+  const m = baseMode(e);
+  return modeColor[m] || modeColor.default;
+}
+
+/* ---------- Format (Solo / 2v2 ...) ---------- */
+
+function detectFormat(e: SavedEntry): string {
+  const cfg: any =
+    e.game ||
+    (e.summary && e.summary.game) ||
+    (e.decoded && (e.decoded.config || e.decoded.game));
+  if (!cfg) return "Solo";
+
+  const teams = cfg.teams;
+  if (!teams || teams.length <= 1) return "Solo";
+
+  const sizes = teams.map((t: any) => t.players?.length || 1);
+  if (sizes.every((s) => s === sizes[0])) return sizes[0] + "v" + sizes[0];
+  return sizes.join("v");
+}
+
+/* ---------- Score / classement ---------- */
+
+function cleanName(raw: any): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const name = raw.trim();
+  if (!name) return undefined;
+  if (name.length > 24 && name.includes("-")) return undefined; // évite les IDs
+  return name;
+}
+function cleanScore(raw: any): string | undefined {
+  if (typeof raw === "number") return String(raw);
+  if (typeof raw !== "string") return undefined;
+  const s = raw.trim();
+  if (!/^\d+(\.\d+)?$/.test(s)) return undefined;
+  return s;
+}
+
+function summarizeScore(e: SavedEntry): string {
+  const data: any = e.summary || {};
+  const result = data.result || {};
+
+  const rankings =
+    data.rankings ||
+    result.rankings ||
+    result.players ||
+    data.players ||
+    result.standings;
+
+  if (Array.isArray(rankings)) {
+    const parts = rankings
+      .map((r: any) => {
+        const name =
+          cleanName(r.name || r.playerName || r.label || r.id || r.playerId) ||
+          undefined;
+        const score =
+          cleanScore(
+            r.score ??
+              r.legsWon ??
+              r.legs ??
+              r.setsWon ??
+              r.sets ??
+              r.points ??
+              r.total
+          ) ||
+          (typeof r.avg3 === "number" ? r.avg3.toFixed(1) : undefined);
+
+        if (!name && !score) return null;
+        if (name && score) return `${name}: ${score}`;
+        return name || score || null;
+      })
+      .filter(Boolean) as string[];
+
+    if (parts.length) return parts.join(" • ");
+  }
+
+  const detailed = data.detailedByPlayer || data.byPlayer;
+  if (detailed && typeof detailed === "object") {
+    const parts = Object.entries(detailed)
+      .map(([rawName, val]: [string, any]) => {
+        const name = cleanName(rawName);
+        const legs = cleanScore(val.legsWon ?? val.legs);
+        const avg =
+          typeof val.avg3 === "number" ? val.avg3.toFixed(1) : undefined;
+
+        if (!name && !legs && !avg) return null;
+
+        const sub = [];
+        if (legs) sub.push(`${legs}L`);
+        if (avg) sub.push(avg);
+
+        if (name && sub.length) return `${name}: ${sub.join(" • ")}`;
+        if (name) return name;
+        if (sub.length) return sub.join(" • ");
+        return null;
+      })
+      .filter(Boolean) as string[];
+
+    if (parts.length) return parts.join(" • ");
+  }
+
+  return "";
+}
+
+/* ---------- StartScore basé sur game / summary / decoded ---------- */
+
+function getStartScore(e: SavedEntry): number {
+  const anyE: any = e;
+
+  const direct =
+    e.game?.startScore ??
+    anyE.summary?.game?.startScore ??
+    anyE.decoded?.config?.startScore ??
+    anyE.decoded?.game?.startScore ??
+    anyE.decoded?.x01?.config?.startScore ??
+    anyE.decoded?.x01?.startScore ??
+    anyE.decoded?.x01?.start;
+
+  if (typeof direct === "number" && [301, 501, 701, 901].includes(direct)) {
+    return direct;
+  }
+
+  return 501;
+}
+
+/* ---------- History API avec décodage payload ---------- */
 
 const HistoryAPI = {
   async list(store: Store): Promise<SavedEntry[]> {
     try {
-      const rows = await History.list();
+      const rows = (await History.list()) as SavedEntry[];
 
-      // 🔍 DEBUG : affiche la 1ère entrée brute dans la console
-      if (rows && rows.length > 0) {
-        console.log(
-          "[HISTORY DEBUG] first row =",
-          JSON.stringify(rows[0], null, 2)
-        );
-      }
+      const enhanced = await Promise.all(
+        rows.map(async (row) => {
+          const r: any = row;
+          if (!r.summary) r.summary = {};
+          if (!r.game) r.game = {};
 
-      return rows as SavedEntry[];
+          if (typeof r.payload === "string") {
+            const decoded = await decodePayload(r.payload);
+            if (decoded && typeof decoded === "object") {
+              r.decoded = decoded;
+
+              const cfg =
+                decoded.config ||
+                decoded.game ||
+                decoded.x01?.config ||
+                decoded.x01;
+
+              if (cfg) {
+                const sc =
+                  cfg.startScore ??
+                  cfg.start ??
+                  cfg.x01Start ??
+                  cfg.x01StartScore;
+                if (typeof sc === "number") {
+                  r.game.startScore = sc;
+                }
+                const mode = cfg.mode || cfg.gameMode || "x01";
+                if (!r.game.mode) r.game.mode = mode;
+              }
+
+              const sum =
+                decoded.summary || decoded.result || decoded.stats || {};
+              r.summary = { ...sum, ...r.summary };
+            }
+          }
+
+          return r as SavedEntry;
+        })
+      );
+
+      return enhanced;
     } catch {
       const anyStore = store as any;
       return anyStore.history ?? [];
@@ -456,9 +433,7 @@ const HistoryAPI = {
   },
 };
 
-/* ---------------------------------------------
-   Styles
---------------------------------------------- */
+/* ---------- Styles ---------- */
 
 function makeStyles(theme: any) {
   const edge = theme.borderSoft ?? "rgba(255,255,255,0.12)";
@@ -487,7 +462,6 @@ function makeStyles(theme: any) {
       `,
     },
 
-    /* KPIs */
     kpiRow: {
       marginTop: 20,
       display: "flex",
@@ -529,7 +503,6 @@ function makeStyles(theme: any) {
       boxShadow: `0 0 10px ${theme.primary}AA`,
     },
 
-    /* Filters */
     filtersRow: {
       marginTop: 18,
       display: "flex",
@@ -551,7 +524,6 @@ function makeStyles(theme: any) {
       cursor: "pointer",
     }),
 
-    /* List & cards */
     list: {
       marginTop: 20,
       padding: "0 12px",
@@ -573,7 +545,6 @@ function makeStyles(theme: any) {
       alignItems: "center",
     },
 
-    /* Avatars */
     avatars: { display: "flex" },
     avWrap: {
       width: 42,
@@ -623,9 +594,7 @@ function makeStyles(theme: any) {
   };
 }
 
-/* ---------------------------------------------
-   Component
---------------------------------------------- */
+/* ---------- Component ---------- */
 
 export default function HistoryPage({
   store,
@@ -646,7 +615,8 @@ export default function HistoryPage({
   async function loadHistory() {
     setLoading(true);
     try {
-      setItems(await HistoryAPI.list(store));
+      const rows = await HistoryAPI.list(store);
+      setItems(rows);
     } finally {
       setLoading(false);
     }
@@ -656,7 +626,6 @@ export default function HistoryPage({
     loadHistory();
   }, [store]);
 
-  // tri / dedupe
   const { done, running } = useMemo(() => {
     const fins = items.filter((e) => statusOf(e) === "finished");
     const inprog = items.filter((e) => statusOf(e) !== "finished");
@@ -688,13 +657,11 @@ export default function HistoryPage({
 
       {/* ===== KPIs ===== */}
       <div style={S.kpiRow}>
-        {/* SAUVEGARDEES (info only) */}
         <div style={S.kpiCard(false, theme.primary)}>
           <div style={S.kpiLabel}>Sauvegardées</div>
           <div style={S.kpiValue}>{items.length}</div>
         </div>
 
-        {/* TERMINÉES */}
         <div
           style={S.kpiCard(tab === "done", theme.primary)}
           onClick={() => setTab("done")}
@@ -703,13 +670,14 @@ export default function HistoryPage({
           <div style={S.kpiValue}>{done.length}</div>
         </div>
 
-        {/* EN COURS */}
         <div
           style={S.kpiCard(tab === "running", theme.danger)}
           onClick={() => setTab("running")}
         >
           <div style={S.kpiLabel}>En cours</div>
-          <div style={{ ...S.kpiValue, color: theme.danger }}>{running.length}</div>
+          <div style={{ ...S.kpiValue, color: theme.danger }}>
+            {running.length}
+          </div>
         </div>
       </div>
 
@@ -755,7 +723,7 @@ export default function HistoryPage({
                 {/* Top row */}
                 <div style={S.rowBetween}>
                   <div style={{ display: "flex", gap: 8 }}>
-                    {/* MODE BADGE coloré */}
+                    {/* Mode badge */}
                     <span
                       style={{
                         padding: "4px 10px",
@@ -771,15 +739,19 @@ export default function HistoryPage({
                       {modeLabel(e)}
                     </span>
 
-                    {/* STATUT stylé */}
+                    {/* Statut */}
                     <span
                       style={{
                         padding: "4px 10px",
                         borderRadius: 999,
                         fontSize: 11,
                         fontWeight: 800,
-                        background: inProg ? "rgba(255,0,0,0.1)" : getModeColor(e) + "22",
-                        border: "1px solid " + (inProg ? theme.danger : getModeColor(e)),
+                        background: inProg
+                          ? "rgba(255,0,0,0.1)"
+                          : getModeColor(e) + "22",
+                        border:
+                          "1px solid " +
+                          (inProg ? theme.danger : getModeColor(e)),
                         color: inProg ? theme.danger : getModeColor(e),
                         textShadow: "0 0 4px rgba(0,0,0,0.6)",
                       }}
@@ -792,7 +764,7 @@ export default function HistoryPage({
                   </span>
                 </div>
 
-                {/* FORMAT + SCORE / CLASSEMENT */}
+                {/* Format + score/classement */}
                 <div
                   style={{
                     marginTop: 8,
@@ -821,7 +793,9 @@ export default function HistoryPage({
                           {url ? (
                             <img src={url} style={S.avImg} />
                           ) : (
-                            <div style={S.avFallback}>{nm.slice(0, 2)}</div>
+                            <div style={S.avFallback}>
+                              {nm ? nm.slice(0, 2) : "?"}
+                            </div>
                           )}
                         </div>
                       );
@@ -845,57 +819,62 @@ export default function HistoryPage({
                 </div>
 
                 {/* Buttons */}
-                <div style={S.pillRow}>
-                  {inProg ? (
-                    <>
-                      <div
-                        style={{ ...S.pill, ...S.pillGold }}
-                        onClick={() =>
-                          go("x01", {
-                            resumeId: e.id,
-                            players: e.players || [],
-                          })
-                        }
-                      >
-                        <Icon.Play /> Reprendre
-                      </div>
+<div style={S.pillRow}>
+  {inProg ? (
+    <>
+      {/* Reprendre une partie en cours */}
+      <div
+        style={{ ...S.pill, ...S.pillGold }}
+        onClick={() =>
+          go("x01_play_v3", {
+            // on prend resumeId si présent, sinon id / matchLink
+            resumeId: e.resumeId || matchLink(e) || e.id,
+            from: "history",
+            mode: baseMode(e),
+          })
+        }
+      >
+        <Icon.Play /> Reprendre
+      </div>
 
-                      <div
-                        style={S.pill}
-                        onClick={() =>
-                          go("x01", {
-                            resumeId: e.id,
-                            players: e.players || [],
-                            preview: true,
-                          })
-                        }
-                      >
-                        <Icon.Eye /> Voir
-                      </div>
-                    </>
-                  ) : (
-                    <div
-                      style={{ ...S.pill, ...S.pillGold }}
-                      onClick={() =>
-                        go("x01_end", {
-                          rec: e,
-                          resumeId: e.id,
-                          showEnd: true,
-                          from: "history",
-                        })
-                      }
-                    >
-                      <Icon.Eye /> Voir stats
-                    </div>
-                  )}
+      {/* Voir sans jouer (aperçu) */}
+      <div
+        style={S.pill}
+        onClick={() =>
+          go("x01_play_v3", {
+            resumeId: e.resumeId || matchLink(e) || e.id,
+            from: "history_preview",
+            mode: baseMode(e),
+            preview: true,
+          })
+        }
+      >
+        <Icon.Eye /> Voir
+      </div>
+    </>
+  ) : (
+    <div
+      style={{ ...S.pill, ...S.pillGold }}
+      onClick={() =>
+        go("x01_end", {
+          rec: e,
+          resumeId: e.resumeId || matchLink(e) || e.id,
+          showEnd: true,
+          from: "history",
+        })
+      }
+    >
+      <Icon.Eye /> Voir stats
+    </div>
+  )}
 
-                  <div
-                    style={{ ...S.pill, ...S.pillDanger }}
-                    onClick={() => handleDelete(e)}
-                  >
-                    <Icon.Trash /> Supprimer
-                  </div>
-                </div>
+  <div
+    style={{ ...S.pill, ...S.pillDanger }}
+    onClick={() => handleDelete(e)}
+  >
+    <Icon.Trash /> Supprimer
+  </div>
+</div>
               </div>
             );
           })
@@ -905,9 +884,7 @@ export default function HistoryPage({
   );
 }
 
-/* ---------------------------------------------
-   Date format
---------------------------------------------- */
+/* ---------- Date format ---------- */
 
 function fmtDate(ts: number) {
   return new Date(ts).toLocaleString();

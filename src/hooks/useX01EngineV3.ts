@@ -4,6 +4,7 @@
 // - Stats LIVE correctes (darts, visits, bestVisit, totalScore)
 // - PATCH COMPLET HITS/MISS/SEGMENTS (radar + hits S/D/T + détail)
 // - Agrégat summary.detailedByPlayer pour les matchs X01 multi
+// - summary.game.startScore + summary.rankings (pour Historique)
 // - Une seule MAJ des stats par VOLÉE
 // - Checkout adaptatif V3
 // - Status : playing / leg_end / set_end / match_end
@@ -40,6 +41,7 @@ import {
 } from "../lib/x01v3/x01StatsLiveV3";
 
 import { extAdaptCheckoutSuggestion } from "../lib/x01v3/x01CheckoutV3";
+import { History, type SavedMatch, type PlayerLite } from "../lib/history";
 
 // -------------------------------------------------------------
 // Helpers internes
@@ -192,7 +194,7 @@ function finalizeStatsFor(st: X01StatsLiveV3) {
 }
 
 // ===========================================================
-// AGRÉGATION MATCH : summary.detailedByPlayer
+// AGRÉGATION MATCH : summary.detailedByPlayer + rankings
 // ===========================================================
 
 function buildAggregatedStats(
@@ -378,6 +380,47 @@ export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
             applySetWinV3(config, m, setWinner);
 
             if (checkMatchWinV3(config, m)) {
+              // ========= FIN DE MATCH =========
+              // On pose aussi les métadonnées pour l'historique :
+              // - summary.game.startScore / mode
+              // - summary.rankings (classement joueurs)
+              const rankings = [...config.players].map((p) => {
+                const pid = p.id as X01PlayerId;
+                const legs = m.legsWon[pid] ?? 0;
+                const sets = m.setsWon[pid] ?? 0;
+                return {
+                  id: pid,
+                  name: p.name,
+                  legsWon: legs,
+                  setsWon: sets,
+                  score: sets || legs || 0,
+                };
+              });
+
+              rankings.sort((a, b) => {
+                if (b.setsWon !== a.setsWon) return b.setsWon - a.setsWon;
+                if (b.legsWon !== a.legsWon) return b.legsWon - a.legsWon;
+                return 0;
+              });
+
+              const summaryAny: any = (m as any).summary || {};
+
+              (m as any).summary = {
+                ...summaryAny,
+                game: {
+                  ...(summaryAny.game || {}),
+                  mode: "x01",
+                  startScore: config.startScore,
+                  legsPerSet: config.legsPerSet ?? null,
+                  setsToWin: config.setsToWin ?? null,
+                },
+                rankings,
+                winnerName:
+                  summaryAny.winnerName ??
+                  (m as any).winnerName ??
+                  (rankings[0]?.name ?? null),
+              };
+
               m.status = "match_end";
               return m;
             }
@@ -413,65 +456,53 @@ export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
   // -----------------------------------------------------------
 
   const startNextLeg = React.useCallback(() => {
-    setState((prev) => {
-      const m = structuredClone(prev);
-
-      if (m.status === "match_end") return m;
-
-      const setWinner = checkSetWinV3(config, m);
-
-      if (setWinner) {
-        // Nouveau set
-        m.currentSet++;
-        m.currentLeg = 1;
-
-        for (const pid of Object.keys(m.legsWon)) m.legsWon[pid] = 0;
-
-        m.throwOrder = generateThrowOrderV3(
-          config,
-          m.throwOrder,
-          m.currentSet
-        );
-        m.activePlayer = m.throwOrder[0];
-      } else {
-        // Nouveau leg dans le même set
-        m.currentLeg++;
-        m.activePlayer = getNextPlayerV3(m);
-      }
-
-      // Reset scores
-      for (const pid of Object.keys(m.scores)) {
-        m.scores[pid] = config.startScore;
-      }
-
-      // Reset stats live pour tous les joueurs
-      setLiveStatsByPlayer(() => {
-        const out: Record<X01PlayerId, X01StatsLiveV3> = {};
-        for (const p of config.players) {
-          out[p.id] = createEmptyLiveStatsV3();
-        }
-        // on purge aussi la copie côté match
-        (m as any).liveStatsByPlayer = out;
-        return out;
-      });
-
-      (m as any).lastLegWinnerId = null;
-      (m as any).lastWinnerId = null;
-      (m as any).lastWinningPlayerId = null;
-
-      startNewVisitV3(m);
-      if (m.visit) {
-        m.visit.checkoutSuggestion = extAdaptCheckoutSuggestion({
-          score: m.visit.currentScore,
-          dartsLeft: m.visit.dartsLeft,
-          outMode: config.outMode,
-        });
-      }
-
-      m.status = "playing";
-      return m;
-    });
+    // ...
   }, [config]);
+
+  // -----------------------------------------------------------
+  // Autosave → History (in_progress / finished)
+  // -----------------------------------------------------------
+
+  React.useEffect(() => {
+    try {
+      // on ne logge que les matchs X01 locaux
+      const playersLite: PlayerLite[] = config.players.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        avatarDataUrl: p.avatarDataUrl ?? null,
+      }));
+
+      const summary: any = (state as any).summary || {};
+      const finished = state.status === "match_end";
+      summary.finished = finished;
+
+      const rec: SavedMatch = {
+        id: state.matchId,
+        kind: "x01",
+        status: finished ? "finished" : "in_progress",
+        players: playersLite,
+        winnerId: (state as any).lastWinnerId ?? null,
+        game: {
+          mode: "x01",
+          startScore: config.startScore,
+        },
+        summary,
+        // payload complet pour reprise : config + state + stats live
+        payload: {
+          config,
+          state,
+          liveStatsByPlayer,
+        },
+      };
+
+      // on ne bloque pas le rendu, pas d'await
+      History.upsert(rec);
+    } catch (e) {
+      console.warn("[useX01EngineV3] autosave history error:", e);
+    }
+    // config est constant sur la durée du hook
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, liveStatsByPlayer]);
 
   // -----------------------------------------------------------
   // Exposition

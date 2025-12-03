@@ -27,12 +27,19 @@ export type SavedMatch = {
   winnerId?: string | null;
   createdAt?: number;
   updatedAt?: number;
+  // Config légère de la partie (ex: X01 301 / 501...)
+  game?: {
+    mode?: string;
+    startScore?: number;
+    [k: string]: any;
+  } | null;
   // Résumé léger (pour listes)
   summary?: {
     legs?: number;
     darts?: number; // total darts (compat)
     avg3ByPlayer?: Record<string, number>;
     co?: number;
+    [k: string]: any;
   } | null;
   // Payload complet (gros) — compressé en base
   payload?: any;
@@ -547,7 +554,7 @@ export async function upsert(rec: SavedMatch): Promise<void> {
     // payload compressé séparé (IDB)
   };
 
-  // ---------------------------------------------
+ // ---------------------------------------------
   // 🎯 Intégration Cricket : calcul auto legStats
   // ---------------------------------------------
   let payloadEffective = rec.payload;
@@ -575,6 +582,70 @@ export async function upsert(rec: SavedMatch): Promise<void> {
     }
   } catch (e) {
     console.warn("[history.upsert] cricket enrichment error:", e);
+  }
+
+  // ---------------------------------------------
+  // 🎯 Intégration X01 : expose startScore pour l'UI
+  // ---------------------------------------------
+  try {
+    if (rec.kind === "x01" && payloadEffective && typeof payloadEffective === "object") {
+      const base = payloadEffective as any;
+
+      // tentative multi-chemins pour trouver la config X01
+      const cfg =
+        base.config ||
+        base.game?.config ||
+        base.x01?.config ||
+        base.match?.config ||
+        base.x01Config;
+
+      if (cfg) {
+        const sc =
+          cfg.startScore ??
+          cfg.start ??
+          cfg.x01StartScore ??
+          cfg.x01Start ??
+          cfg.startingScore;
+
+        if (typeof sc === "number" && sc > 0) {
+          // game.* pour les listes (HistoryPage)
+          safe.game = {
+            ...(safe.game || {}),
+            mode: safe.kind || rec.kind || "x01",
+            startScore: sc,
+          };
+
+          const prevSummary: any = safe.summary || {};
+          safe.summary = {
+            ...prevSummary,
+            game: {
+              ...(prevSummary.game || {}),
+              startScore: sc,
+            },
+          };
+        }
+      }
+
+      // si le payload contient déjà un summary / result, on le propage
+      if (base.summary && typeof base.summary === "object") {
+        const prevSummary: any = safe.summary || {};
+        safe.summary = {
+          ...base.summary,
+          ...prevSummary,
+        };
+      } else if (base.result && typeof base.result === "object") {
+        const prevSummary: any = safe.summary || {};
+        safe.summary = {
+          ...prevSummary,
+          result: {
+            ...(prevSummary.result || {}),
+            ...base.result,
+          },
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("[history.upsert] x01 enrichment error:", e);
   }
 
   try {

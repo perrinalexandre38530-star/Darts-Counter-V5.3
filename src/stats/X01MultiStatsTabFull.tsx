@@ -571,16 +571,25 @@ async function loadX01MultiSessions(
 
     if (!players.length) continue;
 
-    // --------- 4) filtrage éventuel par profil ----------
+    // --------- 4) si profileId fourni → on ne garde que les matchs où il joue ----------
     if (profileId) {
-      const player = players.find(
+      const playsThisMatch = players.some(
         (p) => p?.profileId === profileId || p?.id === profileId
       );
-      if (!player) continue;
+      if (!playsThisMatch) continue;
+    }
 
-      const pid = player.id || player.profileId;
-      if (!pid) continue;
+    // --------- 5) on crée UNE session par joueur ----------
+    for (const player of players) {
+      const pidCandidate =
+        player.id ??
+        player.profileId ??
+        player.playerId ??
+        player.pid ??
+        null;
+      if (!pidCandidate) continue;
 
+      const pid = String(pidCandidate);
       const base = buildSessionFromSummary(match, pid);
       if (!base) continue;
 
@@ -600,55 +609,28 @@ async function loadX01MultiSessions(
 
       const teamId = (player as any).teamId ?? null;
 
+      const playerName =
+        player.name ||
+        player.displayName ||
+        player.nickname ||
+        player.nick ||
+        player.label ||
+        "Player";
+
       out.push({
         id: `${matchId}:${pid}`,
         matchId,
         date: createdAt,
-        selectedPlayerId: pid, // ✅ bon champ
-        playerName: player.name || "Player",
+        selectedPlayerId: pid,
+        playerName,
         isTeam,
-        teamId,                // 🔥 nouveau champ
+        teamId,
         ...base,
       });
-    } else {
-      // Pas de profileId => TOUTES les lignes pour ce match
-      for (const player of players) {
-        const pid = player.id || player.profileId;
-        if (!pid) continue;
-
-        const base = buildSessionFromSummary(match, pid);
-        if (!base) continue;
-
-        const isTeam =
-          ["team", "teams"].some((w) =>
-            String(
-              match.gameMode ||
-                match.mode ||
-                match.variant ||
-                match?.payload?.gameMode ||
-                match?.payload?.mode ||
-                match?.payload?.variant
-            )
-              .toLowerCase()
-              .includes(w)
-          ) || !!(player as any).teamId;
-
-        const teamId = (player as any).teamId ?? null;
-
-        out.push({
-          id: `${matchId}:${pid}`,
-          matchId,
-          date: createdAt,
-          selectedPlayerId: pid,
-          playerName: player.name || "Player",
-          isTeam,
-          teamId,              // 🔥 nouveau
-          ...base,
-        });
-      }
     }
   }
 
+  // Tri chronologique
   return out.sort((a, b) => a.date - b.date);
 }
 
@@ -814,10 +796,16 @@ const teamFormatStats: Record<string, { total: number; win: number }> = {};
 
 // Pour chaque match → on ne lit QUE la ligne du joueur sélectionné
 for (const [, arr] of matchGroups) {
-  // 🔥 utiliser bien l'ID effectif (playerId OU profileId)
-  const playerLine = effectiveProfileId
-    ? arr.find((s) => s.selectedPlayerId === effectiveProfileId)
-    : arr[0]; // fallback
+  let playerLine: X01MultiSession | undefined;
+
+  if (effectiveProfileId) {
+    playerLine =
+      arr.find(
+        (s) => String(s.selectedPlayerId) === String(effectiveProfileId)
+      ) || arr[0]; // fallback si les IDs ne matchent pas
+  } else {
+    playerLine = arr[0];
+  }
 
   if (!playerLine) continue;
 
@@ -850,22 +838,6 @@ for (const [, arr] of matchGroups) {
     const myRank = playerLine.rank ?? null;
     if (myRank && myRank < numPlayers) {
       multiFinishCount++;
-    }
-
-    // Comptage des places 1 / 2 / 3 / 4→10+ pour CE match
-    for (const line of arr) {
-      const r = line.rank ?? null;
-      if (!r || r < 1) continue;
-      if (r === 1) multiRanks.first++;
-      else if (r === 2) multiRanks.second++;
-      else if (r === 3) multiRanks.third++;
-      else if (r === 4) multiRanks.place4++;
-      else if (r === 5) multiRanks.place5++;
-      else if (r === 6) multiRanks.place6++;
-      else if (r === 7) multiRanks.place7++;
-      else if (r === 8) multiRanks.place8++;
-      else if (r === 9) multiRanks.place9++;
-      else multiRanks.place10plus++;
     }
   }
 
@@ -1663,16 +1635,19 @@ type MatchOutcome = {
   teammates: string[];
   opponents: string[];
   won: boolean;
-  margin: number | null; // diff legs ou sets si dispo
+  margin: number | null;      // diff (pour comparer)
+  scoreLabel: string | null;  // affichage "3-0", "2-1", etc.
 };
 
 const outcomes: MatchOutcome[] = [];
 
 for (const matchId in groupedByMatch) {
   const arr = groupedByMatch[matchId];
-  const myLine = profileId
-    ? arr.find((s) => s.selectedPlayerId === profileId)
-    : arr[0]; // fallback
+  const targetId = effectiveProfileId ?? profileId ?? null;
+
+const myLine = targetId
+  ? arr.find((s) => String(s.selectedPlayerId) === String(targetId))
+  : arr[0];
 
   if (!myLine) continue;
 
@@ -1687,10 +1662,29 @@ for (const matchId in groupedByMatch) {
     .filter((s) => s.selectedPlayerId !== myLine.selectedPlayerId && s.isTeam !== true)
     .map((s) => s.selectedPlayerId);
 
-  // Calcul marge (legs)
+  // Calcul marge + score affichable (legs ou sets)
   let margin: number | null = null;
+  let scoreLabel: string | null = null;
+
+  // On privilégie les LEGS ; si pas dispo, on bascule sur les SETS
   if (myLine.legsPlayed != null && myLine.legsWon != null) {
-    margin = (myLine.legsWon ?? 0) - ((myLine.legsPlayed ?? 0) - (myLine.legsWon ?? 0));
+    const legsPlayed = myLine.legsPlayed ?? 0;
+    const legsWon = myLine.legsWon ?? 0;
+    const legsLost = Math.max(0, legsPlayed - legsWon);
+
+    if (legsPlayed > 0) {
+      margin = legsWon - legsLost;
+      scoreLabel = `${legsWon}-${legsLost}`;
+    }
+  } else if (myLine.setsPlayed != null && myLine.setsWon != null) {
+    const setsPlayed = myLine.setsPlayed ?? 0;
+    const setsWon = myLine.setsWon ?? 0;
+    const setsLost = Math.max(0, setsPlayed - setsWon);
+
+    if (setsPlayed > 0) {
+      margin = setsWon - setsLost;
+      scoreLabel = `${setsWon}-${setsLost}`;
+    }
   }
 
   outcomes.push({
@@ -1701,6 +1695,7 @@ for (const matchId in groupedByMatch) {
     opponents,
     won: !!myLine.isWin,
     margin,
+    scoreLabel,
   });
 }
 
@@ -1708,10 +1703,10 @@ for (const matchId in groupedByMatch) {
 // 3) RECORDS — meilleure victoire / pire défaite
 // ============================================================
 
-let bestSoloWin: string | null = null;
-let worstSoloLose: string | null = null;
-let bestTeamWin: string | null = null;
-let worstTeamLose: string | null = null;
+let bestSoloWin: string | null = null;   // Top score DUO
+let worstSoloLose: string | null = null; // Pire défaite DUO
+let bestTeamWin: string | null = null;   // Top score TEAM
+let worstTeamLose: string | null = null; // (on le garde si tu veux l’afficher plus tard)
 
 let bestSoloMargin = -Infinity;
 let worstSoloMargin = Infinity;
@@ -1719,27 +1714,32 @@ let bestTeamMargin = -Infinity;
 let worstTeamMargin = Infinity;
 
 for (const oc of outcomes) {
-  if (oc.margin == null) continue;
+  if (oc.margin == null || !oc.scoreLabel) continue;
 
-  if (!oc.isTeam) {
-    // SOLO
+  const isDuo = !oc.isTeam && oc.players.length === 2;
+  const isTeam = oc.isTeam;
+
+  // --- DUO ---
+  if (isDuo) {
     if (oc.won && oc.margin > bestSoloMargin) {
       bestSoloMargin = oc.margin;
-      bestSoloWin = oc.margin.toString();
+      bestSoloWin = oc.scoreLabel; // ex: "3-0"
     }
     if (!oc.won && oc.margin < worstSoloMargin) {
       worstSoloMargin = oc.margin;
-      worstSoloLose = oc.margin.toString();
+      worstSoloLose = oc.scoreLabel; // ex: "0-3"
     }
-  } else {
-    // TEAM
+  }
+
+  // --- TEAM ---
+  if (isTeam) {
     if (oc.won && oc.margin > bestTeamMargin) {
       bestTeamMargin = oc.margin;
-      bestTeamWin = oc.margin.toString();
+      bestTeamWin = oc.scoreLabel; // ex: "2-0" dans un format 2v2, etc.
     }
     if (!oc.won && oc.margin < worstTeamMargin) {
       worstTeamMargin = oc.margin;
-      worstTeamLose = oc.margin.toString();
+      worstTeamLose = oc.scoreLabel;
     }
   }
 }
@@ -2873,87 +2873,93 @@ for (const tm in teammateStats) {
     </div>
 
     {/* RECORDS */}
-    <div>
+<div>
+  <div
+    style={{
+      fontSize: 11,
+      textTransform: "uppercase",
+      color: "#7CFF9A",
+      fontWeight: 800,
+      marginBottom: 8,
+    }}
+  >
+    Records
+  </div>
+
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      gap: 8,
+    }}
+  >
+    {/* TOP SCORE DUO */}
+    <div style={{ flex: 1 }}>
       <div
         style={{
-          fontSize: 11,
+          fontSize: 9,
+          color: T.text70,
           textTransform: "uppercase",
-          color: "#7CFF9A",
-          fontWeight: 800,
-          marginBottom: 8,
         }}
       >
-        Records (diff. legs)
+        Top score DUO
       </div>
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 8,
+          fontSize: 16,
+          fontWeight: 800,
+          color: "#7CFF9A",
         }}
       >
-        <div style={{ flex: 1 }}>
-          <div
-            style={{
-              fontSize: 9,
-              color: T.text70,
-              textTransform: "uppercase",
-            }}
-          >
-            Grosse victoire solo
-          </div>
-          <div
-            style={{
-              fontSize: 16,
-              fontWeight: 800,
-              color: "#7CFF9A",
-            }}
-          >
-            {bestSoloWinDisplay}
-          </div>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div
-            style={{
-              fontSize: 9,
-              color: T.text70,
-              textTransform: "uppercase",
-            }}
-          >
-            Grosse victoire team
-          </div>
-          <div
-            style={{
-              fontSize: 16,
-              fontWeight: 800,
-              color: "#7CFF9A",
-            }}
-          >
-            {bestTeamWinDisplay}
-          </div>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div
-            style={{
-              fontSize: 9,
-              color: T.text70,
-              textTransform: "uppercase",
-            }}
-          >
-            Pire défaite solo / team
-          </div>
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 700,
-              color: "#7CFF9A",
-            }}
-          >
-            {worstSoloLoseDisplay} / {worstTeamLoseDisplay}
-          </div>
-        </div>
+        {bestSoloWinDisplay !== "-" ? bestSoloWinDisplay : "-"}
       </div>
     </div>
+
+    {/* TOP SCORE TEAM */}
+    <div style={{ flex: 1 }}>
+      <div
+        style={{
+          fontSize: 9,
+          color: T.text70,
+          textTransform: "uppercase",
+        }}
+      >
+        Top score TEAM
+      </div>
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 800,
+          color: "#7CFF9A",
+        }}
+      >
+        {bestTeamWinDisplay !== "-" ? bestTeamWinDisplay : "-"}
+      </div>
+    </div>
+
+    {/* PIRE DÉFAITE DUO */}
+    <div style={{ flex: 1 }}>
+      <div
+        style={{
+          fontSize: 9,
+          color: T.text70,
+          textTransform: "uppercase",
+        }}
+      >
+        Pire défaite DUO
+      </div>
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 800,
+          color: "#FF6B6B",
+        }}
+      >
+        {worstSoloLoseDisplay !== "-" ? worstSoloLoseDisplay : "-"}
+      </div>
+    </div>
+  </div>
+</div>
 
     {/* FAVORIS — NOMS */}
     <div>
@@ -3563,88 +3569,226 @@ for (const tm in teammateStats) {
               }}
             >
               {pagedSessions.map((s: any) => {
-                const hits = s.hitsS + s.hitsD + s.hitsT;
-                const throws = hits + s.miss;
-                const pctHitsSession =
-                  throws > 0 ? (hits / throws) * 100 : null;
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => setSelected(s)}
-                    style={{
-                      textAlign: "left",
-                      borderRadius: 14,
-                      border: "1px solid rgba(255,255,255,.08)",
-                      padding: "8px 10px",
-                      background:
-                        "linear-gradient(180deg,#15171B,#0F1013)",
-                      color: T.text,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginBottom: 2,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: T.text70,
-                        }}
-                      >
-                        {formatShortDate(s.date)} — {s.playerName}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: T.gold,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {s.avg3D.toFixed(1)} de moy. 3D
-                      </div>
-                    </div>
+  const hits = s.hitsS + s.hitsD + s.hitsT;
+  const throws = hits + s.miss;
+  const pctHitsSession =
+    throws > 0 ? (hits / throws) * 100 : null;
 
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        fontSize: 11,
-                        color: T.text70,
-                      }}
-                    >
-                      <div>
-                        Darts:{" "}
-                        <span style={{ color: "#E5FFEF" }}>
-                          {s.darts}
-                        </span>
-                      </div>
-                      <div>
-                        Hits:{" "}
-                        <span style={{ color: "#7CFF9A" }}>{hits}</span>
-                        {pctHitsSession !== null && (
-                          <span> ({pctHitsSession.toFixed(1)}%)</span>
-                        )}
-                      </div>
-                      <div>
-                        BV:{" "}
-                        <span style={{ color: "#FFB8DE" }}>
-                          {s.bestVisit}
-                        </span>
-                      </div>
-                      <div>
-                        CO:{" "}
-                        <span style={{ color: "#FF9F43" }}>
-                          {s.bestCheckout ?? "-"}
-                        </span>
-                      </div>
-                    </div>
-                  </button>
+  // ---- méta match (DUO / MULTI / TEAM + format) ----
+  const group = matchGroups.get(s.matchId) || [s];
+  const numPlayers = group.length;
+  const isTeamMatch = s.isTeam === true;
+  const isDuoMatch = !isTeamMatch && numPlayers === 2;
+  const isMultiMatch = !isTeamMatch && numPlayers >= 3;
+
+  let modeLabel = "SOLO";
+  if (isTeamMatch) modeLabel = "TEAM";
+  else if (isDuoMatch) modeLabel = "DUO";
+  else if (isMultiMatch) modeLabel = "MULTI";
+
+  // format TEAM : 2v2, 3v3, 2v2v2, 2v2v2v2...
+  let teamFormatLabel: string | null = null;
+  if (isTeamMatch) {
+    const teamCount: Record<string, number> = {};
+    for (const line of group) {
+      const tid = (line as any).teamId || "team";
+      teamCount[tid] = (teamCount[tid] || 0) + 1;
+    }
+    const sizes = Object.values(teamCount).sort((a, b) => b - a);
+    if (sizes.length) {
+      teamFormatLabel = sizes.join("v"); // ex: 2v2, 3v3, 2v2v2...
+    }
+  }
+
+  // rang / classement
+  const rank: number | null =
+    typeof s.rank === "number" && s.rank > 0 ? s.rank : null;
+  let rankLabel: string | null = null;
+  if (rank != null) {
+    rankLabel = rank === 1 ? "1er" : `${rank}e`;
+  }
+  const placeText =
+    rankLabel && numPlayers > 1 ? `${rankLabel} / ${numPlayers}` : null;
+
+  // WIN / LOSE
+  const isWin = !!s.isWin;
+  const winLabel = isWin ? "WIN" : "LOSE";
+  const winColor = isWin ? "#7CFF9A" : "#FF6B6B";
+
+  // Legs / sets
+  const legsPlayed = s.legsPlayed ?? 0;
+  const legsWon = s.legsWon ?? 0;
+  const setsPlayed = s.setsPlayed ?? 0;
+  const setsWon = s.setsWon ?? 0;
+
+  return (
+    <button
+      key={s.id}
+      type="button"
+      onClick={() => setSelected(s)}
+      style={{
+        textAlign: "left",
+        borderRadius: 14,
+        border: "1px solid rgba(255,255,255,.08)",
+        padding: "8px 10px",
+        background: "linear-gradient(180deg,#15171B,#0F1013)",
+        color: T.text,
+        cursor: "pointer",
+      }}
+    >
+      {/* ligne date + moyenne */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 2,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            color: T.text70,
+          }}
+        >
+          {formatShortDate(s.date)} — {s.playerName}
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            color: T.gold,
+            fontWeight: 700,
+          }}
+        >
+          {s.avg3D.toFixed(1)} de moy. 3D
+        </div>
+      </div>
+
+      {/* ligne mode / format / rang / WIN */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 4,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            flexWrap: "wrap",
+            fontSize: 10,
+          }}
+        >
+          {/* badge mode */}
+          <span
+            style={{
+              padding: "2px 8px",
+              borderRadius: 999,
+              border: "1px solid rgba(255,255,255,.22)",
+              background: "rgba(0,0,0,.6)",
+              textTransform: "uppercase",
+              letterSpacing: 0.6,
+              color: "#E5F2FF",
+              fontWeight: 700,
+            }}
+          >
+            {modeLabel}
+            {isTeamMatch && teamFormatLabel
+              ? ` ${teamFormatLabel}`
+              : ""}
+          </span>
+
+          {/* badge classement */}
+          {placeText && (
+            <span
+              style={{
+                padding: "2px 8px",
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,.18)",
+                background: "rgba(0,0,0,.55)",
+                color: "#FFCFA0",
+                fontWeight: 700,
+              }}
+            >
+              {placeText}
+            </span>
+          )}
+        </div>
+
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            color: winColor,
+            textTransform: "uppercase",
+          }}
+        >
+          {winLabel}
+        </div>
+      </div>
+
+      {/* ligne Darts / Hits / BV / CO */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: 11,
+          color: T.text70,
+        }}
+      >
+        <div>
+          Darts:{" "}
+          <span style={{ color: "#E5FFEF" }}>{s.darts}</span>
+        </div>
+        <div>
+          Hits:{" "}
+          <span style={{ color: "#7CFF9A" }}>{hits}</span>
+          {pctHitsSession !== null && (
+            <span> ({pctHitsSession.toFixed(1)}%)</span>
+          )}
+        </div>
+        <div>
+          BV:{" "}
+          <span style={{ color: "#FFB8DE" }}>{s.bestVisit}</span>
+        </div>
+        <div>
+          CO:{" "}
+          <span style={{ color: "#FF9F43" }}>
+            {s.bestCheckout ?? "-"}
+          </span>
+        </div>
+      </div>
+
+      {/* ligne Legs / Sets */}
+      {(legsPlayed > 0 || setsPlayed > 0) && (
+        <div
+          style={{
+            marginTop: 2,
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: 10,
+            color: T.text70,
+          }}
+        >
+          <div>
+            Legs:{" "}
+            <span style={{ color: "#E5FFEF" }}>
+              {legsWon} / {legsPlayed}
+            </span>
+          </div>
+          {setsPlayed > 0 && (
+            <div>
+              Sets:{" "}
+              <span style={{ color: "#E5FFEF" }}>
+                {setsWon} / {setsPlayed}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </button>
                 );
               })}
             </div>
