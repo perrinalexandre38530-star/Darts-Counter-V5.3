@@ -1757,6 +1757,64 @@ for (const tm in teammateStats) {
   }
 }
 
+// ---------- Formats d'affichage pour les stats MATCHS / ADVERSAIRES ----------
+
+// marge +X / -X pour les victoires/défaites
+const formatMargin = (m: string | null): string =>
+  m == null ? "-" : Number(m) > 0 ? `+${m}` : `${m}`;
+
+// Map id -> nom joueur (à partir des lignes de sessions)
+const nameById: Record<string, string> = {};
+for (const s of filtered) {
+  if (!s.selectedPlayerId) continue;
+  if (!nameById[s.selectedPlayerId]) {
+    nameById[s.selectedPlayerId] = s.playerName || s.selectedPlayerId;
+  }
+}
+
+// Marges formatées
+const bestSoloWinDisplay = formatMargin(bestSoloWin);
+const bestTeamWinDisplay = formatMargin(bestTeamWin);
+const worstSoloLoseDisplay = formatMargin(worstSoloLose);
+const worstTeamLoseDisplay = formatMargin(worstTeamLose);
+
+// Noms lisibles (adversaires / coéquipiers)
+const favOpponentName =
+  favOpponent && nameById[favOpponent]
+    ? nameById[favOpponent]
+    : favOpponent;
+
+const worstOpponentName =
+  worstOpponent && nameById[worstOpponent]
+    ? nameById[worstOpponent]
+    : worstOpponent;
+
+const favTeammateName =
+  favTeammate && nameById[favTeammate]
+    ? nameById[favTeammate]
+    : favTeammate;
+
+// Moyennes Win en %
+const avgMatchWinDisplay = fmtPct(pctWinX01);
+const avgLegWinDisplay = fmtPct(pctLegsWinX01);
+const avgSetWinDisplay = fmtPct(pctSetsWinX01);
+
+// Winrates adversaires / coéquipiers
+const favOpponentRateDisplay =
+  favOpponentRate >= 0 && favOpponentRate <= 1
+    ? `${(favOpponentRate * 100).toFixed(1)}%`
+    : "-";
+
+const worstOpponentRateDisplay =
+  worstOpponentRate >= 0 && worstOpponentRate <= 1
+    ? `${(worstOpponentRate * 100).toFixed(1)}%`
+    : "-";
+
+const favTeammateRateDisplay =
+  favTeammateRate >= 0 && favTeammateRate <= 1
+    ? `${(favTeammateRate * 100).toFixed(1)}%`
+    : "-";
+
 
   // ------------------- RENDER -------------------
 
@@ -2618,7 +2676,7 @@ for (const tm in teammateStats) {
       textAlign: "center",
     }}
   >
-    {/* MOYENNES */}
+    {/* MOYENNES WIN */}
     <div>
       <div
         style={{
@@ -2629,7 +2687,7 @@ for (const tm in teammateStats) {
           marginBottom: 8,
         }}
       >
-        MOYENNES
+        MOYENNES WIN
       </div>
       <div
         style={{
@@ -2646,7 +2704,7 @@ for (const tm in teammateStats) {
               textTransform: "uppercase",
             }}
           >
-            Moy. match Win
+            % Match Win
           </div>
           <div
             style={{
@@ -2655,7 +2713,7 @@ for (const tm in teammateStats) {
               color: "#FFB8DE",
             }}
           >
-            0.0
+            {avgMatchWinDisplay}
           </div>
         </div>
         <div style={{ flex: 1 }}>
@@ -2666,7 +2724,7 @@ for (const tm in teammateStats) {
               textTransform: "uppercase",
             }}
           >
-            Moy. leg Win
+            % Leg Win
           </div>
           <div
             style={{
@@ -2675,7 +2733,7 @@ for (const tm in teammateStats) {
               color: "#FFB8DE",
             }}
           >
-            0.0
+            {avgLegWinDisplay}
           </div>
         </div>
         <div style={{ flex: 1 }}>
@@ -2686,7 +2744,7 @@ for (const tm in teammateStats) {
               textTransform: "uppercase",
             }}
           >
-            Moy. set Win
+            % Set Win
           </div>
           <div
             style={{
@@ -2695,13 +2753,13 @@ for (const tm in teammateStats) {
               color: "#FFB8DE",
             }}
           >
-            0.0
+            {avgSetWinDisplay}
           </div>
         </div>
       </div>
     </div>
 
-    {/* RECORDS */}
+    {/* RECORDS VICTOIRES / DÉFAITES */}
     <div>
       <div
         style={{
@@ -2738,7 +2796,7 @@ for (const tm in teammateStats) {
               color: "#7CFF9A",
             }}
           >
-            -
+            {bestSoloWinDisplay}
           </div>
         </div>
         <div style={{ flex: 1 }}>
@@ -2758,7 +2816,7 @@ for (const tm in teammateStats) {
               color: "#7CFF9A",
             }}
           >
-            -
+            {bestTeamWinDisplay}
           </div>
         </div>
         <div style={{ flex: 1 }}>
@@ -2778,13 +2836,13 @@ for (const tm in teammateStats) {
               color: "#7CFF9A",
             }}
           >
-            - / -
+            {worstSoloLoseDisplay} / {worstTeamLoseDisplay}
           </div>
         </div>
       </div>
     </div>
 
-    {/* FAVORIS */}
+    {/* FAVORIS #1 — NOMS ADVERSAIRES / COÉQUIPIERS */}
     <div>
       <div
         style={{
@@ -2795,7 +2853,7 @@ for (const tm in teammateStats) {
           marginBottom: 8,
         }}
       >
-        FAVORIS
+        FAVORIS (NOMS)
       </div>
       <div
         style={{
@@ -2821,7 +2879,7 @@ for (const tm in teammateStats) {
               color: "#4DB2FF",
             }}
           >
-            -
+            {favOpponentName || "-"}
           </div>
         </div>
         <div style={{ flex: 1 }}>
@@ -2841,7 +2899,7 @@ for (const tm in teammateStats) {
               color: "#4DB2FF",
             }}
           >
-            -
+            {worstOpponentName || "-"}
           </div>
         </div>
         <div style={{ flex: 1 }}>
@@ -2861,13 +2919,13 @@ for (const tm in teammateStats) {
               color: "#4DB2FF",
             }}
           >
-            -
+            {favTeammateName || "-"}
           </div>
         </div>
       </div>
     </div>
 
-    {/* FAVORIS */}
+    {/* FAVORIS #2 — RATIO CONTRE EUX */}
     <div>
       <div
         style={{
@@ -2878,7 +2936,7 @@ for (const tm in teammateStats) {
           marginBottom: 8,
         }}
       >
-        FAVORIS
+        FAVORIS (RATIO WIN)
       </div>
       <div
         style={{
@@ -2895,7 +2953,7 @@ for (const tm in teammateStats) {
               textTransform: "uppercase",
             }}
           >
-            Adversaire favori
+            Vs adversaire favori
           </div>
           <div
             style={{
@@ -2904,7 +2962,7 @@ for (const tm in teammateStats) {
               color: "#4DB2FF",
             }}
           >
-            -
+            {favOpponentRateDisplay}
           </div>
         </div>
         <div style={{ flex: 1 }}>
@@ -2915,7 +2973,7 @@ for (const tm in teammateStats) {
               textTransform: "uppercase",
             }}
           >
-            Pire adversaire
+            Vs pire adversaire
           </div>
           <div
             style={{
@@ -2924,7 +2982,7 @@ for (const tm in teammateStats) {
               color: "#4DB2FF",
             }}
           >
-            -
+            {worstOpponentRateDisplay}
           </div>
         </div>
         <div style={{ flex: 1 }}>
@@ -2935,7 +2993,7 @@ for (const tm in teammateStats) {
               textTransform: "uppercase",
             }}
           >
-            Coéquipier favori
+            Avec coéquipier favori
           </div>
           <div
             style={{
@@ -2944,7 +3002,7 @@ for (const tm in teammateStats) {
               color: "#4DB2FF",
             }}
           >
-            -
+            {favTeammateRateDisplay}
           </div>
         </div>
       </div>
