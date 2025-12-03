@@ -161,6 +161,9 @@ export type X01MultiSession = {
   selectedPlayerId: string;
   playerName: string;
 
+  // 🔥 pour les stats TEAM
+  teamId?: string | null;
+
   darts: number;
   avg3D: number;
   avg1D: number;
@@ -595,6 +598,8 @@ async function loadX01MultiSessions(
             .includes(w)
         ) || !!(player as any).teamId;
 
+      const teamId = (player as any).teamId ?? null;
+
       out.push({
         id: `${matchId}:${pid}`,
         matchId,
@@ -602,6 +607,7 @@ async function loadX01MultiSessions(
         selectedPlayerId: pid, // ✅ bon champ
         playerName: player.name || "Player",
         isTeam,
+        teamId,                // 🔥 nouveau champ
         ...base,
       });
     } else {
@@ -627,6 +633,8 @@ async function loadX01MultiSessions(
               .includes(w)
           ) || !!(player as any).teamId;
 
+        const teamId = (player as any).teamId ?? null;
+
         out.push({
           id: `${matchId}:${pid}`,
           matchId,
@@ -634,6 +642,7 @@ async function loadX01MultiSessions(
           selectedPlayerId: pid,
           playerName: player.name || "Player",
           isTeam,
+          teamId,              // 🔥 nouveau
           ...base,
         });
       }
@@ -790,7 +799,8 @@ let duoTotal = 0,
 let multiTotal = 0,
   multiWins = 0,
   multiLegsWon = 0,
-  multiLegsPlayed = 0;
+  multiLegsPlayed = 0,
+  multiFinishCount = 0; // 🔥 nb de FINISH en multi (ne pas finir dernier)
 
 let teamTotal = 0,
   teamWins = 0,
@@ -799,10 +809,14 @@ let teamTotal = 0,
   teamSetsWon = 0,
   teamSetsPlayed = 0;
 
+// 🔥 stats par format de team (2v2, 3v3, 2v2v2, 2v2v2v2, etc.)
+const teamFormatStats: Record<string, { total: number; win: number }> = {};
+
 // Pour chaque match → on ne lit QUE la ligne du joueur sélectionné
 for (const [, arr] of matchGroups) {
-  const playerLine = profileId
-    ? arr.find((s) => s.selectedPlayerId === profileId)
+  // 🔥 utiliser bien l'ID effectif (playerId OU profileId)
+  const playerLine = effectiveProfileId
+    ? arr.find((s) => s.selectedPlayerId === effectiveProfileId)
     : arr[0]; // fallback
 
   if (!playerLine) continue;
@@ -831,6 +845,28 @@ for (const [, arr] of matchGroups) {
 
     multiLegsWon += playerLine.legsWon ?? 0;
     multiLegsPlayed += playerLine.legsPlayed ?? 0;
+
+    // 🔥 FINISH = ne pas arriver dernier (rang < nb joueurs)
+    const myRank = playerLine.rank ?? null;
+    if (myRank && myRank < numPlayers) {
+      multiFinishCount++;
+    }
+
+    // Comptage des places 1 / 2 / 3 / 4→10+ pour CE match
+    for (const line of arr) {
+      const r = line.rank ?? null;
+      if (!r || r < 1) continue;
+      if (r === 1) multiRanks.first++;
+      else if (r === 2) multiRanks.second++;
+      else if (r === 3) multiRanks.third++;
+      else if (r === 4) multiRanks.place4++;
+      else if (r === 5) multiRanks.place5++;
+      else if (r === 6) multiRanks.place6++;
+      else if (r === 7) multiRanks.place7++;
+      else if (r === 8) multiRanks.place8++;
+      else if (r === 9) multiRanks.place9++;
+      else multiRanks.place10plus++;
+    }
   }
 
   // ---- TEAM ----
@@ -843,6 +879,23 @@ for (const [, arr] of matchGroups) {
 
     teamSetsWon += playerLine.setsWon ?? 0;
     teamSetsPlayed += playerLine.setsPlayed ?? 0;
+
+    // 🔥 Détection du format (2v2, 3v3, 2v2v2, 2v2v2v2, etc.)
+    const teamCount: Record<string, number> = {};
+    for (const line of arr) {
+      const tid = line.teamId || "team";
+      teamCount[tid] = (teamCount[tid] || 0) + 1;
+    }
+    const sizes = Object.values(teamCount).sort((a, b) => b - a);
+    const formatLabel =
+      sizes.length > 0 ? sizes.join("v") : "team";
+
+    const bucket =
+      teamFormatStats[formatLabel] ||
+      (teamFormatStats[formatLabel] = { total: 0, win: 0 });
+
+    bucket.total++;
+    if (playerLine.isWin) bucket.win++;
   }
 }
 
@@ -851,16 +904,19 @@ for (const [, arr] of matchGroups) {
 const pct = (num: number, den: number) =>
   den > 0 ? ((num / den) * 100).toFixed(1) : "0.0";
 
-const duoPctWin = pct(duoWins, duoTotal);
-const multiPctWin = pct(multiWins, multiTotal);
-const teamPctWin = pct(teamWins, teamTotal);
-
-const duoPctLegs = pct(duoLegsWon, duoLegsPlayed);
-const multiPctLegs = pct(multiLegsWon, multiLegsPlayed);
-const teamPctLegs = pct(teamLegsWon, teamLegsPlayed);
-
-const duoPctSets = pct(duoSetsWon, duoSetsPlayed);
-const teamPctSets = pct(teamSetsWon, teamSetsPlayed);
+  const duoPctWin = pct(duoWins, duoTotal);
+  const multiPctWin = pct(multiWins, multiTotal);
+  const teamPctWin = pct(teamWins, teamTotal);
+  
+  const duoPctLegs = pct(duoLegsWon, duoLegsPlayed);
+  const multiPctLegs = pct(multiLegsWon, multiLegsPlayed); // on le garde au cas où
+  const teamPctLegs = pct(teamLegsWon, teamLegsPlayed);
+  
+  const duoPctSets = pct(duoSetsWon, duoSetsPlayed);
+  const teamPctSets = pct(teamSetsWon, teamSetsPlayed);
+  
+  // 🔥 % FINISH multi
+  const multiPctFinish = pct(multiFinishCount, multiTotal);
 
   const totalSessions = filtered.length;
   const totalDarts = filtered.reduce((s: any, x: any) => s + x.darts, 0);
@@ -2549,8 +2605,18 @@ for (const tm in teammateStats) {
   </div>
 
   {[
-    { label: "Matchs multi", total: multiTotal, win: multiWins, pct: multiPctWin },
-    { label: "Legs Win multi", total: multiLegsPlayed, win: multiLegsWon, pct: multiPctLegs },
+    {
+      label: "Matchs multi",
+      total: multiTotal,
+      win: multiWins,
+      pct: multiPctWin,
+    },
+    {
+      label: "Finish multi",
+      total: multiTotal,
+      win: multiFinishCount,
+      pct: multiPctFinish,
+    },
   ].map((row) => (
     <div key={row.label} style={statRowBox}>
       <span style={{ flex: 2 }}>{row.label}</span>
@@ -2650,6 +2716,65 @@ for (const tm in teammateStats) {
       </span>
     </div>
   ))}
+
+  {/* 🔥 FORMATS TEAM : 2v2 / 3v3 / 2v2v2 / ... */}
+  {Object.keys(teamFormatStats).length > 0 && (
+    <div
+      style={{
+        marginTop: 8,
+        borderRadius: 12,
+        padding: "6px 10px 8px",
+        background: "rgba(0,0,0,.45)",
+        border: "1px solid rgba(255,255,255,.08)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          textTransform: "uppercase",
+          color: T.text70,
+          marginBottom: 4,
+        }}
+      >
+        Formats team
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          fontSize: 10,
+          color: T.text70,
+          marginBottom: 2,
+        }}
+      >
+        <div style={{ flex: 2 }}>Format</div>
+        <div style={{ flex: 1, textAlign: "right" }}>Win / Total</div>
+        <div style={{ flex: 1, textAlign: "right" }}>%Win</div>
+      </div>
+
+      {Object.entries(teamFormatStats).map(([format, st]) => {
+        const pctWin =
+          st.total > 0 ? ((st.win / st.total) * 100).toFixed(1) : "0.0";
+        return (
+          <div
+            key={format}
+            style={{
+              display: "flex",
+              fontSize: 10,
+              color: T.text,
+              lineHeight: 1.5,
+            }}
+          >
+            <div style={{ flex: 2 }}>{format}</div>
+            <div style={{ flex: 1, textAlign: "right" }}>
+              {st.win} / {st.total}
+            </div>
+            <div style={{ flex: 1, textAlign: "right" }}>{pctWin}%</div>
+          </div>
+        );
+      })}
+    </div>
+  )}
 </div>
 
 </div>

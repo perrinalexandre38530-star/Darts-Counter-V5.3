@@ -94,51 +94,81 @@ function baseMode(e: SavedEntry) {
   return k || m || "x01";
 }
 
-// Recherche profonde de startScore / start si vraiment rien ailleurs
+// trouve un startScore 301 / 501 / 701 / 901 n'importe où dans l'objet
 function deepFindStart(obj: any, depth = 4): number | undefined {
   if (!obj || depth < 0) return undefined;
   if (typeof obj !== "object") return undefined;
 
-  for (const [key, val] of Object.entries(obj)) {
-    if (typeof val === "number") {
-      const k = key.toLowerCase();
-      if (k.includes("start") || k.includes("score")) return val;
-    }
-    if (typeof val === "object") {
-      const found = deepFindStart(val, depth - 1);
-      if (typeof found === "number") return found;
-    }
-    if (Array.isArray(val)) {
-      for (const it of val) {
-        const found = deepFindStart(it, depth - 1);
-        if (typeof found === "number") return found;
+  const candidates = new Set<number>();
+
+  function walk(o: any, d: number) {
+    if (!o || d < 0) return;
+    if (typeof o !== "object") return;
+
+    for (const [, val] of Object.entries(o)) {
+      if (typeof val === "number") {
+        if ([301, 501, 701, 901].includes(val)) {
+          candidates.add(val);
+        }
+      } else if (typeof val === "string") {
+        const trimmed = val.trim();
+        if (/^\d{3}$/.test(trimmed)) {
+          const n = Number(trimmed);
+          if ([301, 501, 701, 901].includes(n)) {
+            candidates.add(n);
+          }
+        }
+      } else if (Array.isArray(val)) {
+        for (const it of val) walk(it, d - 1);
+      } else if (typeof val === "object") {
+        walk(val, d - 1);
       }
     }
+  }
+
+  walk(obj, depth);
+
+  if (candidates.size === 0) return undefined;
+  // on choisit un des classiques, priorité 301 puis 501, etc.
+  const order = [301, 501, 701, 901];
+  for (const v of order) {
+    if (candidates.has(v)) return v;
   }
   return undefined;
 }
 
 function getStartScore(e: SavedEntry): number {
   const anyE: any = e;
-  const direct =
-    e.game?.startScore ??
-    anyE.startScore ??
-    anyE.config?.startScore ??
-    anyE.config?.start ??
-    anyE.engineConfig?.startScore ??
-    anyE.engineConfig?.start ??
-    anyE.summary?.config?.startScore ??
-    anyE.summary?.config?.start ??
-    (anyE.payload?.game?.startScore ??
-      anyE.payload?.config?.startScore ??
-      anyE.payload?.config?.start);
 
-  if (typeof direct === "number") return direct;
+  const paths = [
+    anyE.game?.startScore,
+    anyE.summary?.game?.startScore,
+    anyE.payload?.game?.startScore,
 
-  const deep = deepFindStart(e);
-  if (typeof deep === "number") return deep;
+    anyE.config?.startScore,
+    anyE.summary?.config?.startScore,
+    anyE.payload?.config?.startScore,
 
-  return 501;
+    anyE.config?.start,
+    anyE.summary?.config?.start,
+    anyE.payload?.config?.start,
+
+    anyE.payload?.x01?.startScore,
+    anyE.payload?.x01?.start,
+    anyE.summary?.x01?.startScore,
+    anyE.summary?.x01?.start,
+
+    anyE.engineConfig?.startScore,
+    anyE.engineConfig?.start,
+  ];
+
+  for (const v of paths) {
+    if (typeof v === "number" && [301, 501, 701, 901].includes(v)) {
+      return v;
+    }
+  }
+
+  return 501; // fallback
 }
 
 function modeLabel(e: SavedEntry) {
@@ -189,7 +219,6 @@ function detectFormat(e: SavedEntry): string {
   if (!teams || teams.length <= 1) return "Solo";
 
   const sizes = teams.map((t: any) => t.players?.length || 1);
-
   if (sizes.every((s) => s === sizes[0])) return sizes[0] + "v" + sizes[0];
 
   return sizes.join("v");
@@ -199,11 +228,28 @@ function detectFormat(e: SavedEntry): string {
    Score Summary (classement)
 --------------------------------------------- */
 
+function cleanName(raw: any): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const name = raw.trim();
+  if (!name) return undefined;
+  // on évite d'afficher des IDs type uuid
+  if (name.length > 24 && name.includes("-")) return undefined;
+  return name;
+}
+
+function cleanScore(raw: any): string | undefined {
+  if (typeof raw === "number") return String(raw);
+  if (typeof raw !== "string") return undefined;
+  const s = raw.trim();
+  if (!/^\d+(\.\d+)?$/.test(s)) return undefined;
+  return s;
+}
+
 function summarizeScore(e: SavedEntry): string {
   const data: any = e.summary || e.payload || {};
   const result = data.result || {};
 
-  // 1) rankings classiques
+  // 1) rankings / players / standings
   const rankings =
     data.rankings ||
     result.rankings ||
@@ -212,48 +258,59 @@ function summarizeScore(e: SavedEntry): string {
     result.standings;
 
   if (Array.isArray(rankings)) {
-    const parts = rankings.map((r: any) => {
-      const name = r.name || r.playerName || r.label || "?";
-      const score =
-        r.score ??
-        r.legsWon ??
-        r.legs ??
-        r.setsWon ??
-        r.sets ??
-        r.points ??
-        r.total ??
-        (typeof r.avg3 === "number" ? r.avg3.toFixed(1) : undefined);
+    const parts = rankings
+      .map((r: any) => {
+        const name =
+          cleanName(r.name || r.playerName || r.label || r.id || r.playerId) ||
+          undefined;
+        const score =
+          cleanScore(
+            r.score ??
+              r.legsWon ??
+              r.legs ??
+              r.setsWon ??
+              r.sets ??
+              r.points ??
+              r.total,
+          ) ||
+          (typeof r.avg3 === "number" ? r.avg3.toFixed(1) : undefined);
 
-      if (score === undefined) return name;
-      return `${name}: ${score}`;
-    });
-    if (parts.some(Boolean)) return parts.join(" • ");
-  }
+        if (!name && !score) return null;
+        if (name && score) return `${name}: ${score}`;
+        return name || score || null;
+      })
+      .filter(Boolean) as string[];
 
-  // 2) objet scores simple
-  const scoresObj = result.scores || data.scores;
-  if (scoresObj && typeof scoresObj === "object") {
-    const parts = Object.entries(scoresObj).map(([name, val]) => {
-      return `${name}: ${val as any}`;
-    });
     if (parts.length) return parts.join(" • ");
   }
 
-  // 3) detailedByPlayer (X01 V3 / training / multi)
+  // 2) detailedByPlayer / byPlayer (X01 V3)
   const detailed = data.detailedByPlayer || data.byPlayer;
   if (detailed && typeof detailed === "object") {
-    const parts = Object.entries(detailed).map(([name, val]: [string, any]) => {
-      const legs = val.legsWon ?? val.legs ?? undefined;
-      const avg = typeof val.avg3 === "number" ? val.avg3.toFixed(1) : undefined;
-      if (legs !== undefined && avg !== undefined) {
-        return `${name}: ${legs}L • ${avg}`;
-      }
-      if (legs !== undefined) return `${name}: ${legs}L`;
-      if (avg !== undefined) return `${name}: ${avg}`;
-      return name;
-    });
+    const parts = Object.entries(detailed)
+      .map(([rawName, val]: [string, any]) => {
+        const name = cleanName(rawName);
+        const legs = cleanScore(val.legsWon ?? val.legs);
+        const avg =
+          typeof val.avg3 === "number" ? val.avg3.toFixed(1) : undefined;
+
+        if (!name && !legs && !avg) return null;
+
+        const sub = [];
+        if (legs) sub.push(`${legs}L`);
+        if (avg) sub.push(avg);
+
+        if (name && sub.length) return `${name}: ${sub.join(" • ")}`;
+        if (name) return name;
+        if (sub.length) return sub.join(" • ");
+        return null;
+      })
+      .filter(Boolean) as string[];
+
     if (parts.length) return parts.join(" • ");
   }
+
+  // 3) on NE TOUCHE PLUS aux objets generic scores pour éviter les IDs chelous
 
   return "";
 }
@@ -377,6 +434,15 @@ const HistoryAPI = {
   async list(store: Store): Promise<SavedEntry[]> {
     try {
       const rows = await History.list();
+
+      // 🔍 DEBUG : affiche la 1ère entrée brute dans la console
+      if (rows && rows.length > 0) {
+        console.log(
+          "[HISTORY DEBUG] first row =",
+          JSON.stringify(rows[0], null, 2)
+        );
+      }
+
       return rows as SavedEntry[];
     } catch {
       const anyStore = store as any;
