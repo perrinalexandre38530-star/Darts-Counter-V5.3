@@ -255,13 +255,26 @@ function buildAggregatedStats(
 // Hook principal
 // -------------------------------------------------------------
 
-export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
+export function useX01EngineV3({
+  config,
+  initialState,
+  initialLiveStats,
+  historyId,
+}: {
+  config: X01ConfigV3;
+  initialState?: X01MatchStateV3;
+  initialLiveStats?: Record<X01PlayerId, X01StatsLiveV3>;
+  historyId?: string;
+}) {
   const [state, setState] = React.useState<X01MatchStateV3>(() =>
-    createInitialMatchState(config)
+    initialState ? structuredClone(initialState) : createInitialMatchState(config)
   );
 
   const [liveStatsByPlayer, setLiveStatsByPlayer] =
     React.useState<Record<X01PlayerId, X01StatsLiveV3>>(() => {
+      if (initialLiveStats) {
+        return structuredClone(initialLiveStats);
+      }
       const out: Record<X01PlayerId, X01StatsLiveV3> = {};
       for (const p of config.players) {
         out[p.id] = createEmptyLiveStatsV3();
@@ -477,7 +490,7 @@ export function useX01EngineV3({ config }: { config: X01ConfigV3 }) {
       summary.finished = finished;
 
       const rec: SavedMatch = {
-        id: state.matchId,
+        id: historyId || state.matchId,
         kind: "x01",
         status: finished ? "finished" : "in_progress",
         players: playersLite,
