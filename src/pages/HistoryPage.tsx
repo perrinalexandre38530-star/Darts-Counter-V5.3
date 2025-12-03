@@ -1,19 +1,16 @@
 // ============================================
-// src/pages/HistoryPage.tsx — Historique
-// Version refondue : thèmes + i18n + logique existante
-// - Thèmes via ThemeContext (bg, card, primary, danger...)
-// - Textes via LangContext (history.* / common.delete)
-// - Dé-doublonnage uniquement sur les parties terminées
-// - Reprendre une partie "en cours" avec son id d’historique
-// - "Voir stats" -> overlay x01_end (rec complet)
+// src/pages/HistoryPage.tsx — Historique V2 Neon Deluxe
 // ============================================
 
 import React, { useEffect, useMemo, useState } from "react";
 import type { Store } from "../lib/types";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
+import { History, type SavedMatch } from "../lib/history";
 
-/* ---------- Icônes inline ---------- */
+/* ---------------------------------------------
+   Icons
+--------------------------------------------- */
 
 const Icon = {
   Trophy: (p: any) => (
@@ -47,33 +44,32 @@ const Icon = {
   ),
 };
 
-/* ---------- Types & helpers data ---------- */
+/* ---------------------------------------------
+   Types
+--------------------------------------------- */
 
-export type SavedEntry = {
-  id: string;
+export type SavedEntry = SavedMatch & {
   resumeId?: string;
-  kind?: string;
-  game?: { mode?: string; startScore?: number };
-  createdAt: number;
-  updatedAt?: number;
-  players?: any[];
-  winnerId?: string | null;
+  game?: { mode?: string; startScore?: number; teams?: any[] };
   winnerName?: string | null;
-  status?: "finished" | "inprogress" | "in_progress" | "unknown";
-  summary?: any;
-  payload?: any;
 };
+
+/* ---------------------------------------------
+   Helpers : player & avatar
+--------------------------------------------- */
 
 function getId(v: any): string {
   if (!v) return "";
   if (typeof v === "string") return v;
   return String(v.id || v.playerId || v.profileId || v._id || "");
 }
+
 function getName(v: any): string {
   if (!v) return "";
   if (typeof v === "string") return v;
   return String(v.name || v.displayName || v.username || "");
 }
+
 function getAvatarUrl(store: Store, v: any): string | null {
   if (v && typeof v === "object" && v.avatarDataUrl) return String(v.avatarDataUrl);
   const id = getId(v);
@@ -86,39 +82,203 @@ function getAvatarUrl(store: Store, v: any): string | null {
   const hit = list.find((p) => getId(p) === id);
   return hit?.avatarDataUrl ?? null;
 }
+
+/* ---------------------------------------------
+   Mode + params
+--------------------------------------------- */
+
 function baseMode(e: SavedEntry) {
   const k = (e.kind || "").toLowerCase();
   const m = (e.game?.mode || "").toLowerCase();
   if (k === "leg") return m || "x01";
   return k || m || "x01";
 }
-function statusOf(e: SavedEntry): "finished" | "in_progress" {
-  const s = (e.status || "").toLowerCase();
-  if (s === "finished") return "finished";
-  if (s === "inprogress" || s === "in_progress") return "in_progress";
-  const sum = e.summary || e.payload || {};
-  if (sum?.finished === true || sum?.result?.finished === true) return "finished";
-  return "in_progress";
+
+// Recherche profonde de startScore / start si vraiment rien ailleurs
+function deepFindStart(obj: any, depth = 4): number | undefined {
+  if (!obj || depth < 0) return undefined;
+  if (typeof obj !== "object") return undefined;
+
+  for (const [key, val] of Object.entries(obj)) {
+    if (typeof val === "number") {
+      const k = key.toLowerCase();
+      if (k.includes("start") || k.includes("score")) return val;
+    }
+    if (typeof val === "object") {
+      const found = deepFindStart(val, depth - 1);
+      if (typeof found === "number") return found;
+    }
+    if (Array.isArray(val)) {
+      for (const it of val) {
+        const found = deepFindStart(it, depth - 1);
+        if (typeof found === "number") return found;
+      }
+    }
+  }
+  return undefined;
 }
+
+function getStartScore(e: SavedEntry): number {
+  const anyE: any = e;
+  const direct =
+    e.game?.startScore ??
+    anyE.startScore ??
+    anyE.config?.startScore ??
+    anyE.config?.start ??
+    anyE.engineConfig?.startScore ??
+    anyE.engineConfig?.start ??
+    anyE.summary?.config?.startScore ??
+    anyE.summary?.config?.start ??
+    (anyE.payload?.game?.startScore ??
+      anyE.payload?.config?.startScore ??
+      anyE.payload?.config?.start);
+
+  if (typeof direct === "number") return direct;
+
+  const deep = deepFindStart(e);
+  if (typeof deep === "number") return deep;
+
+  return 501;
+}
+
 function modeLabel(e: SavedEntry) {
   const m = baseMode(e);
   if (m === "x01") {
-    const sc = e.game?.startScore || 501;
+    const sc = getStartScore(e);
     return `X01 · ${sc}`;
   }
   return m.toUpperCase();
 }
+
+/* ---------------------------------------------
+   Status
+--------------------------------------------- */
+
+function statusOf(e: SavedEntry): "finished" | "in_progress" {
+  const s = (e.status || "").toLowerCase();
+  if (s === "finished") return "finished";
+  if (s === "inprogress" || s === "in_progress") return "in_progress";
+  const sum: any = e.summary || e.payload || {};
+  if (sum?.finished === true || sum?.result?.finished === true) return "finished";
+  return "in_progress";
+}
+
+/* ---------------------------------------------
+   Match Link
+--------------------------------------------- */
+
 function matchLink(e: SavedEntry): string | undefined {
   return (
     e.resumeId ||
-    e.summary?.resumeId ||
-    e.summary?.matchId ||
-    e.payload?.resumeId ||
-    e.payload?.matchId
+    (e.summary as any)?.resumeId ||
+    (e.summary as any)?.matchId ||
+    (e.payload as any)?.resumeId ||
+    (e.payload as any)?.matchId
   );
 }
 
-/* --- dé-doublonnage & filtres --- */
+/* ---------------------------------------------
+   Team Format
+--------------------------------------------- */
+
+function detectFormat(e: SavedEntry): string {
+  const cfg: any = (e as any)?.game || (e as any)?.payload?.game;
+  if (!cfg) return "Solo";
+
+  const teams = cfg?.teams;
+  if (!teams || teams.length <= 1) return "Solo";
+
+  const sizes = teams.map((t: any) => t.players?.length || 1);
+
+  if (sizes.every((s) => s === sizes[0])) return sizes[0] + "v" + sizes[0];
+
+  return sizes.join("v");
+}
+
+/* ---------------------------------------------
+   Score Summary (classement)
+--------------------------------------------- */
+
+function summarizeScore(e: SavedEntry): string {
+  const data: any = e.summary || e.payload || {};
+  const result = data.result || {};
+
+  // 1) rankings classiques
+  const rankings =
+    data.rankings ||
+    result.rankings ||
+    result.players ||
+    data.players ||
+    result.standings;
+
+  if (Array.isArray(rankings)) {
+    const parts = rankings.map((r: any) => {
+      const name = r.name || r.playerName || r.label || "?";
+      const score =
+        r.score ??
+        r.legsWon ??
+        r.legs ??
+        r.setsWon ??
+        r.sets ??
+        r.points ??
+        r.total ??
+        (typeof r.avg3 === "number" ? r.avg3.toFixed(1) : undefined);
+
+      if (score === undefined) return name;
+      return `${name}: ${score}`;
+    });
+    if (parts.some(Boolean)) return parts.join(" • ");
+  }
+
+  // 2) objet scores simple
+  const scoresObj = result.scores || data.scores;
+  if (scoresObj && typeof scoresObj === "object") {
+    const parts = Object.entries(scoresObj).map(([name, val]) => {
+      return `${name}: ${val as any}`;
+    });
+    if (parts.length) return parts.join(" • ");
+  }
+
+  // 3) detailedByPlayer (X01 V3 / training / multi)
+  const detailed = data.detailedByPlayer || data.byPlayer;
+  if (detailed && typeof detailed === "object") {
+    const parts = Object.entries(detailed).map(([name, val]: [string, any]) => {
+      const legs = val.legsWon ?? val.legs ?? undefined;
+      const avg = typeof val.avg3 === "number" ? val.avg3.toFixed(1) : undefined;
+      if (legs !== undefined && avg !== undefined) {
+        return `${name}: ${legs}L • ${avg}`;
+      }
+      if (legs !== undefined) return `${name}: ${legs}L`;
+      if (avg !== undefined) return `${name}: ${avg}`;
+      return name;
+    });
+    if (parts.length) return parts.join(" • ");
+  }
+
+  return "";
+}
+
+/* ---------------------------------------------
+   Mode colors
+--------------------------------------------- */
+
+const modeColor: Record<string, string> = {
+  x01: "#e4c06b",
+  cricket: "#4da84d",
+  clock: "#ff40b4",
+  training: "#71c9ff",
+  killer: "#ff6a3c",
+  default: "#888",
+};
+
+function getModeColor(e: SavedEntry) {
+  const m = baseMode(e);
+  return modeColor[m] || modeColor.default;
+}
+
+/* ---------------------------------------------
+   Dedup & Filter
+--------------------------------------------- */
 
 function better(a: SavedEntry, b: SavedEntry): SavedEntry {
   const ta = a.updatedAt || a.createdAt || 0;
@@ -127,15 +287,13 @@ function better(a: SavedEntry, b: SavedEntry): SavedEntry {
   const sa = statusOf(a),
     sb = statusOf(b);
   if (sa !== sb) return sa === "finished" ? a : b;
-  const ka = (a.kind || "").toLowerCase();
-  const kb = (b.kind || "").toLowerCase();
-  if (ka !== kb) return ka === "leg" ? b : a;
   return a;
 }
+
 function sameBucket(a: SavedEntry, b: SavedEntry): boolean {
   if (baseMode(a) !== baseMode(b)) return false;
-  const ta = a.updatedAt || a.createdAt || 0,
-    tb = b.updatedAt || b.createdAt || 0;
+  const ta = a.updatedAt || a.createdAt || 0;
+  const tb = b.updatedAt || b.createdAt || 0;
   if (Math.abs(ta - tb) > 20 * 60 * 1000) return false;
   const A = new Set((a.players || []).map(getId).filter(Boolean));
   const B = new Set((b.players || []).map(getId).filter(Boolean));
@@ -143,21 +301,22 @@ function sameBucket(a: SavedEntry, b: SavedEntry): boolean {
   for (const id of A) if (B.has(id)) return true;
   return false;
 }
+
 function dedupe(list: SavedEntry[]): SavedEntry[] {
   const byLink = new Map<string, SavedEntry>();
   const rest: SavedEntry[] = [];
+
   for (const e of list) {
     const link = matchLink(e);
-    if (link)
-      byLink.set(link, byLink.has(link) ? better(byLink.get(link)!, e) : e);
+    if (link) byLink.set(link, byLink.has(link) ? better(byLink.get(link)!, e) : e);
     else rest.push(e);
   }
+
   const base = [...byLink.values(), ...rest];
   const buckets: { rep: SavedEntry }[] = [];
+
   for (const e of base.sort(
-    (a, b) =>
-      (a.updatedAt || a.createdAt || 0) -
-      (b.updatedAt || b.createdAt || 0)
+    (a, b) => (a.updatedAt || a.createdAt || 0) - (b.updatedAt || b.createdAt || 0)
   )) {
     let ok = false;
     for (const bkt of buckets) {
@@ -173,67 +332,71 @@ function dedupe(list: SavedEntry[]): SavedEntry[] {
     .map((b) => b.rep)
     .sort(
       (a, b) =>
-        (b.updatedAt || b.createdAt || 0) -
-        (a.updatedAt || a.createdAt || 0)
+        (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)
     );
 }
 
+/* ---------------------------------------------
+   Range Filters
+--------------------------------------------- */
+
 type RangeKey = "today" | "week" | "month" | "year" | "archives";
 
-function startOfToday(d = new Date()) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x.getTime();
-}
-function startOfWeek(d = new Date()) {
-  const x = new Date(d);
-  const day = (x.getDay() + 6) % 7;
-  x.setDate(x.getDate() - day);
-  x.setHours(0, 0, 0, 0);
-  return x.getTime();
-}
-function startOfMonth(d = new Date()) {
-  const x = new Date(d.getFullYear(), d.getMonth(), 1);
-  x.setHours(0, 0, 0, 0);
-  return x.getTime();
-}
-function startOfYear(d = new Date()) {
-  const x = new Date(d.getFullYear(), 0, 1);
-  x.setHours(0, 0, 0, 0);
-  return x.getTime();
-}
-function inRange(ts: number, key: RangeKey): boolean {
-  const t = ts || Date.now();
+function startOf(period: RangeKey) {
   const now = new Date();
-  if (key === "today") return t >= startOfToday(now);
-  if (key === "week") return t >= startOfWeek(now);
-  if (key === "month") return t >= startOfMonth(now);
-  if (key === "year") return t >= startOfYear(now);
-  if (key === "archives") return t < startOfYear(now);
-  return true;
+  if (period === "today") {
+    now.setHours(0, 0, 0, 0);
+    return now.getTime();
+  }
+  if (period === "week") {
+    const d = (now.getDay() + 6) % 7;
+    now.setDate(now.getDate() - d);
+    now.setHours(0, 0, 0, 0);
+    return now.getTime();
+  }
+  if (period === "month") {
+    return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  }
+  if (period === "year") {
+    return new Date(now.getFullYear(), 0, 1).getTime();
+  }
+  return 0;
 }
 
-/* ---------- API History (store ou window.History) ---------- */
+function inRange(ts: number, key: RangeKey): boolean {
+  const t = ts || Date.now();
+  if (key === "archives") return t < startOf("year");
+  return t >= startOf(key);
+}
+
+/* ---------------------------------------------
+   History API Wrapper
+--------------------------------------------- */
 
 const HistoryAPI = {
   async list(store: Store): Promise<SavedEntry[]> {
-    const anyStore = store as any;
-    if (Array.isArray(anyStore?.history)) return anyStore.history as SavedEntry[];
-    if (typeof (window as any).History?.list === "function")
-      return await (window as any).History.list();
-    return [];
+    try {
+      const rows = await History.list();
+      return rows as SavedEntry[];
+    } catch {
+      const anyStore = store as any;
+      return anyStore.history ?? [];
+    }
   },
-  async remove(id: string): Promise<void> {
-    if (typeof (window as any).History?.remove === "function")
-      await (window as any).History.remove(id);
+  async remove(id: string) {
+    try {
+      await History.remove(id);
+    } catch {}
   },
 };
 
-/* ---------- Styles dépendants du thème ---------- */
+/* ---------------------------------------------
+   Styles
+--------------------------------------------- */
 
 function makeStyles(theme: any) {
-  const text70 = theme.textSoft || "rgba(255,255,255,0.7)";
-  const edge = theme.borderSoft || "rgba(255,255,255,0.12)";
+  const edge = theme.borderSoft ?? "rgba(255,255,255,0.12)";
+  const text70 = theme.textSoft ?? "rgba(255,255,255,0.7)";
 
   return {
     page: {
@@ -241,147 +404,121 @@ function makeStyles(theme: any) {
       background: theme.bg,
       color: theme.text,
       paddingBottom: 96,
-      fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-    } as React.CSSProperties,
-    header: {
-      position: "sticky",
-      top: 0,
-      zIndex: 10,
-      backdropFilter: "blur(10px)",
-      background: "rgba(0,0,0,.42)",
-      borderBottom: `1px solid ${edge}`,
-    } as React.CSSProperties,
-    headerRow: {
-      display: "grid",
-      gridTemplateColumns: "1fr auto",
-      gap: 10,
-      padding: "14px 16px",
-      alignItems: "center",
-    } as React.CSSProperties,
-    h1: {
-      fontSize: 24,
-      fontWeight: 800,
-      letterSpacing: "0.08em",
+    },
+
+    title: {
+      marginTop: 20,
+      textAlign: "center",
+      fontSize: 28,
+      fontWeight: 900,
       textTransform: "uppercase",
-    } as React.CSSProperties,
-    headerSub: {
-      fontSize: 11,
-      color: text70,
-      letterSpacing: "0.04em",
-      textTransform: "uppercase",
-      marginTop: 4,
-    } as React.CSSProperties,
-    tabsRow: {
+      letterSpacing: 3,
+      color: theme.primary,
+      textShadow: `
+        0 0 8px ${theme.primary},
+        0 0 18px ${theme.primary},
+        0 0 28px ${theme.primary}AA
+      `,
+    },
+
+    /* KPIs */
+    kpiRow: {
+      marginTop: 20,
       display: "flex",
-      gap: 8,
-      justifySelf: "end",
-    } as React.CSSProperties,
-    tab: (active: boolean): React.CSSProperties => ({
-      display: "inline-flex",
-      alignItems: "center",
-      height: 32,
-      padding: "0 12px",
-      borderRadius: 999,
-      fontWeight: 800,
-      fontSize: 12,
-      letterSpacing: 0.3,
-      border: `1px solid ${active ? theme.primary : edge}`,
-      background: active ? "rgba(0,0,0,0.6)" : "rgba(255,255,255,0.04)",
-      color: active ? theme.primary : theme.text,
-      cursor: "pointer",
-    }),
-    subTabsWrap: {
-      padding: "0 16px 12px 16px",
-      borderBottom: `1px solid ${edge}`,
-      background: "rgba(0,0,0,.28)",
-      backdropFilter: "blur(6px)",
-    } as React.CSSProperties,
-    subTabsRow: {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 8,
-    } as React.CSSProperties,
-    subTab: (active: boolean): React.CSSProperties => ({
-      display: "inline-flex",
-      alignItems: "center",
-      height: 28,
-      padding: "0 10px",
-      borderRadius: 999,
-      fontWeight: 800,
-      fontSize: 11,
-      letterSpacing: 0.3,
-      border: `1px solid ${active ? theme.primary : edge}`,
-      background: active ? "rgba(0,0,0,0.6)" : "rgba(255,255,255,0.04)",
-      color: active ? theme.primary : theme.text,
-      cursor: "pointer",
-    }),
-    list: {
-      padding: 12,
-      display: "grid",
       gap: 12,
-      maxWidth: 760,
-      margin: "0 auto",
-    } as React.CSSProperties,
-    card: {
-      background: theme.card,
-      border: `1px solid ${edge}`,
-      borderRadius: 18,
-      padding: 14,
-      boxShadow: "0 16px 40px rgba(0,0,0,.35)",
-      backdropFilter: "blur(12px)",
-    } as React.CSSProperties,
-    rowBetween: {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 8,
-    } as React.CSSProperties,
-    chip: {
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 6,
-      height: 28,
-      padding: "0 10px",
-      borderRadius: 999,
-      border: `1px solid ${edge}`,
-      background: "rgba(255,255,255,.06)",
+      padding: "0 12px",
+    },
+
+    kpiCard: (active: boolean, borderColor: string) => ({
+      flex: 1,
+      padding: "12px 6px",
+      borderRadius: 16,
+      cursor: "pointer",
+      textAlign: "center",
+      background: "linear-gradient(180deg,#15171B,#0F0F11)",
+      border: `1px solid ${active ? borderColor : "rgba(255,255,255,0.15)"}`,
+      boxShadow: active ? `0 0 14px ${borderColor}` : "none",
+    }),
+
+    kpiLabel: {
       fontSize: 11,
-      fontWeight: 800,
-      letterSpacing: 0.4,
-    } as React.CSSProperties,
-    chipGold: {
+      opacity: 0.7,
+    },
+    kpiValue: {
+      marginTop: 4,
+      fontSize: 20,
+      fontWeight: 900,
+    },
+
+    reloadBtn: {
+      margin: "14px auto 0 auto",
+      padding: "6px 14px",
+      fontSize: 13,
+      fontWeight: 900,
+      borderRadius: 12,
       border: `1px solid ${theme.primary}`,
       background: "rgba(0,0,0,0.4)",
       color: theme.primary,
-    } as React.CSSProperties,
-    chipRed: {
-      border: `1px solid ${theme.danger}`,
-      background: "rgba(0,0,0,0.4)",
-      color: theme.danger,
-    } as React.CSSProperties,
-    date: {
-      fontSize: 11,
-      color: theme.primary,
-      fontWeight: 700,
-    } as React.CSSProperties,
-    sub: { fontSize: 12, color: text70 } as React.CSSProperties,
-    avatars: {
+      display: "block",
+      boxShadow: `0 0 10px ${theme.primary}AA`,
+    },
+
+    /* Filters */
+    filtersRow: {
+      marginTop: 18,
       display: "flex",
+      gap: 8,
+      justifyContent: "center",
+      padding: "0 12px",
+    },
+    filterBtn: (active: boolean) => ({
+      padding: "6px 10px",
+      fontSize: 12,
+      fontWeight: 800,
+      borderRadius: 10,
+      border: `1px solid ${active ? theme.primary : edge}`,
+      background: active
+        ? "rgba(255,255,255,0.18)"
+        : "rgba(255,255,255,0.06)",
+      color: active ? theme.primary : theme.text,
+      boxShadow: active ? `0 0 10px ${theme.primary}88` : "none",
+      cursor: "pointer",
+    }),
+
+    /* List & cards */
+    list: {
+      marginTop: 20,
+      padding: "0 12px",
+      display: "grid",
+      gap: 14,
+    },
+
+    card: {
+      background: theme.card,
+      borderRadius: 18,
+      padding: 14,
+      border: `1px solid ${edge}`,
+      boxShadow: "0 12px 28px rgba(0,0,0,.4)",
+    },
+
+    rowBetween: {
+      display: "flex",
+      justifyContent: "space-between",
       alignItems: "center",
-    } as React.CSSProperties,
+    },
+
+    /* Avatars */
+    avatars: { display: "flex" },
     avWrap: {
       width: 42,
       height: 42,
       borderRadius: "50%",
       overflow: "hidden",
-      boxShadow: "0 0 0 2px rgba(0,0,0,.45)",
       background: "rgba(255,255,255,.08)",
-    } as React.CSSProperties,
-    avImg: {
-      width: "100%",
-      height: "100%",
-      objectFit: "cover",
-    } as React.CSSProperties,
+      border: "2px solid rgba(0,0,0,.4)",
+      marginLeft: -8,
+    },
+    avImg: { width: "100%", height: "100%", objectFit: "cover" },
     avFallback: {
       width: "100%",
       height: "100%",
@@ -389,43 +526,40 @@ function makeStyles(theme: any) {
       placeItems: "center",
       fontWeight: 900,
       color: text70,
-      fontSize: 14,
-    } as React.CSSProperties,
+    },
+
     pillRow: {
+      marginTop: 12,
       display: "flex",
       gap: 8,
-      justifyContent: "flex-end",
-      marginTop: 12,
-      flexWrap: "wrap",
-    } as React.CSSProperties,
+    },
     pill: {
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 6,
-      padding: "8px 12px",
+      flex: 1,
+      padding: "8px 10px",
+      textAlign: "center",
       borderRadius: 999,
-      border: `1px solid ${edge}`,
-      background: "rgba(255,255,255,.08)",
-      fontSize: 13,
-      fontWeight: 800,
+      fontWeight: 900,
       cursor: "pointer",
-    } as React.CSSProperties,
+      fontSize: 12,
+      border: `1px solid ${edge}`,
+      background: "rgba(255,255,255,.06)",
+    },
     pillGold: {
-      border: `1px solid ${theme.primary}`,
-      background: "rgba(0,0,0,0.5)",
       color: theme.primary,
-      boxShadow: `0 0 10px ${theme.primary}`,
-    } as React.CSSProperties,
+      border: `1px solid ${theme.primary}`,
+      background: "rgba(0,0,0,.4)",
+    },
     pillDanger: {
+      color: "#ffbcbc",
       border: `1px solid ${theme.danger}`,
-      background: "rgba(0,0,0,0.5)",
-      color: "#ffd6d6",
-      boxShadow: `0 0 10px ${theme.danger}`,
-    } as React.CSSProperties,
+      background: "rgba(255,0,0,.15)",
+    },
   };
 }
 
-/* ---------- Composant principal ---------- */
+/* ---------------------------------------------
+   Component
+--------------------------------------------- */
 
 export default function HistoryPage({
   store,
@@ -441,26 +575,33 @@ export default function HistoryPage({
   const [tab, setTab] = useState<"done" | "running">("done");
   const [sub, setSub] = useState<RangeKey>("today");
   const [items, setItems] = useState<SavedEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  async function loadHistory() {
+    setLoading(true);
+    try {
+      setItems(await HistoryAPI.list(store));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    (async () => setItems(await HistoryAPI.list(store)))();
+    loadHistory();
   }, [store]);
 
-  // ✅ dé-doublonnage uniquement sur les parties terminées
+  // tri / dedupe
   const { done, running } = useMemo(() => {
-    const finished: SavedEntry[] = [];
-    const inprog: SavedEntry[] = [];
-    for (const e of items) {
-      if (statusOf(e) === "finished") finished.push(e);
-      else inprog.push(e);
-    }
-    const dedupedDone = dedupe(finished);
-    const runningSorted = inprog.sort(
-      (a, b) =>
-        (b.updatedAt || b.createdAt || 0) -
-        (a.updatedAt || a.createdAt || 0)
-    );
-    return { done: dedupedDone, running: runningSorted };
+    const fins = items.filter((e) => statusOf(e) === "finished");
+    const inprog = items.filter((e) => statusOf(e) !== "finished");
+    return {
+      done: dedupe(fins),
+      running: inprog.sort(
+        (a, b) =>
+          (b.updatedAt || b.createdAt || 0) -
+          (a.updatedAt || a.createdAt || 0)
+      ),
+    };
   }, [items]);
 
   const source = tab === "done" ? done : running;
@@ -469,272 +610,225 @@ export default function HistoryPage({
   );
 
   async function handleDelete(e: SavedEntry) {
-    if (
-      !window.confirm(
-        t("history.confirmDelete", "Supprimer cette partie ?")
-      )
-    ) {
-      return;
-    }
+    if (!window.confirm("Supprimer cette partie ?")) return;
     await HistoryAPI.remove(e.id);
-    setItems(await HistoryAPI.list(store));
+    await loadHistory();
   }
 
   return (
     <div style={S.page}>
-      {/* Header collant */}
-      <header style={S.header}>
-        <div style={S.headerRow}>
-          <div>
-            <h1 style={S.h1}>
-              {t("history.title", "Historique").toUpperCase()}
-            </h1>
-            <div style={S.headerSub}>
-              {t(
-                "history.subtitle",
-                "Retrouve toutes tes parties et statistiques."
-              )}
+      {/* ===== TITLE ===== */}
+      <div style={S.title}>HISTORIQUE</div>
+
+      {/* ===== KPIs ===== */}
+      <div style={S.kpiRow}>
+        {/* SAUVEGARDEES (info only) */}
+        <div style={S.kpiCard(false, theme.primary)}>
+          <div style={S.kpiLabel}>Sauvegardées</div>
+          <div style={S.kpiValue}>{items.length}</div>
+        </div>
+
+        {/* TERMINÉES */}
+        <div
+          style={S.kpiCard(tab === "done", theme.primary)}
+          onClick={() => setTab("done")}
+        >
+          <div style={S.kpiLabel}>Terminées</div>
+          <div style={S.kpiValue}>{done.length}</div>
+        </div>
+
+        {/* EN COURS */}
+        <div
+          style={S.kpiCard(tab === "running", theme.danger)}
+          onClick={() => setTab("running")}
+        >
+          <div style={S.kpiLabel}>En cours</div>
+          <div style={{ ...S.kpiValue, color: theme.danger }}>{running.length}</div>
+        </div>
+      </div>
+
+      {/* ===== RELOAD ===== */}
+      <button
+        style={{
+          ...S.reloadBtn,
+          opacity: loading ? 0.5 : 1,
+        }}
+        onClick={() => loadHistory()}
+      >
+        {loading ? "Chargement..." : "Recharger"}
+      </button>
+
+      {/* ===== FILTERS ===== */}
+      <div style={S.filtersRow}>
+        {[["today", "J"], ["week", "S"], ["month", "M"], ["year", "A"], ["archives", "ARV"]].map(
+          ([key, label]) => (
+            <div
+              key={key}
+              style={S.filterBtn(sub === key)}
+              onClick={() => setSub(key as RangeKey)}
+            >
+              {label}
             </div>
-          </div>
+          )
+        )}
+      </div>
 
-          <div style={S.tabsRow}>
-            <button
-              type="button"
-              style={S.tab(tab === "done")}
-              onClick={() => setTab("done")}
-            >
-              {t("history.status.done", "Terminées")}
-            </button>
-            <button
-              type="button"
-              style={S.tab(tab === "running")}
-              onClick={() => setTab("running")}
-            >
-              {t("history.status.inProgress", "En cours")}
-            </button>
-          </div>
-        </div>
-
-        {/* sous-onglets temps */}
-        <div style={S.subTabsWrap}>
-          <div style={S.subTabsRow}>
-            <button
-              type="button"
-              style={S.subTab(sub === "today")}
-              onClick={() => setSub("today")}
-            >
-              {t("history.range.today", "Aujourd'hui")}
-            </button>
-            <button
-              type="button"
-              style={S.subTab(sub === "week")}
-              onClick={() => setSub("week")}
-            >
-              {t("history.range.week", "Cette semaine")}
-            </button>
-            <button
-              type="button"
-              style={S.subTab(sub === "month")}
-              onClick={() => setSub("month")}
-            >
-              {t("history.range.month", "Ce mois-ci")}
-            </button>
-            <button
-              type="button"
-              style={S.subTab(sub === "year")}
-              onClick={() => setSub("year")}
-            >
-              {t("history.range.year", "Cette année")}
-            </button>
-            <button
-              type="button"
-              style={S.subTab(sub === "archives")}
-              onClick={() => setSub("archives")}
-            >
-              {t("history.range.archives", "Archives")}
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Liste des parties */}
+      {/* ===== LIST ===== */}
       <div style={S.list}>
         {filtered.length === 0 ? (
-          <div style={{ ...S.sub, marginTop: 24 }}>
-            {t(
-              "history.empty",
-              "Aucune partie ne correspond à ces filtres pour le moment."
-            )}
+          <div style={{ opacity: 0.7, textAlign: "center", marginTop: 20 }}>
+            Aucune partie ici.
           </div>
         ) : (
           filtered.map((e) => {
             const inProg = statusOf(e) === "in_progress";
-            const key = String(matchLink(e) || e.id);
+            const key = matchLink(e) || e.id;
 
             return (
               <div key={key} style={S.card}>
-                {/* Ligne haut : mode + statut + date */}
+                {/* Top row */}
                 <div style={S.rowBetween}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <span style={S.chip}>{modeLabel(e)}</span>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {/* MODE BADGE coloré */}
                     <span
                       style={{
-                        ...S.chip,
-                        ...(inProg ? S.chipRed : S.chipGold),
+                        padding: "4px 10px",
+                        borderRadius: 999,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        background: getModeColor(e) + "22",
+                        border: `1px solid ${getModeColor(e)}99`,
+                        color: getModeColor(e),
+                        textShadow: "0 0 4px rgba(0,0,0,0.6)",
                       }}
                     >
-                      {inProg
-                        ? t("history.badge.inProgress", "En cours")
-                        : t("history.badge.done", "Terminé")}
+                      {modeLabel(e)}
+                    </span>
+
+                    {/* STATUT stylé */}
+                    <span
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 999,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        background: inProg ? "rgba(255,0,0,0.1)" : getModeColor(e) + "22",
+                        border: "1px solid " + (inProg ? theme.danger : getModeColor(e)),
+                        color: inProg ? theme.danger : getModeColor(e),
+                        textShadow: "0 0 4px rgba(0,0,0,0.6)",
+                      }}
+                    >
+                      {inProg ? "En cours" : "Terminé"}
                     </span>
                   </div>
-                  <span style={S.date}>{fmtDate(e.updatedAt || e.createdAt)}</span>
+                  <span style={{ fontSize: 11, color: theme.primary }}>
+                    {fmtDate(e.updatedAt || e.createdAt)}
+                  </span>
                 </div>
 
-                {/* Avatars + gagnant / état */}
+                {/* FORMAT + SCORE / CLASSEMENT */}
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 12,
+                    color: "rgba(255,255,255,0.9)",
+                  }}
+                >
+                  {detectFormat(e)}
+                  {(() => {
+                    const s = summarizeScore(e);
+                    return s ? " • " + s : "";
+                  })()}
+                </div>
+
+                {/* Avatars & Winner */}
                 <div style={{ ...S.rowBetween, marginTop: 10 }}>
                   <div style={S.avatars}>
                     {(e.players || []).slice(0, 6).map((p, i) => {
-                      const id = getId(p) || String(i);
                       const nm = getName(p);
                       const url = getAvatarUrl(store, p);
                       return (
                         <div
-                          key={`${id}-${i}`}
-                          style={{
-                            ...S.avWrap,
-                            marginLeft: i === 0 ? 0 : -8,
-                            zIndex: 10 - i,
-                          }}
-                          title={nm}
+                          key={i}
+                          style={{ ...S.avWrap, marginLeft: i === 0 ? 0 : -8 }}
                         >
                           {url ? (
-                            <img
-                              src={url}
-                              alt={nm || "avatar"}
-                              style={S.avImg}
-                            />
+                            <img src={url} style={S.avImg} />
                           ) : (
-                            <div style={S.avFallback}>
-                              {(nm || id || "?")
-                                .slice(0, 2)
-                                .toUpperCase()}
-                            </div>
+                            <div style={S.avFallback}>{nm.slice(0, 2)}</div>
                           )}
                         </div>
                       );
                     })}
                   </div>
 
-                  {!inProg ? (
-                    e.winnerName ? (
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          color: theme.primary,
-                          fontWeight: 900,
-                        }}
-                      >
-                        <Icon.Trophy /> <span>{e.winnerName}</span>
-                      </div>
-                    ) : (
-                      <div style={S.sub}>
-                        {t("history.done.noWinner", "Partie terminée")}
-                      </div>
-                    )
-                  ) : (
-                    <div style={S.sub}>
-                      {t("history.running", "Partie non terminée")}
+                  {inProg ? (
+                    <div style={{ opacity: 0.7 }}>À reprendre</div>
+                  ) : e.winnerName ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        color: theme.primary,
+                      }}
+                    >
+                      <Icon.Trophy /> {e.winnerName}
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
-                {/* Actions */}
+                {/* Buttons */}
                 <div style={S.pillRow}>
                   {inProg ? (
                     <>
-                      <button
-                        type="button"
+                      <div
                         style={{ ...S.pill, ...S.pillGold }}
-                        onClick={() => {
-                          const resumeId = e.id;
-                          const mode = baseMode(e);
-                          if (mode === "x01")
-                            go("x01", {
-                              resumeId,
-                              players: e.players || [],
-                            });
-                          else
-                            go("game", {
-                              mode,
-                              resumeId,
-                              players: e.players || [],
-                            });
-                        }}
+                        onClick={() =>
+                          go("x01", {
+                            resumeId: e.id,
+                            players: e.players || [],
+                          })
+                        }
                       >
-                        <Icon.Play />{" "}
-                        {t("history.btn.resume", "Reprendre")}
-                      </button>
+                        <Icon.Play /> Reprendre
+                      </div>
 
-                      <button
-                        type="button"
+                      <div
                         style={S.pill}
-                        onClick={() => {
-                          const resumeId = e.id;
-                          const mode = baseMode(e);
-                          if (mode === "x01")
-                            go("x01", {
-                              resumeId,
-                              players: e.players || [],
-                              preview: true,
-                            });
-                          else
-                            go("game", {
-                              mode,
-                              resumeId,
-                              players: e.players || [],
-                              preview: true,
-                            });
-                        }}
+                        onClick={() =>
+                          go("x01", {
+                            resumeId: e.id,
+                            players: e.players || [],
+                            preview: true,
+                          })
+                        }
                       >
-                        <Icon.Eye /> {t("history.btn.view", "Voir")}
-                      </button>
+                        <Icon.Eye /> Voir
+                      </div>
                     </>
                   ) : (
-                    <button
-                      type="button"
+                    <div
                       style={{ ...S.pill, ...S.pillGold }}
-                      onClick={() => {
-                        const resumeId = matchLink(e) || e.id;
+                      onClick={() =>
                         go("x01_end", {
                           rec: e,
-                          resumeId,
+                          resumeId: e.id,
                           showEnd: true,
                           from: "history",
-                        });
-                      }}
+                        })
+                      }
                     >
-                      <Icon.Eye />{" "}
-                      {t("history.btn.showStats", "Voir stats")}
-                    </button>
+                      <Icon.Eye /> Voir stats
+                    </div>
                   )}
 
-                  <button
-                    type="button"
+                  <div
                     style={{ ...S.pill, ...S.pillDanger }}
                     onClick={() => handleDelete(e)}
                   >
-                    <Icon.Trash /> {t("common.delete", "Supprimer")}
-                  </button>
+                    <Icon.Trash /> Supprimer
+                  </div>
                 </div>
               </div>
             );
@@ -745,15 +839,10 @@ export default function HistoryPage({
   );
 }
 
-/* ---------- Format date ---------- */
+/* ---------------------------------------------
+   Date format
+--------------------------------------------- */
 
 function fmtDate(ts: number) {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: "short",
-      timeStyle: "medium",
-    }).format(new Date(ts));
-  } catch {
-    return new Date(ts).toLocaleString();
-  }
+  return new Date(ts).toLocaleString();
 }

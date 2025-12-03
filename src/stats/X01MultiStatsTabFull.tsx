@@ -1757,64 +1757,52 @@ for (const tm in teammateStats) {
   }
 }
 
-// ---------- Formats d'affichage pour les stats MATCHS / ADVERSAIRES ----------
+ // ============================================================
+  // FORMATTAGE DES STATS MATCHS / FAVORIS POUR LE RENDER
+  // ============================================================
 
-// marge +X / -X pour les victoires/défaites
-const formatMargin = (m: string | null): string =>
-  m == null ? "-" : Number(m) > 0 ? `+${m}` : `${m}`;
-
-// Map id -> nom joueur (à partir des lignes de sessions)
-const nameById: Record<string, string> = {};
-for (const s of filtered) {
-  if (!s.selectedPlayerId) continue;
-  if (!nameById[s.selectedPlayerId]) {
-    nameById[s.selectedPlayerId] = s.playerName || s.selectedPlayerId;
+  // Mapping id -> nom (pour afficher les adversaires / teammates)
+  const playerNameMap: Record<string, string> = {};
+  for (const s of filtered) {
+    if (!s.selectedPlayerId) continue;
+    if (!playerNameMap[s.selectedPlayerId]) {
+      playerNameMap[s.selectedPlayerId] = s.playerName || s.selectedPlayerId;
+    }
   }
-}
 
-// Marges formatées
-const bestSoloWinDisplay = formatMargin(bestSoloWin);
-const bestTeamWinDisplay = formatMargin(bestTeamWin);
-const worstSoloLoseDisplay = formatMargin(worstSoloLose);
-const worstTeamLoseDisplay = formatMargin(worstTeamLose);
+  const favOpponentName =
+    favOpponent ? playerNameMap[favOpponent] ?? favOpponent : null;
+  const worstOpponentName =
+    worstOpponent ? playerNameMap[worstOpponent] ?? worstOpponent : null;
+  const favTeammateName =
+    favTeammate ? playerNameMap[favTeammate] ?? favTeammate : null;
 
-// Noms lisibles (adversaires / coéquipiers)
-const favOpponentName =
-  favOpponent && nameById[favOpponent]
-    ? nameById[favOpponent]
-    : favOpponent;
+  const favOpponentRateDisplay =
+    favOpponentRate >= 0
+      ? `${(favOpponentRate * 100).toFixed(1)}%`
+      : "-";
 
-const worstOpponentName =
-  worstOpponent && nameById[worstOpponent]
-    ? nameById[worstOpponent]
-    : worstOpponent;
+  const worstOpponentRateDisplay =
+    worstOpponentRate < 999
+      ? `${(worstOpponentRate * 100).toFixed(1)}%`
+      : "-";
 
-const favTeammateName =
-  favTeammate && nameById[favTeammate]
-    ? nameById[favTeammate]
-    : favTeammate;
+  const favTeammateRateDisplay =
+    favTeammateRate >= 0
+      ? `${(favTeammateRate * 100).toFixed(1)}%`
+      : "-";
 
-// Moyennes Win en %
-const avgMatchWinDisplay = fmtPct(pctWinX01);
-const avgLegWinDisplay = fmtPct(pctLegsWinX01);
-const avgSetWinDisplay = fmtPct(pctSetsWinX01);
+  const bestSoloWinDisplay = bestSoloWin ?? "-";
+  const bestTeamWinDisplay = bestTeamWin ?? "-";
+  const worstSoloLoseDisplay = worstSoloLose ?? "-";
+  const worstTeamLoseDisplay = worstTeamLose ?? "-";
 
-// Winrates adversaires / coéquipiers
-const favOpponentRateDisplay =
-  favOpponentRate >= 0 && favOpponentRate <= 1
-    ? `${(favOpponentRate * 100).toFixed(1)}%`
-    : "-";
-
-const worstOpponentRateDisplay =
-  worstOpponentRate >= 0 && worstOpponentRate <= 1
-    ? `${(worstOpponentRate * 100).toFixed(1)}%`
-    : "-";
-
-const favTeammateRateDisplay =
-  favTeammateRate >= 0 && favTeammateRate <= 1
-    ? `${(favTeammateRate * 100).toFixed(1)}%`
-    : "-";
-
+  const pctMatchWinDisplay =
+    matchesX01Total > 0 ? `${pctWinX01.toFixed(1)}%` : "0.0%";
+  const pctLegsWinDisplay =
+    legsPlayedX01 > 0 ? `${pctLegsWinX01.toFixed(1)}%` : "0.0%";
+  const pctSetsWinDisplay =
+    setsPlayedX01 > 0 ? `${pctSetsWinX01.toFixed(1)}%` : "0.0%";
 
   // ------------------- RENDER -------------------
 
@@ -2666,7 +2654,7 @@ const favTeammateRateDisplay =
 
 </div>
 
-{/* ====== MOYENNES / RECORDS / FAVORIS — MATCHS (présentation en colonnes) ====== */}
+{/* ====== MOYENNES / RECORDS / FAVORIS — MATCHS ====== */}
 <div style={{ ...card, marginTop: 12 }}>
   <div
     style={{
@@ -2687,7 +2675,7 @@ const favTeammateRateDisplay =
           marginBottom: 8,
         }}
       >
-        MOYENNES WIN
+        Moyennes WIN
       </div>
       <div
         style={{
@@ -2704,7 +2692,7 @@ const favTeammateRateDisplay =
               textTransform: "uppercase",
             }}
           >
-            % Match Win
+            % match WIN
           </div>
           <div
             style={{
@@ -2713,7 +2701,7 @@ const favTeammateRateDisplay =
               color: "#FFB8DE",
             }}
           >
-            {avgMatchWinDisplay}
+            {pctMatchWinDisplay}
           </div>
         </div>
         <div style={{ flex: 1 }}>
@@ -2724,7 +2712,7 @@ const favTeammateRateDisplay =
               textTransform: "uppercase",
             }}
           >
-            % Leg Win
+            % leg WIN
           </div>
           <div
             style={{
@@ -2733,7 +2721,7 @@ const favTeammateRateDisplay =
               color: "#FFB8DE",
             }}
           >
-            {avgLegWinDisplay}
+            {pctLegsWinDisplay}
           </div>
         </div>
         <div style={{ flex: 1 }}>
@@ -2744,7 +2732,7 @@ const favTeammateRateDisplay =
               textTransform: "uppercase",
             }}
           >
-            % Set Win
+            % set WIN
           </div>
           <div
             style={{
@@ -2753,13 +2741,13 @@ const favTeammateRateDisplay =
               color: "#FFB8DE",
             }}
           >
-            {avgSetWinDisplay}
+            {pctSetsWinDisplay}
           </div>
         </div>
       </div>
     </div>
 
-    {/* RECORDS VICTOIRES / DÉFAITES */}
+    {/* RECORDS */}
     <div>
       <div
         style={{
@@ -2770,7 +2758,7 @@ const favTeammateRateDisplay =
           marginBottom: 8,
         }}
       >
-        RECORDS
+        Records (diff. legs)
       </div>
       <div
         style={{
@@ -2827,7 +2815,7 @@ const favTeammateRateDisplay =
               textTransform: "uppercase",
             }}
           >
-            Grosse défaite solo / team
+            Pire défaite solo / team
           </div>
           <div
             style={{
@@ -2842,7 +2830,7 @@ const favTeammateRateDisplay =
       </div>
     </div>
 
-    {/* FAVORIS #1 — NOMS ADVERSAIRES / COÉQUIPIERS */}
+    {/* FAVORIS — NOMS */}
     <div>
       <div
         style={{
@@ -2853,7 +2841,7 @@ const favTeammateRateDisplay =
           marginBottom: 8,
         }}
       >
-        FAVORIS (NOMS)
+        Favoris (noms)
       </div>
       <div
         style={{
@@ -2879,7 +2867,7 @@ const favTeammateRateDisplay =
               color: "#4DB2FF",
             }}
           >
-            {favOpponentName || "-"}
+            {favOpponentName ?? "-"}
           </div>
         </div>
         <div style={{ flex: 1 }}>
@@ -2899,7 +2887,7 @@ const favTeammateRateDisplay =
               color: "#4DB2FF",
             }}
           >
-            {worstOpponentName || "-"}
+            {worstOpponentName ?? "-"}
           </div>
         </div>
         <div style={{ flex: 1 }}>
@@ -2919,13 +2907,13 @@ const favTeammateRateDisplay =
               color: "#4DB2FF",
             }}
           >
-            {favTeammateName || "-"}
+            {favTeammateName ?? "-"}
           </div>
         </div>
       </div>
     </div>
 
-    {/* FAVORIS #2 — RATIO CONTRE EUX */}
+    {/* FAVORIS — RATIO WIN */}
     <div>
       <div
         style={{
@@ -2936,7 +2924,7 @@ const favTeammateRateDisplay =
           marginBottom: 8,
         }}
       >
-        FAVORIS (RATIO WIN)
+        Favoris (ratio WIN)
       </div>
       <div
         style={{
