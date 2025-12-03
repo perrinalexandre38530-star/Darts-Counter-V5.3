@@ -626,16 +626,15 @@ export default function HistoryPage({
     loadHistory();
   }, [store]);
 
+  // tri / dedupe
   const { done, running } = useMemo(() => {
     const fins = items.filter((e) => statusOf(e) === "finished");
     const inprog = items.filter((e) => statusOf(e) !== "finished");
+
     return {
+      // on dé-doublonne AUSSI les parties en cours
       done: dedupe(fins),
-      running: inprog.sort(
-        (a, b) =>
-          (b.updatedAt || b.createdAt || 0) -
-          (a.updatedAt || a.createdAt || 0)
-      ),
+      running: dedupe(inprog),
     };
   }, [items]);
 

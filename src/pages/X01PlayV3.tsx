@@ -551,6 +551,8 @@ export default function X01PlayV3({
 
   // Pour éviter de sauvegarder le match plusieurs fois (History)
   const hasSavedMatchRef = React.useRef(false);
+  // ID unique de la partie dans l'historique (même id pour "en cours" et "terminé")
+  const historyIdRef = React.useRef<string | null>(null);
 
   // Autosave : log de toutes les fléchettes (dans l'ordre global)
   const replayDartsRef = React.useRef<X01DartInputV3[]>([]);
@@ -610,20 +612,68 @@ export default function X01PlayV3({
 
   const persistAutosave = React.useCallback(() => {
     if (typeof window === "undefined") return;
+
     try {
+      // ID de match stable : d'abord matchId du moteur, sinon ref locale
+      const engineMatchId: string | undefined = (state as any)?.matchId;
+      const matchId =
+        historyIdRef.current ||
+        engineMatchId ||
+        `x01v3-${config.startScore}-${Date.now().toString(16)}`;
+
+      historyIdRef.current = matchId;
+
+      // Snapshot pour autosave localStorage (reprise rapide)
       const snap: X01V3AutosaveSnapshot = {
-        id: `x01v3-${config.startScore}-${config.players
-          .map((p: any) => p.name)
-          .join("-")}`,
+        id: matchId,
         createdAt: Date.now(),
         config,
         darts: replayDartsRef.current,
       };
       window.localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(snap));
+
+      // --------- En parallèle : enregistre la partie EN COURS dans History ---------
+      const lightPlayers = (config.players || []).map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        avatarDataUrl:
+          p.avatarDataUrl ?? p.avatarUrl ?? p.photoUrl ?? null,
+      }));
+
+      const payload = {
+        mode: "x01_multi",
+        variant: "x01_v3",
+        game: "x01",
+        startScore: config.startScore,
+        matchId,
+        config: { ...config, players: lightPlayers },
+        // on stocke juste la liste complète des darts pour pouvoir rejouer
+        darts: replayDartsRef.current,
+      };
+
+      const record: any = {
+        id: matchId,
+        kind: "x01",
+        status: "in_progress",
+        createdAt: snap.createdAt,
+        updatedAt: snap.createdAt,
+        players: lightPlayers,
+        winnerId: null,
+        summary: {
+          matchId,
+          status: "in_progress",
+        },
+        payload,
+      };
+
+      // fire-and-forget, on ne bloque pas l'UI
+      History.upsert(record).catch((err) => {
+        console.warn("[X01PlayV3] History.upsert(in_progress) failed", err);
+      });
     } catch (e) {
       console.warn("[X01PlayV3] persistAutosave failed", e);
     }
-  }, [config]);
+  }, [config, state]);
 
   // Reprise auto : au premier rendu, on rejoue toutes les fléchettes sauvegardées
   React.useEffect(() => {
@@ -2046,6 +2096,7 @@ perPlayer.push({
   }
 
   const summary = {
+    matchId, // 🧷 identifiant de match commun "en cours" / "terminé"
     avg3ByPlayer,
     bestVisitByPlayer,
     bestCheckoutByPlayer,
@@ -2093,6 +2144,8 @@ perPlayer.push({
 
     game: "x01",
     startScore: config.startScore,
+    matchId,          // 🧷 idem summary
+    resumeId: matchId,
     config: lightConfig,
     finalScores: scores,
     legsWon: state?.legsWon ?? {},
@@ -2104,6 +2157,7 @@ perPlayer.push({
   // -------------------------
   const record: any = {
     id: matchId,
+    resumeId: matchId, // pour matchLink() dans HistoryPage
     kind: "x01",
     status: "finished",
     createdAt,
