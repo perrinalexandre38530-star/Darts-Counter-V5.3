@@ -566,6 +566,7 @@ export default function X01PlayV3({
     scores,
     status,
     throwDart,
+    undoLastDart,      // 🔥 nouveau : UNDO illimité du moteur V3
     startNextLeg,
   } = useX01EngineV3({ config });
 
@@ -768,8 +769,22 @@ export default function X01PlayV3({
   };
 
   const handleCancel = () => {
-    setCurrentThrow([]);
-    setMultiplier(1);
+    // 1) Si une volée est en cours -> on annule juste cette volée
+    if (currentThrow.length > 0) {
+      setCurrentThrow([]);
+      setMultiplier(1);
+      return;
+    }
+
+    // 2) Sinon -> UNDO GLOBAL via le moteur V3
+    //    (remonte le dernier hit, même si on change de joueur / de volée)
+    undoLastDart();
+
+    // 3) On garde l'autosave en phase avec ce qui vient d'être annulé
+    if (replayDartsRef.current.length > 0) {
+      replayDartsRef.current.pop();
+      persistAutosave();
+    }
   };
 
   const validateThrow = () => {

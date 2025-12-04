@@ -8,6 +8,8 @@
 // - Une seule MAJ des stats par VOLÉE
 // - Checkout adaptatif V3
 // - Status : playing / leg_end / set_end / match_end
+// - 🔥 UNDO illimité : efface le dernier hit, remonte joueurs/volées
+//   + rebuildFromDarts(allDarts) pour reconstruire un match complet
 // =============================================================
 
 import * as React from "react";
@@ -251,6 +253,254 @@ function buildAggregatedStats(
   return out;
 }
 
+// ===========================================================
+// REBUILD MATCH COMPLET DEPUIS L'HISTORIQUE DES DARTS (UNDO)
+// ===========================================================
+
+function rebuildMatchFromHistory(
+  config: X01ConfigV3,
+  darts: Array<{ v: number; m: number }>,
+  opts?: { matchId?: string }
+): {
+  newState: X01MatchStateV3;
+  newLiveStats: Record<X01PlayerId, X01StatsLiveV3>;
+} {
+  let m = createInitialMatchState(config);
+
+  // on conserve le même matchId pour l'historique
+  if (opts?.matchId) {
+    (m as any).matchId = opts.matchId;
+  }
+
+  const live: Record<X01PlayerId, X01StatsLiveV3> = {} as any;
+  for (const p of config.players) {
+    live[p.id] = createEmptyLiveStatsV3();
+  }
+
+  for (const d of darts) {
+    if (m.status !== "playing") break;
+
+    if (!m.visit) startNewVisitV3(m);
+
+    const input: X01DartInputV3 = {
+      segment: d.v,
+      multiplier: d.m,
+    } as X01DartInputV3;
+
+    const result = applyDartToCurrentPlayerV3(config, m, input);
+    const visit = m.visit!;
+    const pid = m.activePlayer;
+
+    const visitEnded =
+      result.bust || visit.dartsLeft === 0 || result.scoreAfter === 0;
+
+    if (!visitEnded) {
+      // checkout adaptatif tant que la visite continue
+      if (!result.bust && visit.dartsLeft > 0 && result.scoreAfter > 1) {
+        visit.checkoutSuggestion = extAdaptCheckoutSuggestion({
+          score: visit.currentScore,
+          dartsLeft: visit.dartsLeft,
+          outMode: config.outMode,
+        });
+      } else {
+        visit.checkoutSuggestion = null;
+      }
+      continue;
+    }
+
+    // -------- FIN DE VISITE (stats uniques) --------
+    const dartsArr = (visit as any).dartsThrown
+      ? (visit as any).dartsThrown.map((dd: any) => ({
+          v: dd.value,
+          m: dd.mult,
+        }))
+      : (visit.darts || []).map((dd) => ({
+          v: dd.segment,
+          m: dd.multiplier,
+        }));
+
+    const isCheckout = !result.bust && result.scoreAfter === 0;
+
+    const base = live[pid] ?? createEmptyLiveStatsV3();
+    const stPlayer: X01StatsLiveV3 = structuredClone(
+      base
+    ) as X01StatsLiveV3;
+
+    // Stats live "classiques"
+    applyVisitToLiveStatsV3(stPlayer, visit as any, result.bust, isCheckout);
+
+    // Patch étendu : hits/miss/segments
+    ensureExtendedStatsFor(stPlayer);
+    recordVisitOn(stPlayer, dartsArr);
+    finalizeStatsFor(stPlayer);
+
+    live[pid] = stPlayer;
+    (m as any).liveStatsByPlayer = live;
+
+    // ---------- Fin de leg / set / match ----------
+    const legWinner = checkLegWinV3(config, m);
+    if (legWinner) {
+      // Agrégation des stats live -> summary.detailedByPlayer
+      const aggregated = buildAggregatedStats(
+        (m as any).liveStatsByPlayer as Record<X01PlayerId, X01StatsLiveV3>
+      );
+
+      const bestCheckoutByPlayer: Record<string, number> = {};
+      for (const pId of Object.keys(aggregated)) {
+        const bc = aggregated[pId].bestCheckout || 0;
+        if (bc > 0) bestCheckoutByPlayer[pId] = bc;
+      }
+
+      (m as any).summary = {
+        ...(m as any).summary,
+        detailedByPlayer: aggregated,
+        bestCheckoutByPlayer,
+      };
+
+      applyLegWinV3(config, m, legWinner);
+
+      if (legWinner.winnerPlayerId) {
+        (m as any).lastLegWinnerId = legWinner.winnerPlayerId;
+        (m as any).lastWinnerId = legWinner.winnerPlayerId;
+        (m as any).lastWinningPlayerId = legWinner.winnerPlayerId;
+      }
+
+      const setWinner = checkSetWinV3(config, m);
+      if (setWinner) {
+        applySetWinV3(config, m, setWinner);
+
+        if (checkMatchWinV3(config, m)) {
+          // ========= FIN DE MATCH =========
+          const rankings = [...config.players].map((p) => {
+            const pid2 = p.id as X01PlayerId;
+            const legs = m.legsWon[pid2] ?? 0;
+            const sets = m.setsWon[pid2] ?? 0;
+            return {
+              id: pid2,
+              name: p.name,
+              legsWon: legs,
+              setsWon: sets,
+              score: sets || legs || 0,
+            };
+          });
+
+          rankings.sort((a, b) => {
+            if (b.setsWon !== a.setsWon) return b.setsWon - a.setsWon;
+            if (b.legsWon !== a.legsWon) return b.legsWon - a.legsWon;
+            return 0;
+          });
+
+          const summaryAny: any = (m as any).summary || {};
+
+          (m as any).summary = {
+            ...summaryAny,
+            game: {
+              ...(summaryAny.game || {}),
+              mode: "x01",
+              startScore: config.startScore,
+              legsPerSet: config.legsPerSet ?? null,
+              setsToWin: config.setsToWin ?? null,
+            },
+            rankings,
+            winnerName:
+              summaryAny.winnerName ??
+              (m as any).winnerName ??
+              (rankings[0]?.name ?? null),
+          };
+
+          m.status = "match_end";
+          break;
+        }
+
+        m.status = "set_end";
+      } else {
+        m.status = "leg_end";
+      }
+
+      // si leg_end / set_end, on arrête de rejouer (comme en live)
+      break;
+    }
+
+    // Joueur suivant
+    m.activePlayer = getNextPlayerV3(m);
+
+    startNewVisitV3(m);
+    if (m.visit) {
+      m.visit.checkoutSuggestion = extAdaptCheckoutSuggestion({
+        score: m.visit.currentScore,
+        dartsLeft: m.visit.dartsLeft,
+        outMode: config.outMode,
+      });
+    }
+  }
+
+  return { newState: m, newLiveStats: live };
+}
+
+// -------------------------------------------------------------
+// Helper : passer à la manche / au set suivant
+// -------------------------------------------------------------
+function goToNextLeg(
+  prev: X01MatchStateV3,
+  config: X01ConfigV3
+): X01MatchStateV3 {
+  const next: any = { ...prev };
+
+  const startScore = (config as any).startScore ?? 501;
+  const legsPerSet = (config as any).legsPerSet ?? 1;
+  const setsToWin = (config as any).setsToWin ?? 1;
+
+  const playerIds: X01PlayerId[] = (config.players ?? []).map(
+    (p: any) => p.id as X01PlayerId
+  );
+
+  // --- reset des scores pour tous les joueurs ---
+  const newScores: Record<X01PlayerId, number> = {} as any;
+  for (const pid of playerIds) {
+    newScores[pid] = startScore;
+  }
+  next.scores = newScores;
+
+  // --- reset visite / statut ---
+  next.visit = null;
+  next.status = "playing";
+
+  const curLeg = (prev as any).currentLeg ?? 1;
+  const curSet = (prev as any).currentSet ?? 1;
+
+  if (prev.status === "set_end") {
+    // 👉 nouveau set
+    const nextSet = Math.min(curSet + 1, setsToWin);
+    next.currentSet = nextSet;
+    next.currentLeg = 1;
+
+    // les sets sont déjà incrémentés par le moteur à la fin du set
+    // ici on remet simplement les legs de ce nouveau set à 0
+    const legsWonPrev = ((prev as any).legsWon ?? {}) as Record<
+      string,
+      number
+    >;
+    const legsWonNew: Record<string, number> = {};
+    for (const pid of playerIds) {
+      legsWonNew[pid] =
+        legsWonPrev[pid] && nextSet === curSet + 1 ? 0 : legsWonPrev[pid] ?? 0;
+    }
+    next.legsWon = legsWonNew;
+  } else {
+    // 👉 manche suivante dans le même set
+    const nextLeg = Math.min(curLeg + 1, legsPerSet);
+    next.currentSet = curSet;
+    next.currentLeg = nextLeg;
+  }
+
+  // on nettoie les infos de gagnant pour ne pas rester figé
+  next.lastLegWinnerId = null;
+  next.lastWinnerId = null;
+  next.lastWinningPlayerId = null;
+
+  return next as X01MatchStateV3;
+}
+
 // -------------------------------------------------------------
 // Hook principal
 // -------------------------------------------------------------
@@ -282,12 +532,49 @@ export function useX01EngineV3({
       return out;
     });
 
+  // Historique interne de tous les darts saisis (pour UNDO illimité)
+  const dartsHistoryRef = React.useRef<Array<{ v: number; m: number }>>([]);
+
+  // -----------------------------------------------------------
+  // rebuildFromDarts : reconstruit le match depuis une liste
+  // de X01DartInputV3 (pour l'UI qui garde son propre historique)
+  // -----------------------------------------------------------
+
+  const rebuildFromDarts = React.useCallback(
+    (allDarts: X01DartInputV3[]) => {
+      // on convertit X01DartInputV3 -> {v,m}
+      const dartsVM = allDarts.map((d) => ({
+        v: d.segment,
+        m: d.multiplier,
+      }));
+
+      // on synchronise aussi l'historique interne
+      dartsHistoryRef.current = dartsVM.slice();
+
+      const { newState, newLiveStats } = rebuildMatchFromHistory(
+        config,
+        dartsVM,
+        { matchId: state.matchId }
+      );
+
+      setState(newState);
+      setLiveStatsByPlayer(newLiveStats);
+    },
+    [config, state.matchId]
+  );
+
   // -----------------------------------------------------------
   // throwDart : appliqué à CHAQUE fléchette
   // -----------------------------------------------------------
 
   const throwDart = React.useCallback(
     (input: X01DartInputV3) => {
+      // On mémorise chaque dart dans l'historique interne
+      dartsHistoryRef.current.push({
+        v: input.segment,
+        m: input.multiplier,
+      });
+
       setState((prevState) => {
         const next = structuredClone(prevState);
         const m = next;
@@ -369,9 +656,9 @@ export function useX01EngineV3({
           );
 
           const bestCheckoutByPlayer: Record<string, number> = {};
-          for (const pid of Object.keys(aggregated)) {
-            const bc = aggregated[pid].bestCheckout || 0;
-            if (bc > 0) bestCheckoutByPlayer[pid] = bc;
+          for (const pid2 of Object.keys(aggregated)) {
+            const bc = aggregated[pid2].bestCheckout || 0;
+            if (bc > 0) bestCheckoutByPlayer[pid2] = bc;
           }
 
           (m as any).summary = {
@@ -398,11 +685,11 @@ export function useX01EngineV3({
               // - summary.game.startScore / mode
               // - summary.rankings (classement joueurs)
               const rankings = [...config.players].map((p) => {
-                const pid = p.id as X01PlayerId;
-                const legs = m.legsWon[pid] ?? 0;
-                const sets = m.setsWon[pid] ?? 0;
+                const pid3 = p.id as X01PlayerId;
+                const legs = m.legsWon[pid3] ?? 0;
+                const sets = m.setsWon[pid3] ?? 0;
                 return {
-                  id: pid,
+                  id: pid3,
                   name: p.name,
                   legsWon: legs,
                   setsWon: sets,
@@ -465,11 +752,31 @@ export function useX01EngineV3({
   );
 
   // -----------------------------------------------------------
+  // UNDO illimité : efface le dernier dart, remonte volées/joueurs
+  // -----------------------------------------------------------
+
+  const undoLastDart = React.useCallback(() => {
+    if (dartsHistoryRef.current.length === 0) return;
+
+    // On enlève le dernier dart saisi
+    dartsHistoryRef.current.pop();
+
+    const { newState, newLiveStats } = rebuildMatchFromHistory(
+      config,
+      dartsHistoryRef.current,
+      { matchId: state.matchId }
+    );
+
+    setState(newState);
+    setLiveStatsByPlayer(newLiveStats);
+  }, [config, state.matchId]);
+
+  // -----------------------------------------------------------
   // startNextLeg
   // -----------------------------------------------------------
 
   const startNextLeg = React.useCallback(() => {
-    // ...
+    setState((prev) => goToNextLeg(prev, config));
   }, [config]);
 
   // -----------------------------------------------------------
@@ -528,6 +835,8 @@ export function useX01EngineV3({
     scores: state.scores,
     status: state.status,
     throwDart,
+    undoLastDart,   // utilisé si tu veux un UNDO "interne"
+    rebuildFromDarts, // 🔥 pour X01PlayV3 + autosave / ANNULER global
     startNextLeg,
   };
 }

@@ -55,6 +55,8 @@ export default function X01LegOverlayV3({
   const { theme } = useTheme();
   const { t } = useLang();
 
+  // 🔒 Comportement simple : si le parent dit open=false ou status=playing,
+  // on ne rend rien.
   if (!open || status === "playing") return null;
 
   const players = config?.players ?? [];
@@ -169,11 +171,15 @@ export default function X01LegOverlayV3({
   // ------------------------------------------------------------
   // Callbacks (avec compat noms anciens / nouveaux)
   // ------------------------------------------------------------
-  const nextLeg = () => onNextLeg();
 
   const quitHandler = onExitMatch || onQuit;
   const replaySameHandler = onReplaySameConfig || onReplaySame;
   const replayNewHandler = onReplayNewConfig || onReplayNew;
+
+  const nextLeg = () => {
+    // ➜ Laisse le parent gérer le state (status / open)
+    onNextLeg();
+  };
 
   const quitMatch = () => {
     if (quitHandler) quitHandler();
@@ -187,7 +193,6 @@ export default function X01LegOverlayV3({
     if (replayNewHandler) replayNewHandler();
   };
 
-  // on appelle le callback même si matchId est vide
   const showSummary = () => {
     if (onShowSummary) {
       onShowSummary(matchId ?? "");
@@ -241,7 +246,7 @@ export default function X01LegOverlayV3({
         />
 
         <div style={{ position: "relative", zIndex: 2 }}>
-          {/* Manche / Set chip — CENTRÉ AU-DESSUS DU SCOREBOARD */}
+          {/* Manche / Set chip */}
           <div
             style={{
               display: "flex",
@@ -430,7 +435,6 @@ function DuelLayout({
           gap: 4,
         }}
       >
-        {/* avatar au-dessus du nom – taille fixe */}
         <AvatarMedallion
           avatar={
             winner?.avatarDataUrl || winner?.avatarUrl || winner?.photoUrl
@@ -707,7 +711,7 @@ function RankingLayout({
 // ------------------------------------------------------------
 function AvatarMedallion({
   avatar,
-  size = 70, // ajustable
+  size = 70,
 }: {
   avatar?: string | null;
   size?: number;
@@ -731,7 +735,7 @@ function AvatarMedallion({
         <img
           src={avatar}
           style={{
-            width: "105%", // léger zoom pour couper les bords PNG
+            width: "105%",
             height: "105%",
             objectFit: "cover",
           }}
@@ -775,7 +779,6 @@ function Mini({
     >
       <div style={{ fontSize: 11, opacity: 0.7 }}>{label}</div>
 
-      {/* Vainqueur en doré */}
       <div
         style={{
           fontWeight: 800,
@@ -787,7 +790,6 @@ function Mini({
         {win}
       </div>
 
-      {/* Perdant en blanc */}
       <div
         style={{
           fontWeight: 700,

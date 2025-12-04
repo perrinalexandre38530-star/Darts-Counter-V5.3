@@ -17,6 +17,7 @@ import TrainingRadar from "../components/TrainingRadar";
 import { GoldPill } from "../components/StatsPlayerDashboard";
 import { History } from "../lib/history";
 import type { Dart as UIDart } from "../lib/types";
+import ProfileAvatar from "../components/ProfileAvatar";
 
 // ------ Helpers locaux : classement multi pour un joueur ------
 
@@ -160,6 +161,8 @@ export type X01MultiSession = {
   date: number;
   selectedPlayerId: string;
   playerName: string;
+  // 🔥 AJOUT
+  profileId?: string | null;
 
   // 🔥 pour les stats TEAM
   teamId?: string | null;
@@ -617,12 +620,16 @@ async function loadX01MultiSessions(
         player.label ||
         "Player";
 
+      // 🔥 C’EST ICI QUE ÇA REMPLACE MON "sessions.push"
+      //    → on enrichit la ligne de session avec profileId etc.
       out.push({
         id: `${matchId}:${pid}`,
         matchId,
         date: createdAt,
         selectedPlayerId: pid,
         playerName,
+        // 👇 profil réel du joueur dans l’historique (clé magique pour l’avatar)
+        profileId: player.profileId ?? player.id ?? null,
         isTeam,
         teamId,
         ...base,
@@ -1751,16 +1758,26 @@ for (const oc of outcomes) {
 // ============================================================
 
 type VersusStats = {
-  vsMatches: number;   // matchs joués face à ce joueur
-  vsWins: number;      // matchs gagnés face à lui
-  teamMatches: number; // matchs joués AVEC lui en équipe
+  vsMatches: number;         // matchs joués face à ce joueur
+  vsWins: number;            // matchs gagnés face à lui
+  vsLegs: number;            // nombre de legs joués dans ces matchs
+  bestScoreLabel: string | null; // meilleur score "3-0", "2-1" vs ce joueur
+  bestScoreMargin: number;       // marge associée (pour comparer)
+  teamMatches: number;       // matchs joués AVEC lui en équipe
 };
 
 const perPersonStats: Record<string, VersusStats> = {};
 
 const ensurePerson = (id: string): VersusStats => {
   if (!perPersonStats[id]) {
-    perPersonStats[id] = { vsMatches: 0, vsWins: 0, teamMatches: 0 };
+    perPersonStats[id] = {
+      vsMatches: 0,
+      vsWins: 0,
+      vsLegs: 0,
+      bestScoreLabel: null,
+      bestScoreMargin: -Infinity,
+      teamMatches: 0,
+    };
   }
   return perPersonStats[id];
 };
@@ -1772,6 +1789,19 @@ for (const oc of outcomes) {
     const st = ensurePerson(opp);
     st.vsMatches++;
     if (oc.won) st.vsWins++;
+
+    // on ajoute les legs joués sur ce match (ou sets joués si pas de legs)
+    if (oc.legsPlayed != null) {
+      st.vsLegs += oc.legsPlayed;
+    }
+
+    // meilleur score vs cet adversaire
+    if (oc.margin != null && oc.scoreLabel) {
+      if (oc.margin > st.bestScoreMargin) {
+        st.bestScoreMargin = oc.margin;
+        st.bestScoreLabel = oc.scoreLabel;
+      }
+    }
   }
 
   // coéquipiers (joués avec, en team)
@@ -1824,59 +1854,114 @@ for (const id in perPersonStats) {
   }
 }
 
- // ============================================================
-  // FORMATTAGE DES STATS MATCHS / FAVORIS POUR LE RENDER
-  // ============================================================
+if (filtered.length > 0) {
+  // DEBUG TEMPORAIRE
+  // Regarde dans la console ce qu'il y a dans une session pour voir
+  // si tu as profileId / profile / playerProfileId, etc.
+  // (tu peux supprimer ce log ensuite)
+  console.log("X01Multi sample session", filtered[0]);
+}
 
-  // Mapping id -> nom (pour afficher les adversaires / teammates)
-  const playerNameMap: Record<string, string> = {};
-  for (const s of filtered) {
-    if (!s.selectedPlayerId) continue;
-    if (!playerNameMap[s.selectedPlayerId]) {
-      playerNameMap[s.selectedPlayerId] = s.playerName || s.selectedPlayerId;
-    }
+// ============================================================
+// FORMATTAGE DES STATS MATCHS / FAVORIS POUR LE RENDER
+// ============================================================
+
+// Helper ultra tolérant pour récupérer le vrai profileId depuis une session
+const getProfileIdFromSession = (s: any): string | undefined => {
+  return (
+    (s.profileId && String(s.profileId)) ||
+    (s.profile_id && String(s.profile_id)) ||
+    (s.profile && s.profile.id && String(s.profile.id)) ||
+    (s.playerProfileId && String(s.playerProfileId)) ||
+    (s.player_profile_id && String(s.player_profile_id)) ||
+    undefined
+  );
+};
+
+// Mapping id (selectedPlayerId) -> nom + profileId
+const playerNameMap: Record<string, string> = {};
+const playerProfileIdMap: Record<string, string | undefined> = {};
+
+for (const s of filtered) {
+  if (!s.selectedPlayerId) continue;
+  const key = String(s.selectedPlayerId);
+
+  if (!playerNameMap[key]) {
+    playerNameMap[key] = s.playerName || key;
   }
 
-  const favOpponentName =
-    favOpponentId ? playerNameMap[favOpponentId] ?? favOpponentId : null;
-  const maxWinVsName =
-    maxWinVsId ? playerNameMap[maxWinVsId] ?? maxWinVsId : null;
-  const favTeammateName =
-    favTeammateId ? playerNameMap[favTeammateId] ?? favTeammateId : null;
+  // 🔥 on essaie de récupérer un vrai profileId avec le helper
+  if (!playerProfileIdMap[key]) {
+    const pid = getProfileIdFromSession(s as any);
+    if (pid) {
+      playerProfileIdMap[key] = pid;
+    }
+  }
+}
 
-  // valeurs numériques à afficher sous les "avatars"
-  const favOpponentStats =
-    favOpponentId != null ? perPersonStats[favOpponentId] : null;
-  const maxWinVsStats =
-    maxWinVsId != null ? perPersonStats[maxWinVsId] : null;
-  const favTeammateStats =
-    favTeammateId != null ? perPersonStats[favTeammateId] : null;
+// Noms "humains"
+const favOpponentName =
+  favOpponentId ? playerNameMap[favOpponentId] ?? favOpponentId : null;
+const maxWinVsName =
+  maxWinVsId ? playerNameMap[maxWinVsId] ?? maxWinVsId : null;
+const favTeammateName =
+  favTeammateId ? playerNameMap[favTeammateId] ?? favTeammateId : null;
 
-  const favOpponentMatchesPct =
-    favOpponentStats && totalMatchesPlayer > 0
-      ? ((favOpponentStats.vsMatches / totalMatchesPlayer) * 100).toFixed(1)
-      : null;
+// 💡 vrais profileId (pour les avatars)
+const favOpponentProfileId =
+  favOpponentId ? playerProfileIdMap[favOpponentId] : undefined;
+const maxWinVsProfileId =
+  maxWinVsId ? playerProfileIdMap[maxWinVsId] : undefined;
+const favTeammateProfileId =
+  favTeammateId ? playerProfileIdMap[favTeammateId] : undefined;
 
-  const maxWinVsRatePct =
-    maxWinVsStats && maxWinVsStats.vsMatches > 0
-      ? ((maxWinVsStats.vsWins / maxWinVsStats.vsMatches) * 100).toFixed(1)
-      : null;
+// valeurs numériques à afficher sous les "avatars"
+const favOpponentStats =
+  favOpponentId != null ? perPersonStats[favOpponentId] : null;
+const maxWinVsStats =
+  maxWinVsId != null ? perPersonStats[maxWinVsId] : null;
+const favTeammateStats =
+  favTeammateId != null ? perPersonStats[favTeammateId] : null;
 
-  const favTeammateMatchesPct =
-    favTeammateStats && totalMatchesPlayer > 0
-      ? ((favTeammateStats.teamMatches / totalMatchesPlayer) * 100).toFixed(1)
-      : null;
+const favOpponentMatchesPct =
+  favOpponentStats && totalMatchesPlayer > 0
+    ? ((favOpponentStats.vsMatches / totalMatchesPlayer) * 100).toFixed(1)
+    : null;
 
-  const bestDuoScoreDisplay = bestDuoScore ?? "-";
-  const bestTeamScoreDisplay = bestTeamScore ?? "-";
-  const worstDuoScoreDisplay = worstDuoScore ?? "-";
+const maxWinVsRatePct =
+  maxWinVsStats && maxWinVsStats.vsMatches > 0
+    ? ((maxWinVsStats.vsWins / maxWinVsStats.vsMatches) * 100).toFixed(1)
+    : null;
 
-  const pctMatchWinDisplay =
-    matchesX01Total > 0 ? `${pctWinX01.toFixed(1)}%` : "0.0%";
-  const pctLegsWinDisplay =
-    legsPlayedX01 > 0 ? `${pctLegsWinX01.toFixed(1)}%` : "0.0%";
-  const pctSetsWinDisplay =
-    setsPlayedX01 > 0 ? `${pctSetsWinX01.toFixed(1)}%` : "0.0%";
+const favTeammateMatchesPct =
+  favTeammateStats && totalMatchesPlayer > 0
+    ? ((favTeammateStats.teamMatches / totalMatchesPlayer) * 100).toFixed(1)
+    : null;
+
+const bestDuoScoreDisplay = bestDuoScore ?? "-";
+const bestTeamScoreDisplay = bestTeamScore ?? "-";
+const worstDuoScoreDisplay = worstDuoScore ?? "-";
+
+const pctMatchWinDisplay =
+  matchesX01Total > 0 ? `${pctWinX01.toFixed(1)}%` : "0.0%";
+const pctLegsWinDisplay =
+  legsPlayedX01 > 0 ? `${pctLegsWinX01.toFixed(1)}%` : "0.0%";
+const pctSetsWinDisplay =
+  setsPlayedX01 > 0 ? `${pctSetsWinX01.toFixed(1)}%` : "0.0%";
+
+// LIGNES POUR LE TABLEAU "DÉTAILS ADVERSAIRES / COÉQUIPIERS"
+const detailsRows = Object.entries(perPersonStats)
+  .map(([id, st]) => ({
+    id,
+    name: playerNameMap[id] ?? id,
+    matches: st.vsMatches,
+    legs: st.vsLegs,
+    wins: st.vsWins,
+    bestScore: st.bestScoreLabel,
+    teams: st.teamMatches,
+  }))
+  // tri : ceux qu'on a le plus joués en haut
+  .sort((a, b) => b.matches - a.matches);
 
   // ------------------- RENDER -------------------
 
@@ -2974,211 +3059,392 @@ for (const id in perPersonStats) {
     </div>
 
     {/* FAVORIS — ADVERSAIRE FAVORI / MAX WIN VS / COÉQUIPIER FAVORI */}
-    <div>
+<div>
+  <div
+    style={{
+      fontSize: 11,
+      textTransform: "uppercase",
+      color: "#4DB2FF",
+      fontWeight: 800,
+      marginBottom: 8,
+    }}
+  >
+    Favoris
+  </div>
+
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      gap: 8,
+    }}
+  >
+    {/* Adversaire favori = celui contre qui on joue le plus */}
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        textAlign: "center",
+      }}
+    >
       <div
         style={{
-          fontSize: 11,
+          fontSize: 9,
+          color: T.text70,
           textTransform: "uppercase",
-          color: "#4DB2FF",
-          fontWeight: 800,
-          marginBottom: 8,
+          marginBottom: 6,
         }}
       >
-        Favoris
+        Adversaire favori
       </div>
 
+      {/* Avatar médaillon */}
+      <div style={{ marginBottom: 4 }}>
+      <ProfileAvatar profileId={favOpponentProfileId} size={44} />
+      </div>
+
+      {/* Nom réduit mais entier, centré sur 2 lignes max */}
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 8,
+          fontSize: 10,
+          fontWeight: 700,
+          color: "#4DB2FF",
+          marginBottom: 2,
+          maxWidth: 80,
+          lineHeight: 1.15,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
         }}
       >
-        {/* Adversaire favori = celui contre qui on joue le plus */}
-        <div style={{ flex: 1 }}>
-          <div
-            style={{
-              fontSize: 9,
-              color: T.text70,
-              textTransform: "uppercase",
-            }}
-          >
-            Adversaire favori
-          </div>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 800,
-              color: "#4DB2FF",
-              marginBottom: 2,
-            }}
-          >
-            {favOpponentName ?? "-"}
-          </div>
-          <div
-            style={{
-              fontSize: 10,
-              color: T.text70,
-              lineHeight: 1.3,
-            }}
-          >
-            {favOpponentStats
-              ? `Matchs: ${favOpponentStats.vsMatches}${
-                  favOpponentMatchesPct
-                    ? ` (${favOpponentMatchesPct}% de tous tes matchs)`
-                    : ""
-                }`
-              : "-"}
-          </div>
-        </div>
+        {favOpponentName ?? "-"}
+      </div>
 
-        {/* Max Win VS = celui contre qui on a gagné le plus */}
-        <div style={{ flex: 1 }}>
+      {/* Stat en mode "intitulé : case néon" */}
+      <div style={{ marginTop: 4 }}>
+        <div
+          style={{
+            fontSize: 9,
+            color: T.text70,
+            textTransform: "uppercase",
+            marginBottom: 2,
+          }}
+        >
+          Matchs
+        </div>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "2px 10px",
+            borderRadius: 999,
+            border: "1px solid #4DB2FF",
+            boxShadow: "0 0 10px rgba(77,178,255,.7)",
+            background:
+              "radial-gradient(circle at 0% 0%, rgba(77,178,255,.35), transparent 55%)",
+            fontSize: 11,
+            fontWeight: 800,
+            color: "#E5F2FF",
+            minWidth: 40,
+          }}
+        >
+          {favOpponentStats ? favOpponentStats.vsMatches : "-"}
+        </div>
+        {favOpponentMatchesPct && (
           <div
             style={{
               fontSize: 9,
               color: T.text70,
-              textTransform: "uppercase",
+              marginTop: 2,
             }}
           >
-            Max Win VS
+            {favOpponentMatchesPct}% de tes matchs
           </div>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 800,
-              color: "#4DB2FF",
-              marginBottom: 2,
-            }}
-          >
-            {maxWinVsName ?? "-"}
-          </div>
-          <div
-            style={{
-              fontSize: 10,
-              color: T.text70,
-              lineHeight: 1.3,
-            }}
-          >
-            {maxWinVsStats
-              ? `Victoires: ${maxWinVsStats.vsWins}${
-                  maxWinVsRatePct
-                    ? ` (${maxWinVsRatePct}% de win vs lui)`
-                    : ""
-                }`
-              : "-"}
-          </div>
-        </div>
-
-        {/* Coéquipier favori = celui avec qui on joue le plus en TEAM */}
-        <div style={{ flex: 1 }}>
-          <div
-            style={{
-              fontSize: 9,
-              color: T.text70,
-              textTransform: "uppercase",
-            }}
-          >
-            Coéquipier favori
-          </div>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 800,
-              color: "#4DB2FF",
-              marginBottom: 2,
-            }}
-          >
-            {favTeammateName ?? "-"}
-          </div>
-          <div
-            style={{
-              fontSize: 10,
-              color: T.text70,
-              lineHeight: 1.3,
-            }}
-          >
-            {favTeammateStats
-              ? `Matchs TEAM: ${favTeammateStats.teamMatches}${
-                  favTeammateMatchesPct
-                    ? ` (${favTeammateMatchesPct}% de tous tes matchs)`
-                    : ""
-                }`
-              : "-"}
-          </div>
-        </div>
+        )}
       </div>
     </div>
 
-    {/* TABLEAU RÉCAP VERSUS PAR JOUEUR */}
-    {Object.keys(perPersonStats).length > 0 && (
+    {/* Max Win VS = celui contre qui on a gagné le plus */}
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        textAlign: "center",
+      }}
+    >
       <div
         style={{
-          marginTop: 14,
+          fontSize: 9,
+          color: T.text70,
+          textTransform: "uppercase",
+          marginBottom: 6,
+        }}
+      >
+        Max Win VS
+      </div>
+
+      <div style={{ marginBottom: 4 }}>
+      <ProfileAvatar profileId={maxWinVsProfileId} size={44} />
+      </div>
+
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          color: "#4DB2FF",
+          marginBottom: 2,
+          maxWidth: 80,
+          lineHeight: 1.15,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+        }}
+      >
+        {maxWinVsName ?? "-"}
+      </div>
+
+      <div style={{ marginTop: 4 }}>
+        <div
+          style={{
+            fontSize: 9,
+            color: T.text70,
+            textTransform: "uppercase",
+            marginBottom: 2,
+          }}
+        >
+          Victoires
+        </div>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "2px 10px",
+            borderRadius: 999,
+            border: "1px solid #7CFF9A",
+            boxShadow: "0 0 10px rgba(124,255,154,.7)",
+            background:
+              "radial-gradient(circle at 0% 0%, rgba(124,255,154,.35), transparent 55%)",
+            fontSize: 11,
+            fontWeight: 800,
+            color: "#E5FFEF",
+            minWidth: 40,
+          }}
+        >
+          {maxWinVsStats ? maxWinVsStats.vsWins : "-"}
+        </div>
+        {maxWinVsRatePct && (
+          <div
+            style={{
+              fontSize: 9,
+              color: T.text70,
+              marginTop: 2,
+            }}
+          >
+            {maxWinVsRatePct}% de win vs lui
+          </div>
+        )}
+      </div>
+    </div>
+
+    {/* Coéquipier favori = celui avec qui on joue le plus en TEAM */}
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        textAlign: "center",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9,
+          color: T.text70,
+          textTransform: "uppercase",
+          marginBottom: 6,
+        }}
+      >
+        Coéquipier favori
+      </div>
+
+      <div style={{ marginBottom: 4 }}>
+      <ProfileAvatar profileId={favTeammateProfileId} size={44} />
+      </div>
+
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          color: "#4DB2FF",
+          marginBottom: 2,
+          maxWidth: 80,
+          lineHeight: 1.15,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+        }}
+      >
+        {favTeammateName ?? "-"}
+      </div>
+
+      <div style={{ marginTop: 4 }}>
+        <div
+          style={{
+            fontSize: 9,
+            color: T.text70,
+            textTransform: "uppercase",
+            marginBottom: 2,
+          }}
+        >
+          Matchs TEAM
+        </div>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "2px 10px",
+            borderRadius: 999,
+            border: "1px solid #F6C256",
+            boxShadow: "0 0 10px rgba(246,194,86,.7)",
+            background:
+              "radial-gradient(circle at 0% 0%, rgba(246,194,86,.35), transparent 55%)",
+            fontSize: 11,
+            fontWeight: 800,
+            color: "#FFF3D9",
+            minWidth: 40,
+          }}
+        >
+          {favTeammateStats ? favTeammateStats.teamMatches : "-"}
+        </div>
+        {favTeammateMatchesPct && (
+          <div
+            style={{
+              fontSize: 9,
+              color: T.text70,
+              marginTop: 2,
+            }}
+          >
+            {favTeammateMatchesPct}% de tes matchs
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+</div>
+
+    {/* DÉTAILS ADVERSAIRES / COÉQUIPIERS */}
+    {detailsRows.length > 0 && (
+      <div
+        style={{
+          marginTop: 10,
           textAlign: "left",
         }}
       >
         <div
           style={{
-            fontSize: 11,
+            fontSize: 10,
             textTransform: "uppercase",
             color: T.text70,
+            marginBottom: 6,
+            letterSpacing: 0.6,
             fontWeight: 700,
-            marginBottom: 4,
           }}
         >
           Détails adversaires / coéquipiers
         </div>
-        <table
+
+        <div
           style={{
-            width: "100%",
-            borderCollapse: "collapse",
+            display: "grid",
+            gridTemplateColumns: "2fr 0.7fr 0.7fr 0.7fr 0.9fr 0.7fr",
+            columnGap: 6,
+            rowGap: 4,
             fontSize: 10,
-            color: T.text70,
           }}
         >
-          <thead>
-            <tr>
-              <th style={{ textAlign: "left", padding: "4px 0" }}>Joueur</th>
-              <th style={{ textAlign: "right", padding: "4px 0" }}>Matchs</th>
-              <th style={{ textAlign: "right", padding: "4px 0" }}>Win</th>
-              {/* Legs / Meilleur score : placeholders pour plus tard */}
-              <th style={{ textAlign: "right", padding: "4px 0" }}>Legs</th>
-              <th style={{ textAlign: "right", padding: "4px 0" }}>
-                Meilleur score
-              </th>
-              <th style={{ textAlign: "right", padding: "4px 0" }}>Teams</th>
-            </tr>
-          </thead>
-          <tbody>
-            {Object.entries(perPersonStats)
-              .sort(([, a], [, b]) => b.vsMatches - a.vsMatches)
-              .map(([id, st]) => {
-                const name = playerNameMap[id] ?? id;
-                return (
-                  <tr
-                    key={id}
-                    style={{
-                      borderTop: "1px solid rgba(255,255,255,.08)",
-                    }}
-                  >
-                    <td style={{ padding: "4px 0" }}>{name}</td>
-                    <td style={{ padding: "4px 0", textAlign: "right" }}>
-                      {st.vsMatches}
-                    </td>
-                    <td style={{ padding: "4px 0", textAlign: "right" }}>
-                      {st.vsWins}
-                    </td>
-                    <td style={{ padding: "4px 0", textAlign: "right" }}>-</td>
-                    <td style={{ padding: "4px 0", textAlign: "right" }}>-</td>
-                    <td style={{ padding: "4px 0", textAlign: "right" }}>
-                      {st.teamMatches}
-                    </td>
-                  </tr>
-                );
-              })}
-          </tbody>
-        </table>
+          {/* En-têtes */}
+          <div style={{ fontWeight: 700, color: T.text70 }}>Joueur</div>
+          <div
+            style={{
+              textAlign: "right",
+              fontWeight: 700,
+              color: T.text70,
+            }}
+          >
+            Matchs
+          </div>
+          <div
+            style={{
+              textAlign: "right",
+              fontWeight: 700,
+              color: T.text70,
+            }}
+          >
+            Legs
+          </div>
+          <div
+            style={{
+              textAlign: "right",
+              fontWeight: 700,
+              color: T.text70,
+            }}
+          >
+            Win
+          </div>
+          <div
+            style={{
+              textAlign: "right",
+              fontWeight: 700,
+              color: T.text70,
+            }}
+          >
+            Meilleur score
+          </div>
+          <div
+            style={{
+              textAlign: "right",
+              fontWeight: 700,
+              color: T.text70,
+            }}
+          >
+            Teams
+          </div>
+
+          {/* Lignes */}
+          {detailsRows.map((row) => (
+            <React.Fragment key={row.id}>
+              <div>{row.name}</div>
+              <div style={{ textAlign: "right", color: "#E5FFEF" }}>
+                {row.matches}
+              </div>
+              <div style={{ textAlign: "right", color: "#E5FFEF" }}>
+                {row.legs || "-"}
+              </div>
+              <div style={{ textAlign: "right", color: "#E5FFEF" }}>
+                {row.wins || "-"}
+              </div>
+              <div style={{ textAlign: "right", color: "#7CFF9A" }}>
+                {row.bestScore ?? "-"}
+              </div>
+              <div style={{ textAlign: "right", color: "#E5FFEF" }}>
+                {row.teams || "-"}
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
       </div>
     )}
   </div>
