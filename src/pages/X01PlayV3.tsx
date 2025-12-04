@@ -769,22 +769,27 @@ export default function X01PlayV3({
   };
 
   const handleCancel = () => {
-    // 1) Si une volée est en cours -> on annule juste cette volée
+    // 1) Si une volée est en cours -> on enlève UNIQUEMENT le dernier hit
     if (currentThrow.length > 0) {
-      setCurrentThrow([]);
+      setCurrentThrow((prev) => prev.slice(0, -1));
       setMultiplier(1);
       return;
     }
 
-    // 2) Sinon -> UNDO GLOBAL via le moteur V3
-    //    (remonte le dernier hit, même si on change de joueur / de volée)
+    // 2) Sinon -> UNDO GLOBAL : on remonte d'UN dart dans tout le match
+    if (!replayDartsRef.current.length) {
+      // rien à annuler
+      return;
+    }
+
+    // On enlève la DERNIÈRE fléchette du log global (autosave)
+    replayDartsRef.current.pop();
+
+    // On demande au moteur V3 de revenir d'un dart en arrière
     undoLastDart();
 
-    // 3) On garde l'autosave en phase avec ce qui vient d'être annulé
-    if (replayDartsRef.current.length > 0) {
-      replayDartsRef.current.pop();
-      persistAutosave();
-    }
+    // On persiste l'autosave avec une fléchette en moins
+    persistAutosave();
   };
 
   const validateThrow = () => {

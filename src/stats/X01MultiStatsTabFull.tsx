@@ -196,6 +196,9 @@ export type X01MultiSession = {
 
   // ➕ rang du joueur sur le match (multi)
   rank?: number | null;
+
+  // ➕ avatar compressé (si dispo dans History.players)
+  avatarDataUrl?: string | null;
 };
 
 type Props = {
@@ -620,16 +623,16 @@ async function loadX01MultiSessions(
         player.label ||
         "Player";
 
-      // 🔥 C’EST ICI QUE ÇA REMPLACE MON "sessions.push"
-      //    → on enrichit la ligne de session avec profileId etc.
       out.push({
         id: `${matchId}:${pid}`,
         matchId,
         date: createdAt,
         selectedPlayerId: pid,
         playerName,
-        // 👇 profil réel du joueur dans l’historique (clé magique pour l’avatar)
+        // 🔥 profileId pour lier aux profils / bots
         profileId: player.profileId ?? player.id ?? null,
+        // 🔥 avatar qui vient directement de History.players[].avatarDataUrl
+        avatarDataUrl: player.avatarDataUrl ?? null,
         isTeam,
         teamId,
         ...base,
@@ -1878,9 +1881,10 @@ const getProfileIdFromSession = (s: any): string | undefined => {
   );
 };
 
-// Mapping id (selectedPlayerId) -> nom + profileId
+// Mapping id (selectedPlayerId) -> nom + profileId + avatar
 const playerNameMap: Record<string, string> = {};
 const playerProfileIdMap: Record<string, string | undefined> = {};
+const playerAvatarMap: Record<string, string | null | undefined> = {};
 
 for (const s of filtered) {
   if (!s.selectedPlayerId) continue;
@@ -1897,6 +1901,11 @@ for (const s of filtered) {
       playerProfileIdMap[key] = pid;
     }
   }
+
+  // 🔥 avatar récupéré depuis X01MultiSession.avatarDataUrl
+  if (playerAvatarMap[key] === undefined) {
+    playerAvatarMap[key] = s.avatarDataUrl ?? null;
+  }
 }
 
 // Noms "humains"
@@ -1907,13 +1916,21 @@ const maxWinVsName =
 const favTeammateName =
   favTeammateId ? playerNameMap[favTeammateId] ?? favTeammateId : null;
 
-// 💡 vrais profileId (pour les avatars)
+// 💡 vrais profileId (on les garde si tu veux réutiliser ProfileAvatar ailleurs)
 const favOpponentProfileId =
   favOpponentId ? playerProfileIdMap[favOpponentId] : undefined;
 const maxWinVsProfileId =
   maxWinVsId ? playerProfileIdMap[maxWinVsId] : undefined;
 const favTeammateProfileId =
   favTeammateId ? playerProfileIdMap[favTeammateId] : undefined;
+
+// 💡 URLs d'avatar (data URL ou HTTP) pour les 3 favoris
+const favOpponentAvatarUrl =
+  favOpponentId ? playerAvatarMap[favOpponentId] ?? null : null;
+const maxWinVsAvatarUrl =
+  maxWinVsId ? playerAvatarMap[maxWinVsId] ?? null : null;
+const favTeammateAvatarUrl =
+  favTeammateId ? playerAvatarMap[favTeammateId] ?? null : null;
 
 // valeurs numériques à afficher sous les "avatars"
 const favOpponentStats =
@@ -3102,7 +3119,39 @@ const detailsRows = Object.entries(perPersonStats)
 
       {/* Avatar médaillon */}
       <div style={{ marginBottom: 4 }}>
-      <ProfileAvatar profileId={favOpponentProfileId} size={44} />
+        <div
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: "50%",
+            border: "2px solid rgba(77,178,255,.9)",
+            boxShadow: "0 0 12px rgba(77,178,255,.6)",
+            overflow: "hidden",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background:
+              "radial-gradient(circle at 30% 10%, rgba(255,255,255,.4), #080910 60%)",
+          }}
+        >
+          {favOpponentAvatarUrl ? (
+            <img
+              src={favOpponentAvatarUrl}
+              alt={favOpponentName ?? ""}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          ) : (
+            <span
+              style={{
+                color: "#E5F2FF",
+                fontWeight: 800,
+                fontSize: 18,
+              }}
+            >
+              {(favOpponentName || "?").trim().charAt(0) || "?"}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Nom réduit mais entier, centré sur 2 lignes max */}
@@ -3191,7 +3240,39 @@ const detailsRows = Object.entries(perPersonStats)
       </div>
 
       <div style={{ marginBottom: 4 }}>
-      <ProfileAvatar profileId={maxWinVsProfileId} size={44} />
+        <div
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: "50%",
+            border: "2px solid rgba(124,255,154,.9)",
+            boxShadow: "0 0 12px rgba(124,255,154,.6)",
+            overflow: "hidden",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background:
+              "radial-gradient(circle at 30% 10%, rgba(255,255,255,.4), #080910 60%)",
+          }}
+        >
+          {maxWinVsAvatarUrl ? (
+            <img
+              src={maxWinVsAvatarUrl}
+              alt={maxWinVsName ?? ""}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          ) : (
+            <span
+              style={{
+                color: "#E5FFEF",
+                fontWeight: 800,
+                fontSize: 18,
+              }}
+            >
+              {(maxWinVsName || "?").trim().charAt(0) || "?"}
+            </span>
+          )}
+        </div>
       </div>
 
       <div
@@ -3278,7 +3359,39 @@ const detailsRows = Object.entries(perPersonStats)
       </div>
 
       <div style={{ marginBottom: 4 }}>
-      <ProfileAvatar profileId={favTeammateProfileId} size={44} />
+        <div
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: "50%",
+            border: "2px solid rgba(246,194,86,.9)",
+            boxShadow: "0 0 12px rgba(246,194,86,.6)",
+            overflow: "hidden",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background:
+              "radial-gradient(circle at 30% 10%, rgba(255,255,255,.4), #080910 60%)",
+          }}
+        >
+          {favTeammateAvatarUrl ? (
+            <img
+              src={favTeammateAvatarUrl}
+              alt={favTeammateName ?? ""}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          ) : (
+            <span
+              style={{
+                color: "#FFF3D9",
+                fontWeight: 800,
+                fontSize: 18,
+              }}
+            >
+              {(favTeammateName || "?").trim().charAt(0) || "?"}
+            </span>
+          )}
+        </div>
       </div>
 
       <div
