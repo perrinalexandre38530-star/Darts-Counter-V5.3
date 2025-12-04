@@ -440,6 +440,7 @@ function rebuildMatchFromHistory(
 // -------------------------------------------------------------
 // Helper : passer à la manche / au set suivant
 // -------------------------------------------------------------
+
 function goToNextLeg(
   prev: X01MatchStateV3,
   config: X01ConfigV3
@@ -776,7 +777,10 @@ export function useX01EngineV3({
   // -----------------------------------------------------------
 
   const startNextLeg = React.useCallback(() => {
+    // nouvelle manche = on reset l'état de manche,
+    // et on efface l'historique d'UNDO (UNDO limité à la manche courante)
     setState((prev) => goToNextLeg(prev, config));
+    dartsHistoryRef.current = [];
   }, [config]);
 
   // -----------------------------------------------------------
@@ -835,8 +839,8 @@ export function useX01EngineV3({
     scores: state.scores,
     status: state.status,
     throwDart,
-    undoLastDart,   // utilisé si tu veux un UNDO "interne"
-    rebuildFromDarts, // 🔥 pour X01PlayV3 + autosave / ANNULER global
+    undoLastDart,    // 👉 à brancher sur la touche ANNULER du keypad
+    rebuildFromDarts, // 👉 pour reconstruire depuis un historique externe
     startNextLeg,
   };
 }
