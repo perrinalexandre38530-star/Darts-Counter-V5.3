@@ -2102,16 +2102,12 @@ function LocalProfilesRefonte({
   onCreate: (
     name: string,
     file?: File | null,
-    privateInfo?: Partial<{
-      country?: string;
-    }>
+    privateInfo?: Partial<{ country?: string }>
   ) => void;
   onRename: (id: string, name: string) => void;
   onPatchPrivateInfo: (
     id: string,
-    patch: Partial<{
-      country?: string;
-    }>
+    patch: Partial<{ country?: string }>
   ) => void;
   onAvatar: (id: string, file: File) => void;
   onDelete: (id: string) => void;
@@ -2121,6 +2117,7 @@ function LocalProfilesRefonte({
   const { t } = useLang();
   const primary = theme.primary;
 
+  // on enlève seulement le profil actif du carrousel
   const locals = React.useMemo(
     () => profiles.filter((p) => p.id !== activeProfileId),
     [profiles, activeProfileId]
@@ -2144,17 +2141,20 @@ function LocalProfilesRefonte({
 
   const current = locals[index] || null;
 
-  // ✅ mêmes stats que le menu Profils locaux
-  const stats = useBasicStats(current?.id);
+  // 🔥 mêmes stats que GoldMiniStats / menu profils locaux
+  const bs = useBasicStats(current?.id);
+
+  const avg3 = Number.isFinite(bs.avg3) ? Number(bs.avg3) : 0;
+  const bestVisit = Number(bs.bestVisit ?? 0);
+  const bestCheckout = Number(bs.bestCheckout ?? 0);
+  const winPct = Math.round(Number(bs.winRate ?? 0));
 
   React.useEffect(() => {
     setIsEditing(false);
     setEditFile(null);
     setEditPreview(null);
     if (current) {
-      const pi = ((current as any).privateInfo || {}) as {
-        country?: string;
-      };
+      const pi = ((current as any).privateInfo || {}) as { country?: string };
       setEditName(current.name || "");
       setEditCountry(pi.country || "");
     } else {
@@ -2173,25 +2173,15 @@ function LocalProfilesRefonte({
     r.readAsDataURL(editFile);
   }, [editFile]);
 
-  const avg3 = Number.isFinite(stats.avg3) ? stats.avg3 : 0;
-  const bestVisit = Number(stats.bestVisit ?? 0);
-  const bestCheckout = Number(stats.bestCheckout ?? 0);
-  const winPct = Math.round(Number(stats.winRate ?? 0));
-
   function handleSaveEdit() {
     if (!current) return;
     const trimmedName = editName.trim();
     const trimmedCountry = editCountry.trim();
 
-    if (trimmedName) {
-      onRename(current.id, trimmedName);
-    }
-    onPatchPrivateInfo(current.id, {
-      country: trimmedCountry || "",
-    });
-    if (editFile) {
-      onAvatar(current.id, editFile);
-    }
+    if (trimmedName) onRename(current.id, trimmedName);
+    onPatchPrivateInfo(current.id, { country: trimmedCountry || "" });
+    if (editFile) onAvatar(current.id, editFile);
+
     setIsEditing(false);
     setEditFile(null);
     setEditPreview(null);
@@ -2251,10 +2241,7 @@ function LocalProfilesRefonte({
                 setIndex((i) => (i <= 0 ? locals.length - 1 : i - 1))
               }
               disabled={locals.length <= 1}
-              style={{
-                minWidth: 36,
-                opacity: locals.length <= 1 ? 0.4 : 1,
-              }}
+              style={{ minWidth: 36, opacity: locals.length <= 1 ? 0.4 : 1 }}
             >
               ◂
             </button>
@@ -2283,10 +2270,7 @@ function LocalProfilesRefonte({
                 setIndex((i) => (i >= locals.length - 1 ? 0 : i + 1))
               }
               disabled={locals.length <= 1}
-              style={{
-                minWidth: 36,
-                opacity: locals.length <= 1 ? 0.4 : 1,
-              }}
+              style={{ minWidth: 36, opacity: locals.length <= 1 ? 0.4 : 1 }}
             >
               ▸
             </button>
@@ -2294,7 +2278,7 @@ function LocalProfilesRefonte({
 
           {current && (
             <>
-              {/* Médaillon central GROS + StarRing */}
+              {/* Médaillon central GROS + StarRing alimenté par avg3 */}
               <div
                 style={{
                   display: "flex",
@@ -2343,12 +2327,7 @@ function LocalProfilesRefonte({
               </div>
 
               {/* Nom + drapeau pays */}
-              <div
-                style={{
-                  textAlign: "center",
-                  marginBottom: 10,
-                }}
-              >
+              <div style={{ textAlign: "center", marginBottom: 10 }}>
                 <div
                   style={{
                     fontWeight: 800,
@@ -2440,192 +2419,8 @@ function LocalProfilesRefonte({
                 />
               </div>
 
-              {/* Actions principales — une seule ligne */}
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "nowrap",
-                  justifyContent: "space-between",
-                  gap: 6,
-                  marginBottom: isEditing ? 10 : 0,
-                  overflowX: "auto",
-                  paddingBottom: 2,
-                }}
-              >
-                <button
-                  className="btn sm"
-                  onClick={() => setIsEditing((v) => !v)}
-                  style={{ flex: 1, minWidth: 90 }}
-                >
-                  {t("profiles.locals.btn.edit", "ÉDITER")}
-                </button>
-
-                <button
-                  className="btn sm"
-                  onClick={() => onOpenAvatarCreator?.()}
-                  style={{
-                    flex: 1,
-                    minWidth: 110,
-                    background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
-                    color: "#000",
-                    fontWeight: 800,
-                  }}
-                >
-                  {t("profiles.locals.btn.avatarCreator", "CRÉER AVATAR")}
-                </button>
-
-                <button
-                  className="btn danger sm"
-                  onClick={() => {
-                    const ok = confirm(
-                      t(
-                        "profiles.locals.confirmDelete",
-                        "Supprimer ce profil local ?"
-                      )
-                    );
-                    if (ok) onDelete(current.id);
-                  }}
-                  style={{ flex: 1, minWidth: 90 }}
-                >
-                  {t("profiles.locals.btn.delete", "SUPPRIMER")}
-                </button>
-              </div>
-
-              {/* Bloc édition détaillée */}
-              {isEditing && (
-                <div
-                  style={{
-                    marginTop: 10,
-                    paddingTop: 10,
-                    borderTop: `1px dashed ${theme.borderSoft}`,
-                    display: "grid",
-                    gap: 8,
-                  }}
-                >
-                  <div
-                    className="subtitle"
-                    style={{ fontSize: 11, color: theme.textSoft }}
-                  >
-                    {t(
-                      "profiles.locals.edit.hint",
-                      "Modifier l’avatar, le nom et le pays de ce profil local."
-                    )}
-                  </div>
-
-                  <div
-                    className="row"
-                    style={{
-                      gap: 10,
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <label
-                      style={{
-                        width: 60,
-                        height: 60,
-                        borderRadius: "50%",
-                        overflow: "hidden",
-                        border: `2px solid ${primary}66`,
-                        cursor: "pointer",
-                        display: "grid",
-                        placeItems: "center",
-                        background: "#111118",
-                      }}
-                    >
-                      <input
-                        type="file"
-                        accept="image/*"
-                        style={{ display: "none" }}
-                        onChange={(e) =>
-                          setEditFile(e.target.files?.[0] ?? null)
-                        }
-                      />
-                      {editPreview ? (
-                        <img
-                          src={editPreview}
-                          alt="avatar"
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                          }}
-                        />
-                      ) : (
-                        <span
-                          className="subtitle"
-                          style={{ fontSize: 10, color: "#AAA" }}
-                        >
-                          {t(
-                            "profiles.locals.edit.avatar",
-                            "Charger image"
-                          )}
-                        </span>
-                      )}
-                    </label>
-
-                    <div
-                      style={{
-                        flex: 1,
-                        minWidth: 160,
-                        display: "grid",
-                        gap: 6,
-                      }}
-                    >
-                      <input
-                        className="input"
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        placeholder={t(
-                          "profiles.locals.add.placeholder",
-                          "Nom du profil"
-                        )}
-                      />
-                      <input
-                        className="input"
-                        value={editCountry}
-                        onChange={(e) => setEditCountry(e.target.value)}
-                        placeholder={t(
-                          "profiles.private.country",
-                          "Pays"
-                        )}
-                      />
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "flex-end",
-                      gap: 8,
-                      marginTop: 4,
-                    }}
-                  >
-                    <button
-                      className="btn sm"
-                      onClick={() => {
-                        setIsEditing(false);
-                        setEditFile(null);
-                        setEditPreview(null);
-                        if (current) {
-                          const pi = ((current as any).privateInfo ||
-                            {}) as { country?: string };
-                          setEditName(current.name || "");
-                          setEditCountry(pi.country || "");
-                        }
-                      }}
-                    >
-                      {t("common.cancel", "Annuler")}
-                    </button>
-                    <button
-                      className="btn ok sm"
-                      onClick={handleSaveEdit}
-                    >
-                      {t("common.save", "Enregistrer")}
-                    </button>
-                  </div>
-                </div>
-              )}
+              {/* Actions + bloc édition -> tu gardes ton code actuel ici */}
+              {/* ... */}
             </>
           )}
         </div>
@@ -2633,7 +2428,6 @@ function LocalProfilesRefonte({
     </div>
   );
 }
-
 
 /* ----- Formulaire d’ajout local (refondu) ----- */
 

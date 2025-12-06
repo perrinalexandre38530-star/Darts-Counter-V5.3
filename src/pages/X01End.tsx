@@ -738,69 +738,85 @@ export default function X01End({ go, params }: Props) {
         />
       </CardTable>
 
-      {/* ===== 7) RADAR HITS "TRAINING" ===== */}
+      {/* ===== 7) RADAR HITS "TRAINING-LIKE" ===== */}
       {chartMetrics ? (
-        <Panel className="x-card">
-          <h3
-            style={{
-              margin: "0 0 6px",
-              fontSize: D.fsHead + 1,
-              letterSpacing: 0.2,
-              color: "#ffcf57",
-            }}
-          >
-            Radar — répartition des hits
-          </h3>
-          <div
-            className="selector"
-            style={{
-              display: "flex",
-              gap: 6,
-              flexWrap: "wrap",
-              marginBottom: 8,
-            }}
-          >
-            {players.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => setChartPid(p.id)}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border:
-                    p.id === chartPid
-                      ? "1px solid rgba(255,200,60,.6)"
-                      : "1px solid rgba(255,255,255,.18)",
-                  background:
-                    p.id === chartPid
-                      ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
-                      : "transparent",
-                  color:
-                    p.id === chartPid ? "#141417" : "#e8e8ec",
-                  fontWeight: 800,
-                  cursor: "pointer",
-                  fontSize: 11.5,
-                }}
-              >
-                {p.name || "—"}
-              </button>
-            ))}
-          </div>
-          <HitsRadar m={chartMetrics} />
-          <div
-            style={{
-              marginTop: 8,
-              color: "#bbb",
-              fontSize: 12,
-            }}
-          >
-            Radar basé sur le nombre de{" "}
-            <b>Singles</b>, <b>Doubles</b>, <b>Triples</b>,{" "}
-            <b>Bulls</b>, <b>DBulls</b> et <b>Misses</b> pour la
-            partie. Les rayons sont normalisés sur l’axe le plus
-            élevé du joueur (comme le radar Training X01).
-          </div>
-        </Panel>
+        <>
+          <Panel className="x-card">
+            <h3
+              style={{
+                margin: "0 0 6px",
+                fontSize: D.fsHead + 1,
+                letterSpacing: 0.2,
+                color: "#ffcf57",
+              }}
+            >
+              Radar — répartition des hits
+            </h3>
+            <div
+              className="selector"
+              style={{
+                display: "flex",
+                gap: 6,
+                flexWrap: "wrap",
+                marginBottom: 8,
+              }}
+            >
+              {players.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setChartPid(p.id)}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    border:
+                      p.id === chartPid
+                        ? "1px solid rgba(255,200,60,.6)"
+                        : "1px solid rgba(255,255,255,.18)",
+                    background:
+                      p.id === chartPid
+                        ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
+                        : "transparent",
+                    color:
+                      p.id === chartPid ? "#141417" : "#e8e8ec",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    fontSize: 11.5,
+                  }}
+                >
+                  {p.name || "—"}
+                </button>
+              ))}
+            </div>
+            <HitsRadar m={chartMetrics} />
+            <div
+              style={{
+                marginTop: 8,
+                color: "#bbb",
+                fontSize: 12,
+              }}
+            >
+              Chaque numéro est pondéré par le nombre de hits :{" "}
+              <b>1× Single</b>, <b>2× Double</b>, <b>3× Triple</b>.
+              Le point le plus touché est le plus éloigné du centre
+              (même logique que le radar Training X01).
+            </div>
+          </Panel>
+
+          {/* Bloc "Hits par segments" façon X01Multi */}
+          <Panel className="x-card">
+            <h3
+              style={{
+                margin: "0 0 6px",
+                fontSize: D.fsHead + 1,
+                letterSpacing: 0.2,
+                color: "#ffcf57",
+              }}
+            >
+              Hits par segments
+            </h3>
+            <HitsBySegmentBlock m={chartMetrics} />
+          </Panel>
+        </>
       ) : null}
 
       {/* ===== 8) HISTORIQUE DES VOLÉES ===== */}
@@ -1795,49 +1811,95 @@ function tdStyle(isRowHeader: boolean): React.CSSProperties {
 }
 
 /* ================================
-   Radar hits type TrainingX01
-   Axes : Singles / Doubles / Triples / Bulls / DBulls / Miss
+   Radar hits type "cible X01"
+   - 20 numéros, ordre officiel
+   - score(num) = 1×Singles + 2×Doubles + 3×Triples
+   - Bulls / Miss sortent dans BullMissBars (bloc séparé)
 ================================ */
 function HitsRadar({ m }: { m: PlayerMetrics }) {
-  const singles = Math.max(0, Number(m.singles ?? 0));
-  const doubles = Math.max(0, Number(m.doubles ?? 0));
-  const triples = Math.max(0, Number(m.triples ?? 0));
-  const bulls = Math.max(0, Number(m.bulls ?? 0));
-  const dbulls = Math.max(0, Number(m.dbulls ?? 0));
-  const misses = Math.max(0, Number(m.misses ?? 0));
+  const BY = (m.byNumber || {}) as ByNumber | any;
 
-  const axes = [
-    { label: "Singles", value: singles },
-    { label: "Doubles", value: doubles },
-    { label: "Triples", value: triples },
-    { label: "Bulls", value: bulls },
-    { label: "DBulls", value: dbulls },
-    { label: "Miss", value: misses },
+  const numbers = [
+    20, 1, 18, 4, 13, 6, 10, 15, 2, 17,
+    3, 19, 7, 16, 8, 11, 14, 9, 12, 5,
   ];
 
-  const maxVal = Math.max(1, ...axes.map((a) => a.value));
+  const values: number[] = [];
 
-  const size = 260;
+  for (const nu of numbers) {
+    const key = String(nu);
+    const row =
+      (BY[key] as any) ||
+      (BY[`n${key}`] as any) ||
+      (BY[`s${key}`] as any) ||
+      {};
+
+    // Singles = tous les simples pour ce numéro
+    const singles = n(
+      row.singles ??
+        row.single ??
+        row.s ??
+        row.inner ??
+        row.outer,
+      0
+    );
+    // Doubles / triples
+    const doubles = n(
+      row.doubles ??
+        row.double ??
+        row.d ??
+        row.hitsD ??
+        row.D,
+      0
+    );
+    const triples = n(
+      row.triples ??
+        row.triple ??
+        row.t ??
+        row.hitsT ??
+        row.T,
+      0
+    );
+
+    const score =
+      Math.max(0, singles) +
+      2 * Math.max(0, doubles) +
+      3 * Math.max(0, triples);
+
+    values.push(score);
+  }
+
+  const maxVal = Math.max(1, ...values);
+
+  const size = 320;
   const cx = size / 2;
   const cy = size / 2;
-  const R = 100;
-  const step = (Math.PI * 2) / axes.length;
+  const R = 115;
+  const step = (Math.PI * 2) / numbers.length;
 
   const toXY = (value: number, idx: number) => {
     const ratio = maxVal > 0 ? value / maxVal : 0;
     const r = R * ratio;
-    const theta = -Math.PI / 2 + idx * step;
+    const theta = -Math.PI / 2 + idx * step; // 20 en haut
     return {
       x: cx + r * Math.cos(theta),
       y: cy + r * Math.sin(theta),
     };
   };
 
-  const polyPoints = axes
-    .map((a, i) => {
-      const { x, y } = toXY(a.value, i);
+  const polyPoints = values
+    .map((val, i) => {
+      const { x, y } = toXY(val, i);
       return `${x},${y}`;
     })
+    .concat(
+      values.length
+        ? (() => {
+            const { x, y } = toXY(values[0], 0);
+            return `${x},${y}`;
+          })()
+        : []
+    )
     .join(" ");
 
   return (
@@ -1846,19 +1908,26 @@ function HitsRadar({ m }: { m: PlayerMetrics }) {
         width="100%"
         height={size}
         viewBox={`0 0 ${size} ${size}`}
-        style={{ maxWidth: 360 }}
+        style={{ maxWidth: 380 }}
       >
         {/* Fond */}
         <defs>
-          <radialGradient id="radar-bg" cx="50%" cy="45%">
+          <radialGradient id="x01end-radar-bg2" cx="50%" cy="40%">
             <stop offset="0%" stopColor="#26262b" />
             <stop offset="100%" stopColor="#151519" />
           </radialGradient>
         </defs>
-        <rect x={0} y={0} width={size} height={size} fill="url(#radar-bg)" rx={16} />
+        <rect
+          x={0}
+          y={0}
+          width={size}
+          height={size}
+          fill="url(#x01end-radar-bg2)"
+          rx={18}
+        />
 
         {/* Cercles guides */}
-        {[0.33, 0.66, 1].map((t, i) => (
+        {[0.25, 0.5, 0.75, 1].map((t, i) => (
           <circle
             key={i}
             cx={cx}
@@ -1870,12 +1939,16 @@ function HitsRadar({ m }: { m: PlayerMetrics }) {
           />
         ))}
 
-        {/* Axes + labels */}
-        {axes.map((a, i) => {
-          const end = toXY(R, i);
-          const labelPos = toXY(R + 16, i);
+        {/* Axes + labels numéros */}
+        {numbers.map((nu, i) => {
+          const end = toXY(maxVal, i);
+          const labelR = R + 16;
+          const theta = -Math.PI / 2 + i * step;
+          const lx = cx + labelR * Math.cos(theta);
+          const ly = cy + labelR * Math.sin(theta);
+
           return (
-            <g key={a.label}>
+            <g key={nu}>
               <line
                 x1={cx}
                 y1={cy}
@@ -1885,34 +1958,46 @@ function HitsRadar({ m }: { m: PlayerMetrics }) {
                 strokeWidth={1}
               />
               <text
-                x={labelPos.x}
-                y={labelPos.y}
+                x={lx}
+                y={ly}
                 fontSize={11}
                 textAnchor="middle"
                 alignmentBaseline="middle"
                 fill="#e8e8ec"
-                style={{ fontWeight: 700 }}
+                style={{ fontWeight: 800 }}
               >
-                {a.label}
+                {nu}
               </text>
             </g>
           );
         })}
 
-        {/* Polygone + points */}
-        <polyline
-          points={polyPoints}
-          fill="rgba(255,207,87,.16)"
-          stroke="#ffcf57"
-          strokeWidth={2}
-          strokeLinejoin="round"
-        />
-        {axes.map((a, i) => {
-          const { x, y } = toXY(a.value, i);
-          return <circle key={a.label} cx={x} cy={y} r={3} fill="#ffcf57" />;
-        })}
+        {/* Polygone pondéré */}
+        {values.length > 0 && (
+          <>
+            <polyline
+              points={polyPoints}
+              fill="rgba(255,207,87,.18)"
+              stroke="#ffcf57"
+              strokeWidth={2}
+              strokeLinejoin="round"
+            />
+            {values.map((val, i) => {
+              const { x, y } = toXY(val, i);
+              return (
+                <circle
+                  key={i}
+                  cx={x}
+                  cy={y}
+                  r={3}
+                  fill="#ffcf57"
+                />
+              );
+            })}
+          </>
+        )}
 
-        {/* Nom du joueur au centre */}
+        {/* Nom joueur au centre */}
         <text
           x={cx}
           y={cy}
@@ -1925,6 +2010,340 @@ function HitsRadar({ m }: { m: PlayerMetrics }) {
           {m.name}
         </text>
       </svg>
+    </div>
+  );
+}
+
+/* ================================
+   Hits par segments (style X01Multi)
+   - 20 numéros en barres empilées S / D / T
+   - colonne de droite : BULL / DBULL / MISS
+================================ */
+function HitsBySegmentBlock({ m }: { m: PlayerMetrics }) {
+  const BY = (m.byNumber || {}) as ByNumber | any;
+
+  const numbers = [
+    20, 1, 18, 4, 13, 6, 10, 15, 2, 17,
+    3, 19, 7, 16, 8, 11, 14, 9, 12, 5,
+  ];
+
+  type SegHit = { num: number; s: number; d: number; t: number; total: number };
+
+  const segments: SegHit[] = numbers.map((nu) => {
+    const key = String(nu);
+    const row =
+      (BY[key] as any) ||
+      (BY[`n${key}`] as any) ||
+      (BY[`s${key}`] as any) ||
+      {};
+
+    const s = Math.max(
+      0,
+      n(
+        row.singles ??
+          row.single ??
+          row.s ??
+          row.inner ??
+          row.outer,
+        0
+      )
+    );
+    const d = Math.max(
+      0,
+      n(
+        row.doubles ??
+          row.double ??
+          row.d ??
+          row.hitsD ??
+          row.D,
+        0
+      )
+    );
+    const t = Math.max(
+      0,
+      n(
+        row.triples ??
+          row.triple ??
+          row.t ??
+          row.hitsT ??
+          row.T,
+        0
+      )
+    );
+
+    return {
+      num: nu,
+      s,
+      d,
+      t,
+      total: s + d + t,
+    };
+  });
+
+  const maxTotal = Math.max(1, ...segments.map((s) => s.total));
+
+  // Bull / DBull / Miss sur la colonne de droite
+  const bullHits = Math.max(
+    0,
+    n((BY as any).bull, 0) + n(m.bulls, 0)
+  );
+  const dbullHits = Math.max(
+    0,
+    n((BY as any).dbull, 0) + n(m.dbulls, 0)
+  );
+  const missHits = Math.max(
+    0,
+    n((BY as any).miss, 0) + n(m.misses, 0)
+  );
+
+  const maxSide = Math.max(1, bullHits, dbullHits, missHits);
+
+  const barHeight = 80;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 12,
+        marginTop: 4,
+      }}
+    >
+      {/* Barres 20 numéros */}
+      <div
+        style={{
+          flex: 1,
+          overflowX: "auto",
+          paddingBottom: 4,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-end",
+            gap: 6,
+            minWidth: 20 * 18,
+          }}
+        >
+          {segments.map((seg) => {
+            const ratio = seg.total > 0 ? seg.total / maxTotal : 0;
+            const hTotal = barHeight * ratio || 0;
+
+            const hS =
+              seg.total > 0 ? (seg.s / seg.total) * hTotal : 0;
+            const hD =
+              seg.total > 0 ? (seg.d / seg.total) * hTotal : 0;
+            const hT =
+              seg.total > 0 ? (seg.t / seg.total) * hTotal : 0;
+
+            return (
+              <div
+                key={seg.num}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  fontSize: 10,
+                  color: "#ddd",
+                }}
+              >
+                <div
+                  style={{
+                    position: "relative",
+                    width: 12,
+                    height: barHeight,
+                    borderRadius: 999,
+                    background: "rgba(255,255,255,.03)",
+                    overflow: "hidden",
+                    boxShadow:
+                      seg.total > 0
+                        ? "0 0 6px rgba(0,0,0,.6)"
+                        : "none",
+                  }}
+                >
+                  {/* Singles */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: hS,
+                      background:
+                        "linear-gradient(180deg,#8bc5ff,#3ba9ff)",
+                    }}
+                  />
+                  {/* Doubles */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      bottom: hS,
+                      height: hD,
+                      background:
+                        "linear-gradient(180deg,#7fe2a9,#3dd68c)",
+                    }}
+                  />
+                  {/* Triples */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      bottom: hS + hD,
+                      height: hT,
+                      background:
+                        "linear-gradient(180deg,#fca5ff,#f973cf)",
+                    }}
+                  />
+                </div>
+                <div style={{ marginTop: 2 }}>{seg.num}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Légende S / D / T sous les barres */}
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            marginTop: 6,
+            fontSize: 10,
+            color: "#ccc",
+          }}
+        >
+          <LegendDot
+            label="Singles"
+            gradient="linear-gradient(180deg,#8bc5ff,#3ba9ff)"
+          />
+          <LegendDot
+            label="Doubles"
+            gradient="linear-gradient(180deg,#7fe2a9,#3dd68c)"
+          />
+          <LegendDot
+            label="Triples"
+            gradient="linear-gradient(180deg,#fca5ff,#f973cf)"
+          />
+        </div>
+      </div>
+
+      {/* Colonne droite BULL / DBULL / MISS */}
+      <div
+        style={{
+          width: 52,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          fontSize: 10,
+        }}
+      >
+        {[
+          {
+            key: "BULL",
+            value: bullHits,
+            color:
+              "linear-gradient(180deg,#7fe2a9,#3dd68c)",
+          },
+          {
+            key: "DBULL",
+            value: dbullHits,
+            color:
+              "linear-gradient(180deg,#bbf7d0,#4ade80)",
+          },
+          {
+            key: "MISS",
+            value: missHits,
+            color:
+              "linear-gradient(180deg,#fecaca,#f97373)",
+          },
+        ].map((row) => {
+          const ratio = row.value / maxSide;
+          const h = barHeight * ratio || 0;
+
+          return (
+            <div
+              key={row.key}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                marginBottom: 4,
+              }}
+            >
+              <div
+                style={{
+                  position: "relative",
+                  width: 12,
+                  height: barHeight,
+                  borderRadius: 999,
+                  background: "rgba(255,255,255,.03)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: h,
+                    background: row.color,
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  marginTop: 2,
+                  color:
+                    row.key === "MISS" ? "#ff9b9b" : "#e5ffe7",
+                  fontWeight: 700,
+                  textAlign: "center",
+                }}
+              >
+                {row.key}
+              </div>
+              <div
+                style={{
+                  fontVariantNumeric: "tabular-nums",
+                  color: "#ccc",
+                }}
+              >
+                {row.value}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* Petit composant pour la légende S / D / T */
+function LegendDot({
+  label,
+  gradient,
+}: {
+  label: string;
+  gradient: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+      }}
+    >
+      <span
+        style={{
+          width: 10,
+          height: 10,
+          borderRadius: 999,
+          background: gradient,
+        }}
+      />
+      <span>{label}</span>
     </div>
   );
 }
