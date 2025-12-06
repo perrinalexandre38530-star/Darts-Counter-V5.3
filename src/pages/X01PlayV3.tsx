@@ -24,6 +24,10 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import { History } from "../lib/history";
 
+import EndOfLegOverlay from "../components/EndOfLegOverlay";
+import type { LegStats } from "../lib/stats";
+import { buildLegStatsFromV3LiveForOverlay } from "../lib/x01v3/x01V3LegStatsAdapter";
+
 // ---------------- Constantes visuelles / autosave ----------------
 
 const NAV_HEIGHT = 64;
@@ -559,6 +563,26 @@ export default function X01PlayV3({
   const isReplayingRef = React.useRef(false);
   const hasReplayedRef = React.useRef(false);
 
+  // Overlay "Résumé de la manche" (EndOfLegOverlay)
+  const [summaryOpen, setSummaryOpen] = React.useState(false);
+  const [summaryLegStats, setSummaryLegStats] =
+    React.useState<LegStats | null>(null);
+
+  const summaryPlayersById = React.useMemo(
+    () =>
+      Object.fromEntries(
+        (config.players || []).map((p) => [
+          p.id,
+          {
+            id: p.id,
+            name: p.name || "Joueur",
+            avatarDataUrl: p.avatarDataUrl ?? null,
+          },
+        ])
+      ),
+    [config.players]
+  );
+
   const {
     state,
     liveStatsByPlayer,
@@ -566,12 +590,18 @@ export default function X01PlayV3({
     scores,
     status,
     throwDart,
-    undoLastDart,      // 🔥 nouveau : UNDO illimité du moteur V3
+    undoLastDart, // 🔥 nouveau : UNDO illimité du moteur V3
     startNextLeg,
   } = useX01EngineV3({ config });
 
   const players = config.players;
   const activePlayer = players.find((p) => p.id === activePlayerId) || null;
+
+  // Y a-t-il AU MOINS un BOT dans la partie ?
+  const hasBots = React.useMemo(
+    () => players.some((p: any) => !!(p as any).isBot),
+    [players]
+  );
 
   const setsTarget = config.setsToWin ?? 1;
   const legsTarget = config.legsPerSet ?? 1;
@@ -732,9 +762,9 @@ export default function X01PlayV3({
       }
     }
   }, [status]);
-
+  
   // =====================================================
-  // ÉTAT LOCAL KEYPAD (logique v1)
+  // ÉTAT LOCAL KEYPAD (logique v1 + synchro UNDO moteur)
   // =====================================================
 
   const [multiplier, setMultiplier] = React.useState<1 | 2 | 3>(1);
@@ -746,7 +776,77 @@ export default function X01PlayV3({
   // 🔒 garde-fou anti double-validation HUMAIN
   const isValidatingRef = React.useRef(false);
 
+  // 🔒 garde-fou BOT : (gardé si tu veux le réutiliser plus tard)
+  const botUndoGuardRef = React.useRef(false);
+
+  // 🔒 indique si currentThrow vient du moteur (rebuild / UNDO)
+  //    ou de la saisie locale sur le keypad
+  const currentThrowFromEngineRef = React.useRef(false);
+
+  // 🔄 SYNC AVEC LE MOTEUR UNIQUEMENT POUR LES CAS "ENGINE-DRIVEN"
+  //    (UNDO global, rebuild, etc.)
+  React.useEffect(() => {
+    // si ce flag est false, on NE TOUCHE PAS à currentThrow
+    // → jeu normal (humain ou bot) = aucun risque de "copier" la volée d'un autre
+    if (!currentThrowFromEngineRef.current) return;
+
+    const v: any = state.visit;
+
+    // 👉 Pas de visite active (nouveau leg / set) → on nettoie la volée locale
+    if (!v) {
+      setCurrentThrow([]);
+      return;
+    }
+
+    // Deux formats possibles selon le moteur : darts ou dartsThrown
+    const raw: UIDart[] =
+      v.darts && Array.isArray(v.darts) && v.darts.length
+        ? v.darts.map((d: any) => ({
+            v: d.segment,
+            mult: d.multiplier as 1 | 2 | 3,
+          }))
+        : v.dartsThrown && Array.isArray(v.dartsThrown) && v.dartsThrown.length
+        ? v.dartsThrown.map((d: any) => ({
+            v: d.value,
+            mult: d.mult as 1 | 2 | 3,
+          }))
+        : [];
+
+    // 👉 Visite active mais sans fléchette → on vide aussi
+    if (!raw.length) {
+      setCurrentThrow([]);
+      return;
+    }
+
+    setCurrentThrow((prev) => {
+      // si c'est déjà identique, on ne touche pas pour éviter les boucles
+      if (
+        prev.length === raw.length &&
+        prev.every((d, i) => d.v === raw[i].v && d.mult === raw[i].mult)
+      ) {
+        return prev;
+      }
+      return raw;
+    });
+  }, [state]);
+
+  // 🔄 CHANGEMENT DE JOUEUR ACTIF → on vide la volée locale
+  //    (sauf en cas d'UNDO/rebuild où c'est le moteur qui pilote)
+  React.useEffect(() => {
+    if (currentThrowFromEngineRef.current) {
+      // si on est dans un cycle piloté par le moteur (UNDO),
+      // on laisse l'autre effet gérer la synchro
+      return;
+    }
+    // nouveau joueur (humain ou bot) → on repart sur une volée vide
+    setCurrentThrow([]);
+    setMultiplier(1);
+  }, [activePlayerId]);
+
   function pushDart(value: number) {
+    // Saisie locale → ce n'est plus un état reconstruit par le moteur
+    currentThrowFromEngineRef.current = false;
+
     setCurrentThrow((prev) => {
       if (prev.length >= 3) return prev;
       const next: UIDart = { v: value, mult: multiplier } as UIDart;
@@ -765,43 +865,59 @@ export default function X01PlayV3({
   };
 
   const handleBackspace = () => {
+    // Backspace = édition locale uniquement
+    currentThrowFromEngineRef.current = false;
     setCurrentThrow((prev) => prev.slice(0, -1));
   };
 
   const handleCancel = () => {
-    // 1) Si une volée est en cours -> on enlève UNIQUEMENT le dernier hit
-    if (currentThrow.length > 0) {
+    // 1) Si une volée saisie LOCALLEMENT est en cours -> on enlève UNIQUEMENT le dernier hit
+    if (currentThrow.length > 0 && !currentThrowFromEngineRef.current) {
       setCurrentThrow((prev) => prev.slice(0, -1));
       setMultiplier(1);
       return;
     }
 
-    // 2) Sinon -> UNDO GLOBAL : on remonte d'UN dart dans tout le match
+    // 2) Sinon -> UNDO GLOBAL : on remonte d'UN dart dans tout le match (moteur V3)
     if (!replayDartsRef.current.length) {
       // rien à annuler
       return;
     }
 
+    // 🛡️ on indique qu'on est en train de faire un UNDO global,
+    // pour empêcher des effets secondaires côté BOT
+    botUndoGuardRef.current = true;
+
     // On enlève la DERNIÈRE fléchette du log global (autosave)
     replayDartsRef.current.pop();
+
+    // 👉 à partir d'ici, on veut que ce soit le moteur qui
+    //     reconduise currentThrow (visit partielle du bon joueur)
+    currentThrowFromEngineRef.current = true;
 
     // On demande au moteur V3 de revenir d'un dart en arrière
     undoLastDart();
 
     // On persiste l'autosave avec une fléchette en moins
     persistAutosave();
+
+    // On relâche le garde BOT juste après ce cycle de rendu
+    setTimeout(() => {
+      botUndoGuardRef.current = false;
+    }, 0);
   };
 
   const validateThrow = () => {
-    // 🛑 pas de volée vide
+    // 🛑 volée vide
     if (!currentThrow.length) return;
-    // 🛑 si déjà en train de valider (double tap / double évènement)
+
+    // 🛑 déjà en train de valider (double tap, spam bouton, etc.)
     if (isValidatingRef.current) return;
     isValidatingRef.current = true;
 
     const toSend = [...currentThrow];
 
-    // 🔥 mémorise dernière volée pour pastilles (UI ONLY)
+    // 🔍 on mémorise la volée pour les pastilles UI
     const pid = activePlayerId;
     if (pid) {
       setLastVisitsByPlayer((m) => ({
@@ -810,24 +926,37 @@ export default function X01PlayV3({
       }));
     }
 
-    // Conversion vers input V3
+    // Conversion UI -> moteur V3
     const inputs: X01DartInputV3[] = toSend.map((d) => ({
       segment: d.v === 25 ? 25 : d.v,
       multiplier: d.mult as 1 | 2 | 3,
     }));
 
-    // moteur V3 : une fléchette = un appel
-    inputs.forEach((input) => {
-      throwDart(input);
-    });
+    // 🔐 UI : on reset tout de suite
+    setCurrentThrow([]);
+    setMultiplier(1);
+
+    // Saisie humaine → c'est la UI qui pilote, plus le moteur
+    currentThrowFromEngineRef.current = false;
 
     // Autosave : on enrichit le log complet + on persiste
     replayDartsRef.current = replayDartsRef.current.concat(inputs);
     persistAutosave();
 
-    setCurrentThrow([]);
-    setMultiplier(1);
-    isValidatingRef.current = false;
+    // ⚠️ POINT CRITIQUE :
+    // On NE fait PLUS un forEach synchrone.
+    // On enchaîne les darts avec de petits setTimeout pour
+    // laisser React appliquer le nouvel état entre chaque dart.
+    inputs.forEach((input, index) => {
+      setTimeout(() => {
+        throwDart(input);
+
+        // dernière fléchette : on relâche le verrou
+        if (index === inputs.length - 1) {
+          isValidatingRef.current = false;
+        }
+      }, index * 10); // 0 / 10 / 20 ms → invisible pour le joueur
+    });
   };
 
   // =====================================================
@@ -963,7 +1092,7 @@ export default function X01PlayV3({
     };
   }, []);
 
-  // =====================================================
+   // =====================================================
   // Quitter / Rejouer / Résumé / Continuer
   // =====================================================
 
@@ -996,11 +1125,28 @@ export default function X01PlayV3({
     handleQuit();
   }
 
-  // RÉSUMÉ : l'overlay envoie toujours un matchId: string
-  function handleShowSummary(matchId: string) {
-    if (!onShowSummary) return;
-    const id = matchId || (state as any).matchId || "";
-    onShowSummary(id);
+  // RÉSUMÉ : on construit un LegStats à partir du moteur V3 + liveStats
+  function handleShowSummary(_matchId: string) {
+    try {
+      const summaryRaw: any = (state as any)?.summary || {};
+      const legStats = buildLegStatsFromV3LiveForOverlay(
+        config,
+        state as any,
+        liveStatsByPlayer as any,
+        scores as any,
+        summaryRaw
+      );
+
+      setSummaryLegStats(legStats);
+      setSummaryOpen(true);
+    } catch (err) {
+      console.warn("[X01PlayV3] failed to build LegStats for summary", err);
+      // fallback : si jamais ça casse, on garde l'ancien comportement
+      if (onShowSummary) {
+        const id = _matchId || (state as any).matchId || "";
+        onShowSummary(id);
+      }
+    }
   }
 
   // CONTINUER (3+ joueurs) : on laisse le moteur passer à la suite
@@ -1033,21 +1179,47 @@ export default function X01PlayV3({
   // BOT : tour auto si joueur courant est un BOT
   // =====================================================
 
-  const isBotTurn = !!(activePlayer && (activePlayer as any).isBot);
-  const currentSetIndex = (state as any).currentSet ?? 1;
-  const currentLegIndex = (state as any).currentLeg ?? 1;
+  const isBotTurn =
+    !!activePlayer && Boolean((activePlayer as any).isBot);
 
   React.useEffect(() => {
-    // Pendant la reprise depuis autosave, on NE JOUE PAS les bots
-    if (isReplayingRef.current) return;
+    console.log("[X01PlayV3][BOT] effect run", {
+      activePlayerId,
+      activePlayerName: activePlayer?.name,
+      isBotTurn,
+      status,
+      isReplaying: isReplayingRef.current,
+    });
 
+    // 0) Pendant la reprise depuis autosave, on NE JOUE PAS les bots
+    if (isReplayingRef.current) {
+      console.log("[X01PlayV3][BOT] stop: replaying autosave");
+      return;
+    }
+
+    // 🛡️ Pendant un UNDO global déclenché par ANNULER,
+    // on ne lance PAS une nouvelle volée de BOT.
+    if (botUndoGuardRef.current) {
+      console.log("[X01PlayV3][BOT] stop: undo in progress");
+      return;
+    }
+
+    // 1) Si ce n'est pas un tour de BOT → on ne fait rien
+    if (!isBotTurn || !activePlayer) {
+      console.log("[X01PlayV3][BOT] stop: not bot turn", {
+        isBotTurn,
+        hasActivePlayer: !!activePlayer,
+      });
+      return;
+    }
+
+    // 2) Si on est en fin de manche / set / match → on ne joue pas
     if (
-      !activePlayer ||
-      !(activePlayer as any).isBot ||
       status === "leg_end" ||
       status === "set_end" ||
       status === "match_end"
     ) {
+      console.log("[X01PlayV3][BOT] stop: end status", { status });
       return;
     }
 
@@ -1055,63 +1227,91 @@ export default function X01PlayV3({
     const scoreNow = scores[pid] ?? config.startScore;
     const level = ((activePlayer as any).botLevel as BotLevel) ?? "easy";
 
-// style optionnel côté profil (sinon dérivé du niveau)
-const style =
-  ((activePlayer as any).botStyle as BotStyle) ?? undefined;
+    console.log("[X01PlayV3][BOT] scheduling bot visit", {
+      pid,
+      name: activePlayer.name,
+      scoreNow,
+      level,
+    });
 
-const timeout = setTimeout(() => {
-  const visit = computeBotVisit(level, scoreNow, doubleOut);
+    const timeout = window.setTimeout(() => {
+      console.log("[X01PlayV3][BOT] timeout fired", {
+        activePlayerId,
+        status,
+      });
 
-  // UI : mémorise la volée du BOT ...
+      // on relit le joueur courant AU MOMENT DU TIR
+      const currentActive = players.find(
+        (p: any) => p.id === activePlayerId
+      );
+      const stillBot =
+        !!currentActive && Boolean((currentActive as any).isBot);
+
+      if (!stillBot) {
+        console.log(
+          "[X01PlayV3][BOT] abort: no longer bot active",
+          { currentActiveName: currentActive?.name }
+        );
+        return;
+      }
+
+      if (
+        status === "leg_end" ||
+        status === "set_end" ||
+        status === "match_end"
+      ) {
+        console.log(
+          "[X01PlayV3][BOT] abort: status changed to end",
+          { status }
+        );
+        return;
+      }
+
+      const visit = computeBotVisit(level, scoreNow, doubleOut);
+      console.log("[X01PlayV3][BOT] visit computed", visit);
+
+      // UI : mémorise la volée du BOT
       setLastVisitsByPlayer((m) => ({
         ...m,
         [pid]: visit,
       }));
 
-      const inputs: X01DartInputV3[] = [];
+      // Transforme la volée en inputs V3
+      const inputs: X01DartInputV3[] = visit.map((d) => {
+        if (d.v <= 0) {
+          // MISS
+          return { segment: 0, multiplier: 1 };
+        }
+        return {
+          segment: d.v === 25 ? 25 : d.v,
+          multiplier: d.mult as 1 | 2 | 3,
+        };
+      });
 
-      // AU LIEU DE TOUT JOUER D'UN COUP → ON JOUE UNE FLÉCHETTE APRÈS L'AUTRE
-visit.forEach((d, index) => {
-  setTimeout(() => {
-    let input: X01DartInputV3;
-
-    if (d.v <= 0) {
-      // MISS
-      input = { segment: 0, multiplier: 1 };
-    } else {
-      input = {
-        segment: d.v === 25 ? 25 : d.v,
-        multiplier: d.mult as 1 | 2 | 3,
-      };
-    }
-
-    inputs.push(input);
-    throwDart(input);
-
-    // Quand la dernière fléchette est jouée → autosave
-    if (index === visit.length - 1) {
-      replayDartsRef.current = replayDartsRef.current.concat(inputs);
-      persistAutosave();
-    }
-  }, index * 550); // ⏱ délai entre chaque dart (550ms)
-});
+      // Joue TOUTE la volée (3 darts)
+      inputs.forEach((input) => {
+        throwDart(input);
+      });
 
       // Autosave : on enregistre aussi les volées des bots
       replayDartsRef.current = replayDartsRef.current.concat(inputs);
       persistAutosave();
     }, 650);
 
-    return () => clearTimeout(timeout);
+    return () => {
+      window.clearTimeout(timeout);
+    };
   }, [
+    isBotTurn,
     activePlayer,
+    activePlayerId,
     status,
     scores,
     config.startScore,
-    currentSetIndex,
-    currentLegIndex,
+    doubleOut,
+    players,
     throwDart,
     persistAutosave,
-    doubleOut,
   ]);
 
   // =====================================================
@@ -1323,6 +1523,15 @@ visit.forEach((d, index) => {
         onReplayNewConfig={handleReplayNewConfigInternal}
         onShowSummary={handleShowSummary}
         onContinueMulti={players.length >= 3 ? handleContinueMulti : undefined}
+      />
+
+      {/* OVERLAY RÉSUMÉ — gros tableau + graphs */}
+      <EndOfLegOverlay
+        open={summaryOpen && !!summaryLegStats}
+        result={summaryLegStats}
+        playersById={summaryPlayersById}
+        onClose={() => setSummaryOpen(false)}
+        onReplay={handleReplaySameConfig}
       />
     </div>
   );
@@ -2039,9 +2248,7 @@ function saveX01V3MatchToHistory({
 
   const matchId =
     state?.matchId ||
-    `x01v3-${Date.now()}-${Math.random()
-      .toString(16)
-      .slice(2)}`;
+    `x01v3-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   const createdAt = state?.createdAt || Date.now();
 
@@ -2054,16 +2261,37 @@ function saveX01V3MatchToHistory({
   const perPlayer: any[] = [];
   const detailedByPlayer: Record<string, any> = {};
 
+  // -------------------------
+  // Maps pour reconstruire un LegacyLegResult (summary.legacy)
+  // -------------------------
+  const legacyRemaining: Record<string, number> = {};
+  const legacyDarts: Record<string, number> = {};
+  const legacyVisits: Record<string, number> = {};
+  const legacyAvg3: Record<string, number> = {};
+  const legacyBestVisit: Record<string, number> = {};
+  const legacyBestCheckout: Record<string, number> = {};
+  const legacyDoubles: Record<string, number> = {};
+  const legacyTriples: Record<string, number> = {};
+  const legacyBulls: Record<string, number> = {};
+  const legacyDbulls: Record<string, number> = {};
+  const legacyMiss: Record<string, number> = {};
+  const legacyBust: Record<string, number> = {};
+  const legacyPoints: Record<string, number> = {};
+  const legacyHitsBySector: Record<string, Record<string, number>> = {};
+
   let winnerId: string | null = null;
 
+  // -------------------------
+  // Stats détaillées par joueur
+  // -------------------------
   for (const p of players as any[]) {
     const pid = p.id as string;
     const live = (liveStatsByPlayer && liveStatsByPlayer[pid]) || {};
-    const dartsThrown = live.dartsThrown ?? live.darts ?? 0;
-
     const startScore = config.startScore ?? 501;
     const scoreNow = scores[pid] ?? startScore;
     const scored = startScore - scoreNow;
+
+    const dartsThrown = live.dartsThrown ?? live.darts ?? 0;
 
     let avg3 = 0;
     if (dartsThrown > 0 && scored > 0) {
@@ -2079,35 +2307,80 @@ function saveX01V3MatchToHistory({
 
     // 🔍 Stats détaillées (hits S/D/T, miss, bull, etc.)
     const detail = extractDetailedStatsFromLive(live);
-
     detailedByPlayer[pid] = detail;
 
     // Reformatage compatible V2/V1 pour StatsHub et tous les dashboards
-const segments = {
-  S: detail.bySegmentS,
-  D: detail.bySegmentD,
-  T: detail.bySegmentT,
-};
+    const segments = {
+      S: detail.bySegmentS,
+      D: detail.bySegmentD,
+      T: detail.bySegmentT,
+    };
 
-const hits = {
-  S: detail.hitsS,
-  D: detail.hitsD,
-  T: detail.hitsT,
-  M: detail.miss,
-};
+    const hits = {
+      S: detail.hitsS,
+      D: detail.hitsD,
+      T: detail.hitsT,
+      M: detail.miss,
+    };
 
-perPlayer.push({
-  playerId: pid,
-  avg3,
-  bestVisit,
-  bestCheckout,
-  darts: detail.darts,
-  hits,
-  bull: detail.bull,
-  dBull: detail.dBull,
-  bust: detail.bust,
-  segments,
-});
+    perPlayer.push({
+      playerId: pid,
+      avg3,
+      bestVisit,
+      bestCheckout,
+      darts: detail.darts,
+      hits,
+      bull: detail.bull,
+      dBull: detail.dBull,
+      bust: detail.bust,
+      segments,
+    });
+
+    // -------------------------
+    // Remplissage des maps "legacy" pour l'écran Historique détaillé
+    // -------------------------
+    legacyRemaining[pid] = scoreNow;
+    legacyDarts[pid] = detail.darts;
+    legacyVisits[pid] = detail.darts ? Math.ceil(detail.darts / 3) : 0;
+    legacyAvg3[pid] = avg3;
+    legacyBestVisit[pid] = bestVisit;
+    legacyBestCheckout[pid] = bestCheckout;
+
+    legacyDoubles[pid] = detail.hitsD;
+    legacyTriples[pid] = detail.hitsT;
+    legacyBulls[pid] = (detail.bull ?? 0) + (detail.dBull ?? 0);
+    legacyDbulls[pid] = detail.dBull ?? 0;
+    legacyMiss[pid] = detail.miss ?? 0;
+    legacyBust[pid] = detail.bust ?? 0;
+    legacyPoints[pid] = scored > 0 ? scored : 0;
+
+    // hits par secteur combinés (S + D + T + BULL / DBULL + MISS)
+    const sectorMap: Record<string, number> = {};
+
+    for (const [seg, v] of Object.entries(detail.bySegmentS || {})) {
+      const k = String(seg);
+      sectorMap[k] = (sectorMap[k] || 0) + Number(v || 0);
+    }
+    for (const [seg, v] of Object.entries(detail.bySegmentD || {})) {
+      const k = String(seg);
+      sectorMap[k] = (sectorMap[k] || 0) + Number(v || 0);
+    }
+    for (const [seg, v] of Object.entries(detail.bySegmentT || {})) {
+      const k = String(seg);
+      sectorMap[k] = (sectorMap[k] || 0) + Number(v || 0);
+    }
+
+    if (detail.bull) {
+      sectorMap["OB"] = (sectorMap["OB"] || 0) + detail.bull;
+    }
+    if (detail.dBull) {
+      sectorMap["IB"] = (sectorMap["IB"] || 0) + detail.dBull;
+    }
+    if (detail.miss) {
+      sectorMap["MISS"] = (sectorMap["MISS"] || 0) + detail.miss;
+    }
+
+    legacyHitsBySector[pid] = sectorMap;
 
     // Gagnant simple : score à 0
     if (scoreNow === 0 && !winnerId) {
@@ -2115,20 +2388,241 @@ perPlayer.push({
     }
   }
 
+  // -------------------------
+  // On récupère ce que le moteur a déjà mis dans state.summary :
+  // - rankings (avec legsWon / setsWon)
+  // - game (legsPerSet / setsToWin / startScore...)
+  // - winnerName éventuel
+  // -------------------------
+  const engineSummary: any = (state as any).summary || {};
+  const rankings = Array.isArray(engineSummary.rankings)
+    ? engineSummary.rankings
+    : [];
+
+  const engineGame = engineSummary.game || {};
+
+  const winnerName =
+    engineSummary.winnerName ||
+    (players.find((p: any) => p.id === winnerId)?.name ?? null);
+
+  // -------------------------
+  // EXTRACTION LEGS / SETS / SCORE FINAL
+  // -------------------------
+
+  // maps issus de l'état moteur (souvent "dernier set")
+  const legsMapState = (state as any).legsWon ?? {};
+  const setsMapState = (state as any).setsWon ?? {};
+
+  const legsByPlayer: Record<string, number> = {};
+  const setsByPlayer: Record<string, number> = {};
+  const legsPlayedByPlayer: Record<string, number> = {};
+  const setsPlayedByPlayer: Record<string, number> = {};
+
+  // Base : ce que dit l'état moteur
+  players.forEach((p: any) => {
+    const pid = p.id as string;
+    legsByPlayer[pid] = Number(legsMapState[pid] ?? 0);
+    setsByPlayer[pid] = Number(setsMapState[pid] ?? 0);
+  });
+
+  // Enrichissement avec engineSummary.rankings (totaux legs/sets gagnés + joués)
+  for (const r of rankings as any[]) {
+    const pid =
+      r.playerId ?? r.id ?? r.pid ?? r.player_id ?? undefined;
+    if (!pid) continue;
+
+    // legs gagnés / perdus / joués
+    const legsWon = numOr0(
+      r.legsWon,
+      r.legs_won,
+      r.legs,
+      r.wonLegs,
+      r.legs_for
+    );
+    const legsLost = numOr0(
+      r.legsLost,
+      r.legs_lost,
+      r.legsAgainst,
+      r.lostLegs,
+      r.legs_against
+    );
+    const legsPlayed = numOr0(
+      r.legsPlayed,
+      r.legs_played,
+      legsWon + legsLost
+    );
+
+    // sets gagnés / perdus / joués
+    const setsWon = numOr0(
+      r.setsWon,
+      r.sets_won,
+      r.sets,
+      r.wonSets,
+      r.sets_for
+    );
+    const setsLost = numOr0(
+      r.setsLost,
+      r.sets_lost,
+      r.setsAgainst,
+      r.lostSets,
+      r.sets_against
+    );
+    const setsPlayed = numOr0(
+      r.setsPlayed,
+      r.sets_played,
+      setsWon + setsLost
+    );
+
+    // On prend le max entre ce que dit l'état et ce que dit le ranking
+    if (legsWon > (legsByPlayer[pid] ?? 0)) {
+      legsByPlayer[pid] = legsWon;
+    }
+    if (setsWon > (setsByPlayer[pid] ?? 0)) {
+      setsByPlayer[pid] = setsWon;
+    }
+
+    if (legsPlayed > 0) {
+      legsPlayedByPlayer[pid] = legsPlayed;
+    }
+    if (setsPlayed > 0) {
+      setsPlayedByPlayer[pid] = setsPlayed;
+    }
+
+    // On pousse aussi ces infos dans detailedByPlayer pour usage futur
+    detailedByPlayer[pid] = {
+      ...(detailedByPlayer[pid] || {}),
+      legsWonTotal: legsWon,
+      legsPlayedTotal: legsPlayed,
+      setsWonTotal: setsWon,
+      setsPlayedTotal: setsPlayed,
+    };
+  }
+
+  // Score final DUEL (ex : 2–1)
+  let matchScore: { [pid: string]: number } = {};
+  if (players.length === 2) {
+    matchScore = {
+      [players[0].id]: setsByPlayer[players[0].id] || 0,
+      [players[1].id]: setsByPlayer[players[1].id] || 0,
+    };
+  } else {
+    // multi-joueurs : classement par sets puis legs
+    const sorted = [...players].sort((a, b) => {
+      const sa = setsByPlayer[a.id] ?? 0;
+      const sb = setsByPlayer[b.id] ?? 0;
+      if (sb !== sa) return sb - sa;
+      const la = legsByPlayer[a.id] ?? 0;
+      const lb = legsByPlayer[b.id] ?? 0;
+      return lb - la;
+    });
+
+    matchScore = {};
+    sorted.forEach((p, idx) => {
+      matchScore[p.id] = idx + 1; // 1er / 2e / 3e...
+    });
+  }
+
+  // -------------------------
+  // Objet legacy compatible avec l'ancien écran détaillé X01
+  // -------------------------
+  const legacy: any = {
+    legNo: 1,
+    winnerId,
+    finishedAt: createdAt,
+    remaining: legacyRemaining,
+    darts: legacyDarts,
+    visits: legacyVisits,
+    avg3: legacyAvg3,
+    bestVisit: legacyBestVisit,
+    bestCheckout: legacyBestCheckout,
+    doubles: legacyDoubles,
+    triples: legacyTriples,
+    bulls: legacyBulls,
+    dbulls: legacyDbulls,
+    misses: legacyMiss,
+    busts: legacyBust,
+    points: legacyPoints,
+    hitsBySector: legacyHitsBySector,
+    // Les buckets 60+/100+/140+/180 ne sont pas reconstruits ici,
+    // ils resteront à 0 faute de détail par volée (option future).
+  };
+
+  // -------------------------
+  // Summary.players : shape attendu par X01End / buildPerPlayerMetrics
+  // -------------------------
+  const summaryPlayers: Record<string, any> = {};
+  for (const p of players as any[]) {
+    const pid = p.id as string;
+    const darts = legacyDarts[pid] || 0;
+    const visits = legacyVisits[pid] || (darts ? Math.ceil(darts / 3) : 0);
+    const points = legacyPoints[pid] || 0;
+
+    summaryPlayers[pid] = {
+      id: pid,
+      name: p.name,
+      avg3: avg3ByPlayer[pid] ?? 0,
+      bestVisit: bestVisitByPlayer[pid] ?? 0,
+      bestCheckout: bestCheckoutByPlayer[pid] ?? 0,
+      darts,
+      visits,
+      _sumPoints: points,
+      _sumDarts: darts,
+      _sumVisits: visits || undefined,
+      matches: 1,
+      legs: legsPlayedByPlayer[pid] || 1,
+      buckets: {},
+      updatedAt: createdAt,
+    };
+  }
+
   const summary = {
-    matchId, // 🧷 identifiant de match commun "en cours" / "terminé"
+    ...engineSummary,
+
+    kind: "x01" as const,
+    matchId,
+
+    game: {
+      ...engineGame,
+      mode: "x01",
+      startScore: config.startScore,
+      legsPerSet: config.legsPerSet ?? null,
+      setsToWin: config.setsToWin ?? null,
+    },
+
+    rankings,
+    winnerName,
+
+    updatedAt: createdAt,
+
+    // nouvelle map players (utilisée en priorité par X01End)
+    players: summaryPlayers,
+
+    // Alias compat pour les anciens agrégateurs
+    legsWon: legsByPlayer,
+    setsWon: setsByPlayer,
+    legsScore: legsByPlayer,
+    setsScore: setsByPlayer,
+
+    // 🔥 AJOUTS CRITIQUES POUR X01 MULTI
+    legsByPlayer,
+    setsByPlayer,
+    legsPlayedByPlayer,
+    setsPlayedByPlayer,
+    matchScore,
+
+    // Stats détaillées multi-joueurs
     avg3ByPlayer,
     bestVisitByPlayer,
     bestCheckoutByPlayer,
     perPlayer,
-    // 🧩 Map par joueur pour les stats avancées X01Multi
     detailedByPlayer,
+
+    // Compatibilité rétro : l'ancien shape utilisé par History / LEO
+    legacy,
   };
 
   // -------------------------
   // Payload "léger" pour l'historique
-  //  -> PAS de engineState complet
-  //  -> PAS de liveStatsByPlayer complet
   // -------------------------
 
   const lightPlayers = players.map((p: any) => ({
@@ -2156,20 +2650,18 @@ perPlayer.push({
   else if (hasTeams) gameMode = "x01_teams";
 
   const payload = {
-    // 👇 ancien champ utilisé par tes agrégateurs
     mode: gameMode, // "x01_solo" | "x01_multi" | "x01_teams"
-
-    // 👇 nouvelle info pour distinguer la V3
     variant: "x01_v3",
-
     game: "x01",
     startScore: config.startScore,
-    matchId,          // 🧷 idem summary
+    matchId, // 🧷 idem summary
     resumeId: matchId,
     config: lightConfig,
     finalScores: scores,
-    legsWon: state?.legsWon ?? {},
-    setsWon: state?.setsWon ?? {},
+
+    // 🔥 ICI on enregistre les maps "totales" (et plus juste le dernier set)
+    legsWon: legsByPlayer,
+    setsWon: setsByPlayer,
   };
 
   // -------------------------
@@ -2181,6 +2673,7 @@ perPlayer.push({
     kind: "x01",
     status: "finished",
     createdAt,
+    updatedAt: createdAt,
     players: lightPlayers.map((p) => ({
       id: p.id,
       name: p.name,

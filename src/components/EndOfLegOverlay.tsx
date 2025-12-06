@@ -127,7 +127,8 @@ function bestVisitFromNew(leg: LegStats, pid: string) {
 
 function powerBucketsFromNew(leg: LegStats, pid: string) {
   const st: any = leg.perPlayer?.[pid] ?? {};
-  const b = st.bins || {};
+  // ✅ supporte maintenant à la fois `bins` ET `buckets`
+  const b = st.bins || st.buckets || {};
   return {
     h60: n(b["60+"] ?? b["60"] ?? 0),
     h100: n(b["100+"] ?? 0),

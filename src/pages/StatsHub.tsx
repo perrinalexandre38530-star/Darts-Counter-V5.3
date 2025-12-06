@@ -15,7 +15,7 @@ import SparklinePro from "../components/SparklinePro";
 import TrainingRadar from "../components/TrainingRadar";
 import ProfileAvatar from "../components/ProfileAvatar";
 import type { Dart as UIDart } from "../lib/types";
-import { getCricketProfileStats } from "../lib/statsBridge";
+import { getCricketProfileStats, getX01MultiLegsSetsForProfile, type X01MultiLegsSets, } from "../lib/statsBridge";
 import type { CricketProfileStats } from "../lib/cricketStats";
 import StatsCricketDashboard from "../components/StatsCricketDashboard";
 // Nouvelle version FULL X01 multi
@@ -3566,16 +3566,50 @@ export default function StatsHub({
     setSelectedPlayerId(filteredPlayers[nextIndex].id);
   }, [canScrollPlayers, filteredPlayers, currentPlayerIndex]);
 
-  // ---------- 5) Quick-stats & Cricket ----------
+  // ---------- 5) Quick-stats & Cricket + X01 multi ----------
   const quick = useQuickStats(selectedPlayer?.id ?? null);
 
-  const cricketStats: CricketProfileStats | null = React.useMemo(() => {
-    if (!selectedPlayer?.id) return null;
-    try {
-      return getCricketProfileStats(selectedPlayer.id);
-    } catch {
-      return null;
+  const [cricketStats, setCricketStats] =
+    React.useState<CricketProfileStats | null>(null);
+
+  const [x01MultiLegsSets, setX01MultiLegsSets] =
+    React.useState<X01MultiLegsSets | null>(null);
+
+  React.useEffect(() => {
+    if (!selectedPlayer?.id) {
+      setCricketStats(null);
+      setX01MultiLegsSets(null);
+      return;
     }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const [cri, x01multi] = await Promise.all([
+          getCricketProfileStats(selectedPlayer.id),
+          getX01MultiLegsSetsForProfile(selectedPlayer.id),
+        ]);
+
+        if (!cancelled) {
+          setCricketStats(cri);
+          setX01MultiLegsSets(x01multi);
+        }
+      } catch (err) {
+        console.warn(
+          "[StatsHub] load extended profile stats failed",
+          err
+        );
+        if (!cancelled) {
+          setCricketStats(null);
+          setX01MultiLegsSets(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedPlayer?.id]);
 
   // Taille du nom en fonction de la longueur
@@ -3937,20 +3971,17 @@ export default function StatsHub({
         {currentMode === "dashboard" && (
           <>
             <div style={row}>
-              {selectedPlayer ? (
-                <StatsPlayerDashboard
-                  data={buildDashboardForPlayer(
-                    selectedPlayer,
-                    records,
-                    quick || null
-                  )}
-                />
-              ) : (
-                <div style={{ color: T.text70, fontSize: 13 }}>
-                  Sélectionne un joueur pour afficher le dashboard.
-                </div>
-              )}
-            </div>
+      {selectedPlayer ? (
+        <StatsPlayerDashboard
+        data={buildDashboardForPlayer(selectedPlayer, records, quick || null)}
+        x01MultiLegsSets={x01MultiLegsSets}
+        />
+      ) : (
+        <div style={{ color: T.text70, fontSize: 13 }}>
+          Sélectionne un joueur pour afficher le dashboard.
+        </div>
+      )}
+    </div>
 
             {/* RÉSUMÉ TRAINING (X01 + Horloge) */}
             {selectedPlayer && (

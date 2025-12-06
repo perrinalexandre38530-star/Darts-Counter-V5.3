@@ -4,6 +4,7 @@
 // ============================================
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../contexts/ThemeContext";
+import type { X01MultiLegsSets } from "../lib/statsBridge";
 
 /* CSS global : shimmer + zoom léger, même logique que StatsHub/Home */
 const statsNameCss = `
@@ -85,6 +86,12 @@ export type PlayerDashboardStats = {
   bestCheckout?: number;
   evolution: PlayerGamePoint[];
   distribution: PlayerDistribution;
+};
+
+// ✅ Props complètes : data (+ null/undefined) + X01 multi legs/sets
+type StatsPlayerDashboardProps = {
+  data: PlayerDashboardStats | null | undefined;
+  x01MultiLegsSets?: X01MultiLegsSets | null;
 };
 
 /* ---------- Thème ---------- */
@@ -466,7 +473,10 @@ function BarChart({
 }
 
 /* ---------- Composant principal ---------- */
-export default function StatsPlayerDashboard({ data }: { data: PlayerDashboardStats }) {
+export default function StatsPlayerDashboard({
+  data,
+  x01MultiLegsSets,
+}: StatsPlayerDashboardProps) {
   // Injection CSS shimmer nom joueur
   useInjectStatsNameCss();
 
@@ -521,6 +531,18 @@ export default function StatsPlayerDashboard({ data }: { data: PlayerDashboardSt
         .filter((p) => p && Number.isFinite(Number(p.avg3)))
         .map((p) => ({ date: p.date ?? "", avg3: Number(p.avg3) }))
     : [];
+
+  // ---------- X01 multi : helpers locaux ----------
+  const duo = x01MultiLegsSets?.duo;
+  const multi = x01MultiLegsSets?.multi;
+  const team = x01MultiLegsSets?.team;
+
+  const winPct = (won?: number, total?: number) => {
+    const w = won ?? 0;
+    const t = total ?? 0;
+    if (!t) return "0%";
+    return `${Math.round((w / t) * 1000) / 10}%`;
+  };
 
   const [refL, wL] = useContainerWidth<HTMLDivElement>(320);
   const [refB, wB] = useContainerWidth<HTMLDivElement>(320);
@@ -616,6 +638,143 @@ export default function StatsPlayerDashboard({ data }: { data: PlayerDashboardSt
             icon={<IconHourglass color={T.gold} />}
           />
         </div>
+
+        {/* =======================================================
+            X01 – Matchs / Legs / Sets par format
+            (DUO / MULTI / TEAM)
+            ======================================================= */}
+        {x01MultiLegsSets && (
+          <div
+            style={{
+              marginTop: 4,
+              borderRadius: 20,
+              padding: 12,
+              background: "linear-gradient(180deg,#15171B,#0E0F12)",
+              border: "1px solid rgba(255,255,255,.14)",
+              boxShadow: "0 8px 20px rgba(0,0,0,.6)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                textTransform: "uppercase",
+                letterSpacing: 0.8,
+                color: "#F6C256",
+                marginBottom: 6,
+              }}
+            >
+              X01 — Matchs / Legs / Sets
+            </div>
+
+            {[
+              ["DUO", duo],
+              ["MULTI", multi],
+              ["TEAM", team],
+            ].map(([label, bloc]) =>
+              bloc ? (
+                <div key={label as string} style={{ marginBottom: 6 }}>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "rgba(255,255,255,.55)",
+                      textTransform: "uppercase",
+                      marginBottom: 2,
+                    }}
+                  >
+                    {label}
+                  </div>
+
+                  {/* Tableau Matchs / Legs / Sets */}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1.4fr 1.1fr 1fr",
+                      fontSize: 11,
+                      padding: "4px 0",
+                      borderTop: "1px solid rgba(255,255,255,.10)",
+                    }}
+                  >
+                    {/* Matchs */}
+                    <div style={{ color: "rgba(255,255,255,.75)" }}>
+                      Matchs
+                    </div>
+                    <div
+                      style={{
+                        textAlign: "center",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {(bloc as any).matchesWon ?? 0} /{" "}
+                      {(bloc as any).matches ?? 0}
+                    </div>
+                    <div
+                      style={{
+                        textAlign: "right",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {winPct(
+                        (bloc as any).matchesWon,
+                        (bloc as any).matches
+                      )}
+                    </div>
+
+                    {/* Legs */}
+                    <div style={{ color: "rgba(255,255,255,.75)" }}>
+                      Legs
+                    </div>
+                    <div
+                      style={{
+                        textAlign: "center",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {(bloc as any).legsWon ?? 0} /{" "}
+                      {(bloc as any).legs ?? 0}
+                    </div>
+                    <div
+                      style={{
+                        textAlign: "right",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {winPct(
+                        (bloc as any).legsWon,
+                        (bloc as any).legs
+                      )}
+                    </div>
+
+                    {/* Sets */}
+                    <div style={{ color: "rgba(255,255,255,.75)" }}>
+                      Sets
+                    </div>
+                    <div
+                      style={{
+                        textAlign: "center",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {(bloc as any).setsWon ?? 0} /{" "}
+                      {(bloc as any).sets ?? 0}
+                    </div>
+                    <div
+                      style={{
+                        textAlign: "right",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {winPct(
+                        (bloc as any).setsWon,
+                        (bloc as any).sets
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null
+            )}
+          </div>
+        )}
       </div>
 
       {/* Graphs responsives (aucun dépassement) */}

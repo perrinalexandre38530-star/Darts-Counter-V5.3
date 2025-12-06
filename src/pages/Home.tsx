@@ -1,12 +1,5 @@
 // =============================================================
 // src/pages/Home.tsx — Home v2 (dashboard futuriste)
-// - Haut de page : "Bienvenue" + logo DARTS COUNTER (centré + animé)
-// - Carte joueur actif (ActiveProfileCard) : avatar + statut + carrousel de stats
-// - Bandeau arcade (ArcadeTicker) : infos importantes avec image spécifique
-// - Bloc détail du ticker : 2 mini-cards
-//   • Card gauche  : stats liées au slide (KPIs si dispo)
-//   • Card droite  : mini-carousel Astuce / Pub / Nouveauté (rotation indépendante)
-// - Gros boutons de navigation (Profils / Local / Online / Stats / Réglages)
 // =============================================================
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -27,6 +20,7 @@ import {
   getBasicProfileStatsAsync,
   getCricketProfileStats,
 } from "../lib/statsBridge";
+import { History } from "../lib/history";
 
 type Props = {
   store: Store;
@@ -39,14 +33,11 @@ const TIP_SWIPE_THRESHOLD = 25;
 
 // ------------------------------------------------------------
 // Tickers : images multiples par thème (choix aléatoire)
-// (base GitHub raw pour que ça marche sur le téléphone)
 // ------------------------------------------------------------
 const GH_IMG_BASE =
   "https://raw.githubusercontent.com/perrinalexandre38530-star/Darts-Counter-V5.3/main/public/img/";
 
-// ⚠️ Assure-toi d’avoir ces fichiers dans /public/img :
 const TICKER_IMAGES = {
-  // bandeaux principaux (haut + thème stats)
   records: ["ticker-records.jpg", "ticker-records-2.jpg"],
   local: ["ticker-x01.jpg", "ticker-x01-2.jpg"],
   onlineLast: ["ticker-online.jpg", "ticker-online-2.jpg"],
@@ -54,11 +45,9 @@ const TICKER_IMAGES = {
   training: ["ticker-training.jpg", "ticker-training-2.jpg"],
   global: ["ticker-global.jpg", "ticker-global-2.jpg"],
   tip: ["ticker-tip.jpg", "ticker-tip-2.jpg"],
-
-  // familles dédiées pour Astuces / Pubs / Nouveautés
-  tipAdvice: ["ticker-tip-advice.jpg", "ticker-tip-advice-2.jpg"], // ASTUCES
-  tipAds: ["ticker-tip-ads.jpg", "ticker-tip-ads-2.jpg"], // PUBS
-  tipNews: ["ticker-tip-news.jpg", "ticker-tip-news-2.jpg"], // NOUVEAUTÉS
+  tipAdvice: ["ticker-tip-advice.jpg", "ticker-tip-advice-2.jpg"],
+  tipAds: ["ticker-tip-ads.jpg", "ticker-tip-ads-2.jpg"],
+  tipNews: ["ticker-tip-news.jpg", "ticker-tip-news-2.jpg"],
 } as const;
 
 function pickTickerImage<K extends keyof typeof TICKER_IMAGES>(key: K): string {
@@ -81,17 +70,14 @@ function getActiveProfile(store: Store): Profile | null {
   return profiles.find((p) => p.id === activeProfileId) ?? profiles[0];
 }
 
-// Stats vides (pour init / fallback)
 function emptyActiveProfileStats(): ActiveProfileStats {
   return {
-    // ---- Vue globale ----
     ratingGlobal: 0,
     winrateGlobal: 0,
     avg3DGlobal: 0,
     sessionsGlobal: 0,
     favoriteNumberLabel: null,
 
-    // ---- Records ----
     recordBestVisitX01: 0,
     recordBestCOX01: 0,
     recordMinDarts501: null,
@@ -99,7 +85,6 @@ function emptyActiveProfileStats(): ActiveProfileStats {
     recordBestStreak: null,
     recordBestCricketScore: null,
 
-    // ---- Online ----
     onlineMatches: 0,
     onlineWinrate: 0,
     onlineAvg3D: 0,
@@ -108,7 +93,6 @@ function emptyActiveProfileStats(): ActiveProfileStats {
     onlineRank: null,
     onlineBestRank: null,
 
-    // ---- X01 Multi ----
     x01MultiAvg3D: 0,
     x01MultiSessions: 0,
     x01MultiWinrate: 0,
@@ -116,7 +100,6 @@ function emptyActiveProfileStats(): ActiveProfileStats {
     x01MultiBestCO: 0,
     x01MultiMinDartsLabel: null,
 
-    // ---- Cricket ----
     cricketPointsPerRound: 0,
     cricketHitsTotal: 0,
     cricketCloseRate: 0,
@@ -124,7 +107,6 @@ function emptyActiveProfileStats(): ActiveProfileStats {
     cricketAvgClose201918: 0,
     cricketOpenings: 0,
 
-    // ---- Training X01 ----
     trainingAvg3D: 0,
     trainingHitsS: 0,
     trainingHitsD: 0,
@@ -132,7 +114,6 @@ function emptyActiveProfileStats(): ActiveProfileStats {
     trainingGoalSuccessRate: 0,
     trainingBestCO: 0,
 
-    // ---- Tour de l'Horloge ----
     clockTargetsHit: 0,
     clockSuccessRate: 0,
     clockTotalTimeSec: 0,
@@ -141,8 +122,7 @@ function emptyActiveProfileStats(): ActiveProfileStats {
 }
 
 /* ============================================================
-   Aggreg Training X01 pour 1 profil (dc_training_x01_stats_v1)
-   - Compatible ancien format sans profileId (legacy)
+   Training X01 agrégé (localStorage)
 ============================================================ */
 
 const TRAINING_X01_STATS_KEY = "dc_training_x01_stats_v1";
@@ -184,7 +164,6 @@ function loadTrainingAggForProfile(profileId: string): TrainingX01Agg {
     for (const row of parsed) {
       if (!row) continue;
 
-      // ⚠️ Compat ancien format
       const hasProfileId =
         row.profileId !== undefined &&
         row.profileId !== null &&
@@ -227,9 +206,7 @@ function loadTrainingAggForProfile(profileId: string): TrainingX01Agg {
 }
 
 /* ============================================================
-   Aggreg Tour de l’Horloge pour 1 profil (dc_training_clock_stats_v1)
-   - Format agrégé par run :
-     { profileId, targetsHit, attempts, totalTimeSec, bestStreak }
+   Tour de l’Horloge agrégé (localStorage)
 ============================================================ */
 
 const TRAINING_CLOCK_STATS_KEY = "dc_training_clock_stats_v1";
@@ -295,53 +272,291 @@ function loadClockAggForProfile(profileId: string): ClockAgg {
   }
 }
 
-/**
- * buildStatsForProfile(profileId)
- * - X01 global + X01 multi + records via statsBridge
- * - Complète avec Training X01 (localStorage dc_training_x01_stats_v1)
- * - Complète avec Cricket profil via getCricketProfileStats
- * - Complète avec Tour de l’Horloge (localStorage dc_training_clock_stats_v1)
- * - Online reste à 0 pour l’instant
- */
+/* ============================================================
+   buildStatsForProfile
+   - + vrai agrégat X01 multi
+   - + records minDarts501
+============================================================ */
+
 async function buildStatsForProfile(
   profileId: string
 ): Promise<ActiveProfileStats> {
   try {
-    const base: any = await getBasicProfileStatsAsync(profileId);
+    const [base, multiRaw, cricket] = await Promise.all([
+      getBasicProfileStatsAsync(profileId),
+      (async () => {
+        try {
+          const anyHistory: any = History as any;
+          if (anyHistory.list) {
+            return await anyHistory.list({
+              game: "x01_multi",
+              includePlayers: true,
+            });
+          }
+        } catch (e) {
+          console.warn("[Home] History.list x01_multi failed", e);
+        }
+        return [] as any[];
+      })(),
+      (async () => {
+        try {
+          return await getCricketProfileStats(profileId);
+        } catch (e) {
+          console.warn("[Home] getCricketProfileStats failed", e);
+          return null;
+        }
+      })(),
+    ]);
 
-    // Cricket
-    let cricket: any = null;
-    try {
-      cricket = await getCricketProfileStats(profileId);
-    } catch (e) {
-      console.warn("[Home] getCricketProfileStats failed", e);
-    }
+    const multiMatches: any[] = Array.isArray(multiRaw) ? multiRaw : [];
 
+    // GLOBAL
     const games = Number(base?.games || 0);
     const wins = Number(base?.wins || 0);
     const avg3 = Number(base?.avg3 || 0);
     const bestVisit = Number(base?.bestVisit || 0);
     const bestCheckout = Number(base?.bestCheckout || 0);
 
-    const winRatePct = Number(base?.winRate != null ? base.winRate : 0);
-    const winRate01 =
-      winRatePct > 0 ? winRatePct / 100 : games > 0 ? wins / games : 0;
+    // --------- Recherche robuste du record "min darts" ---------
+    // 1) Historique X01 multi (totalDarts501 / darts / dartsCount)
+    let minDartsFromHistory = 0;
+    try {
+      const multiMatches = await History.list({
+        game: "x01_multi",
+        includePlayers: true,
+      });
 
+      for (const m of multiMatches || []) {
+        const mm: any = m;
+
+        const n = Number(
+          mm.totalDarts501 ?? mm.darts ?? mm.dartsCount ?? 0
+        );
+
+        if (!Number.isNaN(n) && n > 0) {
+          if (!minDartsFromHistory || n < minDartsFromHistory) {
+            minDartsFromHistory = n;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[Home] min darts from History failed", e);
+    }
+
+    // 2) Scan des champs possibles dans le profil agrégé (statsBridge)
+    const minDartsCandidates: number[] = [];
+
+    const addMinCandidate = (v: any) => {
+      const n = Number(v);
+      if (!Number.isNaN(n) && n > 0) {
+        minDartsCandidates.push(n);
+      }
+    };
+
+    if (base && typeof base === "object") {
+      const b: any = base;
+
+      // clés explicites
+      addMinCandidate(b.minDarts);
+      addMinCandidate(b.min_darts);
+      addMinCandidate(b.minDarts501);
+      addMinCandidate(b.min_darts_501);
+      addMinCandidate(b.minDartsX01);
+      addMinCandidate(b.fastestLeg);
+      addMinCandidate(b.fastest_leg);
+      addMinCandidate(b.bestLegDarts);
+      addMinCandidate(b.best_leg_darts);
+      addMinCandidate(b.recordMinDarts501);
+      addMinCandidate(b.record_min_darts_501);
+
+      // scan automatique de toutes les clés
+      for (const key of Object.keys(b)) {
+        const lk = key.toLowerCase();
+        if (lk.includes("min") && lk.includes("dart")) {
+          addMinCandidate(b[key]);
+        }
+        if (lk.includes("fastest") && lk.includes("leg")) {
+          addMinCandidate(b[key]);
+        }
+      }
+    }
+
+    let minDartsRecord = 0;
+    if (minDartsFromHistory > 0) {
+      minDartsRecord = minDartsFromHistory;
+    } else if (minDartsCandidates.length > 0) {
+      minDartsRecord = Math.min(...minDartsCandidates);
+    }
+
+    const winRatePct = Number(base?.winRate != null ? base.winRate : 0);
+    const winRate01 = winRatePct > 0 ? winRatePct / 100 : games > 0 ? wins / games : 0;
     const ratingGlobal = avg3;
 
-    // Training X01 (agrégat localStorage par profil + legacy)
+        // ---------- X01 MULTI AGGREGATE ----------
+        let multiSessions = 0;
+        let multiTotalScore = 0;
+        let multiTotalDarts = 0;
+    
+        // winrate par MATCH
+        let multiMatchesWon = 0;
+    
+        let multiBestVisit = 0;
+        let multiBestCheckout = 0;
+        let multiMinDarts = Infinity;
+    
+        // fallback si on n’a que des avg3
+        let multiAvg3Sum = 0;
+        let multiAvg3Count = 0;
+    
+        for (const match of multiMatches) {
+          const summary: any = match.summary ?? match;
+          const perPlayer: any[] =
+            summary.perPlayer ?? summary.players ?? match.players ?? [];
+    
+          if (!perPlayer || !perPlayer.length) continue;
+    
+          const me =
+            perPlayer.find(
+              (p) =>
+                p.profileId === profileId ||
+                p.playerId === profileId ||
+                p.id === profileId
+            ) ?? null;
+    
+          if (!me) continue;
+    
+          multiSessions += 1;
+    
+          const darts =
+            Number(me.darts ?? me.totalDarts ?? me.stats?.darts ?? 0) || 0;
+          const score =
+            Number(
+              me.totalScore ?? me.scored ?? me.pointsScored ?? me.score ?? 0
+            ) || 0;
+    
+          const avg3Player =
+            Number(
+              me.avg3D ??
+                me.avg3 ??
+                me.stats?.avg3D ??
+                me.stats?.avg3 ??
+                0
+            ) || 0;
+    
+          if (darts > 0 && score > 0) {
+            multiTotalDarts += darts;
+            multiTotalScore += score;
+          } else if (avg3Player > 0) {
+            // on agrège les avg3 si on n’a pas score + darts
+            multiAvg3Sum += avg3Player;
+            multiAvg3Count += 1;
+          }
+    
+          // -------- MATCH WIN ? --------
+          let isWinner = false;
+          if (me.isWinner === true || me.winner === true) isWinner = true;
+          if ([me.rank, me.place, me.position].some((v) => Number(v) === 1)) {
+            isWinner = true;
+          }
+          if (
+            typeof me.result === "string" &&
+            me.result.toLowerCase().startsWith("win")
+          ) {
+            isWinner = true;
+          }
+          if (
+            typeof me.outcome === "string" &&
+            me.outcome.toLowerCase().startsWith("win")
+          ) {
+            isWinner = true;
+          }
+          if (
+            summary &&
+            summary.winnerId &&
+            [me.profileId, me.playerId, me.id].some(
+              (id) => id && String(id) === String(summary.winnerId)
+            )
+          ) {
+            isWinner = true;
+          }
+          if (isWinner) multiMatchesWon += 1;
+    
+          // -------- BEST VISIT / CO / MIN DARTS --------
+          const bv =
+            Number(me.bestVisit ?? me.bestVisitScore ?? me.best_visit ?? 0) ||
+            0;
+          if (bv > multiBestVisit) multiBestVisit = bv;
+    
+          const bco =
+            Number(
+              me.bestCheckout ??
+                me.bestCo ??
+                me.bestFinish ??
+                me.best_checkout ??
+                0
+            ) || 0;
+          if (bco > multiBestCheckout) multiBestCheckout = bco;
+    
+          const pMinDarts =
+            Number(
+              me.minDarts ??
+                me.minDarts501 ??
+                me.bestLegDarts ??
+                me.fastestLeg ??
+                me.best_leg_darts ??
+                0
+            ) || 0;
+          if (pMinDarts > 0 && pMinDarts < multiMinDarts) {
+            multiMinDarts = pMinDarts;
+          }
+        }
+    
+        const hasMulti = multiSessions > 0;
+    
+        let multiAvg3D = 0;
+        if (multiTotalDarts > 0 && multiTotalScore > 0) {
+          multiAvg3D = Number(
+            ((multiTotalScore / multiTotalDarts) * 3).toFixed(2)
+          );
+        } else if (multiAvg3Count > 0) {
+          multiAvg3D = Number(
+            (multiAvg3Sum / multiAvg3Count).toFixed(2)
+          );
+        }
+    
+        const multiWinRate =
+      hasMulti && multiSessions > 0
+        ? multiMatchesWon / multiSessions
+        : 0;
+
+    let multiMinDartsValue =
+      hasMulti && multiMinDarts !== Infinity ? multiMinDarts : 0;
+
+    // -------- FALLBACKS SUR LES STATS GLOBALES --------
+    // min darts : si on ne trouve rien en X01 multi, on prend le record global
+    if (!multiMinDartsValue && minDartsRecord > 0) {
+      multiMinDartsValue = minDartsRecord;
+    }
+
+    // win% : si le calcul multi retombe à 0 alors qu’on a des wins globaux,
+    // on reprend le winrate global calculé plus haut
+    const effectiveMultiWinRate =
+      multiWinRate > 0 ? multiWinRate : winRate01;
+   
+
+    // ---------- Training X01 ----------
     const tAgg = loadTrainingAggForProfile(profileId);
     const trainingAvg3D =
       tAgg.sessions > 0 ? tAgg.sumAvg3D / tAgg.sessions : 0;
 
-    // Cricket (profil)
+    // ---------- Cricket ----------
     const cricketMatches = Number(cricket?.matchesTotal ?? 0);
     const cricketBestPoints = Number(cricket?.bestPointsInMatch ?? 0);
     const cricketWinsTotal = Number(cricket?.winsTotal ?? 0);
     const cricketWinRate =
       cricketMatches > 0 ? cricketWinsTotal / cricketMatches : 0;
 
-    // Tour de l’Horloge (agrégat localStorage)
+    // ---------- Horloge ----------
     const cAgg = loadClockAggForProfile(profileId);
     const clockTargetsHit = cAgg.targetsHitTotal;
     const clockSuccessRate =
@@ -350,22 +565,22 @@ async function buildStatsForProfile(
     const clockBestStreak = cAgg.bestStreak;
 
     const s: ActiveProfileStats = {
-      // ---- Vue globale ----
+      // globale
       ratingGlobal,
       winrateGlobal: winRate01,
       avg3DGlobal: avg3,
       sessionsGlobal: games,
       favoriteNumberLabel: null,
 
-      // ---- Records ----
+      // records
       recordBestVisitX01: bestVisit,
       recordBestCOX01: bestCheckout,
-      recordMinDarts501: null,
+      recordMinDarts501: minDartsRecord || null,
       recordBestAvg3DX01: avg3,
       recordBestStreak: null,
       recordBestCricketScore: cricketBestPoints || null,
 
-      // ---- Online (non branché pour l’instant) ----
+      // online
       onlineMatches: 0,
       onlineWinrate: 0,
       onlineAvg3D: 0,
@@ -375,14 +590,15 @@ async function buildStatsForProfile(
       onlineBestRank: null,
 
       // ---- X01 Multi ----
-      x01MultiAvg3D: avg3,
-      x01MultiSessions: games,
-      x01MultiWinrate: winRate01,
-      x01MultiBestVisit: bestVisit,
-      x01MultiBestCO: bestCheckout,
-      x01MultiMinDartsLabel: null,
+      x01MultiAvg3D: hasMulti ? multiAvg3D : avg3,
+      x01MultiSessions: multiSessions || games,
+      x01MultiWinrate: effectiveMultiWinRate,
+      x01MultiBestVisit: hasMulti ? multiBestVisit : bestVisit,
+      x01MultiBestCO: hasMulti ? multiBestCheckout : bestCheckout,
+      x01MultiMinDartsLabel:
+        minDartsRecord > 0 ? `${minDartsRecord}` : null,
 
-      // ---- Cricket ----
+      // cricket
       cricketPointsPerRound: cricketBestPoints || 0,
       cricketHitsTotal: cricketMatches || 0,
       cricketCloseRate: cricketWinRate || 0,
@@ -390,7 +606,7 @@ async function buildStatsForProfile(
       cricketAvgClose201918: 0,
       cricketOpenings: cricketMatches || 0,
 
-      // ---- Training X01 ----
+      // training X01
       trainingAvg3D,
       trainingHitsS: tAgg.hitsS || 0,
       trainingHitsD: tAgg.hitsD || 0,
@@ -398,7 +614,7 @@ async function buildStatsForProfile(
       trainingGoalSuccessRate: 0,
       trainingBestCO: tAgg.bestCheckout ?? 0,
 
-      // ---- Tour de l'Horloge ----
+      // horloge
       clockTargetsHit,
       clockSuccessRate,
       clockTotalTimeSec,
@@ -412,7 +628,10 @@ async function buildStatsForProfile(
   }
 }
 
-// Petite mise en forme locale pour le bloc détail
+/* ============================================================
+   Helpers pour les détails du ticker
+============================================================ */
+
 type DetailRow = { label: string; value: string };
 
 function fmtNumHome(v?: number | null, decimals = 1): string {
@@ -420,12 +639,15 @@ function fmtNumHome(v?: number | null, decimals = 1): string {
   const n = Number(v);
   return n % 1 === 0 ? String(n) : n.toFixed(decimals);
 }
-function fmtPctHome(v?: number | null): string {
+function fmtPctHome01(v?: number | null): string {
   if (v == null || Number.isNaN(v)) return "—";
   return `${(v * 100).toFixed(0)}%`;
 }
 
-// Génère les KPIs du gros bloc en fonction du slide
+/**
+ * Détails en dessous du ticker principal
+ * -> on renforce "Derniers records" + "Dernier match local" + "Stats du mois"
+ */
 function buildTickerDetailRows(
   tickerId: string,
   s: ActiveProfileStats,
@@ -440,43 +662,46 @@ function buildTickerDetailRows(
 
   switch (tickerId) {
     case "last-records": {
-      if ((s.recordBestVisitX01 ?? 0) > 0) {
+      const snap = getRecordSnapshotFromStats(s);
+
+      if (snap.bestVisit > 0) {
         rows.push({
           label: t("home.detail.bestVisit", "best visit x01"),
-          value: fmtNumHome(s.recordBestVisitX01, 0),
+          value: fmtNumHome(snap.bestVisit, 0),
         });
       }
-      if ((s.recordBestCOX01 ?? 0) > 0) {
+      if (snap.bestCo > 0) {
         rows.push({
           label: t("home.detail.bestCO", "best checkout"),
-          value: fmtNumHome(s.recordBestCOX01, 0),
+          value: fmtNumHome(snap.bestCo, 0),
         });
       }
-      if ((s.recordBestAvg3DX01 ?? 0) > 0) {
+      if (snap.bestAvg > 0) {
         rows.push({
           label: t("home.detail.bestAvg3d", "best avg 3d"),
-          value: fmtNumHome(s.recordBestAvg3DX01, 2),
+          value: fmtNumHome(snap.bestAvg, 2),
         });
       }
-      if ((s.recordBestCricketScore ?? 0) > 0) {
+      if (snap.minDarts > 0) {
         rows.push({
-          label: t("home.detail.bestCricket", "best cricket"),
-          value: fmtNumHome(s.recordBestCricketScore, 0),
+          label: t("home.detail.bestMinDarts", "leg le plus court"),
+          value: fmtNumHome(snap.minDarts, 0),
         });
       }
       break;
     }
 
     case "last-local-match": {
-      if ((s.x01MultiSessions ?? 0) > 0) {
+      const sessions = s.x01MultiSessions ?? 0;
+      if (sessions > 0) {
         rows.push(
           {
-            label: t("home.detail.localSessions", "matchs x01 multi"),
-            value: fmtNumHome(s.x01MultiSessions, 0),
+            label: t("home.detail.localSessions", "matchs X01 multi"),
+            value: fmtNumHome(sessions, 0),
           },
           {
             label: t("home.detail.localWinrate", "win% local"),
-            value: fmtPctHome(s.x01MultiWinrate ?? 0),
+            value: fmtPctHome01(s.x01MultiWinrate ?? 0),
           },
           {
             label: t("home.detail.localAvg3d", "moy. 3d"),
@@ -491,6 +716,20 @@ function buildTickerDetailRows(
             value: fmtNumHome(s.x01MultiBestCO, 0),
           }
         );
+
+        const snap = getRecordSnapshotFromStats(s);
+        const minDarts =
+          s.x01MultiMinDartsLabel &&
+          Number(s.x01MultiMinDartsLabel) > 0
+            ? Number(s.x01MultiMinDartsLabel)
+            : snap.minDarts;
+
+        if (minDarts > 0) {
+          rows.push({
+            label: t("home.detail.localMinDarts", "min darts"),
+            value: fmtNumHome(minDarts, 0),
+          });
+        }
       }
       break;
     }
@@ -528,15 +767,16 @@ function buildTickerDetailRows(
     }
 
     case "month-summary": {
-      if ((s.sessionsGlobal ?? 0) > 0) {
+      const sessions = s.sessionsGlobal ?? 0;
+      if (sessions > 0) {
         rows.push(
           {
-            label: t("home.detail.globalSessions", "sessions"),
-            value: fmtNumHome(s.sessionsGlobal ?? 0, 0),
+            label: t("home.detail.globalSessions", "sessions totales"),
+            value: fmtNumHome(sessions, 0),
           },
           {
             label: t("home.detail.globalWinrate", "win%"),
-            value: fmtPctHome(s.winrateGlobal ?? 0),
+            value: fmtPctHome01(s.winrateGlobal ?? 0),
           },
           {
             label: t("home.detail.globalAvg3d", "moy. 3d"),
@@ -547,25 +787,10 @@ function buildTickerDetailRows(
             value: fmtNumHome(s.ratingGlobal ?? 0, 1),
           }
         );
-
-        // Ajout Horloge si dispo
-        if ((s.clockTargetsHit ?? 0) > 0) {
-          rows.push(
-            {
-              label: t("home.detail.clockTargets", "cibles horloge"),
-              value: fmtNumHome(s.clockTargetsHit ?? 0, 0),
-            },
-            {
-              label: t("home.detail.clockBestStreak", "meilleure série"),
-              value: fmtNumHome(s.clockBestStreak ?? 0, 0),
-            }
-          );
-        }
       }
       break;
     }
 
-    // Online / leader / tip : pas encore de KPIs dédiés
     case "last-online-match":
     case "online-leader":
     case "tip-of-day":
@@ -729,6 +954,20 @@ function DetailKpi({ label, value, primary, theme }: DetailKpiProps) {
   );
 }
 
+function getRecordSnapshotFromStats(s: ActiveProfileStats) {
+  const bestVisit = s.recordBestVisitX01 || s.x01MultiBestVisit || 0;
+  const bestCo = s.recordBestCOX01 || s.x01MultiBestCO || 0;
+  const bestAvg = s.recordBestAvg3DX01 || s.x01MultiAvg3D || 0;
+  const minDarts =
+    s.recordMinDarts501 ??
+    (s.x01MultiMinDartsLabel
+      ? Number(s.x01MultiMinDartsLabel)
+      : 0);
+
+  return { bestVisit, bestCo, bestAvg, minDarts };
+}
+
+
 // Bandeau arcade : messages + images différentes (textes traduits via t)
 function buildArcadeItems(
   _store: Store,
@@ -754,18 +993,20 @@ function buildArcadeItems(
     (s.trainingHitsS ?? 0) +
     (s.trainingHitsD ?? 0) +
     (s.trainingHitsT ?? 0);
-  const trainingGoalPct =
+    const trainingGoalPct =
     s.trainingGoalSuccessRate != null
       ? Math.round(s.trainingGoalSuccessRate * 100)
       : null;
 
   const clockTargets = s.clockTargetsHit ?? 0;
 
+  const recordSnap = getRecordSnapshotFromStats(s);
+
   const hasRecordX01 =
-    (s.recordBestVisitX01 ?? 0) > 0 ||
-    (s.recordBestCOX01 ?? 0) > 0 ||
-    (s.recordMinDarts501 ?? 0) > 0 ||
-    (s.recordBestAvg3DX01 ?? 0) > 0;
+    recordSnap.bestVisit > 0 ||
+    recordSnap.bestCo > 0 ||
+    recordSnap.bestAvg > 0 ||
+    recordSnap.minDarts > 0;
 
   // ---------- 1) Derniers records ----------
   items.push({
@@ -780,16 +1021,19 @@ function buildArcadeItems(
           "home.ticker.records.text.empty",
           "Aucun record pour l’instant, lance un premier match pour en créer."
         ),
-    detail: hasRecordX01
-      ? [
-          s.recordBestVisitX01 != null
-            ? `Best visit : ${s.recordBestVisitX01}`
-            : null,
-          s.recordBestCOX01 != null ? `Best CO : ${s.recordBestCOX01}` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")
-      : "",
+        detail: hasRecordX01
+        ? [
+            recordSnap.bestVisit
+              ? `Best visit : ${recordSnap.bestVisit}`
+              : null,
+            recordSnap.bestCo ? `Best CO : ${recordSnap.bestCo}` : null,
+            recordSnap.minDarts
+              ? `Min darts : ${recordSnap.minDarts}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        : "",
     backgroundImage: pickTickerImage("records"),
     accentColor: "#F6C256",
   });
@@ -989,6 +1233,20 @@ export default function Home({ store, go }: Props) {
     [store, activeProfile, stats, t]
   );
 
+  // Auto-rotation du bloc détail pour rester synchro avec le bandeau
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!tickerItems.length) return;
+
+    const id = window.setInterval(() => {
+      setTickerIndex((prev) =>
+        tickerItems.length ? (prev + 1) % tickerItems.length : 0
+      );
+    }, DETAIL_INTERVAL_MS);
+
+    return () => window.clearInterval(id);
+  }, [tickerItems.length]);
+
   // clamp / reset l'index quand la liste change
   useEffect(() => {
     if (!tickerItems.length) {
@@ -1177,7 +1435,16 @@ export default function Home({ store, go }: Props) {
         <ArcadeTicker
           items={tickerItems}
           intervalMs={DETAIL_INTERVAL_MS}
-          onActiveIndexChange={(index) => {
+          // on câble TOUT ce qui peut exister côté ArcadeTicker
+          onIndexChange={(index: number) => {
+            if (!tickerItems.length) return;
+            const safe = Math.min(
+              Math.max(index, 0),
+              tickerItems.length - 1
+            );
+            setTickerIndex(safe);
+          }}
+          onActiveIndexChange={(index: number) => {
             if (!tickerItems.length) return;
             const safe = Math.min(
               Math.max(index, 0),

@@ -111,7 +111,8 @@ export function useHomeStats(activeProfileId: string | null) {
 
         const nextStats: HomeStats = {
           global: computeGlobal(localMatches),
-          multi: computeX01Multi(localMulti),
+          // ⬇⬇⬇  Ici on passe aussi le profileId pour calculer win%, bestVisit, etc.
+          multi: computeX01Multi(localMulti, activeProfileId),
           online: computeOnline(onlineMatches),
           cricket,
           trainingX01: computeTrainingX01(trainingX01),
@@ -177,16 +178,152 @@ function computeGlobal(matches: any[] | null | undefined) {
   };
 }
 
-function computeX01Multi(matches: any[] | null | undefined) {
+/**
+ * X01 MULTI (V3) — agrégat Home
+ *
+ * Retourne un objet du type :
+ * {
+ *   count:       nb de matchs (sessions)
+ *   avg3d:       moyenne 3D globale
+ *   avg:         (alias arrondi pour compat backward)
+ *   winPct:      % de legs gagnés
+ *   bestVisit:   meilleure mène
+ *   bestCheckout:meilleure sortie
+ *   minDarts:    leg le plus court
+ *   tickerSlides:[ ... ] // pour le ticker "Derniers records" de la Home
+ * }
+ */
+function computeX01Multi(
+  matches: any[] | null | undefined,
+  activeProfileId: string | null
+) {
   if (!matches || !matches.length) return null;
 
-  const avg =
-    matches.reduce((a: number, m: any) => a + (m.avg3 || 0), 0) /
-    matches.length;
+  let sessions = 0;
+  let totalScore = 0;
+  let totalDarts = 0;
+  let legsWon = 0;
+  let legsPlayed = 0;
+  let bestVisit = 0;
+  let bestCheckout = 0;
+  let minDarts = Infinity;
+
+  for (const match of matches) {
+    const summary: any = match.summary ?? match;
+    const perPlayer: any[] =
+      summary.perPlayer ?? summary.players ?? match.players ?? [];
+
+    if (!perPlayer || !perPlayer.length) continue;
+
+    // On cible le joueur du profil si possible, sinon tout le monde
+    const playersForProfile = activeProfileId
+      ? perPlayer.filter(
+          (p) =>
+            p.profileId === activeProfileId ||
+            p.playerId === activeProfileId ||
+            p.id === activeProfileId
+        )
+      : perPlayer;
+
+    if (!playersForProfile.length) continue;
+
+    sessions += 1;
+
+    for (const p of playersForProfile) {
+      const darts =
+        Number(p.darts ?? p.totalDarts ?? p.stats?.darts ?? 0) || 0;
+      const score =
+        Number(
+          p.totalScore ?? p.scored ?? p.pointsScored ?? p.score ?? 0
+        ) || 0;
+      const legsW = Number(p.legsWon ?? p.wins ?? 0) || 0;
+      const legsP =
+        Number(p.legsPlayed ?? p.legs ?? p.totalLegs ?? 0) || 0;
+
+      totalDarts += darts;
+      totalScore += score;
+      legsWon += legsW;
+      legsPlayed += legsP;
+
+      const bv = Number(p.bestVisit ?? p.bestVisitScore ?? 0) || 0;
+      if (bv > bestVisit) bestVisit = bv;
+
+      const bco =
+        Number(p.bestCheckout ?? p.bestCo ?? p.bestFinish ?? 0) || 0;
+      if (bco > bestCheckout) bestCheckout = bco;
+
+      const pMinDarts =
+        Number(p.minDarts ?? p.bestLegDarts ?? p.fastestLeg ?? 0) || 0;
+      if (pMinDarts > 0 && pMinDarts < minDarts) {
+        minDarts = pMinDarts;
+      }
+    }
+  }
+
+  // Moyenne 3D globale
+  const avg3d =
+    totalDarts > 0 ? Number(((totalScore / totalDarts) * 3).toFixed(1)) : 0;
+  const avgRounded = Math.round(avg3d);
+
+  // Winrate sur les legs
+  const winPct =
+    legsPlayed > 0
+      ? Number(((legsWon / legsPlayed) * 100).toFixed(0))
+      : 0;
+
+  const minDartsValue = minDarts === Infinity ? 0 : minDarts;
+
+  const tickerSlides = [
+    {
+      id: "x01_multi_sessions",
+      label: "Sessions X01 multi",
+      value: String(sessions),
+      subLabel: "Nombre total de matchs multi",
+    },
+    {
+      id: "x01_multi_avg3d",
+      label: "Moyenne 3D",
+      value: avg3d.toFixed(1),
+      subLabel: "Sur toutes les sessions multi",
+    },
+    {
+      id: "x01_multi_winpct",
+      label: "Winrate legs",
+      value: `${winPct.toFixed(0)}%`,
+      subLabel: "Legs gagnés / joués",
+    },
+    {
+      id: "x01_multi_best_visit",
+      label: "Meilleure mène",
+      value: String(bestVisit || 0),
+      subLabel: "Score max sur une volée",
+    },
+    {
+      id: "x01_multi_best_co",
+      label: "Meilleur checkout",
+      value: bestCheckout ? String(bestCheckout) : "—",
+      subLabel: "Plus grosse sortie réalisée",
+    },
+    {
+      id: "x01_multi_min_darts",
+      label: "Leg le plus court",
+      value: minDartsValue ? `${minDartsValue}` : "—",
+      subLabel: "Nb de fléchettes sur un leg gagné",
+    },
+  ];
 
   return {
-    count: matches.length,
-    avg: Math.round(avg),
+    // ancien format (pour compat éventuelle)
+    count: sessions,
+    avg: avgRounded,
+
+    // nouveau format + KPIs détaillés
+    avg3d,
+    winPct,
+    bestVisit,
+    bestCheckout,
+    minDarts: minDartsValue,
+    tickerSlides,
   };
 }
 

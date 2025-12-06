@@ -6,10 +6,12 @@
 //   - objet StatsBridge { makeLeg, commitLegAndAccumulate, makeMatch,
 //                         commitMatchAndSave, getBasicProfileStats,
 //                         getMergedProfilesStats, getProfileQuickStats,
-//                         getBasicProfileStatsAsync, getCricketProfileStats }
+//                         getBasicProfileStatsAsync, getCricketProfileStats,
+//                         getX01MultiLegsSetsForProfile }
 //   - alias nommés (compat pages): getBasicProfileStats, getMergedProfilesStats,
 //                                  getProfileQuickStats, getBasicProfileStatsAsync,
-//                                  getCricketProfileStats
+//                                  getCricketProfileStats,
+//                                  getX01MultiLegsSetsForProfile
 // ============================================
 
 import { History } from "./history";
@@ -304,6 +306,179 @@ function extractX01PlayerStats(rec: SavedMatch, pid: string) {
     bestVisit,
     bestCheckout,
   };
+}
+
+/* =============================================================
+// X01 MULTI — agrégat Legs / Sets par profil (Duo / Multi / Team)
+============================================================= */
+
+export type X01MultiModeCounters = {
+  matchesWin: number;
+  matchesTotal: number;
+  legsWin: number;
+  legsTotal: number;
+  setsWin: number;
+  setsTotal: number;
+};
+
+export type X01MultiLegsSets = {
+  duo: X01MultiModeCounters;
+  multi: X01MultiModeCounters;
+  team: X01MultiModeCounters;
+};
+
+function createEmptyMultiCounters(): X01MultiModeCounters {
+  return {
+    matchesWin: 0,
+    matchesTotal: 0,
+    legsWin: 0,
+    legsTotal: 0,
+    setsWin: 0,
+    setsTotal: 0,
+  };
+}
+
+function createEmptyMultiLegsSets(): X01MultiLegsSets {
+  return {
+    duo: createEmptyMultiCounters(),
+    multi: createEmptyMultiCounters(),
+    team: createEmptyMultiCounters(),
+  };
+}
+
+/**
+ * Agrège Legs / Sets gagnés + totaux pour un profil donné
+ * à partir d'une liste de matches X01 (V3 ou anciens).
+ *
+ * - Duo   = X01 sans teams avec 2 joueurs
+ * - Multi = X01 sans teams avec 3+ joueurs
+ * - Team  = X01 avec teams (payload.mode === "x01_teams")
+ */
+export function computeX01MultiLegsSetsForProfileFromMatches(
+  profileId: string,
+  matches: SavedMatch[]
+): X01MultiLegsSets {
+  const out = createEmptyMultiLegsSets();
+
+  if (!profileId || !Array.isArray(matches) || !matches.length) {
+    return out;
+  }
+
+  for (const m of matches) {
+    if (!m || (m as any).kind !== "x01") continue;
+
+    const payload: any = (m as any).payload || {};
+    const mode: string =
+      payload.mode ||
+      payload.gameMode ||
+      ""; // "x01_solo" | "x01_multi" | "x01_teams"
+
+    if (!mode || mode === "x01_solo") continue;
+
+    // -------------------------------
+    // Récupération des joueurs + pid
+    // -------------------------------
+    const players: any[] =
+      (payload.config && payload.config.players) ||
+      (m as any).players ||
+      [];
+
+    if (!players.length) continue;
+
+    const me = players.find(
+      (p) =>
+        String(p.profileId || "") === String(profileId) ||
+        String(p.id || "") === String(profileId)
+    );
+    if (!me) continue;
+
+    const pid: string = String(me.id);
+
+    // -------------------------------
+    // Legs / Sets par joueur
+    // -------------------------------
+    const summary: any =
+      (m as any).summary || payload.summary || {};
+    const rankings: any[] = Array.isArray(summary.rankings)
+      ? summary.rankings
+      : [];
+
+    let myLegs = 0;
+    let mySets = 0;
+    let totalLegs = 0;
+    let totalSets = 0;
+
+    if (rankings.length) {
+      for (const r of rankings) {
+        const rLegs =
+          Number(r.legsWon ?? r.legs ?? 0) || 0;
+        const rSets =
+          Number(r.setsWon ?? r.sets ?? 0) || 0;
+        totalLegs += rLegs;
+        totalSets += rSets;
+
+        const rid = String(r.id ?? r.playerId ?? "");
+        if (rid === pid) {
+          myLegs = rLegs;
+          mySets = rSets;
+        }
+      }
+    } else {
+      // Fallback : maps legsWon / setsWon (summary ou payload)
+      const legsMap: any =
+        summary.legsWon ||
+        payload.legsWon ||
+        (payload.state && payload.state.legsWon);
+      const setsMap: any =
+        summary.setsWon ||
+        payload.setsWon ||
+        (payload.state && payload.state.setsWon);
+
+      if (legsMap && typeof legsMap === "object") {
+        for (const [k, v] of Object.entries(legsMap)) {
+          const val = Number(v) || 0;
+          totalLegs += val;
+          if (String(k) === pid) myLegs = val;
+        }
+      }
+      if (setsMap && typeof setsMap === "object") {
+        for (const [k, v] of Object.entries(setsMap)) {
+          const val = Number(v) || 0;
+          totalSets += val;
+          if (String(k) === pid) mySets = val;
+        }
+      }
+    }
+
+    // Sélection du "bucket" (duo / multi / team)
+    let bucketKey: keyof X01MultiLegsSets;
+
+    if (mode === "x01_teams") {
+      bucketKey = "team";
+    } else {
+      const playerCount = players.length;
+      bucketKey = playerCount <= 2 ? "duo" : "multi";
+    }
+
+    const bucket = out[bucketKey];
+
+    // Matchs
+    bucket.matchesTotal += 1;
+    if (
+      (m as any).winnerId &&
+      String((m as any).winnerId) === pid
+    ) {
+      bucket.matchesWin += 1;
+    }
+
+    // Legs / Sets
+    bucket.legsWin += myLegs;
+    bucket.legsTotal += totalLegs;
+    bucket.setsWin += mySets;
+    bucket.setsTotal += totalSets;
+  }
+
+  return out;
 }
 
 /* ================================================================
@@ -840,6 +1015,31 @@ export const StatsBridge = {
     const legs = await loadCricketLegStatsForProfile(profileId);
     return aggregateCricketProfileStats(legs, { maxHistoryItems: 30 });
   },
+
+  /* --------------------------------------------------------------
+     getX01MultiLegsSetsForProfile :
+     - agrège Legs / Sets (gagnés + totaux) pour un profil
+       sur les matchs X01 multi (duo / multi / team)
+  -------------------------------------------------------------- */
+  async getX01MultiLegsSetsForProfile(
+    profileId: string
+  ): Promise<X01MultiLegsSets> {
+    if (!profileId) return createEmptyMultiLegsSets();
+
+    try {
+      const rows = await History.list();
+      const matches = (rows as SavedMatch[]).filter(
+        (m) => (m as any).kind === "x01"
+      );
+
+      return computeX01MultiLegsSetsForProfileFromMatches(
+        profileId,
+        matches
+      );
+    } catch {
+      return createEmptyMultiLegsSets();
+    }
+  },
 };
 
 /* ---------- Alias en export NOMMÉ (compat import { ... } ) ---------- */
@@ -859,3 +1059,7 @@ export const getBasicProfileStatsAsync = (profileId: string) =>
 // 🔸 Nouveau : stats Cricket complètes pour un profil
 export const getCricketProfileStats = (profileId: string) =>
   StatsBridge.getCricketProfileStats(profileId);
+
+// 🔸 Nouveau : agrégat Legs / Sets X01 multi (duo / multi / team)
+export const getX01MultiLegsSetsForProfile = (profileId: string) =>
+  StatsBridge.getX01MultiLegsSetsForProfile(profileId);

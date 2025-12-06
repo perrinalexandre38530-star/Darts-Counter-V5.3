@@ -16,8 +16,8 @@ type Props = {
   onSimple: () => void;           // repasse à S (après un appui D/T)
   onDouble: () => void;           // active D
   onTriple: () => void;           // active T
-  onBackspace?: () => void;       // supprime la dernière entrée (clic droit sur ANNULER)
-  onCancel: () => void;           // vide la volée courante (ou annule la dernière volée côté écran)
+  onBackspace?: () => void;       // supprime la dernière entrée locale (utilisé sur clic droit ANNULER)
+  onCancel: () => void;           // logique "Annuler" déléguée au parent (X01V3 : efface dernier hit ou UNDO global)
   onNumber: (n: number) => void;  // 0..20 (0 = MISS)
   onBull: () => void;             // OB/DBULL (25/50)
   onValidate: () => void;         // bouton Valider
@@ -36,7 +36,7 @@ function fmt(d?: UIDart) {
 function throwTotal(throwDarts: UIDart[]) {
   return (throwDarts || []).reduce((acc, d) => {
     if (!d) return acc;
-    if (d.v === 0) return acc;                           // MISS
+    if (d.v === 0) return acc;                             // MISS
     if (d.v === 25) return acc + (d.mult === 2 ? 50 : 25); // BULL / DBULL
     return acc + d.v * d.mult;
   }, 0);
@@ -158,8 +158,8 @@ export default function Keypad({
           onContextMenu={(e) => {
             e.preventDefault();
             onBackspace?.();
-          }} // clic droit = supprimer la dernière
-          title="Annuler la volée (clic droit : annuler la dernière entrée)"
+          }} // clic droit = supprimer la dernière entrée locale
+          title="Annuler (logique gérée par l'écran X01) — clic droit : annuler la dernière entrée"
           aria-label="Annuler"
         >
           ANNULER

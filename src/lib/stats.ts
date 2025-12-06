@@ -5,6 +5,8 @@
 // - computeLegStats/aggregateMatch compatibles X01Play + playerStats
 // ============================================
 
+import type { X01ConfigV3 } from "../types/x01v3";
+
 /* ---------- Types publics ---------- */
 export type BasicProfileStats = {
   games: number;        // parties jouées (tous jeux confondus)
@@ -76,6 +78,9 @@ export type PerPlayerLegStats = {
   avg3: number;                 // alias de avg3d
   dartsThrown: number;          // alias de darts
   buckets?: Record<string, number>; // "0-59","60-99","100+","140+","180"
+
+  // Champs additionnels possibles (usage / précision)
+  // (on les laisse en indexation libre via "as any" dans le code)
 };
 
 export type LegStats = {
@@ -89,7 +94,7 @@ export type LegStats = {
 /* ---------- Helpers locaux ---------- */
 function now() { return Date.now(); }
 function safeNumber(n: any, d = 0) { const v = Number(n); return Number.isFinite(v) ? v : d; }
-function pct(n: number, d: number) { return d > 0 ? +( (n * 100) / d ).toFixed(2) : 0; }
+function pct(n: number, d: number) { return d > 0 ? +((n * 100) / d).toFixed(2) : 0; }
 
 /* ---------- Accès HISTORIQUE (tolérant) ---------- */
 type AnyRecord = any;
@@ -421,6 +426,195 @@ export function aggregateMatch(legs: LegStats[], players: string[]) {
     t.coPct = pct(t.coHits, t.coAtt);
   }
   return agg;
+}
+
+/* -------------------------------------------------------------
+   X01 V3 (payload léger) -> LegStats pour LEO / "Voir stats"
+   Utilise summary.avg3ByPlayer / bestVisitByPlayer /
+   bestCheckoutByPlayer / perPlayer / detailedByPlayer
+------------------------------------------------------------- */
+export function buildLegStatsFromX01V3Summary(
+  summary: any,
+  config: X01ConfigV3,
+  scores: Record<string, number> | undefined
+): LegStats | null {
+  if (!summary || !config || !Array.isArray((config as any).players)) {
+    return null;
+  }
+
+  const players = (config as any).players as {
+    id: string;
+    name?: string;
+  }[];
+
+  const perPlayerArray: any[] = Array.isArray(summary.perPlayer)
+    ? summary.perPlayer
+    : [];
+
+  const detailedByPlayer: Record<string, any> =
+    summary.detailedByPlayer || {};
+
+  const avg3ByPlayer: Record<string, number> =
+    summary.avg3ByPlayer || {};
+
+  const bestVisitByPlayer: Record<string, number> =
+    summary.bestVisitByPlayer || {};
+
+  const bestCheckoutByPlayer: Record<string, number> =
+    summary.bestCheckoutByPlayer || {};
+
+  const startScore = config.startScore ?? 501;
+  const finalScores =
+    scores ||
+    summary.finalScores ||
+    (summary.payload && summary.payload.finalScores) ||
+    {};
+
+  let winnerId: string | null =
+    summary.winnerId ?? summary.winner ?? null;
+
+  if (!winnerId && typeof summary.winnerName === "string") {
+    const p = players.find((pl) => pl.name === summary.winnerName);
+    if (p) winnerId = p.id;
+  }
+
+  const perPlayerLeg: Record<string, PerPlayerLegStats> = {};
+
+  for (const p of players) {
+    const pid = p.id;
+
+    const base = perPlayerArray.find((x) => x.playerId === pid) || {};
+    const detail = detailedByPlayer[pid] || {};
+
+    // Darts / points / visits / moyennes
+    const dartsRaw: number =
+      detail.darts ??
+      base.darts ??
+      (summary.dartsByPlayer && summary.dartsByPlayer[pid]) ??
+      0;
+
+    const scoreNow =
+      typeof finalScores[pid] === "number"
+        ? Number(finalScores[pid])
+        : startScore;
+
+    const points = Math.max(startScore - scoreNow, 0);
+
+    const darts =
+      dartsRaw ||
+      (detail.hitsS || 0) +
+        (detail.hitsD || 0) +
+        (detail.hitsT || 0) +
+        (detail.miss || 0);
+
+    const visits =
+      darts > 0 ? Math.ceil(darts / 3) : base.visits ?? 0;
+
+    const avg3dExplicit = avg3ByPlayer[pid];
+    const avg3d =
+      typeof avg3dExplicit === "number"
+        ? avg3dExplicit
+        : darts > 0
+        ? (points / darts) * 3
+        : 0;
+
+    const bestVisit =
+      typeof bestVisitByPlayer[pid] === "number"
+        ? bestVisitByPlayer[pid]
+        : base.bestVisit ?? 0;
+
+    const bestCheckout =
+      typeof bestCheckoutByPlayer[pid] === "number"
+        ? bestCheckoutByPlayer[pid]
+        : base.bestCheckout ?? 0;
+
+    // Hits détaillés
+    const hits = base.hits || {};
+    const singles = detail.hitsS ?? hits.S ?? 0;
+    const doubles = detail.hitsD ?? hits.D ?? 0;
+    const triples = detail.hitsT ?? hits.T ?? 0;
+    const miss = detail.miss ?? hits.M ?? 0;
+    const bust = detail.bust ?? base.bust ?? 0;
+    const bull = detail.bull ?? base.bull ?? 0;
+    const dBull = detail.dBull ?? base.dBull ?? 0;
+
+    const totalDarts = darts || singles + doubles + triples + miss || 0;
+
+    const h60 = base.h60 ?? 0;
+    const h100 = base.h100 ?? 0;
+    const h140 = base.h140 ?? 0;
+    const h180 = base.h180 ?? 0;
+
+    const bySegmentS = detail.bySegmentS || {};
+    const bySegmentD = detail.bySegmentD || {};
+    const bySegmentT = detail.bySegmentT || {};
+
+    const playerStats: PerPlayerLegStats = {
+      // Volumes
+      darts: totalDarts,
+      dartsThrown: totalDarts,
+      points,
+      visits,
+      avg3d,
+      avg3: avg3d,
+      avg1d: totalDarts ? points / totalDarts : undefined,
+      bestVisit,
+
+      // Power scoring
+      h60,
+      h100,
+      h140,
+      h180,
+      tonsTotal: (h100 || 0) + (h140 || 0) + (h180 || 0),
+
+      // Checkouts
+      bestCheckout,
+      coHits: base.coHits ?? 0,
+      coAtt: base.coAtt ?? 0,
+      coPct: base.coPct ?? 0,
+    };
+
+    // Champs additionnels pour LEO (usage / précision / segments)
+    const psAny = playerStats as any;
+    psAny.singles = singles;
+    psAny.doubles = doubles;
+    psAny.triples = triples;
+    psAny.miss = miss;
+    psAny.bust = bust;
+    psAny.bull = bull;
+    psAny.dBull = dBull;
+
+    psAny.singlesPct =
+      totalDarts > 0 ? (singles / totalDarts) * 100 : undefined;
+    psAny.doublesPct =
+      totalDarts > 0 ? (doubles / totalDarts) * 100 : undefined;
+    psAny.triplesPct =
+      totalDarts > 0 ? (triples / totalDarts) * 100 : undefined;
+    psAny.missPct =
+      totalDarts > 0 ? (miss / totalDarts) * 100 : undefined;
+    psAny.bustPct =
+      totalDarts > 0 ? (bust / totalDarts) * 100 : undefined;
+    psAny.bullPct =
+      totalDarts > 0 ? (bull / totalDarts) * 100 : undefined;
+    psAny.bullEyePct =
+      totalDarts > 0 ? (dBull / totalDarts) * 100 : undefined;
+
+    psAny.bySegmentS = bySegmentS;
+    psAny.bySegmentD = bySegmentD;
+    psAny.bySegmentT = bySegmentT;
+
+    perPlayerLeg[pid] = playerStats;
+  }
+
+  const legStats: LegStats = {
+    legNo: summary.legNo ?? 1,
+    players: players.map((p) => p.id),
+    winnerId: winnerId ?? null,
+    finishedAt: summary.finishedAt ?? summary.createdAt ?? Date.now(),
+    perPlayer: perPlayerLeg,
+  };
+
+  return legStats;
 }
 
 /* ---------- Petits alias de compat éventuelle ---------- */

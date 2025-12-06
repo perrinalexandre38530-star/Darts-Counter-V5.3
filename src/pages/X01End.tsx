@@ -3,10 +3,16 @@
 // Fin de partie “maxi-stats” (LEG/MATCH) — colonnes = joueurs
 // + RESTE TON TABLEAU tel quel
 // + Ajout: overlay optionnel si params.showEnd === true (reconstruit legacy depuis les métriques)
+// + NOUVEAU : support X01 V3 léger via buildLegStatsFromX01V3Summary
+// + NOUVEAU : Radar "TrainingX01-like" + Historique des volées
 // ============================================
 import React from "react";
 import { History } from "../lib/history";
 import EndOfLegOverlay from "../components/EndOfLegOverlay";
+import {
+  buildLegStatsFromX01V3Summary,
+  type LegStats,
+} from "../lib/stats";
 
 /* ================================
    Types basiques
@@ -15,13 +21,25 @@ type PlayerLite = { id: string; name?: string; avatarDataUrl?: string | null };
 
 type Props = {
   go: (tab: string, params?: any) => void;
-  params?: { matchId?: string; resumeId?: string | null; rec?: any; showEnd?: boolean };
+  params?: {
+    matchId?: string;
+    resumeId?: string | null;
+    rec?: any;
+    showEnd?: boolean;
+  };
 };
 
 /* ================================
    Densité / responsive
 ================================ */
-const D = { fsBody: 12, fsHead: 12, padCellV: 6, padCellH: 10, cardPad: 10, radius: 14 };
+const D = {
+  fsBody: 12,
+  fsHead: 12,
+  padCellV: 6,
+  padCellH: 10,
+  cardPad: 10,
+  radius: 14,
+};
 const mobileDenseCss = `
 @media (max-width: 420px){
   .x-end h2{ font-size:16px; }
@@ -31,6 +49,20 @@ const mobileDenseCss = `
   .selector button{ font-size:11px; padding:4px 8px; }
 }
 `;
+
+/* ================================
+   Types pour historique des volées
+================================ */
+type VisitRow = {
+  idx: number;
+  legNo: number;
+  playerId: string;
+  darts: { v: number; mult: 1 | 2 | 3 }[];
+  scoreBefore: number;
+  scoreAfter: number;
+  bust: boolean;
+  finish: boolean;
+};
 
 /* ================================
    Composant principal
@@ -44,9 +76,16 @@ export default function X01End({ go, params }: Props) {
   const [chartPid, setChartPid] = React.useState<string>("");
 
   // NEW: overlay “à la demande”
-  const [overlayOpen, setOverlayOpen] = React.useState<boolean>(!!params?.showEnd);
+  const [overlayOpen, setOverlayOpen] = React.useState<boolean>(
+    !!params?.showEnd
+  );
   const [overlayResult, setOverlayResult] = React.useState<any | null>(null);
-  const [playersById, setPlayersById] = React.useState<Record<string, PlayerLite>>({});
+  const [playersById, setPlayersById] = React.useState<
+    Record<string, PlayerLite>
+  >({});
+
+  // NEW : LegStats X01 V3 reconstruit à partir du summary léger
+  const [legStats, setLegStats] = React.useState<LegStats | null>(null);
 
   // chargement de l'enregistrement (asynchrone protégé)
   React.useEffect(() => {
@@ -64,7 +103,9 @@ export default function X01End({ go, params }: Props) {
             return;
           }
         }
-        const mem = (window as any)?.__appStore?.history as any[] | undefined;
+        const mem = (window as any)?.__appStore?.history as
+          | any[]
+          | undefined;
         if (mem?.length) {
           if (params?.matchId) {
             const m = mem.find((r) => r?.id === params.matchId);
@@ -73,7 +114,9 @@ export default function X01End({ go, params }: Props) {
               return;
             }
           }
-          const lastFin = mem.find((r) => String(r?.status).toLowerCase() === "finished");
+          const lastFin = mem.find(
+            (r) => String(r?.status).toLowerCase() === "finished"
+          );
           if (mounted && lastFin) {
             setRec(lastFin);
             return;
@@ -97,7 +140,7 @@ export default function X01End({ go, params }: Props) {
 
   const players: PlayerLite[] = React.useMemo(() => {
     if (!rec) return [];
-    const arr = rec.players?.length ? rec.players : (rec.payload?.players || []);
+    const arr = rec.players?.length ? rec.players : rec.payload?.players || [];
     return arr.map((p: any) => ({
       id: p.id,
       name: p?.name || "—",
@@ -112,25 +155,94 @@ export default function X01End({ go, params }: Props) {
   }, [players]);
 
   const winnerId: string | null =
-    rec?.winnerId ?? rec?.payload?.winnerId ?? rec?.summary?.winnerId ?? null;
+    rec?.winnerId ??
+    rec?.payload?.winnerId ??
+    rec?.summary?.winnerId ??
+    null;
   const winnerName =
-    (winnerId && (players.find((p) => p.id === winnerId)?.name || null)) || null;
+    (winnerId && (players.find((p) => p.id === winnerId)?.name || null)) ||
+    null;
 
-  const matchSummary = rec?.summary && rec?.summary.kind === "x01" ? rec.summary : null;
+  // Match summary :
+  // - X01 v1/v2 => kind === "x01"
+  // - X01 v3 léger => kind/variant/engine === "x01_v3"
+  const matchSummary =
+    rec?.summary &&
+    typeof rec.summary === "object" &&
+    (rec.summary.kind === "x01" ||
+      rec.summary.kind === "x01_v3" ||
+      rec.summary.variant === "x01_v3" ||
+      rec.summary.engine === "x01_v3")
+      ? rec.summary
+      : null;
+
   const legSummary = !matchSummary ? buildSummaryFromLeg(rec) : null;
 
+  // NEW : tentative de reconstruction LegStats X01 V3 à partir du summary léger
+  React.useEffect(() => {
+    if (!rec) {
+      setLegStats(null);
+      return;
+    }
+
+    const summary: any = rec.summary || {};
+    const decoded: any = rec.decoded || rec.payload || {};
+
+    const isX01V3 =
+      summary.variant === "x01_v3" ||
+      summary.engine === "x01_v3" ||
+      summary.kind === "x01_v3" ||
+      summary.game === "x01_v3";
+
+    if (!isX01V3) {
+      setLegStats(null);
+      return;
+    }
+
+    const cfg =
+      decoded.config ||
+      decoded.game ||
+      decoded.x01?.config ||
+      decoded.x01 ||
+      null;
+
+    if (!cfg) {
+      setLegStats(null);
+      return;
+    }
+
+    const finalScores =
+      decoded.finalScores ||
+      decoded.x01?.finalScores ||
+      summary.finalScores ||
+      undefined;
+
+    const leg = buildLegStatsFromX01V3Summary(summary, cfg, finalScores);
+    setLegStats(leg || null);
+  }, [rec]);
+
   const M = React.useMemo(() => {
-    return rec ? buildPerPlayerMetrics(rec, matchSummary || legSummary, players) : {};
-  }, [rec, matchSummary, legSummary, players]);
+    return rec
+      ? buildPerPlayerMetrics(
+          rec,
+          matchSummary || legSummary,
+          players,
+          legStats || undefined
+        )
+      : {};
+  }, [rec, matchSummary, legSummary, players, legStats]);
 
   const has = detectAvailability(M);
 
-  const resumeId = params?.resumeId ?? rec?.resumeId ?? rec?.payload?.resumeId ?? null;
+  const resumeId =
+    params?.resumeId ?? rec?.resumeId ?? rec?.payload?.resumeId ?? null;
 
   // garder chartPid cohérent avec la liste des joueurs dès qu'elle change
   React.useEffect(() => {
     if (!players.length) return;
-    setChartPid((prev) => (players.find((p) => p.id === prev) ? prev : players[0]?.id || ""));
+    setChartPid((prev) =>
+      players.find((p) => p.id === prev) ? prev : players[0]?.id || ""
+    );
   }, [players]);
 
   // NEW: si showEnd demandé, construire un "legacy" overlay depuis M (sans rien toucher aux profils)
@@ -163,7 +275,10 @@ export default function X01End({ go, params }: Props) {
       const m = M[id];
       if (!m) continue;
       darts[id] = n(m.darts, 0);
-      visits[id] = n(m.visits, darts[id] ? Math.ceil(darts[id] / 3) : 0);
+      visits[id] = n(
+        m.visits,
+        darts[id] ? Math.ceil(darts[id] / 3) : 0
+      );
       avg3[id] = Math.round(n(m.avg3, 0) * 100) / 100;
       bestVisit[id] = n(m.bestVisit, 0);
       bestCheckout[id] = n(m.bestCO, 0);
@@ -177,9 +292,15 @@ export default function X01End({ go, params }: Props) {
       bust[id] = n(m.busts, 0);
       dbull[id] = n(m.dbulls, 0);
 
-      missPct[id] = darts[id] ? Math.round((miss[id] / darts[id]) * 1000) / 10 : 0;
-      bustPct[id] = visits[id] ? Math.round((bust[id] / visits[id]) * 1000) / 10 : 0;
-      dbullPct[id] = darts[id] ? Math.round((dbull[id] / darts[id]) * 1000) / 10 : 0;
+      missPct[id] = darts[id]
+        ? Math.round((miss[id] / darts[id]) * 1000) / 10
+        : 0;
+      bustPct[id] = visits[id]
+        ? Math.round((bust[id] / visits[id]) * 1000) / 10
+        : 0;
+      dbullPct[id] = darts[id]
+        ? Math.round((dbull[id] / darts[id]) * 1000) / 10
+        : 0;
 
       doubles[id] = n(m.doubles, 0);
       triples[id] = n(m.triples, 0);
@@ -223,12 +344,35 @@ export default function X01End({ go, params }: Props) {
     });
   }, [params?.showEnd, players, M, rec, winnerId]);
 
+  // Historique des volées — priorité à legStats / __legStats
+  const visits: VisitRow[] = React.useMemo(
+    () =>
+      buildVisitHistory(
+        rec,
+        players,
+        legStats || rec?.payload?.__legStats || rec?.__legStats || null
+      ),
+    [rec, players, legStats]
+  );
+
   // --- Rendus (aucun hook après ceci) ---
-  if (err) return <Shell go={go} title="Fin de partie"><Notice>{err}</Notice></Shell>;
-  if (!rec) return <Shell go={go}><Notice>Chargement…</Notice></Shell>;
+  if (err)
+    return (
+      <Shell go={go} title="Fin de partie">
+        <Notice>{err}</Notice>
+      </Shell>
+    );
+  if (!rec)
+    return (
+      <Shell go={go}>
+        <Notice>Chargement…</Notice>
+      </Shell>
+    );
 
   const chartPlayer = players.find((p) => p.id === chartPid);
-  const chartMetrics = chartPlayer ? M[chartPlayer.id] || emptyMetrics(chartPlayer) : null;
+  const chartMetrics = chartPlayer
+    ? M[chartPlayer.id] || emptyMetrics(chartPlayer)
+    : null;
 
   /* ========= Tableaux COL-MAJOR (colonnes = joueurs) ========= */
   const cols = players.map((p) => ({ key: p.id, title: p.name || "—" }));
@@ -243,7 +387,13 @@ export default function X01End({ go, params }: Props) {
   return (
     <Shell
       go={go}
-      title={((rec?.kind === "x01" || rec?.kind === "leg") ? "LEG" : String(rec?.kind || "Fin").toUpperCase()) + " — " + dateStr}
+      title={
+        ((rec?.kind === "x01" || rec?.kind === "leg"
+          ? "LEG"
+          : String(rec?.kind || "Fin").toUpperCase()) +
+          " — " +
+          dateStr) as string
+      }
       canResume={!!resumeId && !finished}
       resumeId={resumeId}
     >
@@ -251,12 +401,34 @@ export default function X01End({ go, params }: Props) {
 
       {/* === Bandeau joueurs + vainqueur === */}
       <Panel>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <div style={{ fontWeight: 800, color: "#e8e8ec", fontSize: 12 }}>
-            Joueurs : {players.map((p) => p?.name || "—").join(" · ") || "—"}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <div
+            style={{
+              fontWeight: 800,
+              color: "#e8e8ec",
+              fontSize: 12,
+            }}
+          >
+            Joueurs :{" "}
+            {players.map((p) => p?.name || "—").join(" · ") || "—"}
           </div>
           {winnerName ? (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "#ffcf57", fontWeight: 900 }}>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                color: "#ffcf57",
+                fontWeight: 900,
+              }}
+            >
               <Trophy />
               <span>{winnerName}</span>
             </div>
@@ -266,7 +438,8 @@ export default function X01End({ go, params }: Props) {
 
       {!matchSummary && legSummary ? (
         <InfoCard>
-          <b>Résumé (manche)</b> — reconstruit depuis les statistiques de la manche.
+          <b>Résumé (manche)</b> — reconstruit depuis les statistiques de la
+          manche.
         </InfoCard>
       ) : null}
 
@@ -284,10 +457,44 @@ export default function X01End({ go, params }: Props) {
                 { label: "Darts", get: (m) => f0(m.darts) },
                 { label: "Visits", get: (m) => f0(m.visits) },
                 { label: "Points", get: (m) => f0(m.points) },
-                { label: "Score/visit", get: (m) => (m.visits > 0 ? f2(m.points / m.visits) : "—") },
-                ...(has.first9 ? [{ label: "First9", get: (m) => (m.first9 != null ? f2(m.first9) : "—") }] : []),
-                ...(has.dartsToFinish ? [{ label: "Darts→CO", get: (m) => (m.dartsToFinish != null ? f0(m.dartsToFinish) : "—") }] : []),
-                ...(has.highestNonCO ? [{ label: "Hi non-CO", get: (m) => (m.highestNonCO != null ? f0(m.highestNonCO) : "—") }] : []),
+                {
+                  label: "Score/visit",
+                  get: (m) =>
+                    m.visits > 0
+                      ? f2(m.points / m.visits)
+                      : "—",
+                },
+                ...(has.first9
+                  ? [
+                      {
+                        label: "First9",
+                        get: (m) =>
+                          m.first9 != null ? f2(m.first9) : "—",
+                      },
+                    ]
+                  : []),
+                ...(has.dartsToFinish
+                  ? [
+                      {
+                        label: "Darts→CO",
+                        get: (m) =>
+                          m.dartsToFinish != null
+                            ? f0(m.dartsToFinish)
+                            : "—",
+                      },
+                    ]
+                  : []),
+                ...(has.highestNonCO
+                  ? [
+                      {
+                        label: "Hi non-CO",
+                        get: (m) =>
+                          m.highestNonCO != null
+                            ? f0(m.highestNonCO)
+                            : "—",
+                      },
+                    ]
+                  : []),
               ],
             },
           ]}
@@ -307,7 +514,11 @@ export default function X01End({ go, params }: Props) {
                 { label: "100+", get: (m) => f0(m.t100) },
                 { label: "140+", get: (m) => f0(m.t140) },
                 { label: "180", get: (m) => f0(m.t180) },
-                { label: "Tons (Σ)", get: (m) => f0(m.t180 + m.t140 + m.t100) },
+                {
+                  label: "Tons (Σ)",
+                  get: (m) =>
+                    f0(m.t180 + m.t140 + m.t100),
+                },
               ],
             },
           ]}
@@ -326,8 +537,21 @@ export default function X01End({ go, params }: Props) {
                 { label: "Best CO", get: (m) => f0(m.bestCO) },
                 { label: "CO hits", get: (m) => f0(m.coHits) },
                 { label: "CO att.", get: (m) => f0(m.coAtt) },
-                { label: "CO %", get: (m) => pct(m.coPct) },
-                ...(has.avgCoDarts ? [{ label: "Avg darts@CO", get: (m) => (m.avgCoDarts != null ? f2(m.avgCoDarts) : "—") }] : []),
+                {
+                  label: "CO %",
+                  get: (m) => pct(m.coPct),
+                },
+                ...(has.avgCoDarts
+                  ? [
+                      {
+                        label: "Avg darts@CO",
+                        get: (m) =>
+                          m.avgCoDarts != null
+                            ? f2(m.avgCoDarts)
+                            : "—",
+                      },
+                    ]
+                  : []),
               ],
             },
           ]}
@@ -350,7 +574,16 @@ export default function X01End({ go, params }: Props) {
                     const d = Math.max(0, m.darts || 0);
                     const singles = n(
                       m.singles,
-                      Math.max(0, d - (n(m.doubles) + n(m.triples) + n(m.bulls) + n(m.dbulls) + n(m.misses) + n(m.busts)))
+                      Math.max(
+                        0,
+                        d -
+                          (n(m.doubles) +
+                            n(m.triples) +
+                            n(m.bulls) +
+                            n(m.dbulls) +
+                            n(m.misses) +
+                            n(m.busts))
+                      )
                     );
                     return f0(singles);
                   },
@@ -361,15 +594,48 @@ export default function X01End({ go, params }: Props) {
                     const d = Math.max(0, m.darts || 0);
                     const singles = n(
                       m.singles,
-                      Math.max(0, d - (n(m.doubles) + n(m.triples) + n(m.bulls) + n(m.dbulls) + n(m.misses) + n(m.busts)))
+                      Math.max(
+                        0,
+                        d -
+                          (n(m.doubles) +
+                            n(m.triples) +
+                            n(m.bulls) +
+                            n(m.dbulls) +
+                            n(m.misses) +
+                            n(m.busts))
+                      )
                     );
-                    return pct(d > 0 ? (singles / d) * 100 : undefined);
+                    return pct(
+                      d > 0 ? (singles / d) * 100 : undefined
+                    );
                   },
                 },
-                { label: "Miss", get: (m) => f0(m.misses || 0) },
-                { label: "Miss %", get: (m) => pct(m.darts > 0 ? (n(m.misses) / m.darts) * 100 : undefined) },
-                { label: "Bust", get: (m) => f0(m.busts || 0) },
-                { label: "Bust %", get: (m) => pct(m.darts > 0 ? (n(m.busts) / m.darts) * 100 : undefined) },
+                {
+                  label: "Miss",
+                  get: (m) => f0(m.misses || 0),
+                },
+                {
+                  label: "Miss %",
+                  get: (m) =>
+                    pct(
+                      m.darts > 0
+                        ? (n(m.misses) / m.darts) * 100
+                        : undefined
+                    ),
+                },
+                {
+                  label: "Bust",
+                  get: (m) => f0(m.busts || 0),
+                },
+                {
+                  label: "Bust %",
+                  get: (m) =>
+                    pct(
+                      m.darts > 0
+                        ? (n(m.busts) / m.darts) * 100
+                        : undefined
+                    ),
+                },
               ],
             },
           ]}
@@ -386,15 +652,41 @@ export default function X01End({ go, params }: Props) {
             {
               rows: [
                 { label: "Doubles", get: (m) => f0(m.doubles) },
-                { label: "Dbl %", get: (m) => pct(m.doublePct) },
+                {
+                  label: "Dbl %",
+                  get: (m) => pct(m.doublePct),
+                },
                 { label: "Triples", get: (m) => f0(m.triples) },
-                { label: "Trpl %", get: (m) => pct(m.triplePct) },
+                {
+                  label: "Trpl %",
+                  get: (m) => pct(m.triplePct),
+                },
                 { label: "Bulls", get: (m) => f0(m.bulls) },
-                { label: "Bulls %", get: (m) => pct(m.bullPct) },
+                {
+                  label: "Bulls %",
+                  get: (m) => pct(m.bullPct),
+                },
                 { label: "DBull", get: (m) => f0(m.dbulls) },
-                { label: "DBull %", get: (m) => pct(m.dbullPct) },
-                ...(has.singles ? [{ label: "Singles (hits)", get: (m) => f0(m.singles || 0) }] : []),
-                ...(has.misses ? [{ label: "Misses (hits)", get: (m) => f0(m.misses || 0) }] : []),
+                {
+                  label: "DBull %",
+                  get: (m) => pct(m.dbullPct),
+                },
+                ...(has.singles
+                  ? [
+                      {
+                        label: "Singles (hits)",
+                        get: (m) => f0(m.singles || 0),
+                      },
+                    ]
+                  : []),
+                ...(has.misses
+                  ? [
+                      {
+                        label: "Misses (hits)",
+                        get: (m) => f0(m.misses || 0),
+                      },
+                    ]
+                  : []),
               ],
             },
           ]}
@@ -410,13 +702,34 @@ export default function X01End({ go, params }: Props) {
           rowGroups={[
             {
               rows: [
-                { label: "Treble rate", get: (m) => pct(m.triplePct) },
-                { label: "Double rate", get: (m) => pct(m.doublePct) },
-                { label: "Bull rate", get: (m) => pct(m.bullPct) },
-                { label: "DBull rate", get: (m) => pct(m.dbullPct) },
-                { label: "Checkout rate", get: (m) => pct(m.coPct) },
-                { label: "Single rate", get: (m) => pct(m.singleRate) },
-                { label: "Bust rate", get: (m) => pct(m.bustRate) },
+                {
+                  label: "Treble rate",
+                  get: (m) => pct(m.triplePct),
+                },
+                {
+                  label: "Double rate",
+                  get: (m) => pct(m.doublePct),
+                },
+                {
+                  label: "Bull rate",
+                  get: (m) => pct(m.bullPct),
+                },
+                {
+                  label: "DBull rate",
+                  get: (m) => pct(m.dbullPct),
+                },
+                {
+                  label: "Checkout rate",
+                  get: (m) => pct(m.coPct),
+                },
+                {
+                  label: "Single rate",
+                  get: (m) => pct(m.singleRate),
+                },
+                {
+                  label: "Bust rate",
+                  get: (m) => pct(m.bustRate),
+                },
               ],
             },
           ]}
@@ -425,13 +738,28 @@ export default function X01End({ go, params }: Props) {
         />
       </CardTable>
 
-      {/* ===== 7) CIBLE CIRCULAIRE POLAIRE ===== */}
+      {/* ===== 7) RADAR HITS "TRAINING" ===== */}
       {chartMetrics ? (
         <Panel className="x-card">
-          <h3 style={{ margin: "0 0 6px", fontSize: D.fsHead + 1, letterSpacing: 0.2, color: "#ffcf57" }}>
-            Graphique cible circulaire
+          <h3
+            style={{
+              margin: "0 0 6px",
+              fontSize: D.fsHead + 1,
+              letterSpacing: 0.2,
+              color: "#ffcf57",
+            }}
+          >
+            Radar — répartition des hits
           </h3>
-          <div className="selector" style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+          <div
+            className="selector"
+            style={{
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap",
+              marginBottom: 8,
+            }}
+          >
             {players.map((p) => (
               <button
                 key={p.id}
@@ -439,22 +767,56 @@ export default function X01End({ go, params }: Props) {
                 style={{
                   padding: "6px 10px",
                   borderRadius: 999,
-                  border: p.id === chartPid ? "1px solid rgba(255,200,60,.6)" : "1px solid rgba(255,255,255,.18)",
-                  background: p.id === chartPid ? "linear-gradient(180deg,#ffc63a,#ffaf00)" : "transparent",
-                  color: p.id === chartPid ? "#141417" : "#e8e8ec",
+                  border:
+                    p.id === chartPid
+                      ? "1px solid rgba(255,200,60,.6)"
+                      : "1px solid rgba(255,255,255,.18)",
+                  background:
+                    p.id === chartPid
+                      ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
+                      : "transparent",
+                  color:
+                    p.id === chartPid ? "#141417" : "#e8e8ec",
                   fontWeight: 800,
                   cursor: "pointer",
+                  fontSize: 11.5,
                 }}
               >
                 {p.name || "—"}
               </button>
             ))}
           </div>
-          <TargetPolar m={chartMetrics} />
-          <div style={{ marginTop: 8, color: "#bbb", fontSize: 12 }}>
-            Chaque point = total pondéré sur le numéro (S×1, D×2, T×3 ; Bull×1, DBull×2 ; Miss=point séparé),
-            normalisé sur le max de la manche. Les points sont reliés pour “former” la manche.
+          <HitsRadar m={chartMetrics} />
+          <div
+            style={{
+              marginTop: 8,
+              color: "#bbb",
+              fontSize: 12,
+            }}
+          >
+            Radar basé sur le nombre de{" "}
+            <b>Singles</b>, <b>Doubles</b>, <b>Triples</b>,{" "}
+            <b>Bulls</b>, <b>DBulls</b> et <b>Misses</b> pour la
+            partie. Les rayons sont normalisés sur l’axe le plus
+            élevé du joueur (comme le radar Training X01).
           </div>
+        </Panel>
+      ) : null}
+
+      {/* ===== 8) HISTORIQUE DES VOLÉES ===== */}
+      {visits.length > 0 ? (
+        <Panel className="x-card">
+          <h3
+            style={{
+              margin: "0 0 6px",
+              fontSize: D.fsHead + 1,
+              letterSpacing: 0.2,
+              color: "#ffcf57",
+            }}
+          >
+            Historique des volées
+          </h3>
+          <VisitsList visits={visits} playersById={playersById} />
         </Panel>
       ) : null}
 
@@ -484,14 +846,22 @@ function buildSummaryFromLeg(rec: any) {
   const list = leg?.players;
   const now = Date.now();
 
-  const make = (rows: Array<{ id: string; name?: string }>, get: (id: string) => any) => {
+  const make = (
+    rows: Array<{ id: string; name?: string }>,
+    get: (id: string) => any
+  ) => {
     const players: any = {};
     for (const p of rows) {
       const s = get(p.id) || {};
       const darts = n(s.dartsThrown ?? s.darts);
       const visits = n(s.visits);
-      const points = n(s.pointsScored, (n(s.avg3) / 3) * (darts || visits * 3));
-      const bestCO = sanitizeCO(s.bestCheckoutScore ?? s.highestCheckout ?? s.bestCheckout);
+      const points = n(
+        s.pointsScored,
+        (n(s.avg3) / 3) * (darts || visits * 3)
+      );
+      const bestCO = sanitizeCO(
+        s.bestCheckoutScore ?? s.highestCheckout ?? s.bestCheckout
+      );
       players[p.id] = {
         id: p.id,
         name: p.name || "—",
@@ -499,8 +869,13 @@ function buildSummaryFromLeg(rec: any) {
         bestVisit: n(s.bestVisit),
         bestCheckout: bestCO,
         darts: darts || (visits ? visits * 3 : 0),
-        win: !!s.win || (rec?.winnerId ? rec.winnerId === p.id : false),
-        buckets: s.buckets && Object.keys(s.buckets).length ? s.buckets : undefined,
+        win:
+          !!s.win ||
+          (rec?.winnerId ? rec.winnerId === p.id : false),
+        buckets:
+          s.buckets && Object.keys(s.buckets).length
+            ? s.buckets
+            : undefined,
         updatedAt: now,
         matches: 1,
         legs: 1,
@@ -509,12 +884,17 @@ function buildSummaryFromLeg(rec: any) {
         _sumVisits: visits || undefined,
       };
     }
-    return { kind: "x01", winnerId: rec?.winnerId ?? null, players, updatedAt: now };
+    return {
+      kind: "x01",
+      winnerId: rec?.winnerId ?? null,
+      players,
+      updatedAt: now,
+    };
   };
 
   if (per && Array.isArray(list)) {
     return make(
-      list.map((id: string) => ({
+      list.map((id) => ({
         id,
         name: rec.players?.find((p: any) => p.id === id)?.name,
       })),
@@ -522,7 +902,9 @@ function buildSummaryFromLeg(rec: any) {
     );
   }
 
-  const ids: string[] = Object.keys(rec?.payload?.avg3 || rec?.avg3 || {});
+  const ids: string[] = Object.keys(
+    rec?.payload?.avg3 || rec?.avg3 || {}
+  );
   if (ids.length) {
     const rows = ids.map((id) => ({
       id,
@@ -530,8 +912,16 @@ function buildSummaryFromLeg(rec: any) {
     }));
     const get = (id: string) => ({
       avg3: pick(rec, [`payload.avg3.${id}`, `avg3.${id}`]),
-      bestVisit: pick(rec, [`payload.bestVisit.${id}`, `bestVisit.${id}`]),
-      bestCheckout: sanitizeCO(pick(rec, [`payload.bestCheckout.${id}`, `bestCheckout.${id}`])),
+      bestVisit: pick(rec, [
+        `payload.bestVisit.${id}`,
+        `bestVisit.${id}`,
+      ]),
+      bestCheckout: sanitizeCO(
+        pick(rec, [
+          `payload.bestCheckout.${id}`,
+          `bestCheckout.${id}`,
+        ])
+      ),
       darts: pick(rec, [`payload.darts.${id}`, `darts.${id}`]),
       visits: pick(rec, [`payload.visits.${id}`, `visits.${id}`]),
       buckets: undefined,
@@ -546,7 +936,15 @@ function buildSummaryFromLeg(rec: any) {
 ================================ */
 type ByNumber = Record<
   string,
-  { inner?: number; outer?: number; double?: number; triple?: number; miss?: number; bull?: number; dbull?: number }
+  {
+    inner?: number;
+    outer?: number;
+    double?: number;
+    triple?: number;
+    miss?: number;
+    bull?: number;
+    dbull?: number;
+  }
 >;
 
 type PlayerMetrics = {
@@ -588,7 +986,7 @@ type PlayerMetrics = {
   segDouble?: number;
   segTriple?: number;
   segMiss?: number;
-  byNumber?: ByNumber; // NEW: pour la cible polaire
+  byNumber?: ByNumber;
 };
 
 function emptyMetrics(p: { id: string; name?: string }): PlayerMetrics {
@@ -635,17 +1033,40 @@ function emptyMetrics(p: { id: string; name?: string }): PlayerMetrics {
   };
 }
 
-function buildPerPlayerMetrics(rec: any, summary: any | null, players: PlayerLite[]) {
+function buildPerPlayerMetrics(
+  rec: any,
+  summary: any | null,
+  players: PlayerLite[],
+  legStats?: LegStats
+) {
   const out: Record<string, PlayerMetrics> = {};
-  const rich = rec?.payload?.__legStats || rec?.__legStats || {};
-  const per = rich.perPlayer || {};
+
+  // ---- sources "riches" possibles ----
+  const rich =
+    legStats ||
+    rec?.payload?.__legStats ||
+    rec?.__legStats ||
+    {};
+  const perFromRich = (rich as any).perPlayer || {};
+  const perFromSummary = summary?.detailedByPlayer || {};
+
+  // on merge : ce qui vient de __legStats écrase au besoin ce qui vient de detailedByPlayer
+  const per: Record<string, any> = {
+    ...perFromSummary,
+    ...perFromRich,
+  };
+
   const legacy = rec?.payload || rec || {};
+  const legacyHitsBySectorAll: any =
+    rec?.summary?.legacy?.hitsBySector ||
+    rec?.payload?.legacy?.hitsBySector ||
+    {};
 
   for (const pl of players) {
     const pid = pl.id;
     const m = emptyMetrics(pl);
 
-    // ===== 1) summary (rapide)
+    // ===== 1) summary (rapide) =====
     const s = summary?.players?.[pid];
     if (s) {
       m.avg3 = n(s.avg3);
@@ -655,43 +1076,142 @@ function buildPerPlayerMetrics(rec: any, summary: any | null, players: PlayerLit
       m.darts = n(s.darts);
       m.visits = s._sumVisits ? n(s._sumVisits) : m.darts ? Math.ceil(m.darts / 3) : 0;
       m.points = n(s._sumPoints, (m.avg3 / 3) * m.darts);
-      const b = s.buckets || {};
-      m.t180 = n(b["180"]);
-      m.t140 = n(b["140+"]);
-      m.t100 = n(b["100+"]);
-      m.t60 = n(b["60+"]);
+
+      const sb =
+        s.buckets ||
+        (s.powerBuckets as any) ||
+        (s.power as any) ||
+        {};
+      if (sb) {
+        m.t180 = n(sb["180"] ?? sb["180+"] ?? sb.t180 ?? sb._180, m.t180);
+        m.t140 = n(sb["140+"] ?? sb.t140 ?? sb._140, m.t140);
+        m.t100 = n(sb["100+"] ?? sb.t100 ?? sb._100, m.t100);
+        m.t60 = n(sb["60+"] ?? sb.t60 ?? sb._60, m.t60);
+      }
     }
 
-    // ===== 2) perPlayer riche
+    // ===== 2) perPlayer riche (V3, training, etc.) =====
     const r = per?.[pid] || {};
     const imp = r.impacts || {};
+
     m.first9 = v(r.first9Avg);
     m.highestNonCO = v(r.highestNonCheckout);
     m.dartsToFinish = v(r.dartsToFinish);
     m.avgCoDarts = v(r.avgCheckoutDarts);
 
-    // bruts (hits)
-    m.doubles = n(r.doubles, n(imp.doubles, m.doubles));
-    m.triples = n(r.triples, n(imp.triples, m.triples));
-    m.bulls = n(r.bulls, n(imp.bulls, m.bulls));
-    m.dbulls = n(r.dbulls, n(imp.dbulls, m.dbulls));
-    m.singles = (r.singles ?? imp.singles ?? m.singles) as any;
-    m.misses = (r.misses ?? imp.misses ?? m.misses) as any;
-    m.busts = (r.busts ?? imp.busts ?? m.busts) as any;
+    // NB de darts : on prend ce qu'on trouve de plus fiable
+    const dartsFromDetail = n(
+      r.darts ?? r.dartsThrown ?? r.totalDarts,
+      0
+    );
+    if (!m.darts && dartsFromDetail) m.darts = dartsFromDetail;
+
+    // volumes complémentaires (si summary ne les a pas déjà remplis)
+    if (!m.points) m.points = n(r.pointsScored, 0);
+    if (!m.avg3) m.avg3 = n(r.avg3, 0);
+    if (!m.avg1 && m.avg3) m.avg1 = m.avg3 / 3;
+    if (!m.bestVisit) m.bestVisit = n(r.bestVisit, 0);
+    if (!m.bestCO)
+      m.bestCO = sanitizeCO(
+        r.bestCheckoutScore ?? r.highestCheckout ?? r.bestCheckout
+      );
+
+    // ---- HITS bruts : compat X01 V3 / training ----
+    const dblHits = n(
+      r.doubles ??
+        r.hitsD ??
+        r.hitsDouble ??
+        r.hitsDoubles ??
+        r.doubleHits ??
+        r.doubleCount ??
+        imp.doubles,
+      m.doubles
+    );
+    const trpHits = n(
+      r.triples ??
+        r.hitsT ??
+        r.hitsTriple ??
+        r.hitsTriples ??
+        r.tripleHits ??
+        r.tripleCount ??
+        imp.triples,
+      m.triples
+    );
+    const bulHits = n(
+      r.bulls ??
+        r.bull ??
+        r.hitsBull ??
+        r.hitsBulls ??
+        r.bullHits ??
+        imp.bulls,
+      m.bulls
+    );
+    const dbuHits = n(
+      r.dbulls ??
+        r.dBull ??
+        r.hitsDbull ??
+        r.hitsDBull ??
+        r.doubleBull ??
+        r.doubleBullHits ??
+        imp.dbulls,
+      m.dbulls
+    );
+
+    m.doubles = dblHits;
+    m.triples = trpHits;
+    m.bulls = bulHits;
+    m.dbulls = dbuHits;
+
+    if (m.singles == null) {
+      m.singles =
+        r.singles ??
+        r.hitsS ??
+        r.hitsSingle ??
+        r.hitsSingles ??
+        imp.singles ??
+        undefined;
+    }
+
+    if (m.misses == null) {
+      m.misses =
+        r.misses ??
+        r.miss ??
+        r.hitsMiss ??
+        r.missCount ??
+        imp.misses ??
+        undefined;
+    }
+
+    if (m.busts == null) {
+      m.busts =
+        r.busts ??
+        r.bust ??
+        r.bustCount ??
+        imp.busts ??
+        undefined;
+    }
 
     // checkout
-    m.coHits = n(r.checkoutHits, m.coHits);
-    m.coAtt = n(r.checkoutAttempts, m.coAtt);
+    m.coHits = n(
+      r.checkoutHits ??
+        r.coHits ??
+        r.co_success ??
+        r.hitsCheckout ??
+        r.hitsCO ??
+        imp.coHits,
+      m.coHits
+    );
+    m.coAtt = n(
+      r.checkoutAttempts ??
+        r.coAtt ??
+        r.co_attempts ??
+        r.coAttempts ??
+        r.attemptsCheckout ??
+        imp.coAtt,
+      m.coAtt
+    );
 
-    // volumes complémentaires
-    m.visits = m.visits || n(r.visits, 0);
-    m.points = m.points || n(r.pointsScored, 0);
-    m.avg3 = m.avg3 || n(r.avg3, 0);
-    m.avg1 = m.avg1 || (m.avg3 ? m.avg3 / 3 : 0);
-    m.bestVisit = m.bestVisit || n(r.bestVisit, 0);
-    m.bestCO = m.bestCO || sanitizeCO(r.bestCheckoutScore ?? r.highestCheckout ?? r.bestCheckout);
-
-    // segments (agrégés)
+    // Segments agrégés (si dispo)
     if (r.segments) {
       m.segOuter = v(r.segments.outer);
       m.segInner = v(r.segments.inner);
@@ -700,51 +1220,122 @@ function buildPerPlayerMetrics(rec: any, summary: any | null, players: PlayerLit
       m.segMiss = v(r.segments.miss);
     }
 
-    // ---- NEW: byNumber (toutes variantes connues)
-    const byNum = r.byNumber || imp.byNumber || r.target?.byNumber || r.perNumber || undefined;
-    if (byNum && typeof byNum === "object") m.byNumber = byNum as any;
+    // Power scoring depuis la partie riche, si pas déjà rempli
+    const rb =
+      r.buckets || r.powerBuckets || r.power || r.x01Buckets || {};
+    if (rb && typeof rb === "object") {
+      m.t180 = m.t180 || n(rb["180"] ?? rb["180+"] ?? rb.t180 ?? rb._180, 0);
+      m.t140 = m.t140 || n(rb["140+"] ?? rb.t140 ?? rb._140, 0);
+      m.t100 = m.t100 || n(rb["100+"] ?? rb.t100 ?? rb._100, 0);
+      m.t60 = m.t60 || n(rb["60+"] ?? rb.t60 ?? rb._60, 0);
+    }
 
-    // ===== 3) legacy (compat)
+    // byNumber (si structure dédiée présente)
+    const byNumDirect =
+      r.byNumber ||
+      imp.byNumber ||
+      r.target?.byNumber ||
+      r.perNumber ||
+      undefined;
+    if (byNumDirect && typeof byNumDirect === "object") {
+      m.byNumber = byNumDirect as any;
+    }
+
+    // ===== 3) legacy (compat avec anciens formats / v1 / v2) =====
     m.t180 = m.t180 || n(pick(legacy, [`h180.${pid}`, `t180.${pid}`]), 0);
     m.t140 = m.t140 || n(pick(legacy, [`h140.${pid}`, `t140.${pid}`]), 0);
     m.t100 = m.t100 || n(pick(legacy, [`h100.${pid}`, `t100.${pid}`]), 0);
     m.t60 = m.t60 || n(pick(legacy, [`h60.${pid}`, `t60.${pid}`]), 0);
 
-    m.darts = m.darts || n(pick(legacy, [`darts.${pid}`, `dartsThrown.${pid}`]), 0);
+    m.darts =
+      m.darts ||
+      n(pick(legacy, [`darts.${pid}`, `dartsThrown.${pid}`]), 0);
     m.visits = m.visits || n(pick(legacy, [`visits.${pid}`]), 0);
-    m.points = m.points || n(pick(legacy, [`pointsScored.${pid}`, `points.${pid}`]), 0);
-    m.avg3 = m.avg3 || n(pick(legacy, [`avg3.${pid}`, `avg3d.${pid}`]), 0);
+    m.points =
+      m.points ||
+      n(pick(legacy, [`pointsScored.${pid}`, `points.${pid}`]), 0);
+    m.avg3 =
+      m.avg3 ||
+      n(pick(legacy, [`avg3.${pid}`, `avg3d.${pid}`]), 0);
     if (!m.avg1 && m.avg3) m.avg1 = m.avg3 / 3;
-    m.bestVisit = m.bestVisit || n(pick(legacy, [`bestVisit.${pid}`]), 0);
+    m.bestVisit =
+      m.bestVisit || n(pick(legacy, [`bestVisit.${pid}`]), 0);
     m.bestCO =
       m.bestCO ||
-      sanitizeCO(pick(legacy, [`bestCheckout.${pid}`, `highestCheckout.${pid}`, `bestCO.${pid}`]));
+      sanitizeCO(
+        pick(legacy, [
+          `bestCheckout.${pid}`,
+          `highestCheckout.${pid}`,
+          `bestCO.${pid}`,
+        ])
+      );
 
-    const dblC = n(pick(legacy, [`doubles.${pid}`, `doubleCount.${pid}`, `dbl.${pid}`]), 0);
-    const trpC = n(pick(legacy, [`triples.${pid}`, `tripleCount.${pid}`, `trp.${pid}`]), 0);
-    const bulC = n(pick(legacy, [`bulls.${pid}`, `bullCount.${pid}`, `bull.${pid}`]), 0);
+    const dblC = n(
+      pick(legacy, [
+        `doubles.${pid}`,
+        `doubleCount.${pid}`,
+        `dbl.${pid}`,
+      ]),
+      0
+    );
+    const trpC = n(
+      pick(legacy, [
+        `triples.${pid}`,
+        `tripleCount.${pid}`,
+        `trp.${pid}`,
+      ]),
+      0
+    );
+    const bulC = n(
+      pick(legacy, [
+        `bulls.${pid}`,
+        `bullCount.${pid}`,
+        `bull.${pid}`,
+      ]),
+      0
+    );
     const dbuC = n(
-      pick(legacy, [`dbulls.${pid}`, `doubleBull.${pid}`, `doubleBulls.${pid}`, `bull50.${pid}`]),
+      pick(legacy, [
+        `dbulls.${pid}`,
+        `doubleBull.${pid}`,
+        `doubleBulls.${pid}`,
+        `bull50.${pid}`,
+      ]),
       0
     );
     const sngC = pick(legacy, [`singles.${pid}`, `single.${pid}`]);
     const misC = pick(legacy, [`misses.${pid}`, `miss.${pid}`]);
-    const bstC = pick(legacy, [`busts.${pid}`, `bust.${pid}`, `bustCount.${pid}`]);
+    const bstC = pick(legacy, [
+      `busts.${pid}`,
+      `bust.${pid}`,
+      `bustCount.${pid}`,
+    ]);
 
-    if (!m.doubles) m.doubles = dblC;
-    if (!m.triples) m.triples = trpC;
-    if (!m.bulls) m.bulls = bulC;
-    if (!m.dbulls) m.dbulls = dbuC;
+    if (!m.doubles) m.doubles = dblC || m.doubles;
+    if (!m.triples) m.triples = trpC || m.triples;
+    if (!m.bulls) m.bulls = bulC || m.bulls;
+    if (!m.dbulls) m.dbulls = dbuC || m.dbulls;
     if (m.singles == null && sngC != null) m.singles = n(sngC, 0);
     if (m.misses == null && misC != null) m.misses = n(misC, 0);
     if (m.busts == null && bstC != null) m.busts = n(bstC, 0);
 
-    m.coHits = m.coHits || n(pick(legacy, [`checkoutHits.${pid}`]), 0);
-    m.coAtt = m.coAtt || n(pick(legacy, [`checkoutAttempts.${pid}`]), 0);
+    m.coHits =
+      m.coHits ||
+      n(pick(legacy, [`checkoutHits.${pid}`]), m.coHits);
+    m.coAtt =
+      m.coAtt ||
+      n(
+        pick(legacy, [`checkoutAttempts.${pid}`]),
+        m.coAtt
+      );
 
-    // ===== 4) dérivés & ORDONNANCE : d'abord darts/visits, ensuite %
-    if (!m.points && m.avg3 && m.darts) m.points = Math.round((m.avg3 / 3) * m.darts);
-    if (!m.visits && m.darts) m.visits = Math.ceil(m.darts / 3);
+    // ===== 4) dérivés & % =====
+    if (!m.points && m.avg3 && m.darts) {
+      m.points = Math.round((m.avg3 / 3) * m.darts);
+    }
+    if (!m.visits && m.darts) {
+      m.visits = Math.ceil(m.darts / 3);
+    }
 
     // si darts encore à 0, tente un fallback minimal (hits connus)
     if (!m.darts) {
@@ -761,38 +1352,124 @@ function buildPerPlayerMetrics(rec: any, summary: any | null, players: PlayerLit
     const darts = Math.max(0, n(m.darts, 0));
 
     // % basés prioritairement sur attempts → sinon fallback hits/darts
-    const dblAtt = n(r.doubleAttempts ?? imp.doubleAttempts, 0);
-    const trpAtt = n(r.tripleAttempts ?? imp.tripleAttempts, 0);
-    const bulAtt = n(r.bullAttempts ?? imp.bullAttempts, 0);
-    const dbuAtt =
-      n(r.dbullAttempts ?? imp.dbullAttempts ?? r.doubleBullAttempts ?? imp.doubleBullAttempts, 0);
+    const dblAtt = n(
+      r.doubleAttempts ?? imp.doubleAttempts ?? r.attemptsDouble ?? r.attemptsDoubles,
+      0
+    );
+    const trpAtt = n(
+      r.tripleAttempts ?? imp.tripleAttempts ?? r.attemptsTriple ?? r.attemptsTriples,
+      0
+    );
+    const bulAtt = n(
+      r.bullAttempts ?? imp.bullAttempts ?? r.attemptsBull ?? r.attemptsBulls,
+      0
+    );
+    const dbuAtt = n(
+      r.dbullAttempts ??
+        imp.dbullAttempts ??
+        r.doubleBullAttempts ??
+        imp.doubleBullAttempts,
+      0
+    );
 
-    const dblHit = n(r.doubleHits ?? imp.doubleHits, m.doubles);
-    const trpHit = n(r.tripleHits ?? imp.tripleHits, m.triples);
-    const bulHit = n(r.bullHits ?? imp.bullHits, m.bulls);
-    const dbuHit =
-      n(r.dbullHits ?? imp.dbullHits ?? r.doubleBullHits ?? imp.doubleBullHits, m.dbulls);
+    const dblHit = n(
+      r.doubleHits ?? imp.doubleHits ?? m.doubles,
+      m.doubles
+    );
+    const trpHit = n(
+      r.tripleHits ?? imp.tripleHits ?? m.triples,
+      m.triples
+    );
+    const bulHit = n(
+      r.bullHits ?? imp.bullHits ?? m.bulls,
+      m.bulls
+    );
+    const dbuHit = n(
+      r.dbullHits ??
+        imp.dbullHits ??
+        r.doubleBullHits ??
+        imp.doubleBullHits ??
+        m.dbulls,
+      m.dbulls
+    );
 
-    m.doublePct = dblAtt > 0 ? (dblHit / dblAtt) * 100 : darts ? (n(m.doubles) / darts) * 100 : undefined;
-    m.triplePct = trpAtt > 0 ? (trpHit / trpAtt) * 100 : darts ? (n(m.triples) / darts) * 100 : undefined;
-    m.bullPct = bulAtt > 0 ? (bulHit / bulAtt) * 100 : darts ? (n(m.bulls) / darts) * 100 : undefined;
-    m.dbullPct = dbuAtt > 0 ? (dbuHit / dbuAtt) * 100 : darts ? (n(m.dbulls) / darts) * 100 : undefined;
+    m.doublePct =
+      dblAtt > 0
+        ? (dblHit / dblAtt) * 100
+        : darts
+        ? (n(m.doubles) / darts) * 100
+        : undefined;
 
-    // singles/busts (attempts → fallback)
-    const sngAtt = n(r.singleAttempts ?? imp.singleAttempts, 0);
-    const bstAtt = n(r.bustAttempts ?? imp.bustAttempts, 0);
-    const sngHit = n(r.singleHits ?? imp.singleHits, n(m.singles, 0));
-    const bstHit = n(r.bustHits ?? imp.bustHits, n(m.busts, 0));
-    m.singleRate = sngAtt > 0 ? (sngHit / sngAtt) * 100 : darts ? (n(m.singles) / darts) * 100 : undefined;
-    m.bustRate = bstAtt > 0 ? (bstHit / bstAtt) * 100 : darts ? (n(m.busts) / darts) * 100 : undefined;
+    m.triplePct =
+      trpAtt > 0
+        ? (trpHit / trpAtt) * 100
+        : darts
+        ? (n(m.triples) / darts) * 100
+        : undefined;
+
+    m.bullPct =
+      bulAtt > 0
+        ? (bulHit / bulAtt) * 100
+        : darts
+        ? (n(m.bulls) / darts) * 100
+        : undefined;
+
+    m.dbullPct =
+      dbuAtt > 0
+        ? (dbuHit / dbuAtt) * 100
+        : darts
+        ? (n(m.dbulls) / darts) * 100
+        : undefined;
+
+    // singles / bust rates
+    const sngAtt = n(
+      r.singleAttempts ?? imp.singleAttempts ?? r.attemptsSingle ?? r.attemptsSingles,
+      0
+    );
+    const bstAtt = n(
+      r.bustAttempts ?? imp.bustAttempts ?? r.attemptsBust ?? r.attemptsBusts,
+      0
+    );
+    const sngHit = n(
+      r.singleHits ?? imp.singleHits ?? n(m.singles, 0),
+      n(m.singles, 0)
+    );
+    const bstHit = n(
+      r.bustHits ?? imp.bustHits ?? n(m.busts, 0),
+      n(m.busts, 0)
+    );
+
+    m.singleRate =
+      sngAtt > 0
+        ? (sngHit / sngAtt) * 100
+        : darts
+        ? (n(m.singles) / darts) * 100
+        : undefined;
+
+    m.bustRate =
+      bstAtt > 0
+        ? (bstHit / bstAtt) * 100
+        : darts
+        ? (n(m.busts) / darts) * 100
+        : undefined;
 
     // CO%
-    if (m.coAtt > 0) m.coPct = (m.coHits / m.coAtt) * 100;
+    if (m.coAtt > 0) {
+      m.coPct = (m.coHits / m.coAtt) * 100;
+    } else if (m.coHits > 0) {
+      // fallback simple si on n'a pas les tentatives détaillées
+      m.coPct = 100;
+    }
 
-    // ===== 5) données de cible (si segments manquent → fallback global)
+    // ===== 5) données cible / byNumber =====
     const singlesFallback = Math.max(
       0,
-      darts - (n(m.doubles) + n(m.triples) + n(m.bulls) + n(m.dbulls) + n(m.misses))
+      darts -
+        (n(m.doubles) +
+          n(m.triples) +
+          n(m.bulls) +
+          n(m.dbulls) +
+          n(m.misses))
     );
     if (m.singles == null) m.singles = singlesFallback;
 
@@ -805,8 +1482,54 @@ function buildPerPlayerMetrics(rec: any, summary: any | null, players: PlayerLit
     if (m.segTriple == null) m.segTriple = n(m.triples, 0);
     if (m.segMiss == null) m.segMiss = n(m.misses, 0);
 
+    // Si on n'a toujours pas de byNumber, on reconstruit une version simple
+    // à partir de legacy.hitsBySector (comptage global par numéro).
+    if (!m.byNumber) {
+      const legacyHits: any = legacyHitsBySectorAll?.[pid];
+      if (legacyHits && typeof legacyHits === "object") {
+        const byNum: ByNumber = {};
+        let bullTotal = 0;
+        let dbullTotal = 0;
+        let missTotal = 0;
+
+        for (const [seg, valRaw] of Object.entries(legacyHits)) {
+          const val = n(valRaw, 0);
+          if (!val) continue;
+          const segKey = String(seg).toUpperCase();
+
+          if (segKey === "MISS") {
+            missTotal += val;
+            continue;
+          }
+          if (segKey === "OB") {
+            bullTotal += val;
+            continue;
+          }
+          if (segKey === "IB") {
+            dbullTotal += val;
+            continue;
+          }
+
+          const num = Number(segKey);
+          if (!Number.isFinite(num)) continue;
+
+          const key = String(num);
+          const row = byNum[key] || {};
+          row.inner = (row.inner ?? 0) + val;
+          byNum[key] = row;
+        }
+
+        (byNum as any).bull = bullTotal;
+        (byNum as any).dbull = dbullTotal;
+        (byNum as any).miss = missTotal;
+
+        m.byNumber = byNum;
+      }
+    }
+
     out[pid] = m;
   }
+
   return out;
 }
 
@@ -815,8 +1538,13 @@ function buildPerPlayerMetrics(rec: any, summary: any | null, players: PlayerLit
 ================================ */
 function detectAvailability(M: Record<string, PlayerMetrics>) {
   const vals = Object.values(M);
-  const any = (k: keyof PlayerMetrics) => vals.some((v) => v[k] != null && Number(v[k] as any) !== 0);
-  const segAny = ["segOuter", "segInner", "segDouble", "segTriple", "segMiss"].some((k) => any(k as any));
+  const any = (k: keyof PlayerMetrics) =>
+    vals.some(
+      (v) => v[k] != null && Number(v[k] as any) !== 0
+    );
+  const segAny = ["segOuter", "segInner", "segDouble", "segTriple", "segMiss"].some(
+    (k) => any(k as any)
+  );
   const impactsAny =
     any("doubles") ||
     any("triples") ||
@@ -864,18 +1592,29 @@ function Shell({
   resumeId?: string | null;
 }) {
   return (
-    <div className="x-end" style={{ padding: 12, maxWidth: 640, margin: "0 auto" }}>
+    <div
+      className="x-end"
+      style={{ padding: 12, maxWidth: 640, margin: "0 auto" }}
+    >
       <button onClick={() => go("stats", { tab: "history" })} style={btn()}>
         ← Retour
       </button>
-      <h2 style={{ margin: "10px 0 8px", letterSpacing: 0.3 }}>{title || "Fin de partie"}</h2>
+      <h2 style={{ margin: "10px 0 8px", letterSpacing: 0.3 }}>
+        {title || "Fin de partie"}
+      </h2>
       {children}
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <button onClick={() => go("stats", { tab: "history" })} style={btn()}>
+        <button
+          onClick={() => go("stats", { tab: "history" })}
+          style={btn()}
+        >
           ← Historique
         </button>
         {canResume && resumeId ? (
-          <button onClick={() => go("x01", { resumeId })} style={btnGold()}>
+          <button
+            onClick={() => go("x01", { resumeId })}
+            style={btnGold()}
+          >
             Reprendre
           </button>
         ) : null}
@@ -883,7 +1622,15 @@ function Shell({
     </div>
   );
 }
-function Panel({ children, style, className }: { children: React.ReactNode; style?: React.CSSProperties; className?: string }) {
+function Panel({
+  children,
+  style,
+  className,
+}: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+  className?: string;
+}) {
   return (
     <div
       className={className}
@@ -901,10 +1648,25 @@ function Panel({ children, style, className }: { children: React.ReactNode; styl
     </div>
   );
 }
-function CardTable({ title, children }: { title: string; children: React.ReactNode }) {
+function CardTable({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <Panel className="x-card" style={{ padding: D.cardPad }}>
-      <h3 style={{ margin: "0 0 6px", fontSize: D.fsHead + 1, letterSpacing: 0.2, color: "#ffcf57" }}>{title}</h3>
+      <h3
+        style={{
+          margin: "0 0 6px",
+          fontSize: D.fsHead + 1,
+          letterSpacing: 0.2,
+          color: "#ffcf57",
+        }}
+      >
+        {title}
+      </h3>
       {children}
     </Panel>
   );
@@ -948,7 +1710,14 @@ function TableColMajor({
   tableStyle?: React.CSSProperties;
 }) {
   return (
-    <div className="x-table" style={{ overflowX: "auto", border: "1px solid rgba(255,255,255,.08)", borderRadius: D.radius }}>
+    <div
+      className="x-table"
+      style={{
+        overflowX: "auto",
+        border: "1px solid rgba(255,255,255,.08)",
+        borderRadius: D.radius,
+      }}
+    >
       <table style={tableStyle}>
         <thead>
           <tr>
@@ -956,8 +1725,19 @@ function TableColMajor({
               Stat
             </th>
             {columns.map((c) => (
-              <th key={c.key} className="x-th" style={thStyle(false)}>
-                <span style={{ fontWeight: 900, color: "#ffcf57" }}>{c.title}</span>
+              <th
+                key={c.key}
+                className="x-th"
+                style={thStyle(false)}
+              >
+                <span
+                  style={{
+                    fontWeight: 900,
+                    color: "#ffcf57",
+                  }}
+                >
+                  {c.title}
+                </span>
               </th>
             ))}
           </tr>
@@ -970,9 +1750,15 @@ function TableColMajor({
                   {r.label}
                 </td>
                 {columns.map((c) => {
-                  const m = dataMap[c.key] || emptyMetrics({ id: c.key });
+                  const m =
+                    dataMap[c.key] ||
+                    emptyMetrics({ id: c.key });
                   return (
-                    <td key={c.key} className="x-td" style={tdStyle(false)}>
+                    <td
+                      key={c.key}
+                      className="x-td"
+                      style={tdStyle(false)}
+                    >
                       {r.get(m)}
                     </td>
                   );
@@ -1009,137 +1795,134 @@ function tdStyle(isRowHeader: boolean): React.CSSProperties {
 }
 
 /* ================================
-   Cible polaire — pondérée S×1, D×2, T×3 (+ Bull/DBull), Miss séparé
+   Radar hits type TrainingX01
+   Axes : Singles / Doubles / Triples / Bulls / DBulls / Miss
 ================================ */
-function TargetPolar({ m }: { m: PlayerMetrics }) {
-  const size = 340;
-  const cx = size / 2,
-    cy = size / 2;
-  const Rmax = 140; // rayon utile (bords)
-  const labels = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5]; // ordre réel
+function HitsRadar({ m }: { m: PlayerMetrics }) {
+  const singles = Math.max(0, Number(m.singles ?? 0));
+  const doubles = Math.max(0, Number(m.doubles ?? 0));
+  const triples = Math.max(0, Number(m.triples ?? 0));
+  const bulls = Math.max(0, Number(m.bulls ?? 0));
+  const dbulls = Math.max(0, Number(m.dbulls ?? 0));
+  const misses = Math.max(0, Number(m.misses ?? 0));
 
-  // Lecture byNumber si dispo
-  const BY = (m.byNumber || {}) as ByNumber;
+  const axes = [
+    { label: "Singles", value: singles },
+    { label: "Doubles", value: doubles },
+    { label: "Triples", value: triples },
+    { label: "Bulls", value: bulls },
+    { label: "DBulls", value: dbulls },
+    { label: "Miss", value: misses },
+  ];
 
-  // Pondération par numéro
-  const weighted = (nu: number) => {
-    const row = (BY[String(nu)] || (BY as any)[`n${nu}`] || {}) as any;
-    const singles = n(row.inner) + n(row.outer);
-    const dbl = n(row.double);
-    const trp = n(row.triple);
-    const bull = n(row.bull);
-    const dbull = n(row.dbull);
-    // S×1 + D×2 + T×3 + Bull×1 + DBull×2
-    return singles * 1 + dbl * 2 + trp * 3 + bull * 1 + dbull * 2;
+  const maxVal = Math.max(1, ...axes.map((a) => a.value));
+
+  const size = 260;
+  const cx = size / 2;
+  const cy = size / 2;
+  const R = 100;
+  const step = (Math.PI * 2) / axes.length;
+
+  const toXY = (value: number, idx: number) => {
+    const ratio = maxVal > 0 ? value / maxVal : 0;
+    const r = R * ratio;
+    const theta = -Math.PI / 2 + idx * step;
+    return {
+      x: cx + r * Math.cos(theta),
+      y: cy + r * Math.sin(theta),
+    };
   };
 
-  const counts: number[] = labels.map(weighted);
-
-  // Miss & centre
-  const missCount = n((BY as any)?.miss, n(m.segMiss, n(m.misses)));
-  const bullSum = n((BY as any)?.bull, n(m.bulls));
-  const dbullSum = n((BY as any)?.dbull, n(m.dbulls));
-
-  // Échelle — max sur l’ensemble
-  const maxVal = Math.max(1, ...counts, missCount, bullSum + 2 * dbullSum);
-  const scale = (v: number) => (v / maxVal) * Rmax;
-
-  // Points polaires
-  const toXY = (r: number, thetaDeg: number) => {
-    const a = ((thetaDeg - 90) * Math.PI) / 180;
-    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
-  };
-
-  // positions des 20 numéros
-  const step = 360 / labels.length;
-  const points = counts.map((v, i) => {
-    const r = scale(v);
-    const pos = toXY(r, i * step);
-    return { ...pos, r, i, v };
-  });
-
-  // polyligne (connecte les 20 numéros)
-  const poly = points.map((p) => `${p.x},${p.y}`).join(" ");
-
-  // Lignes et labels périphériques
-  const rim = labels.map((nu, i) => {
-    const posTick = toXY(Rmax, i * step);
-    const posLab = toXY(Rmax + 16, i * step);
-    return (
-      <g key={`lab-${nu}`}>
-        <circle cx={posTick.x} cy={posTick.y} r={2} fill="rgba(255,255,255,.35)" />
-        <text
-          x={posLab.x}
-          y={posLab.y}
-          fontSize="11"
-          textAnchor="middle"
-          alignmentBaseline="middle"
-          fill="#e8e8ec"
-          style={{ fontWeight: 800 }}
-        >
-          {nu}
-        </text>
-      </g>
-    );
-  });
-
-  // points visuels
-  const hitDots = points.map((p, idx) => (
-    <g key={`dot-${idx}`}>
-      <circle cx={p.x} cy={p.y} r={3.5} fill="#ffcf57" />
-    </g>
-  ));
-
-  // bull / dbull au centre (rayons distincts)
-  const rb = Math.max(4, scale(bullSum * 1)); // Bull×1
-  const rdb = Math.max(2, scale(dbullSum * 2)); // DBull×2
-  const missPos = toXY(scale(missCount), 300); // Miss vers le bas
+  const polyPoints = axes
+    .map((a, i) => {
+      const { x, y } = toXY(a.value, i);
+      return `${x},${y}`;
+    })
+    .join(" ");
 
   return (
     <div style={{ display: "flex", justifyContent: "center" }}>
-      <svg width="100%" height={size} viewBox={`0 0 ${size} ${size}`} style={{ maxWidth: 480 }}>
-        {/* fond */}
+      <svg
+        width="100%"
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        style={{ maxWidth: 360 }}
+      >
+        {/* Fond */}
         <defs>
-          <radialGradient id="bg" cx="50%" cy="40%">
-            <stop offset="0%" stopColor="#2a2a30" />
-            <stop offset="100%" stopColor="#16161a" />
+          <radialGradient id="radar-bg" cx="50%" cy="45%">
+            <stop offset="0%" stopColor="#26262b" />
+            <stop offset="100%" stopColor="#151519" />
           </radialGradient>
         </defs>
-        <rect x="0" y="0" width={size} height={size} fill="url(#bg)" rx={16} />
+        <rect x={0} y={0} width={size} height={size} fill="url(#radar-bg)" rx={16} />
 
-        {/* cercles guides */}
-        {[0.25, 0.5, 0.75, 1].map((t, i) => (
-          <circle key={i} cx={cx} cy={cy} r={Rmax * t} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth={1} />
+        {/* Cercles guides */}
+        {[0.33, 0.66, 1].map((t, i) => (
+          <circle
+            key={i}
+            cx={cx}
+            cy={cy}
+            r={R * t}
+            fill="none"
+            stroke="rgba(255,255,255,.06)"
+            strokeWidth={1}
+          />
         ))}
 
-        {/* repères & labels numéros */}
-        {rim}
+        {/* Axes + labels */}
+        {axes.map((a, i) => {
+          const end = toXY(R, i);
+          const labelPos = toXY(R + 16, i);
+          return (
+            <g key={a.label}>
+              <line
+                x1={cx}
+                y1={cy}
+                x2={end.x}
+                y2={end.y}
+                stroke="rgba(255,255,255,.10)"
+                strokeWidth={1}
+              />
+              <text
+                x={labelPos.x}
+                y={labelPos.y}
+                fontSize={11}
+                textAnchor="middle"
+                alignmentBaseline="middle"
+                fill="#e8e8ec"
+                style={{ fontWeight: 700 }}
+              >
+                {a.label}
+              </text>
+            </g>
+          );
+        })}
 
-        {/* polyligne & points */}
-        <polyline points={poly} fill="rgba(255,207,87,.12)" stroke="#ffcf57" strokeWidth={2} />
-        {hitDots}
+        {/* Polygone + points */}
+        <polyline
+          points={polyPoints}
+          fill="rgba(255,207,87,.16)"
+          stroke="#ffcf57"
+          strokeWidth={2}
+          strokeLinejoin="round"
+        />
+        {axes.map((a, i) => {
+          const { x, y } = toXY(a.value, i);
+          return <circle key={a.label} cx={x} cy={y} r={3} fill="#ffcf57" />;
+        })}
 
-        {/* Bull / DBull */}
-        <circle cx={cx} cy={cy} r={rb} fill="rgba(255,255,255,.2)" stroke="rgba(255,255,255,.35)" strokeWidth={1} />
-        <circle cx={cx} cy={cy} r={rdb} fill="#ffcf57" />
-        <text x={cx} y={cy - 8} textAnchor="middle" fontSize="11" fill="#e8e8ec" style={{ fontWeight: 700 }}>
-          Bull {bullSum}
-        </text>
-        <text x={cx} y={cy + 10} textAnchor="middle" fontSize="11" fill="#ffcf57" style={{ fontWeight: 900 }}>
-          DBull {dbullSum}
-        </text>
-
-        {/* Miss */}
-        <circle cx={missPos.x} cy={missPos.y} r={3.5} fill="#ffcf57" />
+        {/* Nom du joueur au centre */}
         <text
-          x={toXY(Rmax + 24, 300).x}
-          y={toXY(Rmax + 24, 300).y}
+          x={cx}
+          y={cy}
           textAnchor="middle"
-          fontSize="11"
-          fill="#e8e8ec"
-          style={{ fontWeight: 800 }}
+          alignmentBaseline="middle"
+          fontSize={13}
+          fill="#ffcf57"
+          style={{ fontWeight: 900 }}
         >
-          Miss {missCount}
+          {m.name}
         </text>
       </svg>
     </div>
@@ -1147,14 +1930,251 @@ function TargetPolar({ m }: { m: PlayerMetrics }) {
 }
 
 /* ================================
+   Historique des volées
+================================ */
+function dartToString(v: number, mult: 1 | 2 | 3) {
+  if (!v) return "MISS";
+  if (v === 25) return mult === 2 ? "DBULL" : "BULL";
+  const prefix = mult === 3 ? "T" : mult === 2 ? "D" : "S";
+  return `${prefix}${v}`;
+}
+
+function buildVisitHistory(
+  rec: any,
+  players: PlayerLite[],
+  legLike: any
+): VisitRow[] {
+  if (!players.length) return [];
+
+  // 1) Si legStats / __legStats possède déjà les visits : on les utilise
+  const rawVisits: any[] =
+    legLike?.visits && Array.isArray(legLike.visits)
+      ? legLike.visits
+      : [];
+
+  if (rawVisits.length) {
+    return rawVisits.map((v, idx) => {
+      const dartsSrc: any[] =
+        v.darts || v.hits || v.throw || v.throws || [];
+      const darts = dartsSrc.map((d) => ({
+        v: Number(d.segment ?? d.v ?? d.value ?? d.num ?? 0) || 0,
+        mult: (Number(d.multiplier ?? d.mult ?? d.m ?? d.multi ?? 1) ||
+          1) as 1 | 2 | 3,
+      }));
+      const before = n(
+        v.scoreBefore ?? v.before ?? v.startScore ?? v.scoreStart,
+        0
+      );
+      const after = n(
+        v.scoreAfter ?? v.after ?? v.endScore ?? v.scoreEnd,
+        0
+      );
+      const bust = !!(v.bust ?? v.isBust);
+      const finish =
+        !!(v.finish ?? v.isFinish) || (!bust && after === 0);
+
+      return {
+        idx: idx + 1,
+        legNo: Number(v.legNo ?? v.legIndex ?? 1) || 1,
+        playerId: String(v.playerId ?? v.pid ?? ""),
+        darts,
+        scoreBefore: before,
+        scoreAfter: after,
+        bust,
+        finish,
+      };
+    });
+  }
+
+  // 2) Fallback : on reconstruit depuis une liste linéaire de darts
+  const rawDarts: any[] =
+    rec?.payload?.allDarts ||
+    rec?.payload?.darts ||
+    rec?.payload?.replayDarts ||
+    rec?.darts ||
+    [];
+
+  if (!Array.isArray(rawDarts) || !rawDarts.length) return [];
+
+  const order: string[] =
+    (Array.isArray(rec?.summary?.throwOrder) &&
+    rec.summary.throwOrder.length
+      ? rec.summary.throwOrder
+      : players.map((p) => p.id)) || [];
+
+  if (!order.length) return [];
+
+  const startScore =
+    rec?.summary?.game?.startScore ??
+    rec?.payload?.startScore ??
+    rec?.payload?.config?.startScore ??
+    rec?.payload?.game?.startScore ??
+    501;
+
+  const scores: Record<string, number> = {};
+  order.forEach((pid) => {
+    scores[pid] = startScore;
+  });
+
+  const visits: VisitRow[] = [];
+  let legNo = 1;
+  let throwerIndex = 0;
+  let i = 0;
+
+  while (i < rawDarts.length) {
+    const pid = order[throwerIndex % order.length];
+    const scoreBefore = scores[pid] ?? startScore;
+
+    const darts: { v: number; mult: 1 | 2 | 3 }[] = [];
+    let scoreAfter = scoreBefore;
+    let bust = false;
+    let finish = false;
+
+    for (let j = 0; j < 3 && i < rawDarts.length; j++, i++) {
+      const r = rawDarts[i] || {};
+      const seg = Number(r.segment ?? r.v ?? r.value ?? r.num ?? 0) || 0;
+      const mult = (Number(r.multiplier ?? r.mult ?? r.m ?? r.multi ?? 1) ||
+        1) as 1 | 2 | 3;
+
+      darts.push({ v: seg, mult });
+
+      const value = seg === 25 && mult === 2 ? 50 : seg * mult;
+      const tentative = scoreAfter - value;
+
+      if (tentative < 0 || tentative === 1) {
+        // Bust : score revient à l'état initial de la volée
+        bust = true;
+        scoreAfter = scoreBefore;
+        break;
+      } else {
+        scoreAfter = tentative;
+        if (scoreAfter === 0) {
+          finish = true;
+          break;
+        }
+      }
+    }
+
+    visits.push({
+      idx: visits.length + 1,
+      legNo,
+      playerId: pid,
+      darts,
+      scoreBefore,
+      scoreAfter,
+      bust,
+      finish,
+    });
+
+    scores[pid] = scoreAfter;
+
+    if (finish) {
+      // Nouveau leg : reset des scores
+      legNo += 1;
+      order.forEach((id) => {
+        scores[id] = startScore;
+      });
+    }
+
+    throwerIndex += 1;
+  }
+
+  return visits;
+}
+
+function VisitsList({
+  visits,
+  playersById,
+}: {
+  visits: VisitRow[];
+  playersById: Record<string, PlayerLite>;
+}) {
+  if (!visits.length) return null;
+
+  return (
+    <div style={{ maxHeight: 260, overflowY: "auto", marginTop: 2 }}>
+      {visits.map((v) => {
+        const p = playersById[v.playerId];
+        const name = p?.name || "—";
+        const dartsLabel = v.darts.map((d) => dartToString(d.v, d.mult)).join(" · ");
+
+        return (
+          <div
+            key={v.idx}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "4px 6px",
+              borderRadius: 8,
+              background: "rgba(255,255,255,.02)",
+              marginBottom: 3,
+              fontSize: 11.5,
+            }}
+          >
+            <div style={{ minWidth: 70 }}>
+              <b>#{v.idx}</b> · Leg {v.legNo}
+            </div>
+            <div
+              style={{
+                flex: 1,
+                minWidth: 0,
+                marginInline: 8,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {name}
+              {v.bust && (
+                <span style={{ marginLeft: 4, color: "#ff9090", fontWeight: 700 }}>
+                  (BUST)
+                </span>
+              )}
+              {v.finish && !v.bust && (
+                <span style={{ marginLeft: 4, color: "#7fe2a9", fontWeight: 700 }}>
+                  (FINISH)
+                </span>
+              )}
+            </div>
+            <div
+              style={{
+                flex: 2,
+                minWidth: 0,
+                fontFamily: "monospace",
+                fontSize: 11,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {dartsLabel || "—"}
+            </div>
+            <div style={{ minWidth: 80, textAlign: "right" }}>
+              {v.scoreBefore} → <b>{v.scoreAfter}</b>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ================================
    Utils
 ================================ */
-function normalizeStatus(rec: any): "finished" | "in_progress" {
-  const raw = String(rec?.status ?? rec?.payload?.status ?? "").toLowerCase();
+function normalizeStatus(
+  rec: any
+): "finished" | "in_progress" {
+  const raw = String(
+    rec?.status ?? rec?.payload?.status ?? ""
+  ).toLowerCase();
   if (raw === "finished") return "finished";
-  if (raw === "inprogress" || raw === "in_progress") return "in_progress";
+  if (raw === "inprogress" || raw === "in_progress")
+    return "in_progress";
   const sum = rec?.summary ?? rec?.payload ?? {};
-  if (sum?.finished === true || sum?.result?.finished === true) return "finished";
+  if (sum?.finished === true || sum?.result?.finished === true)
+    return "finished";
   return "in_progress";
 }
 
@@ -1207,11 +2227,13 @@ function f2(x: any) {
 }
 function f0(x: any) {
   const v = Number(x);
-  return Number.isFinite(v) ? v | 0 : 0;
+  return Number.isFinite(v) ? (v | 0) : 0;
 }
 function pct(x?: number) {
   const v = Number(x);
-  return Number.isFinite(v) ? `${Math.round(Math.max(0, Math.min(100, v)))}%` : "—";
+  return Number.isFinite(v)
+    ? `${Math.round(Math.max(0, Math.min(100, v)))}%`
+    : "—";
 }
 
 function pick(obj: any, paths: string[], def?: any) {

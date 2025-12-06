@@ -3,7 +3,7 @@
 // Espace Profils avec menu interne
 // - Vue MENU : "Créer avatar" / "Mon Profil" / "Amis" / "Profils locaux" / "BOAT"
 // - Vue "Mon Profil" : profil connecté + mini-stats + infos personnelles + Amis
-// - Vue "Profils locaux" : formulaire + liste des profils locaux
+// - Vue "Profils locaux" : formulaire + carrousel stylé de profils locaux
 // - Thème via ThemeContext + textes via LangContext
 // ============================================
 
@@ -208,6 +208,23 @@ export default function Profiles({
     });
   }
 
+  type PrivateInfo = {
+    nickname?: string;
+    lastName?: string;
+    firstName?: string;
+    birthDate?: string;
+    country?: string;
+    city?: string;
+    email?: string;
+    phone?: string;
+    password?: string;
+    // lien compte online (hash d’email)
+    onlineKey?: string;
+    // prefs app
+    appLang?: Lang;
+    appTheme?: ThemeId;
+  };
+
   async function addProfile(
     name: string,
     file?: File | null,
@@ -240,10 +257,7 @@ export default function Profiles({
   // NEW : au chargement de la page, si un profil actif a des prefs app, on les applique
   React.useEffect(() => {
     if (!active) return;
-    const pi = ((active as any).privateInfo || {}) as {
-      appLang?: Lang;
-      appTheme?: ThemeId;
-    };
+    const pi = ((active as any).privateInfo || {}) as PrivateInfo;
     if (pi.appLang && pi.appLang !== lang) {
       try {
         setLang(pi.appLang);
@@ -483,31 +497,18 @@ export default function Profiles({
                 title={`${t(
                   "profiles.locals.title",
                   "Profils locaux"
-                )} (${profiles.length})`}
+                )} (${profiles.filter((p) => p.id !== activeProfileId).length})`}
               >
-                <AddLocalProfile onCreate={addProfile} />
-                <div
-                  style={{
-                    maxHeight: "min(44vh, 420px)",
-                    minHeight: 260,
-                    overflowY: "auto",
-                    paddingRight: 6,
-                    marginTop: 6,
-                    borderRadius: 12,
-                    border: `1px solid ${theme.borderSoft}`,
-                    background: theme.card,
-                  }}
-                >
-                  <LocalProfiles
-                    profiles={profiles}
-                    onRename={renameProfile}
-                    onAvatar={changeAvatar}
-                    onDelete={delProfile}
-                    statsMap={statsMap}
-                    warmup={(id) => warmProfileStats(id, setStatsMap)}
-                    onOpenAvatarCreator={openAvatarCreator}
-                  />
-                </div>
+                <LocalProfilesRefonte
+                  profiles={profiles}
+                  activeProfileId={activeProfileId}
+                  onCreate={addProfile}
+                  onRename={renameProfile}
+                  onPatchPrivateInfo={patchProfilePrivateInfo}
+                  onAvatar={changeAvatar}
+                  onDelete={delProfile}
+                  onOpenAvatarCreator={openAvatarCreator}
+                />
               </Card>
             )}
 
@@ -752,6 +753,7 @@ function Card({
 }
 
 /* ------ Profil actif + ring externe ------ */
+
 function ActiveProfileBlock({
   active,
   activeAvg3D,
@@ -928,23 +930,6 @@ function ActiveProfileBlock({
 
 /* ------ Bloc INFOS PERSONNELLES + SÉCURITÉ ------ */
 
-type PrivateInfo = {
-  nickname?: string;
-  lastName?: string;
-  firstName?: string;
-  birthDate?: string;
-  country?: string;
-  city?: string;
-  email?: string;
-  phone?: string;
-  password?: string;
-  // lien compte online (hash d’email)
-  onlineKey?: string;
-  // prefs app
-  appLang?: Lang;
-  appTheme?: ThemeId;
-};
-
 function PrivateInfoBlock({
   active,
   onPatch,
@@ -956,6 +941,23 @@ function PrivateInfoBlock({
 }) {
   const { theme } = useTheme();
   const { t } = useLang();
+
+  type PrivateInfo = {
+    nickname?: string;
+    lastName?: string;
+    firstName?: string;
+    birthDate?: string;
+    country?: string;
+    city?: string;
+    email?: string;
+    phone?: string;
+    password?: string;
+    // lien compte online (hash d’email)
+    onlineKey?: string;
+    // prefs app
+    appLang?: Lang;
+    appTheme?: ThemeId;
+  };
 
   const initial: PrivateInfo = React.useMemo(() => {
     if (!active) return {};
@@ -1001,7 +1003,7 @@ function PrivateInfoBlock({
   }
 
   function handleSubmit() {
-    const patch: Partial<PrivateInfo> = { ...fields };
+    const patch: PrivateInfo = { ...fields };
 
     // === Nouveau mot de passe ?
     if (newPass || newPass2) {
@@ -1406,9 +1408,38 @@ function UnifiedAuthBlock({
   onCreate: (
     name: string,
     file?: File | null,
-    privateInfo?: Partial<PrivateInfo>
+    privateInfo?: Partial<{
+      nickname?: string;
+      lastName?: string;
+      firstName?: string;
+      birthDate?: string;
+      country?: string;
+      city?: string;
+      email?: string;
+      phone?: string;
+      password?: string;
+      onlineKey?: string;
+      appLang?: Lang;
+      appTheme?: ThemeId;
+    }>
   ) => void;
-  onHydrateProfile?: (id: string, patch: Partial<PrivateInfo>) => void;
+  onHydrateProfile?: (
+    id: string,
+    patch: Partial<{
+      nickname?: string;
+      lastName?: string;
+      firstName?: string;
+      birthDate?: string;
+      country?: string;
+      city?: string;
+      email?: string;
+      phone?: string;
+      password?: string;
+      onlineKey?: string;
+      appLang?: Lang;
+      appTheme?: ThemeId;
+    }>
+  ) => void;
   autoFocusCreate?: boolean;
 }) {
   const { t, setLang, lang } = useLang();
@@ -1416,6 +1447,21 @@ function UnifiedAuthBlock({
   const { signup: onlineSignup, login: onlineLogin } = useAuthOnline();
 
   const primary = theme.primary as string;
+
+  type PrivateInfo = {
+    nickname?: string;
+    lastName?: string;
+    firstName?: string;
+    birthDate?: string;
+    country?: string;
+    city?: string;
+    email?: string;
+    phone?: string;
+    password?: string;
+    onlineKey?: string;
+    appLang?: Lang;
+    appTheme?: ThemeId;
+  };
 
   // Connexion
   const [loginEmail, setLoginEmail] = React.useState("");
@@ -1609,14 +1655,11 @@ function UnifiedAuthBlock({
     // 5) Si un profil existe déjà, on s'assure qu'il a bien l'onlineKey
     const pi = ((match as any).privateInfo || {}) as PrivateInfo;
     if (!pi.onlineKey && onlineKey) {
-      // petit patch silencieux pour ajouter la clé au profil existant
       const patched: Partial<PrivateInfo> = {
         ...pi,
         onlineKey,
       };
-      // on repasse par onCreate ? non, on laisse Profiles gérer via patchActivePrivateInfo
-      // -> on fera ce patch côté appelant via PrivateInfoBlock / PlayerPrefsBlock si besoin
-      // Ici, on se contente de mettre à jour en mémoire via onConnect(match.id)
+      onHydrateProfile?.(match.id, patched);
     }
 
     // 6) On sélectionne ce profil comme actif
@@ -2042,7 +2085,557 @@ function UnifiedAuthBlock({
   );
 }
 
-/* ----- Formulaire d’ajout local ----- */
+/* ----- NOUVELLE refonte Profils locaux : création + carrousel ----- */
+
+function LocalProfilesRefonte({
+  profiles,
+  activeProfileId,
+  onCreate,
+  onRename,
+  onPatchPrivateInfo,
+  onAvatar,
+  onDelete,
+  onOpenAvatarCreator,
+}: {
+  profiles: Profile[];
+  activeProfileId: string | null;
+  onCreate: (
+    name: string,
+    file?: File | null,
+    privateInfo?: Partial<{
+      country?: string;
+    }>
+  ) => void;
+  onRename: (id: string, name: string) => void;
+  onPatchPrivateInfo: (
+    id: string,
+    patch: Partial<{
+      country?: string;
+    }>
+  ) => void;
+  onAvatar: (id: string, file: File) => void;
+  onDelete: (id: string) => void;
+  onOpenAvatarCreator?: () => void;
+}) {
+  const { theme } = useTheme();
+  const { t } = useLang();
+  const primary = theme.primary;
+
+  const locals = React.useMemo(
+    () => profiles.filter((p) => p.id !== activeProfileId),
+    [profiles, activeProfileId]
+  );
+
+  const [index, setIndex] = React.useState(0);
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [editName, setEditName] = React.useState("");
+  const [editCountry, setEditCountry] = React.useState("");
+  const [editFile, setEditFile] = React.useState<File | null>(null);
+  const [editPreview, setEditPreview] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (index >= locals.length && locals.length > 0) {
+      setIndex(locals.length - 1);
+    }
+    if (locals.length === 0) {
+      setIndex(0);
+    }
+  }, [locals.length, index]);
+
+  const current = locals[index] || null;
+
+  // ✅ mêmes stats que le menu Profils locaux
+  const stats = useBasicStats(current?.id);
+
+  React.useEffect(() => {
+    setIsEditing(false);
+    setEditFile(null);
+    setEditPreview(null);
+    if (current) {
+      const pi = ((current as any).privateInfo || {}) as {
+        country?: string;
+      };
+      setEditName(current.name || "");
+      setEditCountry(pi.country || "");
+    } else {
+      setEditName("");
+      setEditCountry("");
+    }
+  }, [current?.id]);
+
+  React.useEffect(() => {
+    if (!editFile) {
+      setEditPreview(null);
+      return;
+    }
+    const r = new FileReader();
+    r.onload = () => setEditPreview(String(r.result));
+    r.readAsDataURL(editFile);
+  }, [editFile]);
+
+  const avg3 = Number.isFinite(stats.avg3) ? stats.avg3 : 0;
+  const bestVisit = Number(stats.bestVisit ?? 0);
+  const bestCheckout = Number(stats.bestCheckout ?? 0);
+  const winPct = Math.round(Number(stats.winRate ?? 0));
+
+  function handleSaveEdit() {
+    if (!current) return;
+    const trimmedName = editName.trim();
+    const trimmedCountry = editCountry.trim();
+
+    if (trimmedName) {
+      onRename(current.id, trimmedName);
+    }
+    onPatchPrivateInfo(current.id, {
+      country: trimmedCountry || "",
+    });
+    if (editFile) {
+      onAvatar(current.id, editFile);
+    }
+    setIsEditing(false);
+    setEditFile(null);
+    setEditPreview(null);
+  }
+
+  // tailles médaillon ++
+  const AVATAR = 120;
+  const BORDER = 10;
+  const MEDALLION = AVATAR + BORDER;
+  const STAR = 12;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* ------- Création PROFIL LOCAL ------- */}
+      <AddLocalProfile onCreate={onCreate} />
+
+      {/* ------- Carrousel + stats + actions ------- */}
+      {locals.length === 0 ? (
+        <div
+          className="subtitle"
+          style={{
+            marginTop: 8,
+            fontSize: 12,
+            color: theme.textSoft,
+            textAlign: "center",
+          }}
+        >
+          {t(
+            "profiles.locals.empty",
+            "Aucun profil local pour l’instant. Ajoute un joueur au-dessus."
+          )}
+        </div>
+      ) : (
+        <div
+          style={{
+            marginTop: 8,
+            padding: 12,
+            borderRadius: 16,
+            border: `1px solid ${theme.borderSoft}`,
+            background:
+              "radial-gradient(circle at top, rgba(255,255,255,.08), transparent 60%)",
+          }}
+        >
+          {/* Header carrousel */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 10,
+              gap: 8,
+            }}
+          >
+            <button
+              className="btn sm"
+              onClick={() =>
+                setIndex((i) => (i <= 0 ? locals.length - 1 : i - 1))
+              }
+              disabled={locals.length <= 1}
+              style={{
+                minWidth: 36,
+                opacity: locals.length <= 1 ? 0.4 : 1,
+              }}
+            >
+              ◂
+            </button>
+
+            <div
+              className="subtitle"
+              style={{
+                fontSize: 11,
+                textTransform: "uppercase",
+                letterSpacing: 1,
+                color: theme.textSoft,
+                flex: 1,
+                textAlign: "center",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {t("profiles.locals.carousel.label", "Profil local")}{" "}
+              {locals.length > 1 ? `(${index + 1}/${locals.length})` : ""}
+            </div>
+
+            <button
+              className="btn sm"
+              onClick={() =>
+                setIndex((i) => (i >= locals.length - 1 ? 0 : i + 1))
+              }
+              disabled={locals.length <= 1}
+              style={{
+                minWidth: 36,
+                opacity: locals.length <= 1 ? 0.4 : 1,
+              }}
+            >
+              ▸
+            </button>
+          </div>
+
+          {current && (
+            <>
+              {/* Médaillon central GROS + StarRing */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  marginBottom: 10,
+                }}
+              >
+                <div
+                  style={{
+                    position: "relative",
+                    width: MEDALLION,
+                    height: MEDALLION,
+                    borderRadius: "50%",
+                    padding: BORDER / 2,
+                    background: `linear-gradient(135deg, ${primary}, ${primary}55)`,
+                    boxShadow: `0 0 30px ${primary}66, inset 0 0 14px rgba(0,0,0,.7)`,
+                  }}
+                >
+                  <div
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      left: -(STAR / 2),
+                      top: -(STAR / 2),
+                      width: MEDALLION + STAR,
+                      height: MEDALLION + STAR,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    <ProfileStarRing
+                      anchorSize={MEDALLION}
+                      gapPx={-1}
+                      starSize={STAR}
+                      stepDeg={10}
+                      avg3d={avg3}
+                    />
+                  </div>
+
+                  <ProfileAvatar
+                    size={AVATAR - 8}
+                    dataUrl={current.avatarDataUrl}
+                    label={current.name?.[0]?.toUpperCase() || "?"}
+                    showStars={false}
+                  />
+                </div>
+              </div>
+
+              {/* Nom + drapeau pays */}
+              <div
+                style={{
+                  textAlign: "center",
+                  marginBottom: 10,
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 800,
+                    fontSize: 18,
+                    color: primary,
+                    textShadow: `0 0 8px ${primary}55`,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {current.name || "—"}
+                </div>
+                <div
+                  className="subtitle"
+                  style={{
+                    fontSize: 14,
+                    marginTop: 4,
+                    color: theme.textSoft,
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  {(() => {
+                    const pi = ((current as any).privateInfo || {}) as {
+                      country?: string;
+                    };
+                    const country = pi.country || "";
+                    const flag = getCountryFlag(country);
+
+                    if (flag) {
+                      return (
+                        <>
+                          <span style={{ fontSize: 18 }}>{flag}</span>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              opacity: 0.7,
+                              maxWidth: 120,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {country}
+                          </span>
+                        </>
+                      );
+                    }
+
+                    return (
+                      <span style={{ fontSize: 11, opacity: 0.6 }}>
+                        {t("profiles.private.country", "Pays")}
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* KPIs — une seule ligne avec scroll si besoin */}
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "nowrap",
+                  justifyContent: "space-between",
+                  gap: 6,
+                  marginBottom: 12,
+                  overflowX: "auto",
+                  paddingBottom: 2,
+                }}
+              >
+                <KpiPill
+                  label={t("home.stats.avg3", "Moy/3D")}
+                  value={(Math.round(avg3 * 10) / 10).toFixed(1)}
+                />
+                <KpiPill
+                  label={t("home.stats.best", "Best visit")}
+                  value={String(bestVisit)}
+                />
+                <KpiPill
+                  label={t("home.stats.co", "Best CO")}
+                  value={String(bestCheckout)}
+                />
+                <KpiPill
+                  label={t("home.stats.winPct", "Win %")}
+                  value={`${winPct}%`}
+                />
+              </div>
+
+              {/* Actions principales — une seule ligne */}
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "nowrap",
+                  justifyContent: "space-between",
+                  gap: 6,
+                  marginBottom: isEditing ? 10 : 0,
+                  overflowX: "auto",
+                  paddingBottom: 2,
+                }}
+              >
+                <button
+                  className="btn sm"
+                  onClick={() => setIsEditing((v) => !v)}
+                  style={{ flex: 1, minWidth: 90 }}
+                >
+                  {t("profiles.locals.btn.edit", "ÉDITER")}
+                </button>
+
+                <button
+                  className="btn sm"
+                  onClick={() => onOpenAvatarCreator?.()}
+                  style={{
+                    flex: 1,
+                    minWidth: 110,
+                    background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
+                    color: "#000",
+                    fontWeight: 800,
+                  }}
+                >
+                  {t("profiles.locals.btn.avatarCreator", "CRÉER AVATAR")}
+                </button>
+
+                <button
+                  className="btn danger sm"
+                  onClick={() => {
+                    const ok = confirm(
+                      t(
+                        "profiles.locals.confirmDelete",
+                        "Supprimer ce profil local ?"
+                      )
+                    );
+                    if (ok) onDelete(current.id);
+                  }}
+                  style={{ flex: 1, minWidth: 90 }}
+                >
+                  {t("profiles.locals.btn.delete", "SUPPRIMER")}
+                </button>
+              </div>
+
+              {/* Bloc édition détaillée */}
+              {isEditing && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    paddingTop: 10,
+                    borderTop: `1px dashed ${theme.borderSoft}`,
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  <div
+                    className="subtitle"
+                    style={{ fontSize: 11, color: theme.textSoft }}
+                  >
+                    {t(
+                      "profiles.locals.edit.hint",
+                      "Modifier l’avatar, le nom et le pays de ce profil local."
+                    )}
+                  </div>
+
+                  <div
+                    className="row"
+                    style={{
+                      gap: 10,
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <label
+                      style={{
+                        width: 60,
+                        height: 60,
+                        borderRadius: "50%",
+                        overflow: "hidden",
+                        border: `2px solid ${primary}66`,
+                        cursor: "pointer",
+                        display: "grid",
+                        placeItems: "center",
+                        background: "#111118",
+                      }}
+                    >
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: "none" }}
+                        onChange={(e) =>
+                          setEditFile(e.target.files?.[0] ?? null)
+                        }
+                      />
+                      {editPreview ? (
+                        <img
+                          src={editPreview}
+                          alt="avatar"
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                          }}
+                        />
+                      ) : (
+                        <span
+                          className="subtitle"
+                          style={{ fontSize: 10, color: "#AAA" }}
+                        >
+                          {t(
+                            "profiles.locals.edit.avatar",
+                            "Charger image"
+                          )}
+                        </span>
+                      )}
+                    </label>
+
+                    <div
+                      style={{
+                        flex: 1,
+                        minWidth: 160,
+                        display: "grid",
+                        gap: 6,
+                      }}
+                    >
+                      <input
+                        className="input"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        placeholder={t(
+                          "profiles.locals.add.placeholder",
+                          "Nom du profil"
+                        )}
+                      />
+                      <input
+                        className="input"
+                        value={editCountry}
+                        onChange={(e) => setEditCountry(e.target.value)}
+                        placeholder={t(
+                          "profiles.private.country",
+                          "Pays"
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      gap: 8,
+                      marginTop: 4,
+                    }}
+                  >
+                    <button
+                      className="btn sm"
+                      onClick={() => {
+                        setIsEditing(false);
+                        setEditFile(null);
+                        setEditPreview(null);
+                        if (current) {
+                          const pi = ((current as any).privateInfo ||
+                            {}) as { country?: string };
+                          setEditName(current.name || "");
+                          setEditCountry(pi.country || "");
+                        }
+                      }}
+                    >
+                      {t("common.cancel", "Annuler")}
+                    </button>
+                    <button
+                      className="btn ok sm"
+                      onClick={handleSaveEdit}
+                    >
+                      {t("common.save", "Enregistrer")}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/* ----- Formulaire d’ajout local (refondu) ----- */
 
 function AddLocalProfile({
   onCreate,
@@ -2050,10 +2643,13 @@ function AddLocalProfile({
   onCreate: (
     name: string,
     file?: File | null,
-    privateInfo?: Partial<PrivateInfo>
+    privateInfo?: Partial<{
+      country?: string;
+    }>
   ) => void;
 }) {
   const [name, setName] = React.useState("");
+  const [country, setCountry] = React.useState("");
   const [file, setFile] = React.useState<File | null>(null);
   const [preview, setPreview] = React.useState<string | null>(null);
 
@@ -2071,349 +2667,151 @@ function AddLocalProfile({
     r.readAsDataURL(file);
   }, [file]);
 
-  function submit() {
-    if (!name.trim()) return;
-    onCreate(name.trim(), file);
+  function reset() {
     setName("");
+    setCountry("");
     setFile(null);
     setPreview(null);
   }
 
+  function submit() {
+    if (!name.trim()) return;
+    const trimmedName = name.trim();
+    const trimmedCountry = country.trim();
+    const privateInfo: { country?: string } = {};
+    if (trimmedCountry) privateInfo.country = trimmedCountry;
+
+    onCreate(trimmedName, file, privateInfo);
+    reset();
+  }
+
+  const hasSomething = name || country || file;
+
   return (
     <div
-      className="item"
       style={{
-        gap: 10,
-        alignItems: "center",
-        marginBottom: 8,
-        flexWrap: "wrap",
+        marginBottom: 10,
+        padding: 10,
+        borderRadius: 14,
+        border: `1px solid ${theme.borderSoft}`,
+        background: theme.bg,
+        boxShadow: "0 10px 20px rgba(0,0,0,.35)",
       }}
     >
-      <label
-        title={t("profiles.locals.add.avatar", "Avatar")}
+      <div
+        className="subtitle"
         style={{
-          width: 44,
-          height: 44,
-          borderRadius: "50%",
-          overflow: "hidden",
-          border: `1px solid ${theme.borderSoft}`,
-          display: "grid",
-          placeItems: "center",
-          background: theme.bg,
-          cursor: "pointer",
-          flex: "0 0 auto",
+          fontSize: 11,
+          color: theme.textSoft,
+          marginBottom: 8,
+          textTransform: "uppercase",
+          letterSpacing: 1,
         }}
       >
-        <input
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-        />
-        {preview ? (
-          <img
-            src={preview}
-            alt=""
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-            }}
-          />
-        ) : (
-          <span className="subtitle" style={{ fontSize: 11 }}>
-            {t("profiles.locals.add.avatar", "Avatar")}
-          </span>
-        )}
-      </label>
-
-      <input
-        className="input"
-        placeholder={t(
-          "profiles.locals.add.placeholder",
-          "Nom du profil"
-        )}
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && submit()}
-        style={{ flex: 1, minWidth: 160, maxWidth: 260 }}
-      />
-
-      <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-        <button
-          className="btn primary sm"
-          onClick={submit}
-          style={{
-            background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
-            color: "#000",
-            fontWeight: 700,
-          }}
-        >
-          {t("profiles.locals.add.btnAdd", "Ajouter")}
-        </button>
-        {(name || file) && (
-          <button
-            className="btn sm"
-            onClick={() => {
-              setName("");
-              setFile(null);
-              setPreview(null);
-            }}
-          >
-            {t("profiles.locals.add.btnCancel", "Annuler")}
-          </button>
+        {t(
+          "profiles.locals.add.title",
+          "Créer un profil local"
         )}
       </div>
-    </div>
-  );
-}
 
-/* ----- Liste des profils locaux ----- */
+      <div
+        className="row"
+        style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}
+      >
+        <label
+          title={t("profiles.locals.add.avatar", "Avatar")}
+          style={{
+            width: 52,
+            height: 52,
+            borderRadius: "50%",
+            overflow: "hidden",
+            border: `1px solid ${theme.borderSoft}`,
+            display: "grid",
+            placeItems: "center",
+            background: theme.card,
+            cursor: "pointer",
+            flex: "0 0 auto",
+          }}
+        >
+          <input
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          />
+          {preview ? (
+            <img
+              src={preview}
+              alt=""
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+              }}
+            />
+          ) : (
+            <span className="subtitle" style={{ fontSize: 11 }}>
+              {t("profiles.locals.add.avatar", "Avatar")}
+            </span>
+          )}
+        </label>
 
-function LocalProfiles({
-  profiles,
-  onRename,
-  onAvatar,
-  onDelete,
-  statsMap,
-  warmup,
-  onOpenAvatarCreator,
-}: {
-  profiles: Profile[];
-  onRename: (id: string, name: string) => void;
-  onAvatar: (id: string, file: File) => void;
-  onDelete: (id: string) => void;
-  statsMap: Record<string, BasicProfileStats | undefined>;
-  warmup: (id: string) => void;
-  onOpenAvatarCreator?: () => void;
-}) {
-  const [editing, setEditing] = React.useState<string | null>(null);
-  const [tmpName, setTmpName] = React.useState<string>("");
-  const [tmpFile, setTmpFile] = React.useState<File | null>(null);
+        <div
+          style={{
+            flex: 1,
+            minWidth: 160,
+            display: "grid",
+            gap: 6,
+          }}
+        >
+          <input
+            className="input"
+            placeholder={t(
+              "profiles.locals.add.placeholder",
+              "Nom du profil"
+            )}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+          />
+          <input
+            className="input"
+            placeholder={t("profiles.private.country", "Pays")}
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+          />
+        </div>
 
-  const { theme } = useTheme();
-  const { t } = useLang();
-  const primary = theme.primary;
-
-  function startEdit(p: Profile) {
-    setEditing(p.id);
-    setTmpName(p.name || "");
-    setTmpFile(null);
-  }
-
-  function saveEdit(id: string) {
-    if (tmpName.trim()) onRename(id, tmpName.trim());
-    if (tmpFile) onAvatar(id, tmpFile);
-    setEditing(null);
-    setTmpFile(null);
-  }
-
-  return (
-    <div className="list">
-      {profiles.map((p) => {
-        const isEdit = editing === p.id;
-        const s = statsMap[p.id];
-        const AVA = 48;
-        const MEDALLION = AVA;
-        const STAR = 9;
-
-        return (
-          <div
-            className="item"
-            key={p.id}
+        <div
+          className="col"
+          style={{
+            gap: 6,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            minWidth: 96,
+          }}
+        >
+          <button
+            className="btn primary sm"
+            onClick={submit}
             style={{
-              gap: 10,
-              alignItems: "center",
-              flexWrap: "wrap",
-              background: theme.bg,
+              background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
+              color: "#000",
+              fontWeight: 700,
+              minWidth: 90,
             }}
           >
-            <div
-              className="row"
-              style={{ gap: 10, minWidth: 0, flex: 1 }}
-            >
-              <div
-                style={{
-                  position: "relative",
-                  width: AVA,
-                  height: AVA,
-                  flex: "0 0 auto",
-                }}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: "absolute",
-                    left: -(STAR / 2),
-                    top: -(STAR / 2),
-                    width: MEDALLION + STAR,
-                    height: MEDALLION + STAR,
-                    pointerEvents: "none",
-                  }}
-                >
-                  <ProfileStarRing
-                    anchorSize={MEDALLION}
-                    gapPx={2}
-                    starSize={STAR}
-                    stepDeg={10}
-                    avg3d={Number(
-                      (s as any)?.avg3d ?? (s as any)?.avg3 ?? 0
-                    )}
-                  />
-                </div>
-
-                <ProfileAvatar
-                  size={AVA}
-                  dataUrl={p.avatarDataUrl}
-                  label={p.name?.[0]?.toUpperCase() || "?"}
-                  showStars={false}
-                />
-              </div>
-
-              <div style={{ minWidth: 0 }}>
-                {isEdit ? (
-                  <div
-                    className="row"
-                    style={{ gap: 8, flexWrap: "wrap" }}
-                  >
-                    <input
-                      className="input"
-                      value={tmpName}
-                      onChange={(e) =>
-                        setTmpName(e.target.value)
-                      }
-                      style={{ width: 200 }}
-                    />
-                    <label className="btn sm">
-                      {t(
-                        "profiles.locals.edit.avatarBtn",
-                        "Avatar"
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        style={{ display: "none" }}
-                        onChange={(e) =>
-                          setTmpFile(
-                            e.target.files?.[0] ?? null
-                          )
-                        }
-                      />
-                    </label>
-                  </div>
-                ) : (
-                  <>
-                    <div
-                      style={{
-                        fontWeight: 800,
-                        whiteSpace: "nowrap",
-                        textAlign: "left",
-                      }}
-                    >
-                      <a
-                        href={`#/stats?pid=${p.id}`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          location.hash = `#/stats?pid=${p.id}`;
-                        }}
-                        onMouseEnter={() => warmup(p.id)}
-                        style={{
-                          color: primary,
-                          textDecoration: "none",
-                        }}
-                        title={t(
-                          "profiles.locals.seeStats",
-                          "Voir les statistiques"
-                        )}
-                      >
-                        {p.name || "—"}
-                      </a>
-                    </div>
-
-                    <div style={{ marginTop: 6 }}>
-                      <GoldMiniStats profileId={p.id} />
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div
-              className="col"
-              style={{
-                gap: 6,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-end",
-                minWidth: 122,
-              }}
-            >
-              <button
-                className="btn sm"
-                onClick={() => onOpenAvatarCreator?.()}
-                title={t(
-                  "profiles.locals.btn.avatarCreator.tooltip",
-                  "Ouvrir le créateur d’avatar"
-                )}
-                style={{
-                  background: `linear-gradient(180deg, ${primary}, ${primary}AA)`,
-                  color: "#000",
-                  fontWeight: 800,
-                }}
-              >
-                {t(
-                  "profiles.locals.btn.avatarCreator",
-                  "Créer avatar"
-                )}
-              </button>
-
-              {isEdit ? (
-                <>
-                  <button
-                    className="btn ok sm"
-                    onClick={() => saveEdit(p.id)}
-                  >
-                    {t(
-                      "profiles.locals.btn.save",
-                      "Enregistrer"
-                    )}
-                  </button>
-                  <button
-                    className="btn sm"
-                    onClick={() => setEditing(null)}
-                  >
-                    {t(
-                      "profiles.locals.btn.cancel",
-                      "Annuler"
-                    )}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    className="btn sm"
-                    onClick={() => startEdit(p)}
-                  >
-                    {t(
-                      "profiles.locals.btn.edit",
-                      "Éditer"
-                    )}
-                  </button>
-                  <button
-                    className="btn danger sm"
-                    onClick={() => onDelete(p.id)}
-                  >
-                    {t(
-                      "profiles.locals.btn.delete",
-                      "Suppr."
-                    )}
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })}
+            {t("profiles.locals.add.btnAdd", "Ajouter")}
+          </button>
+          {hasSomething && (
+            <button className="btn sm" onClick={reset}>
+              {t("profiles.locals.add.btnCancel", "Annuler")}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -2690,6 +3088,54 @@ function GoldStatItem({
   );
 }
 
+/* ------ Petit bouton KPI pour la refonte locals ------ */
+
+function KpiPill({ label, value }: { label: string; value: string }) {
+  const { theme } = useTheme();
+  const primary = theme.primary;
+  return (
+    <div
+      style={{
+        flex: 1,
+        minWidth: 0,
+        maxWidth: 110,
+        borderRadius: 999,
+        padding: "5px 8px",
+        fontSize: 10,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        background: `linear-gradient(135deg, ${primary}22, ${primary}55)`,
+        border: `1px solid ${primary}99`,
+        boxShadow: "0 6px 14px rgba(0,0,0,.45)",
+        fontVariantNumeric: "tabular-nums",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span
+        style={{
+          textTransform: "uppercase",
+          letterSpacing: 0.7,
+          color: "rgba(255,255,255,.7)",
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          marginTop: 1,
+          fontWeight: 800,
+          fontSize: 13,
+          color: "#000",
+          textShadow: `0 0 6px ${primary}AA`,
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
 function StatusDot({ kind }: { kind: "online" | "away" | "offline" }) {
   const color =
     kind === "online"
@@ -2721,15 +3167,280 @@ function read(f: File) {
     r.readAsDataURL(f);
   });
 }
-async function warmProfileStats(
-  id: string,
-  setStatsMap: React.Dispatch<
-    React.SetStateAction<Record<string, BasicProfileStats | undefined>>
-  >
-) {
-  if (!id) return;
-  try {
-    const s = await getBasicProfileStats(id);
-    setStatsMap((m) => (m[id] ? m : { ...m, [id]: s }));
-  } catch {}
+
+function getCountryFlag(countryRaw?: string): string | null {
+  if (!countryRaw) return null;
+  const v = countryRaw.trim();
+  if (!v) return null;
+
+  // Si l'utilisateur a déjà mis un emoji drapeau → on le garde
+  if (/\p{Extended_Pictographic}/u.test(v)) {
+    return v;
+  }
+
+  // Si l'utilisateur a mis un code ISO directement (FR, US, GB...)
+  const upper = v.toUpperCase();
+  if (/^[A-Z]{2}$/.test(upper)) {
+    return isoCodeToFlag(upper);
+  }
+
+  // Normalisation du nom
+  const key = v
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[’'`´]/g, "")
+    .replace(/[^a-z]/g, "");
+
+  // Mapping noms → codes ISO (liste large)
+  const nameToCode: Record<string, string> = {
+    // FR + variantes FR/EN les plus courantes
+    france: "FR",
+    republiquefrancaise: "FR",
+    frenchrepublic: "FR",
+    etatsunis: "US",
+    etatsunisdamérique: "US",
+    etatsunisdamerique: "US",
+    etatsunisamerique: "US",
+    etatsunisdam: "US",
+    usa: "US",
+    unitedstates: "US",
+    unitedstatesofamerica: "US",
+    royaumeuni: "GB",
+    royaumeuniangleterre: "GB",
+    royaumeuniuk: "GB",
+    uk: "GB",
+    angleterre: "GB",
+    england: "GB",
+    ecosse: "GB",
+    scotland: "GB",
+    paysbas: "NL",
+    paysbasnederland: "NL",
+    belgique: "BE",
+    suisse: "CH",
+    espagne: "ES",
+    allemagne: "DE",
+    italie: "IT",
+    portugal: "PT",
+
+    // Liste ISO (noms anglais sans espaces / caractères spéciaux)
+    afghanistan: "AF",
+    albania: "AL",
+    algeria: "DZ",
+    andorra: "AD",
+    angola: "AO",
+    antiguaandbarbuda: "AG",
+    argentina: "AR",
+    armenia: "AM",
+    australia: "AU",
+    austria: "AT",
+    azerbaijan: "AZ",
+    bahamas: "BS",
+    bahrain: "BH",
+    bangladesh: "BD",
+    barbados: "BB",
+    belarus: "BY",
+    belgium: "BE",
+    belize: "BZ",
+    benin: "BJ",
+    bhutan: "BT",
+    bolivia: "BO",
+    bosniaandherzegovina: "BA",
+    botswana: "BW",
+    brazil: "BR",
+    brunei: "BN",
+    bulgaria: "BG",
+    burkinafaso: "BF",
+    burundi: "BI",
+    caboverde: "CV",
+    cambodia: "KH",
+    cameroon: "CM",
+    canada: "CA",
+    centralafricanrepublic: "CF",
+    chad: "TD",
+    chile: "CL",
+    china: "CN",
+    colombia: "CO",
+    comoros: "KM",
+    congo: "CG",
+    congodemocraticrepublic: "CD",
+    costarica: "CR",
+    croatia: "HR",
+    cuba: "CU",
+    cyprus: "CY",
+    czechrepublic: "CZ",
+    czechia: "CZ",
+    denmark: "DK",
+    djibouti: "DJ",
+    dominica: "DM",
+    dominicanrepublic: "DO",
+    ecuador: "EC",
+    egypt: "EG",
+    elsalvador: "SV",
+    equatorialguinea: "GQ",
+    eritrea: "ER",
+    estonia: "EE",
+    eswatini: "SZ",
+    ethiopia: "ET",
+    fiji: "FJ",
+    finland: "FI",
+    france: "FR",
+    gabon: "GA",
+    gambia: "GM",
+    georgia: "GE",
+    germany: "DE",
+    ghana: "GH",
+    greece: "GR",
+    grenada: "GD",
+    guatemala: "GT",
+    guinea: "GN",
+    guineabissau: "GW",
+    guyana: "GY",
+    haiti: "HT",
+    honduras: "HN",
+    hungary: "HU",
+    iceland: "IS",
+    india: "IN",
+    indonesia: "ID",
+    iran: "IR",
+    iraq: "IQ",
+    ireland: "IE",
+    israel: "IL",
+    italy: "IT",
+    jamaica: "JM",
+    japan: "JP",
+    jordan: "JO",
+    kazakhstan: "KZ",
+    kenya: "KE",
+    kiribati: "KI",
+    koreademocraticpeoplesrepublic: "KP",
+    northkorea: "KP",
+    korearepublicof: "KR",
+    southkorea: "KR",
+    kuwait: "KW",
+    kyrgyzstan: "KG",
+    laos: "LA",
+    latvia: "LV",
+    lebanon: "LB",
+    lesotho: "LS",
+    liberia: "LR",
+    libya: "LY",
+    liechtenstein: "LI",
+    lithuania: "LT",
+    luxembourg: "LU",
+    madagascar: "MG",
+    malawi: "MW",
+    malaysia: "MY",
+    maldives: "MV",
+    mali: "ML",
+    malta: "MT",
+    marshallislands: "MH",
+    mauritania: "MR",
+    mauritius: "MU",
+    mexico: "MX",
+    micronesia: "FM",
+    moldova: "MD",
+    monaco: "MC",
+    mongolia: "MN",
+    montenegro: "ME",
+    morocco: "MA",
+    mozambique: "MZ",
+    myanmar: "MM",
+    namibia: "NA",
+    nauru: "NR",
+    nepal: "NP",
+    netherlands: "NL",
+    newzealand: "NZ",
+    nicaragua: "NI",
+    niger: "NE",
+    nigeria: "NG",
+    northmacedonia: "MK",
+    norway: "NO",
+    oman: "OM",
+    pakistan: "PK",
+    palau: "PW",
+    panama: "PA",
+    papuanewguinea: "PG",
+    paraguay: "PY",
+    peru: "PE",
+    philippines: "PH",
+    poland: "PL",
+    portugal: "PT",
+    qatar: "QA",
+    romania: "RO",
+    russia: "RU",
+    russianfederation: "RU",
+    rwanda: "RW",
+    saintkittsandnevis: "KN",
+    saintlucia: "LC",
+    saintvincentandthegrenadines: "VC",
+    samoa: "WS",
+    sanmarino: "SM",
+    saotomeandprincipe: "ST",
+    saudiaarabia: "SA",
+    saudiarabia: "SA",
+    senegal: "SN",
+    serbia: "RS",
+    seychelles: "SC",
+    sierraleone: "SL",
+    singapore: "SG",
+    slovakia: "SK",
+    slovenia: "SI",
+    solomonislands: "SB",
+    somalia: "SO",
+    southafrica: "ZA",
+    southsudan: "SS",
+    spain: "ES",
+    srilanka: "LK",
+    sudan: "SD",
+    suriname: "SR",
+    sweden: "SE",
+    switzerland: "CH",
+    syria: "SY",
+    taiwan: "TW",
+    tajikistan: "TJ",
+    tanzania: "TZ",
+    thailand: "TH",
+    timorleste: "TL",
+    togo: "TG",
+    tonga: "TO",
+    trinidadandtobago: "TT",
+    tunisia: "TN",
+    turkey: "TR",
+    türkiye: "TR",
+    turkmenistan: "TM",
+    tuvalu: "TV",
+    uganda: "UG",
+    ukraine: "UA",
+    unitedarabemirates: "AE",
+    unitedkingdom: "GB",
+    unitedstatesofamerica: "US",
+    unitedstates: "US",
+    uruguay: "UY",
+    uzbekistan: "UZ",
+    vanuatu: "VU",
+    venezuela: "VE",
+    vietnam: "VN",
+    yemen: "YE",
+    zambia: "ZM",
+    zimbabwe: "ZW",
+  };
+
+  const iso = nameToCode[key];
+  if (!iso) {
+    // fallback : on tente avec les 2 premières lettres du mot
+    const guess = upper.slice(0, 2);
+    if (/^[A-Z]{2}$/.test(guess)) {
+      return isoCodeToFlag(guess);
+    }
+    return null;
+  }
+
+  return isoCodeToFlag(iso);
+}
+
+function isoCodeToFlag(code: string): string | null {
+  if (!/^[A-Z]{2}$/.test(code)) return null;
+  const first = code.codePointAt(0)! - 65 + 0x1f1e6;
+  const second = code.codePointAt(1)! - 65 + 0x1f1e6;
+  return String.fromCodePoint(first, second);
 }

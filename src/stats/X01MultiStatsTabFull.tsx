@@ -424,43 +424,112 @@ function buildSessionFromSummary(
 
   const isWin = isWinExplicit || isWinHeuristic;
 
-  const legsWon = numOr0(
-    row.legsWon,
-    detail.legsWon,
-    match?.payload?.legsWon?.[pidStr],
-    match?.legsWon?.[pidStr]
-  );
-  const setsWon = numOr0(
-    row.setsWon,
-    detail.setsWon,
-    match?.payload?.setsWon?.[pidStr],
-    match?.setsWon?.[pidStr]
-  );
+  // 🔥 On essaye d'être ULTRA tolérant sur l'endroit où sont stockés les legs/sets
 
-  let legsPlayed = numOr0(row.legsPlayed, detail.legsPlayed);
-  if (!legsPlayed) {
-    const legsMap =
-      match?.payload?.legsWon || match?.legsWon || undefined;
-    if (legsMap && typeof legsMap === "object") {
-      const totalLegs = Object.values(legsMap).reduce(
-        (sum: number, v: any) => sum + numOr0(v),
-        0
-      );
-      if (totalLegs > 0) legsPlayed = totalLegs;
+  // maps "legs gagnés"
+  const legsMapCandidates: any[] = [
+    summary?.legsByPlayer,
+    summary?.legsScore,
+    match?.payload?.legsWon,
+    match?.legsWon,
+  ];
+
+  // maps "legs joués"
+  const legsPlayedMapCandidates: any[] = [
+    summary?.legsPlayedByPlayer,
+    summary?.legsPlayed,
+  ];
+
+  // maps "sets gagnés"
+  const setsMapCandidates: any[] = [
+    summary?.setsByPlayer,
+    summary?.setsScore,
+    match?.payload?.setsWon,
+    match?.setsWon,
+  ];
+
+  // maps "sets joués"
+  const setsPlayedMapCandidates: any[] = [
+    summary?.setsPlayedByPlayer,
+    summary?.setsPlayed,
+  ];
+
+  // clés possibles pour ce joueur dans les maps
+  const candidateKeys: string[] = [
+    pidStr,
+    row.playerId,
+    row.selectedPlayerId,
+    row.profileId,
+    row.id,
+    row.pid,
+  ]
+    .filter(Boolean)
+    .map((x: any) => String(x));
+
+  function lookupValueInMaps(maps: any[]): number {
+    for (const map of maps) {
+      if (!map || typeof map !== "object") continue;
+      for (const key of candidateKeys) {
+        if (key in map) {
+          const v = (map as any)[key];
+          const n = Number(v);
+          if (Number.isFinite(n)) return n;
+        }
+      }
     }
+    return 0;
   }
 
-  let setsPlayed = numOr0(row.setsPlayed, detail.setsPlayed);
+  function sumFirstMap(maps: any[]): number {
+    const map = maps.find((m) => m && typeof m === "object");
+    if (!map) return 0;
+    return Object.values(map as any).reduce(
+      (sum: number, v: any) => sum + numOr0(v),
+      0
+    );
+  }
+
+  // 1) on lit d'abord ce qui vient du détail V3 (legsPlayedTotal, legsWonTotal, etc.)
+  let legsWon = numOr0(
+    detail.legsWonTotal,
+    detail.legsWon,
+    row.legsWon
+  );
+  let legsPlayed = numOr0(
+    detail.legsPlayedTotal,
+    detail.legsPlayed,
+    row.legsPlayed
+  );
+
+  let setsWon = numOr0(
+    detail.setsWonTotal,
+    detail.setsWon,
+    row.setsWon
+  );
+  let setsPlayed = numOr0(
+    detail.setsPlayedTotal,
+    detail.setsPlayed,
+    row.setsPlayed
+  );
+
+  // 2) si on n'a toujours rien, on va chercher dans les maps summary.*
+  if (!legsWon) {
+    const v = lookupValueInMaps(legsMapCandidates);
+    if (v) legsWon = v;
+  }
+  if (!setsWon) {
+    const v = lookupValueInMaps(setsMapCandidates);
+    if (v) setsWon = v;
+  }
+
+  // 3) si legsPlayed/setsPlayed sont à 0, on estime "Total" = somme des legs/sets gagnés de tout le match
+  if (!legsPlayed) {
+    const totalLegs = sumFirstMap(legsMapCandidates);
+    if (totalLegs) legsPlayed = totalLegs;
+  }
   if (!setsPlayed) {
-    const setsMap =
-      match?.payload?.setsWon || match?.setsWon || undefined;
-    if (setsMap && typeof setsMap === "object") {
-      const totalSets = Object.values(setsMap).reduce(
-        (sum: number, v: any) => sum + numOr0(v),
-        0
-      );
-      if (totalSets > 0) setsPlayed = totalSets;
-    }
+    const totalSets = sumFirstMap(setsMapCandidates);
+    if (totalSets) setsPlayed = totalSets;
   }
 
   const finishes = numOr0(
@@ -518,6 +587,7 @@ function buildSessionFromSummary(
     rank,
   };
 }
+
 /**
  * Chargement des matchs X01 depuis History
  * - match X01 détecté même si kind / game / mode / variant = "x01v3" etc.
@@ -804,6 +874,14 @@ let teamTotal = 0,
 // 🔥 stats par format de team (2v2, 3v3, 2v2v2, 2v2v2v2, etc.)
 const teamFormatStats: Record<string, { total: number; win: number }> = {};
 
+// 🔥 Compteurs globaux X01 (tous formats confondus) pour le joueur
+let x01MatchesTotal = 0;
+let x01WinsTotal = 0;
+let x01LegsPlayedTotal = 0;
+let x01LegsWonTotal = 0;
+let x01SetsPlayedTotal = 0;
+let x01SetsWonTotal = 0;
+
 // Pour chaque match → on ne lit QUE la ligne du joueur sélectionné
 for (const [, arr] of matchGroups) {
   let playerLine: X01MultiSession | undefined;
@@ -818,6 +896,16 @@ for (const [, arr] of matchGroups) {
   }
 
   if (!playerLine) continue;
+  
+  // 🔥 Compteurs globaux X01 pour ce joueur (tous formats confondus)
+  x01MatchesTotal++;
+  if (playerLine.isWin) x01WinsTotal++;
+
+  x01LegsPlayedTotal += playerLine.legsPlayed ?? 0;
+  x01LegsWonTotal += playerLine.legsWon ?? 0;
+
+  x01SetsPlayedTotal += playerLine.setsPlayed ?? 0;
+  x01SetsWonTotal += playerLine.setsWon ?? 0;
 
   const isTeam = playerLine.isTeam === true;
   const numPlayers = arr.length;
@@ -1069,62 +1157,26 @@ const pct = (num: number, den: number) =>
   totalSessions > 0 ? (sessionsWithCO / totalSessions) * 100 : null;
 
 // ================== AGRÉGATS MATCHS (tous modes) ==================
-const distinctMatchIds = new Set<string>();
-for (const s of filtered) {
-  if (s.matchId) distinctMatchIds.add(s.matchId);
-}
-const totalMatchesAllModes = distinctMatchIds.size;
+// 🔥 Ici on utilise UNIQUEMENT la ligne du joueur courant sur chaque match
+// (compteurs x01MatchesTotal / x01WinsTotal / x01Legs* / x01Sets* calculés plus haut)
 
-const filteredX01 = filtered;
-const filteredX01Solo = filteredX01.filter((s: any) => !(s as any).isTeam);
-const filteredX01Team = filteredX01.filter((s: any) => !!(s as any).isTeam);
-
-const matchesX01Solo =
-  new Set(filteredX01Solo.map((s: any) => s.matchId)).size;
-const matchesX01Team =
-  new Set(filteredX01Team.map((s: any) => s.matchId)).size;
-const matchesX01Total = matchesX01Solo + matchesX01Team;
-
-const winsX01Solo = filteredX01Solo.filter((s: any) => (s as any).isWin).length;
-const winsX01Team = filteredX01Team.filter((s: any) => (s as any).isWin).length;
-const winsX01Total = winsX01Solo + winsX01Team;
-
-const pctMatchesX01 =
-  totalMatchesAllModes > 0
-    ? (matchesX01Total / totalMatchesAllModes) * 100
-    : 0;
+const matchesX01Total = x01MatchesTotal;
+const winsX01Total = x01WinsTotal;
 
 const pctWinX01 =
   matchesX01Total > 0
     ? (winsX01Total / matchesX01Total) * 100
     : 0;
 
-const legsPlayedX01 = filteredX01.reduce(
-  (sum: any, s: any) => sum + numOr0((s as any).legsPlayed),
-  0
-);
-const legsWonX01 = filteredX01.reduce(
-  (sum: any, s: any) => sum + numOr0((s as any).legsWon),
-  0
-);
+const legsPlayedX01 = x01LegsPlayedTotal;
+const legsWonX01 = x01LegsWonTotal;
 const pctLegsWinX01 =
   legsPlayedX01 > 0 ? (legsWonX01 / legsPlayedX01) * 100 : 0;
 
-const setsPlayedX01 = filteredX01.reduce(
-  (sum: any, s: any) => sum + numOr0((s as any).setsPlayed),
-  0
-);
-const setsWonX01 = filteredX01.reduce(
-  (sum: any, s: any) => sum + numOr0((s as any).setsWon),
-  0
-);
+const setsPlayedX01 = x01SetsPlayedTotal;
+const setsWonX01 = x01SetsWonTotal;
 const pctSetsWinX01 =
   setsPlayedX01 > 0 ? (setsWonX01 / setsPlayedX01) * 100 : 0;
-
-const finishesX01 = filteredX01.reduce(
-  (sum: any, s: any) => sum + numOr0((s as any).finishes),
-  0
-);
 
   // Pour l’instant on n’a pas encore branché Cricket → 0
   const matchesCricketSolo = 0;
@@ -1645,8 +1697,12 @@ type MatchOutcome = {
   teammates: string[];
   opponents: string[];
   won: boolean;
-  margin: number | null;      // diff (pour comparer)
-  scoreLabel: string | null;  // affichage "3-0", "2-1", etc.
+  margin: number | null; // diff (pour comparer)
+  scoreLabel: string | null; // "3-0", "2-1", etc.
+  legsPlayed: number;
+  legsWon: number;
+  setsPlayed: number;
+  setsWon: number;
 };
 
 const outcomes: MatchOutcome[] = [];
@@ -1655,9 +1711,9 @@ for (const matchId in groupedByMatch) {
   const arr = groupedByMatch[matchId];
   const targetId = effectiveProfileId ?? profileId ?? null;
 
-const myLine = targetId
-  ? arr.find((s) => String(s.selectedPlayerId) === String(targetId))
-  : arr[0];
+  const myLine = targetId
+    ? arr.find((s) => String(s.selectedPlayerId) === String(targetId))
+    : arr[0];
 
   if (!myLine) continue;
 
@@ -1665,40 +1721,37 @@ const myLine = targetId
 
   // Détection teammates / opponents
   const teammates = arr
-    .filter((s) => s.isTeam === true && s.selectedPlayerId !== myLine.selectedPlayerId)
+    .filter(
+      (s) => s.isTeam === true && s.selectedPlayerId !== myLine.selectedPlayerId
+    )
     .map((s) => s.selectedPlayerId);
 
   const opponents = arr
-    .filter((s) => s.selectedPlayerId !== myLine.selectedPlayerId && s.isTeam !== true)
+    .filter(
+      (s) => s.selectedPlayerId !== myLine.selectedPlayerId && s.isTeam !== true
+    )
     .map((s) => s.selectedPlayerId);
 
-  // Calcul marge + score affichable (legs ou sets)
+  // Legs / sets pour ce match (pour le joueur)
+  const legsPlayed = myLine.legsPlayed ?? 0;
+  const legsWon = myLine.legsWon ?? 0;
+  const setsPlayed = myLine.setsPlayed ?? 0;
+  const setsWon = myLine.setsWon ?? 0;
+
+  // Calcul marge + score affichable (on privilégie les LEGS, puis les SETS)
   let margin: number | null = null;
   let scoreLabel: string | null = null;
 
-  // On privilégie les LEGS ; si pas dispo, on bascule sur les SETS
-  if (myLine.legsPlayed != null && myLine.legsWon != null) {
-    const legsPlayed = myLine.legsPlayed ?? 0;
-    const legsWon = myLine.legsWon ?? 0;
+  if (legsPlayed > 0) {
     const legsLost = Math.max(0, legsPlayed - legsWon);
-
-    if (legsPlayed > 0) {
-      margin = legsWon - legsLost;
-      scoreLabel = `${legsWon}-${legsLost}`;
-    }
-  } else if (myLine.setsPlayed != null && myLine.setsWon != null) {
-    const setsPlayed = myLine.setsPlayed ?? 0;
-    const setsWon = myLine.setsWon ?? 0;
+    margin = legsWon - legsLost;
+    scoreLabel = `${legsWon}-${legsLost}`;
+  } else if (setsPlayed > 0) {
     const setsLost = Math.max(0, setsPlayed - setsWon);
-
-    if (setsPlayed > 0) {
-      margin = setsWon - setsLost;
-      scoreLabel = `${setsWon}-${setsLost}`;
-    }
-  }
-
-  // 🔥 Fallback si on n'a ni legs ni sets dans l'historique :
-  if (margin === null) {
+    margin = setsWon - setsLost;
+    scoreLabel = `${setsWon}-${setsLost}`;
+  } else {
+    // 🔥 Fallback si on n'a ni legs ni sets dans l'historique :
     const isWin = !!myLine.isWin;
     margin = isWin ? 1 : -1;
     scoreLabel = isWin ? "1-0" : "0-1";
@@ -1713,12 +1766,24 @@ const myLine = targetId
     won: !!myLine.isWin,
     margin,
     scoreLabel,
+    legsPlayed,
+    legsWon,
+    setsPlayed,
+    setsWon,
   });
 }
 
 // ============================================================
 // 3) RECORDS — TOP SCORE DUO / TEAM + PIRE DÉFAITE DUO
 // ============================================================
+
+// Helper : récupère le nombre de legs/sets gagnés à partir de "2-1", "3-0", etc.
+const getMyScoreFromOutcome = (oc: MatchOutcome): number => {
+  if (!oc.scoreLabel) return 0;
+  const [meRaw] = oc.scoreLabel.split("-");
+  const n = parseInt(meRaw ?? "0", 10);
+  return Number.isFinite(n) ? n : 0;
+};
 
 // on distingue bien DUO (2 joueurs, pas TEAM) et TEAM
 let bestDuoScore: string | null = null;
@@ -1729,28 +1794,44 @@ let bestDuoMargin = -Infinity;
 let bestTeamMargin = -Infinity;
 let worstDuoMargin = Infinity;
 
+// 🔥 nouveau : pour départager 1-0 vs 2-1 (même marge, plus de legs gagnés)
+let bestDuoMyScore = -Infinity;
+let bestTeamMyScore = -Infinity;
+
 for (const oc of outcomes) {
   if (oc.margin == null) continue;
 
   const isDuo = !oc.isTeam && oc.players.length === 2;
+  const myScoreThis = getMyScoreFromOutcome(oc);
 
   if (isDuo) {
-    // TOP SCORE DUO
-    if (oc.won && oc.margin > bestDuoMargin) {
-      bestDuoMargin = oc.margin;
-      bestDuoScore = oc.scoreLabel ?? oc.margin.toString();
+    // TOP SCORE DUO : d’abord marge, puis nb de legs/sets gagnés
+    if (oc.won) {
+      if (
+        oc.margin > bestDuoMargin ||
+        (oc.margin === bestDuoMargin && myScoreThis > bestDuoMyScore)
+      ) {
+        bestDuoMargin = oc.margin;
+        bestDuoMyScore = myScoreThis;
+        bestDuoScore = oc.scoreLabel ?? oc.margin.toString();
+      }
     }
-    // PIRE DÉFAITE DUO
+
+    // PIRE DÉFAITE DUO (inchangé : marge la plus négative)
     if (!oc.won && oc.margin < worstDuoMargin) {
       worstDuoMargin = oc.margin;
       worstDuoScore = oc.scoreLabel ?? oc.margin.toString();
     }
   }
 
-  if (oc.isTeam) {
-    // TOP SCORE TEAM
-    if (oc.won && oc.margin > bestTeamMargin) {
+  if (oc.isTeam && oc.won) {
+    // TOP SCORE TEAM : même logique que DUO
+    if (
+      oc.margin > bestTeamMargin ||
+      (oc.margin === bestTeamMargin && myScoreThis > bestTeamMyScore)
+    ) {
       bestTeamMargin = oc.margin;
+      bestTeamMyScore = myScoreThis;
       bestTeamScore = oc.scoreLabel ?? oc.margin.toString();
     }
   }
@@ -1761,12 +1842,13 @@ for (const oc of outcomes) {
 // ============================================================
 
 type VersusStats = {
-  vsMatches: number;         // matchs joués face à ce joueur
-  vsWins: number;            // matchs gagnés face à lui
-  vsLegs: number;            // nombre de legs joués dans ces matchs
+  vsMatches: number; // matchs joués face à ce joueur
+  vsWins: number; // matchs gagnés face à lui
+  legsWon: number; // 🔥 legs gagnés contre lui
+  setsWon: number; // 🔥 sets gagnés contre lui
   bestScoreLabel: string | null; // meilleur score "3-0", "2-1" vs ce joueur
-  bestScoreMargin: number;       // marge associée (pour comparer)
-  teamMatches: number;       // matchs joués AVEC lui en équipe
+  bestScoreMargin: number; // marge associée (pour comparer)
+  teamMatches: number; // matchs joués AVEC lui en équipe
 };
 
 const perPersonStats: Record<string, VersusStats> = {};
@@ -1776,7 +1858,8 @@ const ensurePerson = (id: string): VersusStats => {
     perPersonStats[id] = {
       vsMatches: 0,
       vsWins: 0,
-      vsLegs: 0,
+      legsWon: 0,
+      setsWon: 0,
       bestScoreLabel: null,
       bestScoreMargin: -Infinity,
       teamMatches: 0,
@@ -1787,16 +1870,34 @@ const ensurePerson = (id: string): VersusStats => {
 
 // on remplit pour chaque match
 for (const oc of outcomes) {
+  // --- on déduit les legs / sets gagnés à partir du score "3-0", "2-1", etc. ---
+  let legsWonThis = 0;
+  let setsWonThis = 0;
+
+  if (oc.scoreLabel) {
+    const [meRaw, oppRaw] = oc.scoreLabel.split("-");
+    const meScore = parseInt(meRaw ?? "0", 10);
+    // const oppScore = parseInt(oppRaw ?? "0", 10); // utile si tu veux plus tard
+
+    if (!Number.isNaN(meScore)) {
+      // si on sait que le match est en sets, on range ça en sets, sinon en legs
+      if (oc.setsPlayed && oc.setsPlayed > 0) {
+        setsWonThis = meScore;
+      } else {
+        legsWonThis = meScore;
+      }
+    }
+  }
+
   // adversaires (joués contre)
   for (const opp of oc.opponents) {
     const st = ensurePerson(opp);
     st.vsMatches++;
     if (oc.won) st.vsWins++;
 
-    // on ajoute les legs joués sur ce match (ou sets joués si pas de legs)
-    if (oc.legsPlayed != null) {
-      st.vsLegs += oc.legsPlayed;
-    }
+    // 🔥 Legs / sets gagnés contre cet adversaire sur ce match
+    st.legsWon += legsWonThis;
+    st.setsWon += setsWonThis;
 
     // meilleur score vs cet adversaire
     if (oc.margin != null && oc.scoreLabel) {
@@ -1858,10 +1959,6 @@ for (const id in perPersonStats) {
 }
 
 if (filtered.length > 0) {
-  // DEBUG TEMPORAIRE
-  // Regarde dans la console ce qu'il y a dans une session pour voir
-  // si tu as profileId / profile / playerProfileId, etc.
-  // (tu peux supprimer ce log ensuite)
   console.log("X01Multi sample session", filtered[0]);
 }
 
@@ -1902,9 +1999,9 @@ for (const s of filtered) {
     }
   }
 
-  // 🔥 avatar récupéré depuis X01MultiSession.avatarDataUrl
+  // 🔥 avatar récupéré depuis X01MultiSession.avatarDataUrl (si dispo)
   if (playerAvatarMap[key] === undefined) {
-    playerAvatarMap[key] = s.avatarDataUrl ?? null;
+    playerAvatarMap[key] = (s as any).avatarDataUrl ?? null;
   }
 }
 
@@ -1916,7 +2013,7 @@ const maxWinVsName =
 const favTeammateName =
   favTeammateId ? playerNameMap[favTeammateId] ?? favTeammateId : null;
 
-// 💡 vrais profileId (on les garde si tu veux réutiliser ProfileAvatar ailleurs)
+// vrais profileId (optionnels)
 const favOpponentProfileId =
   favOpponentId ? playerProfileIdMap[favOpponentId] : undefined;
 const maxWinVsProfileId =
@@ -1924,7 +2021,7 @@ const maxWinVsProfileId =
 const favTeammateProfileId =
   favTeammateId ? playerProfileIdMap[favTeammateId] : undefined;
 
-// 💡 URLs d'avatar (data URL ou HTTP) pour les 3 favoris
+// URLs d'avatar (data URL ou HTTP)
 const favOpponentAvatarUrl =
   favOpponentId ? playerAvatarMap[favOpponentId] ?? null : null;
 const maxWinVsAvatarUrl =
@@ -1932,7 +2029,7 @@ const maxWinVsAvatarUrl =
 const favTeammateAvatarUrl =
   favTeammateId ? playerAvatarMap[favTeammateId] ?? null : null;
 
-// valeurs numériques à afficher sous les "avatars"
+// valeurs numériques sous les avatars
 const favOpponentStats =
   favOpponentId != null ? perPersonStats[favOpponentId] : null;
 const maxWinVsStats =
@@ -1972,27 +2069,26 @@ const detailsRows = Object.entries(perPersonStats)
     id,
     name: playerNameMap[id] ?? id,
     matches: st.vsMatches,
-    legs: st.vsLegs,
+    legsWon: st.legsWon,
+    setsWon: st.setsWon,
     wins: st.vsWins,
     bestScore: st.bestScoreLabel,
     teams: st.teamMatches,
   }))
-  // tri : ceux qu'on a le plus joués en haut
   .sort((a, b) => b.matches - a.matches);
 
-  // ------------------- RENDER -------------------
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Filtres J/S/M/A/ALL */}
-      <div style={{ ...card, padding: 14, textAlign: "center" }}>
-        <div
-          style={{
-            ...goldNeon,
-            fontSize: 18,
-            marginBottom: 10,
-            textAlign: "center",
-          }}
+// ------------------- RENDER -------------------
+return (
+  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    {/* Filtres J/S/M/A/ALL */}
+    <div style={{ ...card, padding: 14, textAlign: "center" }}>
+      <div
+        style={{
+          ...goldNeon,
+          fontSize: 18,
+          marginBottom: 10,
+          textAlign: "center",
+        }}
         >
           X01 MULTI
         </div>
@@ -3482,7 +3578,7 @@ const detailsRows = Object.entries(perPersonStats)
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "2fr 0.7fr 0.7fr 0.7fr 0.9fr 0.7fr",
+            gridTemplateColumns: "2fr 0.7fr 0.7fr 0.7fr 0.7fr 0.9fr 0.7fr",
             columnGap: 6,
             rowGap: 4,
             fontSize: 10,
@@ -3506,7 +3602,16 @@ const detailsRows = Object.entries(perPersonStats)
               color: T.text70,
             }}
           >
-            Legs
+            Legs Win
+          </div>
+          <div
+            style={{
+              textAlign: "right",
+              fontWeight: 700,
+              color: T.text70,
+            }}
+          >
+            Sets Win
           </div>
           <div
             style={{
@@ -3538,24 +3643,27 @@ const detailsRows = Object.entries(perPersonStats)
 
           {/* Lignes */}
           {detailsRows.map((row) => (
-            <React.Fragment key={row.id}>
-              <div>{row.name}</div>
-              <div style={{ textAlign: "right", color: "#E5FFEF" }}>
-                {row.matches}
-              </div>
-              <div style={{ textAlign: "right", color: "#E5FFEF" }}>
-                {row.legs || "-"}
-              </div>
-              <div style={{ textAlign: "right", color: "#E5FFEF" }}>
-                {row.wins || "-"}
-              </div>
-              <div style={{ textAlign: "right", color: "#7CFF9A" }}>
-                {row.bestScore ?? "-"}
-              </div>
-              <div style={{ textAlign: "right", color: "#E5FFEF" }}>
-                {row.teams || "-"}
-              </div>
-            </React.Fragment>
+  <React.Fragment key={row.id}>
+    <div>{row.name}</div>
+    <div style={{ textAlign: "right", color: "#E5FFEF" }}>
+      {row.matches}
+    </div>
+    <div style={{ textAlign: "right", color: "#E5FFEF" }}>
+      {row.legsWon || "-"}
+    </div>
+    <div style={{ textAlign: "right", color: "#E5FFEF" }}>
+      {row.setsWon || "-"}
+    </div>
+    <div style={{ textAlign: "right", color: "#E5FFEF" }}>
+      {row.wins || "-"}
+    </div>
+    <div style={{ textAlign: "right", color: "#7CFF9A" }}>
+      {row.bestScore ?? "-"}
+    </div>
+    <div style={{ textAlign: "right", color: "#E5FFEF" }}>
+      {row.teams || "-"}
+    </div>
+  </React.Fragment>
           ))}
         </div>
       </div>

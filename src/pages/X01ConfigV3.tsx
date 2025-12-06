@@ -585,9 +585,12 @@ export default function X01ConfigV3({
                   overflowX: "auto",
                   paddingBottom: 12,
                   marginBottom: 6,
+                  paddingLeft: 24,      // 🔸 nouveau : recule le 1er médaillon
+                  paddingRight: 8,      // léger padding à droite aussi
                   justifyContent:
-                    humanProfiles.length <= 4 ? "center" : "flex-start",
+                    humanProfiles.length <= 4 ? "flex-start" : "flex-start",
                 }}
+                className="dc-scroll-thin"
               >
                 {humanProfiles.map((p) => {
                   const active = selectedIds.includes(p.id);
