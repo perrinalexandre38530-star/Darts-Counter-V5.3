@@ -278,6 +278,13 @@ function loadClockAggForProfile(profileId: string): ClockAgg {
    - + records minDarts501
 ============================================================ */
 
+/* ============================================================
+   buildStatsForProfile
+   - + vrai agrégat X01 multi
+   - + records minDarts501
+   - + lecture robuste des stats globales (games / wins / winRate)
+============================================================ */
+
 async function buildStatsForProfile(
   profileId: string
 ): Promise<ActiveProfileStats> {
@@ -310,283 +317,316 @@ async function buildStatsForProfile(
 
     const multiMatches: any[] = Array.isArray(multiRaw) ? multiRaw : [];
 
-       // GLOBAL
-       const games = Number(base?.games || 0);
-       const wins = Number(base?.wins || 0);
-       const avg3 = Number(base?.avg3 || 0);
-       const bestVisit = Number(base?.bestVisit || 0);
-       const bestCheckout = Number(base?.bestCheckout || 0);
-   
-       // --------- Record global "min darts" (profil agrégé) ---------
-       const minDartsCandidates: number[] = [];
-   
-       const addMinCandidate = (v: any) => {
-         const n = Number(v);
-         if (!Number.isNaN(n) && n > 0) {
-           minDartsCandidates.push(n);
-         }
-       };
-   
-       if (base && typeof base === "object") {
-         const b: any = base;
-   
-         // clés explicites
-         addMinCandidate(b.minDarts);
-         addMinCandidate(b.min_darts);
-         addMinCandidate(b.minDarts501);
-         addMinCandidate(b.min_darts_501);
-         addMinCandidate(b.minDartsX01);
-         addMinCandidate(b.fastestLeg);
-         addMinCandidate(b.fastest_leg);
-         addMinCandidate(b.bestLegDarts);
-         addMinCandidate(b.best_leg_darts);
-         addMinCandidate(b.recordMinDarts501);
-         addMinCandidate(b.record_min_darts_501);
-   
-         // scan automatique de toutes les clés
-         for (const key of Object.keys(b)) {
-           const lk = key.toLowerCase();
-           if (lk.includes("min") && lk.includes("dart")) {
-             addMinCandidate(b[key]);
-           }
-           if (lk.includes("fastest") && lk.includes("leg")) {
-             addMinCandidate(b[key]);
-           }
-         }
-       }
-   
-       const minDartsRecord =
-         minDartsCandidates.length > 0
-           ? Math.min(...minDartsCandidates)
-           : 0;
-   
-       const winRatePct = Number(base?.winRate != null ? base.winRate : 0);
-       const winRate01 =
-         winRatePct > 0 ? winRatePct / 100 : games > 0 ? wins / games : 0;
-       const ratingGlobal = avg3;
-   
-       // =============================================================
-       // ---------- X01 MULTI — AGRÉGATION OFFICIELLE V3 -------------
-       // =============================================================
-   
-       let multiSessions = 0;
-       let multiWins = 0;
-       let multiTotalAvg3 = 0;
-       let multiTotalAvg3Count = 0;
-   
-       let multiBestVisit = 0;
-       let multiBestCheckout = 0;
-       let multiMinDarts = Infinity;
-   
-       try {
-         const multiMatches = await History.list({
-           game: "x01_multi",
-           includePlayers: true,
-         });
-   
-         for (const match of multiMatches || []) {
-           const summary: any = match.summary ?? match;
-           const players: any[] =
-             summary?.perPlayer ?? summary?.players ?? match.players ?? [];
-   
-           if (!players || !players.length) continue;
-   
-           const me =
-             players.find(
-               (p: any) =>
-                 p.profileId === profileId ||
-                 p.playerId === profileId ||
-                 p.id === profileId
-             ) ?? null;
-   
-           if (!me) continue;
-   
-           multiSessions += 1;
-   
-           // win ?
-           let isWinner = false;
-           if (me.isWinner === true || me.winner === true) isWinner = true;
-           if ([me.rank, me.place, me.position].some((v: any) => Number(v) === 1)) {
-             isWinner = true;
-           }
-           if (
-             typeof me.result === "string" &&
-             me.result.toLowerCase().startsWith("win")
-           ) {
-             isWinner = true;
-           }
-           if (
-             typeof me.outcome === "string" &&
-             me.outcome.toLowerCase().startsWith("win")
-           ) {
-             isWinner = true;
-           }
-           if (
-             summary &&
-             summary.winnerId &&
-             [me.profileId, me.playerId, me.id].some(
-               (id: any) => id && String(id) === String(summary.winnerId)
-             )
-           ) {
-             isWinner = true;
-           }
-           if (isWinner) multiWins += 1;
-   
-           // avg3
-           const avg3Player =
-             Number(
-               me.avg3D ??
-                 me.avg3 ??
-                 me.stats?.avg3D ??
-                 me.stats?.avg3 ??
-                 0
-             ) || 0;
-   
-           if (avg3Player > 0) {
-             multiTotalAvg3 += avg3Player;
-             multiTotalAvg3Count += 1;
-           }
-   
-           // best visit
-           const bv =
-             Number(
-               me.bestVisit ??
-                 me.bestVisitScore ??
-                 me.best_visit ??
-                 0
-             ) || 0;
-           if (bv > multiBestVisit) multiBestVisit = bv;
-   
-           // best checkout
-           const bco =
-             Number(
-               me.bestCheckout ??
-                 me.bestCo ??
-                 me.bestFinish ??
-                 me.best_checkout ??
-                 0
-             ) || 0;
-           if (bco > multiBestCheckout) multiBestCheckout = bco;
-   
-           // min darts (tous candidats possibles)
-           const dartsCandidates: number[] = [];
-   
-           const addD = (v: any) => {
-             const n = Number(v);
-             if (!Number.isNaN(n) && n > 0) dartsCandidates.push(n);
-           };
-   
-           addD(me.minDarts);
-           addD(me.minDarts501);
-           addD(me.bestLegDarts);
-           addD(me.fastestLeg);
-           addD(me.best_leg_darts);
-           addD(summary?.minDarts501);
-           addD((match as any).totalDarts501);
-   
-           if (dartsCandidates.length > 0) {
-             const localMin = Math.min(...dartsCandidates);
-             if (localMin > 0 && localMin < multiMinDarts) {
-               multiMinDarts = localMin;
-             }
-           }
-         }
-       } catch (e) {
-         console.warn("[Home] X01 multi aggregate failed", e);
-       }
-   
-       const hasMulti = multiSessions > 0;
-   
-       const x01MultiAvg3D =
-         multiTotalAvg3Count > 0 ? multiTotalAvg3 / multiTotalAvg3Count : avg3;
-   
-       const x01MultiWinrate =
-         hasMulti && multiSessions > 0
-           ? multiWins / multiSessions
-           : winRate01;
-   
-       const x01MultiMinDartsLabel =
-         multiMinDarts !== Infinity
-           ? `${multiMinDarts}`
-           : minDartsRecord > 0
-           ? `${minDartsRecord}`
-           : null;
-   
-       // ---------- Training X01 ----------
-       const tAgg = loadTrainingAggForProfile(profileId);
-       const trainingAvg3D =
-         tAgg.sessions > 0 ? tAgg.sumAvg3D / tAgg.sessions : 0;
-   
-       // ---------- Cricket ----------
-       const cricketMatches = Number(cricket?.matchesTotal ?? 0);
-       const cricketBestPoints = Number(cricket?.bestPointsInMatch ?? 0);
-       const cricketWinsTotal = Number(cricket?.winsTotal ?? 0);
-       const cricketWinRate =
-         cricketMatches > 0 ? cricketWinsTotal / cricketMatches : 0;
-   
-       // ---------- Horloge ----------
-       const cAgg = loadClockAggForProfile(profileId);
-       const clockTargetsHit = cAgg.targetsHitTotal;
-       const clockSuccessRate =
-         cAgg.attemptsTotal > 0 ? cAgg.targetsHitTotal / cAgg.attemptsTotal : 0;
-       const clockTotalTimeSec = cAgg.totalTimeSec;
-       const clockBestStreak = cAgg.bestStreak;
-   
-       const s: ActiveProfileStats = {
-         // globale
-         ratingGlobal,
-         winrateGlobal: winRate01,
-         avg3DGlobal: avg3,
-         sessionsGlobal: games,
-         favoriteNumberLabel: null,
-   
-         // records
-         recordBestVisitX01: bestVisit,
-         recordBestCOX01: bestCheckout,
-         recordMinDarts501: minDartsRecord || null,
-         recordBestAvg3DX01: avg3,
-         recordBestStreak: null,
-         recordBestCricketScore: cricketBestPoints || null,
-   
-         // online
-         onlineMatches: 0,
-         onlineWinrate: 0,
-         onlineAvg3D: 0,
-         onlineBestVisit: 0,
-         onlineBestCO: 0,
-         onlineRank: null,
-         onlineBestRank: null,
-   
-         // ---- X01 Multi ----
-         x01MultiAvg3D,
-         x01MultiSessions: multiSessions || games,
-         x01MultiWinrate: x01MultiWinrate,
-         x01MultiBestVisit: hasMulti ? multiBestVisit : bestVisit,
-         x01MultiBestCO: hasMulti ? multiBestCheckout : bestCheckout,
-         x01MultiMinDartsLabel: x01MultiMinDartsLabel,
-   
-         // cricket
-         cricketPointsPerRound: cricketBestPoints || 0,
-         cricketHitsTotal: cricketMatches || 0,
-         cricketCloseRate: cricketWinRate || 0,
-         cricketLegsWinrate: cricketWinRate || 0,
-         cricketAvgClose201918: 0,
-         cricketOpenings: cricketMatches || 0,
-   
-         // training X01
-         trainingAvg3D,
-         trainingHitsS: tAgg.hitsS || 0,
-         trainingHitsD: tAgg.hitsD || 0,
-         trainingHitsT: tAgg.hitsT || 0,
-         trainingGoalSuccessRate: 0,
-         trainingBestCO: tAgg.bestCheckout ?? 0,
-   
-         // horloge
-         clockTargetsHit,
-         clockSuccessRate,
-         clockTotalTimeSec,
-         clockBestStreak,
-       };   
+    const asNum = (v: any): number => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    // --------- GLOBAL (games / wins / winRate / avg3 / records) ---------
+    const b: any = base ?? {};
+
+    const games =
+      asNum(b.games) ||
+      asNum(b.gamesTotal) ||
+      asNum(b.sessions) ||
+      asNum(b.totalGames) ||
+      asNum(b.totalSessions) ||
+      asNum(b.matchCount) ||
+      asNum(b.matches);
+
+    const wins =
+      asNum(b.wins) ||
+      asNum(b.winsTotal) ||
+      asNum(b.victories) ||
+      asNum(b.totalWins) ||
+      asNum(b.matchWins);
+
+    // winRate peut être stocké en 0-1 ou 0-100
+    const winRateRaw =
+      asNum(b.winRate) ||
+      asNum(b.winrate) ||
+      asNum(b.win_rate) ||
+      asNum(b.winPct) ||
+      asNum(b.win_pct) ||
+      asNum(b.winPercentage);
+
+    const winRate01 =
+      winRateRaw > 0
+        ? winRateRaw > 1.0001
+          ? winRateRaw / 100
+          : winRateRaw
+        : games > 0
+        ? wins / games
+        : 0;
+
+    const avg3 =
+      asNum(b.avg3D) ||
+      asNum(b.avg3) ||
+      asNum(b.avg_3) ||
+      asNum(b.avgThreeDarts);
+
+    const bestVisit =
+      asNum(b.bestVisit) ||
+      asNum(b.bestVisitScore) ||
+      asNum(b.recordBestVisit);
+
+    const bestCheckout =
+      asNum(b.bestCheckout) ||
+      asNum(b.bestCo) ||
+      asNum(b.bestFinish) ||
+      asNum(b.recordBestCheckout);
+
+    // --------- Record global "min darts" (profil agrégé) ---------
+    const minDartsCandidates: number[] = [];
+
+    const addMinCandidate = (v: any) => {
+      const n = asNum(v);
+      if (n > 0) minDartsCandidates.push(n);
+    };
+
+    if (b && typeof b === "object") {
+      // clés explicites
+      addMinCandidate(b.minDarts);
+      addMinCandidate(b.min_darts);
+      addMinCandidate(b.minDarts501);
+      addMinCandidate(b.min_darts_501);
+      addMinCandidate(b.minDartsX01);
+      addMinCandidate(b.fastestLeg);
+      addMinCandidate(b.fastest_leg);
+      addMinCandidate(b.bestLegDarts);
+      addMinCandidate(b.best_leg_darts);
+      addMinCandidate(b.recordMinDarts501);
+      addMinCandidate(b.record_min_darts_501);
+
+      // scan automatique de toutes les clés contenant "min" + "dart" ou "fastest" + "leg"
+      for (const key of Object.keys(b)) {
+        const lk = key.toLowerCase();
+        if (lk.includes("min") && lk.includes("dart")) addMinCandidate(b[key]);
+        if (lk.includes("fastest") && lk.includes("leg")) addMinCandidate(b[key]);
+      }
+    }
+
+    const minDartsRecord =
+      minDartsCandidates.length > 0 ? Math.min(...minDartsCandidates) : 0;
+
+    const ratingGlobal = avg3 || 0;
+
+    // =============================================================
+    // ---------- X01 MULTI — AGRÉGATION OFFICIELLE V3 -------------
+    // =============================================================
+
+    let multiSessions = 0;
+    let multiWins = 0;
+    let multiTotalAvg3 = 0;
+    let multiTotalAvg3Count = 0;
+
+    let multiBestVisit = 0;
+    let multiBestCheckout = 0;
+    let multiMinDarts = Infinity;
+
+    try {
+      for (const match of multiMatches || []) {
+        const summary: any = match.summary ?? match;
+        const players: any[] =
+          summary?.perPlayer ?? summary?.players ?? match.players ?? [];
+
+        if (!players || !players.length) continue;
+
+        const me =
+          players.find(
+            (p: any) =>
+              p.profileId === profileId ||
+              p.playerId === profileId ||
+              p.id === profileId
+          ) ?? null;
+
+        if (!me) continue;
+
+        multiSessions += 1;
+
+        // win ?
+        let isWinner = false;
+        if (me.isWinner === true || me.winner === true) isWinner = true;
+        if ([me.rank, me.place, me.position].some((v: any) => asNum(v) === 1)) {
+          isWinner = true;
+        }
+        if (
+          typeof me.result === "string" &&
+          me.result.toLowerCase().startsWith("win")
+        ) {
+          isWinner = true;
+        }
+        if (
+          typeof me.outcome === "string" &&
+          me.outcome.toLowerCase().startsWith("win")
+        ) {
+          isWinner = true;
+        }
+        if (
+          summary &&
+          summary.winnerId &&
+          [me.profileId, me.playerId, me.id].some(
+            (id: any) => id && String(id) === String(summary.winnerId)
+          )
+        ) {
+          isWinner = true;
+        }
+        if (isWinner) multiWins += 1;
+
+        // avg3
+        const avg3Player =
+          asNum(
+            me.avg3D ??
+              me.avg3 ??
+              me.stats?.avg3D ??
+              me.stats?.avg3 ??
+              0
+          ) || 0;
+
+        if (avg3Player > 0) {
+          multiTotalAvg3 += avg3Player;
+          multiTotalAvg3Count += 1;
+        }
+
+        // best visit
+        const bv =
+          asNum(
+            me.bestVisit ??
+              me.bestVisitScore ??
+              me.best_visit ??
+              0
+          ) || 0;
+        if (bv > multiBestVisit) multiBestVisit = bv;
+
+        // best checkout
+        const bco =
+          asNum(
+            me.bestCheckout ??
+              me.bestCo ??
+              me.bestFinish ??
+              me.best_checkout ??
+              0
+          ) || 0;
+        if (bco > multiBestCheckout) multiBestCheckout = bco;
+
+        // min darts (tous candidats possibles)
+        const dartsCandidates: number[] = [];
+        const addD = (v: any) => {
+          const n = asNum(v);
+          if (n > 0) dartsCandidates.push(n);
+        };
+
+        addD(me.minDarts);
+        addD(me.minDarts501);
+        addD(me.bestLegDarts);
+        addD(me.fastestLeg);
+        addD(me.best_leg_darts);
+        addD(summary?.minDarts501);
+        addD((match as any).totalDarts501);
+
+        if (dartsCandidates.length > 0) {
+          const localMin = Math.min(...dartsCandidates);
+          if (localMin > 0 && localMin < multiMinDarts) {
+            multiMinDarts = localMin;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[Home] X01 multi aggregate failed", e);
+    }
+
+    const hasMulti = multiSessions > 0;
+
+    const x01MultiAvg3D =
+      multiTotalAvg3Count > 0 ? multiTotalAvg3 / multiTotalAvg3Count : avg3 || 0;
+
+    const x01MultiWinrate =
+      hasMulti && multiSessions > 0
+        ? multiWins / multiSessions
+        : winRate01;
+
+    const x01MultiMinDartsLabel =
+      multiMinDarts !== Infinity
+        ? `${multiMinDarts}`
+        : minDartsRecord > 0
+        ? `${minDartsRecord}`
+        : null;
+
+    // ---------- Training X01 ----------
+    const tAgg = loadTrainingAggForProfile(profileId);
+    const trainingAvg3D =
+      tAgg.sessions > 0 ? tAgg.sumAvg3D / tAgg.sessions : 0;
+
+    // ---------- Cricket ----------
+    const cricketMatches = asNum(cricket?.matchesTotal);
+    const cricketBestPoints = asNum(cricket?.bestPointsInMatch);
+    const cricketWinsTotal = asNum(cricket?.winsTotal);
+    const cricketWinRate =
+      cricketMatches > 0 ? cricketWinsTotal / cricketMatches : 0;
+
+    // ---------- Horloge ----------
+    const cAgg = loadClockAggForProfile(profileId);
+    const clockTargetsHit = cAgg.targetsHitTotal;
+    const clockSuccessRate =
+      cAgg.attemptsTotal > 0 ? cAgg.targetsHitTotal / cAgg.attemptsTotal : 0;
+    const clockTotalTimeSec = cAgg.totalTimeSec;
+    const clockBestStreak = cAgg.bestStreak;
+
+    const s: ActiveProfileStats = {
+      // globale
+      ratingGlobal,
+      winrateGlobal: winRate01,
+      avg3DGlobal: avg3 || 0,
+      sessionsGlobal: games,
+      favoriteNumberLabel: null,
+
+      // records
+      recordBestVisitX01: bestVisit || 0,
+      recordBestCOX01: bestCheckout || 0,
+      recordMinDarts501: minDartsRecord || null,
+      recordBestAvg3DX01: avg3 || 0,
+      recordBestStreak: null,
+      recordBestCricketScore: cricketBestPoints || null,
+
+      // online (sera complété plus tard)
+      onlineMatches: 0,
+      onlineWinrate: 0,
+      onlineAvg3D: 0,
+      onlineBestVisit: 0,
+      onlineBestCO: 0,
+      onlineRank: null,
+      onlineBestRank: null,
+
+      // ---- X01 Multi ----
+      x01MultiAvg3D,
+      x01MultiSessions: hasMulti ? multiSessions : games,
+      x01MultiWinrate,
+      x01MultiBestVisit: hasMulti ? multiBestVisit : bestVisit || 0,
+      x01MultiBestCO: hasMulti ? multiBestCheckout : bestCheckout || 0,
+      x01MultiMinDartsLabel: x01MultiMinDartsLabel,
+
+      // cricket
+      cricketPointsPerRound: cricketBestPoints || 0,
+      cricketHitsTotal: cricketMatches || 0,
+      cricketCloseRate: cricketWinRate || 0,
+      cricketLegsWinrate: cricketWinRate || 0,
+      cricketAvgClose201918: 0,
+      cricketOpenings: cricketMatches || 0,
+
+      // training X01
+      trainingAvg3D,
+      trainingHitsS: tAgg.hitsS || 0,
+      trainingHitsD: tAgg.hitsD || 0,
+      trainingHitsT: tAgg.hitsT || 0,
+      trainingGoalSuccessRate: 0,
+      trainingBestCO: tAgg.bestCheckout ?? 0,
+
+      // horloge
+      clockTargetsHit,
+      clockSuccessRate,
+      clockTotalTimeSec,
+      clockBestStreak,
+    };
 
     return s;
   } catch (err) {
@@ -594,6 +634,7 @@ async function buildStatsForProfile(
     return emptyActiveProfileStats();
   }
 }
+
 
 /* ============================================================
    Helpers pour les détails du ticker
