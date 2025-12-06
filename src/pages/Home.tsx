@@ -274,15 +274,9 @@ function loadClockAggForProfile(profileId: string): ClockAgg {
 
 /* ============================================================
    buildStatsForProfile
-   - + vrai agrégat X01 multi
-   - + records minDarts501
-============================================================ */
-
-/* ============================================================
-   buildStatsForProfile
-   - + vrai agrégat X01 multi
-   - + records minDarts501
-   - + lecture robuste des stats globales (games / wins / winRate)
+   - agrégat X01 multi V3 (History)
+   - scan récursif de getBasicProfileStatsAsync (global)
+   - records minDarts501
 ============================================================ */
 
 async function buildStatsForProfile(
@@ -318,65 +312,25 @@ async function buildStatsForProfile(
     const multiMatches: any[] = Array.isArray(multiRaw) ? multiRaw : [];
 
     const asNum = (v: any): number => {
+      if (v === null || v === undefined) return 0;
+      if (typeof v === "string") {
+        const cleaned = v.replace(/[%\s]/g, "");
+        const n = Number(cleaned);
+        return Number.isFinite(n) ? n : 0;
+      }
       const n = Number(v);
       return Number.isFinite(n) ? n : 0;
     };
 
-    // --------- GLOBAL (games / wins / winRate / avg3 / records) ---------
-    const b: any = base ?? {};
+    // --------- GLOBAL : scan récursif de base ---------
+    let games = 0;
+    let wins = 0;
+    let avg3 = 0;
+    let bestVisit = 0;
+    let bestCheckout = 0;
+    let winRate01 = 0;
+    let winRateCandidate = 0; // ratio 0–1
 
-    const games =
-      asNum(b.games) ||
-      asNum(b.gamesTotal) ||
-      asNum(b.sessions) ||
-      asNum(b.totalGames) ||
-      asNum(b.totalSessions) ||
-      asNum(b.matchCount) ||
-      asNum(b.matches);
-
-    const wins =
-      asNum(b.wins) ||
-      asNum(b.winsTotal) ||
-      asNum(b.victories) ||
-      asNum(b.totalWins) ||
-      asNum(b.matchWins);
-
-    // winRate peut être stocké en 0-1 ou 0-100
-    const winRateRaw =
-      asNum(b.winRate) ||
-      asNum(b.winrate) ||
-      asNum(b.win_rate) ||
-      asNum(b.winPct) ||
-      asNum(b.win_pct) ||
-      asNum(b.winPercentage);
-
-    const winRate01 =
-      winRateRaw > 0
-        ? winRateRaw > 1.0001
-          ? winRateRaw / 100
-          : winRateRaw
-        : games > 0
-        ? wins / games
-        : 0;
-
-    const avg3 =
-      asNum(b.avg3D) ||
-      asNum(b.avg3) ||
-      asNum(b.avg_3) ||
-      asNum(b.avgThreeDarts);
-
-    const bestVisit =
-      asNum(b.bestVisit) ||
-      asNum(b.bestVisitScore) ||
-      asNum(b.recordBestVisit);
-
-    const bestCheckout =
-      asNum(b.bestCheckout) ||
-      asNum(b.bestCo) ||
-      asNum(b.bestFinish) ||
-      asNum(b.recordBestCheckout);
-
-    // --------- Record global "min darts" (profil agrégé) ---------
     const minDartsCandidates: number[] = [];
 
     const addMinCandidate = (v: any) => {
@@ -384,26 +338,103 @@ async function buildStatsForProfile(
       if (n > 0) minDartsCandidates.push(n);
     };
 
-    if (b && typeof b === "object") {
-      // clés explicites
-      addMinCandidate(b.minDarts);
-      addMinCandidate(b.min_darts);
-      addMinCandidate(b.minDarts501);
-      addMinCandidate(b.min_darts_501);
-      addMinCandidate(b.minDartsX01);
-      addMinCandidate(b.fastestLeg);
-      addMinCandidate(b.fastest_leg);
-      addMinCandidate(b.bestLegDarts);
-      addMinCandidate(b.best_leg_darts);
-      addMinCandidate(b.recordMinDarts501);
-      addMinCandidate(b.record_min_darts_501);
+    const visited = new Set<any>();
+    const MAX_DEPTH = 6;
 
-      // scan automatique de toutes les clés contenant "min" + "dart" ou "fastest" + "leg"
-      for (const key of Object.keys(b)) {
-        const lk = key.toLowerCase();
-        if (lk.includes("min") && lk.includes("dart")) addMinCandidate(b[key]);
-        if (lk.includes("fastest") && lk.includes("leg")) addMinCandidate(b[key]);
+    const scanObj = (obj: any, depth: number) => {
+      if (!obj || typeof obj !== "object") return;
+      if (visited.has(obj)) return;
+      if (depth > MAX_DEPTH) return;
+      visited.add(obj);
+
+      for (const [key, value] of Object.entries(obj)) {
+        if (value && typeof value === "object") {
+          scanObj(value, depth + 1);
+          continue;
+        }
+
+        const n = asNum(value);
+        if (n <= 0) continue;
+
+        const k = key.toLowerCase();
+
+        // games / sessions / matches
+        if (
+          k.includes("games") ||
+          k.includes("matches") ||
+          k.includes("sessions")
+        ) {
+          if (n > games) games = n;
+        }
+
+        // wins
+        if (
+          k.includes("wins") ||
+          k.includes("victories") ||
+          k.includes("win_count")
+        ) {
+          if (n > wins) wins = n;
+        }
+
+        // win rate
+        if (
+          k.includes("winrate") ||
+          k.includes("win_rate") ||
+          k.includes("winpct") ||
+          k.includes("win_pct") ||
+          k.includes("winpercentage") ||
+          k.includes("win_percent")
+        ) {
+          let r = n;
+          if (r > 1.0001) r = r / 100; // si c’est un pourcentage
+          if (r > winRateCandidate) winRateCandidate = r;
+        }
+
+        // avg3
+        if (
+          k.includes("avg3") ||
+          k.includes("avg_3") ||
+          k.includes("avgthreedarts")
+        ) {
+          if (n > avg3) avg3 = n;
+        }
+
+        // best visit
+        if (k.includes("bestvisit")) {
+          if (n > bestVisit) bestVisit = n;
+        }
+
+        // best checkout
+        if (
+          (k.includes("best") && k.includes("checkout")) ||
+          (k.includes("best") && k.includes("finish")) ||
+          k === "bestco" ||
+          k === "best_co"
+        ) {
+          if (n > bestCheckout) bestCheckout = n;
+        }
+
+        // min darts / fastest leg
+        if (
+          (k.includes("min") && k.includes("dart")) ||
+          (k.includes("fastest") && k.includes("leg")) ||
+          k.includes("mindarts501")
+        ) {
+          addMinCandidate(n);
+        }
       }
+    };
+
+    if (base && typeof base === "object") {
+      scanObj(base, 0);
+    }
+
+    if (winRateCandidate > 0) {
+      winRate01 = winRateCandidate;
+    } else if (games > 0 && wins > 0) {
+      winRate01 = wins / games;
+    } else {
+      winRate01 = 0;
     }
 
     const minDartsRecord =
@@ -509,7 +540,7 @@ async function buildStatsForProfile(
           ) || 0;
         if (bco > multiBestCheckout) multiBestCheckout = bco;
 
-        // min darts (tous candidats possibles)
+        // min darts
         const dartsCandidates: number[] = [];
         const addD = (v: any) => {
           const n = asNum(v);
@@ -552,6 +583,12 @@ async function buildStatsForProfile(
         ? `${minDartsRecord}`
         : null;
 
+    // Fallbacks : si la vue globale est vide mais qu'on a du multi
+    const finalSessionsGlobal = games || (hasMulti ? multiSessions : 0);
+    const finalWinrateGlobal =
+      winRate01 || (hasMulti && multiSessions > 0 ? multiWins / multiSessions : 0);
+    const finalAvg3Global = avg3 || x01MultiAvg3D;
+
     // ---------- Training X01 ----------
     const tAgg = loadTrainingAggForProfile(profileId);
     const trainingAvg3D =
@@ -574,21 +611,22 @@ async function buildStatsForProfile(
 
     const s: ActiveProfileStats = {
       // globale
-      ratingGlobal,
-      winrateGlobal: winRate01,
-      avg3DGlobal: avg3 || 0,
-      sessionsGlobal: games,
+      ratingGlobal: ratingGlobal || finalAvg3Global || 0,
+      winrateGlobal: finalWinrateGlobal,
+      avg3DGlobal: finalAvg3Global,
+      sessionsGlobal: finalSessionsGlobal,
       favoriteNumberLabel: null,
 
       // records
-      recordBestVisitX01: bestVisit || 0,
-      recordBestCOX01: bestCheckout || 0,
-      recordMinDarts501: minDartsRecord || null,
-      recordBestAvg3DX01: avg3 || 0,
+      recordBestVisitX01: bestVisit || multiBestVisit || 0,
+      recordBestCOX01: bestCheckout || multiBestCheckout || 0,
+      recordMinDarts501:
+        minDartsRecord || (multiMinDarts !== Infinity ? multiMinDarts : 0) || null,
+      recordBestAvg3DX01: finalAvg3Global,
       recordBestStreak: null,
       recordBestCricketScore: cricketBestPoints || null,
 
-      // online (sera complété plus tard)
+      // online (on complètera plus tard si besoin)
       onlineMatches: 0,
       onlineWinrate: 0,
       onlineAvg3D: 0,
@@ -599,7 +637,7 @@ async function buildStatsForProfile(
 
       // ---- X01 Multi ----
       x01MultiAvg3D,
-      x01MultiSessions: hasMulti ? multiSessions : games,
+      x01MultiSessions: hasMulti ? multiSessions : finalSessionsGlobal,
       x01MultiWinrate,
       x01MultiBestVisit: hasMulti ? multiBestVisit : bestVisit || 0,
       x01MultiBestCO: hasMulti ? multiBestCheckout : bestCheckout || 0,
@@ -634,7 +672,6 @@ async function buildStatsForProfile(
     return emptyActiveProfileStats();
   }
 }
-
 
 /* ============================================================
    Helpers pour les détails du ticker
