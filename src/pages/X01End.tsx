@@ -2015,21 +2015,19 @@ function HitsRadar({ m }: { m: PlayerMetrics }) {
 }
 
 /* ================================
-   Hits par segments (style X01Multi)
-   - 20 numéros en barres empilées S / D / T
-   - colonne de droite : BULL / DBULL / MISS
+   Hits par segments (2 lignes, centré)
+   - Colonnes : 0 (MISS), 1..20, BULL
+   - 11 colonnes par ligne
 ================================ */
 function HitsBySegmentBlock({ m }: { m: PlayerMetrics }) {
   const BY = (m.byNumber || {}) as ByNumber | any;
 
-  const numbers = [
-    20, 1, 18, 4, 13, 6, 10, 15, 2, 17,
-    3, 19, 7, 16, 8, 11, 14, 9, 12, 5,
-  ];
+  const nums = Array.from({ length: 20 }, (_, i) => i + 1);
 
   type SegHit = { num: number; s: number; d: number; t: number; total: number };
 
-  const segments: SegHit[] = numbers.map((nu) => {
+  // -------- 1) hits par numéro 1..20 --------
+  let segments: SegHit[] = nums.map((nu) => {
     const key = String(nu);
     const row =
       (BY[key] as any) ||
@@ -2071,249 +2069,221 @@ function HitsBySegmentBlock({ m }: { m: PlayerMetrics }) {
       )
     );
 
-    return {
-      num: nu,
-      s,
-      d,
-      t,
-      total: s + d + t,
-    };
+    return { num: nu, s, d, t, total: s + d + t };
   });
 
-  const maxTotal = Math.max(1, ...segments.map((s) => s.total));
+  // -------- 2) fallback si aucun D/T : on répartit les D/T globaux --------
+  const sumSingles = segments.reduce((acc, s) => acc + s.s, 0);
+  const totalDoubles = Math.max(0, n(m.doubles, 0));
+  const totalTriples = Math.max(0, n(m.triples, 0));
 
-  // Bull / DBull / Miss sur la colonne de droite
-  const bullHits = Math.max(
-    0,
-    n((BY as any).bull, 0) + n(m.bulls, 0)
-  );
-  const dbullHits = Math.max(
-    0,
-    n((BY as any).dbull, 0) + n(m.dbulls, 0)
-  );
-  const missHits = Math.max(
-    0,
-    n((BY as any).miss, 0) + n(m.misses, 0)
-  );
+  const hasAnyD = segments.some((s) => s.d > 0);
+  const hasAnyT = segments.some((s) => s.t > 0);
 
-  const maxSide = Math.max(1, bullHits, dbullHits, missHits);
+  const spread = (kind: "d" | "t", total: number) => {
+    if (total <= 0 || sumSingles <= 0) return;
+    let remaining = total;
+    segments = segments.map((seg, idx) => {
+      if (seg.s <= 0) return seg;
+      const raw = (seg.s / sumSingles) * total;
+      const val =
+        idx === segments.length - 1 ? remaining : Math.round(raw);
+      remaining -= val;
+      const next = { ...seg };
+      if (kind === "d") next.d += val;
+      if (kind === "t") next.t += val;
+      next.total = next.s + next.d + next.t;
+      return next;
+    });
+  };
 
-  const barHeight = 80;
+  if (!hasAnyD && totalDoubles > 0) spread("d", totalDoubles);
+  if (!hasAnyT && totalTriples > 0) spread("t", totalTriples);
+
+  // -------- 3) BULL / DBULL / MISS intégrés comme colonnes --------
+  const bullHits = Math.max(0, n((BY as any).bull, 0) + n(m.bulls, 0));
+  const dbullHits = Math.max(0, n((BY as any).dbull, 0) + n(m.dbulls, 0));
+  const missHits = Math.max(0, n((BY as any).miss, 0) + n(m.misses, 0));
+
+  type Col = { label: string; s: number; d: number; t: number };
+
+  const cols: Col[] = [];
+
+  // 0 = MISS
+  cols.push({
+    label: "0",
+    s: missHits,
+    d: 0,
+    t: 0,
+  });
+
+  // 1..20
+  for (const seg of segments) {
+    cols.push({
+      label: String(seg.num),
+      s: seg.s,
+      d: seg.d,
+      t: seg.t,
+    });
+  }
+
+  // BULL = single 25 / double 25 empilé
+  cols.push({
+    label: "BULL",
+    s: bullHits,
+    d: dbullHits,
+    t: 0,
+  });
+
+  const totals = cols.map((c) => c.s + c.d + c.t);
+  const maxTotal = Math.max(1, ...totals);
+
+  const barHeight = 52;
+  const firstRow = cols.slice(0, 11); // 0..10
+  const secondRow = cols.slice(11);   // 11..20 + BULL
+
+  const renderRow = (rowCols: Col[]) => (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        gap: 10,
+        width: "100%",
+      }}
+    >
+      {rowCols.map((c, idx) => {
+        const total = c.s + c.d + c.t;
+        const ratio = total > 0 ? total / maxTotal : 0;
+        const hTotal = barHeight * ratio || 0;
+
+        const hS = total > 0 ? (c.s / total) * hTotal : 0;
+        const hD = total > 0 ? (c.d / total) * hTotal : 0;
+        const hT = total > 0 ? (c.t / total) * hTotal : 0;
+
+        const isMiss = c.label === "0";
+        const isBull = c.label === "BULL";
+
+        return (
+          <div
+            key={`${c.label}-${idx}`}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              fontSize: 10,
+              color: "#ddd",
+            }}
+          >
+            <div
+              style={{
+                position: "relative",
+                width: 14,
+                height: barHeight,
+                borderRadius: 999,
+                background: "rgba(255,255,255,.03)",
+                overflow: "hidden",
+                boxShadow:
+                  total > 0 ? "0 0 6px rgba(0,0,0,.6)" : "none",
+              }}
+            >
+              {/* Singles (ou MISS si label 0) */}
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: hS,
+                  background: isMiss
+                    ? "linear-gradient(180deg,#fecaca,#f97373)"
+                    : "linear-gradient(180deg,#8bc5ff,#3ba9ff)",
+                }}
+              />
+              {/* Doubles (inclut DBULL pour la colonne BULL) */}
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  bottom: hS,
+                  height: hD,
+                  background: isBull
+                    ? "linear-gradient(180deg,#bbf7d0,#4ade80)"
+                    : "linear-gradient(180deg,#7fe2a9,#3dd68c)",
+                }}
+              />
+              {/* Triples */}
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  bottom: hS + hD,
+                  height: hT,
+                  background:
+                    "linear-gradient(180deg,#fca5ff,#f973cf)",
+                }}
+              />
+            </div>
+            <div style={{ marginTop: 2 }}>{c.label}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div
       style={{
         display: "flex",
-        gap: 12,
+        flexDirection: "column",
+        gap: 6,
         marginTop: 4,
       }}
     >
-      {/* Barres 20 numéros */}
       <div
         style={{
-          flex: 1,
-          overflowX: "auto",
-          paddingBottom: 4,
+          width: "100%",
         }}
       >
         <div
           style={{
             display: "flex",
-            alignItems: "flex-end",
-            gap: 6,
-            minWidth: 20 * 18,
+            flexDirection: "column",
+            gap: 4,
           }}
         >
-          {segments.map((seg) => {
-            const ratio = seg.total > 0 ? seg.total / maxTotal : 0;
-            const hTotal = barHeight * ratio || 0;
-
-            const hS =
-              seg.total > 0 ? (seg.s / seg.total) * hTotal : 0;
-            const hD =
-              seg.total > 0 ? (seg.d / seg.total) * hTotal : 0;
-            const hT =
-              seg.total > 0 ? (seg.t / seg.total) * hTotal : 0;
-
-            return (
-              <div
-                key={seg.num}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  fontSize: 10,
-                  color: "#ddd",
-                }}
-              >
-                <div
-                  style={{
-                    position: "relative",
-                    width: 12,
-                    height: barHeight,
-                    borderRadius: 999,
-                    background: "rgba(255,255,255,.03)",
-                    overflow: "hidden",
-                    boxShadow:
-                      seg.total > 0
-                        ? "0 0 6px rgba(0,0,0,.6)"
-                        : "none",
-                  }}
-                >
-                  {/* Singles */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      height: hS,
-                      background:
-                        "linear-gradient(180deg,#8bc5ff,#3ba9ff)",
-                    }}
-                  />
-                  {/* Doubles */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      right: 0,
-                      bottom: hS,
-                      height: hD,
-                      background:
-                        "linear-gradient(180deg,#7fe2a9,#3dd68c)",
-                    }}
-                  />
-                  {/* Triples */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      right: 0,
-                      bottom: hS + hD,
-                      height: hT,
-                      background:
-                        "linear-gradient(180deg,#fca5ff,#f973cf)",
-                    }}
-                  />
-                </div>
-                <div style={{ marginTop: 2 }}>{seg.num}</div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Légende S / D / T sous les barres */}
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            marginTop: 6,
-            fontSize: 10,
-            color: "#ccc",
-          }}
-        >
-          <LegendDot
-            label="Singles"
-            gradient="linear-gradient(180deg,#8bc5ff,#3ba9ff)"
-          />
-          <LegendDot
-            label="Doubles"
-            gradient="linear-gradient(180deg,#7fe2a9,#3dd68c)"
-          />
-          <LegendDot
-            label="Triples"
-            gradient="linear-gradient(180deg,#fca5ff,#f973cf)"
-          />
+          {/* Ligne 1 : 0,1..10 */}
+          {renderRow(firstRow)}
+          {/* Ligne 2 : 11..20,BULL */}
+          {renderRow(secondRow)}
         </div>
       </div>
 
-      {/* Colonne droite BULL / DBULL / MISS */}
+      {/* Légende S / D / T (sans MISS) */}
       <div
         style={{
-          width: 52,
           display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
+          justifyContent: "center",
+          gap: 12,
           fontSize: 10,
+          color: "#ccc",
+          marginTop: 2,
         }}
       >
-        {[
-          {
-            key: "BULL",
-            value: bullHits,
-            color:
-              "linear-gradient(180deg,#7fe2a9,#3dd68c)",
-          },
-          {
-            key: "DBULL",
-            value: dbullHits,
-            color:
-              "linear-gradient(180deg,#bbf7d0,#4ade80)",
-          },
-          {
-            key: "MISS",
-            value: missHits,
-            color:
-              "linear-gradient(180deg,#fecaca,#f97373)",
-          },
-        ].map((row) => {
-          const ratio = row.value / maxSide;
-          const h = barHeight * ratio || 0;
-
-          return (
-            <div
-              key={row.key}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                marginBottom: 4,
-              }}
-            >
-              <div
-                style={{
-                  position: "relative",
-                  width: 12,
-                  height: barHeight,
-                  borderRadius: 999,
-                  background: "rgba(255,255,255,.03)",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    height: h,
-                    background: row.color,
-                  }}
-                />
-              </div>
-              <div
-                style={{
-                  marginTop: 2,
-                  color:
-                    row.key === "MISS" ? "#ff9b9b" : "#e5ffe7",
-                  fontWeight: 700,
-                  textAlign: "center",
-                }}
-              >
-                {row.key}
-              </div>
-              <div
-                style={{
-                  fontVariantNumeric: "tabular-nums",
-                  color: "#ccc",
-                }}
-              >
-                {row.value}
-              </div>
-            </div>
-          );
-        })}
+        <LegendDot
+          label="Singles"
+          gradient="linear-gradient(180deg,#8bc5ff,#3ba9ff)"
+        />
+        <LegendDot
+          label="Doubles"
+          gradient="linear-gradient(180deg,#7fe2a9,#3dd68c)"
+        />
+        <LegendDot
+          label="Triples"
+          gradient="linear-gradient(180deg,#fca5ff,#f973cf)"
+        />
       </div>
     </div>
   );
