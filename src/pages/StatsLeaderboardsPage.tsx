@@ -1,22 +1,24 @@
+// @ts-nocheck
 // =============================================================
-// src/components/stats/StatsLeaderboardsTab.tsx
-// Page "CLASSEMENTS" globale (tous profils)
-// - Scope : LOCAL / ONLINE
+// src/pages/StatsLeaderboardsPage.tsx
+// Page CLASSEMENTS globale (tous profils)
+// - Accès depuis StatsShell via go("stats_leaderboards")
+// - Scope : LOCAL / ONLINE   (V1 : même source = store.history)
 // - Modes : X01 MULTI / CRICKET / KILLER / SHANGHAI / BATTLE ROYALE / HORLOGE
-// - Périodes : J / S / M / Y / All / Tout  (V1 : visuel, sans filtrage date)
+// - Périodes : J / S / M / Y / All / Tout (V1 : visuel, pas encore de filtrage date)
 // - Carrousel compact avec flèches (mode + métrique)
-// - Classement global par mode / stat, basé sur profile.stats (legacy-safe)
+// - Classement global par mode / stat, basé sur store.history (summary/perPlayer)
 // =============================================================
 
 import * as React from "react";
-import type { Store, Profile } from "../../lib/types";
-import { useTheme } from "../../contexts/ThemeContext";
-import { useLang } from "../../contexts/LangContext";
-import ProfileAvatar from "../ProfileAvatar";
-import { loadStore } from "../../lib/storage";
+import type { Store, Profile } from "../lib/types";
+import { useTheme } from "../contexts/ThemeContext";
+import { useLang } from "../contexts/LangContext";
+import ProfileAvatar from "../components/ProfileAvatar";
 
 type Props = {
-  store?: Store; // optionnel : on peut aussi auto-charger
+  store: Store;
+  go: (tab: any, params?: any) => void;
 };
 
 type Scope = "local" | "online";
@@ -52,7 +54,7 @@ type Row = {
   bestCheckout: number;
 };
 
-// ------------------ MODE + METRICS DEFINITIONS ------------------
+// ------ DEFS MODE + METRICS -----------------------------------
 
 const MODE_DEFS: {
   id: LeaderboardMode;
@@ -91,125 +93,166 @@ const MODE_DEFS: {
   },
 ];
 
-// helpers pour lire en douceur dans profile.stats / onlineStats
-function getModeStats(profile: Profile, mode: LeaderboardMode, scope: Scope) {
-  const rootLocal = ((profile as any)?.stats || {}) as any;
-  const rootOnline =
-    ((profile as any)?.onlineStats ||
-      (profile as any)?.online?.stats ||
-      {}) as any;
+// --------- Helpers AGGREGATION À PARTIR DE store.history ------
 
-  const root = scope === "online" ? rootOnline : rootLocal;
+// mappe rec.kind → LeaderboardMode
+function kindToMode(kind: string | null | undefined): LeaderboardMode | null {
+  const k = (kind || "").toLowerCase();
+  if (k.startsWith("x01")) return "x01_multi";
+  if (k.includes("cricket")) return "cricket";
+  if (k.includes("killer")) return "killer";
+  if (k.includes("shanghai")) return "shanghai";
+  if (k.includes("battle")) return "battle_royale";
+  if (k.includes("clock") || k.includes("horloge")) return "clock";
+  return null;
+}
 
-  switch (mode) {
-    case "x01_multi":
-      return (root.x01_multi ?? root.x01Multi ?? root.x01 ?? {}) as any;
-    case "cricket":
-      return (root.cricket ?? {}) as any;
-    case "killer":
-      return (root.killer ?? root.killer_multi ?? {}) as any;
-    case "shanghai":
-      return (root.shanghai ?? {}) as any;
-    case "battle_royale":
-      return (root.battle_royale ?? root.battleRoyale ?? {}) as any;
-    case "clock":
-      return (root.clock ?? root.tourHorloge ?? {}) as any;
-    default:
-      return {} as any;
+// récupère un map per-player à partir de summary
+function extractPerPlayerSummary(summary: any): Record<string, any> {
+  if (!summary) return {};
+  const result: Record<string, any> = {};
+
+  if (summary.detailedByPlayer && typeof summary.detailedByPlayer === "object") {
+    return summary.detailedByPlayer as Record<string, any>;
   }
+
+  if (Array.isArray(summary.perPlayer)) {
+    for (const p of summary.perPlayer) {
+      const pid = p.playerId || p.id;
+      if (!pid) continue;
+      result[pid] = p;
+    }
+  }
+
+  return result;
 }
 
-function buildRow(profile: Profile, mode: LeaderboardMode, scope: Scope): Row {
-  const legacy = (scope === "local"
-    ? (profile as any)?.stats
-    : (profile as any)?.onlineStats ??
-      (profile as any)?.online?.stats) || {};
+type Agg = {
+  wins: number;
+  matches: number;
+  avg3Sum: number;
+  avg3Count: number;
+  bestVisit: number;
+  bestCheckout: number;
+};
 
-  const modeStats = getModeStats(profile, mode, scope);
+function computeRowsFromHistory(
+  store: Store,
+  profiles: Profile[],
+  mode: LeaderboardMode,
+  scope: Scope
+): Row[] {
+  const history: any[] = (store.history || []) as any[];
 
-  const wins =
-    (modeStats.wins ??
-      modeStats.legWins ??
-      modeStats.matchesWon ??
-      0) || 0;
+  // seed avec tous les profils pour qu'ils apparaissent même à 0
+  const aggByPlayer: Record<string, Agg> = {};
+  const profileById: Record<string, Profile> = {};
+  for (const p of profiles) {
+    profileById[p.id] = p;
+    aggByPlayer[p.id] = {
+      wins: 0,
+      matches: 0,
+      avg3Sum: 0,
+      avg3Count: 0,
+      bestVisit: 0,
+      bestCheckout: 0,
+    };
+  }
 
-  const losses =
-    (modeStats.losses ??
-      modeStats.legLosses ??
-      modeStats.matchesLost ??
-      0) || 0;
+  for (const rec of history) {
+    if (!rec) continue;
 
-  const matches =
-    (modeStats.matches ??
-      modeStats.matchesPlayed ??
-      wins + losses) || 0;
+    // scope ONLINE : V1 → on ne filtre pas encore, on pourrait plus tard regarder un flag isOnline
+    const recMode = kindToMode(rec.kind || rec.payload?.kind || null);
+    if (!recMode || recMode !== mode) continue;
 
-  const avg3Raw =
-    modeStats.avg3 ??
-    modeStats.moy3 ??
-    legacy.avg3 ??
-    0;
+    const players: any[] = Array.isArray(rec.players) ? rec.players : [];
+    if (!players.length) continue;
 
-  const bestVisit =
-    modeStats.bestVisit ??
-    modeStats.bv ??
-    legacy.bestVisit ??
-    0;
+    const summary = rec.summary || rec.payload?.summary || null;
+    const perPlayerSummary = extractPerPlayerSummary(summary);
 
-  const bestCheckout =
-    modeStats.bestCheckout ??
-    modeStats.co ??
-    legacy.bestCheckout ??
-    legacy.co ??
-    0;
+    for (const pl of players) {
+      const pid = pl.id;
+      if (!pid || !aggByPlayer[pid]) continue;
 
-  const winRate =
-    matches > 0
-      ? (wins / matches) * 100
-      : 0;
+      const agg = aggByPlayer[pid];
+      agg.matches += 1;
+      if (rec.winnerId && rec.winnerId === pid) {
+        agg.wins += 1;
+      }
 
-  return {
-    id: profile.id,
-    name: profile.name,
-    avatarDataUrl: (profile as any).avatarDataUrl ?? null,
-    wins,
-    losses,
-    matches,
-    winRate,
-    avg3: typeof avg3Raw === "number" ? avg3Raw : 0,
-    bestVisit: typeof bestVisit === "number" ? bestVisit : 0,
-    bestCheckout: typeof bestCheckout === "number" ? bestCheckout : 0,
-  };
+      const det = perPlayerSummary[pid] || {};
+
+      const avg3Candidate =
+        det.avg3 ?? det.moy3 ?? det.avg ?? det.avg3d ?? 0;
+      if (typeof avg3Candidate === "number" && avg3Candidate > 0) {
+        agg.avg3Sum += avg3Candidate;
+        agg.avg3Count += 1;
+      }
+
+      const bvCandidate =
+        det.bestVisit ?? det.bv ?? det.bestVisit3 ?? det.bv3 ?? 0;
+      if (typeof bvCandidate === "number" && bvCandidate > 0) {
+        if (bvCandidate > agg.bestVisit) agg.bestVisit = bvCandidate;
+      }
+
+      const coCandidate =
+        det.bestCheckout ??
+        det.bestCo ??
+        det.coBest ??
+        det.co ??
+        0;
+      if (typeof coCandidate === "number" && coCandidate > 0) {
+        if (coCandidate > agg.bestCheckout) agg.bestCheckout = coCandidate;
+      }
+    }
+  }
+
+  // transform en Row[]
+  const rows: Row[] = Object.keys(aggByPlayer).map((pid) => {
+    const agg = aggByPlayer[pid];
+    const prof = profileById[pid];
+
+    const matches = agg.matches;
+    const wins = agg.wins;
+    const winRate = matches > 0 ? (wins / matches) * 100 : 0;
+    const avg3 =
+      agg.avg3Count > 0 ? agg.avg3Sum / agg.avg3Count : 0;
+
+    return {
+      id: pid,
+      name: prof?.name || "—",
+      avatarDataUrl: (prof as any)?.avatarDataUrl ?? null,
+      wins,
+      losses: Math.max(0, matches - wins),
+      matches,
+      winRate,
+      avg3,
+      bestVisit: agg.bestVisit,
+      bestCheckout: agg.bestCheckout,
+    };
+  });
+
+  return rows;
 }
 
-// --------------------------- COMPONENT --------------------------
+// =============================================================
 
-export default function StatsLeaderboardsTab({ store }: Props) {
+export default function StatsLeaderboardsPage({ store, go }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
 
-  // store passé en props OU chargé depuis storage
-  const effectiveStore: Store | null = React.useMemo(() => {
-    if (store) return store;
-    try {
-      return loadStore() as Store;
-    } catch {
-      return null;
-    }
-  }, [store]);
-
-  const profiles: Profile[] = effectiveStore?.profiles ?? [];
+  const profiles: Profile[] = store?.profiles ?? [];
 
   const [scope, setScope] = React.useState<Scope>("local");
   const [mode, setMode] = React.useState<LeaderboardMode>("x01_multi");
   const [period, setPeriod] = React.useState<PeriodKey>("ALL");
 
-  // Metric par défaut = premier metric du mode sélectionné
   const initialMetric =
     MODE_DEFS.find((m) => m.id === mode)?.metrics[0] ?? "wins";
   const [metric, setMetric] = React.useState<MetricKey>(initialMetric);
 
-  // Infos de carrousel
   const currentModeDef = MODE_DEFS.find((m) => m.id === mode);
   const currentModeIndex = MODE_DEFS.findIndex((m) => m.id === mode);
   const metricList = currentModeDef?.metrics ?? [];
@@ -218,7 +261,6 @@ export default function StatsLeaderboardsTab({ store }: Props) {
     metricList.findIndex((m) => m === metric)
   );
 
-  // Recalage metric si on change de mode
   React.useEffect(() => {
     const def = MODE_DEFS.find((m) => m.id === mode);
     if (!def) return;
@@ -244,10 +286,10 @@ export default function StatsLeaderboardsTab({ store }: Props) {
     setMetric(metricList[newIndex]);
   };
 
+  // 🔥 ICI : on construit les lignes à partir de store.history
   const rows = React.useMemo(() => {
     if (!profiles.length) return [];
-
-    const allRows = profiles.map((p) => buildRow(p, mode, scope));
+    const baseRows = computeRowsFromHistory(store, profiles, mode, scope);
 
     const value = (r: Row): number => {
       switch (metric) {
@@ -268,8 +310,8 @@ export default function StatsLeaderboardsTab({ store }: Props) {
       }
     };
 
-    return [...allRows].sort((a, b) => value(b) - value(a));
-  }, [profiles, mode, scope, metric]);
+    return [...baseRows].sort((a, b) => value(b) - value(a));
+  }, [store.history, profiles, mode, scope, metric]);
 
   const hasData = rows.length > 0;
 
@@ -312,6 +354,7 @@ export default function StatsLeaderboardsTab({ store }: Props) {
 
   return (
     <div
+      className="stats-leaderboards-page"
       style={{
         width: "100%",
         minHeight: "100vh",
@@ -324,7 +367,61 @@ export default function StatsLeaderboardsTab({ store }: Props) {
         color: theme.text,
       }}
     >
-      {/* ---------- HEADER : CENTRE + SCOPE + MODE (carrousel) ---------- */}
+      {/* HEADER simple, sans avatar global */}
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 520,
+          marginBottom: 10,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontWeight: 900,
+              letterSpacing: 0.9,
+              textTransform: "uppercase",
+              color: theme.primary,
+              fontSize: 20,
+              textShadow: `0 0 14px ${theme.primary}66`,
+              marginBottom: 4,
+            }}
+          >
+            {t("stats.leaderboards.titleMain", "CENTRE DE STATISTIQUES")}
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              lineHeight: 1.3,
+              color: theme.textSoft,
+            }}
+          >
+            Classements globaux par mode de jeu et par stat.
+          </div>
+        </div>
+
+        <button
+          onClick={() => go("statsShell")}
+          style={{
+            borderRadius: 999,
+            border: `1px solid ${theme.borderSoft}`,
+            padding: "6px 10px",
+            fontSize: 11,
+            fontWeight: 700,
+            background: theme.card,
+            color: theme.textSoft,
+            cursor: "pointer",
+          }}
+        >
+          ← Menu stats
+        </button>
+      </div>
+
+      {/* ---------- CARD : SCOPE + MODE ---------- */}
       <div
         style={{
           width: "100%",
@@ -337,22 +434,6 @@ export default function StatsLeaderboardsTab({ store }: Props) {
           boxShadow: `0 16px 32px rgba(0,0,0,.65), 0 0 20px ${theme.primary}33`,
         }}
       >
-        {/* Titre centre */}
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            textTransform: "uppercase",
-            letterSpacing: 1.4,
-            textAlign: "center",
-            color: theme.primary,
-            marginBottom: 8,
-          }}
-        >
-          {t("stats.leaderboards.centerTitle", "CENTRE DE STATISTIQUES")}
-        </div>
-
-        {/* Scope LOCAL / ONLINE */}
         <div
           style={{
             display: "flex",
@@ -393,7 +474,6 @@ export default function StatsLeaderboardsTab({ store }: Props) {
           })}
         </div>
 
-        {/* Carrousel mode : flèches + mode courant */}
         <div
           style={{
             display: "flex",
@@ -453,7 +533,7 @@ export default function StatsLeaderboardsTab({ store }: Props) {
         </div>
       </div>
 
-      {/* ---------- PÉRIODE + CARROUSEL STAT (flèches) ---------- */}
+      {/* ---------- PÉRIODE + STAT CARROUSEL ---------- */}
       <div
         style={{
           width: "100%",
@@ -466,7 +546,6 @@ export default function StatsLeaderboardsTab({ store }: Props) {
           boxShadow: `0 12px 26px rgba(0,0,0,.7)`,
         }}
       >
-        {/* Bandeau période J / S / M / Y / All / Tout */}
         <div
           style={{
             display: "flex",
@@ -518,7 +597,6 @@ export default function StatsLeaderboardsTab({ store }: Props) {
           </div>
         </div>
 
-        {/* Carrousel : stat courante + flèches */}
         <div
           style={{
             fontSize: 10,
@@ -613,7 +691,7 @@ export default function StatsLeaderboardsTab({ store }: Props) {
             marginBottom: 6,
           }}
         >
-          {t("stats.leaderboards.title", "Classements")}
+          {t("stats.leaderboards.titleList", "Classements")}
         </div>
 
         {!hasData ? (
@@ -691,7 +769,6 @@ export default function StatsLeaderboardsTab({ store }: Props) {
                         : `1px solid ${theme.borderSoft}`,
                   }}
                 >
-                  {/* Rang */}
                   <div
                     style={{
                       width: 26,
@@ -704,7 +781,6 @@ export default function StatsLeaderboardsTab({ store }: Props) {
                     {rank}
                   </div>
 
-                  {/* Nom + petit avatar */}
                   <div
                     style={{
                       display: "flex",
@@ -760,7 +836,6 @@ export default function StatsLeaderboardsTab({ store }: Props) {
                     </div>
                   </div>
 
-                  {/* Valeur de la stat + matchs */}
                   <div
                     style={{
                       display: "flex",
@@ -793,7 +868,6 @@ export default function StatsLeaderboardsTab({ store }: Props) {
         )}
       </div>
 
-      {/* espace bottom nav */}
       <div style={{ height: 80 }} />
     </div>
   );

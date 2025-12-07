@@ -59,6 +59,7 @@ import StatsShell from "./pages/StatsShell";
 import StatsHub from "./pages/StatsHub";
 import StatsOnline from "./pages/StatsOnline";
 import StatsCricket from "./pages/StatsCricket";
+import StatsLeaderboardsPage from "./pages/StatsLeaderboardsPage"; // ⭐ CLASSEMENTS
 
 // X01 V3
 import X01ConfigV3 from "./pages/X01ConfigV3";
@@ -115,6 +116,7 @@ type Tab =
   | "stats_online"
   | "cricket_stats"
   | "statsDetail"
+  | "stats_leaderboards" // ⭐ page CLASSEMENTS
   | "x01setup"
   | "x01_online_setup"
   | "x01"
@@ -705,6 +707,10 @@ function App() {
             params={routeParams}
           />
         );
+        break;
+
+      case "stats_leaderboards":
+        page = <StatsLeaderboardsPage store={store} go={go} />;
         break;
 
       /* ---------- SYNC / PARTAGE ---------- */

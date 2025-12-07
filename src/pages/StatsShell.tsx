@@ -296,25 +296,22 @@ export default function StatsShell({ store, go }: Props) {
           onInfo={() => setInfoMode("locals")}
         />
 
-        {/* CLASSEMENTS (nouvelle carte) */}
+        {/* NOUVELLE CARTE : CLASSEMENTS GLOBAUX */}
         <StatsShellCard
-          title={t("statsShell.leaderboards.title", "CLASSEMENTS")}
-          subtitle={t(
-            "statsShell.leaderboards.subtitle",
-            "Tops & rankings par mode de jeu (Local / Online)."
-          )}
+          title="CLASSEMENTS"
+          subtitle="Classements globaux par mode de jeu (X01 multi, Cricket, Killer, etc.)."
           theme={theme}
           onClick={() => {
-            if (!active) return;
-            go("statsHub", {
-              tab: "stats",
-              mode: "active",              // on part du joueur actif
-              initialPlayerId: active.id,  // pour que le carrousel soit sur lui
-              playerId: active.id,
-              initialStatsSubTab: "leaderboards", // 👈 ouvre directement l’onglet Classements
-            });
+            // 🧭 ouvre la nouvelle page de classements
+            go("stats_leaderboards");
           }}
-          onInfo={() => setInfoMode("leaderboards")}
+          onInfo={() => {
+            // texte d'aide léger
+            setInfoMode(null);
+            alert(
+              "Vue dédiée aux classements globaux : tous les profils sont comparés pour chaque mode de jeu."
+            );
+          }}
         />
 
         {/* TRAINING */}

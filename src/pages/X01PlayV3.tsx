@@ -2624,6 +2624,26 @@ function saveX01V3MatchToHistory({
   };
 
   // -------------------------
+  // QUICK STATS PROFILS (dc-quick-stats pour ProfileStarRing)
+  // -------------------------
+  try {
+    // On considère tout le match comme un "leg" global pour les quick-stats
+    StatsBridge
+      .commitLegAndAccumulate({ perPlayer }, legacy)
+      .catch((err) => {
+        console.warn(
+          "[X01PlayV3] commitLegAndAccumulate failed",
+          err
+        );
+      });
+  } catch (err) {
+    console.warn(
+      "[X01PlayV3] quick-stats error (sync wrapper)",
+      err
+    );
+  }
+
+  // -------------------------
   // Payload "léger" pour l'historique
   // -------------------------
 

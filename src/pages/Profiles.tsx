@@ -2280,52 +2280,56 @@ function LocalProfilesRefonte({
           {current && (
             <>
               {/* Médaillon central GROS + StarRing alimenté par avg3 */}
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "center",
-                  marginBottom: 10,
-                }}
-              >
-                <div
-                  style={{
-                    position: "relative",
-                    width: MEDALLION,
-                    height: MEDALLION,
-                    borderRadius: "50%",
-                    padding: BORDER / 2,
-                    background: `linear-gradient(135deg, ${primary}, ${primary}55)`,
-                    boxShadow: `0 0 30px ${primary}66, inset 0 0 14px rgba(0,0,0,.7)`,
-                  }}
-                >
-                  <div
-                    aria-hidden
-                    style={{
-                      position: "absolute",
-                      left: -(STAR / 2),
-                      top: -(STAR / 2),
-                      width: MEDALLION + STAR,
-                      height: MEDALLION + STAR,
-                      pointerEvents: "none",
-                    }}
-                  >
-                    <ProfileStarRing
-                      anchorSize={MEDALLION}
-                      gapPx={-1}
-                      starSize={STAR}
-                      stepDeg={10}
-                      avg3d={avg3}
-                    />
-                  </div>
+<div
+  style={{
+    display: "flex",
+    justifyContent: "center",
+    marginBottom: 10,
+  }}
+>
+  <div
+    style={{
+      position: "relative",
+      width: MEDALLION,
+      height: MEDALLION,
+      borderRadius: "50%",
+      padding: BORDER / 2,
+      background: `linear-gradient(135deg, ${primary}, ${primary}55)`,
+      boxShadow: `0 0 30px ${primary}66, inset 0 0 14px rgba(0,0,0,.7)`,
+    }}
+  >
+    {/* Couronne d’étoiles colorée (même logique que Home) */}
+    <div
+      aria-hidden
+      style={{
+        position: "absolute",
+        left: -(STAR / 2),
+        top: -(STAR / 2),
+        width: MEDALLION + STAR,
+        height: MEDALLION + STAR,
+        pointerEvents: "none",
+      }}
+    >
+      <ProfileStarRing
+        anchorSize={MEDALLION}
+        avg3d={avg3}
+        gapPx={-1}
+        starSize={STAR}
+        stepDeg={10}
+        rotationDeg={0}
+        animateGlow={true}
+      />
+    </div>
 
-                  <ProfileAvatar
-                    size={AVATAR - 8}
-                    dataUrl={current.avatarDataUrl}
-                    label={current.name?.[0]?.toUpperCase() || "?"}
-                    showStars={false}
-                  />
-                </div>
-              </div>
+    {/* Avatar au centre, sans étoiles internes */}
+    <ProfileAvatar
+      size={AVATAR - 8}
+      dataUrl={current.avatarDataUrl}
+      label={current.name?.[0]?.toUpperCase() || "?"}
+      showStars={false}
+    />
+  </div>
+</div>
 
               {/* Nom + drapeau pays */}
               <div style={{ textAlign: "center", marginBottom: 10 }}>

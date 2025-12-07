@@ -20,7 +20,7 @@ import {
   PolarGrid,
   PolarAngleAxis,
   Radar,
-  Cell,
+  Cell, // pour teinter chaque barre (avatar + couleur)
 } from "recharts";
 
 import type { LegStats } from "../lib/stats";
@@ -100,23 +100,6 @@ function idsFromNew(leg: LegStats): string[] {
   return (leg.players as Array<{ id: string }>).map((p) => p.id);
 }
 
-function remainingFromNew(leg: LegStats, pid: string) {
-  const st: any = leg.perPlayer?.[pid] ?? {};
-  const start = n((leg as any).startScore ?? (leg as any).start ?? 501);
-  const scored = n(
-    st.totalScored ??
-      st.totalScore ?? // ✅ supporte maintenant totalScore (nouveau moteur)
-      st.points ??
-      st.pointsSum
-  );
-  const approx = Math.max(0, start - scored);
-  const explicit = st.remaining;
-  if (typeof explicit === "number" && isFinite(explicit) && explicit >= 0 && explicit <= start) {
-    return explicit;
-  }
-  return approx;
-}
-
 function visitsFromNew(leg: LegStats, pid: string) {
   const st: any = leg.perPlayer?.[pid] ?? {};
   const d = n(st.darts ?? st.dartsThrown);
@@ -127,15 +110,33 @@ function avg3FromNew(leg: LegStats, pid: string) {
   const st: any = leg.perPlayer?.[pid] ?? {};
   if (typeof st.avg3 === "number") return st.avg3;
   const v = visitsFromNew(leg, pid);
-  const scored = n(
-    st.totalScored ??
-      st.totalScore ?? // ✅ idem que remainingFromNew
-      st.points ??
-      st.pointsSum
-  );
-  if (v > 0) return scored / v; // avg3 = points/volée dans ton app
+  const scored = n(st.totalScored ?? st.points ?? st.pointsSum);
+  if (v > 0 && scored) return scored / v; // avg3 = points/volée dans ton app
   const d = n(st.darts ?? st.dartsThrown);
   return d > 0 ? (scored / d) * 3 : 0;
+}
+
+function remainingFromNew(leg: LegStats, pid: string) {
+  const st: any = leg.perPlayer?.[pid] ?? {};
+  const start = n((leg as any).startScore ?? (leg as any).start ?? 501);
+
+  // 1) points directs si dispo
+  let scored = n(st.totalScored ?? st.points ?? st.pointsSum);
+
+  // 2) Fallback: avg3 * volées
+  if (!scored) {
+    const avg3 =
+      typeof st.avg3 === "number" && isFinite(st.avg3) ? st.avg3 : 0;
+    const v = visitsFromNew(leg, pid);
+    if (avg3 && v) {
+      scored = avg3 * v;
+    }
+  }
+
+  const approx = Math.max(0, start - scored);
+  const explicit = st.remaining;
+  if (typeof explicit === "number" && isFinite(explicit)) return explicit;
+  return approx;
 }
 
 function bestVisitFromNew(leg: LegStats, pid: string) {
@@ -145,7 +146,6 @@ function bestVisitFromNew(leg: LegStats, pid: string) {
 
 function powerBucketsFromNew(leg: LegStats, pid: string) {
   const st: any = leg.perPlayer?.[pid] ?? {};
-  // ✅ supporte maintenant à la fois `bins` ET `buckets`
   const b = st.bins || st.buckets || {};
   return {
     h60: n(b["60+"] ?? b["60"] ?? 0),
@@ -180,46 +180,9 @@ function impactsFromNew(leg: LegStats, pid: string) {
 function checkoutFromNew(leg: LegStats, pid: string) {
   const st: any = leg.perPlayer?.[pid] ?? {};
   const co = st.co || {};
-
-  // ✅ on ratisse large pour retrouver les infos de checkout
-  const count = n(
-    co.coHits ??
-      co.hits ??
-      st.coHits ??
-      st.co_hits ??
-      st.coAtt ??
-      st.coAttempts ??
-      0
-  );
-
-  const totalDarts = n(
-    co.totalCODarts ??
-      co.totalDarts ??
-      st.coDarts ??
-      st.totalCoDarts ??
-      0
-  );
-
-  let avg = n(
-    co.avgCODarts ??
-      co.avgDarts ??
-      st.avgCODarts ??
-      st.coAvgDarts ??
-      0
-  );
-
-  if (!avg && count > 0 && totalDarts > 0) {
-    avg = totalDarts / count;
-  }
-
-  const hi = n(
-    co.highestCO ??
-      co.best ??
-      st.highestCO ??
-      st.bestCO ??
-      0
-  );
-
+  const count = n(co.coHits ?? co.hits ?? 0);
+  const avg = n(co.avgCODarts ?? co.avgDarts ?? 0);
+  const hi = n(co.highestCO ?? co.best ?? 0);
   return { coCount: count, coDartsAvg: avg, highestCO: hi };
 }
 
@@ -280,30 +243,24 @@ function val(obj: Record<string, number> | undefined, k: string) {
   return obj ? n(obj[k]) : 0;
 }
 
-// ⚙️ Remaining côté legacy : si pas renseigné, on recalcule avec startScore - points
-//    + on ignore les valeurs "sentinelles" = 501 quand le joueur a déjà scoré
+// Remaining legacy avec fallback avg3 * visits pour éviter les 501 débiles
 function remainingFromLegacy(res: LegacyLegResult, pid: string) {
   const start = (res as any).startScore ?? (res as any).start ?? 501;
-  const raw = res.remaining?.[pid];
-  const pts = n(res.points?.[pid] ?? 0);
 
-  if (typeof raw === "number" && isFinite(raw)) {
-    // valeur crédible = entre 0 et start (ex: 32, 70, …)
-    if (raw >= 0 && raw < start) {
-      return raw;
-    }
-    // joueur n’a jamais scoré : on garde le score de départ
-    if (raw === start && pts === 0) {
-      return start;
+  let pts = n(res.points?.[pid]);
+
+  if (!pts) {
+    const darts = val(res.darts, pid);
+    const visits = val(res.visits, pid) || (darts ? Math.ceil(darts / 3) : 0);
+    const avg3 =
+      typeof res.avg3?.[pid] === "number" ? n(res.avg3[pid]) : 0;
+    if (avg3 && visits) {
+      pts = avg3 * visits;
     }
   }
 
-  // sinon on recalcule à partir des points réellement marqués
-  if (pts > 0) {
-    return Math.max(0, start - pts);
-  }
-
-  return start;
+  const approx = Math.max(0, start - pts);
+  return approx;
 }
 
 function rowFromLegacy(
@@ -320,10 +277,7 @@ function rowFromLegacy(
       ? (n(res.points?.[pid]) / darts) * 3
       : 0;
 
-  const obRaw =
-    res.hitsBySector?.[pid]?.["OB"] ??
-    res.bulls?.[pid] ??
-    0;
+  const obRaw = res.hitsBySector?.[pid]?.["OB"] ?? res.bulls?.[pid] ?? 0;
   const ibRaw =
     res.hitsBySector?.[pid]?.["IB"] ??
     res.dbull?.[pid] ??
@@ -348,12 +302,7 @@ function rowFromLegacy(
   const coDartsAvgArr = res.checkoutDartsByPlayer?.[pid];
   const coDartsAvg =
     coCount && coDartsAvgArr?.length
-      ? Number(
-          f2(
-            coDartsAvgArr.reduce((s, x) => s + x, 0) /
-              coDartsAvgArr.length
-          )
-        )
+      ? Number(f2(coDartsAvgArr.reduce((s, x) => s + x, 0) / coDartsAvgArr.length))
       : 0;
   const highestCO = n(res.bestCheckout?.[pid] ?? 0);
 
@@ -399,32 +348,6 @@ function sortOrderLegacy(res: LegacyLegResult, ids: string[]) {
   return order;
 }
 
-// ---------- Helper rankings (summary.rankings / rankings optionnels) ----------
-type RankingEntry = { id?: string; pid?: string; [k: string]: any };
-
-function extractRankingIds(src: any): string[] | null {
-  if (!src || typeof src !== "object") return null;
-
-  const arr: RankingEntry[] =
-    (Array.isArray(src.rankings) && src.rankings) ||
-    (Array.isArray(src.summary?.rankings) && src.summary.rankings) ||
-    [];
-
-  if (!arr.length) return null;
-
-  const ids = arr
-    .map((r) =>
-      typeof r.id === "string"
-        ? r.id
-        : typeof r.pid === "string"
-        ? r.pid
-        : null
-    )
-    .filter((x): x is string => !!x);
-
-  return ids.length ? ids : null;
-}
-
 // ---------- Composant principal ----------
 export default function EndOfLegOverlay({
   open,
@@ -464,67 +387,30 @@ function Inner({
     [playersById]
   );
   const avatarOf = React.useCallback(
-    (id?: string | null) =>
-      playersById[id || ""]?.avatarDataUrl ?? null,
+    (id?: string | null) => playersById[id || ""]?.avatarDataUrl ?? null,
     [playersById]
   );
 
   // --- rows bruts ---
   const rowsRaw = React.useMemo(() => {
-    // On essaie d'abord d'extraire un ordre à partir d'un éventuel rankings
-    const globalRankingIds = extractRankingIds(result);
-
     if ((result as any)?.legacy) {
       const r = (result as any).legacy as LegacyLegResult;
-      const rankIds =
-        extractRankingIds((result as any).legacy) ||
-        globalRankingIds;
-
-      if (rankIds && rankIds.length) {
-        return rankIds.map((pid) =>
-          rowFromLegacy(r, pid, nameOf)
-        );
-      }
-
       const ids =
         Object.keys(r?.remaining || {}).length > 0
           ? Object.keys(r.remaining)
           : Object.keys(r?.avg3 || {});
       const ord = sortOrderLegacy(r, ids);
-      return ord.map((pid) =>
-        rowFromLegacy(r, pid, nameOf)
-      );
+      return ord.map((pid) => rowFromLegacy(r, pid, nameOf));
     }
-
     if (isLegStatsObj(result)) {
-      const rankIds = extractRankingIds(result) || globalRankingIds;
-
-      if (rankIds && rankIds.length) {
-        return rankIds.map((pid) =>
-          rowFromNew(result, pid, nameOf)
-        );
-      }
-
       const ids = idsFromNew(result);
       const ord = sortOrderNew(result, ids);
-      return ord.map((pid) =>
-        rowFromNew(result, pid, nameOf)
-      );
+      return ord.map((pid) => rowFromNew(result, pid, nameOf));
     } else {
       const r = result as LegacyLegResult;
-      const rankIds = extractRankingIds(result) || globalRankingIds;
-
-      if (rankIds && rankIds.length) {
-        return rankIds.map((pid) =>
-          rowFromLegacy(r, pid, nameOf)
-        );
-      }
-
       const ids = Object.keys(r.remaining || r.avg3 || {});
       const ord = sortOrderLegacy(r, ids);
-      return ord.map((pid) =>
-        rowFromLegacy(r, pid, nameOf)
-      );
+      return ord.map((pid) => rowFromLegacy(r, pid, nameOf));
     }
   }, [result, nameOf]);
 
@@ -535,19 +421,11 @@ function Inner({
   const finishedAt = isLegStatsObj(result)
     ? (result as any).finishedAt ?? Date.now()
     : (result as LegacyLegResult).finishedAt ?? Date.now();
+  const winnerId: string | null = isLegStatsObj(result)
+    ? (result as any).winnerId ?? rowsRaw[0]?.pid ?? null
+    : (result as LegacyLegResult).winnerId ?? rowsRaw[0]?.pid ?? null;
 
-  const rankingsIdsGlobal = extractRankingIds(result);
-  const rankingsFirstId = rankingsIdsGlobal?.[0];
-
-  const winnerId: string | null = rankingsFirstId
-    ? rankingsFirstId
-    : isLegStatsObj(result)
-    ? ((result as any).winnerId ??
-        rowsRaw[0]?.pid ??
-        null)
-    : ((result as LegacyLegResult).winnerId ??
-        rowsRaw[0]?.pid ??
-        null);
+  const finishedLabel = new Date(finishedAt).toLocaleString();
 
   // 🔁 Ré-ordonnancement : on force le vainqueur en 1ère place
   const rows = React.useMemo(() => {
@@ -564,90 +442,129 @@ function Inner({
   const minDarts = Math.min(
     ...rows.map((r) => (r.darts > 0 ? r.darts : Infinity))
   );
-  const minDartsRow =
-    rows.find((r) => r.darts === minDarts) || null;
+  const minDartsRow = rows.find((r) => r.darts === minDarts) || null;
   const bestAvg = Math.max(...rows.map((r) => r.avg3 || 0));
-  const bestAvgRow =
-    rows.find((r) => r.avg3 === bestAvg) || null;
+  const bestAvgRow = rows.find((r) => r.avg3 === bestAvg) || null;
   const bestVol = Math.max(...rows.map((r) => r.best || 0));
-  const bestVolRow =
-    rows.find((r) => r.best === bestVol) || null;
+  const bestVolRow = rows.find((r) => r.best === bestVol) || null;
 
-  // Pourcentages : déjà formatés, on en tire un ordre simple
   const bestPDBRow =
     rows.slice().sort(
-      (a, b) =>
-        parseFloat(String(b.pDB)) -
-        parseFloat(String(a.pDB))
+      (a, b) => parseFloat(String(b.pDB)) - parseFloat(String(a.pDB))
     )[0] || null;
   const bestPTPRow =
     rows.slice().sort(
-      (a, b) =>
-        parseFloat(String(b.pTP)) -
-        parseFloat(String(a.pTP))
+      (a, b) => parseFloat(String(b.pTP)) - parseFloat(String(a.pTP))
     )[0] || null;
   const bestBullRow =
-    rows
-      .slice()
-      .sort(
-        (a, b) =>
-          (b.bulls || 0) - (a.bulls || 0)
-      )[0] || null;
+    rows.slice().sort((a, b) => (b.bulls || 0) - (a.bulls || 0))[0] || null;
 
-  // Graph bar (moyenne 3D + avatars)
+  // -----------------------------
+  // Graph bar data (Moy. 3D) + avatars + couleurs
+  // -----------------------------
+  const barColors = [
+    "#f0b12a",
+    "#7fe2a9",
+    "#6ab7ff",
+    "#ff9ad4",
+    "#c3a3ff",
+    "#7de3ff",
+    "#ffb870",
+  ];
+
   const barData = React.useMemo(
     () =>
-      rows.map((r) => ({
-        name: r.name,
+      rows.map((r, idx) => ({
         pid: r.pid,
+        name: r.name,
         avg3: Number(f2(r.avg3)),
         avatar: avatarOf(r.pid),
+        color: barColors[idx % barColors.length],
       })),
     [rows, avatarOf]
   );
 
-  // --- Joueur actif pour le RADAR (filtre) ---
-  const [radarPlayerId, setRadarPlayerId] = React.useState<string | null>(() =>
-    rows[0]?.pid ?? null
-  );
-  React.useEffect(() => {
-    setRadarPlayerId(rows[0]?.pid ?? null);
+  // chunks de 3 joueurs max -> plusieurs lignes si besoin
+  const barChunks = React.useMemo(() => {
+    const chunks: typeof barData[] = [];
+    const size = 3;
+    for (let i = 0; i < barData.length; i += size) {
+      chunks.push(barData.slice(i, i + size));
+    }
+    return chunks;
+  }, [barData]);
+
+  // Label halo lumineux au-dessus des barres (utilise la couleur du payload)
+  const renderGlowLabel = React.useCallback((props: any) => {
+    const { x, y, width, value, payload } = props;
+    if (value == null || isNaN(Number(value))) return null;
+    const color = payload?.color || "#f0b12a";
+    const text = String(value);
+    const cx = (x || 0) + (width || 0) / 2;
+    const cy = (y || 0) - 6;
+    return (
+      <g>
+        <text
+          x={cx}
+          y={cy}
+          textAnchor="middle"
+          fill={color}
+          opacity={0.3}
+          style={{ filter: "blur(2px)" }}
+          fontSize={11}
+          fontWeight={900}
+        >
+          {text}
+        </text>
+        <text
+          x={cx}
+          y={cy}
+          textAnchor="middle"
+          fill={color}
+          fontSize={11}
+          fontWeight={900}
+        >
+          {text}
+        </text>
+      </g>
+    );
+  }, []);
+
+  // Radar: hits "Singles / Doubles / Triples / Bulls" par joueur
+  const radarData = React.useMemo(() => {
+    if (!rows.length) return [];
+    const metrics = ["Singles", "Doubles", "Triples", "Bulls"] as const;
+    return metrics.map((metric) => {
+      const obj: any = { metric };
+      rows.forEach((r) => {
+        const singles = Math.max(
+          (r.darts || 0) -
+            (r.doubles || 0) -
+            (r.triples || 0) -
+            (r.ob || 0) -
+            (r.ib || 0),
+          0
+        );
+        const bulls = (r.bulls || 0) + (r.ob || 0) + (r.ib || 0);
+        let v = 0;
+        if (metric === "Singles") v = singles;
+        if (metric === "Doubles") v = r.doubles || 0;
+        if (metric === "Triples") v = r.triples || 0;
+        if (metric === "Bulls") v = bulls;
+        obj[r.pid] = v;
+      });
+      return obj;
+    });
   }, [rows]);
 
-  // Radar (hits par secteur, legacy uniquement si dispo)
-  const radarKeys = React.useMemo(() => {
-    const src: any = (result as any).legacy || result;
-    const hitsBySector: Record<string, Record<string, number>> | undefined =
-      (src && (src.hitsBySector as any)) ||
-      (src?.legacy?.hitsBySector as any);
-
-    const pid = radarPlayerId || rows[0]?.pid;
-    if (!hitsBySector || !pid || !hitsBySector[pid]) return null;
-
-    const entries = Object.entries(hitsBySector[pid])
-      .filter(([k]) => k !== "MISS")
-      .sort((a, b) => n((b as any)[1]) - n((a as any)[1]))
-      .slice(0, 12)
-      .map(([k]) => k);
-
-    return entries.length ? entries : null;
-  }, [result, rows, radarPlayerId]);
-
-  const radarData = React.useMemo(() => {
-    if (!radarKeys) return [];
-    const src: any = (result as any).legacy || result;
-    const hitsBySector: Record<string, Record<string, number>> | undefined =
-      (src && (src.hitsBySector as any)) ||
-      (src?.legacy?.hitsBySector as any);
-
-    const pid = radarPlayerId || rows[0]?.pid;
-    if (!hitsBySector || !pid) return [];
-    const per = hitsBySector[pid] || {};
-    return radarKeys.map((k) => ({
-      sector: k,
-      v: n((per as any)[k]),
-    }));
-  }, [result, rows, radarKeys, radarPlayerId]);
+  const [radarFilter, setRadarFilter] = React.useState<"ALL" | string>("ALL");
+  const radarPlayers = React.useMemo(
+    () =>
+      radarFilter === "ALL"
+        ? rows
+        : rows.filter((r) => r.pid === radarFilter),
+    [rows, radarFilter]
+  );
 
   // Actions
   const handleSave = () => {
@@ -706,23 +623,18 @@ function Inner({
         _sumAvg3: 0,
       };
       const games = cur.games + 1;
-      const wins =
-        cur.wins + (input.winnerId === r.pid ? 1 : 0);
-      const darts =
-        cur.darts + (isFinite(r.darts) ? r.darts : 0);
+      const wins = cur.wins + (input.winnerId === r.pid ? 1 : 0);
+      const darts = cur.darts + (isFinite(r.darts) ? r.darts : 0);
       const bestVisit = Math.max(
         cur.bestVisit || 0,
         isFinite(r.best) ? r.best : 0
       );
       const bestCheckout = Math.max(
         cur.bestCheckout || 0,
-        isFinite(r.highestCO || 0)
-          ? r.highestCO || 0
-          : 0
+        isFinite(r.highestCO || 0) ? r.highestCO || 0 : 0
       );
       const _sumAvg3 =
-        (cur._sumAvg3 ||
-          cur.avg3 * (cur.games || 0)) +
+        (cur._sumAvg3 || cur.avg3 * (cur.games || 0)) +
         (isFinite(r.avg3) ? r.avg3 : 0);
       const avg3 = games ? _sumAvg3 / games : 0;
 
@@ -745,10 +657,7 @@ function Inner({
           detail: { playerId: "*" },
         })
       );
-      localStorage.setItem(
-        "dc:statslite:version",
-        String(Date.now())
-      );
+      localStorage.setItem("dc:statslite:version", String(Date.now()));
     } catch {}
   }
 
@@ -759,9 +668,6 @@ function Inner({
       return null;
     }
   }
-
-  const finishedDate = new Date(finishedAt);
-  const finishedLabel = `${finishedDate.toLocaleDateString()} • ${finishedDate.toLocaleTimeString()}`;
 
   // --- UI ---
   return (
@@ -789,8 +695,7 @@ function Inner({
           maxHeight: "92vh",
           overflow: "auto",
           borderRadius: 14,
-          background:
-            "linear-gradient(180deg, #17181c, #101116)",
+          background: "linear-gradient(180deg, #17181c, #101116)",
           border: "1px solid rgba(255,255,255,.08)",
           boxShadow: "0 16px 44px rgba(0,0,0,.45)",
           fontSize: 12,
@@ -802,10 +707,8 @@ function Inner({
             position: "sticky",
             top: 0,
             zIndex: 1,
-            background:
-              "linear-gradient(180deg, #1a1b20, #13141a)",
-            borderBottom:
-              "1px solid rgba(255,255,255,.08)",
+            background: "linear-gradient(180deg, #1a1b20, #13141a)",
+            borderBottom: "1px solid rgba(255,255,255,.08)",
             padding: "8px 10px",
             borderTopLeftRadius: 14,
             borderTopRightRadius: 14,
@@ -817,7 +720,7 @@ function Inner({
           <div
             style={{
               fontWeight: 900,
-              color: "#f0b12a",
+              color: "var(--dc-accent, #f0b12a)",
               fontSize: 14,
             }}
           >
@@ -836,11 +739,7 @@ function Inner({
           <button
             onClick={onClose}
             title="Fermer"
-            style={btn(
-              "transparent",
-              "#ddd",
-              "#ffffff22"
-            )}
+            style={btn("transparent", "#ddd", "#ffffff22")}
           >
             ✕
           </button>
@@ -852,8 +751,7 @@ function Inner({
           <div
             style={{
               borderRadius: 10,
-              border:
-                "1px solid rgba(255,255,255,.07)",
+              border: "1px solid rgba(255,255,255,.07)",
               background:
                 "linear-gradient(180deg, rgba(28,28,32,.65), rgba(18,18,20,.65))",
               marginBottom: 10,
@@ -863,13 +761,10 @@ function Inner({
               const avatar = avatarOf(r.pid);
               const isWinner = r.pid === winnerId;
               const remainingSafe =
-                typeof r.remaining === "number" &&
-                isFinite(r.remaining)
+                typeof r.remaining === "number" && isFinite(r.remaining)
                   ? r.remaining
                   : 0;
-              const displayScore = isWinner
-                ? 0
-                : remainingSafe;
+              const displayScore = isWinner ? 0 : remainingSafe;
 
               return (
                 <div
@@ -877,20 +772,17 @@ function Inner({
                   style={{
                     padding: "6px 8px",
                     display: "grid",
-                    gridTemplateColumns:
-                      "26px 36px 1fr auto",
+                    gridTemplateColumns: "26px 36px 1fr auto",
                     alignItems: "center",
                     gap: 8,
-                    borderBottom:
-                      "1px solid rgba(255,255,255,.06)",
+                    borderBottom: "1px solid rgba(255,255,255,.06)",
                     background: isWinner
                       ? "radial-gradient(circle at 0% 0%, rgba(127,226,169,.28), transparent 55%)"
                       : "transparent",
                     boxShadow: isWinner
                       ? "0 0 22px rgba(127,226,169,.35)"
                       : "0 0 0 rgba(0,0,0,0)",
-                    transition:
-                      "background .18s, box-shadow .18s",
+                    transition: "background .18s, box-shadow .18s",
                   }}
                 >
                   <div
@@ -898,13 +790,12 @@ function Inner({
                       width: 22,
                       height: 22,
                       borderRadius: 6,
-                      background:
-                        "rgba(255,255,255,.06)",
+                      background: "rgba(255,255,255,.06)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       fontWeight: 800,
-                      color: "#ffcf57",
+                      color: "var(--dc-accent, #ffcf57)",
                       fontSize: 12,
                     }}
                   >
@@ -916,8 +807,7 @@ function Inner({
                       height: 36,
                       borderRadius: "50%",
                       overflow: "hidden",
-                      background:
-                        "rgba(255,255,255,.08)",
+                      background: "rgba(255,255,255,.08)",
                     }}
                   >
                     {avatar ? (
@@ -951,7 +841,7 @@ function Inner({
                       fontWeight: 800,
                       color: isWinner
                         ? "#7fe2a9"
-                        : "#ffcf57",
+                        : "var(--dc-accent, #ffcf57)",
                       fontSize: 13,
                     }}
                   >
@@ -962,7 +852,7 @@ function Inner({
                       fontWeight: 900,
                       color: isWinner
                         ? "#7fe2a9"
-                        : "#ffcf57",
+                        : "var(--dc-accent, #ffcf57)",
                     }}
                   >
                     {displayScore}
@@ -1006,10 +896,7 @@ function Inner({
                 </thead>
                 <tbody>
                   {rows.map((r) => (
-                    <tr
-                      key={`fast-${r.pid}`}
-                      style={rowLine}
-                    >
+                    <tr key={`fast-${r.pid}`} style={rowLine}>
                       <TDStrong>{r.name}</TDStrong>
                       <TD>{r.visits}</TD>
                       <TD>{r.darts}</TD>
@@ -1044,17 +931,10 @@ function Inner({
                 </thead>
                 <tbody>
                   {rows.map((r) => (
-                    <tr
-                      key={`darts-${r.pid}`}
-                      style={rowLine}
-                    >
+                    <tr key={`darts-${r.pid}`} style={rowLine}>
                       <TDStrong>{r.name}</TDStrong>
                       <TD>{r.coCount}</TD>
-                      <TD>
-                        {r.coCount
-                          ? f2(r.coDartsAvg)
-                          : "—"}
-                      </TD>
+                      <TD>{r.coCount ? r.coDartsAvg : "—"}</TD>
                       <TD>{r.doubles}</TD>
                       <TD>{r.triples}</TD>
                       <TD>{r.ob}</TD>
@@ -1090,10 +970,7 @@ function Inner({
                 </thead>
                 <tbody>
                   {rows.map((r, i) => (
-                    <tr
-                      key={`global-${r.pid}`}
-                      style={rowLine}
-                    >
+                    <tr key={`global-${r.pid}`} style={rowLine}>
                       <TD>{i + 1}</TD>
                       <TDStrong>{r.name}</TDStrong>
                       <TD>{f2(r.avg3)}</TD>
@@ -1111,8 +988,7 @@ function Inner({
           </Accordion>
 
           {/* Graphs */}
-          <Accordion title="Graphiques — hits par secteur & moyennes">
-            {/* 🔁 Bascule en colonne : cartes les unes sous les autres */}
+          <Accordion title="Graphiques — hits & moyennes">
             <div
               style={{
                 display: "flex",
@@ -1120,199 +996,184 @@ function Inner({
                 gap: 8,
               }}
             >
-              {/* RADAR avec filtre joueur */}
+              {/* RADAR HITS */}
               <ChartCard>
+                {/* Filtres joueurs (Tous / 1 joueur) */}
                 <div
                   style={{
                     display: "flex",
                     flexWrap: "wrap",
-                    gap: 4,
                     justifyContent: "center",
+                    gap: 6,
                     marginBottom: 6,
                     fontSize: 11,
                   }}
                 >
-                  {rows.map((r) => {
-                    const active = radarPlayerId === r.pid;
-                    return (
-                      <button
-                        key={`radar-toggle-${r.pid}`}
-                        onClick={() => setRadarPlayerId(r.pid)}
-                        style={{
-                          borderRadius: 999,
-                          padding: "3px 8px",
-                          border: active
-                            ? "1px solid #f0b12a"
-                            : "1px solid rgba(255,255,255,.25)",
-                          background: active
-                            ? "linear-gradient(180deg,#f0b12a,#c58d19)"
-                            : "rgba(0,0,0,.35)",
-                          color: active ? "#141417" : "#e7e7e7",
-                          fontWeight: active ? 800 : 600,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {r.name}
-                      </button>
-                    );
-                  })}
+                  <button
+                    onClick={() => setRadarFilter("ALL")}
+                    style={pillBtn(
+                      radarFilter === "ALL"
+                    )}
+                  >
+                    Tous
+                  </button>
+                  {rows.map((r) => (
+                    <button
+                      key={`pill-${r.pid}`}
+                      onClick={() => setRadarFilter(r.pid)}
+                      style={pillBtn(
+                        radarFilter === r.pid
+                      )}
+                    >
+                      {r.name}
+                    </button>
+                  ))}
                 </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    opacity: 0.8,
-                    textAlign: "center",
-                    marginBottom: 4,
-                  }}
-                >
-                  Répartition des hits par secteur pour le joueur sélectionné
-                </div>
-                <ChartMountGuard
-                  minW={220}
-                  minH={220}
-                >
-                  {() =>
-                    radarKeys && radarData.length > 0 ? (
-                      <ResponsiveContainer
-                        width="100%"
-                        height={230}
-                      >
-                        <RadarChart data={radarData}>
-                          <PolarGrid />
-                          <PolarAngleAxis dataKey="sector" />
-                          <Radar
-                            name="Hits"
-                            dataKey="v"
-                            fill="rgba(240,177,42,0.5)"
-                            stroke="#f0b12a"
-                          />
-                        </RadarChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <ChartPlaceholder />
-                    )
-                  }
-                </ChartMountGuard>
+
+                {radarData.length && radarPlayers.length ? (
+                  <>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        opacity: 0.8,
+                        marginBottom: 4,
+                        textAlign: "center",
+                      }}
+                    >
+                      Profil de hits (Singles / Doubles / Triples / Bulls)
+                    </div>
+                    <ResponsiveContainer width="100%" height={230}>
+                      <RadarChart data={radarData}>
+                        <PolarGrid />
+                        <PolarAngleAxis dataKey="metric" />
+                        {radarPlayers.map((r, idx) => {
+                          const colors = [
+                            "#7fe2a9",
+                            "#f5c25c",
+                            "#6ab7ff",
+                            "#ff9ad4",
+                            "#c3a3ff",
+                            "#7de3ff",
+                          ];
+                          const c = colors[idx % colors.length];
+                          return (
+                            <Radar
+                              key={`radar-${r.pid}`}
+                              name={r.name}
+                              dataKey={r.pid}
+                              stroke={c}
+                              fill={c}
+                              fillOpacity={0.25}
+                            />
+                          );
+                        })}
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </>
+                ) : (
+                  <ChartPlaceholder />
+                )}
               </ChartCard>
 
-              {/* Bar chart moyennes 3D */}
+              {/* BAR MOYENNE 3D */}
               <ChartCard>
                 <div
                   style={{
                     fontSize: 11,
-                    fontWeight: 800,
-                    color: "#ffcf57",
+                    opacity: 0.8,
                     marginBottom: 4,
+                    textAlign: "center",
                   }}
                 >
                   Moyenne 3 darts par joueur
                 </div>
-                <ChartMountGuard
-                  minW={220}
-                  minH={220}
-                >
-                  {() => (
-                    <ResponsiveContainer
-                      width="100%"
-                      height={230}
-                    >
-                      <BarChart data={barData}>
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="avg3">
-                          {barData.map((_, idx) => {
-                            const palette = [
-                              "#f6c256",
-                              "#56b4ff",
-                              "#9cf5c8",
-                              "#ff92d0",
-                              "#b694ff",
-                              "#ffd1a0",
-                            ];
-                            return (
-                              <Cell
-                                key={`cell-${idx}`}
-                                fill={
-                                  palette[idx % palette.length]
-                                }
-                              />
-                            );
-                          })}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )}
-                </ChartMountGuard>
-
-                {/* Légende avatars + Moy./3D par joueur */}
-                <div
-                  style={{
-                    marginTop: 6,
-                    display: "flex",
-                    justifyContent: "space-around",
-                    gap: 6,
-                  }}
-                >
-                  {rows.map((r) => {
-                    const avatar = avatarOf(r.pid);
-                    return (
+                {barData.length ? (
+                  <>
+                    {barChunks.map((chunk, idx) => (
                       <div
-                        key={`legend-${r.pid}`}
+                        key={`chunk-${idx}`}
                         style={{
-                          textAlign: "center",
-                          fontSize: 10,
+                          maxWidth: 420,
+                          margin: "0 auto 8px", // centré et ne dépasse jamais la largeur écran
                         }}
                       >
-                        <div
-                          style={{
-                            width: 26,
-                            height: 26,
-                            borderRadius: "50%",
-                            overflow: "hidden",
-                            margin: "0 auto 2px",
-                            border:
-                              "1px solid rgba(255,255,255,.4)",
-                            boxShadow:
-                              "0 0 8px rgba(0,0,0,.7)",
-                          }}
-                        >
-                          {avatar ? (
-                            <img
-                              src={avatar}
-                              alt=""
-                              style={{
-                                width: "100%",
-                                height: "100%",
-                                objectFit: "cover",
-                              }}
-                            />
-                          ) : null}
-                        </div>
-                        <div
-                          style={{
-                            color: "#ffcf57",
-                            fontWeight: 700,
-                          }}
-                        >
-                          {f2(r.avg3)}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                        <ResponsiveContainer width="100%" height={230}>
+                          <BarChart data={chunk}>
+                            <defs>
+                              {chunk.map((b) =>
+                                b.avatar ? (
+                                  <pattern
+                                    key={`pat-${b.pid}`}
+                                    id={`barAvatar-${b.pid}`}
+                                    patternUnits="objectBoundingBox"
+                                    width={1}
+                                    height={1}
+                                  >
+                                    {/* avatar très zoomé + flou léger */}
+                                    <image
+                                      href={b.avatar}
+                                      x={-0.6}
+                                      y={-0.2}
+                                      width={2.2}
+                                      height={1.6}
+                                      preserveAspectRatio="xMidYMid slice"
+                                      style={{ filter: "blur(1.5px)" }}
+                                    />
+                                    {/* voile couleur pour fondre l'image dans la barre */}
+                                    <rect
+                                      x={0}
+                                      y={0}
+                                      width={1}
+                                      height={1}
+                                      fill={b.color}
+                                      opacity={0.45}
+                                    />
+                                  </pattern>
+                                ) : null
+                              )}
+                            </defs>
 
-                <div
-                  style={{
-                    marginTop: 4,
-                    fontSize: 10,
-                    opacity: 0.75,
-                    textAlign: "center",
-                  }}
-                >
-                  Hauteur de barre = moyenne de points par volée (Moy./3D) pour
-                  chaque joueur.
-                </div>
+                            <XAxis dataKey="name" />
+                            <YAxis />
+                            <Tooltip />
+
+                            <Bar
+                              dataKey="avg3"
+                              radius={[6, 6, 0, 0]}
+                              label={renderGlowLabel}
+                            >
+                              {chunk.map((entry) => (
+                                <Cell
+                                  key={`cell-${entry.pid}`}
+                                  fill={
+                                    entry.avatar
+                                      ? `url(#barAvatar-${entry.pid})`
+                                      : entry.color
+                                  }
+                                  stroke={entry.color}
+                                  strokeWidth={1}
+                                />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ))}
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontSize: 10,
+                        opacity: 0.7,
+                        textAlign: "center",
+                      }}
+                    >
+                      Hauteur de la barre = Moyenne de points par volée
+                      (Moy./3D)
+                    </div>
+                  </>
+                ) : (
+                  <ChartPlaceholder />
+                )}
               </ChartCard>
             </div>
           </Accordion>
@@ -1329,11 +1190,7 @@ function Inner({
             {onReplay && (
               <button
                 onClick={onReplay}
-                style={btn(
-                  "transparent",
-                  "#ddd",
-                  "#ffffff22"
-                )}
+                style={btn("transparent", "#ddd", "#ffffff22")}
               >
                 Rejouer la manche
               </button>
@@ -1351,11 +1208,7 @@ function Inner({
             )}
             <button
               onClick={onClose}
-              style={btn(
-                "transparent",
-                "#ddd",
-                "#ffffff22"
-              )}
+              style={btn("transparent", "#ddd", "#ffffff22")}
             >
               Fermer
             </button>
@@ -1381,115 +1234,80 @@ function SummaryRows({
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+        gridTemplateColumns:
+          "repeat(auto-fit, minmax(140px, 1fr))",
         gap: 8,
       }}
     >
       <KPIBlock
         label="Vainqueur"
         color="gold"
-        value={
-          winnerName ? (
-            <span style={{ fontWeight: 900 }}>{winnerName}</span>
-          ) : (
-            "—"
-          )
-        }
+        playerName={winnerName || "—"}
+        stat=""
       />
 
       <KPIBlock
-        label="Min Darts"
+        label="Min darts"
         color="green"
-        value={
-          minDartsRow ? (
-            <span>
-              <span style={{ fontWeight: 800 }}>{minDartsRow.name}</span>
-              <span style={{ opacity: 0.8 }}> — {minDartsRow.darts}</span>
-            </span>
-          ) : (
-            "—"
-          )
+        playerName={minDartsRow?.name || "—"}
+        stat={
+          minDartsRow?.darts != null
+            ? String(minDartsRow.darts)
+            : "—"
         }
       />
 
       <KPIBlock
         label="Best Moy./3D"
         color="blue"
-        value={
-          bestAvgRow ? (
-            <span>
-              <span style={{ fontWeight: 800 }}>{bestAvgRow.name}</span>
-              <span style={{ opacity: 0.8 }}> — {fmt2(bestAvgRow.avg3)}</span>
-            </span>
-          ) : (
-            "—"
-          )
+        playerName={bestAvgRow?.name || "—"}
+        stat={
+          bestAvgRow
+            ? fmt2(bestAvgRow.avg3)
+            : "—"
         }
       />
 
       <KPIBlock
-        label="Best Volée"
+        label="Best volée"
         color="pink"
-        value={
-          bestVolRow ? (
-            <span>
-              <span style={{ fontWeight: 800 }}>{bestVolRow.name}</span>
-              <span style={{ opacity: 0.8 }}> — {bestVolRow.best}</span>
-            </span>
-          ) : (
-            "—"
-          )
+        playerName={bestVolRow?.name || "—"}
+        stat={
+          bestVolRow?.best != null
+            ? String(bestVolRow.best)
+            : "—"
         }
       />
 
       <KPIBlock
         label="Best %DB"
         color="purple"
-        value={
-          bestPDBRow ? (
-            <span>
-              <span style={{ fontWeight: 800 }}>{bestPDBRow.name}</span>
-              <span style={{ opacity: 0.8 }}> — {bestPDBRow.pDB}</span>
-            </span>
-          ) : (
-            "—"
-          )
-        }
+        playerName={bestPDBRow?.name || "—"}
+        stat={bestPDBRow?.pDB || "—"}
       />
 
       <KPIBlock
         label="Best %TP"
         color="orange"
-        value={
-          bestPTPRow ? (
-            <span>
-              <span style={{ fontWeight: 800 }}>{bestPTPRow.name}</span>
-              <span style={{ opacity: 0.8 }}> — {bestPTPRow.pTP}</span>
-            </span>
-          ) : (
-            "—"
-          )
-        }
+        playerName={bestPTPRow?.name || "—"}
+        stat={bestPTPRow?.pTP || "—"}
       />
 
       <KPIBlock
-        label="Best BULL"
+        label="Best Bull"
         color="cyan"
-        value={
-          bestBullRow ? (
-            <span>
-              <span style={{ fontWeight: 800 }}>{bestBullRow.name}</span>
-              <span style={{ opacity: 0.8 }}>
-                {" "}
-                — {bestBullRow.bulls}{" "}
-                <span style={{ fontSize: 11 }}>
-                  ({bestBullRow.ob} + {bestBullRow.ib})
-                </span>
-              </span>
-            </span>
-          ) : (
-            "—"
-          )
+        playerName={bestBullRow?.name || "—"}
+        stat={
+          bestBullRow?.bulls != null
+            ? String(bestBullRow.bulls)
+            : "—"
+        }
+        extra={
+          bestBullRow
+            ? `OB ${bestBullRow.ob ?? 0} + IB ${
+                bestBullRow.ib ?? 0
+              }`
+            : ""
         }
       />
     </div>
@@ -1512,8 +1330,7 @@ function Accordion({
       style={{
         marginTop: 8,
         borderRadius: 10,
-        border:
-          "1px solid rgba(255,255,255,.08)",
+        border: "1px solid rgba(255,255,255,.08)",
         background:
           "linear-gradient(180deg, rgba(28,28,32,.65), rgba(18,18,20,.65))",
       }}
@@ -1535,7 +1352,11 @@ function Accordion({
           fontSize: 12,
         }}
       >
-        <span style={{ color: "#f0b12a" }}>
+        <span
+          style={{
+            color: "var(--dc-accent, #f0b12a)",
+          }}
+        >
           {title}
         </span>
         <div style={{ flex: 1 }} />
@@ -1544,8 +1365,7 @@ function Accordion({
             width: 22,
             height: 22,
             borderRadius: 5,
-            border:
-              "1px solid rgba(255,255,255,.12)",
+            border: "1px solid rgba(255,255,255,.12)",
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
@@ -1559,8 +1379,7 @@ function Accordion({
       <div
         style={{
           overflow: "hidden",
-          transition:
-            "grid-template-rows 180ms ease",
+          transition: "grid-template-rows 180ms ease",
           display: "grid",
           gridTemplateRows: open ? "1fr" : "0fr",
         }}
@@ -1568,9 +1387,7 @@ function Accordion({
         <div
           style={{
             overflow: "hidden",
-            padding: open
-              ? "0 10px 10px"
-              : "0 10px 0",
+            padding: open ? "0 10px 10px" : "0 10px 0",
           }}
         >
           {children}
@@ -1580,55 +1397,11 @@ function Accordion({
   );
 }
 
-function useSizeReady<T extends HTMLElement>(
-  minW = 220,
-  minH = 220
-) {
-  const ref = React.useRef<T | null>(null);
-  const [ready, setReady] = React.useState(false);
-  React.useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const check = () => {
-      const w = el.clientWidth;
-      const h = el.clientHeight;
-      setReady(w >= minW && h >= minH);
-    };
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [minW, minH]);
-  return { ref, ready };
-}
-
-function ChartMountGuard({
-  children,
-  minW = 220,
-  minH = 220,
-}: {
-  children: () => React.ReactNode;
-  minW?: number;
-  minH?: number;
-}) {
-  const { ref, ready } =
-    useSizeReady<HTMLDivElement>(minW, minH);
-  return (
-    <div
-      ref={ref}
-      style={{ width: "100%", minHeight: minH }}
-    >
-      {ready ? children() : <ChartPlaceholder />}
-    </div>
-  );
-}
-
 function ChartCard({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={{
-        border:
-          "1px solid rgba(255,255,255,.08)",
+        border: "1px solid rgba(255,255,255,.08)",
         borderRadius: 10,
         background: "rgba(255,255,255,.03)",
         padding: 6,
@@ -1666,8 +1439,7 @@ const tableBase: React.CSSProperties = {
   fontSize: 12,
 };
 const rowLine: React.CSSProperties = {
-  borderBottom:
-    "1px solid rgba(255,255,255,.06)",
+  borderBottom: "1px solid rgba(255,255,255,.06)",
 };
 
 function TH({ children }: { children: React.ReactNode }) {
@@ -1677,7 +1449,7 @@ function TH({ children }: { children: React.ReactNode }) {
         textAlign: "left",
         padding: "6px 8px",
         fontSize: 11,
-        color: "#ffcf57",
+        color: "var(--dc-accent, #ffcf57)",
         fontWeight: 900,
         whiteSpace: "nowrap",
       }}
@@ -1706,7 +1478,7 @@ function TDStrong({ children }: { children: React.ReactNode }) {
         padding: "6px 8px",
         fontSize: 12,
         fontWeight: 800,
-        color: "#ffcf57",
+        color: "var(--dc-accent, #ffcf57)",
         whiteSpace: "nowrap",
       }}
     >
@@ -1715,55 +1487,18 @@ function TDStrong({ children }: { children: React.ReactNode }) {
   );
 }
 
-function KV({
-  label,
-  value,
-  right,
-  strong,
-}: {
-  label: string;
-  value: React.ReactNode;
-  right?: boolean;
-  strong?: boolean;
-}) {
-  return (
-    <div
-      style={{
-        border:
-          "1px solid rgba(255,255,255,.08)",
-        borderRadius: 8,
-        padding: "6px 8px",
-        background: "rgba(255,255,255,.03)",
-        display: "flex",
-        gap: 8,
-        justifyContent: right
-          ? "space-between"
-          : "flex-start",
-        fontSize: 12,
-      }}
-    >
-      <div style={{ opacity: 0.8 }}>{label}</div>
-      <div
-        style={{
-          marginLeft: "auto",
-          fontWeight: strong ? 900 : 700,
-          color: "#ffcf57",
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
 // --- Nouveau helper KPI lumineux ---
 function KPIBlock({
   label,
-  value,
+  playerName,
+  stat,
   color,
+  extra,
 }: {
   label: string;
-  value: React.ReactNode;
+  playerName: string;
+  stat: string;
+  extra?: string;
   color:
     | "gold"
     | "green"
@@ -1860,7 +1595,7 @@ function KPIBlock({
     >
       <div
         style={{
-          opacity: 0.8,
+          opacity: 0.85,
           letterSpacing: 0.4,
           textTransform: "uppercase",
           fontSize: 10,
@@ -1871,18 +1606,73 @@ function KPIBlock({
       <div
         style={{
           marginTop: 4,
-          color: c.text,
-          fontWeight: 800,
-          fontSize: 13,
           display: "flex",
           alignItems: "center",
-          minHeight: 18,
+          gap: 6,
+          minHeight: 20,
         }}
       >
-        {value}
+        <div
+          style={{
+            fontWeight: 800,
+            color: c.text,
+            fontSize: 12,
+            flex: 1,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {playerName || "—"}
+        </div>
+        {stat && (
+          <div
+            style={{
+              minWidth: 36,
+              padding: "3px 7px",
+              borderRadius: 999,
+              background: "rgba(0,0,0,.35)",
+              border: `1px solid ${c.border}`,
+              textAlign: "center",
+              fontWeight: 900,
+              fontSize: 11,
+              color: c.text,
+            }}
+          >
+            {stat}
+          </div>
+        )}
       </div>
+      {extra && (
+        <div
+          style={{
+            marginTop: 2,
+            fontSize: 10,
+            opacity: 0.75,
+          }}
+        >
+          {extra}
+        </div>
+      )}
     </div>
   );
+}
+
+function pillBtn(active: boolean): React.CSSProperties {
+  return {
+    borderRadius: 999,
+    border: active
+      ? "1px solid var(--dc-accent, #f0b12a)"
+      : "1px solid rgba(255,255,255,.18)",
+    padding: "3px 9px",
+    background: active
+      ? "rgba(240,177,42,.18)"
+      : "rgba(0,0,0,.3)",
+    color: active ? "#ffe2a0" : "#f0f0f0",
+    fontWeight: active ? 800 : 600,
+    fontSize: 11,
+    cursor: "pointer",
+  };
 }
 
 function btn(
@@ -1891,8 +1681,7 @@ function btn(
   border?: string
 ): React.CSSProperties {
   return {
-    appearance:
-      "none" as React.CSSProperties["appearance"],
+    appearance: "none",
     padding: "8px 12px",
     borderRadius: 10,
     border: `1px solid ${border ?? "transparent"}`,
