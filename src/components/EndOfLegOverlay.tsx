@@ -121,15 +121,26 @@ function remainingFromNew(leg: LegStats, pid: string) {
   const st: any = leg.perPlayer?.[pid] ?? {};
   const start = n((leg as any).startScore ?? (leg as any).start ?? 501);
 
-  // 0) si on a un remaining explicite, on le prend tel quel
-  if (typeof st.remaining === "number" && isFinite(st.remaining)) {
-    return Math.max(0, Math.round(st.remaining));
+  // 🔹 1) priorité aux valeurs "officielles" de remaining
+  //    - par joueur : perPlayer[pid].remaining
+  //    - au niveau racine : leg.remaining[pid]
+  const perPlayerRem = st.remaining;
+  const rootRem =
+    (leg as any).remaining && typeof (leg as any).remaining[pid] === "number"
+      ? (leg as any).remaining[pid]
+      : undefined;
+
+  if (typeof perPlayerRem === "number" && isFinite(perPlayerRem)) {
+    return Math.max(0, Math.round(perPlayerRem));
+  }
+  if (typeof rootRem === "number" && isFinite(rootRem)) {
+    return Math.max(0, Math.round(rootRem));
   }
 
-  // 1) points directs si dispo
+  // 🔹 2) points directs si dispo
   let scored = n(st.totalScored ?? st.points ?? st.pointsSum);
 
-  // 2) Fallback: avg3 * volées
+  // 🔹 3) Fallback: avg3 * volées
   if (!scored) {
     const avg3 =
       typeof st.avg3 === "number" && isFinite(st.avg3) ? st.avg3 : 0;
@@ -140,6 +151,8 @@ function remainingFromNew(leg: LegStats, pid: string) {
   }
 
   const approx = Math.max(0, start - scored);
+
+  // 🔹 4) on arrondit toujours à l'entier → plus de 340.98
   return Math.max(0, Math.round(approx));
 }
 
@@ -183,10 +196,52 @@ function impactsFromNew(leg: LegStats, pid: string) {
 
 function checkoutFromNew(leg: LegStats, pid: string) {
   const st: any = leg.perPlayer?.[pid] ?? {};
-  const co = st.co || {};
-  const count = n(co.coHits ?? co.hits ?? 0);
-  const avg = n(co.avgCODarts ?? co.avgDarts ?? 0);
-  const hi = n(co.highestCO ?? co.best ?? 0);
+
+  // On accepte plusieurs conventions possibles :
+  // - st.co = { hits, attempts, dartsTotal, avgDarts, highestCO / best }
+  // - ou des champs à plat : coHits, coAttempts, coDartsTotal, coAvgDarts, highestCO, bestCO…
+  const co = st.co || st.checkout || {};
+
+  const count = n(
+    co.coHits ??
+      co.hits ??
+      st.coHits ??
+      st.checkoutHits ??
+      st.co_count ??
+      0
+  );
+
+  const dartsTotal = n(
+    co.coDartsTotal ??
+      co.dartsTotal ??
+      st.coDartsTotal ??
+      st.checkoutDartsTotal ??
+      st.co_darts_total ??
+      0
+  );
+
+  let avg = n(
+    co.avgCODarts ??
+      co.avgDarts ??
+      st.coAvgDarts ??
+      st.checkoutAvgDarts ??
+      st.co_avg_darts ??
+      0
+  );
+
+  if (!avg && count && dartsTotal) {
+    avg = dartsTotal / count;
+  }
+
+  const hi = n(
+    co.highestCO ??
+      co.best ??
+      st.highestCO ??
+      st.bestCO ??
+      st.coBest ??
+      0
+  );
+
   return { coCount: count, coDartsAvg: avg, highestCO: hi };
 }
 
@@ -981,35 +1036,35 @@ function Inner({
 
           {/* Stats Darts */}
           <Accordion title="Stats Darts">
-            <div style={{ overflowX: "auto" }}>
-              <table style={tableBase}>
-                <thead>
-                  <tr>
-                    <TH>Joueur</TH>
-                    <TH>CO</TH>
-                    <TH>Darts CO</TH>
-                    <TH>DB</TH>
-                    <TH>TP</TH>
-                    <TH>Bull</TH>
-                    <TH>DBull</TH>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <tr key={`darts-${r.pid}`} style={rowLine}>
-                      <TDStrong>{r.name}</TDStrong>
-                      <TD>{r.coCount}</TD>
-                      <TD>{f2(r.coDartsAvg)}</TD>
-                      <TD>{r.doubles}</TD>
-                      <TD>{r.triples}</TD>
-                      <TD>{r.ob}</TD>
-                      <TD>{r.ib}</TD>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Accordion>
+  <div style={{ overflowX: "auto" }}>
+    <table style={tableBase}>
+      <thead>
+        <tr>
+          <TH>Joueur</TH>
+          <TH>CO</TH>
+          <TH>Darts CO</TH>
+          <TH>DB</TH>
+          <TH>TP</TH>
+          <TH>Bull</TH>
+          <TH>DBull</TH>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={`darts-${r.pid}`} style={rowLine}>
+            <TDStrong>{r.name}</TDStrong>
+            <TD>{r.coCount}</TD>
+            <TD>{f2(r.coDartsAvg)}</TD>
+            <TD>{r.doubles}</TD>
+            <TD>{r.triples}</TD>
+            <TD>{r.ob}</TD>
+            <TD>{r.ib}</TD>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+</Accordion>
 
           {/* Stats globales */}
           <Accordion title="Stats globales">

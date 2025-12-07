@@ -11,7 +11,7 @@ import React from "react";
 import ProfileAvatar from "../components/ProfileAvatar";
 import ProfileStarRing from "../components/ProfileStarRing";
 import type { Store, Profile } from "../lib/types";
-import { getBasicProfileStats, type BasicProfileStats, } from "../lib/statsBridge";
+import { getBasicProfileStats, type BasicProfileStats } from "../lib/statsBridge";
 import { getBasicProfileStatsSync } from "../lib/statsLiteIDB";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang, type Lang } from "../contexts/LangContext";
@@ -441,9 +441,27 @@ export default function Profiles({
                       }}
                       onQuit={handleQuit}
                       onEdit={(n, f) => {
-                        if (n && n !== active.name)
+                        if (n && n !== active.name) {
                           renameProfile(active.id, n);
-                        if (f) changeAvatar(active.id, f);
+                        }
+                        if (f) {
+                          // ⭐ 1) avatar local (immédiat)
+                          changeAvatar(active.id, f);
+
+                          // ⭐ 2) avatar ONLINE (Supabase Storage + avatar_url)
+                          if (auth.status === "signed_in") {
+                            (async () => {
+                              try {
+                                await (auth as any).updateAvatar?.(f);
+                              } catch (err) {
+                                console.warn(
+                                  "[profiles] updateAvatar online error:",
+                                  err
+                                );
+                              }
+                            })();
+                          }
+                        }
                       }}
                       onOpenStats={() => {
                         if (!active?.id) return;
@@ -470,36 +488,36 @@ export default function Profiles({
                 </Card>
 
                 <Card
-      title={t(
-        "profiles.private.title",
-        "Informations personnelles"
-      )}
-    >
-      {/* 🔗 Profil ONLINE (Supabase) : infos qui reviennent après reconnexion */}
-      <OnlineProfileForm />
+                  title={t(
+                    "profiles.private.title",
+                    "Informations personnelles"
+                  )}
+                >
+                  {/* 🔗 Profil ONLINE (Supabase) : infos qui reviennent après reconnexion */}
+                  <OnlineProfileForm />
 
-      {/* petite séparation visuelle */}
-      <div
-        style={{
-          margin: "16px 0 10px",
-          opacity: 0.4,
-          borderTop: `1px solid ${theme.borderSoft}`,
-        }}
-      />
+                  {/* petite séparation visuelle */}
+                  <div
+                    style={{
+                      margin: "16px 0 10px",
+                      opacity: 0.4,
+                      borderTop: `1px solid ${theme.borderSoft}`,
+                    }}
+                  />
 
-      {/* Bloc historique/local + sécurité (comme avant) */}
-      <PrivateInfoBlock
-        active={active}
-        onPatch={patchActivePrivateInfo}
-        onSave={handlePrivateInfoSave}
-      />
+                  {/* Bloc historique/local + sécurité (comme avant) */}
+                  <PrivateInfoBlock
+                    active={active}
+                    onPatch={patchActivePrivateInfo}
+                    onSave={handlePrivateInfoSave}
+                  />
 
-      {/* 🔥 Préférences joueur (thème + langue) */}
-      <PlayerPrefsBlock
-        active={active}
-        onPatch={patchActivePrivateInfo}
-      />
-    </Card>
+                  {/* 🔥 Préférences joueur (thème + langue) */}
+                  <PlayerPrefsBlock
+                    active={active}
+                    onPatch={patchActivePrivateInfo}
+                  />
+                </Card>
               </>
             )}
 
@@ -2291,56 +2309,56 @@ function LocalProfilesRefonte({
           {current && (
             <>
               {/* Médaillon central GROS + StarRing alimenté par avg3 */}
-<div
-  style={{
-    display: "flex",
-    justifyContent: "center",
-    marginBottom: 10,
-  }}
->
-  <div
-    style={{
-      position: "relative",
-      width: MEDALLION,
-      height: MEDALLION,
-      borderRadius: "50%",
-      padding: BORDER / 2,
-      background: `linear-gradient(135deg, ${primary}, ${primary}55)`,
-      boxShadow: `0 0 30px ${primary}66, inset 0 0 14px rgba(0,0,0,.7)`,
-    }}
-  >
-    {/* Couronne d’étoiles colorée (même logique que Home) */}
-    <div
-      aria-hidden
-      style={{
-        position: "absolute",
-        left: -(STAR / 2),
-        top: -(STAR / 2),
-        width: MEDALLION + STAR,
-        height: MEDALLION + STAR,
-        pointerEvents: "none",
-      }}
-    >
-      <ProfileStarRing
-        anchorSize={MEDALLION}
-        avg3d={avg3}
-        gapPx={-1}
-        starSize={STAR}
-        stepDeg={10}
-        rotationDeg={0}
-        animateGlow={true}
-      />
-    </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  marginBottom: 10,
+                }}
+              >
+                <div
+                  style={{
+                    position: "relative",
+                    width: MEDALLION,
+                    height: MEDALLION,
+                    borderRadius: "50%",
+                    padding: BORDER / 2,
+                    background: `linear-gradient(135deg, ${primary}, ${primary}55)`,
+                    boxShadow: `0 0 30px ${primary}66, inset 0 0 14px rgba(0,0,0,.7)`,
+                  }}
+                >
+                  {/* Couronne d’étoiles colorée (même logique que Home) */}
+                  <div
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      left: -(STAR / 2),
+                      top: -(STAR / 2),
+                      width: MEDALLION + STAR,
+                      height: MEDALLION + STAR,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    <ProfileStarRing
+                      anchorSize={MEDALLION}
+                      avg3d={avg3}
+                      gapPx={-1}
+                      starSize={STAR}
+                      stepDeg={10}
+                      rotationDeg={0}
+                      animateGlow={true}
+                    />
+                  </div>
 
-    {/* Avatar au centre, sans étoiles internes */}
-    <ProfileAvatar
-      size={AVATAR - 8}
-      dataUrl={current.avatarDataUrl}
-      label={current.name?.[0]?.toUpperCase() || "?"}
-      showStars={false}
-    />
-  </div>
-</div>
+                  {/* Avatar au centre, sans étoiles internes */}
+                  <ProfileAvatar
+                    size={AVATAR - 8}
+                    dataUrl={current.avatarDataUrl}
+                    label={current.name?.[0]?.toUpperCase() || "?"}
+                    showStars={false}
+                  />
+                </div>
+              </div>
 
               {/* Nom + drapeau pays */}
               <div style={{ textAlign: "center", marginBottom: 10 }}>

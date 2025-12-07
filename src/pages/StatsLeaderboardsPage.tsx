@@ -3,11 +3,8 @@
 // src/pages/StatsLeaderboardsPage.tsx
 // Page CLASSEMENTS globale (tous profils)
 // - Accès depuis StatsShell via go("stats_leaderboards")
-// - Scope : LOCAL / ONLINE   (V1 : même source = store.history)
-// - Modes : X01 MULTI / CRICKET / KILLER / SHANGHAI / BATTLE ROYALE / HORLOGE
-// - Périodes : J / S / M / Y / All / Tout (V1 : visuel, pas encore de filtrage date)
-// - Carrousel compact avec flèches (mode + métrique)
-// - Classement global par mode / stat, basé sur store.history (summary/perPlayer)
+// - V1 : on agrège TOUT l'historique (IndexedDB History + store.history)
+//   => au moins "matchs joués" / "victoires" ne sont plus à 0.
 // =============================================================
 
 import * as React from "react";
@@ -15,6 +12,7 @@ import type { Store, Profile } from "../lib/types";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import ProfileAvatar from "../components/ProfileAvatar";
+import { History } from "../lib/history";
 
 type Props = {
   store: Store;
@@ -54,7 +52,7 @@ type Row = {
   bestCheckout: number;
 };
 
-// ------ DEFS MODE + METRICS -----------------------------------
+// ------ DEFS MODE + METRICS (visuel uniquement pour l’instant) ---
 
 const MODE_DEFS: {
   id: LeaderboardMode;
@@ -93,22 +91,9 @@ const MODE_DEFS: {
   },
 ];
 
-// --------- Helpers AGGREGATION À PARTIR DE store.history ------
+// --------- Helpers AGGREGATION À PARTIR D’UN TABLEAU history ------
 
-// mappe rec.kind → LeaderboardMode
-function kindToMode(kind: string | null | undefined): LeaderboardMode | null {
-  if (!kind) return null;
-  const k = kind.toLowerCase();
-  if (k.startsWith("x01") || k.includes("x01")) return "x01_multi";
-  if (k.includes("cricket")) return "cricket";
-  if (k.includes("killer")) return "killer";
-  if (k.includes("shanghai")) return "shanghai";
-  if (k.includes("battle")) return "battle_royale";
-  if (k.includes("clock") || k.includes("horloge")) return "clock";
-  return null;
-}
-
-// récupère un map per-player à partir de summary
+// extrait un map per-player à partir de summary
 function extractPerPlayerSummary(summary: any): Record<string, any> {
   if (!summary) return {};
   const result: Record<string, any> = {};
@@ -142,46 +127,24 @@ type ExtraInfo = {
   avatarDataUrl?: string | null;
 };
 
-function looksLikeX01Match(summary: any): boolean {
-  if (!summary) return false;
-  const per = extractPerPlayerSummary(summary);
-  const vals = Object.values(per);
-  if (!vals.length) return false;
-  const sample: any = vals[0] || {};
-  const avg3 = sample.avg3 ?? sample.moy3 ?? sample.avg ?? sample.avg3d;
-  const bv = sample.bestVisit ?? sample.bv ?? sample.bestVisit3 ?? sample.bv3;
-  const co =
-    sample.bestCheckout ?? sample.bestCo ?? sample.coBest ?? sample.co;
-  return (
-    (typeof avg3 === "number" && avg3 > 0) ||
-    (typeof bv === "number" && bv > 0) ||
-    (typeof co === "number" && co > 0)
-  );
-}
-
 function computeRowsFromHistory(
-  store: Store,
+  history: any[],
   profiles: Profile[],
-  mode: LeaderboardMode,
-  scope: Scope
+  _mode: LeaderboardMode,
+  _scope: Scope
 ): Row[] {
-  const history: any[] = (store.history || []) as any[];
-
   if (import.meta.env.DEV) {
-    const kinds = Array.from(
-      new Set(
-        history.map(
-          (r) => r?.kind || r?.payload?.kind || r?.payload?.mode || "??"
-        )
-      )
-    );
-    console.log("[Leaderboards] history size =", history.length, "; kinds:", kinds);
+    console.log("[Leaderboards] history size =", history.length);
+    if (history[0]) {
+      console.log("[Leaderboards] sample rec =", history[0]);
+    }
   }
 
   const aggByPlayer: Record<string, Agg> = {};
   const infoByPlayer: Record<string, ExtraInfo> = {};
   const profileById: Record<string, Profile> = {};
 
+  // seed avec tous les profils (apparaitront même à 0)
   for (const p of profiles) {
     profileById[p.id] = p;
     aggByPlayer[p.id] = {
@@ -201,24 +164,92 @@ function computeRowsFromHistory(
   for (const rec of history) {
     if (!rec) continue;
 
-    const rawKind = rec.kind || rec.payload?.kind || rec.payload?.mode || null;
-    let recMode = kindToMode(rawKind);
+    const winnerId =
+      rec.winnerId ||
+      rec.payload?.winnerId ||
+      rec.summary?.winnerId ||
+      rec.payload?.summary?.winnerId ||
+      null;
 
     const summary = rec.summary || rec.payload?.summary || null;
     const per = extractPerPlayerSummary(summary);
 
-    if (!recMode && mode === "x01_multi" && looksLikeX01Match(summary)) {
-      recMode = "x01_multi";
+    // 1) summary.detailedByPlayer / perPlayer
+    if (per && Object.keys(per).length > 0) {
+      for (const key of Object.keys(per)) {
+        const det: any = per[key] || {};
+        const pid: string =
+          det.profileId || det.playerId || det.id || key;
+
+        if (!pid) continue;
+
+        if (!aggByPlayer[pid]) {
+          aggByPlayer[pid] = {
+            wins: 0,
+            matches: 0,
+            avg3Sum: 0,
+            avg3Count: 0,
+            bestVisit: 0,
+            bestCheckout: 0,
+          };
+        }
+        if (!infoByPlayer[pid]) {
+          infoByPlayer[pid] = {
+            name: det.name || "",
+            avatarDataUrl: det.avatarDataUrl ?? null,
+          };
+        }
+
+        const agg = aggByPlayer[pid];
+
+        // matches & wins
+        agg.matches += 1;
+        if (winnerId && winnerId === pid) {
+          agg.wins += 1;
+        }
+
+        // avg3
+        const avg3Candidate =
+          det.avg3 ?? det.moy3 ?? det.avg ?? det.avg3d ?? 0;
+        if (typeof avg3Candidate === "number" && avg3Candidate > 0) {
+          agg.avg3Sum += avg3Candidate;
+          agg.avg3Count += 1;
+        }
+
+        // best visit
+        const bvCandidate =
+          det.bestVisit ?? det.bv ?? det.bestVisit3 ?? det.bv3 ?? 0;
+        if (typeof bvCandidate === "number" && bvCandidate > 0) {
+          if (bvCandidate > agg.bestVisit) agg.bestVisit = bvCandidate;
+        }
+
+        // best checkout
+        const coCandidate =
+          det.bestCheckout ??
+          det.bestCo ??
+          det.coBest ??
+          det.co ??
+          0;
+        if (typeof coCandidate === "number" && coCandidate > 0) {
+          if (coCandidate > agg.bestCheckout) agg.bestCheckout = coCandidate;
+        }
+      }
+
+      continue; // on a tout pris via summary, pas besoin du fallback
     }
 
-    if (recMode !== mode) continue;
-    if (!per || !Object.keys(per).length) continue;
+    // 2) FALLBACK : aucun summary par joueur → on se rabat sur rec.players
+    const playersArr: any[] = Array.isArray(rec.players)
+      ? rec.players
+      : Array.isArray(rec.payload?.players)
+      ? rec.payload.players
+      : [];
 
-    for (const key of Object.keys(per)) {
-      const det: any = per[key] || {};
-      const pid: string =
-        det.profileId || det.playerId || det.id || key;
+    if (!playersArr.length) continue;
 
+    for (const pl of playersArr) {
+      const pid: string | undefined =
+        pl.id || pl.profileId || pl.playerId || pl._id;
       if (!pid) continue;
 
       if (!aggByPlayer[pid]) {
@@ -231,45 +262,18 @@ function computeRowsFromHistory(
           bestCheckout: 0,
         };
       }
+
       if (!infoByPlayer[pid]) {
         infoByPlayer[pid] = {
-          name: det.name || "",
-          avatarDataUrl: det.avatarDataUrl ?? null,
+          name: pl.name || "",
+          avatarDataUrl: pl.avatarDataUrl ?? null,
         };
       }
 
       const agg = aggByPlayer[pid];
-
-      // matches & wins
       agg.matches += 1;
-      if (rec.winnerId && rec.winnerId === pid) {
+      if (winnerId && winnerId === pid) {
         agg.wins += 1;
-      }
-
-      // avg3
-      const avg3Candidate =
-        det.avg3 ?? det.moy3 ?? det.avg ?? det.avg3d ?? 0;
-      if (typeof avg3Candidate === "number" && avg3Candidate > 0) {
-        agg.avg3Sum += avg3Candidate;
-        agg.avg3Count += 1;
-      }
-
-      // best visit
-      const bvCandidate =
-        det.bestVisit ?? det.bv ?? det.bestVisit3 ?? det.bv3 ?? 0;
-      if (typeof bvCandidate === "number" && bvCandidate > 0) {
-        if (bvCandidate > agg.bestVisit) agg.bestVisit = bvCandidate;
-      }
-
-      // best checkout
-      const coCandidate =
-        det.bestCheckout ??
-        det.bestCo ??
-        det.coBest ??
-        det.co ??
-        0;
-      if (typeof coCandidate === "number" && coCandidate > 0) {
-        if (coCandidate > agg.bestCheckout) agg.bestCheckout = coCandidate;
       }
     }
   }
@@ -317,6 +321,49 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
   const [mode, setMode] = React.useState<LeaderboardMode>("x01_multi");
   const [period, setPeriod] = React.useState<PeriodKey>("ALL");
 
+  // 🔥 nouvelle source : history local + IDB
+  const [historySource, setHistorySource] = React.useState<any[]>(
+    (store.history as any[]) || []
+  );
+
+  // garde en synchro avec store.history
+  React.useEffect(() => {
+    setHistorySource((store.history as any[]) || []);
+  }, [store.history]);
+
+  // charge TOUT l'historique depuis IndexedDB (History)
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const api: any = History as any;
+        let list: any[] = [];
+
+        if (typeof api.getAll === "function") {
+          list = await api.getAll();
+        } else if (typeof api.list === "function") {
+          list = await api.list();
+        } else if (typeof api.getAllSorted === "function") {
+          list = await api.getAllSorted();
+        }
+
+        if (alive && Array.isArray(list) && list.length) {
+          if (import.meta.env.DEV) {
+            console.log("[Leaderboards] IDB history size =", list.length);
+          }
+          setHistorySource(list);
+        }
+      } catch (err) {
+        if (import.meta.env.DEV) {
+          console.log("[Leaderboards] History IDB load error", err);
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const initialMetric =
     MODE_DEFS.find((m) => m.id === mode)?.metrics[0] ?? "wins";
   const [metric, setMetric] = React.useState<MetricKey>(initialMetric);
@@ -354,9 +401,15 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
     setMetric(metricList[newIndex]);
   };
 
+  // 🔥 ICI : on construit les lignes à partir de historySource
   const rows = React.useMemo(() => {
     if (!profiles.length) return [];
-    const baseRows = computeRowsFromHistory(store, profiles, mode, scope);
+    const baseRows = computeRowsFromHistory(
+      historySource,
+      profiles,
+      mode,
+      scope
+    );
 
     const value = (r: Row): number => {
       switch (metric) {
@@ -378,7 +431,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
     };
 
     return [...baseRows].sort((a, b) => value(b) - value(a));
-  }, [store.history, profiles, mode, scope, metric]);
+  }, [historySource, profiles, mode, scope, metric]);
 
   const hasData = rows.length > 0;
 
@@ -434,7 +487,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
         color: theme.text,
       }}
     >
-      {/* HEADER simple, sans avatar global */}
+      {/* HEADER simple */}
       <div
         style={{
           width: "100%",
@@ -542,7 +595,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
           })}
         </div>
 
-        {/* Carrousel mode : flèches + mode courant */}
+        {/* Carrousel mode : juste visuel pour l'instant */}
         <div
           style={{
             display: "flex",
