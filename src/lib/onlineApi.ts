@@ -31,9 +31,19 @@ export type LoginPayload = {
   password?: string; // requis pour Supabase
 };
 
-export type UpdateProfilePayload = Partial<
-  Pick<OnlineProfile, "displayName" | "avatarUrl" | "country">
->;
+// PATCH profil : on ajoute ici TOUTES les infos perso
+export type UpdateProfilePayload = {
+  displayName?: string;
+  avatarUrl?: string;
+  country?: string;
+  surname?: string;
+  firstName?: string;
+  lastName?: string;
+  birthDate?: string; // "YYYY-MM-DD"
+  city?: string;
+  email?: string;
+  phone?: string;
+};
 
 export type UploadMatchPayload = Omit<
   OnlineMatch,
@@ -110,7 +120,7 @@ function saveAuthToLS(session: AuthSession | null) {
 // --------------------------------------------
 
 // Schéma actuel Supabase :
-// profiles_online (id, display_name, country, avatar_url, created_at, updated_at)
+// profiles_online (id, display_name, country, avatar_url, ... + colonnes perso)
 type SupabaseProfileRow = {
   id: string;
   display_name: string | null;
@@ -118,6 +128,14 @@ type SupabaseProfileRow = {
   country: string | null;
   created_at: string | null;
   updated_at: string | null;
+  // nouvelles colonnes infos perso (si présentes dans la table)
+  surname?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  birth_date?: string | null;
+  city?: string | null;
+  email?: string | null;
+  phone?: string | null;
   // on tolère bio / stats au cas où tu les ajoutes plus tard
   bio?: string | null;
   stats?: any | null;
@@ -131,7 +149,15 @@ function mapProfile(row: SupabaseProfileRow): OnlineProfile {
     displayName: row.display_name ?? "",
     avatarUrl: row.avatar_url ?? undefined,
     country: row.country ?? undefined,
-    // Ces champs restent pour compat si tu ajoutes les colonnes plus tard
+    // infos perso (on les met en camelCase dans OnlineProfile)
+    surname: row.surname ?? "",
+    firstName: row.first_name ?? "",
+    lastName: row.last_name ?? "",
+    birthDate: row.birth_date ?? null,
+    city: row.city ?? "",
+    email: row.email ?? "",
+    phone: row.phone ?? "",
+    // Champs compat
     bio: row.bio ?? "",
     stats:
       row.stats ?? {
@@ -143,7 +169,7 @@ function mapProfile(row: SupabaseProfileRow): OnlineProfile {
       },
     updatedAt: row.updated_at ? Date.parse(row.updated_at) : now(),
   };
-};
+}
 
 // Table d’historique actuelle : "matches_online"
 // (id, user_id, mode, payload, created_at)
@@ -399,13 +425,22 @@ async function updateProfile(
 
   const userId = session.user.id;
 
-  // On ne met à jour que les colonnes qui existent vraiment
+  // construction du patch DB → colonnes snake_case
   const dbPatch: any = {
     updated_at: new Date().toISOString(),
   };
+
   if (patch.displayName !== undefined) dbPatch.display_name = patch.displayName;
   if (patch.avatarUrl !== undefined) dbPatch.avatar_url = patch.avatarUrl;
   if (patch.country !== undefined) dbPatch.country = patch.country;
+
+  if (patch.surname !== undefined) dbPatch.surname = patch.surname;
+  if (patch.firstName !== undefined) dbPatch.first_name = patch.firstName;
+  if (patch.lastName !== undefined) dbPatch.last_name = patch.lastName;
+  if (patch.birthDate !== undefined) dbPatch.birth_date = patch.birthDate;
+  if (patch.city !== undefined) dbPatch.city = patch.city;
+  if (patch.email !== undefined) dbPatch.email = patch.email;
+  if (patch.phone !== undefined) dbPatch.phone = patch.phone;
 
   const { data, error } = await supabase
     .from("profiles_online")
@@ -594,7 +629,7 @@ export const onlineApi = {
   updateEmail,
   getCurrentSession,
 
-  // Profil
+  // Profil (toutes infos perso + avatar)
   updateProfile,
 
   // Matchs (stats / historique online)

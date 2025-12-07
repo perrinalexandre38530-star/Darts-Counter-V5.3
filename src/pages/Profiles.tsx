@@ -11,10 +11,7 @@ import React from "react";
 import ProfileAvatar from "../components/ProfileAvatar";
 import ProfileStarRing from "../components/ProfileStarRing";
 import type { Store, Profile } from "../lib/types";
-import {
-  getBasicProfileStats,
-  type BasicProfileStats,
-} from "../lib/statsBridge";
+import { getBasicProfileStats, type BasicProfileStats, } from "../lib/statsBridge";
 import { getBasicProfileStatsSync } from "../lib/statsLiteIDB";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang, type Lang } from "../contexts/LangContext";
@@ -26,6 +23,7 @@ import { sha256 } from "../lib/crypto";
 
 // 🔥 nouveau : bloc préférences joueur
 import PlayerPrefsBlock from "../components/profile/PlayerPrefsBlock";
+import OnlineProfileForm from "../components/OnlineProfileForm";
 
 type View = "menu" | "me" | "locals" | "friends";
 
@@ -472,23 +470,36 @@ export default function Profiles({
                 </Card>
 
                 <Card
-                  title={t(
-                    "profiles.private.title",
-                    "Informations personnelles"
-                  )}
-                >
-                  <PrivateInfoBlock
-                    active={active}
-                    onPatch={patchActivePrivateInfo}
-                    onSave={handlePrivateInfoSave}
-                  />
+      title={t(
+        "profiles.private.title",
+        "Informations personnelles"
+      )}
+    >
+      {/* 🔗 Profil ONLINE (Supabase) : infos qui reviennent après reconnexion */}
+      <OnlineProfileForm />
 
-                  {/* 🔥 Nouveau bloc : préférences du joueur */}
-                  <PlayerPrefsBlock
-                    active={active}
-                    onPatch={patchActivePrivateInfo}
-                  />
-                </Card>
+      {/* petite séparation visuelle */}
+      <div
+        style={{
+          margin: "16px 0 10px",
+          opacity: 0.4,
+          borderTop: `1px solid ${theme.borderSoft}`,
+        }}
+      />
+
+      {/* Bloc historique/local + sécurité (comme avant) */}
+      <PrivateInfoBlock
+        active={active}
+        onPatch={patchActivePrivateInfo}
+        onSave={handlePrivateInfoSave}
+      />
+
+      {/* 🔥 Préférences joueur (thème + langue) */}
+      <PlayerPrefsBlock
+        active={active}
+        onPatch={patchActivePrivateInfo}
+      />
+    </Card>
               </>
             )}
 

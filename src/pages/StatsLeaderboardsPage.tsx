@@ -97,8 +97,9 @@ const MODE_DEFS: {
 
 // mappe rec.kind → LeaderboardMode
 function kindToMode(kind: string | null | undefined): LeaderboardMode | null {
-  const k = (kind || "").toLowerCase();
-  if (k.startsWith("x01")) return "x01_multi";
+  if (!kind) return null;
+  const k = kind.toLowerCase();
+  if (k.startsWith("x01") || k.includes("x01")) return "x01_multi";
   if (k.includes("cricket")) return "cricket";
   if (k.includes("killer")) return "killer";
   if (k.includes("shanghai")) return "shanghai";
@@ -118,7 +119,7 @@ function extractPerPlayerSummary(summary: any): Record<string, any> {
 
   if (Array.isArray(summary.perPlayer)) {
     for (const p of summary.perPlayer) {
-      const pid = p.playerId || p.id;
+      const pid = p.playerId || p.profileId || p.id;
       if (!pid) continue;
       result[pid] = p;
     }
@@ -136,6 +137,28 @@ type Agg = {
   bestCheckout: number;
 };
 
+type ExtraInfo = {
+  name?: string;
+  avatarDataUrl?: string | null;
+};
+
+function looksLikeX01Match(summary: any): boolean {
+  if (!summary) return false;
+  const per = extractPerPlayerSummary(summary);
+  const vals = Object.values(per);
+  if (!vals.length) return false;
+  const sample: any = vals[0] || {};
+  const avg3 = sample.avg3 ?? sample.moy3 ?? sample.avg ?? sample.avg3d;
+  const bv = sample.bestVisit ?? sample.bv ?? sample.bestVisit3 ?? sample.bv3;
+  const co =
+    sample.bestCheckout ?? sample.bestCo ?? sample.coBest ?? sample.co;
+  return (
+    (typeof avg3 === "number" && avg3 > 0) ||
+    (typeof bv === "number" && bv > 0) ||
+    (typeof co === "number" && co > 0)
+  );
+}
+
 function computeRowsFromHistory(
   store: Store,
   profiles: Profile[],
@@ -144,9 +167,21 @@ function computeRowsFromHistory(
 ): Row[] {
   const history: any[] = (store.history || []) as any[];
 
-  // seed avec tous les profils pour qu'ils apparaissent même à 0
+  if (import.meta.env.DEV) {
+    const kinds = Array.from(
+      new Set(
+        history.map(
+          (r) => r?.kind || r?.payload?.kind || r?.payload?.mode || "??"
+        )
+      )
+    );
+    console.log("[Leaderboards] history size =", history.length, "; kinds:", kinds);
+  }
+
   const aggByPlayer: Record<string, Agg> = {};
+  const infoByPlayer: Record<string, ExtraInfo> = {};
   const profileById: Record<string, Profile> = {};
+
   for (const p of profiles) {
     profileById[p.id] = p;
     aggByPlayer[p.id] = {
@@ -157,33 +192,61 @@ function computeRowsFromHistory(
       bestVisit: 0,
       bestCheckout: 0,
     };
+    infoByPlayer[p.id] = {
+      name: p.name,
+      avatarDataUrl: (p as any).avatarDataUrl ?? null,
+    };
   }
 
   for (const rec of history) {
     if (!rec) continue;
 
-    // scope ONLINE : V1 → on ne filtre pas encore, on pourrait plus tard regarder un flag isOnline
-    const recMode = kindToMode(rec.kind || rec.payload?.kind || null);
-    if (!recMode || recMode !== mode) continue;
-
-    const players: any[] = Array.isArray(rec.players) ? rec.players : [];
-    if (!players.length) continue;
+    const rawKind = rec.kind || rec.payload?.kind || rec.payload?.mode || null;
+    let recMode = kindToMode(rawKind);
 
     const summary = rec.summary || rec.payload?.summary || null;
-    const perPlayerSummary = extractPerPlayerSummary(summary);
+    const per = extractPerPlayerSummary(summary);
 
-    for (const pl of players) {
-      const pid = pl.id;
-      if (!pid || !aggByPlayer[pid]) continue;
+    if (!recMode && mode === "x01_multi" && looksLikeX01Match(summary)) {
+      recMode = "x01_multi";
+    }
+
+    if (recMode !== mode) continue;
+    if (!per || !Object.keys(per).length) continue;
+
+    for (const key of Object.keys(per)) {
+      const det: any = per[key] || {};
+      const pid: string =
+        det.profileId || det.playerId || det.id || key;
+
+      if (!pid) continue;
+
+      if (!aggByPlayer[pid]) {
+        aggByPlayer[pid] = {
+          wins: 0,
+          matches: 0,
+          avg3Sum: 0,
+          avg3Count: 0,
+          bestVisit: 0,
+          bestCheckout: 0,
+        };
+      }
+      if (!infoByPlayer[pid]) {
+        infoByPlayer[pid] = {
+          name: det.name || "",
+          avatarDataUrl: det.avatarDataUrl ?? null,
+        };
+      }
 
       const agg = aggByPlayer[pid];
+
+      // matches & wins
       agg.matches += 1;
       if (rec.winnerId && rec.winnerId === pid) {
         agg.wins += 1;
       }
 
-      const det = perPlayerSummary[pid] || {};
-
+      // avg3
       const avg3Candidate =
         det.avg3 ?? det.moy3 ?? det.avg ?? det.avg3d ?? 0;
       if (typeof avg3Candidate === "number" && avg3Candidate > 0) {
@@ -191,12 +254,14 @@ function computeRowsFromHistory(
         agg.avg3Count += 1;
       }
 
+      // best visit
       const bvCandidate =
         det.bestVisit ?? det.bv ?? det.bestVisit3 ?? det.bv3 ?? 0;
       if (typeof bvCandidate === "number" && bvCandidate > 0) {
         if (bvCandidate > agg.bestVisit) agg.bestVisit = bvCandidate;
       }
 
+      // best checkout
       const coCandidate =
         det.bestCheckout ??
         det.bestCo ??
@@ -209,10 +274,10 @@ function computeRowsFromHistory(
     }
   }
 
-  // transform en Row[]
   const rows: Row[] = Object.keys(aggByPlayer).map((pid) => {
     const agg = aggByPlayer[pid];
     const prof = profileById[pid];
+    const extra = infoByPlayer[pid] || {};
 
     const matches = agg.matches;
     const wins = agg.wins;
@@ -222,8 +287,11 @@ function computeRowsFromHistory(
 
     return {
       id: pid,
-      name: prof?.name || "—",
-      avatarDataUrl: (prof as any)?.avatarDataUrl ?? null,
+      name: prof?.name || extra.name || "—",
+      avatarDataUrl:
+        (prof as any)?.avatarDataUrl ??
+        extra.avatarDataUrl ??
+        null,
       wins,
       losses: Math.max(0, matches - wins),
       matches,
@@ -286,7 +354,6 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
     setMetric(metricList[newIndex]);
   };
 
-  // 🔥 ICI : on construit les lignes à partir de store.history
   const rows = React.useMemo(() => {
     if (!profiles.length) return [];
     const baseRows = computeRowsFromHistory(store, profiles, mode, scope);
@@ -391,7 +458,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
               marginBottom: 4,
             }}
           >
-            {t("stats.leaderboards.titleMain", "CENTRE DE STATISTIQUES")}
+            {t("stats.leaderboards.titleMain", "CLASSEMENTS")}
           </div>
           <div
             style={{
@@ -405,7 +472,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
         </div>
 
         <button
-          onClick={() => go("statsShell")}
+          onClick={() => go("stats")}
           style={{
             borderRadius: 999,
             border: `1px solid ${theme.borderSoft}`,
@@ -417,7 +484,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
             cursor: "pointer",
           }}
         >
-          ← Menu stats
+          ← Retour
         </button>
       </div>
 
@@ -434,6 +501,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
           boxShadow: `0 16px 32px rgba(0,0,0,.65), 0 0 20px ${theme.primary}33`,
         }}
       >
+        {/* Scope LOCAL / ONLINE */}
         <div
           style={{
             display: "flex",
@@ -474,6 +542,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
           })}
         </div>
 
+        {/* Carrousel mode : flèches + mode courant */}
         <div
           style={{
             display: "flex",
@@ -546,6 +615,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
           boxShadow: `0 12px 26px rgba(0,0,0,.7)`,
         }}
       >
+        {/* Bandeau période */}
         <div
           style={{
             display: "flex",
@@ -560,7 +630,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
               fontWeight: 700,
               textTransform: "uppercase",
               letterSpacing: 0.7,
-              color: theme.textSoft,
+              color: theme.primary,
             }}
           >
             {t("stats.leaderboards.period", "Période")}
@@ -597,13 +667,14 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
           </div>
         </div>
 
+        {/* "Classement par" */}
         <div
           style={{
             fontSize: 10,
             fontWeight: 700,
             textTransform: "uppercase",
             letterSpacing: 0.7,
-            color: theme.textSoft,
+            color: theme.primary,
             marginBottom: 4,
           }}
         >
@@ -769,6 +840,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
                         : `1px solid ${theme.borderSoft}`,
                   }}
                 >
+                  {/* Rang */}
                   <div
                     style={{
                       width: 26,
@@ -781,6 +853,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
                     {rank}
                   </div>
 
+                  {/* Nom + avatar */}
                   <div
                     style={{
                       display: "flex",
@@ -836,6 +909,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
                     </div>
                   </div>
 
+                  {/* Valeur + matchs */}
                   <div
                     style={{
                       display: "flex",

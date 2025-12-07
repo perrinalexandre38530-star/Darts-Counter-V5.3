@@ -20,7 +20,8 @@ import {
   PolarGrid,
   PolarAngleAxis,
   Radar,
-  Cell, // pour teinter chaque barre (avatar + couleur)
+  Cell,
+  LabelList,
 } from "recharts";
 
 import type { LegStats } from "../lib/stats";
@@ -120,6 +121,11 @@ function remainingFromNew(leg: LegStats, pid: string) {
   const st: any = leg.perPlayer?.[pid] ?? {};
   const start = n((leg as any).startScore ?? (leg as any).start ?? 501);
 
+  // 0) si on a un remaining explicite, on le prend tel quel
+  if (typeof st.remaining === "number" && isFinite(st.remaining)) {
+    return Math.max(0, Math.round(st.remaining));
+  }
+
   // 1) points directs si dispo
   let scored = n(st.totalScored ?? st.points ?? st.pointsSum);
 
@@ -134,9 +140,7 @@ function remainingFromNew(leg: LegStats, pid: string) {
   }
 
   const approx = Math.max(0, start - scored);
-  const explicit = st.remaining;
-  if (typeof explicit === "number" && isFinite(explicit)) return explicit;
-  return approx;
+  return Math.max(0, Math.round(approx));
 }
 
 function bestVisitFromNew(leg: LegStats, pid: string) {
@@ -243,9 +247,13 @@ function val(obj: Record<string, number> | undefined, k: string) {
   return obj ? n(obj[k]) : 0;
 }
 
-// Remaining legacy avec fallback avg3 * visits pour éviter les 501 débiles
+// Remaining legacy avec priorité au remaining brut, sinon fallback arrondi
 function remainingFromLegacy(res: LegacyLegResult, pid: string) {
   const start = (res as any).startScore ?? (res as any).start ?? 501;
+
+  if (res.remaining && typeof res.remaining[pid] === "number") {
+    return Math.max(0, Math.round(res.remaining[pid]));
+  }
 
   let pts = n(res.points?.[pid]);
 
@@ -260,7 +268,7 @@ function remainingFromLegacy(res: LegacyLegResult, pid: string) {
   }
 
   const approx = Math.max(0, start - pts);
-  return approx;
+  return Math.max(0, Math.round(approx));
 }
 
 function rowFromLegacy(
@@ -302,7 +310,9 @@ function rowFromLegacy(
   const coDartsAvgArr = res.checkoutDartsByPlayer?.[pid];
   const coDartsAvg =
     coCount && coDartsAvgArr?.length
-      ? Number(f2(coDartsAvgArr.reduce((s, x) => s + x, 0) / coDartsAvgArr.length))
+      ? Number(
+          f2(coDartsAvgArr.reduce((s, x) => s + x, 0) / coDartsAvgArr.length)
+        )
       : 0;
   const highestCO = n(res.bestCheckout?.[pid] ?? 0);
 
@@ -484,51 +494,106 @@ function Inner({
     [rows, avatarOf]
   );
 
-  // chunks de 3 joueurs max -> plusieurs lignes si besoin
-  const barChunks = React.useMemo(() => {
-    const chunks: typeof barData[] = [];
-    const size = 3;
-    for (let i = 0; i < barData.length; i += size) {
-      chunks.push(barData.slice(i, i + size));
-    }
-    return chunks;
-  }, [barData]);
+  // Label halo lumineux au-dessus des barres
+  const renderGlowLabel = React.useCallback(
+    (props: any) => {
+      const { x, y, width, value, index } = props;
+      if (value == null || isNaN(Number(value))) return null;
+      const entry = barData[index] || {};
+      const color = entry.color || "#f0b12a";
+      const text = String(value);
+      const cx = (x || 0) + (width || 0) / 2;
+      const cy = (y || 0) - 6;
 
-  // Label halo lumineux au-dessus des barres (utilise la couleur du payload)
-  const renderGlowLabel = React.useCallback((props: any) => {
-    const { x, y, width, value, payload } = props;
-    if (value == null || isNaN(Number(value))) return null;
-    const color = payload?.color || "#f0b12a";
-    const text = String(value);
-    const cx = (x || 0) + (width || 0) / 2;
-    const cy = (y || 0) - 6;
-    return (
-      <g>
-        <text
-          x={cx}
-          y={cy}
-          textAnchor="middle"
-          fill={color}
-          opacity={0.3}
-          style={{ filter: "blur(2px)" }}
-          fontSize={11}
-          fontWeight={900}
-        >
-          {text}
-        </text>
-        <text
-          x={cx}
-          y={cy}
-          textAnchor="middle"
-          fill={color}
-          fontSize={11}
-          fontWeight={900}
-        >
-          {text}
-        </text>
-      </g>
-    );
-  }, []);
+      return (
+        <g>
+          <text
+            x={cx}
+            y={cy}
+            textAnchor="middle"
+            fill={color}
+            opacity={0.25}
+            style={{ filter: "blur(2px)" }}
+            fontSize={11}
+            fontWeight={900}
+          >
+            {text}
+          </text>
+          <text
+            x={cx}
+            y={cy}
+            textAnchor="middle"
+            fill={color}
+            fontSize={11}
+            fontWeight={900}
+          >
+            {text}
+          </text>
+        </g>
+      );
+    },
+    [barData]
+  );
+
+  // Avatar médaillon à l'intérieur de la barre
+  const renderAvatarLabel = React.useCallback(
+    (props: any) => {
+      const { x, y, width, height, index } = props;
+      const entry = barData[index];
+      if (!entry || !entry.avatar) return null;
+
+      const w = Number(width || 0);
+      const h = Number(height || 0);
+      if (!w || !h) return null;
+
+      const cx = Number(x || 0) + w / 2;
+      const cy = Number(y || 0) + h / 2;
+
+      const size = Math.min(w, h) * 0.7;
+      const half = size / 2;
+
+      return (
+        <g>
+          <defs>
+            <clipPath id={`clip-${entry.pid}`}>
+              <circle cx={cx} cy={cy} r={half} />
+            </clipPath>
+          </defs>
+          <image
+            href={entry.avatar}
+            xlinkHref={entry.avatar}
+            x={cx - half}
+            y={cy - half}
+            width={size}
+            height={size}
+            preserveAspectRatio="xMidYMid slice"
+            clipPath={`url(#clip-${entry.pid})`}
+            opacity={0.95}
+          />
+          {/* double anneau de couleur */}
+          <circle
+            cx={cx}
+            cy={cy}
+            r={half}
+            stroke={entry.color}
+            strokeWidth={1.6}
+            fill="none"
+            opacity={0.95}
+          />
+          <circle
+            cx={cx}
+            cy={cy}
+            r={half + 2}
+            stroke={entry.color}
+            strokeWidth={1}
+            fill="none"
+            opacity={0.5}
+          />
+        </g>
+      );
+    },
+    [barData]
+  );
 
   // Radar: hits "Singles / Doubles / Triples / Bulls" par joueur
   const radarData = React.useMemo(() => {
@@ -762,7 +827,7 @@ function Inner({
               const isWinner = r.pid === winnerId;
               const remainingSafe =
                 typeof r.remaining === "number" && isFinite(r.remaining)
-                  ? r.remaining
+                  ? Math.max(0, Math.round(r.remaining))
                   : 0;
               const displayScore = isWinner ? 0 : remainingSafe;
 
@@ -934,7 +999,7 @@ function Inner({
                     <tr key={`darts-${r.pid}`} style={rowLine}>
                       <TDStrong>{r.name}</TDStrong>
                       <TD>{r.coCount}</TD>
-                      <TD>{r.coCount ? r.coDartsAvg : "—"}</TD>
+                      <TD>{f2(r.coDartsAvg)}</TD>
                       <TD>{r.doubles}</TD>
                       <TD>{r.triples}</TD>
                       <TD>{r.ob}</TD>
@@ -1011,9 +1076,7 @@ function Inner({
                 >
                   <button
                     onClick={() => setRadarFilter("ALL")}
-                    style={pillBtn(
-                      radarFilter === "ALL"
-                    )}
+                    style={pillBtn(radarFilter === "ALL")}
                   >
                     Tous
                   </button>
@@ -1021,9 +1084,7 @@ function Inner({
                     <button
                       key={`pill-${r.pid}`}
                       onClick={() => setRadarFilter(r.pid)}
-                      style={pillBtn(
-                        radarFilter === r.pid
-                      )}
+                      style={pillBtn(radarFilter === r.pid)}
                     >
                       {r.name}
                     </button>
@@ -1089,76 +1150,33 @@ function Inner({
                 </div>
                 {barData.length ? (
                   <>
-                    {barChunks.map((chunk, idx) => (
-                      <div
-                        key={`chunk-${idx}`}
-                        style={{
-                          maxWidth: 420,
-                          margin: "0 auto 8px", // centré et ne dépasse jamais la largeur écran
-                        }}
-                      >
-                        <ResponsiveContainer width="100%" height={230}>
-                          <BarChart data={chunk}>
-                            <defs>
-                              {chunk.map((b) =>
-                                b.avatar ? (
-                                  <pattern
-                                    key={`pat-${b.pid}`}
-                                    id={`barAvatar-${b.pid}`}
-                                    patternUnits="objectBoundingBox"
-                                    width={1}
-                                    height={1}
-                                  >
-                                    {/* avatar très zoomé + flou léger */}
-                                    <image
-                                      href={b.avatar}
-                                      x={-0.6}
-                                      y={-0.2}
-                                      width={2.2}
-                                      height={1.6}
-                                      preserveAspectRatio="xMidYMid slice"
-                                      style={{ filter: "blur(1.5px)" }}
-                                    />
-                                    {/* voile couleur pour fondre l'image dans la barre */}
-                                    <rect
-                                      x={0}
-                                      y={0}
-                                      width={1}
-                                      height={1}
-                                      fill={b.color}
-                                      opacity={0.45}
-                                    />
-                                  </pattern>
-                                ) : null
-                              )}
-                            </defs>
+                    <ResponsiveContainer width="100%" height={230}>
+                      <BarChart data={barData}>
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip />
 
-                            <XAxis dataKey="name" />
-                            <YAxis />
-                            <Tooltip />
-
-                            <Bar
-                              dataKey="avg3"
-                              radius={[6, 6, 0, 0]}
-                              label={renderGlowLabel}
-                            >
-                              {chunk.map((entry) => (
-                                <Cell
-                                  key={`cell-${entry.pid}`}
-                                  fill={
-                                    entry.avatar
-                                      ? `url(#barAvatar-${entry.pid})`
-                                      : entry.color
-                                  }
-                                  stroke={entry.color}
-                                  strokeWidth={1}
-                                />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ))}
+                        <Bar
+                          dataKey="avg3"
+                          radius={[6, 6, 0, 0]}
+                          label={renderGlowLabel}
+                        >
+                          {barData.map((entry) => (
+                            <Cell
+                              key={`cell-${entry.pid}`}
+                              fill={entry.color}
+                              stroke={entry.color}
+                              strokeWidth={1}
+                            />
+                          ))}
+                          {/* avatars à l'intérieur des barres */}
+                          <LabelList
+                            dataKey="avg3"
+                            content={renderAvatarLabel}
+                          />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
                     <div
                       style={{
                         marginTop: 4,
@@ -1234,8 +1252,7 @@ function SummaryRows({
     <div
       style={{
         display: "grid",
-        gridTemplateColumns:
-          "repeat(auto-fit, minmax(140px, 1fr))",
+        gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
         gap: 8,
       }}
     >
@@ -1251,9 +1268,7 @@ function SummaryRows({
         color="green"
         playerName={minDartsRow?.name || "—"}
         stat={
-          minDartsRow?.darts != null
-            ? String(minDartsRow.darts)
-            : "—"
+          minDartsRow?.darts != null ? String(minDartsRow.darts) : "—"
         }
       />
 
@@ -1261,11 +1276,7 @@ function SummaryRows({
         label="Best Moy./3D"
         color="blue"
         playerName={bestAvgRow?.name || "—"}
-        stat={
-          bestAvgRow
-            ? fmt2(bestAvgRow.avg3)
-            : "—"
-        }
+        stat={bestAvgRow ? fmt2(bestAvgRow.avg3) : "—"}
       />
 
       <KPIBlock
@@ -1273,9 +1284,7 @@ function SummaryRows({
         color="pink"
         playerName={bestVolRow?.name || "—"}
         stat={
-          bestVolRow?.best != null
-            ? String(bestVolRow.best)
-            : "—"
+          bestVolRow?.best != null ? String(bestVolRow.best) : "—"
         }
       />
 
@@ -1304,9 +1313,7 @@ function SummaryRows({
         }
         extra={
           bestBullRow
-            ? `OB ${bestBullRow.ob ?? 0} + IB ${
-                bestBullRow.ib ?? 0
-              }`
+            ? `OB ${bestBullRow.ob ?? 0} + IB ${bestBullRow.ib ?? 0}`
             : ""
         }
       />
@@ -1665,9 +1672,7 @@ function pillBtn(active: boolean): React.CSSProperties {
       ? "1px solid var(--dc-accent, #f0b12a)"
       : "1px solid rgba(255,255,255,.18)",
     padding: "3px 9px",
-    background: active
-      ? "rgba(240,177,42,.18)"
-      : "rgba(0,0,0,.3)",
+    background: active ? "rgba(240,177,42,.18)" : "rgba(0,0,0,.3)",
     color: active ? "#ffe2a0" : "#f0f0f0",
     fontWeight: active ? 800 : 600,
     fontSize: 11,

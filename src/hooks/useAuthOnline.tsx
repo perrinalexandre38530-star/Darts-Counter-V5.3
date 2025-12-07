@@ -43,7 +43,7 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
   const [user, setUser] = React.useState<UserAuth | null>(null);
   const [profile, setProfile] = React.useState<OnlineProfile | null>(null);
 
-  // Applique une session (ou null)
+  // Applique une session (ou null) : user + profil complet
   const applySession = React.useCallback((session: AuthSession | null) => {
     if (!session) {
       setStatus("signed_out");
@@ -56,7 +56,7 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
     setProfile(session.profile);
   }, []);
 
-  // Restore au chargement
+  // Restore au chargement (lecture depuis Supabase / localStorage via onlineApi)
   React.useEffect(() => {
     let cancelled = false;
 
@@ -72,6 +72,7 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
     }
 
     restore();
+
     return () => {
       cancelled = true;
     };
@@ -107,6 +108,7 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
         password,
         nickname: nickname || email,
       });
+
       applySession(session);
     } finally {
       setLoading(false);
@@ -143,6 +145,7 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
         password,
         nickname: nickname || undefined,
       });
+
       applySession(session);
     } finally {
       setLoading(false);
@@ -160,18 +163,19 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
     }
   }
 
-  // UPDATE PROFILE (online)
+  // UPDATE PROFILE (toutes les infos perso + avatar_url, etc.)
   async function updateProfile(patch: UpdateProfilePayload) {
     setLoading(true);
     try {
       const newProfile = await onlineApi.updateProfile(patch);
+      // on remplace le profil par celui retourné par l'API (toutes les colonnes)
       setProfile(newProfile);
     } finally {
       setLoading(false);
     }
   }
 
-  // REFRESH (re-lire la session depuis Supabase / localStorage)
+  // REFRESH (re-lire la session complète : user + profil)
   async function refresh() {
     setLoading(true);
     try {
