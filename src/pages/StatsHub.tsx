@@ -22,6 +22,7 @@ import StatsCricketDashboard from "../components/StatsCricketDashboard";
 import X01MultiStatsTabFull from "../stats/X01MultiStatsTabFull";
 import StatsTrainingSummary from "../components/stats/StatsTrainingSummary";
 import { useCurrentProfile } from "../hooks/useCurrentProfile";
+import StatsLeaderboardsTab from "../components/stats/StatsLeaderboardsTab";
 
 // Effet "shimmer" à l'intérieur des lettres du nom du joueur
 const statsNameCss = `
@@ -91,7 +92,8 @@ type StatsMainMode =
   | "x01_multi"
   | "cricket"
   | "battle_royale"
-  | "history";
+  | "history"
+  | "leaderboards"; // 👈 juste UNE ligne en plus, avec un |
 
 const STATS_MAIN_MODES: { id: StatsMainMode; label: string }[] = [
   { id: "dashboard", label: "Dashboard (vue globale)" },
@@ -3348,6 +3350,7 @@ export default function StatsHub({
       { key: "dashboard", label: "Dashboard global" },
       { key: "x01_multi", label: "X01 multi" },
       { key: "cricket", label: "Cricket" },
+      { key: "leaderboards", label: "Classements" }, // 👈 NOUVEAU
       { key: "history", label: "Historique" },
     ],
     []
@@ -4023,6 +4026,12 @@ export default function StatsHub({
                 Aucune statistique Cricket disponible.
               </div>
             )}
+          </div>
+        )}
+
+        {currentMode === "leaderboards" && (
+          <div style={card}>
+            <StatsLeaderboardsTab />
           </div>
         )}
 

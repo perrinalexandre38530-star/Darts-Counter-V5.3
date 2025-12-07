@@ -24,6 +24,7 @@ type Props = {
 type InfoMode =
   | "active"
   | "locals"
+  | "leaderboards"   // 👈 nouveau
   | "training"
   | "online"
   | "history"
@@ -293,6 +294,27 @@ export default function StatsShell({ store, go }: Props) {
             });
           }}
           onInfo={() => setInfoMode("locals")}
+        />
+
+        {/* CLASSEMENTS (nouvelle carte) */}
+        <StatsShellCard
+          title={t("statsShell.leaderboards.title", "CLASSEMENTS")}
+          subtitle={t(
+            "statsShell.leaderboards.subtitle",
+            "Tops & rankings par mode de jeu (Local / Online)."
+          )}
+          theme={theme}
+          onClick={() => {
+            if (!active) return;
+            go("statsHub", {
+              tab: "stats",
+              mode: "active",              // on part du joueur actif
+              initialPlayerId: active.id,  // pour que le carrousel soit sur lui
+              playerId: active.id,
+              initialStatsSubTab: "leaderboards", // 👈 ouvre directement l’onglet Classements
+            });
+          }}
+          onInfo={() => setInfoMode("leaderboards")}
         />
 
         {/* TRAINING */}
@@ -669,6 +691,13 @@ function InfoOverlay({
       body = t(
         "statsShell.info.locals.body",
         "Retrouve les mêmes vues de statistiques (y compris l’onglet Cricket) pour tous les profils enregistrés sur cet appareil et compare leurs performances."
+      );
+      break;
+    case "leaderboards":
+      title = t("statsShell.info.leaderboards.title", "CLASSEMENTS");
+      body = t(
+        "statsShell.info.leaderboards.body",
+        "Affiche les classements par mode de jeu : nombre de matchs, pourcentage de victoires, best visits, moyennes 3 darts, et plus, en Local ou Online."
       );
       break;
     case "training":

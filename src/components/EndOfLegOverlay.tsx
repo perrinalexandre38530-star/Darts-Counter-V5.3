@@ -78,9 +78,12 @@ type Props = {
 };
 
 // ---------- Utils ----------
-const n = (v: any) => (typeof v === "number" && isFinite(v) ? v : 0);
+const n = (v: any) =>
+  typeof v === "number" && isFinite(v) ? v : 0;
 const f2 = (v: any) =>
-  typeof v === "number" && isFinite(v) ? (Math.round(v * 100) / 100).toFixed(2) : "0.00";
+  typeof v === "number" && isFinite(v)
+    ? (Math.round(v * 100) / 100).toFixed(2)
+    : "0.00";
 
 const pctFmt = (hits: number, den: number) =>
   den > 0 ? `${((hits / den) * 100).toFixed(1)}%` : "0.0%";
@@ -108,7 +111,9 @@ function remainingFromNew(leg: LegStats, pid: string) {
   );
   const approx = Math.max(0, start - scored);
   const explicit = st.remaining;
-  if (typeof explicit === "number" && isFinite(explicit)) return explicit;
+  if (typeof explicit === "number" && isFinite(explicit) && explicit >= 0 && explicit <= start) {
+    return explicit;
+  }
   return approx;
 }
 
@@ -175,9 +180,46 @@ function impactsFromNew(leg: LegStats, pid: string) {
 function checkoutFromNew(leg: LegStats, pid: string) {
   const st: any = leg.perPlayer?.[pid] ?? {};
   const co = st.co || {};
-  const count = n(co.coHits ?? co.hits ?? 0);
-  const avg = n(co.avgCODarts ?? co.avgDarts ?? 0);
-  const hi = n(co.highestCO ?? co.best ?? 0);
+
+  // ✅ on ratisse large pour retrouver les infos de checkout
+  const count = n(
+    co.coHits ??
+      co.hits ??
+      st.coHits ??
+      st.co_hits ??
+      st.coAtt ??
+      st.coAttempts ??
+      0
+  );
+
+  const totalDarts = n(
+    co.totalCODarts ??
+      co.totalDarts ??
+      st.coDarts ??
+      st.totalCoDarts ??
+      0
+  );
+
+  let avg = n(
+    co.avgCODarts ??
+      co.avgDarts ??
+      st.avgCODarts ??
+      st.coAvgDarts ??
+      0
+  );
+
+  if (!avg && count > 0 && totalDarts > 0) {
+    avg = totalDarts / count;
+  }
+
+  const hi = n(
+    co.highestCO ??
+      co.best ??
+      st.highestCO ??
+      st.bestCO ??
+      0
+  );
+
   return { coCount: count, coDartsAvg: avg, highestCO: hi };
 }
 
@@ -239,13 +281,29 @@ function val(obj: Record<string, number> | undefined, k: string) {
 }
 
 // ⚙️ Remaining côté legacy : si pas renseigné, on recalcule avec startScore - points
+//    + on ignore les valeurs "sentinelles" = 501 quand le joueur a déjà scoré
 function remainingFromLegacy(res: LegacyLegResult, pid: string) {
-  const raw = res.remaining?.[pid];
-  if (typeof raw === "number" && isFinite(raw) && raw > 0) return raw;
   const start = (res as any).startScore ?? (res as any).start ?? 501;
-  const pts = n(res.points?.[pid]);
-  const approx = Math.max(0, start - pts);
-  return approx;
+  const raw = res.remaining?.[pid];
+  const pts = n(res.points?.[pid] ?? 0);
+
+  if (typeof raw === "number" && isFinite(raw)) {
+    // valeur crédible = entre 0 et start (ex: 32, 70, …)
+    if (raw >= 0 && raw < start) {
+      return raw;
+    }
+    // joueur n’a jamais scoré : on garde le score de départ
+    if (raw === start && pts === 0) {
+      return start;
+    }
+  }
+
+  // sinon on recalcule à partir des points réellement marqués
+  if (pts > 0) {
+    return Math.max(0, start - pts);
+  }
+
+  return start;
 }
 
 function rowFromLegacy(
@@ -341,6 +399,32 @@ function sortOrderLegacy(res: LegacyLegResult, ids: string[]) {
   return order;
 }
 
+// ---------- Helper rankings (summary.rankings / rankings optionnels) ----------
+type RankingEntry = { id?: string; pid?: string; [k: string]: any };
+
+function extractRankingIds(src: any): string[] | null {
+  if (!src || typeof src !== "object") return null;
+
+  const arr: RankingEntry[] =
+    (Array.isArray(src.rankings) && src.rankings) ||
+    (Array.isArray(src.summary?.rankings) && src.summary.rankings) ||
+    [];
+
+  if (!arr.length) return null;
+
+  const ids = arr
+    .map((r) =>
+      typeof r.id === "string"
+        ? r.id
+        : typeof r.pid === "string"
+        ? r.pid
+        : null
+    )
+    .filter((x): x is string => !!x);
+
+  return ids.length ? ids : null;
+}
+
 // ---------- Composant principal ----------
 export default function EndOfLegOverlay({
   open,
@@ -387,24 +471,60 @@ function Inner({
 
   // --- rows bruts ---
   const rowsRaw = React.useMemo(() => {
+    // On essaie d'abord d'extraire un ordre à partir d'un éventuel rankings
+    const globalRankingIds = extractRankingIds(result);
+
     if ((result as any)?.legacy) {
       const r = (result as any).legacy as LegacyLegResult;
+      const rankIds =
+        extractRankingIds((result as any).legacy) ||
+        globalRankingIds;
+
+      if (rankIds && rankIds.length) {
+        return rankIds.map((pid) =>
+          rowFromLegacy(r, pid, nameOf)
+        );
+      }
+
       const ids =
         Object.keys(r?.remaining || {}).length > 0
           ? Object.keys(r.remaining)
           : Object.keys(r?.avg3 || {});
       const ord = sortOrderLegacy(r, ids);
-      return ord.map((pid) => rowFromLegacy(r, pid, nameOf));
+      return ord.map((pid) =>
+        rowFromLegacy(r, pid, nameOf)
+      );
     }
+
     if (isLegStatsObj(result)) {
+      const rankIds = extractRankingIds(result) || globalRankingIds;
+
+      if (rankIds && rankIds.length) {
+        return rankIds.map((pid) =>
+          rowFromNew(result, pid, nameOf)
+        );
+      }
+
       const ids = idsFromNew(result);
       const ord = sortOrderNew(result, ids);
-      return ord.map((pid) => rowFromNew(result, pid, nameOf));
+      return ord.map((pid) =>
+        rowFromNew(result, pid, nameOf)
+      );
     } else {
       const r = result as LegacyLegResult;
+      const rankIds = extractRankingIds(result) || globalRankingIds;
+
+      if (rankIds && rankIds.length) {
+        return rankIds.map((pid) =>
+          rowFromLegacy(r, pid, nameOf)
+        );
+      }
+
       const ids = Object.keys(r.remaining || r.avg3 || {});
       const ord = sortOrderLegacy(r, ids);
-      return ord.map((pid) => rowFromLegacy(r, pid, nameOf));
+      return ord.map((pid) =>
+        rowFromLegacy(r, pid, nameOf)
+      );
     }
   }, [result, nameOf]);
 
@@ -415,7 +535,13 @@ function Inner({
   const finishedAt = isLegStatsObj(result)
     ? (result as any).finishedAt ?? Date.now()
     : (result as LegacyLegResult).finishedAt ?? Date.now();
-  const winnerId: string | null = isLegStatsObj(result)
+
+  const rankingsIdsGlobal = extractRankingIds(result);
+  const rankingsFirstId = rankingsIdsGlobal?.[0];
+
+  const winnerId: string | null = rankingsFirstId
+    ? rankingsFirstId
+    : isLegStatsObj(result)
     ? ((result as any).winnerId ??
         rowsRaw[0]?.pid ??
         null)
@@ -468,14 +594,16 @@ function Inner({
           (b.bulls || 0) - (a.bulls || 0)
       )[0] || null;
 
-  // Graph bar
+  // Graph bar (moyenne 3D + avatars)
   const barData = React.useMemo(
     () =>
       rows.map((r) => ({
         name: r.name,
+        pid: r.pid,
         avg3: Number(f2(r.avg3)),
+        avatar: avatarOf(r.pid),
       })),
-    [rows]
+    [rows, avatarOf]
   );
 
   // --- Joueur actif pour le RADAR (filtre) ---
@@ -924,7 +1052,7 @@ function Inner({
                       <TD>{r.coCount}</TD>
                       <TD>
                         {r.coCount
-                          ? r.coDartsAvg
+                          ? f2(r.coDartsAvg)
                           : "—"}
                       </TD>
                       <TD>{r.doubles}</TD>
@@ -1116,6 +1244,64 @@ function Inner({
                     </ResponsiveContainer>
                   )}
                 </ChartMountGuard>
+
+                {/* Légende avatars + Moy./3D par joueur */}
+                <div
+                  style={{
+                    marginTop: 6,
+                    display: "flex",
+                    justifyContent: "space-around",
+                    gap: 6,
+                  }}
+                >
+                  {rows.map((r) => {
+                    const avatar = avatarOf(r.pid);
+                    return (
+                      <div
+                        key={`legend-${r.pid}`}
+                        style={{
+                          textAlign: "center",
+                          fontSize: 10,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 26,
+                            height: 26,
+                            borderRadius: "50%",
+                            overflow: "hidden",
+                            margin: "0 auto 2px",
+                            border:
+                              "1px solid rgba(255,255,255,.4)",
+                            boxShadow:
+                              "0 0 8px rgba(0,0,0,.7)",
+                          }}
+                        >
+                          {avatar ? (
+                            <img
+                              src={avatar}
+                              alt=""
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                objectFit: "cover",
+                              }}
+                            />
+                          ) : null}
+                        </div>
+                        <div
+                          style={{
+                            color: "#ffcf57",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {f2(r.avg3)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
                 <div
                   style={{
                     marginTop: 4,
@@ -1124,8 +1310,8 @@ function Inner({
                     textAlign: "center",
                   }}
                 >
-                  Chaque barre représente la moyenne 3 darts sur cette manche
-                  pour le joueur correspondant.
+                  Hauteur de barre = moyenne de points par volée (Moy./3D) pour
+                  chaque joueur.
                 </div>
               </ChartCard>
             </div>

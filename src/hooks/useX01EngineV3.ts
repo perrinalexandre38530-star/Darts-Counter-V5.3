@@ -25,6 +25,7 @@ import type {
 import {
   startNewVisitV3,
   applyDartToCurrentPlayerV3,
+  isMultiContinueMode, // 👈 helper MULTI "continuer" (FF)
 } from "../lib/x01v3/x01LogicV3";
 
 import {
@@ -78,6 +79,7 @@ function createInitialMatchState(config: X01ConfigV3): X01MatchStateV3 {
   (state as any).lastLegWinnerId = null;
   (state as any).lastWinnerId = null;
   (state as any).lastWinningPlayerId = null;
+  (state as any).finishOrder = []; // 👈 ordre des joueurs qui ont VRAIMENT fini à 0
 
   startNewVisitV3(state);
   if (state.visit) {
@@ -509,6 +511,7 @@ function goToNextLeg(
   // --- reset visite / statut ---
   next.visit = null;
   next.status = "playing";
+  next.finishOrder = []; // reset ordre d'arrivée pour la nouvelle manche
 
   const curLeg = (prev as any).currentLeg ?? 1;
   const curSet = (prev as any).currentSet ?? 1;
@@ -622,6 +625,80 @@ function applyDartWithFlow(
   liveMap[pid] = st;
   (m as any).liveStatsByPlayer = liveMap;
 
+  // ======================================================
+  // 🔥 MODE MULTI "CONTINUER" (Free For All, sans équipes)
+  // - On continue tant qu'il reste au moins 2 joueurs non finis
+  // - Le dernier garde ses points, ne finit jamais, pas de checkout
+  // ======================================================
+  const isMultiFFA =
+    isMultiContinueMode(config) && (config.players?.length ?? 0) > 2;
+
+  if (isMultiFFA) {
+    let finishOrder: X01PlayerId[] =
+      ((m as any).finishOrder as X01PlayerId[]) || [];
+    if (!Array.isArray(finishOrder)) finishOrder = [];
+
+    // Si le joueur vient de FINIR (scoreAfter = 0 et pas bust),
+    // on l'ajoute à l'ordre d'arrivée (sans doublons)
+    if (isCheckout && !finishOrder.includes(pid)) {
+      finishOrder.push(pid);
+    }
+
+    (m as any).finishOrder = finishOrder;
+
+    const totalPlayers = config.players.length;
+    const finishedCount = finishOrder.length;
+
+    // Cas 1 : ce n'est PAS un checkout OU il reste >= 2 joueurs non finis
+    // => on continue la manche, en sautant les joueurs déjà dans finishOrder
+    const shouldContinueLeg =
+      !isCheckout || finishedCount <= totalPlayers - 2;
+
+    if (shouldContinueLeg) {
+      const order = m.throwOrder;
+      const currentIndex = order.indexOf(pid);
+      let nextId: X01PlayerId = pid;
+
+      for (let i = 0; i < order.length; i++) {
+        const idx = (currentIndex + 1 + i) % order.length;
+        const candidateId = order[idx] as X01PlayerId;
+
+        const candidateFinished = finishOrder.includes(candidateId);
+        const candidateScore = m.scores[candidateId] ?? 0;
+
+        // On joue uniquement les joueurs :
+        // - qui n'ont pas fini
+        // - qui ont encore des points (> 0)
+        if (!candidateFinished && candidateScore > 0) {
+          nextId = candidateId;
+          break;
+        }
+      }
+
+      m.activePlayer = nextId;
+
+      startNewVisitV3(m);
+      if (m.visit) {
+        m.visit.checkoutSuggestion = extAdaptCheckoutSuggestion({
+          score: m.visit.currentScore,
+          dartsLeft: m.visit.dartsLeft,
+          outMode: config.outMode,
+        });
+      }
+
+      m.status = "playing";
+      return { state: m, liveStats: liveMap };
+    }
+
+    // Cas 2 : on vient de faire finir l'AVANT-DERNIER joueur :
+    // - isCheckout === true
+    // - finishedCount === totalPlayers - 1
+    // => on LAISSE le dernier avec ses points restants
+    //    (il n'est PAS ajouté à finishOrder)
+    //    et on laisse le flow normal déclarer la fin (leg/match)
+    // => on NE choisit PAS de nextPlayer ici, on laisse la suite gérer
+  }
+
   // ---------- Fin de leg / set / match ----------
   const legWinner = checkLegWinV3(config, m);
   if (legWinner) {
@@ -656,24 +733,71 @@ function applyDartWithFlow(
 
       if (checkMatchWinV3(config, m)) {
         // ========= FIN DE MATCH =========
-        const rankings = [...config.players].map((p) => {
-          const pid3 = p.id as X01PlayerId;
-          const legs = m.legsWon[pid3] ?? 0;
-          const sets = m.setsWon[pid3] ?? 0;
-          return {
-            id: pid3,
-            name: p.name,
-            legsWon: legs,
-            setsWon: sets,
-            score: sets || legs || 0,
-          };
-        });
 
-        rankings.sort((a, b) => {
-          if (b.setsWon !== a.setsWon) return b.setsWon - a.setsWon;
-          if (b.legsWon !== a.legsWon) return b.legsWon - a.legsWon;
-          return 0;
-        });
+        const isMultiFFAForRank =
+          isMultiContinueMode(config) &&
+          (config.players?.length ?? 0) > 2 &&
+          Array.isArray((m as any).finishOrder) &&
+          ((m as any).finishOrder as X01PlayerId[]).length > 0;
+
+        let rankings: Array<{
+          id: X01PlayerId;
+          name: string;
+          legsWon: number;
+          setsWon: number;
+          score: number;
+        }>;
+
+        if (isMultiFFAForRank) {
+          // Classement basé sur l'ordre d'arrivée
+          const finishOrder = (m as any)
+            .finishOrder as X01PlayerId[];
+
+          const orderedIds: X01PlayerId[] = [...finishOrder];
+
+          // On ajoute le / les joueurs qui n'ont JAMAIS fini (dernier / derniers)
+          for (const p of config.players) {
+            const pid3 = p.id as X01PlayerId;
+            if (!orderedIds.includes(pid3)) {
+              orderedIds.push(pid3);
+            }
+          }
+
+          rankings = orderedIds.map((pid3) => {
+            const player = config.players.find(
+              (p) => p.id === pid3
+            );
+            const legs = m.legsWon[pid3] ?? 0;
+            const sets = m.setsWon[pid3] ?? 0;
+            return {
+              id: pid3,
+              name: player?.name || pid3,
+              legsWon: legs,
+              setsWon: sets,
+              score: sets || legs || 0,
+            };
+          });
+        } else {
+          // Classement classique sets/legs
+          rankings = [...config.players].map((p) => {
+            const pid3 = p.id as X01PlayerId;
+            const legs = m.legsWon[pid3] ?? 0;
+            const sets = m.setsWon[pid3] ?? 0;
+            return {
+              id: pid3,
+              name: p.name,
+              legsWon: legs,
+              setsWon: sets,
+              score: sets || legs || 0,
+            };
+          });
+
+          rankings.sort((a, b) => {
+            if (b.setsWon !== a.setsWon) return b.setsWon - a.setsWon;
+            if (b.legsWon !== a.legsWon) return b.legsWon - a.legsWon;
+            return 0;
+          });
+        }
 
         const summaryAny: any = (m as any).summary || {};
 
@@ -705,7 +829,7 @@ function applyDartWithFlow(
     return { state: m, liveStats: liveMap };
   }
 
-  // Joueur suivant
+  // Joueur suivant (modes classiques OU cas "avant-dernier déjà géré plus haut")
   m.activePlayer = getNextPlayerV3(m);
 
   startNewVisitV3(m);

@@ -1254,6 +1254,7 @@ function DetailKpi({ label, value, primary, theme }: DetailKpiProps) {
           fontWeight: 900,
           color: primary,
           lineHeight: 1.1,
+          whiteSpace: "pre-line", // 🔹 pour afficher les \n en vraie nouvelle ligne
         }}
       >
         {value}
@@ -1743,7 +1744,6 @@ export default function Home({ store, go }: Props) {
         <ArcadeTicker
           items={tickerItems}
           intervalMs={DETAIL_INTERVAL_MS}
-          // on câble TOUT ce qui peut exister côté ArcadeTicker
           onIndexChange={(index: number) => {
             if (!tickerItems.length) return;
             const safe = Math.min(
@@ -1807,6 +1807,7 @@ export default function Home({ store, go }: Props) {
                     inset: 0,
                     background:
                       "linear-gradient(130deg, rgba(0,0,0,0.85), rgba(0,0,0,0.45))",
+                    pointerEvents: "none", // 🔑 ne bloque aucun clic
                   }}
                 />
                 <div
@@ -1887,6 +1888,7 @@ export default function Home({ store, go }: Props) {
                     inset: 0,
                     background:
                       "linear-gradient(230deg, rgba(0,0,0,0.9), rgba(0,0,0,0.4))",
+                    pointerEvents: "none", // 🔑 idem ici
                   }}
                 />
                 <div
@@ -1945,6 +1947,7 @@ export default function Home({ store, go }: Props) {
             gap: 14,
           }}
         >
+          {/* PROFILS → onglet "profiles" */}
           <HomeBigButton
             label={t("home.nav.profiles", "Profils")}
             subtitle={t(
@@ -1954,15 +1957,19 @@ export default function Home({ store, go }: Props) {
             icon="user"
             onClick={() => go("profiles")}
           />
+
+          {/* LOCAL → onglet "games" (menu des jeux locaux) */}
           <HomeBigButton
             label={t("home.nav.local", "Local")}
             subtitle={t(
               "home.nav.local.desc",
-              "Jouer sur cette cible en présentiel"
+              "Joue en présentiel sur cette cible"
             )}
             icon="target"
-            onClick={() => go("local")}
+            onClick={() => go("games")}
           />
+
+          {/* ONLINE → onglet "friends" (salons / duels online) */}
           <HomeBigButton
             label={t("home.nav.online", "Online")}
             subtitle={t(
@@ -1970,8 +1977,10 @@ export default function Home({ store, go }: Props) {
               "Matchs à distance avec tes amis"
             )}
             icon="globe"
-            onClick={() => go("online")}
+            onClick={() => go("friends")}
           />
+
+          {/* STATS → onglet "stats" */}
           <HomeBigButton
             label={t("home.nav.stats", "Stats")}
             subtitle={t(
@@ -1981,6 +1990,8 @@ export default function Home({ store, go }: Props) {
             icon="stats"
             onClick={() => go("stats")}
           />
+
+          {/* RÉGLAGES → onglet "settings" */}
           <HomeBigButton
             label={t("home.nav.settings", "Réglages")}
             subtitle={t(
@@ -2069,8 +2080,12 @@ function HomeBigButton({ label, subtitle, icon, onClick }: HomeBtnProps) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={onClick} // 🔑 plus de preventDefault / stopPropagation
       style={{
+        position: "relative",
+        zIndex: 20,
+        pointerEvents: "auto",
+        cursor: "pointer",
         width: "100%",
         borderRadius: 22,
         padding: 14,
@@ -2143,3 +2158,4 @@ function HomeBigButton({ label, subtitle, icon, onClick }: HomeBtnProps) {
     </button>
   );
 }
+

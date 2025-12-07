@@ -12,6 +12,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useLang } from "../../contexts/LangContext";
 import ProfileAvatar from "../ProfileAvatar";
+import ProfileStarRing from "../ProfileStarRing";
 import type { Profile } from "../../lib/types";
 
 type MaybeNum = number | null | undefined;
@@ -196,7 +197,7 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
     const s = stats;
     const out: SlideDef[] = [];
 
-    // 1) Vue globale — TOUJOURS AFFICHÉE (même si toutes les valeurs sont à 0)
+    // 1) Vue globale — TOUJOURS AFFICHÉE
     out.push({
       id: "global",
       title: t("home.stats.global", "Vue globale"),
@@ -224,47 +225,47 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
       ],
     });
 
-    // 2) Records — on l’affiche dès qu’il y a un peu de matière
-if (
-  (s.sessionsGlobal ?? 0) > 0 ||        // au moins des sessions X01
-  (s.x01MultiSessions ?? 0) > 0 ||     // ou des matchs multi
-  (s.recordBestVisitX01 ?? 0) > 0 ||
-  (s.recordBestCOX01 ?? 0) > 0 ||
-  (s.recordBestCricketScore ?? 0) > 0
-) {
-  out.push({
-    id: "records",
-    title: t("home.stats.records", "records"),
-    rows: [
-      {
-        label: t("home.stats.bestVisitX01", "best visit"),
-        value: fmtNum(s.recordBestVisitX01, 0),
-      },
-      {
-        label: t("home.stats.bestCOX01", "best co"),
-        value: fmtNum(s.recordBestCOX01, 0),
-      },
-      {
-        label: t("home.stats.minDarts501", "min darts 501"),
-        value: fmtNum(s.recordMinDarts501, 0),
-      },
-      {
-        label: t("home.stats.bestAvg3DX01", "best moy.3d"),
-        value: fmtNum(s.recordBestAvg3DX01, 2),
-      },
-      {
-        label: t("home.stats.bestStreak", "meilleure série"),
-        value: fmtNum(s.recordBestStreak, 0),
-      },
-      {
-        label: t("home.stats.bestCricketScore", "best cricket"),
-        value: fmtNum(s.recordBestCricketScore, 0),
-      },
-    ],
-  });
-}
+    // 2) Records
+    if (
+      (s.sessionsGlobal ?? 0) > 0 ||
+      (s.x01MultiSessions ?? 0) > 0 ||
+      (s.recordBestVisitX01 ?? 0) > 0 ||
+      (s.recordBestCOX01 ?? 0) > 0 ||
+      (s.recordBestCricketScore ?? 0) > 0
+    ) {
+      out.push({
+        id: "records",
+        title: t("home.stats.records", "records"),
+        rows: [
+          {
+            label: t("home.stats.bestVisitX01", "best visit"),
+            value: fmtNum(s.recordBestVisitX01, 0),
+          },
+          {
+            label: t("home.stats.bestCOX01", "best co"),
+            value: fmtNum(s.recordBestCOX01, 0),
+          },
+          {
+            label: t("home.stats.minDarts501", "min darts 501"),
+            value: fmtNum(s.recordMinDarts501, 0),
+          },
+          {
+            label: t("home.stats.bestAvg3DX01", "best moy.3d"),
+            value: fmtNum(s.recordBestAvg3DX01, 2),
+          },
+          {
+            label: t("home.stats.bestStreak", "meilleure série"),
+            value: fmtNum(s.recordBestStreak, 0),
+          },
+          {
+            label: t("home.stats.bestCricketScore", "best cricket"),
+            value: fmtNum(s.recordBestCricketScore, 0),
+          },
+        ],
+      });
+    }
 
-    // 3) Online — au moins un match
+    // 3) Online
     if ((s.onlineMatches ?? 0) > 0) {
       out.push({
         id: "online",
@@ -306,7 +307,7 @@ if (
       });
     }
 
-    // 4) X01 Multi — au moins 1 session
+    // 4) X01 Multi
     if ((s.x01MultiSessions ?? 0) > 0) {
       out.push({
         id: "x01multi",
@@ -340,7 +341,7 @@ if (
       });
     }
 
-    // 5) Cricket — au moins 1 leg
+    // 5) Cricket
     if ((s.cricketHitsTotal ?? 0) > 0) {
       out.push({
         id: "cricket",
@@ -374,7 +375,7 @@ if (
       });
     }
 
-    // 6) Training X01 — au moins 1 hit
+    // 6) Training X01
     if (
       (s.trainingHitsS ?? 0) +
         (s.trainingHitsD ?? 0) +
@@ -413,7 +414,7 @@ if (
       });
     }
 
-    // 7) Tour de l'Horloge — au moins 1 run
+    // 7) Tour de l'Horloge
     if ((s.clockTargetsHit ?? 0) > 0) {
       out.push({
         id: "clock",
@@ -480,8 +481,7 @@ if (
 
   // Accent pour le shimmer du nom (lié au thème)
   const accent = (theme as any).accent ?? primary;
-  const accentSoft =
-    (theme as any).accent20 ?? `${primary}33`;
+  const accentSoft = (theme as any).accent20 ?? `${primary}33`;
 
   const profileName =
     profile.name?.trim() || t("home.noName", "Joueur");
@@ -534,17 +534,16 @@ if (
               width: "100%",
             }}
           >
-            {/* Médaillon avec mask pour couper le liseré blanc */}
+            {/* Médaillon : avatar + couronne d’étoiles colorée */}
             <div
               style={{
+                position: "relative",
                 width: 84,
                 height: 84,
-                WebkitMaskImage:
-                  "radial-gradient(circle, black 72%, transparent 74%)",
-                maskImage:
-                  "radial-gradient(circle, black 72%, transparent 74%)",
+                marginBottom: 4,
               }}
             >
+              {/* Avatar au centre */}
               <ProfileAvatar
                 size={84}
                 dataUrl={
@@ -553,7 +552,18 @@ if (
                   undefined
                 }
                 label={profile?.name?.[0]?.toUpperCase() || "?"}
-                showStars={false}
+                ringColor={primary}
+                showStars={false} // on gère les étoiles manuellement ici
+              />
+
+              {/* Couronne d’étoiles basée sur la moyenne globale */}
+              <ProfileStarRing
+                anchorSize={84}
+                avg3d={stats.avg3DGlobal ?? 0}
+                gapPx={-3}
+                starSize={14}
+                stepDeg={10}
+                animateGlow={true}
               />
             </div>
 
