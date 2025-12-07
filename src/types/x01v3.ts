@@ -87,6 +87,10 @@ export interface X01MatchStateV3 {
 
   // Statut global du match
   status: "playing" | "leg_end" | "set_end" | "match_end";
+
+  // 🔥 MULTI "Continuer" : ordre d'arrivée des joueurs
+  // (NE CONTIENT QUE ceux qui ont vraiment fini à 0)
+  finishOrder?: X01PlayerId[];
 }
 
 /* -----------------------------------------------

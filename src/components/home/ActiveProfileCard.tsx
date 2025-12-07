@@ -224,43 +224,45 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
       ],
     });
 
-    // 2) Records — au moins un record X01 / Cricket
-    if (
-      (s.recordBestVisitX01 ?? 0) > 0 ||
-      (s.recordBestCOX01 ?? 0) > 0 ||
-      (s.recordBestCricketScore ?? 0) > 0
-    ) {
-      out.push({
-        id: "records",
-        title: t("home.stats.records", "records"),
-        rows: [
-          {
-            label: t("home.stats.bestVisitX01", "best visit"),
-            value: fmtNum(s.recordBestVisitX01, 0),
-          },
-          {
-            label: t("home.stats.bestCOX01", "best co"),
-            value: fmtNum(s.recordBestCOX01, 0),
-          },
-          {
-            label: t("home.stats.minDarts501", "min darts 501"),
-            value: fmtNum(s.recordMinDarts501, 0),
-          },
-          {
-            label: t("home.stats.bestAvg3DX01", "best moy.3d"),
-            value: fmtNum(s.recordBestAvg3DX01, 2),
-          },
-          {
-            label: t("home.stats.bestStreak", "meilleure série"),
-            value: fmtNum(s.recordBestStreak, 0),
-          },
-          {
-            label: t("home.stats.bestCricketScore", "best cricket"),
-            value: fmtNum(s.recordBestCricketScore, 0),
-          },
-        ],
-      });
-    }
+    // 2) Records — on l’affiche dès qu’il y a un peu de matière
+if (
+  (s.sessionsGlobal ?? 0) > 0 ||        // au moins des sessions X01
+  (s.x01MultiSessions ?? 0) > 0 ||     // ou des matchs multi
+  (s.recordBestVisitX01 ?? 0) > 0 ||
+  (s.recordBestCOX01 ?? 0) > 0 ||
+  (s.recordBestCricketScore ?? 0) > 0
+) {
+  out.push({
+    id: "records",
+    title: t("home.stats.records", "records"),
+    rows: [
+      {
+        label: t("home.stats.bestVisitX01", "best visit"),
+        value: fmtNum(s.recordBestVisitX01, 0),
+      },
+      {
+        label: t("home.stats.bestCOX01", "best co"),
+        value: fmtNum(s.recordBestCOX01, 0),
+      },
+      {
+        label: t("home.stats.minDarts501", "min darts 501"),
+        value: fmtNum(s.recordMinDarts501, 0),
+      },
+      {
+        label: t("home.stats.bestAvg3DX01", "best moy.3d"),
+        value: fmtNum(s.recordBestAvg3DX01, 2),
+      },
+      {
+        label: t("home.stats.bestStreak", "meilleure série"),
+        value: fmtNum(s.recordBestStreak, 0),
+      },
+      {
+        label: t("home.stats.bestCricketScore", "best cricket"),
+        value: fmtNum(s.recordBestCricketScore, 0),
+      },
+    ],
+  });
+}
 
     // 3) Online — au moins un match
     if ((s.onlineMatches ?? 0) > 0) {

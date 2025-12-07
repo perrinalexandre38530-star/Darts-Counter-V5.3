@@ -101,7 +101,9 @@ function remainingFromNew(leg: LegStats, pid: string) {
   const start = n((leg as any).startScore ?? (leg as any).start ?? 501);
   const scored = n(st.totalScored ?? st.points ?? st.pointsSum);
   const approx = Math.max(0, start - scored);
-  return n(st.remaining ?? approx);
+  const explicit = st.remaining;
+  if (typeof explicit === "number" && isFinite(explicit)) return explicit;
+  return approx;
 }
 
 function visitsFromNew(leg: LegStats, pid: string) {
@@ -169,7 +171,11 @@ function checkoutFromNew(leg: LegStats, pid: string) {
 }
 
 function rowFromNew(leg: LegStats, pid: string, nameOf: (id: string) => string) {
-  const darts = n((leg as any).perPlayer?.[pid]?.darts ?? (leg as any).perPlayer?.[pid]?.dartsThrown ?? 0);
+  const darts = n(
+    (leg as any).perPlayer?.[pid]?.darts ??
+      (leg as any).perPlayer?.[pid]?.dartsThrown ??
+      0
+  );
   const visits = visitsFromNew(leg, pid);
   const avg3 = avg3FromNew(leg, pid);
   const best = bestVisitFromNew(leg, pid);
@@ -221,7 +227,21 @@ function val(obj: Record<string, number> | undefined, k: string) {
   return obj ? n(obj[k]) : 0;
 }
 
-function rowFromLegacy(res: LegacyLegResult, pid: string, nameOf: (id: string) => string) {
+// ⚙️ Remaining côté legacy : si pas renseigné, on recalcule avec startScore - points
+function remainingFromLegacy(res: LegacyLegResult, pid: string) {
+  const raw = res.remaining?.[pid];
+  if (typeof raw === "number" && isFinite(raw) && raw > 0) return raw;
+  const start = (res as any).startScore ?? (res as any).start ?? 501;
+  const pts = n(res.points?.[pid]);
+  const approx = Math.max(0, start - pts);
+  return approx;
+}
+
+function rowFromLegacy(
+  res: LegacyLegResult,
+  pid: string,
+  nameOf: (id: string) => string
+) {
   const darts = val(res.darts, pid);
   const visits = val(res.visits, pid) || (darts ? Math.ceil(darts / 3) : 0);
   const avg3 =
@@ -235,7 +255,11 @@ function rowFromLegacy(res: LegacyLegResult, pid: string, nameOf: (id: string) =
     res.hitsBySector?.[pid]?.["OB"] ??
     res.bulls?.[pid] ??
     0;
-  const ibRaw = res.hitsBySector?.[pid]?.["IB"] ?? res.dbull?.[pid] ?? res.dbulls?.[pid] ?? 0;
+  const ibRaw =
+    res.hitsBySector?.[pid]?.["IB"] ??
+    res.dbull?.[pid] ??
+    res.dbulls?.[pid] ??
+    0;
 
   const ob = n(obRaw);
   const ib = n(ibRaw);
@@ -249,18 +273,25 @@ function rowFromLegacy(res: LegacyLegResult, pid: string, nameOf: (id: string) =
   const h140 = n(res.h140?.[pid] ?? 0);
   const h180 = n(res.h180?.[pid] ?? res.x180?.[pid] ?? 0);
 
-  const coCount = n(res.coHits?.[pid] ?? res.checkoutDartsByPlayer?.[pid]?.length ?? 0);
+  const coCount = n(
+    res.coHits?.[pid] ?? res.checkoutDartsByPlayer?.[pid]?.length ?? 0
+  );
   const coDartsAvgArr = res.checkoutDartsByPlayer?.[pid];
   const coDartsAvg =
     coCount && coDartsAvgArr?.length
-      ? Number(f2(coDartsAvgArr.reduce((s, x) => s + x, 0) / coDartsAvgArr.length))
+      ? Number(
+          f2(
+            coDartsAvgArr.reduce((s, x) => s + x, 0) /
+              coDartsAvgArr.length
+          )
+        )
       : 0;
   const highestCO = n(res.bestCheckout?.[pid] ?? 0);
 
   return {
     pid,
     name: nameOf(pid),
-    remaining: n(res.remaining?.[pid]),
+    remaining: remainingFromLegacy(res, pid),
     avg3,
     best: n(res.bestVisit?.[pid] ?? 0),
     darts,
@@ -289,8 +320,8 @@ function sortOrderLegacy(res: LegacyLegResult, ids: string[]) {
     Array.isArray(res.order) && res.order.length
       ? res.order.slice()
       : ids.slice().sort((a, b) => {
-          const ra = n(res.remaining?.[a]);
-          const rb = n(res.remaining?.[b]);
+          const ra = remainingFromLegacy(res, a);
+          const rb = remainingFromLegacy(res, b);
           if ((ra === 0) !== (rb === 0)) return ra === 0 ? -1 : 1;
           const aa = n(res.avg3?.[a]);
           const ab = n(res.avg3?.[b]);
@@ -338,12 +369,13 @@ function Inner({
     [playersById]
   );
   const avatarOf = React.useCallback(
-    (id?: string | null) => playersById[id || ""]?.avatarDataUrl ?? null,
+    (id?: string | null) =>
+      playersById[id || ""]?.avatarDataUrl ?? null,
     [playersById]
   );
 
-  // --- rows ---
-  const rows = React.useMemo(() => {
+  // --- rows bruts ---
+  const rowsRaw = React.useMemo(() => {
     if ((result as any)?.legacy) {
       const r = (result as any).legacy as LegacyLegResult;
       const ids =
@@ -366,32 +398,72 @@ function Inner({
   }, [result, nameOf]);
 
   const legNo =
-    (isLegStatsObj(result) ? (result as any).legNo : (result as LegacyLegResult).legNo) ?? 1;
+    (isLegStatsObj(result)
+      ? (result as any).legNo
+      : (result as LegacyLegResult).legNo) ?? 1;
   const finishedAt = isLegStatsObj(result)
     ? (result as any).finishedAt ?? Date.now()
     : (result as LegacyLegResult).finishedAt ?? Date.now();
-  const winnerId = isLegStatsObj(result)
-    ? ((result as any).winnerId ?? rows[0]?.pid ?? null)
-    : ((result as LegacyLegResult).winnerId ?? rows[0]?.pid ?? null);
+  const winnerId: string | null = isLegStatsObj(result)
+    ? ((result as any).winnerId ??
+        rowsRaw[0]?.pid ??
+        null)
+    : ((result as LegacyLegResult).winnerId ??
+        rowsRaw[0]?.pid ??
+        null);
+
+  // 🔁 Ré-ordonnancement : on force le vainqueur en 1ère place
+  const rows = React.useMemo(() => {
+    if (!winnerId) return rowsRaw;
+    const idx = rowsRaw.findIndex((r) => r.pid === winnerId);
+    if (idx <= 0) return rowsRaw;
+    const copy = rowsRaw.slice();
+    const [winnerRow] = copy.splice(idx, 1);
+    copy.unshift(winnerRow);
+    return copy;
+  }, [rowsRaw, winnerId]);
 
   // --- Best-of pour le résumé ---
-  const minDarts = Math.min(...rows.map((r) => (r.darts > 0 ? r.darts : Infinity)));
-  const minDartsRow = rows.find((r) => r.darts === minDarts);
+  const minDarts = Math.min(
+    ...rows.map((r) => (r.darts > 0 ? r.darts : Infinity))
+  );
+  const minDartsRow =
+    rows.find((r) => r.darts === minDarts) || null;
   const bestAvg = Math.max(...rows.map((r) => r.avg3 || 0));
-  const bestAvgRow = rows.find((r) => r.avg3 === bestAvg) || null;
+  const bestAvgRow =
+    rows.find((r) => r.avg3 === bestAvg) || null;
   const bestVol = Math.max(...rows.map((r) => r.best || 0));
-  const bestVolRow = rows.find((r) => r.best === bestVol) || null;
+  const bestVolRow =
+    rows.find((r) => r.best === bestVol) || null;
 
   // Pourcentages : déjà formatés, on en tire un ordre simple
   const bestPDBRow =
-    rows.slice().sort((a, b) => parseFloat(String(b.pDB)) - parseFloat(String(a.pDB)))[0] || null;
+    rows.slice().sort(
+      (a, b) =>
+        parseFloat(String(b.pDB)) -
+        parseFloat(String(a.pDB))
+    )[0] || null;
   const bestPTPRow =
-    rows.slice().sort((a, b) => parseFloat(String(b.pTP)) - parseFloat(String(a.pTP)))[0] || null;
-  const bestBullRow = rows.slice().sort((a, b) => (b.bulls || 0) - (a.bulls || 0))[0] || null;
+    rows.slice().sort(
+      (a, b) =>
+        parseFloat(String(b.pTP)) -
+        parseFloat(String(a.pTP))
+    )[0] || null;
+  const bestBullRow =
+    rows
+      .slice()
+      .sort(
+        (a, b) =>
+          (b.bulls || 0) - (a.bulls || 0)
+      )[0] || null;
 
   // Graph bar
   const barData = React.useMemo(
-    () => rows.map((r) => ({ name: r.name, avg3: Number(f2(r.avg3)) })),
+    () =>
+      rows.map((r) => ({
+        name: r.name,
+        avg3: Number(f2(r.avg3)),
+      })),
     [rows]
   );
 
@@ -405,7 +477,10 @@ function Inner({
       if (!first || !m[first]) return null;
       const entries = Object.entries(m[first])
         .filter(([k]) => k !== "MISS")
-        .sort((a, b) => (n((b as any)[1]) - n((a as any)[1])))
+        .sort(
+          (a, b) =>
+            n((b as any)[1]) - n((a as any)[1])
+        )
         .slice(0, 12)
         .map(([k]) => k);
       return entries.length ? entries : null;
@@ -425,7 +500,10 @@ function Inner({
       }));
 
       if ((StatsLite as any)?.recordLegToLite) {
-        (StatsLite as any).recordLegToLite({ winnerId, rows: rowsLite });
+        (StatsLite as any).recordLegToLite({
+          winnerId,
+          rows: rowsLite,
+        });
       } else {
         fallbackRecordLegToLite({ winnerId, rows: rowsLite });
       }
@@ -433,11 +511,12 @@ function Inner({
       console.warn("[overlay] lite update failed", e);
     }
 
-    try { onSave?.(result); } catch {}
+    try {
+      onSave?.(result);
+    } catch {}
     onClose();
   };
 
-  // petit util pour réutiliser les 'rows' calculées plus haut
   function rowsForLite() {
     return rows || [];
   }
@@ -445,31 +524,80 @@ function Inner({
   // ---- Fallback robuste (écrit un cache minimal si le module n'exporte pas encore recordLegToLite) ----
   function fallbackRecordLegToLite(input: {
     winnerId: string | null;
-    rows: Array<{ pid: string; darts: number; avg3: number; best: number; highestCO?: number }>;
+    rows: Array<{
+      pid: string;
+      darts: number;
+      avg3: number;
+      best: number;
+      highestCO?: number;
+    }>;
   }) {
     const PFX = "dc:statslite:";
     for (const r of input.rows) {
       const key = PFX + r.pid;
       const cur = safeParse(localStorage.getItem(key)) || {
-        games: 0, wins: 0, darts: 0, bestVisit: 0, bestCheckout: 0, avg3: 0, _sumAvg3: 0,
+        games: 0,
+        wins: 0,
+        darts: 0,
+        bestVisit: 0,
+        bestCheckout: 0,
+        avg3: 0,
+        _sumAvg3: 0,
       };
       const games = cur.games + 1;
-      const wins = cur.wins + (input.winnerId === r.pid ? 1 : 0);
-      const darts = cur.darts + (isFinite(r.darts) ? r.darts : 0);
-      const bestVisit = Math.max(cur.bestVisit || 0, isFinite(r.best) ? r.best : 0);
-      const bestCheckout = Math.max(cur.bestCheckout || 0, isFinite(r.highestCO || 0) ? (r.highestCO || 0) : 0);
-      const _sumAvg3 = (cur._sumAvg3 || cur.avg3 * (cur.games || 0)) + (isFinite(r.avg3) ? r.avg3 : 0);
+      const wins =
+        cur.wins + (input.winnerId === r.pid ? 1 : 0);
+      const darts =
+        cur.darts + (isFinite(r.darts) ? r.darts : 0);
+      const bestVisit = Math.max(
+        cur.bestVisit || 0,
+        isFinite(r.best) ? r.best : 0
+      );
+      const bestCheckout = Math.max(
+        cur.bestCheckout || 0,
+        isFinite(r.highestCO || 0)
+          ? r.highestCO || 0
+          : 0
+      );
+      const _sumAvg3 =
+        (cur._sumAvg3 ||
+          cur.avg3 * (cur.games || 0)) +
+        (isFinite(r.avg3) ? r.avg3 : 0);
       const avg3 = games ? _sumAvg3 / games : 0;
 
-      localStorage.setItem(key, JSON.stringify({ games, wins, darts, bestVisit, bestCheckout, avg3, _sumAvg3 }));
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          games,
+          wins,
+          darts,
+          bestVisit,
+          bestCheckout,
+          avg3,
+          _sumAvg3,
+        })
+      );
     }
     try {
-      window.dispatchEvent(new CustomEvent("stats-lite:changed", { detail: { playerId: "*" } }));
-      localStorage.setItem("dc:statslite:version", String(Date.now()));
+      window.dispatchEvent(
+        new CustomEvent("stats-lite:changed", {
+          detail: { playerId: "*" },
+        })
+      );
+      localStorage.setItem(
+        "dc:statslite:version",
+        String(Date.now())
+      );
     } catch {}
   }
 
-  function safeParse(s: string | null) { try { return s ? JSON.parse(s) : null; } catch { return null; } }
+  function safeParse(s: string | null) {
+    try {
+      return s ? JSON.parse(s) : null;
+    } catch {
+      return null;
+    }
+  }
 
   // --- UI ---
   return (
@@ -497,7 +625,8 @@ function Inner({
           maxHeight: "92vh",
           overflow: "auto",
           borderRadius: 14,
-          background: "linear-gradient(180deg, #17181c, #101116)",
+          background:
+            "linear-gradient(180deg, #17181c, #101116)",
           border: "1px solid rgba(255,255,255,.08)",
           boxShadow: "0 16px 44px rgba(0,0,0,.45)",
           fontSize: 12,
@@ -509,8 +638,10 @@ function Inner({
             position: "sticky",
             top: 0,
             zIndex: 1,
-            background: "linear-gradient(180deg, #1a1b20, #13141a)",
-            borderBottom: "1px solid rgba(255,255,255,.08)",
+            background:
+              "linear-gradient(180deg, #1a1b20, #13141a)",
+            borderBottom:
+              "1px solid rgba(255,255,255,.08)",
             padding: "8px 10px",
             borderTopLeftRadius: 14,
             borderTopRightRadius: 14,
@@ -519,14 +650,35 @@ function Inner({
             gap: 6,
           }}
         >
-          <div style={{ fontWeight: 900, color: "#f0b12a", fontSize: 14 }}>
+          <div
+            style={{
+              fontWeight: 900,
+              color: "#f0b12a",
+              fontSize: 14,
+            }}
+          >
             Résumé de la manche #{legNo}
           </div>
-          <div style={{ opacity: 0.7, fontSize: 11, marginLeft: 6 }}>
-            Manche terminée — {new Date(finishedAt).toLocaleTimeString()}
+          <div
+            style={{
+              opacity: 0.7,
+              fontSize: 11,
+              marginLeft: 6,
+            }}
+          >
+            Manche terminée —{" "}
+            {new Date(finishedAt).toLocaleTimeString()}
           </div>
           <div style={{ flex: 1 }} />
-          <button onClick={onClose} title="Fermer" style={btn("transparent", "#ddd", "#ffffff22")}>
+          <button
+            onClick={onClose}
+            title="Fermer"
+            style={btn(
+              "transparent",
+              "#ddd",
+              "#ffffff22"
+            )}
+          >
             ✕
           </button>
         </div>
@@ -537,24 +689,45 @@ function Inner({
           <div
             style={{
               borderRadius: 10,
-              border: "1px solid rgba(255,255,255,.07)",
-              background: "linear-gradient(180deg, rgba(28,28,32,.65), rgba(18,18,20,.65))",
+              border:
+                "1px solid rgba(255,255,255,.07)",
+              background:
+                "linear-gradient(180deg, rgba(28,28,32,.65), rgba(18,18,20,.65))",
               marginBottom: 10,
             }}
           >
             {rows.map((r, idx) => {
               const avatar = avatarOf(r.pid);
-              const finished = (r.remaining ?? 0) === 0;
+              const isWinner = r.pid === winnerId;
+              const remainingSafe =
+                typeof r.remaining === "number" &&
+                isFinite(r.remaining)
+                  ? r.remaining
+                  : 0;
+              const displayScore = isWinner
+                ? 0
+                : remainingSafe;
+
               return (
                 <div
                   key={r.pid}
                   style={{
                     padding: "6px 8px",
                     display: "grid",
-                    gridTemplateColumns: "26px 36px 1fr auto",
+                    gridTemplateColumns:
+                      "26px 36px 1fr auto",
                     alignItems: "center",
                     gap: 8,
-                    borderBottom: "1px solid rgba(255,255,255,.06)",
+                    borderBottom:
+                      "1px solid rgba(255,255,255,.06)",
+                    background: isWinner
+                      ? "radial-gradient(circle at 0% 0%, rgba(127,226,169,.28), transparent 55%)"
+                      : "transparent",
+                    boxShadow: isWinner
+                      ? "0 0 22px rgba(127,226,169,.35)"
+                      : "0 0 0 rgba(0,0,0,0)",
+                    transition:
+                      "background .18s, box-shadow .18s",
                   }}
                 >
                   <div
@@ -562,7 +735,8 @@ function Inner({
                       width: 22,
                       height: 22,
                       borderRadius: 6,
-                      background: "rgba(255,255,255,.06)",
+                      background:
+                        "rgba(255,255,255,.06)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -579,11 +753,20 @@ function Inner({
                       height: 36,
                       borderRadius: "50%",
                       overflow: "hidden",
-                      background: "rgba(255,255,255,.08)",
+                      background:
+                        "rgba(255,255,255,.08)",
                     }}
                   >
                     {avatar ? (
-                      <img src={avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <img
+                        src={avatar}
+                        alt=""
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                        }}
+                      />
                     ) : (
                       <div
                         style={{
@@ -600,20 +783,37 @@ function Inner({
                       </div>
                     )}
                   </div>
-                  <div style={{ fontWeight: 800, color: "#ffcf57", fontSize: 13 }}>{r.name}</div>
-                  <div style={{ fontWeight: 900, color: finished ? "#7fe2a9" : "#ffcf57" }}>
-                    {finished ? "0" : r.remaining ?? "—"}
+                  <div
+                    style={{
+                      fontWeight: 800,
+                      color: isWinner
+                        ? "#7fe2a9"
+                        : "#ffcf57",
+                      fontSize: 13,
+                    }}
+                  >
+                    {r.name}
+                  </div>
+                  <div
+                    style={{
+                      fontWeight: 900,
+                      color: isWinner
+                        ? "#7fe2a9"
+                        : "#ffcf57",
+                    }}
+                  >
+                    {displayScore}
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* Résumé */}
+          {/* Résumé en KPI */}
           <Accordion title="Résumé de la manche" defaultOpen>
             <SummaryRows
               winnerName={nameOf(winnerId || "")}
-              minDartsRow={minDartsRow || null}
+              minDartsRow={minDartsRow}
               bestAvgRow={bestAvgRow}
               bestVolRow={bestVolRow}
               bestPDBRow={bestPDBRow}
@@ -643,7 +843,10 @@ function Inner({
                 </thead>
                 <tbody>
                   {rows.map((r) => (
-                    <tr key={`fast-${r.pid}`} style={rowLine}>
+                    <tr
+                      key={`fast-${r.pid}`}
+                      style={rowLine}
+                    >
                       <TDStrong>{r.name}</TDStrong>
                       <TD>{r.visits}</TD>
                       <TD>{r.darts}</TD>
@@ -678,10 +881,17 @@ function Inner({
                 </thead>
                 <tbody>
                   {rows.map((r) => (
-                    <tr key={`darts-${r.pid}`} style={rowLine}>
+                    <tr
+                      key={`darts-${r.pid}`}
+                      style={rowLine}
+                    >
                       <TDStrong>{r.name}</TDStrong>
                       <TD>{r.coCount}</TD>
-                      <TD>{r.coCount ? r.coDartsAvg : "—"}</TD>
+                      <TD>
+                        {r.coCount
+                          ? r.coDartsAvg
+                          : "—"}
+                      </TD>
                       <TD>{r.doubles}</TD>
                       <TD>{r.triples}</TD>
                       <TD>{r.ob}</TD>
@@ -696,7 +906,12 @@ function Inner({
           {/* Stats globales */}
           <Accordion title="Stats globales">
             <div style={{ overflowX: "auto" }}>
-              <table style={{ ...tableBase, minWidth: 620 }}>
+              <table
+                style={{
+                  ...tableBase,
+                  minWidth: 620,
+                }}
+              >
                 <thead>
                   <tr>
                     <TH>#</TH>
@@ -712,7 +927,10 @@ function Inner({
                 </thead>
                 <tbody>
                   {rows.map((r, i) => (
-                    <tr key={`global-${r.pid}`} style={rowLine}>
+                    <tr
+                      key={`global-${r.pid}`}
+                      style={rowLine}
+                    >
                       <TD>{i + 1}</TD>
                       <TDStrong>{r.name}</TDStrong>
                       <TD>{f2(r.avg3)}</TD>
@@ -731,24 +949,48 @@ function Inner({
 
           {/* Graphs */}
           <Accordion title="Graphiques — hits par secteur & moyennes">
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {/* 🔁 Bascule en colonne : cartes les unes sous les autres */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
               <ChartCard>
-                <ChartMountGuard minW={220} minH={220}>
+                <ChartMountGuard
+                  minW={220}
+                  minH={220}
+                >
                   {() =>
                     radarKeys ? (
-                      <ResponsiveContainer width="100%" height={230}>
+                      <ResponsiveContainer
+                        width="100%"
+                        height={230}
+                      >
                         <RadarChart
-                          data={radarKeys.map((k) => ({
-                            sector: k,
-                            v:
-                              ((result as any).legacy?.hitsBySector ??
-                                (result as any).hitsBySector ??
-                                {})[rows[0]?.pid ?? ""]?.[k] ?? 0,
-                          }))}
+                          data={radarKeys.map(
+                            (k) => ({
+                              sector: k,
+                              v:
+                                ((result as any)
+                                  .legacy
+                                  ?.hitsBySector ??
+                                  (result as any)
+                                    .hitsBySector ??
+                                  {})[
+                                  rows[0]?.pid ??
+                                    ""
+                                ]?.[k] ?? 0,
+                            })
+                          )}
                         >
                           <PolarGrid />
                           <PolarAngleAxis dataKey="sector" />
-                          <Radar name="Hits" dataKey="v" />
+                          <Radar
+                            name="Hits"
+                            dataKey="v"
+                          />
                         </RadarChart>
                       </ResponsiveContainer>
                     ) : (
@@ -759,9 +1001,15 @@ function Inner({
               </ChartCard>
 
               <ChartCard>
-                <ChartMountGuard minW={220} minH={220}>
+                <ChartMountGuard
+                  minW={220}
+                  minH={220}
+                >
                   {() => (
-                    <ResponsiveContainer width="100%" height={230}>
+                    <ResponsiveContainer
+                      width="100%"
+                      height={230}
+                    >
                       <BarChart data={barData}>
                         <XAxis dataKey="name" />
                         <YAxis />
@@ -776,18 +1024,45 @@ function Inner({
           </Accordion>
 
           {/* Actions */}
-          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 10 }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              justifyContent: "flex-end",
+              marginTop: 10,
+            }}
+          >
             {onReplay && (
-              <button onClick={onReplay} style={btn("transparent", "#ddd", "#ffffff22")}>
+              <button
+                onClick={onReplay}
+                style={btn(
+                  "transparent",
+                  "#ddd",
+                  "#ffffff22"
+                )}
+              >
                 Rejouer la manche
               </button>
             )}
             {result && (
-              <button onClick={handleSave} style={btn("linear-gradient(180deg, #f0b12a, #c58d19)", "#141417")}>
+              <button
+                onClick={handleSave}
+                style={btn(
+                  "linear-gradient(180deg, #f0b12a, #c58d19)",
+                  "#141417"
+                )}
+              >
                 Sauvegarder
               </button>
             )}
-            <button onClick={onClose} style={btn("transparent", "#ddd", "#ffffff22")}>
+            <button
+              onClick={onClose}
+              style={btn(
+                "transparent",
+                "#ddd",
+                "#ffffff22"
+              )}
+            >
               Fermer
             </button>
           </div>
@@ -797,7 +1072,7 @@ function Inner({
   );
 }
 
-// ---------- Résumé ----------
+// ---------- Résumé -> KPI lumineux MULTI-COLONNES ----------
 function SummaryRows({
   winnerName,
   minDartsRow,
@@ -809,78 +1084,114 @@ function SummaryRows({
   fmt2,
 }: any) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-      <KV label="Vainqueur" value={winnerName} strong />
-      <KV
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+        gap: 8,
+      }}
+    >
+      <KPIBlock
+        label="Vainqueur"
+        color="gold"
+        value={
+          winnerName ? (
+            <span style={{ fontWeight: 900 }}>{winnerName}</span>
+          ) : (
+            "—"
+          )
+        }
+      />
+
+      <KPIBlock
         label="Min Darts"
+        color="green"
         value={
           minDartsRow ? (
             <span>
-              <b style={{ color: "#ffcf57" }}>{minDartsRow.name}</b> — {minDartsRow.darts}
+              <span style={{ fontWeight: 800 }}>{minDartsRow.name}</span>
+              <span style={{ opacity: 0.8 }}> — {minDartsRow.darts}</span>
             </span>
           ) : (
             "—"
           )
         }
-        right
       />
-      <KV
+
+      <KPIBlock
         label="Best Moy./3D"
+        color="blue"
         value={
           bestAvgRow ? (
             <span>
-              <b style={{ color: "#ffcf57" }}>{bestAvgRow.name}</b> — {fmt2(bestAvgRow.avg3)}
+              <span style={{ fontWeight: 800 }}>{bestAvgRow.name}</span>
+              <span style={{ opacity: 0.8 }}> — {fmt2(bestAvgRow.avg3)}</span>
             </span>
           ) : (
             "—"
           )
         }
       />
-      <KV
+
+      <KPIBlock
         label="Best Volée"
+        color="pink"
         value={
           bestVolRow ? (
             <span>
-              <b style={{ color: "#ffcf57" }}>{bestVolRow.name}</b> — {bestVolRow.best}
+              <span style={{ fontWeight: 800 }}>{bestVolRow.name}</span>
+              <span style={{ opacity: 0.8 }}> — {bestVolRow.best}</span>
             </span>
           ) : (
             "—"
           )
         }
-        right
       />
-      <KV
+
+      <KPIBlock
         label="Best %DB"
+        color="purple"
         value={
           bestPDBRow ? (
             <span>
-              <b style={{ color: "#ffcf57" }}>{bestPDBRow.name}</b> — {bestPDBRow.pDB}
+              <span style={{ fontWeight: 800 }}>{bestPDBRow.name}</span>
+              <span style={{ opacity: 0.8 }}> — {bestPDBRow.pDB}</span>
             </span>
           ) : (
             "—"
           )
         }
       />
-      <KV
+
+      <KPIBlock
         label="Best %TP"
+        color="orange"
         value={
           bestPTPRow ? (
             <span>
-              <b style={{ color: "#ffcf57" }}>{bestPTPRow.name}</b> — {bestPTPRow.pTP}
+              <span style={{ fontWeight: 800 }}>{bestPTPRow.name}</span>
+              <span style={{ opacity: 0.8 }}> — {bestPTPRow.pTP}</span>
             </span>
           ) : (
             "—"
           )
         }
-        right
       />
-      <KV
+
+      <KPIBlock
         label="Best BULL"
+        color="cyan"
         value={
           bestBullRow ? (
             <span>
-              <b style={{ color: "#ffcf57" }}>{bestBullRow.name}</b> — {bestBullRow.bulls}
-              <span style={{ opacity: 0.8 }}> ({bestBullRow.ob} + {bestBullRow.ib})</span>
+              <span style={{ fontWeight: 800 }}>{bestBullRow.name}</span>
+              <span style={{ opacity: 0.8 }}>
+                {" "}
+                — {bestBullRow.bulls}{" "}
+                <span style={{ fontSize: 11 }}>
+                  ({bestBullRow.ob} + {bestBullRow.ib})
+                </span>
+              </span>
             </span>
           ) : (
             "—"
@@ -890,6 +1201,7 @@ function SummaryRows({
     </div>
   );
 }
+
 
 // ---------- UI helpers ----------
 function Accordion({
@@ -907,8 +1219,10 @@ function Accordion({
       style={{
         marginTop: 8,
         borderRadius: 10,
-        border: "1px solid rgba(255,255,255,.08)",
-        background: "linear-gradient(180deg, rgba(28,28,32,.65), rgba(18,18,20,.65))",
+        border:
+          "1px solid rgba(255,255,255,.08)",
+        background:
+          "linear-gradient(180deg, rgba(28,28,32,.65), rgba(18,18,20,.65))",
       }}
     >
       <button
@@ -928,14 +1242,17 @@ function Accordion({
           fontSize: 12,
         }}
       >
-        <span style={{ color: "#f0b12a" }}>{title}</span>
+        <span style={{ color: "#f0b12a" }}>
+          {title}
+        </span>
         <div style={{ flex: 1 }} />
         <span
           style={{
             width: 22,
             height: 22,
             borderRadius: 5,
-            border: "1px solid rgba(255,255,255,.12)",
+            border:
+              "1px solid rgba(255,255,255,.12)",
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
@@ -949,12 +1266,20 @@ function Accordion({
       <div
         style={{
           overflow: "hidden",
-          transition: "grid-template-rows 180ms ease",
+          transition:
+            "grid-template-rows 180ms ease",
           display: "grid",
           gridTemplateRows: open ? "1fr" : "0fr",
         }}
       >
-        <div style={{ overflow: "hidden", padding: open ? "0 10px 10px" : "0 10px 0" }}>
+        <div
+          style={{
+            overflow: "hidden",
+            padding: open
+              ? "0 10px 10px"
+              : "0 10px 0",
+          }}
+        >
           {children}
         </div>
       </div>
@@ -962,7 +1287,10 @@ function Accordion({
   );
 }
 
-function useSizeReady<T extends HTMLElement>(minW = 220, minH = 220) {
+function useSizeReady<T extends HTMLElement>(
+  minW = 220,
+  minH = 220
+) {
   const ref = React.useRef<T | null>(null);
   const [ready, setReady] = React.useState(false);
   React.useLayoutEffect(() => {
@@ -990,9 +1318,13 @@ function ChartMountGuard({
   minW?: number;
   minH?: number;
 }) {
-  const { ref, ready } = useSizeReady<HTMLDivElement>(minW, minH);
+  const { ref, ready } =
+    useSizeReady<HTMLDivElement>(minW, minH);
   return (
-    <div ref={ref} style={{ width: "100%", minHeight: minH }}>
+    <div
+      ref={ref}
+      style={{ width: "100%", minHeight: minH }}
+    >
       {ready ? children() : <ChartPlaceholder />}
     </div>
   );
@@ -1002,7 +1334,8 @@ function ChartCard({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={{
-        border: "1px solid rgba(255,255,255,.08)",
+        border:
+          "1px solid rgba(255,255,255,.08)",
         borderRadius: 10,
         background: "rgba(255,255,255,.03)",
         padding: 6,
@@ -1040,7 +1373,8 @@ const tableBase: React.CSSProperties = {
   fontSize: 12,
 };
 const rowLine: React.CSSProperties = {
-  borderBottom: "1px solid rgba(255,255,255,.06)",
+  borderBottom:
+    "1px solid rgba(255,255,255,.06)",
 };
 
 function TH({ children }: { children: React.ReactNode }) {
@@ -1061,7 +1395,15 @@ function TH({ children }: { children: React.ReactNode }) {
 }
 function TD({ children }: { children: React.ReactNode }) {
   return (
-    <td style={{ padding: "6px 8px", fontSize: 12, whiteSpace: "nowrap" }}>{children}</td>
+    <td
+      style={{
+        padding: "6px 8px",
+        fontSize: 12,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </td>
   );
 }
 function TDStrong({ children }: { children: React.ReactNode }) {
@@ -1094,27 +1436,170 @@ function KV({
   return (
     <div
       style={{
-        border: "1px solid rgba(255,255,255,.08)",
+        border:
+          "1px solid rgba(255,255,255,.08)",
         borderRadius: 8,
         padding: "6px 8px",
         background: "rgba(255,255,255,.03)",
         display: "flex",
         gap: 8,
-        justifyContent: right ? "space-between" : "flex-start",
+        justifyContent: right
+          ? "space-between"
+          : "flex-start",
         fontSize: 12,
       }}
     >
       <div style={{ opacity: 0.8 }}>{label}</div>
-      <div style={{ marginLeft: "auto", fontWeight: strong ? 900 : 700, color: "#ffcf57" }}>
+      <div
+        style={{
+          marginLeft: "auto",
+          fontWeight: strong ? 900 : 700,
+          color: "#ffcf57",
+        }}
+      >
         {value}
       </div>
     </div>
   );
 }
 
-function btn(bg: string, fg: string, border?: string): React.CSSProperties {
+// --- Nouveau helper KPI lumineux ---
+function KPIBlock({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: React.ReactNode;
+  color:
+    | "gold"
+    | "green"
+    | "blue"
+    | "pink"
+    | "purple"
+    | "orange"
+    | "cyan"
+    | "red"
+    | string;
+}) {
+  const palette: Record<
+    string,
+    {
+      border: string;
+      glow: string;
+      gradFrom: string;
+      gradTo: string;
+      text: string;
+    }
+  > = {
+    gold: {
+      border: "rgba(240,177,42,.8)",
+      glow: "rgba(240,177,42,.55)",
+      gradFrom: "#3b2a10",
+      gradTo: "#20150a",
+      text: "#ffd875",
+    },
+    green: {
+      border: "rgba(127,226,169,.8)",
+      glow: "rgba(127,226,169,.55)",
+      gradFrom: "#103322",
+      gradTo: "#081c13",
+      text: "#9cf5c8",
+    },
+    blue: {
+      border: "rgba(86,180,255,.85)",
+      glow: "rgba(86,180,255,.55)",
+      gradFrom: "#10263b",
+      gradTo: "#081521",
+      text: "#b7ddff",
+    },
+    pink: {
+      border: "rgba(255,146,208,.85)",
+      glow: "rgba(255,146,208,.55)",
+      gradFrom: "#3a1230",
+      gradTo: "#20091a",
+      text: "#ffc4ea",
+    },
+    purple: {
+      border: "rgba(186,148,255,.85)",
+      glow: "rgba(186,148,255,.55)",
+      gradFrom: "#2e1545",
+      gradTo: "#190b26",
+      text: "#ddc6ff",
+    },
+    orange: {
+      border: "rgba(255,180,120,.85)",
+      glow: "rgba(255,180,120,.55)",
+      gradFrom: "#3b2313",
+      gradTo: "#1f130b",
+      text: "#ffd1a0",
+    },
+    cyan: {
+      border: "rgba(120,235,255,.85)",
+      glow: "rgba(120,235,255,.55)",
+      gradFrom: "#10343b",
+      gradTo: "#071d21",
+      text: "#c5f6ff",
+    },
+    red: {
+      border: "rgba(255,120,120,.85)",
+      glow: "rgba(255,120,120,.55)",
+      gradFrom: "#3b1616",
+      gradTo: "#200b0b",
+      text: "#ffc0c0",
+    },
+  };
+
+  const c = palette[color] || palette.gold;
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        borderRadius: 10,
+        border: `1px solid ${c.border}`,
+        padding: "7px 9px",
+        background: `radial-gradient(circle at 0% 0%, ${c.glow}, transparent 55%), linear-gradient(180deg, ${c.gradFrom}, ${c.gradTo})`,
+        boxShadow: `0 0 18px ${c.glow}`,
+        overflow: "hidden",
+        fontSize: 12,
+      }}
+    >
+      <div
+        style={{
+          opacity: 0.8,
+          letterSpacing: 0.4,
+          textTransform: "uppercase",
+          fontSize: 10,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          marginTop: 4,
+          color: c.text,
+          fontWeight: 800,
+          fontSize: 13,
+          display: "flex",
+          alignItems: "center",
+          minHeight: 18,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function btn(
+  bg: string,
+  fg: string,
+  border?: string
+): React.CSSProperties {
   return {
-    appearance: "none" as React.CSSProperties["appearance"],
+    appearance:
+      "none" as React.CSSProperties["appearance"],
     padding: "8px 12px",
     borderRadius: 10,
     border: `1px solid ${border ?? "transparent"}`,

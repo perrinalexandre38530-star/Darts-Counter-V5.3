@@ -2,7 +2,7 @@
 // src/hooks/useX01EngineV3.ts
 // Moteur X01 V3 — VERSION FIXÉE (stats 100% correctes)
 // - Stats LIVE correctes (darts, visits, bestVisit, totalScore)
-// - PATCH COMPLET HITS/MISS/SEGMENTS (radar + hits S/D/T + détail)
+// - PATCH COMPLET HITS/MISS/BUST/SEGMENTS + POWER (60+/100+/140+/180)
 // - Agrégat summary.detailedByPlayer pour les matchs X01 multi
 // - summary.game.startScore + summary.rankings (pour Historique)
 // - Une seule MAJ des stats par VOLÉE
@@ -92,7 +92,7 @@ function createInitialMatchState(config: X01ConfigV3): X01MatchStateV3 {
 }
 
 // ===========================================================
-// PATCH STATS COMPLETES X01 (hits/miss/segments) — helpers
+// PATCH STATS COMPLETES X01 (hits/miss/bust/segments/power)
 // ===========================================================
 
 function ensureExtendedStatsFor(st: X01StatsLiveV3) {
@@ -115,6 +115,12 @@ function ensureExtendedStatsFor(st: X01StatsLiveV3) {
   if ((st as any).bull == null) (st as any).bull = 0;
   if ((st as any).dBull == null) (st as any).dBull = 0;
 
+  // Power scoring (par volée)
+  if ((st as any).h60 == null) (st as any).h60 = 0;
+  if ((st as any).h100 == null) (st as any).h100 = 0;
+  if ((st as any).h140 == null) (st as any).h140 = 0;
+  if ((st as any).h180 == null) (st as any).h180 = 0;
+
   // Checkout
   if ((st as any).bestCheckout == null) (st as any).bestCheckout = 0;
 
@@ -128,7 +134,7 @@ function ensureExtendedStatsFor(st: X01StatsLiveV3) {
 function recordDartOn(st: X01StatsLiveV3, v: number, m: number) {
   st.dartsDetail!.push({ v, m });
 
-  // Miss
+  // MISS
   if (v === 0 || m === 0) {
     st.miss!++;
     return;
@@ -172,7 +178,20 @@ function recordVisitOn(
     total += d.v * d.m;
   }
 
-  st.scorePerVisit!.push(total);
+  // Score de la volée (pour power scoring)
+  const visitScore = total;
+
+  if (visitScore >= 180) {
+    (st as any).h180 = ((st as any).h180 || 0) + 1;
+  } else if (visitScore >= 140) {
+    (st as any).h140 = ((st as any).h140 || 0) + 1;
+  } else if (visitScore >= 100) {
+    (st as any).h100 = ((st as any).h100 || 0) + 1;
+  } else if (visitScore >= 60) {
+    (st as any).h60 = ((st as any).h60 || 0) + 1;
+  }
+
+  st.scorePerVisit!.push(visitScore);
 }
 
 function finalizeStatsFor(st: X01StatsLiveV3) {
@@ -213,6 +232,16 @@ function buildAggregatedStats(
       hits: { S: number; D: number; T: number; M: number };
       hitsBySegment: NonNullable<X01StatsLiveV3["hitsBySegment"]>;
       scorePerVisit: number[];
+
+      // Champs étendus exposés dans detailedByPlayer
+      miss: number;
+      bust: number;
+      bull: number;
+      dBull: number;
+      h60: number;
+      h100: number;
+      h140: number;
+      h180: number;
     }
   > = {} as any;
 
@@ -247,6 +276,16 @@ function buildAggregatedStats(
       },
       hitsBySegment: st.hitsBySegment || {},
       scorePerVisit: st.scorePerVisit || [],
+
+      // champs étendus
+      miss: st.miss || 0,
+      bust: st.bust || 0,
+      bull: (st as any).bull || 0,
+      dBull: (st as any).dBull || 0,
+      h60: (st as any).h60 || 0,
+      h100: (st as any).h100 || 0,
+      h140: (st as any).h140 || 0,
+      h180: (st as any).h180 || 0,
     };
   }
 
@@ -329,8 +368,13 @@ function rebuildMatchFromHistory(
     // Stats live "classiques"
     applyVisitToLiveStatsV3(stPlayer, visit as any, result.bust, isCheckout);
 
-    // Patch étendu : hits/miss/segments
+    // Patch étendu : hits/miss/bust/segments + power scoring
     ensureExtendedStatsFor(stPlayer);
+
+    if (result.bust) {
+      stPlayer.bust = (stPlayer.bust || 0) + 1;
+    }
+
     recordVisitOn(stPlayer, dartsArr);
     finalizeStatsFor(stPlayer);
 
@@ -565,8 +609,13 @@ function applyDartWithFlow(
   // Stats live "classiques"
   applyVisitToLiveStatsV3(st, visit as any, result.bust, isCheckout);
 
-  // Patch étendu : hits/miss/segments
+  // Patch étendu : hits/miss/bust/segments + power scoring
   ensureExtendedStatsFor(st);
+
+  if (result.bust) {
+    st.bust = (st.bust || 0) + 1;
+  }
+
   recordVisitOn(st, darts);
   finalizeStatsFor(st);
 
