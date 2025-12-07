@@ -274,9 +274,10 @@ function loadClockAggForProfile(profileId: string): ClockAgg {
 
 /* ============================================================
    buildStatsForProfile
-   - agrégat X01 multi V3 (History)
-   - scan récursif de getBasicProfileStatsAsync (global)
-   - records minDarts501
+   - agrégat global
+   - X01 multi (base + historique)
+   - records (min darts, best streak)
+   - numéro favori
 ============================================================ */
 
 async function buildStatsForProfile(
@@ -309,151 +310,205 @@ async function buildStatsForProfile(
       })(),
     ]);
 
+    const anyBase: any = base || {};
     const multiMatches: any[] = Array.isArray(multiRaw) ? multiRaw : [];
 
-    const asNum = (v: any): number => {
-      if (v === null || v === undefined) return 0;
-      if (typeof v === "string") {
-        const cleaned = v.replace(/[%\s]/g, "");
-        const n = Number(cleaned);
-        return Number.isFinite(n) ? n : 0;
+    // -------- helpers --------
+    const getNum = (obj: any, ...keys: string[]) => {
+      for (const k of keys) {
+        if (obj && obj[k] != null) {
+          const n = Number(obj[k]);
+          if (!Number.isNaN(n)) return n;
+        }
       }
-      const n = Number(v);
-      return Number.isFinite(n) ? n : 0;
+      return 0;
     };
 
-    // --------- GLOBAL : scan récursif de base ---------
-    let games = 0;
-    let wins = 0;
-    let avg3 = 0;
-    let bestVisit = 0;
-    let bestCheckout = 0;
-    let winRate01 = 0;
-    let winRateCandidate = 0; // ratio 0–1
+    const getRatio01 = (obj: any, ...keys: string[]) => {
+      const v = getNum(obj, ...keys);
+      if (v <= 0) return 0;
+      return v > 1 ? v / 100 : v; // si c'est un %
+    };
 
+    // ---------------- GLOBAL ----------------
+    const games = getNum(
+      anyBase,
+      "games",
+      "gamesTotal",
+      "sessions",
+      "x01GamesTotal",
+      "x01_sessions"
+    );
+    const wins = getNum(
+      anyBase,
+      "wins",
+      "winsTotal",
+      "x01WinsTotal",
+      "x01_wins"
+    );
+
+    // moyenne 3 darts "globale"
+    let avg3 = getNum(
+      anyBase,
+      "avg3DOverall",
+      "avg3DGlobal",
+      "avg3D",
+      "avg3",
+      "x01Avg3D",
+      "x01_avg3D"
+    );
+    if (!avg3) {
+      // fallback sur les meilleurs avg 3D connus
+      avg3 =
+        getNum(anyBase, "bestAvg3D", "bestAvg3DX01", "recordBestAvg3DX01") || 0;
+    }
+
+    const bestVisitBase = getNum(
+      anyBase,
+      "bestVisitX01",
+      "bestVisit",
+      "bestVisitScore",
+      "recordBestVisit",
+      "recordBestVisitX01"
+    );
+    const bestCheckoutBase = getNum(
+      anyBase,
+      "bestCheckoutX01",
+      "bestCheckout",
+      "bestCo",
+      "bestFinish",
+      "recordBestCOX01"
+    );
+
+    const winRate01 =
+      getRatio01(
+        anyBase,
+        "winRate",
+        "winRatePct",
+        "x01WinRate",
+        "x01WinRatePct",
+        "x01_winRate"
+      ) || (games > 0 ? wins / games : 0);
+
+    const ratingGlobal =
+      getNum(anyBase, "ratingGlobal", "rating", "x01Rating") || avg3;
+
+    // -------- min darts global + meilleure série --------
     const minDartsCandidates: number[] = [];
+    const streakCandidates: number[] = [];
 
     const addMinCandidate = (v: any) => {
-      const n = asNum(v);
-      if (n > 0) minDartsCandidates.push(n);
+      const n = Number(v);
+      if (!Number.isNaN(n) && n > 0) minDartsCandidates.push(n);
+    };
+    const addStreakCandidate = (v: any) => {
+      const n = Number(v);
+      if (!Number.isNaN(n) && n > 0) streakCandidates.push(n);
     };
 
-    const visited = new Set<any>();
-    const MAX_DEPTH = 6;
+    if (anyBase && typeof anyBase === "object") {
+      // clés explicites min darts
+      addMinCandidate(anyBase.minDarts);
+      addMinCandidate(anyBase.min_darts);
+      addMinCandidate(anyBase.minDarts501);
+      addMinCandidate(anyBase.min_darts_501);
+      addMinCandidate(anyBase.minDartsX01);
+      addMinCandidate(anyBase.fastestLeg);
+      addMinCandidate(anyBase.fastest_leg);
+      addMinCandidate(anyBase.bestLegDarts);
+      addMinCandidate(anyBase.best_leg_darts);
+      addMinCandidate(anyBase.recordMinDarts501);
+      addMinCandidate(anyBase.record_min_darts_501);
 
-    const scanObj = (obj: any, depth: number) => {
-      if (!obj || typeof obj !== "object") return;
-      if (visited.has(obj)) return;
-      if (depth > MAX_DEPTH) return;
-      visited.add(obj);
+      // streak explicites
+      addStreakCandidate(anyBase.bestStreak);
+      addStreakCandidate(anyBase.winStreak);
+      addStreakCandidate(anyBase.bestWinStreak);
+      addStreakCandidate(anyBase.longestWinStreak);
+      addStreakCandidate(anyBase.best_streak);
+      addStreakCandidate(anyBase.longest_streak);
 
-      for (const [key, value] of Object.entries(obj)) {
-        if (value && typeof value === "object") {
-          scanObj(value, depth + 1);
-          continue;
+      // scan générique
+      for (const key of Object.keys(anyBase)) {
+        const lk = key.toLowerCase();
+        if (lk.includes("min") && lk.includes("dart")) {
+          addMinCandidate(anyBase[key]);
         }
-
-        const n = asNum(value);
-        if (n <= 0) continue;
-
-        const k = key.toLowerCase();
-
-        // games / sessions / matches
-        if (
-          k.includes("games") ||
-          k.includes("matches") ||
-          k.includes("sessions")
-        ) {
-          if (n > games) games = n;
-        }
-
-        // wins
-        if (
-          k.includes("wins") ||
-          k.includes("victories") ||
-          k.includes("win_count")
-        ) {
-          if (n > wins) wins = n;
-        }
-
-        // win rate
-        if (
-          k.includes("winrate") ||
-          k.includes("win_rate") ||
-          k.includes("winpct") ||
-          k.includes("win_pct") ||
-          k.includes("winpercentage") ||
-          k.includes("win_percent")
-        ) {
-          let r = n;
-          if (r > 1.0001) r = r / 100; // si c’est un pourcentage
-          if (r > winRateCandidate) winRateCandidate = r;
-        }
-
-        // avg3
-        if (
-          k.includes("avg3") ||
-          k.includes("avg_3") ||
-          k.includes("avgthreedarts")
-        ) {
-          if (n > avg3) avg3 = n;
-        }
-
-        // best visit
-        if (k.includes("bestvisit")) {
-          if (n > bestVisit) bestVisit = n;
-        }
-
-        // best checkout
-        if (
-          (k.includes("best") && k.includes("checkout")) ||
-          (k.includes("best") && k.includes("finish")) ||
-          k === "bestco" ||
-          k === "best_co"
-        ) {
-          if (n > bestCheckout) bestCheckout = n;
-        }
-
-        // min darts / fastest leg
-        if (
-          (k.includes("min") && k.includes("dart")) ||
-          (k.includes("fastest") && k.includes("leg")) ||
-          k.includes("mindarts501")
-        ) {
-          addMinCandidate(n);
+        if (lk.includes("streak")) {
+          addStreakCandidate(anyBase[key]);
         }
       }
-    };
-
-    if (base && typeof base === "object") {
-      scanObj(base, 0);
     }
 
-    if (winRateCandidate > 0) {
-      winRate01 = winRateCandidate;
-    } else if (games > 0 && wins > 0) {
-      winRate01 = wins / games;
-    } else {
-      winRate01 = 0;
-    }
-
-    const minDartsRecord =
+    let minDartsRecord =
       minDartsCandidates.length > 0 ? Math.min(...minDartsCandidates) : 0;
-
-    const ratingGlobal = avg3 || 0;
+    const bestStreakRecord =
+      streakCandidates.length > 0 ? Math.max(...streakCandidates) : 0;
 
     // =============================================================
-    // ---------- X01 MULTI — AGRÉGATION OFFICIELLE V3 -------------
+    // ----------------- X01 MULTI (base + history) -----------------
     // =============================================================
 
-    let multiSessions = 0;
-    let multiWins = 0;
-    let multiTotalAvg3 = 0;
-    let multiTotalAvg3Count = 0;
+    // valeurs fournies par statsBridge (si existantes)
+    const baseMultiSessions = getNum(
+      anyBase,
+      "x01MultiSessions",
+      "x01MultiGames",
+      "x01_multi_sessions"
+    );
+    const baseMultiAvg3D = getNum(
+      anyBase,
+      "x01MultiAvg3D",
+      "x01MultiAvg3",
+      "avg3DMulti",
+      "x01_multi_avg3D"
+    );
+    const baseMultiWinRate01 = getRatio01(
+      anyBase,
+      "x01MultiWinrate",
+      "x01MultiWinRate",
+      "x01MultiWinratePct",
+      "x01MultiWinRatePct",
+      "x01_multi_winRate"
+    );
+    const baseMultiBestVisit = getNum(
+      anyBase,
+      "x01MultiBestVisit",
+      "x01_multi_bestVisit"
+    );
+    const baseMultiBestCO = getNum(
+      anyBase,
+      "x01MultiBestCO",
+      "x01_multi_bestCo",
+      "x01_multi_bestCO"
+    );
+    const baseMultiMinDarts = getNum(
+      anyBase,
+      "x01MultiMinDarts",
+      "x01_multi_minDarts"
+    );
 
-    let multiBestVisit = 0;
-    let multiBestCheckout = 0;
-    let multiMinDarts = Infinity;
+    // agrégat à partir de l'historique
+    let aggSessions = 0;
+    let aggWins = 0;
+    let aggTotalAvg3 = 0;
+    let aggTotalAvg3Count = 0;
+    let aggBestVisit = 0;
+    let aggBestCO = 0;
+    let aggMinDarts = Infinity;
+
+    // pour le numéro favori (hits S/D/T)
+    const favoriteHits: Record<string, number> = {};
+    const addFavHitsBucket = (bucket: any) => {
+      if (!bucket) return;
+      for (const key of Object.keys(bucket)) {
+        const num = Number(key);
+        if (!Number.isFinite(num) || num < 1 || num > 20) continue;
+        const c = Number(bucket[key]) || 0;
+        if (!c) continue;
+        favoriteHits[key] = (favoriteHits[key] ?? 0) + c;
+      }
+    };
 
     try {
       for (const match of multiMatches || []) {
@@ -473,12 +528,12 @@ async function buildStatsForProfile(
 
         if (!me) continue;
 
-        multiSessions += 1;
+        aggSessions += 1;
 
-        // win ?
+        // détection win
         let isWinner = false;
         if (me.isWinner === true || me.winner === true) isWinner = true;
-        if ([me.rank, me.place, me.position].some((v: any) => asNum(v) === 1)) {
+        if ([me.rank, me.place, me.position].some((v: any) => Number(v) === 1)) {
           isWinner = true;
         }
         if (
@@ -502,51 +557,49 @@ async function buildStatsForProfile(
         ) {
           isWinner = true;
         }
-        if (isWinner) multiWins += 1;
+        if (isWinner) aggWins += 1;
 
         // avg3
         const avg3Player =
-          asNum(
+          Number(
             me.avg3D ??
               me.avg3 ??
               me.stats?.avg3D ??
               me.stats?.avg3 ??
               0
           ) || 0;
-
         if (avg3Player > 0) {
-          multiTotalAvg3 += avg3Player;
-          multiTotalAvg3Count += 1;
+          aggTotalAvg3 += avg3Player;
+          aggTotalAvg3Count += 1;
         }
 
         // best visit
         const bv =
-          asNum(
+          Number(
             me.bestVisit ??
               me.bestVisitScore ??
               me.best_visit ??
               0
           ) || 0;
-        if (bv > multiBestVisit) multiBestVisit = bv;
+        if (bv > aggBestVisit) aggBestVisit = bv;
 
         // best checkout
         const bco =
-          asNum(
+          Number(
             me.bestCheckout ??
               me.bestCo ??
               me.bestFinish ??
               me.best_checkout ??
               0
           ) || 0;
-        if (bco > multiBestCheckout) multiBestCheckout = bco;
+        if (bco > aggBestCO) aggBestCO = bco;
 
         // min darts
         const dartsCandidates: number[] = [];
         const addD = (v: any) => {
-          const n = asNum(v);
-          if (n > 0) dartsCandidates.push(n);
+          const n = Number(v);
+          if (!Number.isNaN(n) && n > 0) dartsCandidates.push(n);
         };
-
         addD(me.minDarts);
         addD(me.minDarts501);
         addD(me.bestLegDarts);
@@ -557,37 +610,121 @@ async function buildStatsForProfile(
 
         if (dartsCandidates.length > 0) {
           const localMin = Math.min(...dartsCandidates);
-          if (localMin > 0 && localMin < multiMinDarts) {
-            multiMinDarts = localMin;
+          if (localMin > 0 && localMin < aggMinDarts) {
+            aggMinDarts = localMin;
           }
+        }
+
+        // hits par segment (numéro favori)
+        const detailed = (summary?.detailedByPlayer || {}) as any;
+        const detailedEntry =
+          detailed[me.profileId ?? me.playerId ?? me.id] ?? null;
+        const hitsBySegment =
+          (me as any).hitsBySegment ??
+          detailedEntry?.hitsBySegment ??
+          null;
+
+        if (hitsBySegment) {
+          const sBucket =
+            hitsBySegment.S ??
+            hitsBySegment.single ??
+            hitsBySegment.singles;
+          const dBucket =
+            hitsBySegment.D ??
+            hitsBySegment.double ??
+            hitsBySegment.doubles;
+          const tBucket =
+            hitsBySegment.T ??
+            hitsBySegment.triple ??
+            hitsBySegment.triples;
+
+          addFavHitsBucket(sBucket);
+          addFavHitsBucket(dBucket);
+          addFavHitsBucket(tBucket);
         }
       }
     } catch (e) {
       console.warn("[Home] X01 multi aggregate failed", e);
     }
 
-    const hasMulti = multiSessions > 0;
+    const hasAggMulti = aggSessions > 0;
+
+    const x01MultiSessions =
+      baseMultiSessions || (hasAggMulti ? aggSessions : games);
 
     const x01MultiAvg3D =
-      multiTotalAvg3Count > 0 ? multiTotalAvg3 / multiTotalAvg3Count : avg3 || 0;
+      baseMultiAvg3D ||
+      (aggTotalAvg3Count > 0
+        ? aggTotalAvg3 / aggTotalAvg3Count
+        : avg3);
 
-    const x01MultiWinrate =
-      hasMulti && multiSessions > 0
-        ? multiWins / multiSessions
-        : winRate01;
+    let x01MultiWinrate =
+      baseMultiWinRate01 ||
+      (hasAggMulti && aggSessions > 0 && aggWins > 0
+        ? aggWins / aggSessions
+        : 0);
+
+    if (!x01MultiWinrate) {
+      // fallback : on se cale sur le winrate global
+      x01MultiWinrate = winRate01;
+    }
+
+    const x01MultiBestVisit =
+      baseMultiBestVisit || (hasAggMulti ? aggBestVisit : bestVisitBase);
+    const x01MultiBestCO =
+      baseMultiBestCO || (hasAggMulti ? aggBestCO : bestCheckoutBase);
+
+    const multiMinDartsFromHist =
+      aggMinDarts !== Infinity && aggMinDarts > 0 ? aggMinDarts : 0;
+
+    if (!minDartsRecord && baseMultiMinDarts > 0) {
+      minDartsRecord = baseMultiMinDarts;
+    }
+    if (!minDartsRecord && multiMinDartsFromHist > 0) {
+      minDartsRecord = multiMinDartsFromHist;
+    }
 
     const x01MultiMinDartsLabel =
-      multiMinDarts !== Infinity
-        ? `${multiMinDarts}`
+      baseMultiMinDarts > 0
+        ? String(baseMultiMinDarts)
+        : multiMinDartsFromHist > 0
+        ? String(multiMinDartsFromHist)
         : minDartsRecord > 0
-        ? `${minDartsRecord}`
+        ? String(minDartsRecord)
         : null;
 
-    // Fallbacks : si la vue globale est vide mais qu'on a du multi
-    const finalSessionsGlobal = games || (hasMulti ? multiSessions : 0);
-    const finalWinrateGlobal =
-      winRate01 || (hasMulti && multiSessions > 0 ? multiWins / multiSessions : 0);
-    const finalAvg3Global = avg3 || x01MultiAvg3D;
+    // ---------------- Numéro favori ----------------
+    let favoriteNumberLabel: string | null = null;
+
+    // 1) ce que renvoie déjà statsBridge
+    const baseFav =
+      anyBase.favoriteNumber ??
+      anyBase.favoriteNumberLabel ??
+      anyBase.bestNumber ??
+      anyBase.favorite_target ??
+      anyBase.favoriteSegment ??
+      anyBase.favorite_segment ??
+      null;
+    if (baseFav != null && String(baseFav) !== "" && Number(baseFav) > 0) {
+      favoriteNumberLabel = String(baseFav);
+    }
+
+    // 2) si on a agrégé des hits, on écrase par la vraie valeur calculée
+    const favEntries = Object.entries(favoriteHits);
+    if (favEntries.length > 0) {
+      favEntries.sort(
+        (a, b) =>
+          (b[1] as number) - (a[1] as number) ||
+          Number(a[0]) - Number(b[0])
+      );
+      favoriteNumberLabel = favEntries[0][0]; // "20", "19", etc.
+    }
+
+    // moyenne globale finale (on s'assure que ce n'est pas 0)
+    const avg3Global =
+      avg3 ||
+      x01MultiAvg3D ||
+      getNum(anyBase, "bestAvg3D", "bestAvg3DX01", "recordBestAvg3DX01");
 
     // ---------- Training X01 ----------
     const tAgg = loadTrainingAggForProfile(profileId);
@@ -595,9 +732,9 @@ async function buildStatsForProfile(
       tAgg.sessions > 0 ? tAgg.sumAvg3D / tAgg.sessions : 0;
 
     // ---------- Cricket ----------
-    const cricketMatches = asNum(cricket?.matchesTotal);
-    const cricketBestPoints = asNum(cricket?.bestPointsInMatch);
-    const cricketWinsTotal = asNum(cricket?.winsTotal);
+    const cricketMatches = Number(cricket?.matchesTotal ?? 0);
+    const cricketBestPoints = Number(cricket?.bestPointsInMatch ?? 0);
+    const cricketWinsTotal = Number(cricket?.winsTotal ?? 0);
     const cricketWinRate =
       cricketMatches > 0 ? cricketWinsTotal / cricketMatches : 0;
 
@@ -609,24 +746,60 @@ async function buildStatsForProfile(
     const clockTotalTimeSec = cAgg.totalTimeSec;
     const clockBestStreak = cAgg.bestStreak;
 
+    // -------- Records X01 utilisés par la slide "Records" --------
+    const recordBestVisitX01 =
+      getNum(
+        anyBase,
+        "recordBestVisitX01",
+        "bestVisitX01",
+        "recordBestVisit",
+        "bestVisit"
+      ) || x01MultiBestVisit;
+
+    const recordBestCOX01 =
+      getNum(
+        anyBase,
+        "recordBestCOX01",
+        "bestCoX01",
+        "bestCheckoutX01",
+        "bestCo",
+        "bestCheckout"
+      ) || x01MultiBestCO;
+
+    const recordMinDarts501 =
+      getNum(
+        anyBase,
+        "recordMinDarts501",
+        "minDarts501",
+        "fastestLeg",
+        "minDarts"
+      ) || minDartsRecord;
+
+    const recordBestAvg3DX01 =
+      getNum(
+        anyBase,
+        "recordBestAvg3DX01",
+        "bestAvg3DX01",
+        "bestAvg3D"
+      ) || avg3Global;
+
     const s: ActiveProfileStats = {
       // globale
-      ratingGlobal: ratingGlobal || finalAvg3Global || 0,
-      winrateGlobal: finalWinrateGlobal,
-      avg3DGlobal: finalAvg3Global,
-      sessionsGlobal: finalSessionsGlobal,
-      favoriteNumberLabel: null,
+      ratingGlobal,
+      winrateGlobal: winRate01,
+      avg3DGlobal: avg3Global,
+      sessionsGlobal: games,
+      favoriteNumberLabel,
 
       // records
-      recordBestVisitX01: bestVisit || multiBestVisit || 0,
-      recordBestCOX01: bestCheckout || multiBestCheckout || 0,
-      recordMinDarts501:
-        minDartsRecord || (multiMinDarts !== Infinity ? multiMinDarts : 0) || null,
-      recordBestAvg3DX01: finalAvg3Global,
-      recordBestStreak: null,
+      recordBestVisitX01,
+      recordBestCOX01,
+      recordMinDarts501: recordMinDarts501 || null,
+      recordBestAvg3DX01,
+      recordBestStreak: bestStreakRecord || null,
       recordBestCricketScore: cricketBestPoints || null,
 
-      // online (on complètera plus tard si besoin)
+      // online (à câbler plus tard)
       onlineMatches: 0,
       onlineWinrate: 0,
       onlineAvg3D: 0,
@@ -637,11 +810,11 @@ async function buildStatsForProfile(
 
       // ---- X01 Multi ----
       x01MultiAvg3D,
-      x01MultiSessions: hasMulti ? multiSessions : finalSessionsGlobal,
+      x01MultiSessions,
       x01MultiWinrate,
-      x01MultiBestVisit: hasMulti ? multiBestVisit : bestVisit || 0,
-      x01MultiBestCO: hasMulti ? multiBestCheckout : bestCheckout || 0,
-      x01MultiMinDartsLabel: x01MultiMinDartsLabel,
+      x01MultiBestVisit,
+      x01MultiBestCO,
+      x01MultiMinDartsLabel,
 
       // cricket
       cricketPointsPerRound: cricketBestPoints || 0,

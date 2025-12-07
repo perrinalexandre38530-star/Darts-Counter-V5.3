@@ -58,6 +58,15 @@ export type BasicProfileStats = {
   winRate?: number; // % de victoires 0..100
 };
 
+/* ---------- Constantes / types internes pour le cache quick-stats ---------- */
+
+const QUICK_STATS_KEY = "dc-quick-stats";
+
+type QuickStatsEntry = BasicProfileStats & {
+  points?: number; // utilisé par commitLegAndAccumulate
+  totalScore?: number; // alias plus explicite pour les V3
+};
+
 /* ---------- Maps "legacy" internes (overlay X01 etc.) ---------- */
 
 type LegacyMaps = {
@@ -118,7 +127,6 @@ function dartValue(seg?: Seg) {
    `cricketLegs` (ou `summary.cricketLegs`) = CricketLegStats[] pour chaque match Cricket.
    Si ce n'est pas (encore) le cas, la fonction renvoie simplement [].
 */
-
 async function loadCricketLegStatsForProfile(
   profileId: string
 ): Promise<CricketLegStats[]> {
@@ -482,6 +490,82 @@ export function computeX01MultiLegsSetsForProfileFromMatches(
 }
 
 /* ================================================================
+   bumpBasicProfileStats — utilitaire externe pour X01 V3, etc.
+   -> à appeler depuis saveX01V3MatchToHistory pour alimenter
+      le cache "dc-quick-stats" à partir d'un match complet.
+================================================================ */
+
+export function bumpBasicProfileStats(update: {
+  playerId: string;
+  darts: number;
+  totalScore: number;
+  bestVisit: number;
+  bestCheckout: number;
+  wins: number;
+  games: number;
+}) {
+  try {
+    if (!update.playerId) return;
+
+    const raw = localStorage.getItem(QUICK_STATS_KEY);
+    const bag: Record<string, QuickStatsEntry> = raw
+      ? JSON.parse(raw)
+      : {};
+
+    const prev: QuickStatsEntry =
+      bag[update.playerId] || {
+        games: 0,
+        darts: 0,
+        avg3: 0,
+        bestVisit: 0,
+        bestCheckout: 0,
+        wins: 0,
+        winRate: 0,
+        points: 0,
+        totalScore: 0,
+      };
+
+    const prevTotal =
+      Number(prev.totalScore ?? prev.points ?? 0) || 0;
+
+    const darts =
+      (Number(prev.darts || 0) || 0) +
+      (Number(update.darts || 0) || 0);
+    const totalScore = prevTotal + (Number(update.totalScore || 0) || 0);
+    const games =
+      (Number(prev.games || 0) || 0) +
+      (Number(update.games || 0) || 0);
+    const wins =
+      (Number(prev.wins || 0) || 0) +
+      (Number(update.wins || 0) || 0);
+
+    const avg3 = darts > 0 ? (totalScore * 3) / darts : 0;
+    const winRate = games > 0 ? (wins / games) * 100 : 0;
+
+    bag[update.playerId] = {
+      games,
+      darts,
+      avg3,
+      bestVisit: Math.max(
+        Number(prev.bestVisit || 0),
+        Number(update.bestVisit || 0)
+      ),
+      bestCheckout: Math.max(
+        Number(prev.bestCheckout || 0),
+        Number(update.bestCheckout || 0)
+      ),
+      wins,
+      winRate,
+      totalScore,
+    };
+
+    localStorage.setItem(QUICK_STATS_KEY, JSON.stringify(bag));
+  } catch {
+    // silencieux
+  }
+}
+
+/* ================================================================
    StatsBridge — implémentation principale
 ================================================================ */
 
@@ -647,35 +731,28 @@ export const StatsBridge = {
   -------------------------------------------------------------- */
   async commitLegAndAccumulate(_leg: any, legacy: LegacyMaps) {
     try {
-      const key = "dc-quick-stats";
-      const raw = localStorage.getItem(key);
-      const bag: Record<
-        string,
-        {
-          games: number;
-          darts: number;
-          points: number;
-          avg3: number;
-          bestVisit: number;
-          bestCheckout: number;
-          wins: number;
-        }
-      > = raw ? JSON.parse(raw) : {};
+      const raw = localStorage.getItem(QUICK_STATS_KEY);
+      const bag: Record<string, QuickStatsEntry> = raw
+        ? JSON.parse(raw)
+        : {};
 
       const pids = Object.keys(legacy?.darts || {});
       const winnerId = legacy?.winnerId || null;
 
       for (const pid of pids) {
-        const s =
-          (bag[pid] ??= {
+        const s: QuickStatsEntry =
+          bag[pid] ??
+          ({
             games: 0,
             darts: 0,
-            points: 0,
             avg3: 0,
             bestVisit: 0,
             bestCheckout: 0,
             wins: 0,
-          });
+            winRate: 0,
+            points: 0,
+            totalScore: 0,
+          } as QuickStatsEntry);
 
         // On compte 1 "game" par LEG terminé
         s.games += 1;
@@ -685,22 +762,29 @@ export const StatsBridge = {
         const ptsApprox = d > 0 ? (a3 / 3) * d : 0;
 
         s.darts += d;
-        s.points += ptsApprox;
-        s.avg3 = s.darts > 0 ? (s.points / s.darts) * 3 : 0;
+        const prevTotal =
+          Number(s.totalScore ?? s.points ?? 0) || 0;
+        const totalScore = prevTotal + ptsApprox;
+        s.totalScore = totalScore;
+        s.points = totalScore;
+
+        s.avg3 = s.darts > 0 ? (totalScore / s.darts) * 3 : 0;
 
         s.bestVisit = Math.max(
-          s.bestVisit,
+          Number(s.bestVisit || 0),
           Number(legacy.bestVisit[pid] || 0)
         );
         s.bestCheckout = Math.max(
-          s.bestCheckout,
+          Number(s.bestCheckout || 0),
           Number(legacy.bestCheckout[pid] || 0)
         );
 
         if (winnerId && winnerId === pid) s.wins += 1;
+
+        bag[pid] = s;
       }
 
-      localStorage.setItem(key, JSON.stringify(bag));
+      localStorage.setItem(QUICK_STATS_KEY, JSON.stringify(bag));
     } catch {
       // on reste silencieux
     }
@@ -809,44 +893,39 @@ export const StatsBridge = {
       localStorage.setItem(allKey, JSON.stringify(arr));
 
       // Met à jour les quick-stats (games / wins) si on a winnerId
-      const bagRaw = localStorage.getItem("dc-quick-stats");
-      const bag: Record<
-        string,
-        {
-          games: number;
-          darts: number;
-          points: number;
-          avg3: number;
-          bestVisit: number;
-          bestCheckout: number;
-          wins: number;
-        }
-      > = bagRaw ? JSON.parse(bagRaw) : {};
+      const bagRaw = localStorage.getItem(QUICK_STATS_KEY);
+      const bag: Record<string, QuickStatsEntry> = bagRaw
+        ? JSON.parse(bagRaw)
+        : {};
 
       const pids: string[] = (summary?.perPlayer || []).map(
         (pp: any) => pp.playerId
       );
 
       for (const pid of pids) {
-        const s =
-          (bag[pid] ??= {
+        const s: QuickStatsEntry =
+          bag[pid] ??
+          ({
             games: 0,
             darts: 0,
-            points: 0,
             avg3: 0,
             bestVisit: 0,
             bestCheckout: 0,
             wins: 0,
-          });
+            winRate: 0,
+            points: 0,
+            totalScore: 0,
+          } as QuickStatsEntry);
 
         s.games += 1;
         if (summary?.winnerId && summary.winnerId === pid) {
           s.wins += 1;
         }
-        // bestVisit / bestCheckout déjà mis à jour via commitLegAndAccumulate
+
+        bag[pid] = s;
       }
 
-      localStorage.setItem("dc-quick-stats", JSON.stringify(bag));
+      localStorage.setItem(QUICK_STATS_KEY, JSON.stringify(bag));
     } catch {
       // silencieux
     }
@@ -858,8 +937,10 @@ export const StatsBridge = {
   -------------------------------------------------------------- */
   getBasicProfileStats(profileId: string): BasicProfileStats {
     try {
-      const raw = localStorage.getItem("dc-quick-stats");
-      const bag = raw ? JSON.parse(raw) : {};
+      const raw = localStorage.getItem(QUICK_STATS_KEY);
+      const bag: Record<string, QuickStatsEntry> = raw
+        ? JSON.parse(raw)
+        : {};
       const s = bag[profileId] || null;
 
       if (!s) {
@@ -873,13 +954,24 @@ export const StatsBridge = {
         };
       }
 
+      const games = Number(s.games || 0);
+      const darts = Number(s.darts || 0);
+      const totalScore =
+        Number(s.totalScore ?? s.points ?? 0) || 0;
+
+      let avg3 = Number(s.avg3 || 0);
+      if (!avg3 && darts > 0 && totalScore > 0) {
+        avg3 = (totalScore * 3) / darts;
+      }
+
       return {
-        games: Number(s.games || 0),
-        darts: Number(s.darts || 0),
-        avg3: Number(s.avg3 || 0),
+        games,
+        darts,
+        avg3,
         bestVisit: Number(s.bestVisit || 0),
         bestCheckout: Number(s.bestCheckout || 0),
         wins: Number(s.wins || 0),
+        winRate: s.winRate,
       };
     } catch {
       return {

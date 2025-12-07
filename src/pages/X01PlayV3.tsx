@@ -28,6 +28,8 @@ import EndOfLegOverlay from "../components/EndOfLegOverlay";
 import type { LegStats } from "../lib/stats";
 import { buildLegStatsFromV3LiveForOverlay } from "../lib/x01v3/x01V3LegStatsAdapter";
 
+import { StatsBridge } from "../lib/statsBridge"; 
+
 // ---------------- Constantes visuelles / autosave ----------------
 
 const NAV_HEIGHT = 64;
@@ -2685,10 +2687,48 @@ function saveX01V3MatchToHistory({
   };
 
   try {
+    // 1) 🟡 Met à jour le sac "dc-quick-stats" utilisé par Profils / centre de stats
+    //    On construit un petit legacy minimal compatible avec StatsBridge.commitLegAndAccumulate
+    const quickLegacy: any = {
+      order: (players as any[]).map((p) => p.id as string),
+      winnerId,
+
+      remaining: legacyRemaining,
+      darts: legacyDarts,
+      visits: legacyVisits,
+      points: legacyPoints,
+
+      avg3: legacyAvg3,
+      bestVisit: legacyBestVisit,
+      bestCheckout: legacyBestCheckout,
+
+      // ces champs ne sont pas utilisés par commitLegAndAccumulate,
+      // mais on les passe pour rester compatibles avec le type LegacyMaps
+      h60: {},
+      h100: {},
+      h140: {},
+      h180: {},
+
+      miss: legacyMiss,
+      missPct: {},
+      bust: legacyBust,
+      bustPct: {},
+      dbull: legacyDbulls,
+      dbullPct: {},
+
+      doubles: legacyDoubles,
+      triples: legacyTriples,
+      bulls: legacyBulls,
+    };
+
+    // 🔥 met à jour dc-quick-stats (games, darts, avg3, bestVisit, bestCheckout, wins)
+    StatsBridge.commitLegAndAccumulate?.(null, quickLegacy);
+
+    // 2) 🟢 Sauvegarde "lourde" dans l'historique (IndexedDB + fallback LS)
     History.upsert(record);
   } catch (err) {
     console.warn(
-      "[X01PlayV3] History.upsert failed (probably quota)",
+      "[X01PlayV3] History/StatsBridge save failed",
       err
     );
   }

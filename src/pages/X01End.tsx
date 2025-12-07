@@ -2016,7 +2016,7 @@ function HitsRadar({ m }: { m: PlayerMetrics }) {
 
 /* ================================
    Hits par segments (2 lignes, centré)
-   - Colonnes : 0 (MISS), 1..20, BULL
+   - Colonnes : MISS, 1..20, BULL
    - 11 colonnes par ligne
 ================================ */
 function HitsBySegmentBlock({ m }: { m: PlayerMetrics }) {
@@ -2109,9 +2109,9 @@ function HitsBySegmentBlock({ m }: { m: PlayerMetrics }) {
 
   const cols: Col[] = [];
 
-  // 0 = MISS
+  // MISS (ex-0)
   cols.push({
-    label: "0",
+    label: "MISS",
     s: missHits,
     d: 0,
     t: 0,
@@ -2139,7 +2139,7 @@ function HitsBySegmentBlock({ m }: { m: PlayerMetrics }) {
   const maxTotal = Math.max(1, ...totals);
 
   const barHeight = 52;
-  const firstRow = cols.slice(0, 11); // 0..10
+  const firstRow = cols.slice(0, 11); // MISS + 1..10
   const secondRow = cols.slice(11);   // 11..20 + BULL
 
   const renderRow = (rowCols: Col[]) => (
@@ -2161,7 +2161,7 @@ function HitsBySegmentBlock({ m }: { m: PlayerMetrics }) {
         const hD = total > 0 ? (c.d / total) * hTotal : 0;
         const hT = total > 0 ? (c.t / total) * hTotal : 0;
 
-        const isMiss = c.label === "0";
+        const isMiss = c.label === "MISS";
         const isBull = c.label === "BULL";
 
         return (
@@ -2187,7 +2187,7 @@ function HitsBySegmentBlock({ m }: { m: PlayerMetrics }) {
                   total > 0 ? "0 0 6px rgba(0,0,0,.6)" : "none",
               }}
             >
-              {/* Singles (ou MISS si label 0) */}
+              {/* Singles (ou MISS si label MISS) */}
               <div
                 style={{
                   position: "absolute",
@@ -2242,11 +2242,7 @@ function HitsBySegmentBlock({ m }: { m: PlayerMetrics }) {
         marginTop: 4,
       }}
     >
-      <div
-        style={{
-          width: "100%",
-        }}
-      >
+      <div style={{ width: "100%" }}>
         <div
           style={{
             display: "flex",
@@ -2254,7 +2250,7 @@ function HitsBySegmentBlock({ m }: { m: PlayerMetrics }) {
             gap: 4,
           }}
         >
-          {/* Ligne 1 : 0,1..10 */}
+          {/* Ligne 1 : MISS,1..10 */}
           {renderRow(firstRow)}
           {/* Ligne 2 : 11..20,BULL */}
           {renderRow(secondRow)}

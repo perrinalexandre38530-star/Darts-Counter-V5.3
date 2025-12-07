@@ -2143,6 +2143,7 @@ function LocalProfilesRefonte({
 
   // 🔥 mêmes stats que GoldMiniStats / menu profils locaux
   const bs = useBasicStats(current?.id);
+  console.log("[locals-basicStats]", current?.id, bs);
 
   const avg3 = Number.isFinite(bs.avg3) ? Number(bs.avg3) : 0;
   const bestVisit = Number(bs.bestVisit ?? 0);
