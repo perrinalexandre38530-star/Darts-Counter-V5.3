@@ -22,6 +22,15 @@ import {
 } from "./x01CheckoutV3";
 
 /* -------------------------------------------------------
+   Mode MULTI "Free For All" (sans équipes)
+   => utilisé pour le comportement "Continuer" en X01V3
+------------------------------------------------------- */
+export function isMultiContinueMode(config: X01ConfigV3): boolean {
+  // MULTI FF = plusieurs joueurs indépendants (pas de teams)
+  return config.gameMode === "multi" && !config.teams;
+}
+
+/* -------------------------------------------------------
    Type d'entrée depuis le Keypad
 ------------------------------------------------------- */
 export interface X01DartInputV3 {
@@ -171,7 +180,11 @@ export function applyDartToCurrentPlayerV3(
       // Sortie invalide → bust
       bust = true;
     }
-  } else if (scoreAfter === 1 && config.outMode !== "simple" && config.outMode !== "single") {
+  } else if (
+    scoreAfter === 1 &&
+    config.outMode !== "simple" &&
+    config.outMode !== "single"
+  ) {
     // Double-out / Master-out : score de 1 = impossible → bust
     bust = true;
   }

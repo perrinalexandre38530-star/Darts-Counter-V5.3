@@ -20,6 +20,7 @@ import {
   PolarGrid,
   PolarAngleAxis,
   Radar,
+  Cell,
 } from "recharts";
 
 import type { LegStats } from "../lib/stats";
@@ -99,7 +100,12 @@ function idsFromNew(leg: LegStats): string[] {
 function remainingFromNew(leg: LegStats, pid: string) {
   const st: any = leg.perPlayer?.[pid] ?? {};
   const start = n((leg as any).startScore ?? (leg as any).start ?? 501);
-  const scored = n(st.totalScored ?? st.points ?? st.pointsSum);
+  const scored = n(
+    st.totalScored ??
+      st.totalScore ?? // ✅ supporte maintenant totalScore (nouveau moteur)
+      st.points ??
+      st.pointsSum
+  );
   const approx = Math.max(0, start - scored);
   const explicit = st.remaining;
   if (typeof explicit === "number" && isFinite(explicit)) return explicit;
@@ -116,7 +122,12 @@ function avg3FromNew(leg: LegStats, pid: string) {
   const st: any = leg.perPlayer?.[pid] ?? {};
   if (typeof st.avg3 === "number") return st.avg3;
   const v = visitsFromNew(leg, pid);
-  const scored = n(st.totalScored ?? st.points ?? st.pointsSum);
+  const scored = n(
+    st.totalScored ??
+      st.totalScore ?? // ✅ idem que remainingFromNew
+      st.points ??
+      st.pointsSum
+  );
   if (v > 0) return scored / v; // avg3 = points/volée dans ton app
   const d = n(st.darts ?? st.dartsThrown);
   return d > 0 ? (scored / d) * 3 : 0;
@@ -467,26 +478,48 @@ function Inner({
     [rows]
   );
 
-  // Radar (legacy uniquement si secteurs dispos)
+  // --- Joueur actif pour le RADAR (filtre) ---
+  const [radarPlayerId, setRadarPlayerId] = React.useState<string | null>(() =>
+    rows[0]?.pid ?? null
+  );
+  React.useEffect(() => {
+    setRadarPlayerId(rows[0]?.pid ?? null);
+  }, [rows]);
+
+  // Radar (hits par secteur, legacy uniquement si dispo)
   const radarKeys = React.useMemo(() => {
     const src: any = (result as any).legacy || result;
-    if (!isLegStatsObj(src)) {
-      const res = src as LegacyLegResult;
-      const first = rows[0]?.pid;
-      const m = res.hitsBySector || {};
-      if (!first || !m[first]) return null;
-      const entries = Object.entries(m[first])
-        .filter(([k]) => k !== "MISS")
-        .sort(
-          (a, b) =>
-            n((b as any)[1]) - n((a as any)[1])
-        )
-        .slice(0, 12)
-        .map(([k]) => k);
-      return entries.length ? entries : null;
-    }
-    return null;
-  }, [result, rows]);
+    const hitsBySector: Record<string, Record<string, number>> | undefined =
+      (src && (src.hitsBySector as any)) ||
+      (src?.legacy?.hitsBySector as any);
+
+    const pid = radarPlayerId || rows[0]?.pid;
+    if (!hitsBySector || !pid || !hitsBySector[pid]) return null;
+
+    const entries = Object.entries(hitsBySector[pid])
+      .filter(([k]) => k !== "MISS")
+      .sort((a, b) => n((b as any)[1]) - n((a as any)[1]))
+      .slice(0, 12)
+      .map(([k]) => k);
+
+    return entries.length ? entries : null;
+  }, [result, rows, radarPlayerId]);
+
+  const radarData = React.useMemo(() => {
+    if (!radarKeys) return [];
+    const src: any = (result as any).legacy || result;
+    const hitsBySector: Record<string, Record<string, number>> | undefined =
+      (src && (src.hitsBySector as any)) ||
+      (src?.legacy?.hitsBySector as any);
+
+    const pid = radarPlayerId || rows[0]?.pid;
+    if (!hitsBySector || !pid) return [];
+    const per = hitsBySector[pid] || {};
+    return radarKeys.map((k) => ({
+      sector: k,
+      v: n((per as any)[k]),
+    }));
+  }, [result, rows, radarKeys, radarPlayerId]);
 
   // Actions
   const handleSave = () => {
@@ -599,6 +632,9 @@ function Inner({
     }
   }
 
+  const finishedDate = new Date(finishedAt);
+  const finishedLabel = `${finishedDate.toLocaleDateString()} • ${finishedDate.toLocaleTimeString()}`;
+
   // --- UI ---
   return (
     <div
@@ -666,8 +702,7 @@ function Inner({
               marginLeft: 6,
             }}
           >
-            Manche terminée —{" "}
-            {new Date(finishedAt).toLocaleTimeString()}
+            Manche terminée — {finishedLabel}
           </div>
           <div style={{ flex: 1 }} />
           <button
@@ -957,39 +992,71 @@ function Inner({
                 gap: 8,
               }}
             >
+              {/* RADAR avec filtre joueur */}
               <ChartCard>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 4,
+                    justifyContent: "center",
+                    marginBottom: 6,
+                    fontSize: 11,
+                  }}
+                >
+                  {rows.map((r) => {
+                    const active = radarPlayerId === r.pid;
+                    return (
+                      <button
+                        key={`radar-toggle-${r.pid}`}
+                        onClick={() => setRadarPlayerId(r.pid)}
+                        style={{
+                          borderRadius: 999,
+                          padding: "3px 8px",
+                          border: active
+                            ? "1px solid #f0b12a"
+                            : "1px solid rgba(255,255,255,.25)",
+                          background: active
+                            ? "linear-gradient(180deg,#f0b12a,#c58d19)"
+                            : "rgba(0,0,0,.35)",
+                          color: active ? "#141417" : "#e7e7e7",
+                          fontWeight: active ? 800 : 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {r.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    opacity: 0.8,
+                    textAlign: "center",
+                    marginBottom: 4,
+                  }}
+                >
+                  Répartition des hits par secteur pour le joueur sélectionné
+                </div>
                 <ChartMountGuard
                   minW={220}
                   minH={220}
                 >
                   {() =>
-                    radarKeys ? (
+                    radarKeys && radarData.length > 0 ? (
                       <ResponsiveContainer
                         width="100%"
                         height={230}
                       >
-                        <RadarChart
-                          data={radarKeys.map(
-                            (k) => ({
-                              sector: k,
-                              v:
-                                ((result as any)
-                                  .legacy
-                                  ?.hitsBySector ??
-                                  (result as any)
-                                    .hitsBySector ??
-                                  {})[
-                                  rows[0]?.pid ??
-                                    ""
-                                ]?.[k] ?? 0,
-                            })
-                          )}
-                        >
+                        <RadarChart data={radarData}>
                           <PolarGrid />
                           <PolarAngleAxis dataKey="sector" />
                           <Radar
                             name="Hits"
                             dataKey="v"
+                            fill="rgba(240,177,42,0.5)"
+                            stroke="#f0b12a"
                           />
                         </RadarChart>
                       </ResponsiveContainer>
@@ -1000,7 +1067,18 @@ function Inner({
                 </ChartMountGuard>
               </ChartCard>
 
+              {/* Bar chart moyennes 3D */}
               <ChartCard>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    color: "#ffcf57",
+                    marginBottom: 4,
+                  }}
+                >
+                  Moyenne 3 darts par joueur
+                </div>
                 <ChartMountGuard
                   minW={220}
                   minH={220}
@@ -1014,11 +1092,41 @@ function Inner({
                         <XAxis dataKey="name" />
                         <YAxis />
                         <Tooltip />
-                        <Bar dataKey="avg3" />
+                        <Bar dataKey="avg3">
+                          {barData.map((_, idx) => {
+                            const palette = [
+                              "#f6c256",
+                              "#56b4ff",
+                              "#9cf5c8",
+                              "#ff92d0",
+                              "#b694ff",
+                              "#ffd1a0",
+                            ];
+                            return (
+                              <Cell
+                                key={`cell-${idx}`}
+                                fill={
+                                  palette[idx % palette.length]
+                                }
+                              />
+                            );
+                          })}
+                        </Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   )}
                 </ChartMountGuard>
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: 10,
+                    opacity: 0.75,
+                    textAlign: "center",
+                  }}
+                >
+                  Chaque barre représente la moyenne 3 darts sur cette manche
+                  pour le joueur correspondant.
+                </div>
               </ChartCard>
             </div>
           </Accordion>
@@ -1201,7 +1309,6 @@ function SummaryRows({
     </div>
   );
 }
-
 
 // ---------- UI helpers ----------
 function Accordion({

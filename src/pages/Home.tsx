@@ -290,13 +290,14 @@ async function buildStatsForProfile(
         try {
           const anyHistory: any = History as any;
           if (anyHistory.list) {
+            // 🔥 On prend TOUTES les parties, tous modes confondus
+            // (X01 duo, X01 multi, team, etc.) avec les joueurs.
             return await anyHistory.list({
-              game: "x01_multi",
               includePlayers: true,
             });
           }
         } catch (e) {
-          console.warn("[Home] History.list x01_multi failed", e);
+          console.warn("[Home] History.list all games failed", e);
         }
         return [] as any[];
       })(),
@@ -767,7 +768,8 @@ async function buildStatsForProfile(
         ? multiTotalAvg3 / multiTotalAvg3Count
         : avg3Base;
 
-    // 🟡 %WIN GLOBAL : priorité au winRate du "base"
+    // %WIN GLOBAL : priorité au winRate du "base" (toutes les parties),
+    // sinon fallback sur les matchs X01 multi agrégés
     const globalWinRate =
       winRate01Base > 0
         ? winRate01Base
@@ -775,14 +777,9 @@ async function buildStatsForProfile(
         ? multiWins / multiSessions
         : 0;
 
+    // X01 MULTI : pour l’instant on se cale exactement sur la vue globale
     const x01MultiAvg3D = globalAvg3;
-
-    // 🟡 %WIN X01 MULTI : si on a des matchs multi, on les utilise,
-    // sinon on retombe sur le %win global
-    const x01MultiWinrate =
-      hasMulti && multiSessions > 0
-        ? multiWins / multiSessions
-        : globalWinRate;
+    const x01MultiWinrate = globalWinRate;
 
     const x01MultiMinDartsLabel =
       multiMinDarts !== Infinity

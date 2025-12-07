@@ -842,132 +842,168 @@ export default function X01MultiStatsTabFull({
 
   // --- AGRÉGATION RÉELLE DES MATCHS PAR TYPE ---
 
-// Regroupe les sessions par matchId (une ligne par joueur)
-const matchGroups = new Map<string, X01MultiSession[]>();
-for (const s of filtered) {
-  if (!s.matchId) continue;
-  const arr = matchGroups.get(s.matchId) || [];
-  arr.push(s);
-  matchGroups.set(s.matchId, arr);
-}
-
-let duoTotal = 0,
-  duoWins = 0,
-  duoLegsWon = 0,
-  duoLegsPlayed = 0,
-  duoSetsWon = 0,
-  duoSetsPlayed = 0;
-
-let multiTotal = 0,
-  multiWins = 0,
-  multiLegsWon = 0,
-  multiLegsPlayed = 0,
-  multiFinishCount = 0; // 🔥 nb de FINISH en multi (ne pas finir dernier)
-
-let teamTotal = 0,
-  teamWins = 0,
-  teamLegsWon = 0,
-  teamLegsPlayed = 0,
-  teamSetsWon = 0,
-  teamSetsPlayed = 0;
-
-// 🔥 stats par format de team (2v2, 3v3, 2v2v2, 2v2v2v2, etc.)
-const teamFormatStats: Record<string, { total: number; win: number }> = {};
-
-// 🔥 Compteurs globaux X01 (tous formats confondus) pour le joueur
-let x01MatchesTotal = 0;
-let x01WinsTotal = 0;
-let x01LegsPlayedTotal = 0;
-let x01LegsWonTotal = 0;
-let x01SetsPlayedTotal = 0;
-let x01SetsWonTotal = 0;
-
-// Pour chaque match → on ne lit QUE la ligne du joueur sélectionné
-for (const [, arr] of matchGroups) {
-  let playerLine: X01MultiSession | undefined;
-
-  if (effectiveProfileId) {
-    playerLine =
-      arr.find(
-        (s) => String(s.selectedPlayerId) === String(effectiveProfileId)
-      ) || arr[0]; // fallback si les IDs ne matchent pas
-  } else {
-    playerLine = arr[0];
+  // Regroupe les sessions par matchId (une ligne par joueur)
+  const matchGroups = new Map<string, X01MultiSession[]>();
+  for (const s of filtered) {
+    if (!s.matchId) continue;
+    const arr = matchGroups.get(s.matchId) || [];
+    arr.push(s);
+    matchGroups.set(s.matchId, arr);
   }
 
-  if (!playerLine) continue;
-  
-  // 🔥 Compteurs globaux X01 pour ce joueur (tous formats confondus)
-  x01MatchesTotal++;
-  if (playerLine.isWin) x01WinsTotal++;
+  // Helper : calcule Legs / Sets pour une ligne de match
+  function computeLegsSetsForLine(
+    line: X01MultiSession,
+    group: X01MultiSession[]
+  ) {
+    const isTeam = line.isTeam === true;
+    const numPlayers = group.length;
+    const isDuo = !isTeam && numPlayers === 2;
 
-  x01LegsPlayedTotal += playerLine.legsPlayed ?? 0;
-  x01LegsWonTotal += playerLine.legsWon ?? 0;
+    let legsPlayed = line.legsPlayed ?? 0;
+    let legsWon = line.legsWon ?? 0;
+    let setsPlayed = line.setsPlayed ?? 0;
+    let setsWon = line.setsWon ?? 0;
 
-  x01SetsPlayedTotal += playerLine.setsPlayed ?? 0;
-  x01SetsWonTotal += playerLine.setsWon ?? 0;
+    const myFinishes = (line as any).finishes ?? 0;
 
-  const isTeam = playerLine.isTeam === true;
-  const numPlayers = arr.length;
-  const isDuo = !isTeam && numPlayers === 2;
-  const isMulti = !isTeam && numPlayers >= 3;
+    // 🔥 DUO : si on n'a pas les legs / sets, on les reconstruit
+    if (isDuo) {
+      const opp = group.find(
+        (x) => x.selectedPlayerId !== line.selectedPlayerId
+      );
+      const oppFinishes = (opp as any)?.finishes ?? 0;
 
-  // ---- DUO ----
-  if (isDuo) {
-    duoTotal++;
-    if (playerLine.isWin) duoWins++;
+      // 1 leg gagné = 1 finish
+      if (!legsWon) legsWon = myFinishes;
+      // 1 leg joué = 1 finish (quel que soit le joueur)
+      if (!legsPlayed) legsPlayed = myFinishes + oppFinishes;
+    }
 
-    duoLegsWon += playerLine.legsWon ?? 0;
-    duoLegsPlayed += playerLine.legsPlayed ?? 0;
-
-    duoSetsWon += playerLine.setsWon ?? 0;
-    duoSetsPlayed += playerLine.setsPlayed ?? 0;
+    return { legsPlayed, legsWon, setsPlayed, setsWon };
   }
 
-  // ---- MULTI ----
-  if (isMulti) {
-    multiTotal++;
-    if (playerLine.isWin) multiWins++;
+  let duoTotal = 0,
+    duoWins = 0,
+    duoLegsWon = 0,
+    duoLegsPlayed = 0,
+    duoSetsWon = 0,
+    duoSetsPlayed = 0;
 
-    multiLegsWon += playerLine.legsWon ?? 0;
-    multiLegsPlayed += playerLine.legsPlayed ?? 0;
+  let multiTotal = 0,
+    multiWins = 0,
+    multiLegsWon = 0,
+    multiLegsPlayed = 0,
+    multiFinishCount = 0; // 🔥 nb de FINISH en multi (ne pas finir dernier)
 
-    // 🔥 FINISH = ne pas arriver dernier (rang < nb joueurs)
-    const myRank = playerLine.rank ?? null;
-    if (myRank && myRank < numPlayers) {
-      multiFinishCount++;
+  let teamTotal = 0,
+    teamWins = 0,
+    teamLegsWon = 0,
+    teamLegsPlayed = 0,
+    teamSetsWon = 0,
+    teamSetsPlayed = 0;
+
+  // 🔥 stats par format de team (2v2, 3v3, 2v2v2, 2v2v2v2, etc.)
+  const teamFormatStats: Record<string, { total: number; win: number }> = {};
+
+  // 🔥 Compteurs globaux X01 (tous formats confondus) pour le joueur
+  let x01MatchesTotal = 0;
+  let x01WinsTotal = 0;
+  let x01LegsPlayedTotal = 0;
+  let x01LegsWonTotal = 0;
+  let x01SetsPlayedTotal = 0;
+  let x01SetsWonTotal = 0;
+
+  // Pour chaque match → on ne lit QUE la ligne du joueur sélectionné
+  for (const [, arr] of matchGroups) {
+    let playerLine: X01MultiSession | undefined;
+
+    if (effectiveProfileId) {
+      playerLine =
+        arr.find(
+          (s) => String(s.selectedPlayerId) === String(effectiveProfileId)
+        ) || arr[0]; // fallback si les IDs ne matchent pas
+    } else {
+      playerLine = arr[0];
+    }
+
+    if (!playerLine) continue;
+
+    const isTeam = playerLine.isTeam === true;
+    const numPlayers = arr.length;
+    const isDuo = !isTeam && numPlayers === 2;
+    const isMulti = !isTeam && numPlayers >= 3;
+
+    const { legsPlayed, legsWon, setsPlayed, setsWon } =
+      computeLegsSetsForLine(playerLine, arr);
+
+    // 🔥 Compteurs globaux X01 pour ce joueur (tous formats confondus)
+    x01MatchesTotal++;
+    if (playerLine.isWin) x01WinsTotal++;
+
+    x01LegsPlayedTotal += legsPlayed;
+    x01LegsWonTotal += legsWon;
+
+    x01SetsPlayedTotal += setsPlayed;
+    x01SetsWonTotal += setsWon;
+
+    // ---- DUO ----
+    if (isDuo) {
+      duoTotal++;
+      if (playerLine.isWin) duoWins++;
+
+      duoLegsWon += legsWon;
+      duoLegsPlayed += legsPlayed;
+
+      duoSetsWon += setsWon;
+      duoSetsPlayed += setsPlayed;
+    }
+
+    // ---- MULTI ----
+    if (isMulti) {
+      multiTotal++;
+      if (playerLine.isWin) multiWins++;
+
+      multiLegsWon += legsWon;
+      multiLegsPlayed += legsPlayed;
+
+      // 🔥 FINISH = ne pas arriver dernier (rang < nb joueurs)
+      const myRank = playerLine.rank ?? null;
+      if (myRank && myRank < numPlayers) {
+        multiFinishCount++;
+      }
+    }
+
+    // ---- TEAM ----
+    if (isTeam) {
+      teamTotal++;
+      if (playerLine.isWin) teamWins++;
+
+      teamLegsWon += legsWon;
+      teamLegsPlayed += legsPlayed;
+
+      teamSetsWon += setsWon;
+      teamSetsPlayed += setsPlayed;
+
+      // 🔥 Détection du format (2v2, 3v3, 2v2v2, 2v2v2v2, etc.)
+      const teamCount: Record<string, number> = {};
+      for (const line of arr) {
+        const tid = line.teamId || "team";
+        teamCount[tid] = (teamCount[tid] || 0) + 1;
+      }
+      const sizes = Object.values(teamCount).sort((a, b) => b - a);
+      const formatLabel =
+        sizes.length > 0 ? sizes.join("v") : "team";
+
+      const bucket =
+        teamFormatStats[formatLabel] ||
+        (teamFormatStats[formatLabel] = { total: 0, win: 0 });
+
+      bucket.total++;
+      if (playerLine.isWin) bucket.win++;
     }
   }
 
-  // ---- TEAM ----
-  if (isTeam) {
-    teamTotal++;
-    if (playerLine.isWin) teamWins++;
-
-    teamLegsWon += playerLine.legsWon ?? 0;
-    teamLegsPlayed += playerLine.legsPlayed ?? 0;
-
-    teamSetsWon += playerLine.setsWon ?? 0;
-    teamSetsPlayed += playerLine.setsPlayed ?? 0;
-
-    // 🔥 Détection du format (2v2, 3v3, 2v2v2, 2v2v2v2, etc.)
-    const teamCount: Record<string, number> = {};
-    for (const line of arr) {
-      const tid = line.teamId || "team";
-      teamCount[tid] = (teamCount[tid] || 0) + 1;
-    }
-    const sizes = Object.values(teamCount).sort((a, b) => b - a);
-    const formatLabel =
-      sizes.length > 0 ? sizes.join("v") : "team";
-
-    const bucket =
-      teamFormatStats[formatLabel] ||
-      (teamFormatStats[formatLabel] = { total: 0, win: 0 });
-
-    bucket.total++;
-    if (playerLine.isWin) bucket.win++;
-  }
-}
 
 // --- Calculs finaux ---
 
@@ -1718,6 +1754,11 @@ for (const matchId in groupedByMatch) {
   if (!myLine) continue;
 
   const allIds = arr.map((s) => s.selectedPlayerId);
+  const isTeamMatch = myLine.isTeam || false;
+
+  // 🔥 Legs / sets calculés avec la même logique que plus haut
+  const { legsPlayed, legsWon, setsPlayed, setsWon } =
+    computeLegsSetsForLine(myLine, arr);
 
   // Détection teammates / opponents
   const teammates = arr
@@ -1732,12 +1773,6 @@ for (const matchId in groupedByMatch) {
     )
     .map((s) => s.selectedPlayerId);
 
-  // Legs / sets pour ce match (pour le joueur)
-  const legsPlayed = myLine.legsPlayed ?? 0;
-  const legsWon = myLine.legsWon ?? 0;
-  const setsPlayed = myLine.setsPlayed ?? 0;
-  const setsWon = myLine.setsWon ?? 0;
-
   // Calcul marge + score affichable (on privilégie les LEGS, puis les SETS)
   let margin: number | null = null;
   let scoreLabel: string | null = null;
@@ -1751,7 +1786,7 @@ for (const matchId in groupedByMatch) {
     margin = setsWon - setsLost;
     scoreLabel = `${setsWon}-${setsLost}`;
   } else {
-    // 🔥 Fallback si on n'a ni legs ni sets dans l'historique :
+    // Dernier recours : on retombe sur 1-0 / 0-1
     const isWin = !!myLine.isWin;
     margin = isWin ? 1 : -1;
     scoreLabel = isWin ? "1-0" : "0-1";
@@ -1759,7 +1794,7 @@ for (const matchId in groupedByMatch) {
 
   outcomes.push({
     matchId,
-    isTeam: myLine.isTeam || false,
+    isTeam: isTeamMatch,
     players: allIds,
     teammates,
     opponents,
@@ -1870,24 +1905,21 @@ const ensurePerson = (id: string): VersusStats => {
 
 // on remplit pour chaque match
 for (const oc of outcomes) {
-  // --- on déduit les legs / sets gagnés à partir du score "3-0", "2-1", etc. ---
-  let legsWonThis = 0;
-  let setsWonThis = 0;
-
-  if (oc.scoreLabel) {
-    const [meRaw, oppRaw] = oc.scoreLabel.split("-");
-    const meScore = parseInt(meRaw ?? "0", 10);
-    // const oppScore = parseInt(oppRaw ?? "0", 10); // utile si tu veux plus tard
-
-    if (!Number.isNaN(meScore)) {
-      // si on sait que le match est en sets, on range ça en sets, sinon en legs
-      if (oc.setsPlayed && oc.setsPlayed > 0) {
-        setsWonThis = meScore;
-      } else {
-        legsWonThis = meScore;
+  // on ne fait les stats adversaires détaillées QUE pour les matchs DUO non-team
+  const isDuo = !oc.isTeam && oc.players.length === 2;
+  if (!isDuo) {
+    // mais on garde quand même les coéquipiers (TEAM)
+    if (oc.isTeam) {
+      for (const tm of oc.teammates) {
+        const st = ensurePerson(tm);
+        st.teamMatches++;
       }
     }
+    continue;
   }
+
+  const legsWonThis = oc.legsWon ?? 0;
+  const setsWonThis = oc.setsWon ?? 0;
 
   // adversaires (joués contre)
   for (const opp of oc.opponents) {
@@ -1908,7 +1940,7 @@ for (const oc of outcomes) {
     }
   }
 
-  // coéquipiers (joués avec, en team)
+  // coéquipiers (joués avec, en team) → déjà géré plus haut, mais on garde pour sécurité
   if (oc.isTeam) {
     for (const tm of oc.teammates) {
       const st = ensurePerson(tm);
@@ -2075,6 +2107,7 @@ const detailsRows = Object.entries(perPersonStats)
     bestScore: st.bestScoreLabel,
     teams: st.teamMatches,
   }))
+  // tri : ceux qu'on a le plus joués en haut
   .sort((a, b) => b.matches - a.matches);
 
 // ------------------- RENDER -------------------
@@ -3649,11 +3682,11 @@ return (
       {row.matches}
     </div>
     <div style={{ textAlign: "right", color: "#E5FFEF" }}>
-      {row.legsWon || "-"}
-    </div>
-    <div style={{ textAlign: "right", color: "#E5FFEF" }}>
-      {row.setsWon || "-"}
-    </div>
+  {typeof row.legsWon === "number" ? row.legsWon : "-"}
+</div>
+<div style={{ textAlign: "right", color: "#E5FFEF" }}>
+  {typeof row.setsWon === "number" ? row.setsWon : "-"}
+</div>
     <div style={{ textAlign: "right", color: "#E5FFEF" }}>
       {row.wins || "-"}
     </div>
