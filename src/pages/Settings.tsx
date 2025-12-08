@@ -484,7 +484,7 @@ function AccountSecurityBlock() {
       );
       return;
     }
-  
+
     const ok = window.confirm(
       "⚠️ SUPPRESSION DÉFINITIVE DU COMPTE ⚠️\n\n" +
         "Cette action va :\n" +
@@ -494,34 +494,36 @@ function AccountSecurityBlock() {
         "Action IRRÉVERSIBLE. Continuer ?"
     );
     if (!ok) return;
-  
+
     setMessage(null);
     setError(null);
-  
+
     try {
-      // 1) Appel Edge Function Supabase
-      const res = await fetch("/functions/v1/delete-user", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: auth.user.id }),
-      });
-  
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        console.error("[settings] delete-user function error", body);
-        throw new Error(body?.error || `delete-user failed (status ${res.status})`);
+      // 1) 🔥 Appel de la Edge Function via le SDK SUPABASE
+      //    ➜ plus de problème d’URL / CORS / 405
+      const { error: fnError } = await supabase.functions.invoke(
+        "delete-user",
+        {
+          body: { userId: auth.user.id },
+        }
+      );
+
+      if (fnError) {
+        console.error("[settings] delete-user function error", fnError);
+        throw new Error(fnError.message || "delete-user failed");
       }
-  
+
       // 2) Logout propre côté client
       try {
         await auth.logout();
       } catch (e) {
         console.warn("[settings] logout after delete error", e);
       }
-  
-      // 3) Nuke TOTAL local : profils, stats, IndexedDB, session Supabase…
+
+      // 3) Nuke TOTAL local (ton helper existant)
+      //    ➜ garde ton implémentation actuelle de fullHardReset
       await fullHardReset(); // fait déjà un reload
-  
+
     } catch (e: any) {
       console.error("[settings] delete account error", e);
       setError(

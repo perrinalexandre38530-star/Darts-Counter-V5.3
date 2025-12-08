@@ -1183,7 +1183,7 @@ function ActiveProfileBlock({
 
       {/* TEXTE + ACTIONS */}
       <div className="apb__info">
-        {/* Nom ou champ de saisie – style Home (gradient + shimmer) */}
+        {/* Nom ou champ de saisie — même effet que le nom sous l’avatar Home */}
         <div style={{ marginBottom: 4, width: "100%", textAlign: "center" }}>
           {!isEditing ? (
             <div
@@ -1193,36 +1193,43 @@ function ActiveProfileBlock({
                 textOverflow: "ellipsis",
               }}
             >
-              <a
-                href="#stats"
-                onClick={(e) => {
-                  e.preventDefault();
-                  onOpenStats?.();
-                }}
-                // ⚠️ tout en inline, pas de className spéciale
-                style={{
-                  fontWeight: 900,
-                  fontSize: 30, // monte à 32 si tu veux encore plus gros
-                  lineHeight: 1.05,
-                  textTransform: "uppercase",
-                  letterSpacing: 2.5,
-                  textDecoration: "none",
-                  display: "inline-block",
-                  backgroundImage: `linear-gradient(120deg, ${primary}, #ffffff, ${primary})`,
-                  backgroundSize: "200% 100%",
-                  WebkitBackgroundClip: "text",
-                  backgroundClip: "text",
-                  color: "transparent",
-                  animation:
-                    "profileNamePulse 3.6s ease-in-out infinite, profileNameShimmer 7s linear infinite",
-                }}
+              <button
+                type="button"
+                onClick={() => onOpenStats?.()}
                 title={t(
                   "profiles.connected.seeStats",
                   "Voir les statistiques"
                 )}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  margin: 0,
+                  cursor: "pointer",
+                }}
               >
-                {active?.name || "—"}
-              </a>
+                <span
+                  className="dc-stats-name-wrapper"
+                  style={{
+                    fontSize: 32, // ajuste à 24/28 si tu veux
+                    textTransform: "uppercase",
+                    letterSpacing: 1.6,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    fontWeight: 900,               // épaissit la base
+                    // @ts-ignore – accent pour le gradient
+                    "--dc-accent": primary,
+                  }}
+                >
+                  <span className="dc-stats-name-base">
+                    {active?.name || "—"}
+                  </span>
+                  <span className="dc-stats-name-shimmer">
+                    {active?.name || "—"}
+                  </span>
+                </span>
+              </button>
             </div>
           ) : (
             <input
