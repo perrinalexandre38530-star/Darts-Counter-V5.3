@@ -982,7 +982,7 @@ function ActiveProfileBlock({
   activeAvg3D,
   selfStatus,
   onToggleAway,
-  onQuit, // gardé pour compat mais non utilisé
+  onQuit, // gardé pour compat mais pas utilisé ici
   onEdit,
   onOpenStats,
   onResetStats,
@@ -1183,66 +1183,47 @@ function ActiveProfileBlock({
 
       {/* TEXTE + ACTIONS */}
       <div className="apb__info">
-        {/* Nom ou champ de saisie — même effet que le nom sous l’avatar Home */}
-        <div style={{ marginBottom: 4, width: "100%", textAlign: "center" }}>
-          {!isEditing ? (
-            <div
+        {/* === NOM PROFIL ACTIF (SHIMMER PREMIUM) === */}
+        <div style={{ marginBottom: 6, width: "100%", textAlign: "center" }}>
+          <button
+            type="button"
+            onClick={() => onOpenStats?.()}
+            title={t(
+              "profiles.connected.seeStats",
+              "Voir les statistiques"
+            )}
+            style={{
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              margin: 0,
+              cursor: onOpenStats ? "pointer" : "default",
+            }}
+          >
+            <span
+              className="dc-stats-name-wrapper"
               style={{
+                fontSize: 32,
+                textTransform: "uppercase",
+                letterSpacing: 1.6,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
+                fontWeight: 900,
+                lineHeight: 1.05,
+                display: "inline-block",
+                // @ts-ignore
+                "--dc-accent": primary,
               }}
             >
-              <button
-                type="button"
-                onClick={() => onOpenStats?.()}
-                title={t(
-                  "profiles.connected.seeStats",
-                  "Voir les statistiques"
-                )}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  padding: 0,
-                  margin: 0,
-                  cursor: "pointer",
-                }}
-              >
-                <span
-                  className="dc-stats-name-wrapper"
-                  style={{
-                    fontSize: 32, // ajuste à 24/28 si tu veux
-                    textTransform: "uppercase",
-                    letterSpacing: 1.6,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    fontWeight: 900,               // épaissit la base
-                    // @ts-ignore – accent pour le gradient
-                    "--dc-accent": primary,
-                  }}
-                >
-                  <span className="dc-stats-name-base">
-                    {active?.name || "—"}
-                  </span>
-                  <span className="dc-stats-name-shimmer">
-                    {active?.name || "—"}
-                  </span>
-                </span>
-              </button>
-            </div>
-          ) : (
-            <input
-              className="input"
-              style={{ fontWeight: 700, fontSize: 14, textAlign: "center" }}
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              placeholder={t(
-                "profiles.edit.namePlaceholder",
-                "Nom du profil"
-              )}
-            />
-          )}
+              <span className="dc-stats-name-base">
+                {active?.name || "—"}
+              </span>
+              <span className="dc-stats-name-shimmer">
+                {active?.name || "—"}
+              </span>
+            </span>
+          </button>
         </div>
 
         {/* statut en ligne */}
@@ -1356,6 +1337,7 @@ function ActiveProfileBlock({
     </div>
   );
 }
+
 
 /* ------ Bloc INFOS PERSONNELLES + SÉCURITÉ ------ */
 
@@ -2852,17 +2834,20 @@ function LocalProfilesRefonte({
                 </div>
               </div>
 
-              {/* Nom + pays avec shimmer */}
-              <div style={{ textAlign: "center", marginBottom: 10 }}>
+              {/* === NOM PROFIL LOCAL (SHIMMER PREMIUM) + PAYS === */}
+              <div style={{ textAlign: "center", marginBottom: 12 }}>
                 <span
                   className="dc-stats-name-wrapper"
                   style={{
-                    fontSize: 22,
+                    fontSize: 26,
                     textTransform: "uppercase",
-                    letterSpacing: 0.9,
+                    letterSpacing: 1.4,
                     whiteSpace: "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
+                    fontWeight: 900,
+                    lineHeight: 1.05,
+                    display: "inline-block",
                     // @ts-ignore
                     "--dc-accent": primary,
                   }}
@@ -2956,7 +2941,7 @@ function LocalProfilesRefonte({
 
               {/* Boutons actions : EDITER / AVATAR / ACTIONS */}
               <div
-                className="row"
+                className="row local-actions"
                 style={{
                   gap: 6,
                   justifyContent: "center",
