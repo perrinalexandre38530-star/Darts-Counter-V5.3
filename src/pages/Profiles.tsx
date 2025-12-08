@@ -1051,7 +1051,7 @@ function ActiveProfileBlock({
     setEditPreview(null);
   }
 
-  // style pill premium pour les actions
+  // styles boutons pills
   const pillBtnBase: React.CSSProperties = {
     flex: 1,
     minWidth: 0,
@@ -1102,7 +1102,6 @@ function ActiveProfileBlock({
           height: MEDALLION,
           borderRadius: "50%",
           padding: 0,
-          // ⬇️ plus de halo / cercle : wrapper neutre
           background: "transparent",
           boxShadow: "none",
           position: "relative",
@@ -1163,15 +1162,12 @@ function ActiveProfileBlock({
 
       {/* TEXTE + ACTIONS */}
       <div className="apb__info">
-        {/* Nom ou champ de saisie */}
+        {/* Nom ou champ de saisie avec shimmer */}
         <div style={{ marginBottom: 4, width: "100%", textAlign: "center" }}>
           {!isEditing ? (
             <div
               style={{
-                fontWeight: 900,
-                fontSize: 22,
-                textTransform: "uppercase",
-                letterSpacing: 0.9,
+                // wrapper neutre
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -1183,8 +1179,18 @@ function ActiveProfileBlock({
                   e.preventDefault();
                   onOpenStats?.();
                 }}
-                className="player-name-shimmer" // shimmer comme Home/Stats
-                style={{ color: primary, textDecoration: "none" }}
+                className="player-name-shimmer"
+                style={{
+                  // 👉 même logique que sur la Home : bien gras + plus grand
+                  fontWeight: 900,
+                  fontSize: 26,          // au lieu de 22
+                  lineHeight: 1.05,
+                  textTransform: "uppercase",
+                  letterSpacing: 1.1,
+                  color: primary,
+                  textDecoration: "none",
+                  display: "inline-block",
+                }}
                 title={t(
                   "profiles.connected.seeStats",
                   "Voir les statistiques"
@@ -1207,7 +1213,7 @@ function ActiveProfileBlock({
           )}
         </div>
 
-        {/* statut en ligne — même style “tagline” que sous l’avatar Home */}
+        {/* statut en ligne */}
         <div
           style={{
             marginTop: 2,
@@ -1239,7 +1245,7 @@ function ActiveProfileBlock({
           </div>
         )}
 
-        {/* Actions principales : toujours sur une ligne */}
+        {/* Actions principales */}
         <div
           className="row apb__actions"
           style={{
@@ -1318,7 +1324,6 @@ function ActiveProfileBlock({
     </div>
   );
 }
-
 
 /* ------ Bloc INFOS PERSONNELLES + SÉCURITÉ ------ */
 
@@ -2551,14 +2556,14 @@ function LocalProfilesRefonte({
 
   const current = locals[index] || null;
 
-  // 🔥 mêmes stats que GoldMiniStats / menu profils locaux
+  // stats du profil courant
   const bs = useBasicStats(current?.id);
   const avg3 = Number.isFinite(bs.avg3) ? Number(bs.avg3) : 0;
   const bestVisit = Number(bs.bestVisit ?? 0);
   const bestCheckout = Number(bs.bestCheckout ?? 0);
   const winPct = Math.round(Number(bs.winRate ?? 0));
 
-  // reset du mode édition + menu actions quand on change de profil
+  // reset édition quand on change de profil
   React.useEffect(() => {
     setIsEditing(false);
     setEditFile(null);
@@ -2642,13 +2647,12 @@ function LocalProfilesRefonte({
     onDelete(current.id);
   }
 
-  // tailles médaillon ++
+  // tailles médaillon
   const AVATAR = 120;
   const BORDER = 10;
-  const MEDALLION = AVATAR + BORDER; // encore utilisé pour l'anneau d'étoiles
+  const MEDALLION = AVATAR + BORDER;
   const STAR = 12;
 
-  // style pill premium pour les actions
   const pillBtnBase: React.CSSProperties = {
     flex: 1,
     minWidth: 0,
@@ -2766,7 +2770,7 @@ function LocalProfilesRefonte({
 
           {current && (
             <>
-              {/* Médaillon central GROS + StarRing alimenté par avg3 */}
+              {/* Médaillon central + StarRing alimenté par avg3 */}
               <div
                 style={{
                   display: "flex",
@@ -2780,13 +2784,11 @@ function LocalProfilesRefonte({
                     width: MEDALLION,
                     height: MEDALLION,
                     borderRadius: "50%",
-                    // ⬇️ plus de cercle noir / halo : pas de background ni boxShadow
                     padding: 0,
                     background: "transparent",
                     boxShadow: "none",
                   }}
                 >
-                  {/* Couronne d’étoiles colorée */}
                   <div
                     aria-hidden
                     style={{
@@ -2818,23 +2820,29 @@ function LocalProfilesRefonte({
                 </div>
               </div>
 
-              {/* Nom + pays */}
+              {/* Nom + pays avec shimmer */}
               <div style={{ textAlign: "center", marginBottom: 10 }}>
-                {/* nom centré, un peu plus gros, sans halo lumineux */}
-                <div
+                <span
+                  className="dc-stats-name-wrapper"
                   style={{
-                    fontWeight: 900,
                     fontSize: 22,
-                    color: primary,
                     textTransform: "uppercase",
                     letterSpacing: 0.9,
                     whiteSpace: "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
+                    // @ts-ignore
+                    "--dc-accent": primary,
                   }}
                 >
-                  {current.name || "—"}
-                </div>
+                  <span className="dc-stats-name-base">
+                    {current.name || "—"}
+                  </span>
+                  <span className="dc-stats-name-shimmer">
+                    {current.name || "—"}
+                  </span>
+                </span>
+
                 <div
                   className="subtitle"
                   style={{
@@ -2914,7 +2922,7 @@ function LocalProfilesRefonte({
                 />
               </div>
 
-              {/* ------ BOUTONS ACTIONS : EDITER / AVATAR / ACTIONS ------ */}
+              {/* Boutons actions : EDITER / AVATAR / ACTIONS */}
               <div
                 className="row"
                 style={{
@@ -2943,7 +2951,6 @@ function LocalProfilesRefonte({
                   {t("profiles.locals.actions.avatar", "AVATAR")}
                 </button>
 
-                {/* Menu d’actions avancées */}
                 <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
                   <button
                     className="btn sm"
@@ -3011,7 +3018,7 @@ function LocalProfilesRefonte({
                 </div>
               </div>
 
-              {/* ------ MODE EDITION (nom / pays / avatar) ------ */}
+              {/* MODE EDITION (nom / pays / avatar) */}
               {isEditing && (
                 <div
                   style={{
@@ -3067,10 +3074,7 @@ function LocalProfilesRefonte({
                           className="subtitle"
                           style={{ fontSize: 11 }}
                         >
-                          {t(
-                            "profiles.locals.add.avatar",
-                            "Avatar"
-                          )}
+                          {t("profiles.locals.add.avatar", "Avatar")}
                         </span>
                       )}
                     </label>
