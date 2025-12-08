@@ -1167,7 +1167,6 @@ function ActiveProfileBlock({
           {!isEditing ? (
             <div
               style={{
-                // wrapper neutre
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -1181,13 +1180,13 @@ function ActiveProfileBlock({
                 }}
                 className="player-name-shimmer"
                 style={{
-                  // 👉 même logique que sur la Home : bien gras + plus grand
+                  // ⚠️ IMPORTANT : NE PAS METTRE "color" ici,
+                  // c'est la classe CSS qui gère le dégradé + shimmer
                   fontWeight: 900,
-                  fontSize: 26,          // au lieu de 22
+                  fontSize: 30,      // plus gros pour matcher le Home
                   lineHeight: 1.05,
                   textTransform: "uppercase",
-                  letterSpacing: 1.1,
-                  color: primary,
+                  letterSpacing: 1.6,
                   textDecoration: "none",
                   display: "inline-block",
                 }}
