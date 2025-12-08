@@ -21,7 +21,7 @@ import { supabase } from "../lib/supabase";
 type Props = { go?: (tab: any, params?: any) => void };
 
 const DELETE_USER_FN_URL =
-  "https://nvqqhcnjrjawhmtvlcg.supabase.co/functions/v1/delete-user";
+  "https://nvqqghcnrjawhimtvlcg.supabase.co/functions/v1/delete-user";
 
 // ---------------- Thèmes dispo + descriptions fallback ----------------
 
