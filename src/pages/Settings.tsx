@@ -20,6 +20,9 @@ import { supabase } from "../lib/supabase";
 
 type Props = { go?: (tab: any, params?: any) => void };
 
+const DELETE_USER_FN_URL =
+  "https://nvqqhcnjrjawhmtvlcg.supabase.co/functions/v1/delete-user";
+
 // ---------------- Thèmes dispo + descriptions fallback ----------------
 
 const NEONS: ThemeId[] = [
@@ -499,18 +502,25 @@ function AccountSecurityBlock() {
     setError(null);
 
     try {
-      // 1) 🔥 Appel de la Edge Function via le SDK SUPABASE
-      //    ➜ plus de problème d’URL / CORS / 405
-      const { error: fnError } = await supabase.functions.invoke(
-        "delete-user",
-        {
-          body: { userId: auth.user.id },
-        }
-      );
+      // 1) 🔥 Appel direct de l’URL de la fonction Edge hébergée chez Supabase
+      const res = await fetch(DELETE_USER_FN_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Si un jour tu réactives la vérif JWT, tu pourras ajouter ici:
+          // Authorization: `Bearer ${auth.session?.access_token}`,
+        },
+        body: JSON.stringify({ userId: auth.user.id }),
+      });
 
-      if (fnError) {
-        console.error("[settings] delete-user function error", fnError);
-        throw new Error(fnError.message || "delete-user failed");
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        console.error(
+          "[settings] delete-user HTTP error",
+          res.status,
+          text
+        );
+        throw new Error(`delete-user failed (status ${res.status})`);
       }
 
       // 2) Logout propre côté client
@@ -520,9 +530,8 @@ function AccountSecurityBlock() {
         console.warn("[settings] logout after delete error", e);
       }
 
-      // 3) Nuke TOTAL local (ton helper existant)
-      //    ➜ garde ton implémentation actuelle de fullHardReset
-      await fullHardReset(); // fait déjà un reload
+      // 3) Reset TOTAL local (ton helper existant)
+      await fullHardReset(); // doit déjà faire window.location.reload()
 
     } catch (e: any) {
       console.error("[settings] delete account error", e);
