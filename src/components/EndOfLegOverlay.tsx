@@ -246,6 +246,27 @@ function checkoutFromNew(leg: LegStats, pid: string) {
 }
 
 function rowFromNew(leg: LegStats, pid: string, nameOf: (id: string) => string) {
+  const st: any = leg.perPlayer?.[pid] ?? {};
+
+  // 🎯 1) valeur "officielle" de remaining si elle existe
+  const explicitPer =
+    typeof st.remaining === "number" && isFinite(st.remaining)
+      ? st.remaining
+      : null;
+  const explicitRoot =
+    (leg as any).remaining &&
+    typeof (leg as any).remaining[pid] === "number" &&
+    isFinite((leg as any).remaining[pid])
+      ? (leg as any).remaining[pid]
+      : null;
+
+  const remainingRaw =
+    explicitPer !== null ? explicitPer : explicitRoot !== null ? explicitRoot : null;
+
+  // 🎯 2) fallback calculé si rien n’est fourni par le moteur
+  const remaining =
+    remainingRaw !== null ? remainingRaw : remainingFromNew(leg, pid);
+
   const darts = n(
     (leg as any).perPlayer?.[pid]?.darts ??
       (leg as any).perPlayer?.[pid]?.dartsThrown ??
@@ -254,14 +275,15 @@ function rowFromNew(leg: LegStats, pid: string, nameOf: (id: string) => string) 
   const visits = visitsFromNew(leg, pid);
   const avg3 = avg3FromNew(leg, pid);
   const best = bestVisitFromNew(leg, pid);
-  const remaining = remainingFromNew(leg, pid);
   const p = powerBucketsFromNew(leg, pid);
   const imp = impactsFromNew(leg, pid);
   const co = checkoutFromNew(leg, pid);
+
   return {
     pid,
     name: nameOf(pid),
-    remaining,
+    remainingRaw,                    // 👈 on garde la valeur brute
+    remaining,                       // 👈 valeur finale (brute ou fallback)
     avg3,
     best,
     darts,
@@ -365,16 +387,24 @@ function rowFromLegacy(
   const coDartsAvgArr = res.checkoutDartsByPlayer?.[pid];
   const coDartsAvg =
     coCount && coDartsAvgArr?.length
-      ? Number(
-          f2(coDartsAvgArr.reduce((s, x) => s + x, 0) / coDartsAvgArr.length)
-        )
+      ? Number(f2(coDartsAvgArr.reduce((s, x) => s + x, 0) / coDartsAvgArr.length))
       : 0;
   const highestCO = n(res.bestCheckout?.[pid] ?? 0);
+
+  // 🎯 remaining brut du moteur si dispo
+  const explicitRem =
+    typeof res.remaining?.[pid] === "number" && isFinite(res.remaining[pid])
+      ? res.remaining[pid]
+      : null;
+
+  const remaining =
+    explicitRem !== null ? explicitRem : remainingFromLegacy(res, pid);
 
   return {
     pid,
     name: nameOf(pid),
-    remaining: remainingFromLegacy(res, pid),
+    remainingRaw: explicitRem,       // 👈 valeur brute éventuelle
+    remaining,                       // 👈 valeur finale
     avg3,
     best: n(res.bestVisit?.[pid] ?? 0),
     darts,
@@ -868,119 +898,136 @@ function Inner({
         {/* Corps */}
         <div style={{ padding: 10, paddingTop: 8 }}>
           {/* Classement (liste joueurs) */}
-          <div
-            style={{
-              borderRadius: 10,
-              border: "1px solid rgba(255,255,255,.07)",
-              background:
-                "linear-gradient(180deg, rgba(28,28,32,.65), rgba(18,18,20,.65))",
-              marginBottom: 10,
-            }}
-          >
-            {rows.map((r, idx) => {
-              const avatar = avatarOf(r.pid);
-              const isWinner = r.pid === winnerId;
-              const remainingSafe =
-                typeof r.remaining === "number" && isFinite(r.remaining)
-                  ? Math.max(0, Math.round(r.remaining))
-                  : 0;
-              const displayScore = isWinner ? 0 : remainingSafe;
+<div
+  style={{
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,.07)",
+    background:
+      "linear-gradient(180deg, rgba(28,28,32,.65), rgba(18,18,20,.65))",
+    marginBottom: 10,
+  }}
+>
+  {rows.map((r, idx) => {
+    const avatar = avatarOf(r.pid);
+    const isWinner = r.pid === winnerId;
 
-              return (
-                <div
-                  key={r.pid}
-                  style={{
-                    padding: "6px 8px",
-                    display: "grid",
-                    gridTemplateColumns: "26px 36px 1fr auto",
-                    alignItems: "center",
-                    gap: 8,
-                    borderBottom: "1px solid rgba(255,255,255,.06)",
-                    background: isWinner
-                      ? "radial-gradient(circle at 0% 0%, rgba(127,226,169,.28), transparent 55%)"
-                      : "transparent",
-                    boxShadow: isWinner
-                      ? "0 0 22px rgba(127,226,169,.35)"
-                      : "0 0 0 rgba(0,0,0,0)",
-                    transition: "background .18s, box-shadow .18s",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 6,
-                      background: "rgba(255,255,255,.06)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontWeight: 800,
-                      color: "var(--dc-accent, #ffcf57)",
-                      fontSize: 12,
-                    }}
-                  >
-                    {idx + 1}
-                  </div>
-                  <div
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: "50%",
-                      overflow: "hidden",
-                      background: "rgba(255,255,255,.08)",
-                    }}
-                  >
-                    {avatar ? (
-                      <img
-                        src={avatar}
-                        alt=""
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                        }}
-                      />
-                    ) : (
-                      <div
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          color: "#999",
-                          fontWeight: 700,
-                        }}
-                      >
-                        ?
-                      </div>
-                    )}
-                  </div>
-                  <div
-                    style={{
-                      fontWeight: 800,
-                      color: isWinner
-                        ? "#7fe2a9"
-                        : "var(--dc-accent, #ffcf57)",
-                      fontSize: 13,
-                    }}
-                  >
-                    {r.name}
-                  </div>
-                  <div
-                    style={{
-                      fontWeight: 900,
-                      color: isWinner
-                        ? "#7fe2a9"
-                        : "var(--dc-accent, #ffcf57)",
-                    }}
-                  >
-                    {displayScore}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+    // 👉 valeur brute "remaining" venant du moteur si dispo
+    const remainingRaw =
+      typeof (r as any).remainingRaw === "number" &&
+      isFinite((r as any).remainingRaw)
+        ? (r as any).remainingRaw
+        : null;
+
+    // 👉 valeur calculée de secours si rien de brut
+    const remainingComputed =
+      typeof r.remaining === "number" && isFinite(r.remaining)
+        ? r.remaining
+        : 0;
+
+    // 👉 on affiche en priorité la valeur brute, sinon le calcul
+    const remainingForDisplay =
+      remainingRaw !== null ? remainingRaw : remainingComputed;
+
+    // 👉 vainqueur = 0, les autres = points restants arrondis
+    const displayScore = isWinner
+      ? 0
+      : Math.max(0, Math.round(remainingForDisplay));
+
+    return (
+      <div
+        key={r.pid}
+        style={{
+          padding: "6px 8px",
+          display: "grid",
+          gridTemplateColumns: "26px 36px 1fr auto",
+          alignItems: "center",
+          gap: 8,
+          borderBottom: "1px solid rgba(255,255,255,.06)",
+          background: isWinner
+            ? "radial-gradient(circle at 0% 0%, rgba(127,226,169,.28), transparent 55%)"
+            : "transparent",
+          boxShadow: isWinner
+            ? "0 0 22px rgba(127,226,169,.35)"
+            : "0 0 0 rgba(0,0,0,0)",
+          transition: "background .18s, box-shadow .18s",
+        }}
+      >
+        <div
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 6,
+            background: "rgba(255,255,255,.06)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontWeight: 800,
+            color: "var(--dc-accent, #ffcf57)",
+            fontSize: 12,
+          }}
+        >
+          {idx + 1}
+        </div>
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: "50%",
+            overflow: "hidden",
+            background: "rgba(255,255,255,.08)",
+          }}
+        >
+          {avatar ? (
+            <img
+              src={avatar}
+              alt=""
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#999",
+                fontWeight: 700,
+              }}
+            >
+              ?
+            </div>
+          )}
+        </div>
+        <div
+          style={{
+            fontWeight: 800,
+            color: isWinner
+              ? "#7fe2a9"
+              : "var(--dc-accent, #ffcf57)",
+            fontSize: 13,
+          }}
+        >
+          {r.name}
+        </div>
+        <div
+          style={{
+            fontWeight: 900,
+            color: isWinner
+              ? "#7fe2a9"
+              : "var(--dc-accent, #ffcf57)",
+          }}
+        >
+          {displayScore}
+        </div>
+      </div>
+    );
+  })}
+</div>
 
           {/* Résumé en KPI */}
           <Accordion title="Résumé de la manche" defaultOpen>

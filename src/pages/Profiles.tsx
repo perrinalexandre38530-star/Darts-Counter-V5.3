@@ -12,7 +12,7 @@ import ProfileAvatar from "../components/ProfileAvatar";
 import ProfileStarRing from "../components/ProfileStarRing";
 import type { Store, Profile } from "../lib/types";
 import { getBasicProfileStats, type BasicProfileStats } from "../lib/statsBridge";
-import { getBasicProfileStatsSync } from "../lib/statsLiteIDB";
+import { getBasicProfileStatsSync, purgeAllStatsForProfile } from "../lib/statsLiteIDB";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang, type Lang } from "../contexts/LangContext";
 import { useAuthOnline } from "../hooks/useAuthOnline";
@@ -196,14 +196,33 @@ export default function Profiles({
     );
   }
 
-  function delProfile(id: string) {
+  async function delProfile(id: string) {
+    const ok = window.confirm(
+      'Supprimer ce profil local ET toutes ses stats associées sur cet appareil ?'
+    );
+    if (!ok) return;
+  
+    // 1) On supprime le profil dans le store
     setProfiles((arr) => arr.filter((p) => p.id !== id));
-    if (store.activeProfileId === id) setActiveProfile(null);
+  
+    if (store.activeProfileId === id) {
+      setActiveProfile(null);
+    }
+  
+    // 2) On nettoie le mini-cache des stats chargées côté UI
     setStatsMap((m) => {
       const c = { ...m };
       delete c[id];
       return c;
     });
+  
+    // 3) On purge aussi les stats côté "lite" (localStorage / mini-cache)
+    try {
+      await purgeAllStatsForProfile(id);
+      console.log("[Profiles] Stats locales purgées pour le profil", id);
+    } catch (e) {
+      console.warn("[Profiles] Erreur purgeAllStatsForProfile", e);
+    }
   }
 
   type PrivateInfo = {
@@ -251,6 +270,88 @@ export default function Profiles({
   }
 
   const active = profiles.find((p) => p.id === activeProfileId) || null;
+
+  async function resetActiveStats() {
+    if (!active?.id) return;
+
+    const ok = window.confirm(
+      "Réinitialiser TOUTES les statistiques locales de ce profil ? (X01, Training, etc.)"
+    );
+    if (!ok) return;
+
+    try {
+      // 1) Purge StatsLite / caches internes pour ce profil
+      await purgeAllStatsForProfile(active.id);
+      console.log("[Profiles] StatsLite purgées pour", active.id);
+    } catch (e) {
+      console.warn("[Profiles] purgeAllStatsForProfile error", e);
+    }
+
+    try {
+      // 2) Purge entrée quick-stats locale (dc-quick-stats)
+      const QUICK_KEY = "dc-quick-stats";
+      const raw = localStorage.getItem(QUICK_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          delete parsed[active.id];
+          localStorage.setItem(QUICK_KEY, JSON.stringify(parsed));
+        }
+      }
+    } catch (e) {
+      console.warn("[Profiles] quick-stats reset error", e);
+    }
+
+    // 3) On force aussi le mini-cache UI à se vider pour ce profil
+    setStatsMap((m) => {
+      const copy = { ...m };
+      delete copy[active.id];
+      return copy;
+    });
+
+    alert("Statistiques locales de ce profil réinitialisées.");
+  }
+
+    // 🔁 Hydrate les infos privées (email / pays / surnom) depuis le compte online
+    React.useEffect(() => {
+      if (!active) return;
+      if (auth.status !== "signed_in") return;
+  
+      const pi = ((active as any).privateInfo || {}) as PrivateInfo;
+      const patch: Partial<PrivateInfo> = {};
+  
+      // Email online → privateInfo.email (si différent)
+      const emailOnline = auth.user?.email?.trim().toLowerCase();
+      if (emailOnline) {
+        const emailLocal = (pi.email || "").trim().toLowerCase();
+        if (emailLocal !== emailOnline) {
+          patch.email = emailOnline;
+        }
+      }
+  
+      // Pseudo online → privateInfo.nickname (si différent)
+      const nicknameOnline =
+        auth.profile?.displayName || auth.user?.nickname || "";
+      if (nicknameOnline) {
+        const nicknameLocal = pi.nickname || active.name || "";
+        if (nicknameLocal !== nicknameOnline) {
+          patch.nickname = nicknameOnline;
+        }
+      }
+  
+      // Pays online → privateInfo.country (si différent)
+      const countryOnline = auth.profile?.country || "";
+      if (countryOnline) {
+        const countryLocal = pi.country || "";
+        if (countryLocal !== countryOnline) {
+          patch.country = countryOnline;
+        }
+      }
+  
+      if (Object.keys(patch).length > 0) {
+        patchActivePrivateInfo(patch);
+      }
+    }, [active?.id, auth.status, auth.profile, auth.user]);  
 
   // NEW : au chargement de la page, si un profil actif a des prefs app, on les applique
   React.useEffect(() => {
@@ -383,11 +484,38 @@ export default function Profiles({
           __html: `
           .apb { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
           .apb__info { display:flex; flex-direction:column; align-items:flex-start; text-align:left; flex:1; min-width:220px; }
-          .apb__actions { justify-content:center; }
+
+          /* Boutons actions profil actif : une seule ligne centrée */
+          .apb__actions {
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            width:100%;
+            gap:12px;
+            margin-top:14px;
+            flex-wrap:nowrap;
+          }
+
+          /* Boutons actions profils locaux : une seule ligne centrée */
+          .local-actions {
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            width:100%;
+            gap:12px;
+            margin-top:10px;
+            margin-bottom:10px;
+            flex-wrap:nowrap;
+          }
+
           @media (max-width: 600px){
             .apb { flex-direction:column; align-items:center; }
             .apb__info { align-items:center !important; text-align:center !important; }
-            .apb__actions { justify-content:center !important; }
+            .apb__actions,
+            .local-actions {
+              justify-content:center !important;
+              flex-wrap:wrap;
+            }
           }
         `,
         }}
@@ -473,6 +601,7 @@ export default function Profiles({
                           initialStatsSubTab: "dashboard",
                         });
                       }}
+                      onResetStats={resetActiveStats}
                     />
                   ) : (
                     <UnifiedAuthBlock
@@ -493,26 +622,14 @@ export default function Profiles({
                     "Informations personnelles"
                   )}
                 >
-                  {/* 🔗 Profil ONLINE (Supabase) : infos qui reviennent après reconnexion */}
-                  <OnlineProfileForm />
-
-                  {/* petite séparation visuelle */}
-                  <div
-                    style={{
-                      margin: "16px 0 10px",
-                      opacity: 0.4,
-                      borderTop: `1px solid ${theme.borderSoft}`,
-                    }}
-                  />
-
-                  {/* Bloc historique/local + sécurité (comme avant) */}
+                  {/* Bloc infos perso locales + sécurité */}
                   <PrivateInfoBlock
                     active={active}
                     onPatch={patchActivePrivateInfo}
                     onSave={handlePrivateInfoSave}
                   />
 
-                  {/* 🔥 Préférences joueur (thème + langue) */}
+                  {/* 🔥 Préférences joueur (thème + langue / X01 par défaut, etc.) */}
                   <PlayerPrefsBlock
                     active={active}
                     onPatch={patchActivePrivateInfo}
@@ -788,9 +905,10 @@ function ActiveProfileBlock({
   activeAvg3D,
   selfStatus,
   onToggleAway,
-  onQuit,
+  onQuit, // gardé dans la signature pour compat, mais non utilisé
   onEdit,
   onOpenStats,
+  onResetStats,
 }: {
   active: Profile;
   activeAvg3D: number | null;
@@ -799,16 +917,16 @@ function ActiveProfileBlock({
   onQuit: () => void;
   onEdit: (name: string, avatar?: File | null) => void;
   onOpenStats?: () => void;
+  onResetStats?: () => void;
 }) {
+  const { theme } = useTheme();
+  const { t } = useLang();
+  const primary = theme.primary;
+
   const AVATAR = 96;
   const BORDER = 8;
   const MEDALLION = AVATAR + BORDER;
   const STAR = 14;
-
-  const { theme } = useTheme();
-  const { t } = useLang();
-
-  const primary = theme.primary;
 
   const statusLabelKey =
     selfStatus === "away"
@@ -833,8 +951,94 @@ function ActiveProfileBlock({
       ? "#9AA0AA"
       : "#1FB46A";
 
+  // ----- état édition -----
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [editName, setEditName] = React.useState(active?.name || "");
+  const [editFile, setEditFile] = React.useState<File | null>(null);
+  const [editPreview, setEditPreview] = React.useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  React.useEffect(() => {
+    setEditName(active?.name || "");
+    setEditFile(null);
+    setEditPreview(null);
+    setIsEditing(false);
+  }, [active?.id]);
+
+  React.useEffect(() => {
+    if (!editFile) {
+      setEditPreview(null);
+      return;
+    }
+    const r = new FileReader();
+    r.onload = () => setEditPreview(String(r.result));
+    r.readAsDataURL(editFile);
+  }, [editFile]);
+
+  function handleAvatarClick() {
+    if (!isEditing) return;
+    fileInputRef.current?.click();
+  }
+
+  function handleCancelEdit() {
+    setIsEditing(false);
+    setEditFile(null);
+    setEditPreview(null);
+    setEditName(active?.name || "");
+  }
+
+  function handleSaveEdit() {
+    const trimmed = editName.trim() || active?.name || "";
+    onEdit(trimmed, editFile || undefined);
+    setIsEditing(false);
+    setEditFile(null);
+    setEditPreview(null);
+  }
+
+  // style pill premium pour les actions
+  const pillBtnBase: React.CSSProperties = {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: 120,
+    borderRadius: 999,
+    border: `1px solid ${primary}AA`,
+    background: `linear-gradient(135deg, ${primary}33, ${primary}99)`,
+    color: "#000",
+    fontWeight: 800,
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+    padding: "6px 8px",
+    boxShadow: "0 8px 16px rgba(0,0,0,.45)",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  };
+
+  const pillBtnGhost: React.CSSProperties = {
+    ...pillBtnBase,
+    background: `linear-gradient(135deg, ${primary}11, ${primary}55)`,
+    color: "#fff",
+  };
+
+  const pillBtnDanger: React.CSSProperties = {
+    ...pillBtnBase,
+    background: "linear-gradient(135deg, #ff4b5c, #ff8a80)",
+    border: "1px solid #ffb3b3",
+    color: "#000",
+  };
+
   return (
     <div className="apb">
+      {/* input fichier caché, déclenché en cliquant sur l’avatar */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={(e) => setEditFile(e.target.files?.[0] ?? null)}
+      />
+
+      {/* MÉDAILLON + AVATAR (cliquer pour changer en mode édition) */}
       <div
         style={{
           width: MEDALLION,
@@ -845,8 +1049,11 @@ function ActiveProfileBlock({
           boxShadow: `0 0 26px ${primary}55, inset 0 0 12px rgba(0,0,0,.55)`,
           position: "relative",
           flex: "0 0 auto",
+          cursor: isEditing ? "pointer" : "default",
         }}
+        onClick={handleAvatarClick}
       >
+        {/* anneau d’étoiles */}
         <div
           aria-hidden
           style={{
@@ -867,41 +1074,79 @@ function ActiveProfileBlock({
           />
         </div>
 
+        {/* badge édition sur l’avatar quand on est en mode édition */}
+        {isEditing && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: 2,
+              right: 2,
+              borderRadius: 999,
+              padding: "2px 6px",
+              fontSize: 9,
+              fontWeight: 700,
+              background: "rgba(0,0,0,.7)",
+              border: `1px solid ${primary}`,
+              textTransform: "uppercase",
+            }}
+          >
+            {t("profiles.edit.avatarHint", "Changer")}
+          </div>
+        )}
+
         <ProfileAvatar
           size={AVATAR}
-          dataUrl={active?.avatarDataUrl}
+          dataUrl={editPreview || active?.avatarDataUrl}
           label={active?.name?.[0]?.toUpperCase() || "?"}
           showStars={false}
         />
       </div>
 
+      {/* TEXTE + ACTIONS */}
       <div className="apb__info">
-        <div
-          style={{
-            fontWeight: 800,
-            fontSize: 20,
-            whiteSpace: "nowrap",
-          }}
-        >
-          <a
-            href="#stats"
-            onClick={(e) => {
-              e.preventDefault();
-              onOpenStats?.();
-            }}
-            style={{ color: theme.primary, textDecoration: "none" }}
-            title={t(
-              "profiles.connected.seeStats",
-              "Voir les statistiques"
-            )}
-          >
-            {active?.name || "—"}
-          </a>
+        {/* Nom ou champ de saisie */}
+        <div style={{ marginBottom: 4, width: "100%" }}>
+          {!isEditing ? (
+            <div
+              style={{
+                fontWeight: 800,
+                fontSize: 20,
+                whiteSpace: "nowrap",
+              }}
+            >
+              <a
+                href="#stats"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onOpenStats?.();
+                }}
+                style={{ color: theme.primary, textDecoration: "none" }}
+                title={t(
+                  "profiles.connected.seeStats",
+                  "Voir les statistiques"
+                )}
+              >
+                {active?.name || "—"}
+              </a>
+            </div>
+          ) : (
+            <input
+              className="input"
+              style={{ fontWeight: 700, fontSize: 14 }}
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              placeholder={t(
+                "profiles.edit.namePlaceholder",
+                "Nom du profil"
+              )}
+            />
+          )}
         </div>
 
+        {/* statut en ligne */}
         <div
           className="row"
-          style={{ gap: 8, alignItems: "center", marginTop: 4 }}
+          style={{ gap: 8, alignItems: "center", marginTop: 2 }}
         >
           <StatusDot kind={selfStatus} />
           <span
@@ -915,22 +1160,35 @@ function ActiveProfileBlock({
           </span>
         </div>
 
+        {/* mini stats */}
         {active?.id && (
           <div style={{ marginTop: 8, width: "100%" }}>
             <GoldMiniStats profileId={active.id} />
           </div>
         )}
 
+        {/* Actions principales : toujours sur une ligne */}
         <div
           className="row apb__actions"
           style={{
-            gap: 8,
-            marginTop: 10,
-            flexWrap: "wrap",
+            gap: 6,
+            marginTop: 12,
+            flexWrap: "nowrap",
+            justifyContent: "center",
+            width: "100%",
           }}
         >
-          <EditInline initialName={active?.name || ""} onSave={onEdit} compact />
+          {/* MODIFIER */}
+          <button
+            className="btn sm"
+            type="button"
+            onClick={() => setIsEditing((v) => !v)}
+            style={pillBtnGhost}
+          >
+            {t("profiles.locals.actions.edit", "MODIFIER")}
+          </button>
 
+          {/* ABSENT / EN LIGNE */}
           <button
             className="btn sm"
             onClick={onToggleAway}
@@ -938,20 +1196,52 @@ function ActiveProfileBlock({
               "profiles.btn.toggleStatus.tooltip",
               "Basculer le statut"
             )}
+            style={pillBtnBase}
           >
             {selfStatus === "away"
               ? t("profiles.btn.status.backOnline", "EN LIGNE")
               : t("profiles.btn.status.away", "ABSENT")}
           </button>
 
-          <button
-            className="btn danger sm"
-            onClick={onQuit}
-            title={t("profiles.btn.quit.tooltip", "Quitter la session")}
-          >
-            {t("profiles.btn.quit", "QUITTER")}
-          </button>
+          {/* RESET STATS actif */}
+          {onResetStats && (
+            <button
+              className="btn sm"
+              onClick={onResetStats}
+              style={pillBtnDanger}
+            >
+              {t("profiles.connected.resetStats", "RESET STATS")}
+            </button>
+          )}
         </div>
+
+        {/* Bloc enregistrement / annuler sous le reste, bien contenu dans la carte */}
+        {isEditing && (
+          <div
+            className="row"
+            style={{
+              marginTop: 10,
+              justifyContent: "flex-end",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              className="btn sm"
+              type="button"
+              onClick={handleCancelEdit}
+            >
+              {t("common.cancel", "Annuler")}
+            </button>
+            <button
+              className="btn ok sm"
+              type="button"
+              onClick={handleSaveEdit}
+            >
+              {t("common.save", "Enregistrer")}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1658,30 +1948,47 @@ function UnifiedAuthBlock({
         return false;
       }) || null;
 
-    // 4) Si aucun profil local ne correspond, on en crée un
+    // 4) Si aucun profil local ne correspond
     if (!match) {
-      let displayName = emailNorm;
-      try {
-        const session = await onlineApi.getCurrentSession();
-        displayName =
-          session?.user.nickname ||
-          session?.user.email ||
-          emailNorm;
-      } catch (err) {
-        console.warn("[profiles] getCurrentSession after login error:", err);
+      if (profiles.length > 0) {
+        // 👉 On RÉUTILISE un profil local existant
+        // (pour ne pas perdre avatar + infos déjà saisies)
+        match = profiles[0];
+
+        const pi = ((match as any).privateInfo || {}) as PrivateInfo;
+        const patched: Partial<PrivateInfo> = {
+          ...pi,
+          email: emailNorm,
+          password: pass,
+          onlineKey: onlineKey || pi.onlineKey,
+        };
+
+        onHydrateProfile?.(match.id, patched);
+      } else {
+        // 👉 Aucun profil local du tout → on en crée un (cas tout neuf)
+        let displayName = emailNorm;
+        try {
+          const session = await onlineApi.getCurrentSession();
+          displayName =
+            session?.user.nickname ||
+            session?.user.email ||
+            emailNorm;
+        } catch (err) {
+          console.warn("[profiles] getCurrentSession after login error:", err);
+        }
+
+        const privateInfo: Partial<PrivateInfo> = {
+          email: emailNorm,
+          password: pass,
+          onlineKey: onlineKey || undefined,
+        };
+
+        onCreate(displayName, null, privateInfo);
+        return;
       }
-
-      const privateInfo: Partial<PrivateInfo> = {
-        email: emailNorm,
-        password: pass,
-        onlineKey: onlineKey || undefined,
-      };
-
-      onCreate(displayName, null, privateInfo);
-      return;
     }
 
-    // 5) Si un profil existe déjà, on s'assure qu'il a bien l'onlineKey
+    // 5) Si un profil existe déjà, on s'assure qu'il a bien l’onlineKey
     const pi = ((match as any).privateInfo || {}) as PrivateInfo;
     if (!pi.onlineKey && onlineKey) {
       const patched: Partial<PrivateInfo> = {
@@ -2158,6 +2465,7 @@ function LocalProfilesRefonte({
   const [editCountry, setEditCountry] = React.useState("");
   const [editFile, setEditFile] = React.useState<File | null>(null);
   const [editPreview, setEditPreview] = React.useState<string | null>(null);
+  const [actionsOpen, setActionsOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (index >= locals.length && locals.length > 0) {
@@ -2172,19 +2480,22 @@ function LocalProfilesRefonte({
 
   // 🔥 mêmes stats que GoldMiniStats / menu profils locaux
   const bs = useBasicStats(current?.id);
-  console.log("[locals-basicStats]", current?.id, bs);
-
   const avg3 = Number.isFinite(bs.avg3) ? Number(bs.avg3) : 0;
   const bestVisit = Number(bs.bestVisit ?? 0);
   const bestCheckout = Number(bs.bestCheckout ?? 0);
   const winPct = Math.round(Number(bs.winRate ?? 0));
 
+  // reset du mode édition + menu actions quand on change de profil
   React.useEffect(() => {
     setIsEditing(false);
     setEditFile(null);
     setEditPreview(null);
+    setActionsOpen(false);
     if (current) {
-      const pi = ((current as any).privateInfo || {}) as { country?: string };
+      const pi =
+        ((current as any).privateInfo || {}) as {
+          country?: string;
+        };
       setEditName(current.name || "");
       setEditCountry(pi.country || "");
     } else {
@@ -2203,7 +2514,7 @@ function LocalProfilesRefonte({
     r.readAsDataURL(editFile);
   }, [editFile]);
 
-  function handleSaveEdit() {
+  async function handleSaveEdit() {
     if (!current) return;
     const trimmedName = editName.trim();
     const trimmedCountry = editCountry.trim();
@@ -2217,11 +2528,84 @@ function LocalProfilesRefonte({
     setEditPreview(null);
   }
 
+  async function handlePurgeStats() {
+    if (!current) return;
+    const ok = window.confirm(
+      t(
+        "profiles.locals.actions.purgeConfirm",
+        "Supprimer toutes les statistiques locales pour ce profil ? L’historique brut des parties restera conservé."
+      )
+    );
+    if (!ok) return;
+
+    try {
+      await purgeAllStatsForProfile(current.id);
+      alert(
+        t(
+          "profiles.locals.actions.purgeDone",
+          "Statistiques locales supprimées pour ce profil. L’historique des matchs reste disponible."
+        )
+      );
+    } catch (err) {
+      console.warn("[Profiles] purgeAllStatsForProfile error:", err);
+      alert(
+        t(
+          "profiles.locals.actions.purgeError",
+          "Une erreur est survenue pendant la suppression des statistiques."
+        )
+      );
+    }
+  }
+
+  function handleDeleteProfile() {
+    if (!current) return;
+    const ok = window.confirm(
+      t(
+        "profiles.locals.actions.deleteConfirm",
+        "Supprimer ce profil local ? Ses stats resteront dans l’historique."
+      )
+    );
+    if (!ok) return;
+    onDelete(current.id);
+  }
+
   // tailles médaillon ++
   const AVATAR = 120;
   const BORDER = 10;
   const MEDALLION = AVATAR + BORDER;
   const STAR = 12;
+
+  // style pill premium pour les boutons d’actions locaux
+  const pillBtnBase: React.CSSProperties = {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: 120,
+    borderRadius: 999,
+    border: `1px solid ${primary}AA`,
+    background: `linear-gradient(135deg, ${primary}33, ${primary}99)`,
+    color: "#000",
+    fontWeight: 800,
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+    padding: "6px 8px",
+    boxShadow: "0 8px 16px rgba(0,0,0,.45)",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  };
+
+  const pillBtnGhost: React.CSSProperties = {
+    ...pillBtnBase,
+    background: `linear-gradient(135deg, ${primary}11, ${primary}55)`,
+    color: "#fff",
+  };
+
+  const pillBtnDanger: React.CSSProperties = {
+    ...pillBtnBase,
+    background: "linear-gradient(135deg, #ff4b5c, #ff8a80)",
+    border: "1px solid #ffb3b3",
+    color: "#000",
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -2327,7 +2711,7 @@ function LocalProfilesRefonte({
                     boxShadow: `0 0 30px ${primary}66, inset 0 0 14px rgba(0,0,0,.7)`,
                   }}
                 >
-                  {/* Couronne d’étoiles colorée (même logique que Home) */}
+                  {/* Couronne d’étoiles colorée */}
                   <div
                     aria-hidden
                     style={{
@@ -2350,7 +2734,6 @@ function LocalProfilesRefonte({
                     />
                   </div>
 
-                  {/* Avatar au centre, sans étoiles internes */}
                   <ProfileAvatar
                     size={AVATAR - 8}
                     dataUrl={current.avatarDataUrl}
@@ -2360,7 +2743,7 @@ function LocalProfilesRefonte({
                 </div>
               </div>
 
-              {/* Nom + drapeau pays */}
+              {/* Nom + pays */}
               <div style={{ textAlign: "center", marginBottom: 10 }}>
                 <div
                   style={{
@@ -2388,9 +2771,10 @@ function LocalProfilesRefonte({
                   }}
                 >
                   {(() => {
-                    const pi = ((current as any).privateInfo || {}) as {
-                      country?: string;
-                    };
+                    const pi =
+                      ((current as any).privateInfo || {}) as {
+                        country?: string;
+                      };
                     const country = pi.country || "";
                     const flag = getCountryFlag(country);
 
@@ -2423,7 +2807,7 @@ function LocalProfilesRefonte({
                 </div>
               </div>
 
-              {/* KPIs — une seule ligne avec scroll si besoin */}
+              {/* KPIs */}
               <div
                 style={{
                   display: "flex",
@@ -2453,8 +2837,236 @@ function LocalProfilesRefonte({
                 />
               </div>
 
-              {/* Actions + bloc édition -> tu gardes ton code actuel ici */}
-              {/* ... */}
+              {/* ------ BOUTONS ACTIONS : EDITER / CREER AVATAR / MENU (SUPPR. + PURGE) ------ */}
+              <div
+                className="row"
+                style={{
+                  gap: 6,
+                  justifyContent: "center",
+                  flexWrap: "nowrap",
+                  marginBottom: 4,
+                  width: "100%",
+                }}
+              >
+                <button
+                  className="btn sm"
+                  type="button"
+                  onClick={() => setIsEditing((v) => !v)}
+                  style={pillBtnGhost}
+                >
+                  {t("profiles.locals.actions.edit", "MODIFIER")}
+                </button>
+
+                <button
+                  className="btn sm"
+                  type="button"
+                  onClick={() => onOpenAvatarCreator?.()}
+                  style={pillBtnBase}
+                >
+                  {t(
+                    "profiles.locals.actions.avatar",
+                    "CREER AVATAR"
+                  )}
+                </button>
+
+                {/* Menu d’actions avancées */}
+                <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+                  <button
+                    className="btn sm"
+                    type="button"
+                    onClick={() => setActionsOpen((v) => !v)}
+                    style={pillBtnDanger}
+                  >
+                    {t("profiles.locals.actions.more", "ACTIONS")}
+                  </button>
+
+                  {actionsOpen && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "110%",
+                        right: 0,
+                        zIndex: 50,
+                        minWidth: 210,
+                        padding: 8,
+                        borderRadius: 10,
+                        background: theme.bg,
+                        border: `1px solid ${theme.borderSoft}`,
+                        boxShadow: "0 12px 24px rgba(0,0,0,.6)",
+                        display: "grid",
+                        gap: 6,
+                      }}
+                    >
+                      <button
+                        className="btn sm"
+                        type="button"
+                        onClick={() => {
+                          setActionsOpen(false);
+                          handlePurgeStats();
+                        }}
+                        style={{
+                          justifyContent: "flex-start",
+                          fontSize: 11,
+                        }}
+                      >
+                        {t(
+                          "profiles.locals.actions.purgeStats",
+                          "Purger toutes les stats de ce profil"
+                        )}
+                      </button>
+
+                      <button
+                        className="btn danger sm"
+                        type="button"
+                        onClick={() => {
+                          setActionsOpen(false);
+                          handleDeleteProfile();
+                        }}
+                        style={{
+                          justifyContent: "flex-start",
+                          fontSize: 11,
+                        }}
+                      >
+                        {t(
+                          "profiles.locals.actions.delete",
+                          "Supprimer ce profil local"
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ------ MODE EDITION (nom / pays / avatar) ------ */}
+              {isEditing && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    paddingTop: 10,
+                    borderTop: `1px dashed ${theme.borderSoft}`,
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  <div
+                    className="row"
+                    style={{
+                      gap: 10,
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <label
+                      style={{
+                        width: 52,
+                        height: 52,
+                        borderRadius: "50%",
+                        overflow: "hidden",
+                        border: `1px solid ${theme.borderSoft}`,
+                        display: "grid",
+                        placeItems: "center",
+                        background: theme.card,
+                        cursor: "pointer",
+                        flex: "0 0 auto",
+                      }}
+                    >
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: "none" }}
+                        onChange={(e) =>
+                          setEditFile(e.target.files?.[0] ?? null)
+                        }
+                      />
+                      {editPreview ? (
+                        <img
+                          src={editPreview}
+                          alt=""
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                          }}
+                        />
+                      ) : (
+                        <span
+                          className="subtitle"
+                          style={{ fontSize: 11 }}
+                        >
+                          {t(
+                            "profiles.locals.add.avatar",
+                            "Avatar"
+                          )}
+                        </span>
+                      )}
+                    </label>
+
+                    <div
+                      style={{
+                        flex: 1,
+                        minWidth: 160,
+                        display: "grid",
+                        gap: 6,
+                      }}
+                    >
+                      <input
+                        className="input"
+                        placeholder={t(
+                          "profiles.locals.add.placeholder",
+                          "Nom du profil"
+                        )}
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                      />
+                      <input
+                        className="input"
+                        placeholder={t(
+                          "profiles.private.country",
+                          "Pays"
+                        )}
+                        value={editCountry}
+                        onChange={(e) => setEditCountry(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    className="row"
+                    style={{
+                      justifyContent: "flex-end",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button
+                      className="btn sm"
+                      type="button"
+                      onClick={() => {
+                        setIsEditing(false);
+                        setEditFile(null);
+                        setEditPreview(null);
+                        if (current) {
+                          const pi =
+                            ((current as any).privateInfo || {}) as {
+                              country?: string;
+                            };
+                          setEditName(current.name || "");
+                          setEditCountry(pi.country || "");
+                        }
+                      }}
+                    >
+                      {t("common.cancel", "Annuler")}
+                    </button>
+                    <button
+                      className="btn ok sm"
+                      type="button"
+                      onClick={handleSaveEdit}
+                    >
+                      {t("common.save", "Enregistrer")}
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -2462,6 +3074,7 @@ function LocalProfilesRefonte({
     </div>
   );
 }
+
 
 /* ----- Formulaire d’ajout local (refondu) ----- */
 

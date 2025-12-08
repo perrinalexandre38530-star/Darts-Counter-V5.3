@@ -307,3 +307,71 @@ export async function migrateFromLocalStorage(keys: string[]) {
     } catch {}
   }
 }
+
+/* ============================================================
+   RESET COMPLET : garder uniquement le profil actif (sans stats)
+   - Efface toutes les clés IndexedDB (store, stats, history...)
+   - Efface legacy localStorage
+   - Recharge un mini-store avec SEULEMENT le profil actif
+============================================================ */
+import type { Store, Profile } from "./types";
+
+export async function nukeAllKeepActiveProfile(): Promise<void> {
+  // 1) Charger l'ancien store AVANT suppression
+  let activeProfile: Profile | null = null;
+
+  try {
+    const raw = await idbGet<ArrayBuffer | Uint8Array | string>(STORE_KEY);
+    if (raw != null) {
+      const txt = await decompressGzip(raw as any);
+      const parsed = JSON.parse(txt) as Store;
+
+      const activeId = parsed.activeProfileId ?? null;
+      if (activeId) {
+        const prof = parsed.profiles?.find((p) => p.id === activeId) || null;
+        activeProfile = prof ? { ...prof } : null;
+      }
+    }
+  } catch (err) {
+    console.warn("[storage] unable to load existing store before reset", err);
+  }
+
+  // 2) Supprimer TOUT le contenu d’IndexedDB
+  try {
+    await idbClear();              // efface toutes les clés du store principal "kv"
+  } catch (err) {
+    console.warn("[storage] idbClear error during reset", err);
+  }
+
+  // 3) Effacer les éventuelles anciennes données du localStorage legacy
+  try {
+    localStorage.removeItem(LEGACY_LS_KEY);
+  } catch {}
+
+  // 4) Si on avait un profil actif → on recrée un store minimal
+  if (activeProfile) {
+    // Nettoyage éventuel de champs statistiques dans le profil
+    const cleanProfile: Profile = {
+      ...activeProfile,
+      // supprime/neutralise si besoin les champs internes de stats
+      // quickStats: undefined,
+      // lastStatsSnapshot: undefined,
+    };
+
+    const newStore: Store = {
+      profiles: [cleanProfile],
+      activeProfileId: cleanProfile.id,
+      selfStatus: "online",     // ou "local" selon ton besoin
+      // les autres propriétés du store seront recréées par l'init du store
+    } as Store;
+
+    try {
+      const json = JSON.stringify(newStore);
+      const payload = await compressGzip(json);
+      await idbSet(STORE_KEY, payload);
+    } catch (err) {
+      console.warn("[storage] unable to write minimal store after reset", err);
+    }
+  }
+}
+

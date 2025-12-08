@@ -7,13 +7,14 @@
 // + Bloc "Compte & sécurité" inline (gestion du compte connecté)
 // + Bloc "Notifications & communications"
 // + Bouton "Tout réinitialiser" (nukeAll + reload)
+// + Bouton "Supprimer mon compte" (online + local)
 // ============================================
 
 import React from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang, type Lang } from "../contexts/LangContext";
 import { THEMES, type ThemeId, type AppTheme } from "../theme/themePresets";
-import { nukeAll } from "../lib/storage";
+import { nukeAllKeepActiveProfile } from "../lib/storage";
 import { useAuthOnline } from "../hooks/useAuthOnline";
 import { supabase } from "../lib/supabase";
 
@@ -473,6 +474,63 @@ function AccountSecurityBlock() {
     }
   }
 
+  async function handleDeleteAccount() {
+    if (auth.status !== "signed_in" || !auth.user) {
+      setError(
+        t(
+          "settings.account.delete.noUser",
+          "Aucun compte connecté à supprimer."
+        )
+      );
+      return;
+    }
+
+    const ok = window.confirm(
+      "⚠️ SUPPRESSION DÉFINITIVE DU COMPTE ⚠️\n\n" +
+        "Cette action va :\n" +
+        "- Supprimer ton compte en ligne (Darts Counter / Supabase)\n" +
+        "- Effacer tous les profils locaux, BOTS, stats et réglages sur cet appareil\n\n" +
+        "Cette action est irréversible. Continuer ?"
+    );
+    if (!ok) return;
+
+    setMessage(null);
+    setError(null);
+
+    try {
+      // 1) Appel Edge Function Supabase (adapter le nom si besoin)
+      await fetch("/functions/v1/delete-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: auth.user.id }),
+      });
+
+      // 2) Logout propre
+      try {
+        await auth.logout();
+      } catch (e) {
+        console.warn("[settings] logout after delete error", e);
+      }
+
+      // 3) Nuke complet des données locales
+      await nukeAll();
+
+      alert(
+        "Ton compte a été supprimé et l'application a été réinitialisée.\nElle va maintenant se recharger."
+      );
+      window.location.reload();
+    } catch (e: any) {
+      console.error("[settings] delete account error", e);
+      setError(
+        e?.message ||
+          t(
+            "settings.account.delete.error",
+            "Impossible de supprimer le compte pour le moment."
+          )
+      );
+    }
+  }
+
   const emailLabel = auth.user?.email || "—";
 
   return (
@@ -669,7 +727,7 @@ function AccountSecurityBlock() {
             </div>
           )}
 
-          {/* Actions compte : déconnexion / reset / save */}
+          {/* Actions compte : déconnexion / reset / save / delete account */}
           <div
             style={{
               display: "flex",
@@ -725,6 +783,28 @@ function AccountSecurityBlock() {
                     "settings.account.save.btn",
                     "Enregistrer les changements"
                   )}
+            </button>
+
+            {/* 🔥 Bouton SUPPRIMER MON COMPTE */}
+            <button
+              type="button"
+              className="btn danger sm"
+              onClick={handleDeleteAccount}
+              style={{
+                minWidth: 160,
+                borderColor: "rgba(255,120,120,0.9)",
+                background:
+                  "linear-gradient(135deg, rgba(255,80,80,0.95), rgba(255,170,120,0.95))",
+                color: "#120808",
+                fontWeight: 800,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+              }}
+            >
+              {t(
+                "settings.account.delete.btn",
+                "Supprimer mon compte"
+              )}
             </button>
           </div>
 
@@ -912,24 +992,25 @@ export default function Settings({ go }: Props) {
     injectSettingsAnimationsOnce();
   }, []);
 
-  // 🔥 Reset complet de l'app (profils, BOTS, stats, historique, réglages)
-  function handleFullReset() {
+  // 🔥 Reset complet de l'app
+  // - Efface tous les profils, stats, historiques, réglages…
+  // - MAIS garde le profil actif (sans ses stats)
+  async function handleFullReset() {
     const ok = window.confirm(
-      "Cette action va effacer tous les profils locaux, BOTS, stats, historique et réglages. Tu devras tout recréer. Continuer ?"
+      "Cette action va effacer tous les profils locaux, BOTS, stats, historique et réglages.\n\nSeul le profil actif sera conservé, mais sans aucune statistique.\n\nContinuer ?"
     );
     if (!ok) return;
 
-    nukeAll()
-      .then(() => {
-        alert("Application réinitialisée. La page va se recharger.");
-        window.location.reload();
-      })
-      .catch((err) => {
-        console.error("[Settings] nukeAll error:", err);
-        alert(
-          "Erreur lors de la réinitialisation. Tu peux essayer de vider le stockage du navigateur pour ce site."
+    try {
+      await nukeAllKeepActiveProfile();
+      alert("Application réinitialisée. La page va se recharger.");
+      window.location.reload();
+    } catch (err) {
+      console.error("[Settings] nukeAllKeepActiveProfile error:", err);
+      alert(
+        "Erreur lors de la réinitialisation. Tu peux essayer de vider le stockage du navigateur pour ce site."
         );
-      });
+      }
   }
 
   return (

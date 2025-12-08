@@ -34,10 +34,13 @@ function load(): LiteDB {
     return {};
   }
 }
+
 function save(db: LiteDB) {
   try {
     localStorage.setItem(KEY, JSON.stringify(db));
-  } catch {}
+  } catch {
+    // ignore quota / private mode errors
+  }
 }
 
 /* ---------- Accessor ---------- */
@@ -111,7 +114,10 @@ export function commitLiteFromLeg(
       a.sumDarts += v3.darts;
       a.sumPoints += v3.pts;
       a.bestVisit = Math.max(a.bestVisit, v3.bestVisit);
-      a.bestCheckout = Math.max(a.bestCheckout, clampCO(v3.bestCheckout));
+      a.bestCheckout = Math.max(
+        a.bestCheckout,
+        clampCO(v3.bestCheckout)
+      );
 
       a.legs += 1;
       if (winnerId && pid === winnerId) a.wins += 1;
@@ -134,7 +140,10 @@ export function commitLiteFromLeg(
     a.sumPoints += pts;
 
     a.bestVisit = Math.max(a.bestVisit, N(bestVisit[pid], 0));
-    a.bestCheckout = Math.max(a.bestCheckout, clampCO(bestCheckout[pid]));
+    a.bestCheckout = Math.max(
+      a.bestCheckout,
+      clampCO(bestCheckout[pid])
+    );
     a.coHits += N(coHits[pid], 0);
     a.coAtt += N(coAtt[pid], 0);
 
@@ -182,7 +191,10 @@ export async function addMatchSummary(arg: {
       a.sumDarts += darts;
       a.sumPoints += pts;
       a.bestVisit = Math.max(a.bestVisit, N(p.bestVisit, 0));
-      a.bestCheckout = Math.max(a.bestCheckout, clampCO(p.bestCheckout));
+      a.bestCheckout = Math.max(
+        a.bestCheckout,
+        clampCO(p.bestCheckout)
+      );
 
       const legsInc = Math.max(1, N(p.legs, 1));
       a.legs += legsInc;
@@ -196,7 +208,10 @@ export async function addMatchSummary(arg: {
     a.sumDarts += N(p.darts, 0);
     a.sumPoints += N(p.points, 0);
     a.bestVisit = Math.max(a.bestVisit, N(p.bestVisit, 0));
-    a.bestCheckout = Math.max(a.bestCheckout, clampCO(p.bestCheckout));
+    a.bestCheckout = Math.max(
+      a.bestCheckout,
+      clampCO(p.bestCheckout)
+    );
 
     a.coHits += N(p.coHits, 0);
     a.coAtt += N(p.coAtt, 0);
@@ -229,8 +244,10 @@ export function getBasicProfileStatsSync(playerId: string) {
   }
 
   const avg3 = a.sumDarts > 0 ? (a.sumPoints / a.sumDarts) * 3 : 0;
-  const winPct = a.legs > 0 ? Math.round((a.wins / a.legs) * 1000) / 10 : 0;
-  const coPct = a.coAtt > 0 ? Math.round((a.coHits / a.coAtt) * 1000) / 10 : 0;
+  const winPct =
+    a.legs > 0 ? Math.round((a.wins / a.legs) * 1000) / 10 : 0;
+  const coPct =
+    a.coAtt > 0 ? Math.round((a.coHits / a.coAtt) * 1000) / 10 : 0;
 
   return {
     avg3: Math.round(avg3 * 100) / 100,
@@ -243,8 +260,36 @@ export function getBasicProfileStatsSync(playerId: string) {
 }
 
 /* ============================================================
-   Reset manuel
+   Reset manuel — tout effacer
 ============================================================ */
 export function __resetLiteStats() {
   save({});
+}
+
+/* ============================================================
+   🔥 PURGE CIBLÉE : supprimer les stats d'un seul profil
+   - À appeler quand on supprime un profil local ou un BOT
+   - profileId = p.id utilisé partout dans l'app
+============================================================ */
+
+/**
+ * Supprime les stats lite pour un profil donné dans le mini-cache.
+ * (ne touche pas aux autres profils)
+ */
+export function purgeLiteStatsForProfile(profileId: string) {
+  const db = load();
+  if (db[profileId]) {
+    delete db[profileId];
+    save(db);
+    console.log("[STATS LITE] Purge profil", profileId);
+  }
+}
+
+/**
+ * Alias "global" cohérent avec le reste de l'app.
+ * Aujourd'hui, le mini-cache lite est uniquement dans localStorage,
+ * donc la purge ciblée se limite à ça.
+ */
+export async function purgeAllStatsForProfile(profileId: string) {
+  purgeLiteStatsForProfile(profileId);
 }
