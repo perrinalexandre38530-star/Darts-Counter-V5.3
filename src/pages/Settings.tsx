@@ -14,7 +14,7 @@ import React from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang, type Lang } from "../contexts/LangContext";
 import { THEMES, type ThemeId, type AppTheme } from "../theme/themePresets";
-import { nukeAllKeepActiveProfile } from "../lib/storage";
+// ❌ ancien import supprimé : nukeAllKeepActiveProfile
 import { useAuthOnline } from "../hooks/useAuthOnline";
 import { supabase } from "../lib/supabase";
 
@@ -489,8 +489,9 @@ function AccountSecurityBlock() {
       "⚠️ SUPPRESSION DÉFINITIVE DU COMPTE ⚠️\n\n" +
         "Cette action va :\n" +
         "- Supprimer ton compte en ligne (Darts Counter / Supabase)\n" +
-        "- Effacer tous les profils locaux, BOTS, stats et réglages sur cet appareil\n\n" +
-        "Cette action est irréversible. Continuer ?"
+        "- Effacer tous les profils locaux, BOTS, stats, historique et réglages sur CET appareil\n\n" +
+        "Tu devras recréer un compte si tu veux revenir plus tard.\n\n" +
+        "Action IRRÉVERSIBLE. Continuer ?"
     );
     if (!ok) return;
 
@@ -505,20 +506,18 @@ function AccountSecurityBlock() {
         body: JSON.stringify({ userId: auth.user.id }),
       });
 
-      // 2) Logout propre
+      // 2) Logout propre côté client
       try {
         await auth.logout();
       } catch (e) {
         console.warn("[settings] logout after delete error", e);
       }
 
-      // 3) Nuke complet des données locales
-      await nukeAll();
+      // 3) 🔥 Nuke TOTAL local : profils, stats, IndexedDB, session Supabase…
+      //    (fullHardReset est défini plus bas dans le même fichier)
+      await fullHardReset();
+      // fullHardReset fait déjà un window.location.reload() à la fin
 
-      alert(
-        "Ton compte a été supprimé et l'application a été réinitialisée.\nElle va maintenant se recharger."
-      );
-      window.location.reload();
     } catch (e: any) {
       console.error("[settings] delete account error", e);
       setError(
@@ -530,6 +529,7 @@ function AccountSecurityBlock() {
       );
     }
   }
+
 
   const emailLabel = auth.user?.email || "—";
 
@@ -982,6 +982,103 @@ function ToggleRow({
   );
 }
 
+/* -------------------------------------------------------------
+   RESET TOTAL HARDCORE
+   - Efface localStorage + sessionStorage
+   - Wipe toutes les bases IndexedDB (stats / history / profils…)
+   - Déconnexion Supabase sur cet appareil
+   - Reset du store global (__DARTS_STORE__)
+   - Reload de l'app
+------------------------------------------------------------- */
+async function fullHardReset() {
+  try {
+    console.log(">>> FULL HARD RESET START");
+
+    if (typeof window === "undefined") {
+      console.error("FULL HARD RESET: window is undefined (SSR)");
+      return;
+    }
+
+    // 1) localStorage + sessionStorage
+    try {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    } catch (e) {
+      console.warn("FULL HARD RESET: storage clear failed", e);
+    }
+
+    // 2) Wipe IndexedDB complet
+    try {
+      const anyIndexedDB: any = (window as any).indexedDB;
+      if (anyIndexedDB && typeof anyIndexedDB.databases === "function") {
+        const dbs = await anyIndexedDB.databases();
+        for (const db of dbs) {
+          if (db && db.name) {
+            console.log("Deleting DB:", db.name);
+            await new Promise<void>((resolve, reject) => {
+              const req = window.indexedDB.deleteDatabase(
+                db.name as string
+              );
+              req.onsuccess = () => resolve();
+              req.onerror = () => reject(req.error);
+              req.onblocked = () => resolve(); // au cas où
+            });
+          }
+        }
+      } else {
+        // Fallback : on tente les BDD connues
+        const knownDbs = [
+          "dc_stats_v1",
+          "dc_history_v1",
+          "dc_profiles_v1",
+          "dc_training_v1",
+        ];
+        for (const name of knownDbs) {
+          await new Promise<void>((resolve) => {
+            const req = window.indexedDB.deleteDatabase(name);
+            req.onsuccess = () => resolve();
+            req.onerror = () => resolve();
+            req.onblocked = () => resolve();
+          });
+        }
+      }
+    } catch (e) {
+      console.warn("FULL HARD RESET: indexedDB wipe failed", e);
+    }
+
+    // 3) Déconnexion Supabase (session locale)
+    try {
+      await supabase.auth.signOut({ scope: "local" } as any);
+    } catch (e) {
+      console.warn("Supabase signOut fail:", e);
+    }
+
+    // 4) Reset du store interne global s'il existe
+    try {
+      const anyWindow = window as any;
+      if (anyWindow.__DARTS_STORE__?.setState) {
+        anyWindow.__DARTS_STORE__.setState(() => ({
+          profiles: [],
+          bots: [],
+          history: [],
+          settings: {},
+          activeProfileId: null,
+        }));
+      }
+    } catch (e) {
+      console.warn("Store reset error:", e);
+    }
+
+    // 5) Reload complet
+    window.location.reload();
+  } catch (err) {
+    console.error("FULL HARD RESET FAILED", err);
+    alert(
+      "Erreur lors du reset complet. Tu peux aussi vider manuellement les données du site dans les réglages du navigateur."
+    );
+  }
+}
+
 // ---------------- Composant principal ----------------
 
 export default function Settings({ go }: Props) {
@@ -992,25 +1089,22 @@ export default function Settings({ go }: Props) {
     injectSettingsAnimationsOnce();
   }, []);
 
-  // 🔥 Reset complet de l'app
+  // 🔥 Reset COMPLET de l'app
   // - Efface tous les profils, stats, historiques, réglages…
-  // - MAIS garde le profil actif (sans ses stats)
+  // - NE GARDE RIEN (même plus le profil actif)
   async function handleFullReset() {
     const ok = window.confirm(
-      "Cette action va effacer tous les profils locaux, BOTS, stats, historique et réglages.\n\nSeul le profil actif sera conservé, mais sans aucune statistique.\n\nContinuer ?"
+      "⚠️ RÉINITIALISATION COMPLÈTE ⚠️\n\n" +
+        "Cette action va effacer TOUTES les données locales de Darts Counter sur cet appareil :\n" +
+        "- Profils locaux & BOTS\n" +
+        "- Stats & historique de parties\n" +
+        "- Réglages, thèmes, langue…\n\n" +
+        "Ton compte en ligne (si tu en as un) sera simplement déconnecté de cet appareil, " +
+        "mais toutes les données locales seront perdues.\n\n" +
+        "Action définitive. Continuer ?"
     );
     if (!ok) return;
-
-    try {
-      await nukeAllKeepActiveProfile();
-      alert("Application réinitialisée. La page va se recharger.");
-      window.location.reload();
-    } catch (err) {
-      console.error("[Settings] nukeAllKeepActiveProfile error:", err);
-      alert(
-        "Erreur lors de la réinitialisation. Tu peux essayer de vider le stockage du navigateur pour ce site."
-        );
-      }
+    await fullHardReset();
   }
 
   return (

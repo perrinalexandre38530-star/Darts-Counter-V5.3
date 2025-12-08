@@ -1101,13 +1101,14 @@ function ActiveProfileBlock({
           width: MEDALLION,
           height: MEDALLION,
           borderRadius: "50%",
-          padding: BORDER / 2,
-          background: `linear-gradient(135deg, ${primary}, ${primary}55)`,
-          // ⬇️ halo externe retiré
-          boxShadow: "inset 0 0 12px rgba(0,0,0,.7)",
+          padding: 0,
+          // ⬇️ plus de halo / cercle : wrapper neutre
+          background: "transparent",
+          boxShadow: "none",
           position: "relative",
           flex: "0 0 auto",
           cursor: isEditing ? "pointer" : "default",
+          margin: "0 auto",
         }}
         onClick={handleAvatarClick}
       >
@@ -1163,16 +1164,14 @@ function ActiveProfileBlock({
       {/* TEXTE + ACTIONS */}
       <div className="apb__info">
         {/* Nom ou champ de saisie */}
-        <div style={{ marginBottom: 4, width: "100%" }}>
+        <div style={{ marginBottom: 4, width: "100%", textAlign: "center" }}>
           {!isEditing ? (
             <div
               style={{
                 fontWeight: 900,
-                fontSize: 20,
+                fontSize: 22,
                 textTransform: "uppercase",
                 letterSpacing: 0.9,
-                textShadow: `0 0 6px ${primary}, 0 0 14px ${primary}AA, 0 0 24px ${primary}77`,
-                filter: `drop-shadow(0 0 6px ${primary}66)`,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -1184,6 +1183,7 @@ function ActiveProfileBlock({
                   e.preventDefault();
                   onOpenStats?.();
                 }}
+                className="player-name-shimmer" // shimmer comme Home/Stats
                 style={{ color: primary, textDecoration: "none" }}
                 title={t(
                   "profiles.connected.seeStats",
@@ -1196,7 +1196,7 @@ function ActiveProfileBlock({
           ) : (
             <input
               className="input"
-              style={{ fontWeight: 700, fontSize: 14 }}
+              style={{ fontWeight: 700, fontSize: 14, textAlign: "center" }}
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               placeholder={t(
@@ -1207,15 +1207,23 @@ function ActiveProfileBlock({
           )}
         </div>
 
-        {/* statut en ligne */}
+        {/* statut en ligne — même style “tagline” que sous l’avatar Home */}
         <div
-          className="row"
-          style={{ gap: 8, alignItems: "center", marginTop: 2 }}
+          style={{
+            marginTop: 2,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: 0.8,
+            textTransform: "uppercase",
+          }}
         >
           <StatusDot kind={selfStatus} />
           <span
             style={{
-              fontWeight: 700,
               color: statusColor,
               textShadow: `0 0 6px ${statusColor}, 0 0 12px ${statusColor}`,
             }}
@@ -1310,6 +1318,7 @@ function ActiveProfileBlock({
     </div>
   );
 }
+
 
 /* ------ Bloc INFOS PERSONNELLES + SÉCURITÉ ------ */
 
@@ -2636,7 +2645,7 @@ function LocalProfilesRefonte({
   // tailles médaillon ++
   const AVATAR = 120;
   const BORDER = 10;
-  const MEDALLION = AVATAR + BORDER;
+  const MEDALLION = AVATAR + BORDER; // encore utilisé pour l'anneau d'étoiles
   const STAR = 12;
 
   // style pill premium pour les actions
@@ -2771,10 +2780,10 @@ function LocalProfilesRefonte({
                     width: MEDALLION,
                     height: MEDALLION,
                     borderRadius: "50%",
-                    padding: BORDER / 2,
-                    background: `linear-gradient(135deg, ${primary}, ${primary}55)`,
-                    // ⬇️ halo externe supprimé : seulement inner shadow
-                    boxShadow: "inset 0 0 14px rgba(0,0,0,.75)",
+                    // ⬇️ plus de cercle noir / halo : pas de background ni boxShadow
+                    padding: 0,
+                    background: "transparent",
+                    boxShadow: "none",
                   }}
                 >
                   {/* Couronne d’étoiles colorée */}
@@ -2801,7 +2810,7 @@ function LocalProfilesRefonte({
                   </div>
 
                   <ProfileAvatar
-                    size={AVATAR - 8}
+                    size={AVATAR}
                     dataUrl={current.avatarDataUrl}
                     label={current.name?.[0]?.toUpperCase() || "?"}
                     showStars={false}
@@ -2811,15 +2820,14 @@ function LocalProfilesRefonte({
 
               {/* Nom + pays */}
               <div style={{ textAlign: "center", marginBottom: 10 }}>
+                {/* nom centré, un peu plus gros, sans halo lumineux */}
                 <div
                   style={{
                     fontWeight: 900,
-                    fontSize: 20,
+                    fontSize: 22,
                     color: primary,
                     textTransform: "uppercase",
                     letterSpacing: 0.9,
-                    textShadow: `0 0 6px ${primary}, 0 0 14px ${primary}AA, 0 0 24px ${primary}77`,
-                    filter: `drop-shadow(0 0 6px ${primary}66)`,
                     whiteSpace: "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
