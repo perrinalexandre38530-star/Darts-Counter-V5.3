@@ -799,80 +799,57 @@ export default function X01MultiStatsTabFull({
   );
 
   // Classements multi pour le joueur (ou tous si aucun ID fourni)
-  const multiRanks: MultiRankStats = React.useMemo(() => {
-    const targetId = effectiveProfileId ?? null;
-  
-    // base "any" pour ne pas se battre avec le type exact
-    const stats: any = {
-      first: 0,
-      second: 0,
-      third: 0,
-      fourth: 0,
-      fifth: 0,
-      sixth: 0,
-      seventh: 0,
-      eighth: 0,
-      ninth: 0,
-      tenth: 0,
-      podiums: 0,
-    };
-  
-    // Regroupe les lignes par matchId
-    const groups = new Map<string, X01MultiSession[]>();
+  const multiRanks = React.useMemo(() => {
+    const stats = makeEmptyMultiRankStats();
+    if (!filtered.length) return stats;
+
+    // Regroupe les lignes par match
+    const byMatch = new Map<string, X01MultiSession[]>();
     for (const s of filtered) {
       if (!s.matchId) continue;
-      const arr = groups.get(s.matchId) || [];
+      const arr = byMatch.get(s.matchId) || [];
       arr.push(s);
-      groups.set(s.matchId, arr);
+      byMatch.set(s.matchId, arr);
     }
-  
-    for (const [, arr] of groups) {
-      // match multi = au moins 3 joueurs et pas en team
+
+    for (const [, arr] of byMatch) {
+      // Multi = au moins 3 joueurs sur le match (et pas TEAM)
       if (arr.length < 3) continue;
-  
-      const isTeamMatch = arr.some((s) => s.isTeam);
+      const isTeamMatch = arr.some((p) => p.isTeam);
       if (isTeamMatch) continue;
-  
-      let myLine: X01MultiSession | undefined;
-  
-      if (targetId) {
-        myLine =
-          arr.find(
-            (s) => String(s.selectedPlayerId) === String(targetId)
-          ) || arr[0];
-      } else {
-        myLine = arr[0];
-      }
-  
-      if (!myLine) continue;
-  
-      const rank = myLine.rank ?? null;
-      if (!rank || rank < 1) continue;
-  
-      // map rang → clé du tableau
-      const keyMap: Record<number, keyof typeof stats> = {
-        1: "first",
-        2: "second",
-        3: "third",
-        4: "fourth",
-        5: "fifth",
-        6: "sixth",
-        7: "seventh",
-        8: "eighth",
-        9: "ninth",
-        10: "tenth",
-      };
-  
-      const key = keyMap[rank];
-      if (key) {
-        stats[key] = (stats[key] || 0) + 1;
-        if (rank <= 3) {
-          stats.podiums = (stats.podiums || 0) + 1;
+
+      for (const s of arr) {
+        // 🔥 On ne garde que les lignes du joueur sélectionné :
+        //    on compare d'abord profileId, puis on fallback sur selectedPlayerId
+        if (effectiveProfileId) {
+          const target = String(effectiveProfileId);
+          const lineProfileId =
+            s.profileId != null ? String(s.profileId) : null;
+          const linePlayerId =
+            s.selectedPlayerId != null ? String(s.selectedPlayerId) : null;
+
+          if (lineProfileId !== target && linePlayerId !== target) {
+            continue;
+          }
         }
+
+        const r = s.rank ?? null;
+        if (!r || r < 1) continue;
+
+        if (r === 1) stats.first++;
+        else if (r === 2) stats.second++;
+        else if (r === 3) stats.third++;
+        else if (r === 4) stats.place4++;
+        else if (r === 5) stats.place5++;
+        else if (r === 6) stats.place6++;
+        else if (r === 7) stats.place7++;
+        else if (r === 8) stats.place8++;
+        else if (r === 9) stats.place9++;
+        else stats.place10plus++;
       }
     }
-  
-    return stats as MultiRankStats;
+
+    return stats;
   }, [filtered, effectiveProfileId]);
   
   // --- AGRÉGATION RÉELLE DES MATCHS PAR TYPE ---

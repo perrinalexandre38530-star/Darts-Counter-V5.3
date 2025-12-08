@@ -25,6 +25,61 @@ import { sha256 } from "../lib/crypto";
 import PlayerPrefsBlock from "../components/profile/PlayerPrefsBlock";
 import OnlineProfileForm from "../components/OnlineProfileForm";
 
+// Effet "shimmer" du nom joueur (copié de StatsHub)
+const statsNameCss = `
+.dc-stats-name-wrapper {
+  position: relative;
+  display: inline-block;
+  font-weight: 900;
+}
+
+/* couche de base, couleur thème — SANS GROS HALO LUMINEUX */
+.dc-stats-name-base {
+  color: var(--dc-accent, #f6c256);
+  text-shadow: none !important;
+}
+
+/* couche animée : gradient qui défile à l'intérieur des lettres */
+.dc-stats-name-shimmer {
+  position: absolute;
+  inset: 0;
+  color: transparent;
+
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,0.08) 40%,
+    rgba(255,255,255,0.55) 50%,
+    rgba(255,255,255,0.08) 60%,
+    transparent 100%
+  );
+
+  background-size: 200% 100%;
+  background-position: 0% 0%;
+  -webkit-background-clip: text;
+  background-clip: text;
+
+  animation: dcStatsNameShimmer 2.4s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes dcStatsNameShimmer {
+  0% { background-position: -80% 0%; }
+  100% { background-position: 120% 0%; }
+}
+`;
+
+function useInjectStatsNameCss() {
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (document.getElementById("dc-stats-name-css")) return;
+    const style = document.createElement("style");
+    style.id = "dc-stats-name-css";
+    style.innerHTML = statsNameCss;
+    document.head.appendChild(style);
+  }, []);
+}
+
 type View = "menu" | "me" | "locals" | "friends";
 
 /* ===== Helper lecture instantanée (mini-cache IDB + quick-stats) ===== */
@@ -123,6 +178,9 @@ export default function Profiles({
   go?: (tab: any, params?: any) => void;
   params?: any;
 }) {
+  // 🔥 injection du CSS shimmer une seule fois
+  useInjectStatsNameCss();
+
   const {
     profiles = [],
     activeProfileId = null,
@@ -898,14 +956,12 @@ function Card({
   );
 }
 
-/* ------ Profil actif + ring externe ------ */
-
 function ActiveProfileBlock({
   active,
   activeAvg3D,
   selfStatus,
   onToggleAway,
-  onQuit, // gardé dans la signature pour compat, mais non utilisé
+  onQuit, // gardé pour compat mais non utilisé
   onEdit,
   onOpenStats,
   onResetStats,
@@ -1012,6 +1068,7 @@ function ActiveProfileBlock({
     boxShadow: "0 8px 16px rgba(0,0,0,.45)",
     cursor: "pointer",
     whiteSpace: "nowrap",
+    transition: "transform .12s ease, box-shadow .12s ease, filter .12s ease",
   };
 
   const pillBtnGhost: React.CSSProperties = {
@@ -1046,7 +1103,8 @@ function ActiveProfileBlock({
           borderRadius: "50%",
           padding: BORDER / 2,
           background: `linear-gradient(135deg, ${primary}, ${primary}55)`,
-          boxShadow: `0 0 26px ${primary}55, inset 0 0 12px rgba(0,0,0,.55)`,
+          // ⬇️ halo externe retiré
+          boxShadow: "inset 0 0 12px rgba(0,0,0,.7)",
           position: "relative",
           flex: "0 0 auto",
           cursor: isEditing ? "pointer" : "default",
@@ -1109,9 +1167,15 @@ function ActiveProfileBlock({
           {!isEditing ? (
             <div
               style={{
-                fontWeight: 800,
+                fontWeight: 900,
                 fontSize: 20,
+                textTransform: "uppercase",
+                letterSpacing: 0.9,
+                textShadow: `0 0 6px ${primary}, 0 0 14px ${primary}AA, 0 0 24px ${primary}77`,
+                filter: `drop-shadow(0 0 6px ${primary}66)`,
                 whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
               <a
@@ -1120,7 +1184,7 @@ function ActiveProfileBlock({
                   e.preventDefault();
                   onOpenStats?.();
                 }}
-                style={{ color: theme.primary, textDecoration: "none" }}
+                style={{ color: primary, textDecoration: "none" }}
                 title={t(
                   "profiles.connected.seeStats",
                   "Voir les statistiques"
@@ -1178,14 +1242,14 @@ function ActiveProfileBlock({
             width: "100%",
           }}
         >
-          {/* MODIFIER */}
+          {/* EDITER */}
           <button
             className="btn sm"
             type="button"
             onClick={() => setIsEditing((v) => !v)}
             style={pillBtnGhost}
           >
-            {t("profiles.locals.actions.edit", "MODIFIER")}
+            {t("profiles.locals.actions.edit", "EDITER")}
           </button>
 
           {/* ABSENT / EN LIGNE */}
@@ -1215,7 +1279,7 @@ function ActiveProfileBlock({
           )}
         </div>
 
-        {/* Bloc enregistrement / annuler sous le reste, bien contenu dans la carte */}
+        {/* Bloc enregistrement / annuler sous le reste */}
         {isEditing && (
           <div
             className="row"
@@ -2575,23 +2639,24 @@ function LocalProfilesRefonte({
   const MEDALLION = AVATAR + BORDER;
   const STAR = 12;
 
-  // style pill premium pour les boutons d’actions locaux
+  // style pill premium pour les actions
   const pillBtnBase: React.CSSProperties = {
     flex: 1,
     minWidth: 0,
-    maxWidth: 120,
+    maxWidth: 110,
     borderRadius: 999,
     border: `1px solid ${primary}AA`,
-    background: `linear-gradient(135deg, ${primary}33, ${primary}99)`,
+    background: `linear-gradient(135deg, ${primary}33, ${primary}AA)`,
     color: "#000",
     fontWeight: 800,
     fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.7,
-    padding: "6px 8px",
-    boxShadow: "0 8px 16px rgba(0,0,0,.45)",
+    padding: "5px 8px",
+    boxShadow: "0 8px 18px rgba(0,0,0,.5)",
     cursor: "pointer",
     whiteSpace: "nowrap",
+    transition: "transform .12s ease, box-shadow .12s ease, filter .12s ease",
   };
 
   const pillBtnGhost: React.CSSProperties = {
@@ -2708,7 +2773,8 @@ function LocalProfilesRefonte({
                     borderRadius: "50%",
                     padding: BORDER / 2,
                     background: `linear-gradient(135deg, ${primary}, ${primary}55)`,
-                    boxShadow: `0 0 30px ${primary}66, inset 0 0 14px rgba(0,0,0,.7)`,
+                    // ⬇️ halo externe supprimé : seulement inner shadow
+                    boxShadow: "inset 0 0 14px rgba(0,0,0,.75)",
                   }}
                 >
                   {/* Couronne d’étoiles colorée */}
@@ -2747,10 +2813,13 @@ function LocalProfilesRefonte({
               <div style={{ textAlign: "center", marginBottom: 10 }}>
                 <div
                   style={{
-                    fontWeight: 800,
-                    fontSize: 18,
+                    fontWeight: 900,
+                    fontSize: 20,
                     color: primary,
-                    textShadow: `0 0 8px ${primary}55`,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.9,
+                    textShadow: `0 0 6px ${primary}, 0 0 14px ${primary}AA, 0 0 24px ${primary}77`,
+                    filter: `drop-shadow(0 0 6px ${primary}66)`,
                     whiteSpace: "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -2837,7 +2906,7 @@ function LocalProfilesRefonte({
                 />
               </div>
 
-              {/* ------ BOUTONS ACTIONS : EDITER / CREER AVATAR / MENU (SUPPR. + PURGE) ------ */}
+              {/* ------ BOUTONS ACTIONS : EDITER / AVATAR / ACTIONS ------ */}
               <div
                 className="row"
                 style={{
@@ -2854,7 +2923,7 @@ function LocalProfilesRefonte({
                   onClick={() => setIsEditing((v) => !v)}
                   style={pillBtnGhost}
                 >
-                  {t("profiles.locals.actions.edit", "MODIFIER")}
+                  {t("profiles.locals.actions.edit", "EDITER")}
                 </button>
 
                 <button
@@ -2863,10 +2932,7 @@ function LocalProfilesRefonte({
                   onClick={() => onOpenAvatarCreator?.()}
                   style={pillBtnBase}
                 >
-                  {t(
-                    "profiles.locals.actions.avatar",
-                    "CREER AVATAR"
-                  )}
+                  {t("profiles.locals.actions.avatar", "AVATAR")}
                 </button>
 
                 {/* Menu d’actions avancées */}
@@ -3074,7 +3140,6 @@ function LocalProfilesRefonte({
     </div>
   );
 }
-
 
 /* ----- Formulaire d’ajout local (refondu) ----- */
 

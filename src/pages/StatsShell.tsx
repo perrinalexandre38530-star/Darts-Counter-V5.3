@@ -24,7 +24,7 @@ type Props = {
 type InfoMode =
   | "active"
   | "locals"
-  | "leaderboards"   // 👈 nouveau
+  | "leaderboards" // 👈 classements
   | "training"
   | "online"
   | "history"
@@ -296,22 +296,16 @@ export default function StatsShell({ store, go }: Props) {
           onInfo={() => setInfoMode("locals")}
         />
 
-        {/* NOUVELLE CARTE : CLASSEMENTS GLOBAUX */}
+        {/* CARTE : CLASSEMENTS GLOBAUX */}
         <StatsShellCard
           title="CLASSEMENTS"
           subtitle="Classements globaux par mode de jeu (X01 multi, Cricket, Killer, etc.)."
           theme={theme}
           onClick={() => {
-            // 🧭 ouvre la nouvelle page de classements
+            // ouvre la page de classements
             go("stats_leaderboards");
           }}
-          onInfo={() => {
-            // texte d'aide léger
-            setInfoMode(null);
-            alert(
-              "Vue dédiée aux classements globaux : tous les profils sont comparés pour chaque mode de jeu."
-            );
-          }}
+          onInfo={() => setInfoMode("leaderboards")}
         />
 
         {/* TRAINING */}
@@ -694,7 +688,7 @@ function InfoOverlay({
       title = t("statsShell.info.leaderboards.title", "CLASSEMENTS");
       body = t(
         "statsShell.info.leaderboards.body",
-        "Affiche les classements par mode de jeu : nombre de matchs, pourcentage de victoires, best visits, moyennes 3 darts, et plus, en Local ou Online."
+        "Vue dédiée aux classements globaux : tous les profils sont comparés pour chaque mode de jeu (X01 multi, Cricket, Killer, etc.), avec nombre de matchs, pourcentage de victoires, best visits, moyennes 3 darts, et plus."
       );
       break;
     case "training":
