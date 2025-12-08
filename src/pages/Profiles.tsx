@@ -193,6 +193,19 @@ export default function Profiles({
   const { t, setLang, lang } = useLang();
   const auth = useAuthOnline();
 
+  // 🔥 Shimmer du nom "NINJA" (copie du Home)
+  const primary = theme.primary ?? "#F6C256";
+  const profileHeaderCss = `
+    @keyframes profileNamePulse {
+      0%,100% { transform: scale(1); text-shadow: 0 0 8px ${primary}55; }
+      50% { transform: scale(1.03); text-shadow: 0 0 18px ${primary}AA; }
+    }
+    @keyframes profileNameShimmer {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+  `;
+
   const [view, setView] = React.useState<View>(
     params?.view === "me"
       ? "me"
@@ -537,6 +550,14 @@ export default function Profiles({
 
   return (
     <>
+      {/* Shimmer du nom de profil (utilise profileHeaderCss) */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: profileHeaderCss,
+        }}
+      />
+
+      {/* CSS layout apb + boutons actions */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -1162,7 +1183,7 @@ function ActiveProfileBlock({
 
       {/* TEXTE + ACTIONS */}
       <div className="apb__info">
-        {/* Nom ou champ de saisie avec shimmer */}
+        {/* Nom ou champ de saisie – style Home (gradient + shimmer) */}
         <div style={{ marginBottom: 4, width: "100%", textAlign: "center" }}>
           {!isEditing ? (
             <div
@@ -1178,17 +1199,22 @@ function ActiveProfileBlock({
                   e.preventDefault();
                   onOpenStats?.();
                 }}
-                className="player-name-shimmer"
+                // ⚠️ tout en inline, pas de className spéciale
                 style={{
-                  // ⚠️ IMPORTANT : NE PAS METTRE "color" ici,
-                  // c'est la classe CSS qui gère le dégradé + shimmer
                   fontWeight: 900,
-                  fontSize: 30,      // plus gros pour matcher le Home
+                  fontSize: 30, // monte à 32 si tu veux encore plus gros
                   lineHeight: 1.05,
                   textTransform: "uppercase",
-                  letterSpacing: 1.6,
+                  letterSpacing: 2.5,
                   textDecoration: "none",
                   display: "inline-block",
+                  backgroundImage: `linear-gradient(120deg, ${primary}, #ffffff, ${primary})`,
+                  backgroundSize: "200% 100%",
+                  WebkitBackgroundClip: "text",
+                  backgroundClip: "text",
+                  color: "transparent",
+                  animation:
+                    "profileNamePulse 3.6s ease-in-out infinite, profileNameShimmer 7s linear infinite",
                 }}
                 title={t(
                   "profiles.connected.seeStats",
