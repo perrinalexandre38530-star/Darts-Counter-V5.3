@@ -4,7 +4,7 @@
 // Comparateur X01 (LOCAL / ONLINE / TRAINING X01)
 // - Page complète ou embed (compact)
 // - Données : History + TrainingX01 localStorage
-// - Tableau comparatif 4 colonnes + sparkline + camembert
+// - Tableau comparatif + sparkline + camembert
 // =============================================================
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -13,7 +13,6 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import { History } from "../lib/history";
 
-// 🔽 Recharts : sparkline + camembert
 import {
   ResponsiveContainer,
   LineChart,
@@ -58,33 +57,6 @@ type AggregatedStats = {
   legsLost: number;
   matchesPlayed: number;
   matchesWon: number;
-
-  // 🔜 Champs futurs (hits, 60+, bull, etc.) -> pour l’instant "—"
-  hitsTotal?: number | null;
-  hits60?: number | null;
-  hits80?: number | null;
-  hits100?: number | null;
-  hits120?: number | null;
-  hits140?: number | null;
-  hits180?: number | null;
-  missTotal?: number | null;
-  singleHits?: number | null;
-  doubleHits?: number | null;
-  tripleHits?: number | null;
-  bull25?: number | null;
-  bull50?: number | null;
-  busts?: number | null;
-  coAttempts?: number | null;
-  coSuccess?: number | null;
-
-  // Matchs détaillés (DUO / MULTI / TEAM) – placeholders
-  duoMatches?: number | null;
-  duoWins?: number | null;
-  multiMatches?: number | null;
-  multiWins?: number | null;
-  multiPodiums?: number | null;
-  teamMatches?: number | null;
-  teamWins?: number | null;
 };
 
 type Props = {
@@ -166,7 +138,6 @@ function getPeriodRange(
     case "ALL":
       return { from: undefined, to: undefined };
     case "ARV":
-      // Archives = plus vieux que 1 an
       return { from: undefined, to: today - 365 * oneDay, archivesOnly: true };
     default:
       return { from: undefined, to: undefined };
@@ -250,7 +221,6 @@ function fmtNum(v: number | null | undefined, decimals = 1): string {
 
 function fmtInt(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—";
-  if (v === 0) return "0";
   return String(v);
 }
 
@@ -263,7 +233,7 @@ function fmtPct(
   return `${((num / den) * 100).toFixed(decimals)} %`;
 }
 
-// ----------------- Tableau comparatif -----------------
+// ----------------- Sparkline / camembert -----------------
 
 type FilteredBuckets = {
   local: X01Sample[];
@@ -272,22 +242,12 @@ type FilteredBuckets = {
 };
 
 type SparkPoint = {
-  key: string; // YYYY-MM-DD
-  label: string; // "dd/MM"
+  key: string;
+  label: string;
   local?: number;
   online?: number;
   training?: number;
 };
-
-type TableRow =
-  | { kind: "section"; label: string }
-  | {
-      kind: "stat";
-      label: string;
-      training: string;
-      local: string;
-      online: string;
-    };
 
 function buildSparkData(filtered: FilteredBuckets): SparkPoint[] {
   const dayMapLocal: Record<string, { sum: number; count: number }> = {};
@@ -300,7 +260,7 @@ function buildSparkData(filtered: FilteredBuckets): SparkPoint[] {
   ) => {
     if (typeof s.avg3 !== "number") return;
     const d = new Date(s.createdAt);
-    const key = d.toISOString().slice(0, 10); // YYYY-MM-DD
+    const key = d.toISOString().slice(0, 10);
     if (!map[key]) map[key] = { sum: 0, count: 0 };
     map[key].sum += s.avg3;
     map[key].count += 1;
@@ -321,7 +281,6 @@ function buildSparkData(filtered: FilteredBuckets): SparkPoint[] {
   return allKeys.map((key) => {
     const [year, month, day] = key.split("-");
     const label = `${day}/${month}`;
-
     const lp = dayMapLocal[key];
     const op = dayMapOnline[key];
     const tp = dayMapTraining[key];
@@ -336,11 +295,23 @@ function buildSparkData(filtered: FilteredBuckets): SparkPoint[] {
   });
 }
 
+// ----------------- Tableau -----------------
+
+type TableRow =
+  | { kind: "section"; label: string }
+  | {
+      kind: "stat";
+      label: string;
+      training: string;
+      local: string;
+      online: string;
+    };
+
 // ----------------- Composant principal -----------------
 
 const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
   const { theme } = useTheme();
-  useLang(); // réserve pour i18n plus tard
+  useLang();
 
   const [period, setPeriod] = useState<PeriodKey>("M");
   const [samples, setSamples] = useState<X01Sample[] | null>(null);
@@ -352,7 +323,6 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
   const targetProfile: Profile | null =
     (profileId && profiles.find((p) => p.id === profileId)) || activeFromStore;
 
-  // ---- Chargement historique + Training -> samples ----
   useEffect(() => {
     let cancelled = false;
 
@@ -365,15 +335,11 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
       try {
         let allMatches: any[] = [];
 
-        // 1) History.getAllMatches si dispo
         if (History && typeof (History as any).getAllMatches === "function") {
           allMatches = await (History as any).getAllMatches();
-        }
-        // 2) History.list()
-        else if (History && typeof (History as any).list === "function") {
+        } else if (History && typeof (History as any).list === "function") {
           allMatches = await (History as any).list();
         }
-        // 3) fallback window.History
         // @ts-ignore
         else if (typeof window !== "undefined" && window.History?.list) {
           // @ts-ignore
@@ -428,7 +394,6 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
 
           if (!mode) continue;
 
-          // ---------- Lecture stats par joueur ----------
           const ss: any = m.summary ?? m.payload?.summary ?? {};
 
           const perArray: any[] = Array.isArray(ss.perPlayer)
@@ -527,7 +492,6 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
           result.push(sample);
         }
 
-        // ---------- Ajout des sessions Training X01 depuis localStorage ----------
         const trainingSessions = loadTrainingSessionsForProfile(pid);
         for (const s of trainingSessions) {
           result.push({
@@ -557,7 +521,6 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
     }
 
     load();
-
     return () => {
       cancelled = true;
     };
@@ -597,7 +560,6 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
     [filtered.training]
   );
 
-  // 🔽 Data pour sparkline + camembert
   const sparkData: SparkPoint[] = useMemo(
     () => buildSparkData(filtered),
     [filtered]
@@ -609,7 +571,6 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
     const o = aggOnline.matchesPlayed || aggOnline.count || 0;
     const total = t + l + o;
     if (!total) return [];
-
     return [
       { name: "Training", value: t, color: "#82ffb5" },
       { name: "Local", value: l, color: "#ffd86f" },
@@ -624,7 +585,6 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
   const localColor = "#ffd86f";
   const onlineColor = "#63e1ff";
 
-  // Layout global
   const outerStyle: React.CSSProperties = compact
     ? {
         width: "100%",
@@ -662,14 +622,12 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
         >
           Comparateur X01
         </div>
-        <div style={{ fontSize: 13, opacity: 0.7 }}>
-          Aucun profil actif trouvé.
-        </div>
+        <div style={{ fontSize: 13, opacity: 0.7 }}>Aucun profil actif trouvé.</div>
       </div>
     );
   }
 
-  // ---------- Construction du tableau (toutes les lignes demandées) ----------
+  // ---------- LIGNES DU TABLEAU ----------
 
   const ratio = (s: AggregatedStats) =>
     s.legsPlayed ? s.legsWon / s.legsPlayed : null;
@@ -680,7 +638,7 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
   const winPct = (s: AggregatedStats) =>
     s.matchesPlayed ? s.matchesWon / s.matchesPlayed : null;
 
-  const rows: TableRow[] = [
+  const rowsRecords: TableRow[] = [
     { kind: "section", label: "RECORDS" },
     {
       kind: "stat",
@@ -719,7 +677,7 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
     },
     {
       kind: "stat",
-      label: "Ratio (legs W / legs)",
+      label: "Ratio legs W / legs",
       training: fmtPct(aggTraining.legsWon, aggTraining.legsPlayed, 1),
       local: fmtPct(aggLocal.legsWon, aggLocal.legsPlayed, 1),
       online: fmtPct(aggOnline.legsWon, aggOnline.legsPlayed, 1),
@@ -734,7 +692,7 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
     {
       kind: "stat",
       label: "Best 9 darts",
-      training: "—", // à câbler plus tard
+      training: "—",
       local: "—",
       online: "—",
     },
@@ -752,7 +710,9 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
       local: "—",
       online: "—",
     },
+  ];
 
+  const rowsHits: TableRow[] = [
     { kind: "section", label: "HITS / PRÉCISION" },
     {
       kind: "stat",
@@ -761,20 +721,8 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
       local: fmtInt(aggLocal.darts),
       online: fmtInt(aggOnline.darts),
     },
-    {
-      kind: "stat",
-      label: "Hits totaux",
-      training: "—",
-      local: "—",
-      online: "—",
-    },
-    {
-      kind: "stat",
-      label: "%Hits",
-      training: "—",
-      local: "—",
-      online: "—",
-    },
+    { kind: "stat", label: "Hits totaux", training: "—", local: "—", online: "—" },
+    { kind: "stat", label: "%Hits", training: "—", local: "—", online: "—" },
     { kind: "stat", label: "60+", training: "—", local: "—", online: "—" },
     { kind: "stat", label: "80+", training: "—", local: "—", online: "—" },
     { kind: "stat", label: "100+", training: "—", local: "—", online: "—" },
@@ -839,13 +787,15 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
       local: "—",
       online: "—",
     },
+  ];
 
-    { kind: "section", label: "MATCHS (TRAINING vide)" },
+  const rowsMatch: TableRow[] = [
+    { kind: "section", label: "MATCHS (TRAINING VIDE)" },
     {
       kind: "stat",
       label: "Matchs DUO",
       training: "—",
-      local: "—", // sera câblé depuis X01V3 / summary
+      local: "—",
       online: "—",
     },
     {
@@ -927,6 +877,75 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
     },
   ];
 
+  const renderRows = (rows: TableRow[]) =>
+    rows.map((row, idx) => {
+      if (row.kind === "section") {
+        return (
+          <div
+            key={`sec-${row.label}-${idx}`}
+            style={{
+              padding: "6px 10px 4px",
+              fontSize: 11,
+              letterSpacing: 1.4,
+              textTransform: "uppercase",
+              opacity: 0.85,
+              borderTop: "1px solid rgba(255,255,255,0.12)",
+              background:
+                "linear-gradient(90deg, rgba(255,255,255,0.05), transparent)",
+            }}
+          >
+            {row.label}
+          </div>
+        );
+      }
+
+      const isEven = idx % 2 === 0;
+
+      return (
+        <div
+          key={`row-${row.label}-${idx}`}
+          style={{
+            padding: "4px 10px",
+            display: "grid",
+            gridTemplateColumns: "minmax(0,1.6fr) repeat(3, minmax(0,1fr))",
+            columnGap: 8,
+            fontSize: 11,
+            alignItems: "center",
+            background: isEven ? "rgba(255,255,255,0.02)" : "transparent",
+          }}
+        >
+          <div style={{ opacity: 0.8 }}>{row.label}</div>
+          <div
+            style={{
+              textAlign: "right",
+              color: trainingColor,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {row.training}
+          </div>
+          <div
+            style={{
+              textAlign: "right",
+              color: localColor,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {row.local}
+          </div>
+          <div
+            style={{
+              textAlign: "right",
+              color: onlineColor,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {row.online}
+          </div>
+        </div>
+      );
+    });
+
   // ---------- RENDER ----------
 
   return (
@@ -950,7 +969,7 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
         )}
       </div>
 
-      {/* Sélecteur période */}
+      {/* Période */}
       <div
         style={{
           display: "flex",
@@ -996,21 +1015,43 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
         })}
       </div>
 
-      {/* CARD principale : tableau + graphs */}
+      {/* Carte principale */}
       <div
         style={{
           marginTop: compact ? 6 : 8,
-          borderRadius: 16,
-          background: "rgba(0,0,0,0.85)",
-          border: "1px solid rgba(255,255,255,0.12)",
-          boxShadow: "0 0 30px rgba(0,0,0,0.9)",
-          padding: 12,
+          borderRadius: 18,
+          background:
+            "radial-gradient(circle at 0 0, rgba(255,255,255,0.06), transparent 55%), rgba(0,0,0,0.9)",
+          border: "1px solid rgba(255,255,255,0.16)",
+          boxShadow: "0 0 35px rgba(0,0,0,0.85)",
+          padding: 10,
           display: "flex",
           flexDirection: "column",
           gap: 10,
         }}
       >
-        {/* Tableau comparatif */}
+        {/* Header colonnes */}
+        <div
+          style={{
+            padding: "6px 10px",
+            display: "grid",
+            gridTemplateColumns: "minmax(0,1.6fr) repeat(3, minmax(0,1fr))",
+            columnGap: 8,
+            fontSize: 11,
+            textTransform: "uppercase",
+            letterSpacing: 1.3,
+            fontWeight: 700,
+            background:
+              "linear-gradient(90deg, rgba(255,255,255,0.14), rgba(0,0,0,0.9))",
+          }}
+        >
+          <div style={{ opacity: 0.75 }}>Stat</div>
+          <div style={{ textAlign: "right", color: trainingColor }}>Training</div>
+          <div style={{ textAlign: "right", color: localColor }}>Local</div>
+          <div style={{ textAlign: "right", color: onlineColor }}>Online</div>
+        </div>
+
+        {/* RECORDS */}
         <div
           style={{
             borderRadius: 12,
@@ -1018,274 +1059,163 @@ const StatsX01Compare: React.FC<Props> = ({ store, profileId, compact }) => {
             border: "1px solid rgba(255,255,255,0.12)",
           }}
         >
+          {renderRows(rowsRecords)}
+
+          {/* Sparkline entre RECORDS et HITS */}
           <div
             style={{
-              background:
-                "linear-gradient(90deg, rgba(255,255,255,0.08), rgba(0,0,0,0.8))",
-              padding: "6px 10px",
-              display: "grid",
-              gridTemplateColumns: "minmax(0,1.5fr) repeat(3, minmax(0,1fr))",
-              columnGap: 8,
-              fontSize: 11,
-              textTransform: "uppercase",
-              letterSpacing: 1.3,
-              fontWeight: 700,
+              borderTop: "1px solid rgba(255,255,255,0.12)",
+              padding: "8px 10px 10px",
+              background: "rgba(0,0,0,0.85)",
             }}
           >
-            <div style={{ opacity: 0.7 }}>Stat</div>
-            <div style={{ textAlign: "right", color: trainingColor }}>
-              Training
+            <div
+              style={{
+                fontSize: 11,
+                textTransform: "uppercase",
+                letterSpacing: 1.1,
+                opacity: 0.8,
+                marginBottom: 4,
+              }}
+            >
+              Évolution AVG 3 darts
             </div>
-            <div style={{ textAlign: "right", color: localColor }}>Local</div>
-            <div style={{ textAlign: "right", color: onlineColor }}>Online</div>
-          </div>
-
-          <div>
-            {rows.map((row, idx) => {
-              if (row.kind === "section") {
-                return (
-                  <div
-                    key={`sec-${row.label}-${idx}`}
-                    style={{
-                      padding: "6px 10px 4px",
-                      fontSize: 11,
-                      letterSpacing: 1.4,
-                      textTransform: "uppercase",
-                      opacity: 0.8,
-                      borderTop:
-                        idx === 0
-                          ? "none"
-                          : "1px solid rgba(255,255,255,0.12)",
-                      background:
-                        "linear-gradient(90deg, rgba(255,255,255,0.04), transparent)",
-                    }}
-                  >
-                    {row.label}
-                  </div>
-                );
-              }
-
-              const isEven = idx % 2 === 0;
-
-              return (
-                <div
-                  key={`row-${row.label}-${idx}`}
-                  style={{
-                    padding: "4px 10px",
-                    display: "grid",
-                    gridTemplateColumns:
-                      "minmax(0,1.5fr) repeat(3, minmax(0,1fr))",
-                    columnGap: 8,
-                    fontSize: 11,
-                    alignItems: "center",
-                    background: isEven
-                      ? "rgba(255,255,255,0.02)"
-                      : "transparent",
-                  }}
+            <div style={{ width: "100%", height: 110 }}>
+              <ResponsiveContainer>
+                <LineChart
+                  data={sparkData}
+                  margin={{ left: -20, right: 4, top: 4, bottom: 0 }}
                 >
-                  <div style={{ opacity: 0.8 }}>{row.label}</div>
-                  <div
-                    style={{
-                      textAlign: "right",
-                      color: trainingColor,
-                      fontVariantNumeric: "tabular-nums",
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 10, fill: "#ccc" }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: "#ccc" }}
+                    tickLine={false}
+                    width={28}
+                    domain={["auto", "auto"]}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "#050712",
+                      border: "1px solid rgba(255,255,255,0.2)",
+                      borderRadius: 8,
+                      fontSize: 11,
                     }}
-                  >
-                    {row.training}
-                  </div>
-                  <div
-                    style={{
-                      textAlign: "right",
-                      color: localColor,
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
-                    {row.local}
-                  </div>
-                  <div
-                    style={{
-                      textAlign: "right",
-                      color: onlineColor,
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
-                    {row.online}
-                  </div>
-                </div>
-              );
-            })}
+                    labelStyle={{ color: "#fff" }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="training"
+                    stroke={trainingColor}
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 3 }}
+                    name="Training"
+                    connectNulls
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="local"
+                    stroke={localColor}
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 3 }}
+                    name="Local"
+                    connectNulls
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="online"
+                    stroke={onlineColor}
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 3 }}
+                    name="Online"
+                    connectNulls
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-        </div>
 
-        {/* Sparkline + Camembert */}
-        {!compact && (
+          {/* HITS */}
+          {renderRows(rowsHits)}
+
+          {/* Camembert entre HITS et MATCHS */}
           <div
             style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-              marginTop: 4,
+              borderTop: "1px solid rgba(255,255,255,0.12)",
+              padding: "8px 10px 6px",
+              background: "rgba(0,0,0,0.9)",
             }}
           >
-            {/* Sparkline AVG 3 darts */}
             <div
               style={{
-                padding: 10,
-                borderRadius: 12,
-                background: "rgba(0,0,0,0.75)",
-                border: "1px solid rgba(255,255,255,0.12)",
+                fontSize: 11,
+                textTransform: "uppercase",
+                letterSpacing: 1.1,
+                opacity: 0.8,
+                marginBottom: 4,
               }}
             >
-              <div
-                style={{
-                  fontSize: 12,
-                  textTransform: "uppercase",
-                  letterSpacing: 1.1,
-                  opacity: 0.85,
-                  marginBottom: 6,
-                }}
-              >
-                Évolution AVG 3 darts
-              </div>
-              {sparkData.length <= 1 ? (
-                <div style={{ fontSize: 11, opacity: 0.6 }}>
-                  Pas assez de données pour tracer la courbe sur cette période.
-                </div>
-              ) : (
-                <div style={{ width: "100%", height: 130 }}>
-                  <ResponsiveContainer>
-                    <LineChart
-                      data={sparkData}
-                      margin={{ left: -20, right: 4, top: 4, bottom: 0 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                      <XAxis
-                        dataKey="label"
-                        tick={{ fontSize: 10, fill: "#ccc" }}
-                        tickLine={false}
-                      />
-                      <YAxis
-                        tick={{ fontSize: 10, fill: "#ccc" }}
-                        tickLine={false}
-                        width={28}
-                        domain={["auto", "auto"]}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          background: "#050712",
-                          border: "1px solid rgba(255,255,255,0.2)",
-                          borderRadius: 8,
-                          fontSize: 11,
-                        }}
-                        labelStyle={{ color: "#fff" }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="training"
-                        stroke={trainingColor}
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={{ r: 3 }}
-                        name="Training"
-                        connectNulls
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="local"
-                        stroke={localColor}
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={{ r: 3 }}
-                        name="Local"
-                        connectNulls
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="online"
-                        stroke={onlineColor}
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={{ r: 3 }}
-                        name="Online"
-                        connectNulls
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+              Répartition sessions / matchs par mode
             </div>
-
-            {/* Camembert répartition sessions/matchs */}
-            <div
-              style={{
-                padding: 10,
-                borderRadius: 12,
-                background: "rgba(0,0,0,0.75)",
-                border: "1px solid rgba(255,255,255,0.12)",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 12,
-                  textTransform: "uppercase",
-                  letterSpacing: 1.1,
-                  opacity: 0.85,
-                  marginBottom: 6,
-                }}
-              >
-                Répartition sessions / matchs par mode
-              </div>
-              {pieData.length === 0 ? (
-                <div style={{ fontSize: 11, opacity: 0.6 }}>
-                  Pas assez de données pour afficher le graphique.
-                </div>
+            <div style={{ width: "100%", height: 140 }}>
+              {pieData.length ? (
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={32}
+                      outerRadius={55}
+                      paddingAngle={2}
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        background: "#050712",
+                        border: "1px solid rgba(255,255,255,0.2)",
+                        borderRadius: 8,
+                        fontSize: 11,
+                      }}
+                      formatter={(value: any, name: any) => [
+                        `${value}`,
+                        name,
+                      ]}
+                    />
+                    <Legend
+                      verticalAlign="middle"
+                      align="right"
+                      layout="vertical"
+                      iconSize={8}
+                      wrapperStyle={{
+                        fontSize: 10,
+                        textTransform: "uppercase",
+                        letterSpacing: 1,
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
               ) : (
-                <div style={{ width: "100%", height: 160 }}>
-                  <ResponsiveContainer>
-                    <PieChart>
-                      <Pie
-                        data={pieData}
-                        dataKey="value"
-                        nameKey="name"
-                        innerRadius={35}
-                        outerRadius={55}
-                        paddingAngle={2}
-                      >
-                        {pieData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          background: "#050712",
-                          border: "1px solid rgba(255,255,255,0.2)",
-                          borderRadius: 8,
-                          fontSize: 11,
-                        }}
-                        formatter={(value: any, name: any) => [
-                          `${value}`,
-                          name,
-                        ]}
-                      />
-                      <Legend
-                        verticalAlign="middle"
-                        align="right"
-                        layout="vertical"
-                        iconSize={8}
-                        wrapperStyle={{
-                          fontSize: 11,
-                          paddingLeft: 8,
-                          textTransform: "uppercase",
-                          letterSpacing: 1,
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
+                <div style={{ fontSize: 11, opacity: 0.6 }}>
+                  Pas encore assez de données pour ce graphique.
                 </div>
               )}
             </div>
           </div>
-        )}
+
+          {/* MATCHS */}
+          {renderRows(rowsMatch)}
+        </div>
       </div>
     </div>
   );
