@@ -9,10 +9,7 @@
 import React from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
-import {
-  type DartSet,
-  updateDartSet,
-} from "../lib/dartSetsStore";
+import { type DartSet, updateDartSet } from "../lib/dartSetsStore";
 import {
   scanDartImage,
   type DartScanResult,
@@ -24,7 +21,13 @@ type Props = {
   onUpdated?: (updated: DartSet) => void;
 };
 
-type ScanStatus = "idle" | "preview" | "uploading" | "processing" | "done" | "error";
+type ScanStatus =
+  | "idle"
+  | "preview"
+  | "uploading"
+  | "processing"
+  | "done"
+  | "error";
 
 const DartSetScannerSheet: React.FC<Props> = ({
   dartSet,
@@ -111,7 +114,6 @@ const DartSetScannerSheet: React.FC<Props> = ({
 
       setStatus("done");
       if (updated && onUpdated) onUpdated(updated);
-      // On laisse l'utilisateur voir le résultat éventuel ailleurs, on ferme direct
       onClose();
     } catch (err: any) {
       console.error("[DartSetScannerSheet] scan error", err);
@@ -138,6 +140,8 @@ const DartSetScannerSheet: React.FC<Props> = ({
         display: "flex",
         flexDirection: "column",
         padding: 16,
+        overflowY: "auto",
+        WebkitOverflowScrolling: "touch",
       }}
     >
       {/* Header */}
@@ -182,7 +186,6 @@ const DartSetScannerSheet: React.FC<Props> = ({
       {/* Infos + preview */}
       <div
         style={{
-          flex: 1,
           borderRadius: 18,
           background:
             "linear-gradient(145deg, rgba(6,6,14,.96), rgba(10,10,26,.98))",
@@ -206,7 +209,7 @@ const DartSetScannerSheet: React.FC<Props> = ({
         <div
           style={{
             marginTop: 4,
-            flex: 1,
+            maxHeight: "55vh",
             borderRadius: 14,
             border: "1px dashed rgba(255,255,255,.25)",
             background: "rgba(0,0,0,.6)",

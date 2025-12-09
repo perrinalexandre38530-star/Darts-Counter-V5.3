@@ -6,6 +6,7 @@
 // - Protocole JSON:
 //    Client → DO : { kind: "join" | "command" | "snapshot" | "lifecycle" | "ping", ... }
 //    DO → Clients : { kind: "welcome" | "command" | "snapshot" | "lifecycle" | "error" | "info" | "pong" }
+// - Env étendu pour inclure aussi le bucket R2 / IA (utilisés par le Worker)
 // =======================================================
 
 export type Env = {
@@ -13,6 +14,11 @@ export type Env = {
   AVATAR_CACHE: KVNamespace; // optionnel, mais dispo si besoin
   DC_SYNC: KVNamespace;      // ⬅️ KV utilisée par /api/sync/upload & download
   ALLOW_ORIGINS: string;
+
+  // 🔽 Nouveaux bindings utilisés par le worker (scan fléchettes)
+  DART_IMAGES_BUCKET: R2Bucket;
+  PUBLIC_BASE_URL: string;
+  AI: any;
 };
 
 type ClientWs = WebSocket;

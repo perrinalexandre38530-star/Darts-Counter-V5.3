@@ -1,13 +1,18 @@
 // =======================================================
 // src/online/server/worker.ts
-// Entrée Cloudflare Worker pour l'ONLINE temps réel + Sync Cloud
+// Entrée Cloudflare Worker pour l'ONLINE temps réel + Sync Cloud + Scanner fléchettes
 // - Route /room/:code → WebSocket vers le RoomDO
 // - Routes /api/sync/upload & /api/sync/download → KV DC_SYNC
+// - Route /dart-scan → scan fléchettes (R2 + IA placeholder)
 // - CORS basique (ALLOW_ORIGINS)
 // =======================================================
 
 import type { Env } from "./RoomDO";
 import { RoomDO } from "./RoomDO";
+// ⚠️ Dans RoomDO.ts, Env doit contenir :
+// DART_IMAGES_BUCKET: R2Bucket;
+// PUBLIC_BASE_URL: string;
+// AI: any;
 
 export { RoomDO }; // 🔑 important pour que Wrangler trouve la classe DO
 
@@ -38,6 +43,11 @@ function jsonResponse(body: any, init?: ResponseInit): Response {
       ...(init?.headers || {}),
     },
   });
+}
+
+// Réponse JSON d’erreur (sans CORS)
+function jsonError(message: string, status: number): Response {
+  return jsonResponse({ error: message }, { status });
 }
 
 // Ajout des headers CORS sur une réponse existante
@@ -77,19 +87,16 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
   try {
     payload = await request.json();
   } catch {
-    return jsonResponse({ error: "Invalid JSON body" }, { status: 400 });
+    return jsonError("Invalid JSON body", 400);
   }
 
   if (!payload || typeof payload !== "object") {
-    return jsonResponse({ error: "Invalid payload" }, { status: 400 });
+    return jsonError("Invalid payload", 400);
   }
 
   if (!payload.store) {
     // On s'attend normalement à { kind, createdAt, app, store }
-    return jsonResponse(
-      { error: "Missing 'store' in payload" },
-      { status: 400 }
-    );
+    return jsonError("Missing 'store' in payload", 400);
   }
 
   const token = generateToken();
@@ -108,22 +115,115 @@ async function handleDownload(request: Request, env: Env): Promise<Response> {
   const token = (url.searchParams.get("token") || "").trim();
 
   if (!token) {
-    return jsonResponse(
-      { error: "Missing 'token' query parameter" },
-      { status: 400 }
-    );
+    return jsonError("Missing 'token' query parameter", 400);
   }
 
   const key = `sync:${token}`;
   const raw = await env.DC_SYNC.get(key);
 
   if (!raw) {
-    return jsonResponse({ error: "Snapshot not found" }, { status: 404 });
+    return jsonError("Snapshot not found", 404);
   }
 
   // On renvoie le snapshot tel quel (SyncCenter.tsx lit data.store)
   const snapshot = JSON.parse(raw);
   return jsonResponse(snapshot);
+}
+
+// --------------------------------------------
+// Scanner fléchettes: /dart-scan
+// --------------------------------------------
+
+type DartScanOptions = {
+  bgColor?: string;
+  targetAngleDeg?: number;
+  cartoonLevel?: number;
+};
+
+type DartScanResult = {
+  mainImageUrl: string;
+  thumbImageUrl: string;
+  bgColor?: string;
+};
+
+async function handleDartScan(request: Request, env: Env): Promise<Response> {
+  try {
+    const formData = await request.formData();
+    const file = formData.get("image");
+
+    if (!(file instanceof File)) {
+      return jsonError("Missing image file", 400);
+    }
+
+    let options: DartScanOptions = {};
+    const rawOptions = formData.get("options");
+    if (typeof rawOptions === "string") {
+      try {
+        options = JSON.parse(rawOptions);
+      } catch {
+        return jsonError("Invalid options JSON", 400);
+      }
+    }
+
+    const result = await processDartImage(file, options, env);
+
+    return jsonResponse({
+      mainImageUrl: result.mainImageUrl,
+      thumbImageUrl: result.thumbImageUrl,
+      bgColor: result.bgColor,
+    });
+  } catch (err: any) {
+    console.error("[/dart-scan] error", err);
+    return jsonError("Internal error while scanning dart", 500);
+  }
+}
+
+async function processDartImage(
+  file: File,
+  options: DartScanOptions,
+  env: Env
+): Promise<DartScanResult> {
+  const arrayBuffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+
+  const bgColor = options.bgColor || "#101020";
+  const targetAngleDeg = options.targetAngleDeg ?? 48;
+  const cartoonLevel = options.cartoonLevel ?? 0.8;
+
+  // -------------------------------------------------
+  // 1) Pipeline IA (placeholder)
+  // Pour l’instant, on renvoie l'image brute pour tester
+  // upload R2 + URLs. Plus tard : détourage + cartoon + rotation.
+  // -------------------------------------------------
+
+  const cartoonPngBytes = bytes;
+
+  // 2) Miniature pour overlay avatar (placeholder aussi)
+  const thumbPngBytes = cartoonPngBytes; // TODO: resize si besoin
+
+  // 3) Sauvegarde dans R2
+
+  const mainKey = `dart-sets/main-${crypto.randomUUID()}.png`;
+  const thumbKey = `dart-sets/thumb-${crypto.randomUUID()}.png`;
+
+  await env.DART_IMAGES_BUCKET.put(mainKey, cartoonPngBytes, {
+    httpMetadata: { contentType: "image/png" },
+  });
+
+  await env.DART_IMAGES_BUCKET.put(thumbKey, thumbPngBytes, {
+    httpMetadata: { contentType: "image/png" },
+  });
+
+  const base = env.PUBLIC_BASE_URL.replace(/\/+$/, "");
+
+  const mainImageUrl = `${base}/${mainKey}`;
+  const thumbImageUrl = `${base}/${thumbKey}`;
+
+  return {
+    mainImageUrl,
+    thumbImageUrl,
+    bgColor,
+  };
 }
 
 // --------------------------------------------
@@ -151,6 +251,12 @@ export default {
       return new Response(null, { status: 204, headers });
     }
 
+    // ------- Route scanner fléchettes -------
+    if (url.pathname === "/dart-scan" && request.method === "POST") {
+      const res = await handleDartScan(request, env);
+      return withCors(env, request, res);
+    }
+
     // ------- Routes Cloud Sync -------
     if (url.pathname === "/api/sync/upload" && request.method === "POST") {
       const res = await handleUpload(request, env);
@@ -166,21 +272,15 @@ export default {
     if (url.pathname.startsWith("/room/")) {
       const code = url.pathname.split("/").pop() || "";
       if (!code) {
-        return withCors(
-          env,
-          request,
-          jsonResponse({ error: "Missing room code" }, { status: 400 })
-        );
+        const res = jsonError("Missing room code", 400);
+        return withCors(env, request, res);
       }
 
       const upgrade =
         request.headers.get("Upgrade") || request.headers.get("upgrade");
       if (upgrade !== "websocket") {
-        return withCors(
-          env,
-          request,
-          jsonResponse({ error: "Expected WebSocket upgrade" }, { status: 400 })
-        );
+        const res = jsonError("Expected WebSocket upgrade", 400);
+        return withCors(env, request, res);
       }
 
       // Chaque code (= lobbyCode) a son DO dédié
@@ -201,7 +301,7 @@ export default {
     }
 
     // ------- 404 -------
-    const res = jsonResponse({ error: "Not found" }, { status: 404 });
+    const res = jsonError("Not found", 404);
     return withCors(env, request, res);
   },
 };
