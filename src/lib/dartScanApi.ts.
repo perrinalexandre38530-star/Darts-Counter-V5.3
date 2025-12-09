@@ -1,0 +1,40 @@
+// =============================================
+// src/lib/dartScanApi.ts
+// Appel au Worker "dc-online-v3" pour scanner une fléchette
+// =============================================
+
+const ONLINE_API_BASE = "https://dc-online-v3.perrin-alexandre38530.workers.dev";
+
+export type DartScanResult = {
+  mainImageUrl: string;
+  thumbImageUrl: string;
+  bgColor?: string;
+};
+
+export async function uploadDartScan(file: File): Promise<DartScanResult> {
+  const form = new FormData();
+  form.append("image", file);
+
+  // Optionnel : paramètres de rendu (pour plus tard, mais ça ne gêne pas)
+  form.append(
+    "options",
+    JSON.stringify({
+      bgColor: "#101020",
+      targetAngleDeg: 48,
+      cartoonLevel: 0.8,
+    })
+  );
+
+  const res = await fetch(`${ONLINE_API_BASE}/dart-scan`, {
+    method: "POST",
+    body: form,
+  });
+
+  if (!res.ok) {
+    // Tu verras le code HTTP dans la console si ça foire
+    throw new Error(`Scan failed: HTTP ${res.status}`);
+  }
+
+  const data = await res.json();
+  return data as DartScanResult;
+}

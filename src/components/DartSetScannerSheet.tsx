@@ -3,12 +3,13 @@
 // UI de scan pour un jeu de fléchettes
 // - Choix / prise de photo
 // - Envoi vers l'API scanner
-// - Mise à jour du DartSet (mainImageUrl + thumbImageUrl + bgColor)
+// - Mise à jour du DartSet
 // =============================================================
 
 import React from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
+
 import { type DartSet, updateDartSet } from "../lib/dartSetsStore";
 import {
   scanDartImage,
@@ -51,6 +52,7 @@ const DartSetScannerSheet: React.FC<Props> = ({
     };
   }, [previewUrl]);
 
+  // ------------------ Textes ------------------
   const t_scanTitle =
     lang === "fr"
       ? "Scanner la fléchette"
@@ -62,32 +64,31 @@ const DartSetScannerSheet: React.FC<Props> = ({
 
   const t_scanSubtitle =
     lang === "fr"
-      ? "Prends ta fléchette en photo sur fond neutre. L'app va la détourer, la styliser en cartoon et l'orienter automatiquement."
+      ? "Prends ta fléchette en photo sur fond neutre. L'app va la détourer, la styliser et l’orienter automatiquement."
       : lang === "es"
-      ? "Haz una foto de tu dardo sobre un fondo neutro. La app lo recortará, aplicará estilo cartoon y lo orientará automáticamente."
+      ? "Fotografía tu dardo sobre un fondo neutro. La app lo recortará y lo orientará automáticamente."
       : lang === "de"
-      ? "Fotografiere deinen Dart vor neutralem Hintergrund. Die App schneidet ihn aus, stylisiert ihn im Cartoon-Look und richtet ihn automatisch aus."
-      : "Take a picture of your dart on a neutral background. The app will cut it out, cartoonize it and orient it automatically.";
+      ? "Fotografiere deinen Dart vor neutralem Hintergrund. Die App schneidet ihn aus und richtet ihn automatisch aus."
+      : "Take a picture of your dart on a neutral background. The app will process it automatically.";
+
+  // ------------------ Handlers ------------------
 
   const handlePickImage = () => {
     setError(null);
-    if (inputRef.current) {
-      inputRef.current.click();
-    }
+    inputRef.current?.click();
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
+
     if (!f.type.startsWith("image/")) {
-      setError(
-        lang === "fr"
-          ? "Fichier non valide. Choisis une image."
-          : "Invalid file. Please pick an image."
-      );
+      setError(lang === "fr" ? "Fichier non valide." : "Invalid file.");
       return;
     }
+
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+
     const url = URL.createObjectURL(f);
     setFile(f);
     setPreviewUrl(url);
@@ -97,15 +98,20 @@ const DartSetScannerSheet: React.FC<Props> = ({
   const handleScan = async () => {
     if (!file) return;
     setError(null);
+
     try {
       setStatus("uploading");
+
+      // appel API Worker
       const result: DartScanResult = await scanDartImage(file, {
         bgColor: dartSet.bgColor || "#101020",
         targetAngleDeg: 48,
         cartoonLevel: 0.85,
       });
+
       setStatus("processing");
 
+      // Mise à jour dans le store local
       const updated = updateDartSet(dartSet.id, {
         mainImageUrl: result.mainImageUrl,
         thumbImageUrl: result.thumbImageUrl,
@@ -113,22 +119,23 @@ const DartSetScannerSheet: React.FC<Props> = ({
       });
 
       setStatus("done");
-      if (updated && onUpdated) onUpdated(updated);
+      if (onUpdated && updated) onUpdated(updated);
       onClose();
-    } catch (err: any) {
-      console.error("[DartSetScannerSheet] scan error", err);
-      setStatus("error");
+    } catch (err) {
+      console.error("SCAN ERROR", err);
       setError(
         lang === "fr"
           ? "Le scan a échoué. Vérifie ta connexion et réessaie."
-          : "Scan failed. Check your connection and try again."
+          : "Scan failed. Try again."
       );
+      setStatus("error");
     }
   };
 
   const canScan = !!file && (status === "preview" || status === "error");
   const isBusy = status === "uploading" || status === "processing";
 
+  // ------------------ UI ------------------
   return (
     <div
       style={{
@@ -141,20 +148,18 @@ const DartSetScannerSheet: React.FC<Props> = ({
         flexDirection: "column",
         padding: 16,
         overflowY: "auto",
-        WebkitOverflowScrolling: "touch",
       }}
     >
       {/* Header */}
       <div
         style={{
           display: "flex",
-          alignItems: "center",
           justifyContent: "space-between",
+          alignItems: "center",
           marginBottom: 12,
         }}
       >
         <button
-          type="button"
           onClick={onClose}
           style={{
             padding: "6px 10px",
@@ -172,7 +177,7 @@ const DartSetScannerSheet: React.FC<Props> = ({
           style={{
             fontSize: 13,
             fontWeight: 700,
-            letterSpacing: 1.4,
+            letterSpacing: 1.5,
             textTransform: "uppercase",
             color: "#fff",
           }}
@@ -183,17 +188,16 @@ const DartSetScannerSheet: React.FC<Props> = ({
         <div style={{ width: 60 }} />
       </div>
 
-      {/* Infos + preview */}
+      {/* Bloc principal */}
       <div
         style={{
           borderRadius: 18,
-          background:
-            "linear-gradient(145deg, rgba(6,6,14,.96), rgba(10,10,26,.98))",
+          background: "linear-gradient(145deg, #06060e, #0a0a1a)",
           border: "1px solid rgba(255,255,255,.08)",
           padding: 14,
           display: "flex",
           flexDirection: "column",
-          gap: 10,
+          gap: 12,
         }}
       >
         <div
@@ -205,7 +209,7 @@ const DartSetScannerSheet: React.FC<Props> = ({
           {t_scanSubtitle}
         </div>
 
-        {/* Zone preview */}
+        {/* Preview */}
         <div
           style={{
             marginTop: 4,
@@ -216,8 +220,6 @@ const DartSetScannerSheet: React.FC<Props> = ({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            flexDirection: "column",
-            gap: 8,
             overflow: "hidden",
           }}
         >
@@ -232,53 +234,37 @@ const DartSetScannerSheet: React.FC<Props> = ({
               }}
             />
           ) : (
-            <>
-              <div
-                style={{
-                  fontSize: 32,
-                  marginBottom: 4,
-                }}
-              >
-                📷
-              </div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "rgba(255,255,255,.6)",
-                  textAlign: "center",
-                  padding: "0 16px",
-                }}
-              >
+            <div
+              style={{
+                textAlign: "center",
+                padding: 16,
+                color: "rgba(255,255,255,.6)",
+              }}
+            >
+              <div style={{ fontSize: 36 }}>📷</div>
+              <div style={{ marginTop: 8, fontSize: 12 }}>
                 {lang === "fr"
-                  ? "Choisis une photo de ta fléchette ou prends-la directement avec l'appareil photo."
-                  : "Pick a photo of your dart or take one with the camera."}
+                  ? "Choisis une photo de ta fléchette ou prends-en une."
+                  : "Choose a photo or take one."}
               </div>
-            </>
+            </div>
           )}
         </div>
 
         {error && (
           <div
             style={{
-              marginTop: 4,
               fontSize: 11,
-              color: "rgba(255,140,140,.95)",
+              color: "rgb(255,120,120)",
             }}
           >
             {error}
           </div>
         )}
 
-        {/* Actions */}
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            marginTop: 6,
-          }}
-        >
+        {/* Boutons */}
+        <div style={{ display: "flex", gap: 8 }}>
           <button
-            type="button"
             onClick={handlePickImage}
             disabled={isBusy}
             style={{
@@ -291,33 +277,30 @@ const DartSetScannerSheet: React.FC<Props> = ({
               fontSize: 12,
             }}
           >
-            {lang === "fr"
-              ? "Choisir / prendre une photo"
-              : "Pick / take a photo"}
+            {lang === "fr" ? "Choisir une photo" : "Pick photo"}
           </button>
 
           <button
-            type="button"
             onClick={handleScan}
             disabled={!canScan || isBusy}
             style={{
               flex: 1,
               padding: "8px 10px",
               borderRadius: 999,
-              border: "none",
               background: canScan
                 ? "radial-gradient(circle at 0% 0%, rgba(127,226,169,.45), rgba(8,28,18,.98))"
                 : "rgba(0,0,0,.4)",
+              border: "none",
               color: canScan ? "#fff" : "rgba(255,255,255,.4)",
               fontSize: 12,
               fontWeight: 700,
-              textTransform: "uppercase",
               letterSpacing: 1.4,
+              textTransform: "uppercase",
             }}
           >
             {isBusy
               ? lang === "fr"
-                ? "Scan en cours..."
+                ? "Scan..."
                 : "Scanning..."
               : lang === "fr"
               ? "Lancer le scan"
@@ -326,7 +309,7 @@ const DartSetScannerSheet: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* input file caché */}
+      {/* Input fichier */}
       <input
         ref={inputRef}
         type="file"
