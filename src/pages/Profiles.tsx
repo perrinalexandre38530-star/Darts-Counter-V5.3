@@ -20,6 +20,7 @@ import { onlineApi } from "../lib/onlineApi";
 import type { ThemeId } from "../theme/themePresets";
 
 import { sha256 } from "../lib/crypto";
+import DartSetsPanel from "../components/DartSetsPanel";
 
 // 🔥 nouveau : bloc préférences joueur
 import PlayerPrefsBlock from "../components/profile/PlayerPrefsBlock";
@@ -694,6 +695,13 @@ export default function Profiles({
                     />
                   )}
                 </Card>
+
+                {/* 🔥 Panneau sets de fléchettes du profil actif */}
+                {active && (
+                  <div style={{ marginTop: 8, marginBottom: 8 }}>
+                    <DartSetsPanel profile={active} />
+                  </div>
+                )}
 
                 <Card
                   title={t(
@@ -2916,7 +2924,7 @@ function LocalProfilesRefonte({
                   flexWrap: "nowrap",
                   justifyContent: "space-between",
                   gap: 6,
-                  marginBottom: 12,
+                  marginBottom: 8,
                   overflowX: "auto",
                   paddingBottom: 2,
                 }}
@@ -2937,6 +2945,11 @@ function LocalProfilesRefonte({
                   label={t("home.stats.winPct", "Win %")}
                   value={`${winPct}%`}
                 />
+              </div>
+
+              {/* 🔥 NOUVEAU : Mes jeux de fléchettes pour ce profil local */}
+              <div style={{ marginTop: 4, marginBottom: 10 }}>
+                <DartSetsPanel profile={current} />
               </div>
 
               {/* Boutons actions : EDITER / AVATAR / ACTIONS */}

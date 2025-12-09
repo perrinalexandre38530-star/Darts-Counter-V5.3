@@ -28,6 +28,7 @@ export interface X01PlayerV3 {
   id: X01PlayerId;
   name: string;
   avatar?: string; // dataURL ou url
+  dartSetId?: string | null; // jeu de fléchettes utilisé pour ce match
 }
 
 export interface X01TeamV3 {

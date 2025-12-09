@@ -12,6 +12,11 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import ProfileAvatar from "../components/ProfileAvatar";
 import ProfileStarRing from "../components/ProfileStarRing";
+import {
+  getDartSetsForProfile,
+  getFavoriteDartSetForProfile,
+  type DartSet,
+} from "../lib/dartSetsStore";
 
 // 🔽 IMPORTS DE TOUS LES AVATARS BOTS PRO
 import avatarGreenMachine from "../assets/avatars/bots-pro/green-machine.png";
@@ -66,6 +71,136 @@ type BotLite = {
   name: string;
   avatarDataUrl?: string | null;
   botLevel?: string; // libellé ("Easy", "Standard", "Pro", "Légende", etc.)
+};
+
+// -------------------------------------------------------------
+// PlayerDartBadge
+// - Petit badge "jeu de fléchettes" sous un joueur X01
+// - Affiche l'image (plus tard) + nom du set
+// - Chaque tap passe au set suivant (cycle)
+// -------------------------------------------------------------
+type PlayerDartBadgeProps = {
+  profileId?: string | null;
+  dartSetId?: string | null;
+  onChange: (id: string | null) => void;
+};
+
+const PlayerDartBadge: React.FC<PlayerDartBadgeProps> = ({
+  profileId,
+  dartSetId,
+  onChange,
+}) => {
+  const { palette } = useTheme();
+  const { lang } = useLang();
+  const primary = palette?.primary || "#f5c35b";
+
+  const [sets, setSets] = React.useState<DartSet[]>([]);
+  const [favorite, setFavorite] = React.useState<DartSet | null>(null);
+
+  React.useEffect(() => {
+    if (!profileId) {
+      setSets([]);
+      setFavorite(null);
+      return;
+    }
+    const all = getDartSetsForProfile(profileId);
+    setSets(all);
+    setFavorite(getFavoriteDartSetForProfile(profileId) || null);
+  }, [profileId]);
+
+  // Pas de profil ou pas de set → pas de badge
+  if (!profileId || sets.length === 0) return null;
+
+  // Set courant : soit celui explicitement choisi, soit le préféré
+  const explicit = dartSetId
+    ? sets.find((s) => s.id === dartSetId) || null
+    : null;
+  const current = explicit || favorite || sets[0];
+
+  const handleClick = () => {
+    if (sets.length === 0 || !current) return;
+    const idx = sets.findIndex((s) => s.id === current.id);
+    const next = sets[(idx + 1) % sets.length];
+    onChange(next.id); // on force un set explicite
+  };
+
+  const labelBase =
+    lang === "fr"
+      ? "Jeu de fléchettes"
+      : lang === "es"
+      ? "Juego de dardos"
+      : lang === "de"
+      ? "Dart-Set"
+      : "Dart set";
+
+      return (
+        <button
+          type="button"
+          onClick={handleClick}
+          style={{
+            marginTop: 6,
+            alignSelf: "center",
+            padding: "4px 10px",
+            borderRadius: 999,
+            border: "1px solid rgba(255,255,255,.18)",
+            background:
+              "radial-gradient(circle at 0% 0%, rgba(245,195,91,.22), rgba(8,8,20,.96))",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            color: "#fff",
+            fontSize: 10,
+            maxWidth: 180,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {/* Mini visuel fléchettes */}
+          {current.thumbImageUrl ? (
+            <img
+              src={current.thumbImageUrl}
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                objectFit: "cover",
+                boxShadow: "0 0 6px rgba(0,0,0,.9)",
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                background: current.bgColor || "#050509",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 12,
+                boxShadow: "0 0 6px rgba(0,0,0,.9)",
+                border: "1px solid rgba(245,195,91,.8)",
+              }}
+            >
+              🎯
+            </div>
+          )}
+      
+          {/* Nom du set UNIQUEMENT */}
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              textOverflow: "ellipsis",
+              overflow: "hidden",
+            }}
+          >
+            {current.name}
+          </span>
+        </button>
+      );
 };
 
 // ------------------------------------------------------
@@ -139,6 +274,123 @@ const PRO_BOTS: BotLite[] = [
     avatarDataUrl: avatarTheFerret,
   },
 ];
+
+// -------------------------------------------------------------
+// Petit chip "Jeu de fléchettes" pour un joueur X01
+// - Compact, une seule pastille cliquable
+// - Chaque clic fait défiler : AUTO -> Set1 -> Set2 -> ... -> AUTO
+// -------------------------------------------------------------
+type PlayerDartChipProps = {
+  profileId?: string | null;
+  dartSetId?: string | null;
+  onChange: (id: string | null) => void;
+};
+
+const PlayerDartChip: React.FC<PlayerDartChipProps> = ({
+  profileId,
+  dartSetId,
+  onChange,
+}) => {
+  const { palette } = useTheme();
+  const { lang } = useLang();
+  const primary = palette?.primary || "#f5c35b";
+
+  const [sets, setSets] = React.useState<DartSet[]>([]);
+  const [favorite, setFavorite] = React.useState<DartSet | null>(null);
+
+  React.useEffect(() => {
+    if (!profileId) {
+      setSets([]);
+      setFavorite(null);
+      return;
+    }
+    const all = getDartSetsForProfile(profileId);
+    setSets(all);
+    setFavorite(getFavoriteDartSetForProfile(profileId) || null);
+  }, [profileId]);
+
+  if (!profileId || sets.length === 0) {
+    // Aucun set pour ce profil → on n'affiche rien
+    return null;
+  }
+
+  const currentIndex = dartSetId
+    ? sets.findIndex((s) => s.id === dartSetId)
+    : -1; // -1 = AUTO (préféré)
+
+  const handleClick = () => {
+    if (sets.length === 0) return;
+
+    // On a N sets + 1 état AUTO → (N + 1) états dans le cycle
+    const total = sets.length + 1;
+    const nextIndex = (currentIndex + 1 + total) % total;
+
+    if (nextIndex === 0) {
+      // Retour sur AUTO (préféré)
+      onChange(null);
+    } else {
+      const set = sets[nextIndex - 1];
+      onChange(set.id);
+    }
+  };
+
+  const isAuto = currentIndex === -1;
+  const currentSet =
+    isAuto && favorite ? favorite : sets.find((s) => s.id === dartSetId) || null;
+
+  const autoText =
+    lang === "fr"
+      ? "AUTO · préf"
+      : lang === "es"
+      ? "AUTO · favorito"
+      : lang === "de"
+      ? "AUTO · Favorit"
+      : "AUTO · fav";
+
+  const text =
+    isAuto && currentSet
+      ? `${autoText} · ${currentSet.name}`
+      : currentSet
+      ? currentSet.name
+      : autoText;
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      style={{
+        marginTop: 6,
+        alignSelf: "center",
+        padding: "4px 10px",
+        borderRadius: 999,
+        border: `1px solid rgba(255,255,255,.14)`,
+        background: isAuto
+          ? "radial-gradient(circle at 0% 0%, rgba(245,195,91,.3), rgba(10,10,22,.95))"
+          : "radial-gradient(circle at 0% 0%, rgba(127,226,169,.32), rgba(6,24,16,.96))",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        color: "#fff",
+        fontSize: 10,
+        textTransform: "uppercase",
+        letterSpacing: 1.4,
+        maxWidth: 170,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }}
+    >
+      <span style={{ fontSize: 13 }}>🎯</span>
+      <span
+        style={{
+          opacity: 0.9,
+        }}
+      >
+        {text}
+      </span>
+    </button>
+  );
+};
 
 export default function X01ConfigV3({
   profiles,
@@ -241,6 +493,21 @@ export default function X01ConfigV3({
   const [teamAssignments, setTeamAssignments] = React.useState<
     Record<string, TeamId | null>
   >({});
+
+  // profileId -> dartSetId (ou null)
+  const [playerDartSets, setPlayerDartSets] = React.useState<
+    Record<string, string | null>
+  >({});
+
+  const handleChangePlayerDartSet = (
+    profileId: string,
+    dartSetId: string | null
+  ) => {
+    setPlayerDartSets((prev) => ({
+      ...prev,
+      [profileId]: dartSetId,
+    }));
+  };
 
   // ---- helpers sélection joueurs (humains + bots) ----
   function togglePlayer(id: string) {
@@ -402,22 +669,27 @@ export default function X01ConfigV3({
       .map((id) => {
         const human = allProfiles.find((p) => p.id === id);
         if (human) {
+          const dartSetId = playerDartSets[human.id] ?? null;
           return {
             id: human.id,
+            profileId: human.id,
             name: human.name,
             avatarDataUrl: (human as any).avatarDataUrl ?? null,
             isBot: !!(human as any).isBot,
             botLevel: (human as any).botLevel ?? undefined,
+            dartSetId,
           };
         }
         const bot = botProfiles.find((b) => b.id === id);
         if (bot) {
           return {
             id: bot.id,
+            profileId: null,
             name: bot.name,
             avatarDataUrl: bot.avatarDataUrl ?? null,
             isBot: true,
             botLevel: bot.botLevel ?? undefined,
+            dartSetId: null,
           };
         }
         return null;
@@ -585,10 +857,9 @@ export default function X01ConfigV3({
                   overflowX: "auto",
                   paddingBottom: 12,
                   marginBottom: 6,
-                  paddingLeft: 24,      // 🔸 nouveau : recule le 1er médaillon
-                  paddingRight: 8,      // léger padding à droite aussi
-                  justifyContent:
-                    humanProfiles.length <= 4 ? "flex-start" : "flex-start",
+                  paddingLeft: 24,
+                  paddingRight: 8,
+                  justifyContent: "flex-start",
                 }}
                 className="dc-scroll-thin"
               >
@@ -602,13 +873,13 @@ export default function X01ConfigV3({
                   const haloColor = teamId ? TEAM_COLORS[teamId] : primary;
 
                   return (
-                    <button
+                    <div
                       key={p.id}
-                      type="button"
+                      role="button"
                       onClick={() => togglePlayer(p.id)}
                       style={{
-                        minWidth: 90,
-                        maxWidth: 90,
+                        minWidth: 120,
+                        maxWidth: 120,
                         background: "transparent",
                         border: "none",
                         padding: 0,
@@ -617,6 +888,7 @@ export default function X01ConfigV3({
                         alignItems: "center",
                         gap: 6,
                         flexShrink: 0,
+                        cursor: "pointer",
                       }}
                     >
                       <div
@@ -668,7 +940,25 @@ export default function X01ConfigV3({
                       >
                         {p.name}
                       </div>
-                    </button>
+
+                      {/* ⬇⬇⬇ BADGE "JEU DE FLÉCHETTES" ICI ⬇⬇⬇ */}
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <PlayerDartBadge
+                          profileId={p.id}
+                          dartSetId={playerDartSets[p.id] ?? null}
+                          onChange={(id) =>
+                            handleChangePlayerDartSet(p.id, id)
+                          }
+                        />
+                      </div>
+                    </div>
                   );
                 })}
               </div>

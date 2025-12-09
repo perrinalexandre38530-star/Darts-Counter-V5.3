@@ -20,6 +20,7 @@ import type { CricketProfileStats } from "../lib/cricketStats";
 import StatsCricketDashboard from "../components/StatsCricketDashboard";
 // Nouvelle version FULL X01 multi
 import X01MultiStatsTabFull from "../stats/X01MultiStatsTabFull";
+import StatsX01Compare from "./StatsX01Compare";
 import StatsTrainingSummary from "../components/stats/StatsTrainingSummary";
 import { useCurrentProfile } from "../hooks/useCurrentProfile";
 import StatsLeaderboardsTab from "../components/stats/StatsLeaderboardsTab";
@@ -90,10 +91,11 @@ function useInjectStatsNameCss() {
 type StatsMainMode =
   | "dashboard"
   | "x01_multi"
+  | "x01_compare"   // 👈 NOUVEAU
   | "cricket"
   | "battle_royale"
   | "history"
-  | "leaderboards"; // 👈 juste UNE ligne en plus, avec un |
+  | "leaderboards";
 
 const STATS_MAIN_MODES: { id: StatsMainMode; label: string }[] = [
   { id: "dashboard", label: "Dashboard (vue globale)" },
@@ -3349,8 +3351,9 @@ export default function StatsHub({
     () => [
       { key: "dashboard", label: "Dashboard global" },
       { key: "x01_multi", label: "X01 multi" },
+      { key: "x01_compare", label: "Comparateur X01" }, // 👈 inséré ici
       { key: "cricket", label: "Cricket" },
-      { key: "leaderboards", label: "Classements" }, // 👈 NOUVEAU
+      { key: "leaderboards", label: "Classements" },
       { key: "history", label: "Historique" },
     ],
     []
@@ -3380,74 +3383,80 @@ export default function StatsHub({
 
   const canScrollModes = totalModes > 1;
 
-  // -- 2) Historiques --
-  const storeHistory = useStoreHistory();
-  const apiHistory = useHistoryAPI();
-
-  const [storeProfiles, setStoreProfiles] = React.useState<PlayerLite[]>([]);
-
-  React.useEffect(() => {
-    let mounted = true;
-
-    (async () => {
-      try {
-        const store: any = await loadStore<any>();
-        if (!mounted) return;
-
-        const arr: PlayerLite[] = Array.isArray(store?.profiles)
-          ? store.profiles.map((p: any) => ({
-              id: String(p.id),
-              name: p.name,
-              avatarDataUrl: p.avatarDataUrl ?? null,
-            }))
-          : [];
-
-        setStoreProfiles(arr);
-      } catch {
-        if (!mounted) return;
-        setStoreProfiles([]);
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  // Fusion en éliminant doublons
-  const combinedHistory = React.useMemo(() => {
-    const mem = toArr<SavedMatch>(memHistory);
-    const all = [...mem, ...apiHistory, ...storeHistory];
-
-    const byId = new Map<string, SavedMatch>();
-    for (const r of all) {
-      const id = String(r.id ?? "");
-      if (!id) continue;
-
-      const existing = byId.get(id);
-      if (!existing) {
-        byId.set(id, r);
-      } else {
-        const tNew = r.updatedAt ?? r.createdAt ?? 0;
-        const tOld = existing.updatedAt ?? existing.createdAt ?? 0;
-        if (tNew >= tOld) byId.set(id, r);
-      }
-    }
-    return Array.from(byId.values()).sort(
-      (a, b) =>
-        (b.updatedAt ?? b.createdAt ?? 0) -
-        (a.updatedAt ?? a.createdAt ?? 0)
+    // -- 2) Historiques --
+    const storeHistory = useStoreHistory();
+    const apiHistory = useHistoryAPI();
+  
+    const [storeProfiles, setStoreProfiles] = React.useState<PlayerLite[]>([]);
+  
+    React.useEffect(() => {
+      let mounted = true;
+  
+      (async () => {
+        try {
+          const store: any = await loadStore<any>();
+          if (!mounted) return;
+  
+          const arr: PlayerLite[] = Array.isArray(store?.profiles)
+            ? store.profiles.map((p: any) => ({
+                id: String(p.id),
+                name: p.name,
+                avatarDataUrl: p.avatarDataUrl ?? null,
+              }))
+            : [];
+  
+          setStoreProfiles(arr);
+        } catch {
+          if (!mounted) return;
+          setStoreProfiles([]);
+        }
+      })();
+  
+      return () => {
+        mounted = false;
+      };
+    }, []);
+  
+    // Mini-store pour le comparateur X01 (StatsX01Compare)
+    const pseudoStoreForCompare = React.useMemo(
+      () => ({ profiles: storeProfiles }),
+      [storeProfiles]
     );
-  }, [memHistory, apiHistory, storeHistory]);
-
-  // Normalisation
-  const records = React.useMemo(
-    () =>
-      combinedHistory.map((r) =>
-        normalizeRecordPlayers(r, storeProfiles)
-      ),
-    [combinedHistory, storeProfiles]
-  );
+  
+    // Fusion en éliminant doublons
+    const combinedHistory = React.useMemo(() => {
+      const mem = toArr<SavedMatch>(memHistory);
+      const all = [...mem, ...apiHistory, ...storeHistory];
+  
+      const byId = new Map<string, SavedMatch>();
+      for (const r of all) {
+        const id = String(r.id ?? "");
+        if (!id) continue;
+  
+        const existing = byId.get(id);
+        if (!existing) {
+          byId.set(id, r);
+        } else {
+          const tNew = r.updatedAt ?? r.createdAt ?? 0;
+          const tOld = existing.updatedAt ?? existing.createdAt ?? 0;
+          if (tNew >= tOld) byId.set(id, r);
+        }
+      }
+      return Array.from(byId.values()).sort(
+        (a, b) =>
+          (b.updatedAt ?? b.createdAt ?? 0) -
+          (a.updatedAt ?? a.createdAt ?? 0)
+      );
+    }, [memHistory, apiHistory, storeHistory]);
+  
+    // Normalisation
+    const records = React.useMemo(
+      () =>
+        combinedHistory.map((r) =>
+          normalizeRecordPlayers(r, storeProfiles)
+        ),
+      [combinedHistory, storeProfiles]
+    );  
 
   // -- 3) Liste unique de tous les joueurs vus --
   const allPlayers = React.useMemo(() => {
@@ -4012,6 +4021,23 @@ export default function StatsHub({
             ) : (
               <div style={{ color: T.text70, fontSize: 13 }}>
                 Sélectionne un joueur pour afficher les stats X01 multi.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ✅ NOUVEAU : onglet COMPARATEUR X01 */}
+        {currentMode === "x01_compare" && (
+          <div style={card}>
+            {selectedPlayer ? (
+              <StatsX01Compare
+                store={pseudoStoreForCompare as any}
+                profileId={selectedPlayer.id}
+                compact
+              />
+            ) : (
+              <div style={{ color: T.text70, fontSize: 13 }}>
+                Sélectionne un joueur pour afficher le comparateur X01.
               </div>
             )}
           </div>

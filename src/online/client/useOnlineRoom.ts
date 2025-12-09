@@ -30,29 +30,29 @@ const WS_BASE =
   import.meta.env.VITE_ONLINE_WS_BASE_URL ||
   (import.meta.env.DEV ? "ws://127.0.0.1:8787" : "");
 
-// ---------------------------------------------------------
-// Types internes hook
-// ---------------------------------------------------------
-
-type WsStatus = "idle" | "connecting" | "connected" | "disconnected";
+type WsStatus = "idle" | "connecting" | "connected" | "disconnected" | "error";
 
 type UseOnlineRoomOptions = {
-  roomCode: string;      // code salon ex: "4F9Q" (ou lobbyCode)
-  playerId: PlayerId;    // id joueur côté app
-  playerName: string;    // nom/pseudo
-  autoJoin?: boolean;    // join_room auto à la connexion
+  roomId: RoomId | string; // code salon ex: "4F9Q"
+  playerId: PlayerId;      // id joueur côté app
+  nickname: string;        // pseudo affiché dans la room
+  autoJoin?: boolean;      // join_room auto à la connexion
 };
 
 type UseOnlineRoomReturn = {
-  roomState: RoomState | null;
-  wsStatus: WsStatus;
-  lastError: string | null;
+  // état temps réel
+  connected: boolean;
+  status: WsStatus;
+  state: RoomState | null;
+  lastEvent: ServerEvent | null;
+  error: string | null;
 
-  // Actions génériques
+  // API générique
+  send: (ev: ClientEvent) => void;
   reconnect: () => void;
   close: () => void;
 
-  // Actions X01
+  // Helpers X01 (optionnels mais pratiques)
   sendPing: () => void;
   joinRoom: () => void;
   leaveRoom: () => void;
@@ -83,21 +83,20 @@ function buildWsUrl(roomCode: string): string {
 // Hook principal
 // ---------------------------------------------------------
 
-export function useOnlineRoom(
-  opts: UseOnlineRoomOptions
-): UseOnlineRoomReturn {
-  const { roomCode, playerId, playerName, autoJoin = true } = opts;
+export function useOnlineRoom(opts: UseOnlineRoomOptions): UseOnlineRoomReturn {
+  const { roomId, playerId, nickname, autoJoin = true } = opts;
 
-  const [roomState, setRoomState] = React.useState<RoomState | null>(null);
-  const [wsStatus, setWsStatus] = React.useState<WsStatus>("idle");
-  const [lastError, setLastError] = React.useState<string | null>(null);
+  const [state, setState] = React.useState<RoomState | null>(null);
+  const [status, setStatus] = React.useState<WsStatus>("idle");
+  const [error, setError] = React.useState<string | null>(null);
+  const [lastEvent, setLastEvent] = React.useState<ServerEvent | null>(null);
 
   const wsRef = React.useRef<WebSocket | null>(null);
   const reconnectTokenRef = React.useRef(0);
 
-  // --------- Fonctions internes ---------
+  // --------- Envoi sécurisé (API générique) ---------
 
-  const safeSend = React.useCallback((ev: ClientEvent) => {
+  const send = React.useCallback((ev: ClientEvent) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       console.warn("[useOnlineRoom] WS non connecté, impossible d’envoyer", ev);
@@ -110,82 +109,95 @@ export function useOnlineRoom(
     }
   }, []);
 
+  // --------- Gestion des messages serveur ---------
+
   const handleServerEvent = React.useCallback((ev: ServerEvent) => {
+    setLastEvent(ev);
+
     switch (ev.t) {
       case "pong": {
-        // juste pour debug si tu veux
+        // Ping/pong pour debug
         return;
       }
 
       case "error": {
         console.warn("[Room] server error", ev.code, ev.msg);
-        setLastError(ev.msg || ev.code || "Erreur serveur");
+        setError(ev.msg || ev.code || "Erreur serveur");
         return;
       }
 
       case "server_update": {
-        setRoomState(ev.state);
+        // État complet de la room : clients + match + version
+        setState(ev.state);
         return;
       }
 
       default: {
-        // Exhaustivité TS si tu veux
+        // Pour tout autre event custom si tu en ajoutes plus tard
         return;
       }
     }
   }, []);
 
-  // --------- Connexion WS + gestion auto-reconnect ---------
+  // --------- Connexion WS + auto-reconnect ---------
 
   const connect = React.useCallback(() => {
-    const token = ++reconnectTokenRef.current; // annule les anciennes connexions
-    setLastError(null);
+    const token = ++reconnectTokenRef.current;
+    setError(null);
 
-    if (!roomCode) {
-      setLastError("Code de salon manquant.");
+    if (!roomId) {
+      setError("Code de salon manquant.");
+      setStatus("error");
       return;
     }
 
-    const url = buildWsUrl(roomCode);
+    const url = buildWsUrl(String(roomId));
     if (!url) {
-      setLastError(
+      setError(
         "URL WebSocket invalide. Vérifie VITE_ONLINE_WS_BASE_URL dans .env.local."
       );
+      setStatus("error");
       return;
     }
 
     try {
       const ws = new WebSocket(url);
       wsRef.current = ws;
-      setWsStatus("connecting");
+      setStatus("connecting");
 
       ws.onopen = () => {
         if (reconnectTokenRef.current !== token) {
           ws.close();
           return;
         }
-        setWsStatus("connected");
-        // Auto-join une fois ouvert
+        setStatus("connected");
+
+        // Auto-join une fois connecté
         if (autoJoin) {
-          safeSend({
+          send({
             t: "join_room",
             playerId,
-            name: playerName || "Joueur",
-          });
+            name: nickname || "Joueur",
+          } as ClientEvent);
         }
       };
 
       ws.onerror = (ev) => {
         console.warn("[useOnlineRoom] ws.onerror", ev);
-        setLastError("Erreur WebSocket (voir console).");
+        // 🔴 Message propre (et plus "Erreur WebSocket : Erreur WebSocket…")
+        setError(
+          "Impossible de se connecter au serveur temps réel (WebSocket)."
+        );
+        setStatus("error");
       };
 
       ws.onclose = () => {
         if (reconnectTokenRef.current !== token) {
           return;
         }
-        setWsStatus("disconnected");
-        // Option : auto-reconnect doux
+        setStatus("disconnected");
+
+        // Auto-reconnect "doux"
         setTimeout(() => {
           if (reconnectTokenRef.current === token) {
             connect();
@@ -195,11 +207,11 @@ export function useOnlineRoom(
 
       ws.onmessage = (event) => {
         try {
-          const data =
+          const raw =
             typeof event.data === "string"
               ? event.data
               : new TextDecoder().decode(event.data as ArrayBuffer);
-          const msg: ServerEvent = JSON.parse(data);
+          const msg: ServerEvent = JSON.parse(raw);
           handleServerEvent(msg);
         } catch (e) {
           console.warn("[useOnlineRoom] message parse error", e);
@@ -207,12 +219,15 @@ export function useOnlineRoom(
       };
     } catch (e: any) {
       console.error("[useOnlineRoom] WebSocket init error", e);
-      setLastError(e?.message || "Impossible d’ouvrir la connexion WebSocket.");
-      setWsStatus("disconnected");
+      setError(
+        e?.message ||
+          "Impossible d’ouvrir la connexion WebSocket (voir console)."
+      );
+      setStatus("error");
     }
-  }, [roomCode, playerId, playerName, autoJoin, handleServerEvent, safeSend]);
+  }, [roomId, nickname, playerId, autoJoin, handleServerEvent, send]);
 
-  // Connexion au montage / changement de roomCode
+  // Connexion au montage / changement de roomId
   React.useEffect(() => {
     connect();
     return () => {
@@ -228,7 +243,7 @@ export function useOnlineRoom(
     };
   }, [connect]);
 
-  // --------- API publique (actions) ---------
+  // --------- API reconnect / close ---------
 
   const reconnect = React.useCallback(() => {
     reconnectTokenRef.current++;
@@ -240,8 +255,8 @@ export function useOnlineRoom(
       }
       wsRef.current = null;
     }
-    setRoomState(null);
-    setWsStatus("idle");
+    setState(null);
+    setStatus("idle");
     connect();
   }, [connect]);
 
@@ -255,28 +270,30 @@ export function useOnlineRoom(
       }
       wsRef.current = null;
     }
-    setWsStatus("disconnected");
+    setStatus("disconnected");
   }, []);
 
+  // --------- Helpers X01 (au-dessus de send) ---------
+
   const sendPing = React.useCallback(() => {
-    safeSend({ t: "ping" });
-  }, [safeSend]);
+    send({ t: "ping" } as ClientEvent);
+  }, [send]);
 
   const joinRoom = React.useCallback(() => {
-    safeSend({
+    send({
       t: "join_room",
       playerId,
-      name: playerName || "Joueur",
-    });
-  }, [safeSend, playerId, playerName]);
+      name: nickname || "Joueur",
+    } as ClientEvent);
+  }, [send, playerId, nickname]);
 
   const leaveRoom = React.useCallback(() => {
-    safeSend({ t: "leave_room" });
-  }, [safeSend]);
+    send({ t: "leave_room" } as ClientEvent);
+  }, [send]);
 
   const startX01Match = React.useCallback(
     (params: { startScore: number; order: { id: PlayerId; name: string }[] }) => {
-      safeSend({
+      send({
         t: "start_match",
         start: {
           game: "x01",
@@ -285,27 +302,32 @@ export function useOnlineRoom(
         },
       } as ClientEvent);
     },
-    [safeSend]
+    [send]
   );
 
   const sendVisit = React.useCallback(
     (darts: { value: number; mult: 1 | 2 | 3 | 25 | 50 }[]) => {
-      safeSend({
+      send({
         t: "throw_visit",
         darts,
       } as ClientEvent);
     },
-    [safeSend]
+    [send]
   );
 
   const undoLast = React.useCallback(() => {
-    safeSend({ t: "undo_last" } as ClientEvent);
-  }, [safeSend]);
+    send({ t: "undo_last" } as ClientEvent);
+  }, [send]);
+
+  // --------- Retour hook ---------
 
   return {
-    roomState,
-    wsStatus,
-    lastError,
+    connected: status === "connected",
+    status,
+    state,
+    lastEvent,
+    error,
+    send,
     reconnect,
     close,
     sendPing,

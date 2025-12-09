@@ -63,7 +63,9 @@ type ClientWsMessage =
   | { kind: "lifecycle"; data: X01OnlineLifecycleCommand };
 
 function buildWsUrl(lobbyCode: string): string | null {
-  const base = import.meta.env.VITE_ONLINE_WS_BASE_URL as string | undefined;
+  const base =
+  import.meta.env.VITE_ONLINE_WS_BASE_URL ||
+  "wss://dc-online-v3.perrin-alexandre38530.workers.dev";
 
   if (!base) {
     console.warn(

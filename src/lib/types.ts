@@ -28,6 +28,9 @@ export type Profile = {
   stats?: ProfileStats; 
   // ...tout ce que tu avais déjà
 
+  // 🔹 Favori : set de fléchettes préféré
+  favoriteDartSetId?: string | null;
+
   // 🔹 Nouveau : identification BOT
   isBot?: boolean;         // true si c'est un bot
   botLevel?: BotLevel;     // niveau d'IA
@@ -38,6 +41,9 @@ export type Profile = {
   name: string;
   avatarDataUrl?: string;
   stats?: ProfileStats | any; // compat ancien code
+
+  // 🔹 Favori : set de fléchettes préféré
+  favoriteDartSetId?: string | null;
 };
 
 /* ===== Réglages ===== */

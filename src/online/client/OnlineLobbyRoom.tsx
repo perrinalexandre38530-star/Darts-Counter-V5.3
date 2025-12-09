@@ -50,7 +50,10 @@ export default function OnlineLobbyRoom({
     if (!match || firedRef.current) return;
     firedRef.current = true;
     if (onMatchStarted) {
-      onMatchStarted(lastEvent ?? { t: "server_update", v: state?.v ?? 0, state } as any);
+      onMatchStarted(
+        lastEvent ??
+          ({ t: "server_update", v: state?.v ?? 0, state } as any)
+      );
     }
   }, [match, lastEvent, onMatchStarted, state]);
 
@@ -58,7 +61,9 @@ export default function OnlineLobbyRoom({
     if (!isHost) return;
 
     const order = clients.map((c) => c.id);
-    const startScore = (lobby.settings?.startScore as number) || 501;
+
+    // ⚠️ le champ dans OnlineLobbySettings s'appelle "start"
+    const startScore = (lobby.settings?.start as number) || 501;
 
     send({
       t: "start_match",
@@ -201,7 +206,9 @@ export default function OnlineLobbyRoom({
                     fontSize: 12,
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  >
                     <div
                       style={{
                         width: 26,
