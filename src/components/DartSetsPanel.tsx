@@ -48,9 +48,6 @@ const DEFAULT_BG = "#101020";
 
 // ----------------------------------------------------------
 // Composant d’affichage de fléchette
-// - carré fixe (size x size)
-// - image centrée, contain
-// - rotation standard (55°) pour toutes les flèches
 // ----------------------------------------------------------
 const DartImage: React.FC<{
   url: string;
@@ -190,7 +187,6 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
         thumbImageUrl: chosenPreset ? chosenPreset.imgUrlThumb : undefined,
         bgColor: form.bgColor || DEFAULT_BG,
         scope,
-        // champs optionnels pour la nouvelle archi
         kind,
         presetId: chosenPreset ? chosenPreset.id : undefined,
       } as any);
@@ -256,7 +252,6 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
         notes: notes || undefined,
         bgColor: editForm.bgColor || DEFAULT_BG,
         scope,
-        // Pour un preset choisi, on met à jour les URLs
         ...(chosenPreset
           ? {
               mainImageUrl: chosenPreset.imgUrlMain,
@@ -382,8 +377,8 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       : "No visual";
 
   // ------------------------------------------------------------------
-
   // Helper UI : sélecteur de preset pour création / édition
+  // ------------------------------------------------------------------
   const renderPresetPicker = (
     currentPresetId: string | null,
     setFormState:
@@ -435,7 +430,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
             style={{
               flexShrink: 0,
               padding: "6px 10px",
-              borderRadius: 999,
+              borderRadius: 12,
               border:
                 currentPresetId === null
                   ? "1px solid rgba(255,255,255,.9)"
@@ -448,6 +443,12 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
               fontSize: 11,
               textTransform: "uppercase",
               letterSpacing: 1,
+              minWidth: 96,
+              height: 68,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              whiteSpace: "nowrap",
             }}
           >
             {noVisualLabel}
@@ -462,9 +463,9 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                 onClick={() => setPreset(preset.id)}
                 style={{
                   flexShrink: 0,
-                  minWidth: 96,
-                  padding: 6,
-                  borderRadius: 12,
+                  minWidth: 110,
+                  padding: 4,
+                  borderRadius: 14,
                   border: isSelected
                     ? "1px solid rgba(245,195,91,.95)"
                     : "1px solid rgba(255,255,255,.2)",
@@ -475,20 +476,21 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                   display: "flex",
                   flexDirection: "column",
                   gap: 4,
-                  alignItems: "center",
+                  alignItems: "stretch",
                 }}
               >
+                {/* Vignette plein bouton */}
                 <div
                   style={{
-                    width: 52,
-                    height: 52,
-                    borderRadius: "50%",
+                    width: "100%",
+                    height: 60,
+                    borderRadius: 10,
                     overflow: "hidden",
+                    background:
+                      "radial-gradient(circle at 30% 20%, #20232c, #070912 70%)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    background:
-                      "radial-gradient(circle at 30% 20%, #ffffff, #bbbbbb 40%, #333333 70%, #000000 100%)",
                   }}
                 >
                   <img
@@ -501,6 +503,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                     }}
                   />
                 </div>
+                {/* Nom */}
                 <div
                   style={{
                     fontSize: 10,
@@ -509,7 +512,8 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                     whiteSpace: "nowrap",
                     textOverflow: "ellipsis",
                     overflow: "hidden",
-                    maxWidth: 90,
+                    maxWidth: 100,
+                    textAlign: "center",
                   }}
                 >
                   {preset.name}
@@ -521,6 +525,8 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       </div>
     );
   };
+
+  // ------------------------------------------------------------------
 
   return (
     <div
@@ -1228,12 +1234,12 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "80px 1fr", // image à gauche
+                    gridTemplateColumns: "80px 1fr",
                     gap: 10,
                     alignItems: "center",
                   }}
                 >
-                  {/* Image gauche : fléchette */}
+                  {/* Image gauche */}
                   <div
                     style={{
                       width: 80,
@@ -1318,7 +1324,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                       </div>
                     )}
 
-                    {/* Ligne 3 : poids + statut (privé/public) */}
+                    {/* Ligne 3 : poids + statut */}
                     <div
                       style={{
                         display: "flex",

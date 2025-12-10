@@ -22,6 +22,13 @@ export type DartPreset = {
 
 export const dartPresets: DartPreset[] = [
   {
+    id: "target-exo03",
+    name: "Target Exo 03",
+    imgUrlMain: "/images/darts/target-exo03-1024.png",
+    imgUrlThumb: "/images/darts/target-exo03-256.png",
+    theme: "white",
+  },
+  {
     id: "classic-gold",
     name: "Classic Gold",
     imgUrlMain: "/images/darts/classic-gold-1024.png",
