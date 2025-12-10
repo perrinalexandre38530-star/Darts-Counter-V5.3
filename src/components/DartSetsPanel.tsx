@@ -7,6 +7,7 @@
 // - Création et édition en blocs flottants
 // - Scanner (sheet) pour associer des visuels
 // - Intégration presets cartoon (dartPresets) pour le visuel
+// - Upload photo perso pour un set (stockée dans dartSetsStore)
 // =============================================================
 
 import React from "react";
@@ -39,21 +40,35 @@ type FormState = {
   bgColor: string;
   scope: "private" | "public";
 
-  // Nouveau : gestion du visuel
+  // Gestion du visuel
   kind: "plain" | "preset" | "photo";
   presetId: string | null;
+
+  // Photo perso (base64) utilisée à la création
+  photoDataUrl: string | null;
 };
 
 const DEFAULT_BG = "#101020";
 
 // ----------------------------------------------------------
-// Composant d’affichage de fléchette
+// Composant d’affichage de fléchette / visuel
+// - carré fixe (size x size)
+// - image centrée, contain
+// - angleDeg optionnel (par défaut 0 → aucune rotation)
 // ----------------------------------------------------------
 const DartImage: React.FC<{
   url: string;
   size?: number;
   angleDeg?: number;
-}> = ({ url, size = 72, angleDeg = 55 }) => {
+}> = ({ url, size = 72, angleDeg = 0 }) => {
+  const rotateStyle =
+    angleDeg && angleDeg !== 0
+      ? {
+          transform: `rotate(${angleDeg}deg)`,
+          transformOrigin: "center center",
+        }
+      : {};
+
   return (
     <div
       style={{
@@ -63,10 +78,188 @@ const DartImage: React.FC<{
         backgroundSize: "contain",
         backgroundPosition: "center",
         backgroundRepeat: "no-repeat",
-        transform: `rotate(${angleDeg}deg)`,
-        transformOrigin: "center center",
+        ...rotateStyle,
       }}
     />
+  );
+};
+
+// ----------------------------------------------------------
+// Upload d’image perso pour un set (édition uniquement)
+// - Sauvegarde thumbImageUrl + mainImageUrl + kind: "photo"
+// ----------------------------------------------------------
+type DartSetImageUploaderProps = {
+  dartSet: DartSet | null;
+  onUpdated: (updated: DartSet) => void;
+};
+
+const DartSetImageUploader: React.FC<DartSetImageUploaderProps> = ({
+  dartSet,
+  onUpdated,
+}) => {
+  const { lang } = useLang();
+
+  if (!dartSet) return null;
+
+  const labelMain =
+    lang === "fr"
+      ? "Photo du set"
+      : lang === "es"
+      ? "Foto del set"
+      : lang === "de"
+      ? "Foto des Sets"
+      : "Set photo";
+
+  const btnLabel =
+    lang === "fr"
+      ? "Choisir une photo"
+      : lang === "es"
+      ? "Elegir foto"
+      : lang === "de"
+      ? "Foto wählen"
+      : "Choose photo";
+
+  const helper =
+    lang === "fr"
+      ? "Format carré conseillé (512×512). La photo sera stockée localement."
+      : lang === "es"
+      ? "Se recomienda formato cuadrado (512×512). La foto se guarda localmente."
+      : lang === "de"
+      ? "Quadratisches Format empfohlen (512×512). Foto wird lokal gespeichert."
+      : "Square format recommended (512×512). Photo is stored locally.";
+
+  const currentUrl =
+    (dartSet as any).thumbImageUrl || (dartSet as any).mainImageUrl || "";
+
+  const handleFileChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+
+      try {
+        updateDartSet(dartSet.id, {
+          mainImageUrl: dataUrl,
+          thumbImageUrl: dataUrl,
+          kind: "photo",
+          presetId: undefined,
+        } as any);
+
+        const updated: DartSet = {
+          ...dartSet,
+          mainImageUrl: dataUrl,
+          thumbImageUrl: dataUrl,
+          // @ts-expect-error champs libres nouvelle archi
+          kind: "photo",
+          presetId: undefined,
+        };
+
+        onUpdated(updated);
+      } catch (err) {
+        console.warn("[DartSetImageUploader] update error", err);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div
+      style={{
+        gridColumn: "1 / span 2",
+        marginTop: 6,
+        paddingTop: 6,
+        borderTop: "1px dashed rgba(255,255,255,.14)",
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+      }}
+    >
+      {/* Aperçu actuel */}
+      <div
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 14,
+          border: "1px solid rgba(255,255,255,.25)",
+          background: dartSet.bgColor || DEFAULT_BG,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "hidden",
+        }}
+      >
+        {currentUrl ? (
+          // AUCUNE rotation ici
+          <DartImage url={currentUrl} size={60} angleDeg={0} />
+        ) : (
+          <span style={{ fontSize: 26 }}>🎯</span>
+        )}
+      </div>
+
+      {/* Texte + bouton upload */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 4,
+          flex: 1,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            color: "rgba(255,255,255,.7)",
+            textTransform: "uppercase",
+            letterSpacing: 1,
+          }}
+        >
+          {labelMain}
+        </div>
+
+        <label
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "6px 10px",
+            borderRadius: 999,
+            border: "1px solid rgba(127,196,255,.9)",
+            background:
+              "radial-gradient(circle at 0% 0%, rgba(127,196,255,.35), rgba(8,18,32,.95))",
+            color: "#fff",
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: 1,
+            cursor: "pointer",
+            width: "fit-content",
+          }}
+        >
+          <span style={{ marginRight: 6 }}>📷</span>
+          {btnLabel}
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleFileChange}
+            style={{ display: "none" }}
+          />
+        </label>
+
+        <div
+          style={{
+            fontSize: 10,
+            color: "rgba(255,255,255,.45)",
+            maxWidth: 260,
+          }}
+        >
+          {helper}
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -79,6 +272,7 @@ const createEmptyForm = (primary: string): FormState => ({
   scope: "private",
   kind: "plain",
   presetId: null,
+  photoDataUrl: null,
 });
 
 const DartSetsPanel: React.FC<Props> = ({ profile }) => {
@@ -173,8 +367,26 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       ? dartPresets.find((p) => p.id === form.presetId)
       : undefined;
 
-    const kind: string =
-      chosenPreset && form.kind !== "photo" ? "preset" : "plain";
+    // Construction image / kind / preset selon priorité :
+    // 1) photo perso
+    // 2) preset cartoon
+    // 3) rien
+    let kind: "plain" | "preset" | "photo" = "plain";
+    let mainImageUrl = "";
+    let thumbImageUrl: string | undefined = undefined;
+    let presetId: string | undefined = undefined;
+
+    if (form.photoDataUrl) {
+      kind = "photo";
+      mainImageUrl = form.photoDataUrl;
+      thumbImageUrl = form.photoDataUrl;
+      presetId = undefined;
+    } else if (chosenPreset) {
+      kind = "preset";
+      mainImageUrl = chosenPreset.imgUrlMain;
+      thumbImageUrl = chosenPreset.imgUrlThumb;
+      presetId = chosenPreset.id;
+    }
 
     try {
       createDartSet({
@@ -183,12 +395,12 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
         brand: brand || undefined,
         weightGrams,
         notes: notes || undefined,
-        mainImageUrl: chosenPreset ? chosenPreset.imgUrlMain : "",
-        thumbImageUrl: chosenPreset ? chosenPreset.imgUrlThumb : undefined,
+        mainImageUrl,
+        thumbImageUrl,
         bgColor: form.bgColor || DEFAULT_BG,
         scope,
         kind,
-        presetId: chosenPreset ? chosenPreset.id : undefined,
+        presetId,
       } as any);
 
       reloadSets();
@@ -218,6 +430,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       scope: set.scope || "private",
       kind,
       presetId,
+      photoDataUrl: null,
     });
   };
 
@@ -241,8 +454,15 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       ? dartPresets.find((p) => p.id === editForm.presetId)
       : undefined;
 
-    const kind: string =
-      chosenPreset && editForm.kind !== "photo" ? "preset" : editForm.kind;
+    let kind: "plain" | "preset" | "photo" = editForm.kind;
+
+    // En édition, la photo perso passe par DartSetImageUploader
+    // → ici on ne touche qu’aux presets / texte.
+    if (chosenPreset && kind !== "photo") {
+      kind = "preset";
+    } else if (!chosenPreset && kind === "preset") {
+      kind = "plain";
+    }
 
     try {
       updateDartSet(editingId, {
@@ -252,7 +472,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
         notes: notes || undefined,
         bgColor: editForm.bgColor || DEFAULT_BG,
         scope,
-        ...(chosenPreset
+        ...(chosenPreset && kind === "preset"
           ? {
               mainImageUrl: chosenPreset.imgUrlMain,
               thumbImageUrl: chosenPreset.imgUrlThumb,
@@ -360,30 +580,32 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
 
   const visualLabel =
     lang === "fr"
-      ? "Visuel (preset cartoon)"
+      ? "Visuel (preset cartoon ou photo)"
       : lang === "es"
-      ? "Visual (preset cartoon)"
+      ? "Visual (preset cartoon o foto)"
       : lang === "de"
-      ? "Visual (Preset Cartoon)"
-      : "Visual (cartoon preset)";
+      ? "Visual (Preset Cartoon oder Foto)"
+      : "Visual (cartoon preset or photo)";
 
-  const noVisualLabel =
+  const uploadLabel =
     lang === "fr"
-      ? "Aucun visuel"
+      ? "Charger une photo"
       : lang === "es"
-      ? "Sin visual"
+      ? "Subir foto"
       : lang === "de"
-      ? "Kein Visual"
-      : "No visual";
+      ? "Foto hochladen"
+      : "Upload photo";
 
   // ------------------------------------------------------------------
   // Helper UI : sélecteur de preset pour création / édition
   // ------------------------------------------------------------------
+
   const renderPresetPicker = (
     currentPresetId: string | null,
     setFormState:
       | React.Dispatch<React.SetStateAction<FormState | null>>
-      | React.Dispatch<React.SetStateAction<FormState>>
+      | React.Dispatch<React.SetStateAction<FormState>>,
+    mode: "create" | "edit"
   ) => {
     const setPreset = (presetId: string | null) => {
       setFormState((prev: any) => {
@@ -394,8 +616,33 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
           ...prev,
           presetId,
           kind: nextKind,
+          // si on choisit un preset, on efface la photo stockée en création
+          photoDataUrl:
+            "photoDataUrl" in prev && nextKind !== "photo"
+              ? null
+              : prev.photoDataUrl ?? null,
         };
       });
+    };
+
+    const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        setFormState((prev: any) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            kind: "photo",
+            presetId: null,
+            photoDataUrl: dataUrl,
+          };
+        });
+      };
+      reader.readAsDataURL(file);
     };
 
     return (
@@ -423,36 +670,39 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
             paddingBottom: 4,
           }}
         >
-          {/* Bouton "aucun visuel" */}
-          <button
-            type="button"
-            onClick={() => setPreset(null)}
-            style={{
-              flexShrink: 0,
-              padding: "6px 10px",
-              borderRadius: 12,
-              border:
-                currentPresetId === null
-                  ? "1px solid rgba(255,255,255,.9)"
-                  : "1px solid rgba(255,255,255,.2)",
-              background:
-                currentPresetId === null
-                  ? "rgba(255,255,255,.18)"
-                  : "rgba(0,0,0,.3)",
-              color: "#fff",
-              fontSize: 11,
-              textTransform: "uppercase",
-              letterSpacing: 1,
-              minWidth: 96,
-              height: 68,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {noVisualLabel}
-          </button>
+          {/* En création : bouton "Charger une photo" à la place de "Aucun visuel" */}
+          {mode === "create" && (
+            <label
+              style={{
+                flexShrink: 0,
+                padding: "6px 10px",
+                borderRadius: 12,
+                border: "1px solid rgba(127,196,255,.9)",
+                background:
+                  "radial-gradient(circle at 0% 0%, rgba(127,196,255,.3), rgba(4,8,20,.95))",
+                color: "#fff",
+                fontSize: 11,
+                textTransform: "uppercase",
+                letterSpacing: 1,
+                minWidth: 110,
+                height: 68,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                whiteSpace: "nowrap",
+                cursor: "pointer",
+              }}
+            >
+              <span style={{ marginRight: 4 }}>📷</span>
+              {uploadLabel}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                style={{ display: "none" }}
+              />
+            </label>
+          )}
 
           {dartPresets.map((preset) => {
             const isSelected = currentPresetId === preset.id;
@@ -748,8 +998,8 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
             />
           </div>
 
-          {/* Sélecteur de preset cartoon */}
-          {renderPresetPicker(form.presetId, setForm as any)}
+          {/* Sélecteur visuel : presets + upload photo perso */}
+          {renderPresetPicker(form.presetId, setForm as any, "create")}
 
           {/* Scope création */}
           <div style={{ gridColumn: "1 / span 2", marginTop: 4 }}>
@@ -1003,13 +1253,24 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
             />
           </div>
 
-          {/* Sélecteur de preset cartoon en édition */}
+          {/* Sélecteur de preset cartoon en édition (sans bouton upload) */}
           {renderPresetPicker(
             editForm.presetId,
             setEditForm as React.Dispatch<
               React.SetStateAction<FormState | null>
-            >
+            >,
+            "edit"
           )}
+
+          {/* Upload photo perso pour ce set (édition) */}
+          <DartSetImageUploader
+            dartSet={sets.find((s) => s.id === editingId) || null}
+            onUpdated={(updated) => {
+              setSets((prev) =>
+                prev.map((s) => (s.id === updated.id ? updated : s))
+              );
+            }}
+          />
 
           {/* Scope édition */}
           <div style={{ gridColumn: "1 / span 2", marginTop: 4 }}>
@@ -1234,12 +1495,12 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "80px 1fr",
+                    gridTemplateColumns: "80px 1fr", // image à gauche
                     gap: 10,
                     alignItems: "center",
                   }}
                 >
-                  {/* Image gauche */}
+                  {/* Image gauche : visuel du set */}
                   <div
                     style={{
                       width: 80,
@@ -1254,12 +1515,13 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                     }}
                   >
                     {activeSet.thumbImageUrl || activeSet.mainImageUrl ? (
+                      // AUCUNE rotation sur la carte
                       <DartImage
                         url={
                           activeSet.thumbImageUrl || activeSet.mainImageUrl!
                         }
                         size={66}
-                        angleDeg={55}
+                        angleDeg={0}
                       />
                     ) : (
                       <span style={{ fontSize: 24 }}>🎯</span>
@@ -1324,7 +1586,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                       </div>
                     )}
 
-                    {/* Ligne 3 : poids + statut */}
+                    {/* Ligne 3 : poids + statut (privé/public) */}
                     <div
                       style={{
                         display: "flex",
