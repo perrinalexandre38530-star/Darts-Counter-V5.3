@@ -6,6 +6,7 @@
 // - Barre d'actions globale (Scanner / Editer / Suppr / Favori)
 // - Création et édition en blocs flottants
 // - Scanner (sheet) pour associer des visuels
+// - Intégration presets cartoon (dartPresets) pour le visuel
 // =============================================================
 
 import React from "react";
@@ -24,6 +25,8 @@ import {
   updateDartSet,
 } from "../lib/dartSetsStore";
 
+import { dartPresets } from "../lib/dartPresets";
+
 type Props = {
   profile: Profile;
 };
@@ -35,9 +38,40 @@ type FormState = {
   notes: string;
   bgColor: string;
   scope: "private" | "public";
+
+  // Nouveau : gestion du visuel
+  kind: "plain" | "preset" | "photo";
+  presetId: string | null;
 };
 
 const DEFAULT_BG = "#101020";
+
+// ----------------------------------------------------------
+// Composant d’affichage de fléchette
+// - carré fixe (size x size)
+// - image centrée, contain
+// - rotation standard (55°) pour toutes les flèches
+// ----------------------------------------------------------
+const DartImage: React.FC<{
+  url: string;
+  size?: number;
+  angleDeg?: number;
+}> = ({ url, size = 72, angleDeg = 55 }) => {
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        backgroundImage: `url(${url})`,
+        backgroundSize: "contain",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+        transform: `rotate(${angleDeg}deg)`,
+        transformOrigin: "center center",
+      }}
+    />
+  );
+};
 
 const createEmptyForm = (primary: string): FormState => ({
   name: "",
@@ -46,6 +80,8 @@ const createEmptyForm = (primary: string): FormState => ({
   notes: "",
   bgColor: primary || DEFAULT_BG,
   scope: "private",
+  kind: "plain",
+  presetId: null,
 });
 
 const DartSetsPanel: React.FC<Props> = ({ profile }) => {
@@ -136,6 +172,13 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
     const weightGrams = Number.isFinite(weight) ? weight : undefined;
     const scope = form.scope;
 
+    const chosenPreset = form.presetId
+      ? dartPresets.find((p) => p.id === form.presetId)
+      : undefined;
+
+    const kind: string =
+      chosenPreset && form.kind !== "photo" ? "preset" : "plain";
+
     try {
       createDartSet({
         profileId: profile.id,
@@ -143,11 +186,14 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
         brand: brand || undefined,
         weightGrams,
         notes: notes || undefined,
-        mainImageUrl: "", // sera rempli par le scanner
-        thumbImageUrl: undefined,
+        mainImageUrl: chosenPreset ? chosenPreset.imgUrlMain : "",
+        thumbImageUrl: chosenPreset ? chosenPreset.imgUrlThumb : undefined,
         bgColor: form.bgColor || DEFAULT_BG,
         scope,
-      });
+        // champs optionnels pour la nouvelle archi
+        kind,
+        presetId: chosenPreset ? chosenPreset.id : undefined,
+      } as any);
 
       reloadSets();
       setForm(createEmptyForm(primary));
@@ -160,6 +206,12 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
   const handleStartEdit = (set: DartSet | null) => {
     if (!set) return;
     setIsCreating(false);
+
+    const kind: "plain" | "preset" | "photo" =
+      ((set as any).kind as "plain" | "preset" | "photo") || "plain";
+    const presetId: string | null =
+      ((set as any).presetId as string | null) || null;
+
     setEditingId(set.id);
     setEditForm({
       name: set.name || "",
@@ -168,6 +220,8 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       notes: set.notes || "",
       bgColor: set.bgColor || primary || DEFAULT_BG,
       scope: set.scope || "private",
+      kind,
+      presetId,
     });
   };
 
@@ -187,6 +241,13 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
     const weightGrams = Number.isFinite(weight) ? weight : undefined;
     const scope = editForm.scope;
 
+    const chosenPreset = editForm.presetId
+      ? dartPresets.find((p) => p.id === editForm.presetId)
+      : undefined;
+
+    const kind: string =
+      chosenPreset && editForm.kind !== "photo" ? "preset" : editForm.kind;
+
     try {
       updateDartSet(editingId, {
         name,
@@ -195,7 +256,16 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
         notes: notes || undefined,
         bgColor: editForm.bgColor || DEFAULT_BG,
         scope,
-      });
+        // Pour un preset choisi, on met à jour les URLs
+        ...(chosenPreset
+          ? {
+              mainImageUrl: chosenPreset.imgUrlMain,
+              thumbImageUrl: chosenPreset.imgUrlThumb,
+            }
+          : {}),
+        kind,
+        presetId: chosenPreset ? chosenPreset.id : undefined,
+      } as any);
 
       reloadSets();
       setEditingId(null);
@@ -293,7 +363,164 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       ? "Favorit"
       : "Favorite";
 
+  const visualLabel =
+    lang === "fr"
+      ? "Visuel (preset cartoon)"
+      : lang === "es"
+      ? "Visual (preset cartoon)"
+      : lang === "de"
+      ? "Visual (Preset Cartoon)"
+      : "Visual (cartoon preset)";
+
+  const noVisualLabel =
+    lang === "fr"
+      ? "Aucun visuel"
+      : lang === "es"
+      ? "Sin visual"
+      : lang === "de"
+      ? "Kein Visual"
+      : "No visual";
+
   // ------------------------------------------------------------------
+
+  // Helper UI : sélecteur de preset pour création / édition
+  const renderPresetPicker = (
+    currentPresetId: string | null,
+    setFormState:
+      | React.Dispatch<React.SetStateAction<FormState | null>>
+      | React.Dispatch<React.SetStateAction<FormState>>
+  ) => {
+    const setPreset = (presetId: string | null) => {
+      setFormState((prev: any) => {
+        if (!prev) return prev;
+        const nextKind: "plain" | "preset" | "photo" =
+          presetId === null ? "plain" : "preset";
+        return {
+          ...prev,
+          presetId,
+          kind: nextKind,
+        };
+      });
+    };
+
+    return (
+      <div
+        style={{
+          gridColumn: "1 / span 2",
+          marginTop: 4,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            color: "rgba(255,255,255,.6)",
+            marginBottom: 4,
+          }}
+        >
+          {visualLabel}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            overflowX: "auto",
+            paddingBottom: 4,
+          }}
+        >
+          {/* Bouton "aucun visuel" */}
+          <button
+            type="button"
+            onClick={() => setPreset(null)}
+            style={{
+              flexShrink: 0,
+              padding: "6px 10px",
+              borderRadius: 999,
+              border:
+                currentPresetId === null
+                  ? "1px solid rgba(255,255,255,.9)"
+                  : "1px solid rgba(255,255,255,.2)",
+              background:
+                currentPresetId === null
+                  ? "rgba(255,255,255,.18)"
+                  : "rgba(0,0,0,.3)",
+              color: "#fff",
+              fontSize: 11,
+              textTransform: "uppercase",
+              letterSpacing: 1,
+            }}
+          >
+            {noVisualLabel}
+          </button>
+
+          {dartPresets.map((preset) => {
+            const isSelected = currentPresetId === preset.id;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => setPreset(preset.id)}
+                style={{
+                  flexShrink: 0,
+                  minWidth: 96,
+                  padding: 6,
+                  borderRadius: 12,
+                  border: isSelected
+                    ? "1px solid rgba(245,195,91,.95)"
+                    : "1px solid rgba(255,255,255,.2)",
+                  background: isSelected
+                    ? "radial-gradient(circle at 0% 0%, rgba(245,195,91,.35), rgba(10,10,22,.95))"
+                    : "rgba(4,4,10,.9)",
+                  color: "#fff",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  alignItems: "center",
+                }}
+              >
+                <div
+                  style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: "50%",
+                    overflow: "hidden",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background:
+                      "radial-gradient(circle at 30% 20%, #ffffff, #bbbbbb 40%, #333333 70%, #000000 100%)",
+                  }}
+                >
+                  <img
+                    src={preset.imgUrlThumb}
+                    alt={preset.name}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "contain",
+                    }}
+                  />
+                </div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.8,
+                    whiteSpace: "nowrap",
+                    textOverflow: "ellipsis",
+                    overflow: "hidden",
+                    maxWidth: 90,
+                  }}
+                >
+                  {preset.name}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -360,6 +587,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
           onClick={() => {
             setEditingId(null);
             setEditForm(null);
+            setForm(createEmptyForm(primary));
             setIsCreating((x) => !x);
           }}
           style={{
@@ -513,6 +741,9 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
               }}
             />
           </div>
+
+          {/* Sélecteur de preset cartoon */}
+          {renderPresetPicker(form.presetId, setForm as any)}
 
           {/* Scope création */}
           <div style={{ gridColumn: "1 / span 2", marginTop: 4 }}>
@@ -766,6 +997,14 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
             />
           </div>
 
+          {/* Sélecteur de preset cartoon en édition */}
+          {renderPresetPicker(
+            editForm.presetId,
+            setEditForm as React.Dispatch<
+              React.SetStateAction<FormState | null>
+            >
+          )}
+
           {/* Scope édition */}
           <div style={{ gridColumn: "1 / span 2", marginTop: 4 }}>
             <div
@@ -989,12 +1228,39 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 80px",
+                    gridTemplateColumns: "80px 1fr", // image à gauche
                     gap: 10,
                     alignItems: "center",
                   }}
                 >
-                  {/* Infos gauche */}
+                  {/* Image gauche : fléchette */}
+                  <div
+                    style={{
+                      width: 80,
+                      height: 70,
+                      borderRadius: 14,
+                      background: activeSet.bgColor || DEFAULT_BG,
+                      border: "1px solid rgba(255,255,255,.2)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {activeSet.thumbImageUrl || activeSet.mainImageUrl ? (
+                      <DartImage
+                        url={
+                          activeSet.thumbImageUrl || activeSet.mainImageUrl!
+                        }
+                        size={66}
+                        angleDeg={55}
+                      />
+                    ) : (
+                      <span style={{ fontSize: 24 }}>🎯</span>
+                    )}
+                  </div>
+
+                  {/* Infos droite */}
                   <div
                     style={{
                       display: "flex",
@@ -1003,7 +1269,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                       overflow: "hidden",
                     }}
                   >
-                    {/* Ligne 1 : nom + favori */}
+                    {/* Ligne 1 : nom + étoile */}
                     <div
                       style={{
                         display: "flex",
@@ -1026,33 +1292,43 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                       {activeSet.isFavorite && (
                         <span
                           style={{
-                            padding: "2px 8px",
-                            borderRadius: 999,
-                            border: "1px solid rgba(245,195,91,.9)",
-                            background:
-                              "linear-gradient(135deg, rgba(40,26,0,1), rgba(120,90,20,1))",
-                            fontSize: 10,
-                            textTransform: "uppercase",
-                            letterSpacing: 1.2,
-                            color: "rgba(255,235,190,.98)",
+                            fontSize: 16,
+                            textShadow:
+                              "0 0 4px rgba(245,195,91,.9), 0 0 10px rgba(245,195,91,.7)",
+                            color: "rgba(245,195,91,1)",
                           }}
                         >
-                          ★ {labelFav}
+                          ★
                         </span>
                       )}
                     </div>
 
-                    {/* Ligne 2 : marque + poids */}
+                    {/* Ligne 2 : marque */}
+                    {activeSet.brand && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "rgba(255,255,255,.75)",
+                          whiteSpace: "nowrap",
+                          textOverflow: "ellipsis",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {activeSet.brand}
+                      </div>
+                    )}
+
+                    {/* Ligne 3 : poids + statut (privé/public) */}
                     <div
                       style={{
                         display: "flex",
-                        flexWrap: "wrap",
-                        gap: 6,
+                        alignItems: "center",
+                        gap: 8,
                         fontSize: 11,
-                        color: "rgba(255,255,255,.7)",
+                        color: "rgba(255,255,255,.8)",
+                        flexWrap: "wrap",
                       }}
                     >
-                      {activeSet.brand && <span>{activeSet.brand}</span>}
                       {typeof activeSet.weightGrams === "number" && (
                         <span
                           style={{
@@ -1065,18 +1341,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                           {activeSet.weightGrams} g
                         </span>
                       )}
-                    </div>
 
-                    {/* Ligne 3 : scope + usage */}
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 6,
-                        fontSize: 10,
-                        color: "rgba(255,255,255,.7)",
-                      }}
-                    >
                       <span
                         style={{
                           padding: "2px 8px",
@@ -1095,6 +1360,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                               : "rgba(220,220,255,.9)",
                           textTransform: "uppercase",
                           letterSpacing: 1,
+                          fontSize: 10,
                         }}
                       >
                         {activeSet.scope === "public"
@@ -1113,57 +1379,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                           ? "Privat"
                           : "Private"}
                       </span>
-
-                      {typeof activeSet.usageCount === "number" &&
-                        activeSet.usageCount > 0 && (
-                          <span
-                            style={{
-                              fontSize: 10,
-                              color: "rgba(180,255,200,.85)",
-                            }}
-                          >
-                            {lang === "fr"
-                              ? `${activeSet.usageCount} match(s)`
-                              : lang === "es"
-                              ? `${activeSet.usageCount} partida(s)`
-                              : lang === "de"
-                              ? `${activeSet.usageCount} Spiel(e)`
-                              : `${activeSet.usageCount} match(es)`}
-                          </span>
-                        )}
                     </div>
-                  </div>
-
-                  {/* Image droite */}
-                  <div
-                    style={{
-                      width: 80,
-                      height: 70,
-                      borderRadius: 14,
-                      background: activeSet.bgColor || DEFAULT_BG,
-                      border: "1px solid rgba(255,255,255,.2)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      transform: "rotate(18deg)",
-                      overflow: "hidden",
-                    }}
-                  >
-                    {activeSet.thumbImageUrl || activeSet.mainImageUrl ? (
-                      <img
-                        src={
-                          activeSet.thumbImageUrl || activeSet.mainImageUrl
-                        }
-                        alt={activeSet.name}
-                        style={{
-                          width: "110%",
-                          height: "110%",
-                          objectFit: "cover",
-                        }}
-                      />
-                    ) : (
-                      <span style={{ fontSize: 24 }}>🎯</span>
-                    )}
                   </div>
                 </div>
 
@@ -1291,7 +1507,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
         </div>
       )}
 
-      {/* Sheet Scanner */}
+      {/* Sheet Scanner (photo perso via /dart-scan) */}
       {scannerTarget && (
         <DartSetScannerSheet
           dartSet={scannerTarget}

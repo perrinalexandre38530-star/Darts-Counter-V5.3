@@ -4,7 +4,8 @@
 // - Accepte EITHER {dataUrl,label,size,avg3D,showStars[,ringColor,textColor]}
 //   OR      {profile,size,avg3D,showStars[,ringColor,textColor]}
 // - Aucun accès direct non-sécurisé à profile.*
-// - NEW : overlay fléchette (set préféré ou plus tard set imposé)
+// - NEW : overlay fléchette (set préféré ou set imposé via dartSetId)
+//   ➜ Désactivé par défaut, à activer avec showDartOverlay={true}
 // ============================================
 
 import React from "react";
@@ -28,7 +29,7 @@ type VisualOpts = {
   ringColor?: string;
   textColor?: string;
   dartSetId?: string | null; // set forcé (match X01)
-  showDartOverlay?: boolean; // activer/désactiver overlay
+  showDartOverlay?: boolean; // activer/désactiver overlay (OFF par défaut)
 };
 
 type Props =
@@ -52,7 +53,9 @@ type Props =
 export default function ProfileAvatar(props: Props) {
   const size = props.size ?? 56;
   const showStars = props.showStars ?? true;
-  const showDartOverlay = props.showDartOverlay !== false;
+
+  // ⚠️ Overlay désactivé par défaut
+  const showDartOverlay = props.showDartOverlay === true;
 
   // -------- Normalisation des données --------
   const p: ProfileLike | null =
@@ -94,7 +97,7 @@ export default function ProfileAvatar(props: Props) {
       // Liste de tous les sets du profil
       const all = getDartSetsForProfile(profileId) || [];
 
-      // 1) Si un set est imposé (en match X01 / Cricket) — plus tard
+      // 1) Si un set est imposé (en match X01 / Cricket)
       if (props.dartSetId) {
         const forced = all.find((s) => s.id === props.dartSetId);
         if (forced) {
@@ -171,7 +174,7 @@ export default function ProfileAvatar(props: Props) {
       )}
 
       {/* ---------- Overlay fléchettes (extérieur du médaillon, image) ---------- */}
-      {dartSet?.thumbImageUrl && (
+      {showDartOverlay && dartSet?.thumbImageUrl && (
         <img
           src={dartSet.thumbImageUrl}
           alt="dart set"
@@ -189,8 +192,8 @@ export default function ProfileAvatar(props: Props) {
         />
       )}
 
-      {/* ---------- Overlay fléchettes (extérieur du médaillon, fallback 🎯) ---------- */}
-      {!dartSet?.thumbImageUrl && dartSet && (
+      {/* ---------- Overlay fléchettes (fallback 🎯) ---------- */}
+      {showDartOverlay && !dartSet?.thumbImageUrl && dartSet && (
         <div
           style={{
             position: "absolute",

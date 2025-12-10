@@ -4,6 +4,7 @@
 // - Liste les sets du profil
 // - Permet de choisir un set (ou "auto : préféré")
 // - Compact, pour X01ConfigV3 & autres écrans de config
+// - Affiche une vignette si le set possède une image (preset / photo)
 // =============================================================
 
 import React from "react";
@@ -17,8 +18,30 @@ import {
 
 type Props = {
   profileId: string;
-  value: string | null | undefined;          // dartSetId sélectionné
+  value: string | null | undefined; // dartSetId sélectionné
   onChange: (dartSetId: string | null) => void;
+};
+
+// Mini composant fléchette (même logique que dans DartSetsPanel)
+const DartImage: React.FC<{
+  url: string;
+  size?: number;
+  angleDeg?: number;
+}> = ({ url, size = 26, angleDeg = 55 }) => {
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        backgroundImage: `url(${url})`,
+        backgroundSize: "contain",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+        transform: `rotate(${angleDeg}deg)`,
+        transformOrigin: "center center",
+      }}
+    />
+  );
 };
 
 const DartSetSelector: React.FC<Props> = ({ profileId, value, onChange }) => {
@@ -125,6 +148,7 @@ const DartSetSelector: React.FC<Props> = ({ profileId, value, onChange }) => {
         gap: 6,
       }}
     >
+      {/* Header */}
       <div
         style={{
           display: "flex",
@@ -164,6 +188,7 @@ const DartSetSelector: React.FC<Props> = ({ profileId, value, onChange }) => {
         )}
       </div>
 
+      {/* Liste horizontale */}
       <div
         style={{
           display: "flex",
@@ -204,6 +229,35 @@ const DartSetSelector: React.FC<Props> = ({ profileId, value, onChange }) => {
         {/* Boutons pour chaque set */}
         {sets.map((set) => {
           const isSelected = value === set.id;
+
+          // Compat avec la nouvelle archi : vignette (preset ou photo)
+          const thumb =
+            (set as any).thumbImageUrl ||
+            (set as any).mainImageUrl ||
+            undefined;
+          const kind: string | undefined = (set as any).kind; // "preset" | "photo" | ...
+
+          let kindLabel: string | null = null;
+          if (kind === "preset") {
+            kindLabel =
+              lang === "fr"
+                ? "Preset"
+                : lang === "es"
+                ? "Preset"
+                : lang === "de"
+                ? "Preset"
+                : "Preset";
+          } else if (kind === "photo") {
+            kindLabel =
+              lang === "fr"
+                ? "Photo perso"
+                : lang === "es"
+                ? "Foto propia"
+                : lang === "de"
+                ? "Eigenes Foto"
+                : "Custom photo";
+          }
+
           return (
             <button
               key={set.id}
@@ -211,7 +265,7 @@ const DartSetSelector: React.FC<Props> = ({ profileId, value, onChange }) => {
               onClick={() => onChange(set.id)}
               style={{
                 flexShrink: 0,
-                padding: "4px 10px",
+                padding: "4px 8px",
                 borderRadius: 999,
                 border: isSelected
                   ? `1px solid ${primary}`
@@ -222,33 +276,90 @@ const DartSetSelector: React.FC<Props> = ({ profileId, value, onChange }) => {
                 color: isSelected ? "#fff" : "rgba(255,255,255,.85)",
                 fontSize: 10,
                 display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-start",
-                gap: 1,
-                minWidth: 90,
+                alignItems: "center",
+                gap: 6,
+                minWidth: 120,
+                maxWidth: 190,
               }}
             >
-              <span
+              {/* Vignette ronde avec fléchette orientée */}
+              <div
                 style={{
-                  fontWeight: 700,
-                  whiteSpace: "nowrap",
-                  textOverflow: "ellipsis",
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
                   overflow: "hidden",
-                  maxWidth: 120,
+                  flexShrink: 0,
+                  background:
+                    "radial-gradient(circle at 30% 20%, #ffffff, #bbbbbb 40%, #333333 70%, #000000 100%)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
-                {set.name}
-              </span>
-              <span
+                {thumb ? (
+                  <DartImage url={thumb} size={26} angleDeg={55} />
+                ) : (
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: "rgba(0,0,0,.55)",
+                    }}
+                  >
+                    🎯
+                  </span>
+                )}
+              </div>
+
+              {/* Texte */}
+              <div
                 style={{
-                  fontSize: 9,
-                  opacity: 0.8,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  gap: 1,
+                  overflow: "hidden",
                 }}
               >
-                {set.weightGrams
-                  ? `${set.weightGrams} g`
-                  : set.brand || "—"}
-              </span>
+                <span
+                  style={{
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                    textOverflow: "ellipsis",
+                    overflow: "hidden",
+                    maxWidth: 130,
+                  }}
+                >
+                  {set.name}
+                </span>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 4,
+                    alignItems: "center",
+                    fontSize: 9,
+                    opacity: 0.8,
+                  }}
+                >
+                  {set.weightGrams && <span>{`${set.weightGrams} g`}</span>}
+                  {!set.weightGrams && set.brand && <span>{set.brand}</span>}
+                  {kindLabel && (
+                    <span
+                      style={{
+                        padding: "1px 4px",
+                        borderRadius: 999,
+                        border: "1px solid rgba(255,255,255,.25)",
+                        fontSize: 8,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.8,
+                      }}
+                    >
+                      {kindLabel}
+                    </span>
+                  )}
+                </div>
+              </div>
             </button>
           );
         })}
