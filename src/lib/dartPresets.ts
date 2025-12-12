@@ -22,53 +22,31 @@ export type DartPreset = {
 
 export const dartPresets: DartPreset[] = [
   {
+    id: "gold-darts",
+    name: "Gold",
+    imgUrlMain: "/images/darts/gold-darts-1024.png",
+    imgUrlThumb: "/images/darts/gold-darts-256.png",
+    theme: "gold",
+  },
+  {
+    id: "winmau-xenon",
+    name: "Winmau Xenon",
+    imgUrlMain: "/images/darts/winmau-xenon-1024.png",
+    imgUrlThumb: "/images/darts/winmau-xenon-256.png",
+    theme: "white",
+  },
+  {
+    id: "winmau-neutron",
+    name: "Winmau Neutron",
+    imgUrlMain: "/images/darts/winmau-neutron-1024.png",
+    imgUrlThumb: "/images/darts/winmau-neutron-256.png",
+    theme: "white",
+  },
+  {
     id: "target-exo03",
     name: "Target Exo 03",
     imgUrlMain: "/images/darts/target-exo03-1024.png",
     imgUrlThumb: "/images/darts/target-exo03-256.png",
     theme: "white",
   },
-  {
-    id: "classic-gold",
-    name: "Classic Gold",
-    imgUrlMain: "/images/darts/classic-gold-1024.png",
-    imgUrlThumb: "/images/darts/classic-gold-256.png",
-    theme: "gold",
-  },
-  {
-    id: "neon-green",
-    name: "Neon Green",
-    imgUrlMain: "/images/darts/neon-green-1024.png",
-    imgUrlThumb: "/images/darts/neon-green-256.png",
-    theme: "green",
-  },
-  {
-    id: "pink-stinger",
-    name: "Pink Stinger",
-    imgUrlMain: "/images/darts/pink-stinger-1024.png",
-    imgUrlThumb: "/images/darts/pink-stinger-256.png",
-    theme: "pink",
-  },
-  {
-    id: "blue-ice",
-    name: "Blue Ice",
-    imgUrlMain: "/images/darts/blue-ice-1024.png",
-    imgUrlThumb: "/images/darts/blue-ice-256.png",
-    theme: "blue",
-  },
-  {
-    id: "red-blaze",
-    name: "Red Blaze",
-    imgUrlMain: "/images/darts/red-blaze-1024.png",
-    imgUrlThumb: "/images/darts/red-blaze-256.png",
-    theme: "red",
-  },
-  {
-    id: "purple-shadow",
-    name: "Purple Shadow",
-    imgUrlMain: "/images/darts/purple-shadow-1024.png",
-    imgUrlThumb: "/images/darts/purple-shadow-256.png",
-    theme: "purple",
-  },
-  // ➜ Tu peux en rajouter autant que tu veux
 ];

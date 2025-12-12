@@ -50,6 +50,9 @@ type FormState = {
 
 const DEFAULT_BG = "#101020";
 
+// Poids possibles 10 g → 32 g
+const WEIGHT_OPTIONS = Array.from({ length: 23 }, (_, i) => 10 + i);
+
 // ----------------------------------------------------------
 // Composant d’affichage de fléchette / visuel
 // - carré fixe (size x size)
@@ -340,17 +343,44 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
 
   const handleChange =
     (field: keyof FormState) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    (
+      e: React.ChangeEvent<
+        HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+      >
+    ) => {
       const value = e.target.value;
       setForm((prev) => ({ ...prev, [field]: value }));
     };
 
   const handleEditChange =
     (field: keyof FormState) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    (
+      e: React.ChangeEvent<
+        HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+      >
+    ) => {
       const value = e.target.value;
       setEditForm((prev) => (prev ? { ...prev, [field]: value } : prev));
     };
+
+  const handleCreatePhotoUpload = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setForm((prev) => ({
+        ...prev,
+        kind: "photo",
+        presetId: null,
+        photoDataUrl: dataUrl,
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -580,12 +610,12 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
 
   const visualLabel =
     lang === "fr"
-      ? "Visuel (preset cartoon ou photo)"
+      ? "Visuel preset"
       : lang === "es"
-      ? "Visual (preset cartoon o foto)"
+      ? "Visual preset"
       : lang === "de"
-      ? "Visual (Preset Cartoon oder Foto)"
-      : "Visual (cartoon preset or photo)";
+      ? "Visual-Preset"
+      : "Preset visual";
 
   const uploadLabel =
     lang === "fr"
@@ -596,16 +626,25 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       ? "Foto hochladen"
       : "Upload photo";
 
+  const noVisualLabel =
+    lang === "fr"
+      ? "Aucun visuel"
+      : lang === "es"
+      ? "Sin visual"
+      : lang === "de"
+      ? "Kein Visual"
+      : "No visual";
+
   // ------------------------------------------------------------------
   // Helper UI : sélecteur de preset pour création / édition
-  // ------------------------------------------------------------------
+  // (UNIQUEMENT les presets scrollables maintenant)
+// ------------------------------------------------------------------
 
   const renderPresetPicker = (
     currentPresetId: string | null,
     setFormState:
       | React.Dispatch<React.SetStateAction<FormState | null>>
-      | React.Dispatch<React.SetStateAction<FormState>>,
-    mode: "create" | "edit"
+      | React.Dispatch<React.SetStateAction<FormState>>
   ) => {
     const setPreset = (presetId: string | null) => {
       setFormState((prev: any) => {
@@ -616,33 +655,8 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
           ...prev,
           presetId,
           kind: nextKind,
-          // si on choisit un preset, on efface la photo stockée en création
-          photoDataUrl:
-            "photoDataUrl" in prev && nextKind !== "photo"
-              ? null
-              : prev.photoDataUrl ?? null,
         };
       });
-    };
-
-    const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        setFormState((prev: any) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            kind: "photo",
-            presetId: null,
-            photoDataUrl: dataUrl,
-          };
-        });
-      };
-      reader.readAsDataURL(file);
     };
 
     return (
@@ -670,39 +684,36 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
             paddingBottom: 4,
           }}
         >
-          {/* En création : bouton "Charger une photo" à la place de "Aucun visuel" */}
-          {mode === "create" && (
-            <label
-              style={{
-                flexShrink: 0,
-                padding: "6px 10px",
-                borderRadius: 12,
-                border: "1px solid rgba(127,196,255,.9)",
-                background:
-                  "radial-gradient(circle at 0% 0%, rgba(127,196,255,.3), rgba(4,8,20,.95))",
-                color: "#fff",
-                fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                minWidth: 110,
-                height: 68,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                whiteSpace: "nowrap",
-                cursor: "pointer",
-              }}
-            >
-              <span style={{ marginRight: 4 }}>📷</span>
-              {uploadLabel}
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoUpload}
-                style={{ display: "none" }}
-              />
-            </label>
-          )}
+          {/* Bouton "aucun visuel" */}
+          <button
+            type="button"
+            onClick={() => setPreset(null)}
+            style={{
+              flexShrink: 0,
+              padding: "6px 10px",
+              borderRadius: 12,
+              border:
+                currentPresetId === null
+                  ? "1px solid rgba(255,255,255,.9)"
+                  : "1px solid rgba(255,255,255,.25)",
+              background:
+                currentPresetId === null
+                  ? "rgba(255,255,255,.18)"
+                  : "rgba(0,0,0,.3)",
+              color: "#fff",
+              fontSize: 11,
+              textTransform: "uppercase",
+              letterSpacing: 1,
+              minWidth: 110,
+              height: 68,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {noVisualLabel}
+          </button>
 
           {dartPresets.map((preset) => {
             const isSelected = currentPresetId === preset.id;
@@ -955,11 +966,9 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
             >
               Poids (g)
             </label>
-            <input
+            <select
               value={form.weightGrams}
               onChange={handleChange("weightGrams")}
-              placeholder="18, 20, 22..."
-              inputMode="numeric"
               style={{
                 width: "100%",
                 marginTop: 2,
@@ -970,7 +979,22 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                 color: "#fff",
                 fontSize: 12,
               }}
-            />
+            >
+              <option value="">
+                {lang === "fr"
+                  ? "Choisir..."
+                  : lang === "es"
+                  ? "Elegir..."
+                  : lang === "de"
+                  ? "Wählen..."
+                  : "Select..."}
+              </option>
+              {WEIGHT_OPTIONS.map((w) => (
+                <option key={w} value={String(w)}>
+                  {w} g
+                </option>
+              ))}
+            </select>
           </div>
 
           <div style={{ gridColumn: "1 / span 2" }}>
@@ -998,8 +1022,8 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
             />
           </div>
 
-          {/* Sélecteur visuel : presets + upload photo perso */}
-          {renderPresetPicker(form.presetId, setForm as any, "create")}
+          {/* Sélecteur visuel : presets scrollables seulement */}
+          {renderPresetPicker(form.presetId, setForm as any)}
 
           {/* Scope création */}
           <div style={{ gridColumn: "1 / span 2", marginTop: 4 }}>
@@ -1084,6 +1108,69 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                 height: 32,
               }}
             />
+          </div>
+
+          {/* Upload photo perso déplacé ici, juste au-dessus d'Enregistrer */}
+          <div style={{ gridColumn: "1 / span 2", marginTop: 6 }}>
+            <label
+              style={{ fontSize: 11, color: "rgba(255,255,255,.6)" }}
+            >
+              Photo perso (optionnel)
+            </label>
+            <div
+              style={{
+                marginTop: 4,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <label
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid rgba(127,196,255,.9)",
+                  background:
+                    "radial-gradient(circle at 0% 0%, rgba(127,196,255,.35), rgba(8,18,32,.95))",
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: 1,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                }}
+              >
+                <span style={{ marginRight: 4 }}>📷</span>
+                {uploadLabel}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleCreatePhotoUpload}
+                  style={{ display: "none" }}
+                />
+              </label>
+
+              {form.photoDataUrl && (
+                <div
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,.3)",
+                    overflow: "hidden",
+                    background: "#050509",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <DartImage url={form.photoDataUrl} size={44} angleDeg={0} />
+                </div>
+              )}
+            </div>
           </div>
 
           <div
@@ -1210,11 +1297,9 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
             >
               Poids (g)
             </label>
-            <input
+            <select
               value={editForm.weightGrams}
               onChange={handleEditChange("weightGrams")}
-              placeholder="18, 20, 22..."
-              inputMode="numeric"
               style={{
                 width: "100%",
                 marginTop: 2,
@@ -1225,7 +1310,22 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                 color: "#fff",
                 fontSize: 12,
               }}
-            />
+            >
+              <option value="">
+                {lang === "fr"
+                  ? "Choisir..."
+                  : lang === "es"
+                  ? "Elegir..."
+                  : lang === "de"
+                  ? "Wählen..."
+                  : "Select..."}
+              </option>
+              {WEIGHT_OPTIONS.map((w) => (
+                <option key={w} value={String(w)}>
+                  {w} g
+                </option>
+              ))}
+            </select>
           </div>
 
           <div style={{ gridColumn: "1 / span 2" }}>
@@ -1253,13 +1353,12 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
             />
           </div>
 
-          {/* Sélecteur de preset cartoon en édition (sans bouton upload) */}
+          {/* Sélecteur de preset cartoon en édition (sans upload) */}
           {renderPresetPicker(
             editForm.presetId,
             setEditForm as React.Dispatch<
               React.SetStateAction<FormState | null>
-            >,
-            "edit"
+            >
           )}
 
           {/* Upload photo perso pour ce set (édition) */}
