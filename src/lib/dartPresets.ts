@@ -29,6 +29,20 @@ export const dartPresets: DartPreset[] = [
     theme: "gold",
   },
   {
+    id: "rose-kuli-us",
+    name: "Rose Kuli US",
+    imgUrlMain: "/images/darts/rose-kuli-us-1024.png",
+    imgUrlThumb: "/images/darts/rose-kuli-us-256.png",
+    theme: "red",
+  },
+  {
+    id: "rose-kuli-red",
+    name: "Rose Kuli Red",
+    imgUrlMain: "/images/darts/rose-kuli-red-1024.png",
+    imgUrlThumb: "/images/darts/rose-kuli-red-256.png",
+    theme: "red",
+  },
+  {
     id: "winmau-xenon",
     name: "Winmau Xenon",
     imgUrlMain: "/images/darts/winmau-xenon-1024.png",
@@ -44,9 +58,16 @@ export const dartPresets: DartPreset[] = [
   },
   {
     id: "target-exo03",
-    name: "Target Exo 03",
+    name: "Target Exo",
     imgUrlMain: "/images/darts/target-exo03-1024.png",
     imgUrlThumb: "/images/darts/target-exo03-256.png",
     theme: "white",
+  },
+  {
+    id: "harrows-ryan-searle",
+    name: "Harrows Ryan Searle",
+    imgUrlMain: "/images/darts/harrows-ryan-searle-1024.png",
+    imgUrlThumb: "/images/darts/harrows-ryan-searle-256.png",
+    theme: "pink",
   },
 ];
