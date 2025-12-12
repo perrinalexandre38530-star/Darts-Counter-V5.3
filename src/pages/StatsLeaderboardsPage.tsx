@@ -7,12 +7,8 @@
 // - Avatars: récup depuis profiles OU history.players OU summary
 // - + BotsMap: récup avatars/noms depuis localStorage dc_bots_v1
 // - Metrics: wins / matches / winRate / avg3 / bestVisit / bestCheckout
+// - ✅ NEW (KILLER Option A): kills / favNumber / favSegment / favHits
 // - Filtre période D/W/M/Y/ALL/TOUT
-//
-// ✅ FIX: branchement KILLER (et autres modes) plus robuste :
-//    - détecte rec.kind / rec.game / rec.mode / rec.variant à plusieurs niveaux
-//    - accepte "killer_xxx", "mode:killer", etc. (includes)
-//    - winnerId récupéré via plusieurs chemins (summary/payload/winner.id)
 // =============================================================
 
 import * as React from "react";
@@ -45,19 +41,34 @@ type MetricKey =
   | "matches"
   | "avg3"
   | "bestVisit"
-  | "bestCheckout";
+  | "bestCheckout"
+  // ✅ NEW (killer option A)
+  | "kills"
+  | "favNumberHits"
+  | "favSegmentHits"
+  | "totalHits";
 
 type Row = {
   id: string;
   name: string;
   avatarDataUrl?: string | null;
+
   wins: number;
   losses: number;
   matches: number;
   winRate: number;
+
   avg3: number;
   bestVisit: number;
   bestCheckout: number;
+
+  // ✅ NEW
+  kills: number;
+  favNumber: number; // 0 si inconnu, sinon 1..20 ou 25
+  favNumberHits: number;
+  favSegment: string; // "S20" / "T8" / "DB" ...
+  favSegmentHits: number;
+  totalHits: number;
 };
 
 const MODE_DEFS: {
@@ -71,7 +82,14 @@ const MODE_DEFS: {
     metrics: ["avg3", "wins", "winRate", "matches", "bestVisit", "bestCheckout"],
   },
   { id: "cricket", label: "CRICKET", metrics: ["winRate", "wins", "matches"] },
-  { id: "killer", label: "KILLER", metrics: ["wins", "winRate", "matches"] },
+
+  // ✅ NEW: killer expose kills + favoris
+  {
+    id: "killer",
+    label: "KILLER",
+    metrics: ["kills", "wins", "winRate", "matches", "favSegmentHits", "favNumberHits", "totalHits"],
+  },
+
   { id: "shanghai", label: "SHANGHAI", metrics: ["wins", "winRate", "matches"] },
   {
     id: "battle_royale",
@@ -213,62 +231,30 @@ function inPeriod(rec: any, period: PeriodKey): boolean {
   return Date.now() - dt <= span;
 }
 
-// ✅ FIX: détection mode ultra robuste (killer etc.)
 function isRecordMatchingMode(rec: any, mode: LeaderboardMode, scope: Scope): boolean {
   // scope online/local : à brancher plus tard si tu as un flag fiable
   void scope;
 
-  const low = (v: any) => safeStr(v).toLowerCase();
-
-  // collecte plusieurs sources possibles
-  const kinds = [
-    rec?.kind,
-    rec?.payload?.kind,
-    rec?.summary?.kind,
-    rec?.payload?.summary?.kind,
-    rec?.type,
-  ].map(low);
-
-  const games = [
-    rec?.game,
-    rec?.payload?.game,
-    rec?.summary?.game?.mode,
-    rec?.summary?.game?.game,
-    rec?.payload?.summary?.game?.mode,
-    rec?.payload?.summary?.game?.game,
-  ].map(low);
-
-  const modes = [
-    rec?.mode,
-    rec?.payload?.mode,
-    rec?.summary?.mode,
-    rec?.payload?.summary?.mode,
-  ].map(low);
-
-  const variants = [
-    rec?.variant,
-    rec?.payload?.variant,
-    rec?.summary?.variant,
-    rec?.payload?.summary?.variant,
-  ].map(low);
-
-  const blob = [...kinds, ...games, ...modes, ...variants].filter(Boolean).join(" | ");
-
-  const has = (needle: string) => blob.includes(needle);
+  const kind = rec?.kind || rec?.summary?.kind || rec?.payload?.kind;
+  const payloadMode = rec?.payload?.mode;
+  const payloadVariant = rec?.payload?.variant;
+  const game = rec?.payload?.game || rec?.summary?.game?.mode || rec?.summary?.game?.game;
 
   const isX01 =
-    has("x01") ||
-    has("x01_v3") ||
-    has("x01_multi") ||
-    has("x01_teams");
+    kind === "x01" ||
+    game === "x01" ||
+    rec?.summary?.game?.mode === "x01" ||
+    payloadVariant === "x01_v3" ||
+    payloadMode === "x01_multi" ||
+    payloadMode === "x01_teams";
 
   if (mode === "x01_multi") return isX01;
 
-  if (mode === "cricket") return has("cricket");
-  if (mode === "killer") return has("killer");
-  if (mode === "shanghai") return has("shanghai");
-  if (mode === "battle_royale") return has("battle_royale") || has("battle royale");
-  if (mode === "clock") return has("clock") || has("horloge") || has("tour");
+  if (mode === "cricket") return kind === "cricket" || game === "cricket";
+  if (mode === "killer") return kind === "killer" || game === "killer" || payloadMode === "killer";
+  if (mode === "shanghai") return kind === "shanghai" || game === "shanghai";
+  if (mode === "battle_royale") return kind === "battle_royale" || game === "battle_royale";
+  if (mode === "clock") return kind === "clock" || game === "clock";
 
   return true;
 }
@@ -318,6 +304,13 @@ function extractPerPlayerSummary(summary: any): Record<string, any> {
     summary.coByPlayer ||
     null;
 
+  // ✅ NEW: hitsBySegment map possible (Option A)
+  const hitsBySegMap =
+    summary.hitsBySegmentByPlayer ||
+    summary.hits_by_segment_by_player ||
+    summary.hitsBySegment ||
+    null;
+
   const nameMap = summary.nameByPlayer || summary.playerNames || null;
   const avatarMap = summary.avatarByPlayer || summary.avatarDataUrlByPlayer || null;
 
@@ -331,6 +324,7 @@ function extractPerPlayerSummary(summary: any): Record<string, any> {
   collectKeys(bestCheckoutMap);
   collectKeys(nameMap);
   collectKeys(avatarMap);
+  collectKeys(hitsBySegMap);
 
   if (keys.size) {
     for (const pid of keys) {
@@ -342,6 +336,7 @@ function extractPerPlayerSummary(summary: any): Record<string, any> {
         avg3: numOr0(avg3Map?.[pid]),
         bestVisit: numOr0(bestVisitMap?.[pid]),
         bestCheckout: numOr0(bestCheckoutMap?.[pid]),
+        hitsBySegment: hitsBySegMap?.[pid] || undefined,
       };
     }
     return out;
@@ -358,13 +353,76 @@ function extractPerPlayerSummary(summary: any): Record<string, any> {
   return {};
 }
 
+// ✅ NEW helpers: fav number/segment from hitsBySegment
+function parseSegmentKeyToNumber(segKey: string): number {
+  const k = safeStr(segKey).toUpperCase();
+  if (k === "SB" || k === "BULL") return 25;
+  if (k === "DB" || k === "DBULL") return 25;
+  // format S20 / D8 / T19
+  const m = k.match(/^([SDT])(\d{1,2})$/);
+  if (m) {
+    const n = Number(m[2]);
+    if (n >= 1 && n <= 20) return n;
+  }
+  return 0;
+}
+
+function computeFavsFromHitsMap(hitsBySegment: any) {
+  const segCounts: Record<string, number> = {};
+  const numCounts: Record<string, number> = {};
+  let totalHits = 0;
+
+  if (hitsBySegment && typeof hitsBySegment === "object") {
+    for (const [k0, v0] of Object.entries(hitsBySegment)) {
+      const k = safeStr(k0).toUpperCase();
+      const c = numOr0(v0);
+      if (c <= 0) continue;
+      segCounts[k] = (segCounts[k] || 0) + c;
+      totalHits += c;
+
+      const n = parseSegmentKeyToNumber(k);
+      if (n > 0) {
+        const nk = String(n);
+        numCounts[nk] = (numCounts[nk] || 0) + c;
+      }
+    }
+  }
+
+  let favSegment = "";
+  let favSegmentHits = 0;
+  for (const [k, c] of Object.entries(segCounts)) {
+    if (c > favSegmentHits) {
+      favSegmentHits = c;
+      favSegment = k;
+    }
+  }
+
+  let favNumber = 0;
+  let favNumberHits = 0;
+  for (const [nk, c] of Object.entries(numCounts)) {
+    const n = Number(nk);
+    if (c > favNumberHits) {
+      favNumberHits = c;
+      favNumber = n;
+    }
+  }
+
+  return { favSegment, favSegmentHits, favNumber, favNumberHits, totalHits };
+}
+
 type Agg = {
   wins: number;
   matches: number;
+
   avg3Sum: number;
   avg3Count: number;
   bestVisit: number;
   bestCheckout: number;
+
+  // ✅ NEW
+  kills: number;
+  hitsBySegmentAgg: Record<string, number>;
+  totalHits: number;
 };
 
 type ExtraInfo = {
@@ -396,6 +454,10 @@ function computeRowsFromHistory(
       avg3Count: 0,
       bestVisit: 0,
       bestCheckout: 0,
+
+      kills: 0,
+      hitsBySegmentAgg: {},
+      totalHits: 0,
     };
     infoByPlayer[p.id] = {
       name: p.name,
@@ -408,19 +470,18 @@ function computeRowsFromHistory(
     if (!inPeriod(rec, period)) continue;
     if (!isRecordMatchingMode(rec, mode, scope)) continue;
 
-    // ✅ FIX: winnerId robuste (beaucoup de formats)
     const winnerId =
-      rec?.winnerId ||
-      rec?.payload?.winnerId ||
-      rec?.summary?.winnerId ||
-      rec?.payload?.summary?.winnerId ||
-      rec?.summary?.winner?.id ||
-      rec?.payload?.summary?.winner?.id ||
-      rec?.winner?.id ||
+      rec.winnerId ||
+      rec.payload?.winnerId ||
+      rec.summary?.winnerId ||
+      rec.payload?.summary?.winnerId ||
       null;
 
     const summary = rec.summary || rec.payload?.summary || null;
     const per = extractPerPlayerSummary(summary);
+
+    // For killer: sometimes summary.players contains kills, but perPlayer has hitsBySegment
+    const summaryPlayersArr: any[] = Array.isArray(summary?.players) ? summary.players : [];
 
     // ------------------------------
     // 1) Per-player via summary (meilleur câblage)
@@ -439,6 +500,9 @@ function computeRowsFromHistory(
             avg3Count: 0,
             bestVisit: 0,
             bestCheckout: 0,
+            kills: 0,
+            hitsBySegmentAgg: {},
+            totalHits: 0,
           };
         }
 
@@ -464,8 +528,9 @@ function computeRowsFromHistory(
         const agg = aggByPlayer[pid];
 
         agg.matches += 1;
-        if (winnerId && safeStr(winnerId) === safeStr(pid)) agg.wins += 1;
+        if (winnerId && winnerId === pid) agg.wins += 1;
 
+        // X01 metrics
         const avg3Candidate = numOr0(det.avg3, det.moy3, det.avg, det.avg3d, det.avg_3);
         if (avg3Candidate > 0) {
           agg.avg3Sum += avg3Candidate;
@@ -477,19 +542,42 @@ function computeRowsFromHistory(
 
         const coCandidate = numOr0(det.bestCheckout, det.bestCo, det.coBest, det.co, det.best_co);
         if (coCandidate > 0) agg.bestCheckout = Math.max(agg.bestCheckout, coCandidate);
+
+        // ✅ KILLER: kills (si dispo dans summary.players)
+        if (mode === "killer" && summaryPlayersArr.length) {
+          const sp = summaryPlayersArr.find((x) => String(pickId(x) || x?.id) === String(pid));
+          if (sp) {
+            const k = numOr0(sp.kills, sp.killCount, sp.k);
+            if (k > 0) agg.kills += k;
+          }
+        } else if (mode === "killer") {
+          // fallback si kills packé dans det
+          const k = numOr0(det.kills, det.killCount, det.k);
+          if (k > 0) agg.kills += k;
+        }
+
+        // ✅ KILLER Option A: hitsBySegment
+        const hbs = det.hitsBySegment || det.hits_by_segment || det.hits || null;
+        if (hbs && typeof hbs === "object") {
+          for (const [seg, c0] of Object.entries(hbs)) {
+            const c = numOr0(c0);
+            if (c <= 0) continue;
+            const s = safeStr(seg).toUpperCase();
+            agg.hitsBySegmentAgg[s] = (agg.hitsBySegmentAgg[s] || 0) + c;
+            agg.totalHits += c;
+          }
+        }
       }
       continue;
     }
 
     // ------------------------------
-    // 2) Fallback via players array (KILLER / CRICKET etc.)
+    // 2) Fallback via players array
     // ------------------------------
     const playersArr: any[] = Array.isArray(rec.players)
       ? rec.players
       : Array.isArray(rec.payload?.players)
       ? rec.payload.players
-      : Array.isArray(rec.summary?.players)
-      ? rec.summary.players
       : Array.isArray(rec.payload?.summary?.players)
       ? rec.payload.summary.players
       : [];
@@ -497,7 +585,7 @@ function computeRowsFromHistory(
     if (!playersArr.length) continue;
 
     for (const pl of playersArr) {
-      const pid = pickId(pl) || safeStr(pl?.pid) || safeStr(pl?.playerId);
+      const pid = pickId(pl);
       const name = pickName(pl);
       const avatar = pickAvatar(pl);
 
@@ -513,6 +601,10 @@ function computeRowsFromHistory(
           avg3Count: 0,
           bestVisit: 0,
           bestCheckout: 0,
+
+          kills: 0,
+          hitsBySegmentAgg: {},
+          totalHits: 0,
         };
       }
 
@@ -528,8 +620,9 @@ function computeRowsFromHistory(
 
       const agg = aggByPlayer[key];
       agg.matches += 1;
-      if (winnerId && pid && safeStr(winnerId) === safeStr(pid)) agg.wins += 1;
+      if (winnerId && pid && winnerId === pid) agg.wins += 1;
 
+      // X01 fallbacks
       const avg3Candidate = numOr0(pl.avg3, pl.moy3, pl.avg3d);
       if (avg3Candidate > 0) {
         agg.avg3Sum += avg3Candidate;
@@ -539,6 +632,12 @@ function computeRowsFromHistory(
       if (bvCandidate > 0) agg.bestVisit = Math.max(agg.bestVisit, bvCandidate);
       const coCandidate = numOr0(pl.bestCheckout, pl.bestCo, pl.coBest);
       if (coCandidate > 0) agg.bestCheckout = Math.max(agg.bestCheckout, coCandidate);
+
+      // KILLER fallback kills
+      if (mode === "killer") {
+        const k = numOr0(pl.kills, pl.killCount, pl.k);
+        if (k > 0) agg.kills += k;
+      }
     }
   }
 
@@ -552,13 +651,11 @@ function computeRowsFromHistory(
     const winRate = matches > 0 ? (wins / matches) * 100 : 0;
     const avg3 = agg.avg3Count > 0 ? agg.avg3Sum / agg.avg3Count : 0;
 
-    // ✅ NEW: si avatar manquant, on tente botsMap (utile si row seed par name:xxx ou info manquante)
-    const botFallbackAvatar =
-      botsMap?.[pid]?.avatarDataUrl ||
-      (pid?.startsWith("name:") ? null : null);
+    const fav = computeFavsFromHitsMap(agg.hitsBySegmentAgg);
 
-    const botFallbackName =
-      botsMap?.[pid]?.name || undefined;
+    // ✅ NEW: si avatar manquant, on tente botsMap (utile si row seed par name:xxx ou info manquante)
+    const botFallbackAvatar = botsMap?.[pid]?.avatarDataUrl || null;
+    const botFallbackName = botsMap?.[pid]?.name || undefined;
 
     return {
       id: pid,
@@ -569,13 +666,22 @@ function computeRowsFromHistory(
         extra.avatarDataUrl ??
         botFallbackAvatar ??
         null,
+
       wins,
       losses: Math.max(0, matches - wins),
       matches,
       winRate,
+
       avg3,
       bestVisit: agg.bestVisit,
       bestCheckout: agg.bestCheckout,
+
+      kills: agg.kills || 0,
+      favNumber: fav.favNumber || 0,
+      favNumberHits: fav.favNumberHits || 0,
+      favSegment: fav.favSegment || "",
+      favSegmentHits: fav.favSegmentHits || 0,
+      totalHits: fav.totalHits || agg.totalHits || 0,
     };
   });
 
@@ -596,6 +702,16 @@ function metricLabel(m: MetricKey) {
       return "Best visit";
     case "bestCheckout":
       return "Best CO";
+
+    // ✅ NEW
+    case "kills":
+      return "Kills";
+    case "favNumberHits":
+      return "Numéro favori";
+    case "favSegmentHits":
+      return "Segment favori";
+    case "totalHits":
+      return "Hits total";
   }
 }
 
@@ -629,7 +745,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
   const [period, setPeriod] = React.useState<PeriodKey>("ALL");
 
   const [historySource, setHistorySource] = React.useState<any[]>(
-    (((store as any)?.history) as any[]) || []
+    ((((store as any)?.history) as any[]) || []) as any[]
   );
 
   React.useEffect(() => {
@@ -706,6 +822,16 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
           return r.bestVisit;
         case "bestCheckout":
           return r.bestCheckout;
+
+        // ✅ NEW
+        case "kills":
+          return r.kills;
+        case "favNumberHits":
+          return r.favNumberHits;
+        case "favSegmentHits":
+          return r.favSegmentHits;
+        case "totalHits":
+          return r.totalHits;
         default:
           return 0;
       }
@@ -1039,27 +1165,55 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
               else if (isThird) rankColor = "#cd7f32";
 
               let metricValue: string;
+              let metricSub: string | null = null;
+
               switch (metric) {
                 case "wins":
                   metricValue = `${row.wins}`;
+                  metricSub = `${row.matches} matchs`;
                   break;
                 case "winRate":
                   metricValue = `${row.winRate.toFixed(1)}%`;
+                  metricSub = `${row.wins}/${row.matches}`;
                   break;
                 case "matches":
                   metricValue = `${row.matches}`;
+                  metricSub = `${row.wins} win`;
                   break;
                 case "avg3":
                   metricValue = row.avg3 ? row.avg3.toFixed(1) : "0.0";
+                  metricSub = `${row.matches} matchs`;
                   break;
                 case "bestVisit":
                   metricValue = `${row.bestVisit || 0}`;
+                  metricSub = `${row.matches} matchs`;
                   break;
                 case "bestCheckout":
                   metricValue = `${row.bestCheckout || 0}`;
+                  metricSub = `${row.matches} matchs`;
                   break;
+
+                // ✅ NEW (killer)
+                case "kills":
+                  metricValue = `${row.kills || 0}`;
+                  metricSub = `${row.matches} matchs`;
+                  break;
+                case "favNumberHits":
+                  metricValue = row.favNumber ? `#${row.favNumber}` : "—";
+                  metricSub = row.favNumberHits ? `${row.favNumberHits} hit(s)` : `${row.totalHits || 0} hit(s)`;
+                  break;
+                case "favSegmentHits":
+                  metricValue = row.favSegment ? `${row.favSegment}` : "—";
+                  metricSub = row.favSegmentHits ? `${row.favSegmentHits} hit(s)` : `${row.totalHits || 0} hit(s)`;
+                  break;
+                case "totalHits":
+                  metricValue = `${row.totalHits || 0}`;
+                  metricSub = row.favSegment ? `fav: ${row.favSegment}` : null;
+                  break;
+
                 default:
                   metricValue = "0";
+                  metricSub = `${row.matches} matchs`;
               }
 
               const label = row.name || "—";
@@ -1129,7 +1283,9 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
                   {/* Valeur */}
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", fontSize: 11 }}>
                     <div style={{ fontWeight: 800, color: theme.primary }}>{metricValue}</div>
-                    <div style={{ fontSize: 9.5, color: theme.textSoft }}>{row.matches} matchs</div>
+                    <div style={{ fontSize: 9.5, color: theme.textSoft }}>
+                      {metricSub ?? `${row.matches} matchs`}
+                    </div>
                   </div>
                 </div>
               );

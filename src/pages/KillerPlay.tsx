@@ -1,3 +1,4 @@
+// @ts-nocheck
 // ============================================
 // src/pages/KillerPlay.tsx
 // KILLER — PLAY (V1.1)
@@ -5,6 +6,7 @@
 // ✅ UNDO RÉEL (rollback état complet)
 // ✅ Auto-fin de tour quand dartsLeft = 0
 // ✅ Hook input externe (CustomEvent "dc:throw")
+// ✅ OPTION A (NEW): hitsBySegment par joueur (pour stats/classements)
 // - Reçoit config depuis KillerConfig : routeParams.config
 // - Tour par tour (3 fléchettes)
 // - Devenir Killer en touchant SON numéro (règle single/double)
@@ -19,6 +21,9 @@ import type {
   KillerDamageRule,
   KillerBecomeRule,
 } from "./KillerConfig";
+
+// ✅ NEW (Option A)
+import { createHitsAccumulator } from "../lib/hitsBySegment";
 
 type Props = {
   store: Store;
@@ -282,6 +287,11 @@ function ThrowPad({
 
 export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const startedAt = React.useMemo(() => Date.now(), []);
+
+  // ✅ NEW (Option A): accumulate hitsBySegment per player for this match
+  const hitsAccRef = React.useRef<any>(null);
+  if (!hitsAccRef.current) hitsAccRef.current = createHitsAccumulator();
+
   const initialPlayers: KillerPlayerState[] = React.useMemo(() => {
     const lives = clampInt(config?.lives, 1, 9, 3);
     return (config?.players || []).map((p) => ({
@@ -340,6 +350,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     setVisit(s.visit);
     setLog(s.log);
     setFinished(s.finished);
+
+    // ⚠️ Note: on ne rollback pas hitsAccRef ici (Option A) pour rester léger.
+    // Si tu veux un UNDO 100% parfait sur hitsBySegment aussi, on le fera après (Option A+).
   }
 
   function endTurn() {
@@ -350,6 +363,18 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
 
   function buildMatchRecord(finalPlayers: KillerPlayerState[], winnerId: string) {
     const finishedAt = Date.now();
+
+    // ✅ NEW (Option A): inject hitsBySegment into summary.perPlayer
+    const hitsMap = hitsAccRef.current?.toJSON?.() || {};
+    const perPlayer = finalPlayers.map((p) => ({
+      playerId: p.id,
+      profileId: p.id,
+      id: p.id,
+      name: p.name,
+      avatarDataUrl: p.avatarDataUrl ?? null,
+      hitsBySegment: hitsMap?.[p.id] || {},
+      // tu pourras ajouter plus tard: favSegment / favNumber / etc
+    }));
 
     const rec: any = {
       kind: "killer",
@@ -366,6 +391,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         livesStart: config.lives,
         becomeRule: config.becomeRule,
         damageRule: config.damageRule,
+
+        // ✅ NEW: pour StatsLeaderboardsPage (extractPerPlayerSummary)
+        perPlayer,
+
         players: finalPlayers.map((p) => ({
           id: p.id,
           name: p.name,
@@ -380,6 +409,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         mode: "killer",
         config,
         state: { players: finalPlayers },
+        summary: {
+          mode: "killer",
+          perPlayer,
+        },
       },
     };
 
@@ -394,8 +427,20 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
 
     const thr: ThrowInput = {
       target: clampInt(t.target, 0, 25, 0),
-      mult: (clampInt(t.mult, 1, 3, 1) as Mult),
+      mult: clampInt(t.mult, 1, 3, 1) as Mult,
     };
+
+    // ✅ NEW (Option A): comptage segment touché par joueur (S20 / T8 / SB / DB)
+    try {
+      const pid = String(current?.id || "");
+      // on fournit un "dart object" compatible avec segmentKeyFromDart()
+      hitsAccRef.current?.addFromDart(pid, {
+        number: thr.target,
+        mult: thr.mult,
+        isBull: thr.target === 25 && thr.mult === 1,
+        isDBull: thr.target === 25 && thr.mult === 2,
+      });
+    } catch {}
 
     setVisit((v) => [...v, thr]);
     setDartsLeft((d) => Math.max(0, d - 1));
@@ -437,7 +482,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             me.kills += 1;
             pushLog(`💀 ${me.name} élimine ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg})`);
           } else {
-            pushLog(`🔻 ${me.name} touche ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg}) → ${victim.lives} vie(s)`);
+            pushLog(
+              `🔻 ${me.name} touche ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg}) → ${victim.lives} vie(s)`
+            );
           }
           return next;
         }

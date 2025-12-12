@@ -84,6 +84,25 @@ function resolvePoints(pp: any): number {
   return 0;
 }
 
+// ✅ AVG/3D : certains résumés (souvent X01 V3) stockent déjà avg3 / avgPer3,
+// mais pas forcément sumPoints. On le récupère en priorité.
+function resolveAvg3(pp: any): number | null {
+  const v =
+    pp?.avg3 ??
+    pp?.avgPer3 ??
+    pp?.avgPer3D ??
+    pp?.avg_3 ??
+    pp?.avg_per_3 ??
+    null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function pointsFromAvg3(avg3: number, darts: number): number {
+  // avg3 = points / darts * 3  => points = avg3/3 * darts
+  return (avg3 / 3) * darts;
+}
+
 function resolveHits(pp: any): { S: number; D: number; T: number; M: number } {
   const h = pp?.hits ?? pp?.hit ?? pp?.segments ?? null;
   if (h && typeof h === "object") {
@@ -160,10 +179,18 @@ export async function getX01StatsByDartSet(profileId?: string) {
       const darts = N(pp?.darts, 0);
       a.darts += darts;
 
-      // avg3 recalcul solide : points/darts * 3
-      const points = resolvePoints(pp);
-      a.avg3SumPoints += points;
-      a.avg3SumDarts += darts;
+      // ✅ AVG/3D : priorité à la valeur déjà calculée si présente (X01 V3 souvent)
+      // sinon fallback sur points
+      const avg3 = resolveAvg3(pp);
+
+      if (avg3 !== null && darts > 0) {
+        a.avg3SumPoints += pointsFromAvg3(avg3, darts);
+        a.avg3SumDarts += darts;
+      } else {
+        const points = resolvePoints(pp);
+        a.avg3SumPoints += points;
+        a.avg3SumDarts += darts;
+      }
 
       a.bestVisit = Math.max(a.bestVisit, N(pp?.bestVisit, 0));
       a.bestCheckout = Math.max(a.bestCheckout, N(pp?.bestCheckout, 0));

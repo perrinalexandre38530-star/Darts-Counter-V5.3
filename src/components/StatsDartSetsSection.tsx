@@ -9,11 +9,7 @@ import React from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 
-import {
-  getDartSetsForProfile,
-  type DartSet,
-} from "../lib/dartSetsStore";
-
+import { getDartSetsForProfile, type DartSet } from "../lib/dartSetsStore";
 import { dartPresets } from "../lib/dartPresets";
 import { getX01StatsByDartSetForProfile } from "../lib/statsByDartSet";
 
@@ -26,17 +22,49 @@ function fmt1(n: number) {
 }
 
 function presetById(id: string) {
-  return (dartPresets || []).find((p) => p.id === id) || null;
+  return (dartPresets || []).find((p) => String(p?.id) === String(id)) || null;
+}
+
+// ✅ accepte string OU import d’asset (module avec default), etc.
+function asUrl(v: any): string | null {
+  if (!v) return null;
+  if (typeof v === "string") return v;
+  if (typeof v === "object") {
+    if (typeof (v as any).default === "string") return (v as any).default;
+    if (typeof (v as any).src === "string") return (v as any).src;
+    if (typeof (v as any).url === "string") return (v as any).url;
+  }
+  return null;
+}
+
+function presetImage(pr: any): string | null {
+  if (!pr) return null;
+  return (
+    asUrl(pr.imgUrlThumb) ||
+    asUrl(pr.imgUrlMain) ||
+    asUrl(pr.imgUrl) ||
+    asUrl(pr.thumb) ||
+    asUrl(pr.thumbnail) ||
+    asUrl(pr.imageThumb) ||
+    asUrl(pr.imageMain) ||
+    asUrl(pr.image) ||
+    asUrl(pr.img) ||
+    asUrl(pr.url) ||
+    asUrl(pr.src) ||
+    null
+  );
+}
+
+function pickNum(r: any, ...keys: string[]) {
+  for (const k of keys) {
+    const v = Number(r?.[k]);
+    if (Number.isFinite(v)) return v;
+  }
+  return null;
 }
 
 function pickAccent(theme: any) {
-  // on reste ultra safe : si ton ThemeContext expose primary, on le prend
-  return (
-    theme?.primary ||
-    theme?.accent ||
-    theme?.colors?.primary ||
-    "#F6C256"
-  );
+  return theme?.primary || theme?.accent || theme?.colors?.primary || "#F6C256";
 }
 
 export default function StatsDartSetsSection(props: {
@@ -147,8 +175,7 @@ export default function StatsDartSetsSection(props: {
             marginTop: 10,
             borderRadius: 18,
             border: "1px solid rgba(255,255,255,.08)",
-            background:
-              `radial-gradient(circle at 0% 0%, ${accentSoft}, transparent 60%), rgba(0,0,0,.28)`,
+            background: `radial-gradient(circle at 0% 0%, ${accentSoft}, transparent 60%), rgba(0,0,0,.28)`,
             padding: 10,
           }}
         >
@@ -170,7 +197,7 @@ export default function StatsDartSetsSection(props: {
               {resolveSetName(top.dartSetId, mySets, t)}
             </span>
             <span style={{ color: accent }}>
-              AVG/3D {fmt1(top.avg3 || 0)}
+              AVG/3D {fmt1(pickNum(top, "avg3") ?? 0)}
             </span>
           </div>
         </div>
@@ -178,7 +205,13 @@ export default function StatsDartSetsSection(props: {
 
       {/* States */}
       {loading ? (
-        <div style={{ color: "rgba(255,255,255,.75)", fontSize: 12, padding: 8 }}>
+        <div
+          style={{
+            color: "rgba(255,255,255,.75)",
+            fontSize: 12,
+            padding: 8,
+          }}
+        >
           {t("common.loading", "Chargement...")}
         </div>
       ) : err ? (
@@ -186,8 +219,17 @@ export default function StatsDartSetsSection(props: {
           {t("common.error", "Erreur")} : {String(err)}
         </div>
       ) : !rows.length ? (
-        <div style={{ color: "rgba(255,255,255,.75)", fontSize: 12, padding: 8 }}>
-          {t("stats.dartSets.empty", "Aucune partie X01 trouvée pour ce profil.")}
+        <div
+          style={{
+            color: "rgba(255,255,255,.75)",
+            fontSize: 12,
+            padding: 8,
+          }}
+        >
+          {t(
+            "stats.dartSets.empty",
+            "Aucune partie X01 trouvée pour ce profil."
+          )}
         </div>
       ) : (
         <>
@@ -205,25 +247,56 @@ export default function StatsDartSetsSection(props: {
             {rows.map((r: any, idx: number) => {
               const id: string = String(r.dartSetId || "");
 
-              const my = mySets.find((s: any) => s?.id === id) || null;
-              const pr = !my ? presetById(id) : null;
+              // set perso ?
+              const my = mySets.find((s: any) => String(s?.id) === id) || null;
+
+              // preset direct (si la stat est un preset id)
+              const prDirect = !my ? presetById(id) : null;
+
+              // ✅ si c’est un set perso SANS photo, on tente de retrouver son preset d’origine
+              const myPresetId =
+                (my as any)?.dartPresetId ||
+                (my as any)?.presetId ||
+                (my as any)?.preset ||
+                (my as any)?.basePresetId ||
+                (my as any)?.refPresetId ||
+                null;
+
+              const prFromMy = myPresetId ? presetById(String(myPresetId)) : null;
+
+              const pr = prDirect || prFromMy;
 
               const name =
                 my?.name ||
                 pr?.name ||
                 t("stats.dartSets.unknown", "Set inconnu");
 
+              // ✅ image: photo perso > imgUrl du set > image preset (même si Type=Perso)
               const img =
-                my?.photoDataUrl ||
-                my?.imgUrlMain ||
-                pr?.imgUrlThumb ||
-                pr?.imgUrlMain ||
+                asUrl((my as any)?.photoDataUrl) ||
+                asUrl((my as any)?.imgUrlMain) ||
+                asUrl((my as any)?.imgUrlThumb) ||
+                presetImage(pr) ||
                 null;
 
-              const avg3 = N(r.avg3, 0);
-              const quality = clamp01(avg3 / 90);
+              const avg3v = pickNum(r, "avg3") ?? 0;
+
+              const quality = clamp01(avg3v / 90);
               const badgeColor =
-                quality > 0.72 ? "#7fe2a9" : quality > 0.45 ? accent : "#cfd1d7";
+                quality > 0.72
+                  ? "#7fe2a9"
+                  : quality > 0.45
+                  ? accent
+                  : "#cfd1d7";
+
+              // stats enrichies (si présentes)
+              const bestLeg = pickNum(r, "bestLeg", "bestLegScore");
+              const first9 = pickNum(r, "first9", "avgFirst9", "avg9");
+              const coPct = pickNum(r, "checkoutPct", "coPct", "checkoutRate");
+              const dblPct = pickNum(r, "doublePct", "dblPct", "doublesRate");
+              const ton80 = pickNum(r, "ton80", "s180", "count180");
+              const high140 = pickNum(r, "high140", "count140");
+              const high100 = pickNum(r, "high100", "count100");
 
               return (
                 <div
@@ -233,8 +306,7 @@ export default function StatsDartSetsSection(props: {
                     maxWidth: 252,
                     borderRadius: 18,
                     border: "1px solid rgba(255,255,255,.10)",
-                    background:
-                      `radial-gradient(circle at 0% 0%, ${accentSoft}, transparent 60%), linear-gradient(180deg, rgba(18,18,22,.92), rgba(10,10,12,.90))`,
+                    background: `radial-gradient(circle at 0% 0%, ${accentSoft}, transparent 60%), linear-gradient(180deg, rgba(18,18,22,.92), rgba(10,10,12,.90))`,
                     boxShadow: "0 10px 26px rgba(0,0,0,.42)",
                     padding: 10,
                   }}
@@ -256,6 +328,10 @@ export default function StatsDartSetsSection(props: {
                         <img
                           src={img}
                           alt={name}
+                          onError={(e) => {
+                            // fallback visuel si url cassée
+                            (e.currentTarget as any).style.display = "none";
+                          }}
                           style={{
                             width: "100%",
                             height: "100%",
@@ -278,6 +354,26 @@ export default function StatsDartSetsSection(props: {
                           ?
                         </div>
                       )}
+
+                      {/* si img fail et cachée, on met un fallback par-dessus */}
+                      {img ? (
+                        <div
+                          style={{
+                            position: "relative",
+                            marginTop: -66,
+                            width: 66,
+                            height: 66,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            pointerEvents: "none",
+                            color: "rgba(255,255,255,.40)",
+                            fontWeight: 900,
+                          }}
+                        >
+                          {/* visible uniquement si l'image a été cachée via onError */}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -294,13 +390,20 @@ export default function StatsDartSetsSection(props: {
                         {name}
                       </div>
 
-                      <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <div
+                        style={{
+                          marginTop: 6,
+                          display: "flex",
+                          gap: 6,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <Pill text={`AVG/3D ${fmt1(avg3v)}`} color={badgeColor} />
                         <Pill
-                          text={`AVG/3D ${fmt1(avg3)}`}
-                          color={badgeColor}
-                        />
-                        <Pill
-                          text={`${t("stats.matches", "Matchs")} ${N(r.matches, 0)}`}
+                          text={`${t("stats.matches", "Matchs")} ${N(
+                            r.matches,
+                            0
+                          )}`}
                           color={"rgba(255,255,255,.75)"}
                         />
                         <Pill
@@ -320,11 +423,41 @@ export default function StatsDartSetsSection(props: {
                       gap: 8,
                     }}
                   >
-                    <KPI label={t("stats.bestVisit", "Best volée")} value={String(N(r.bestVisit, 0))} />
-                    <KPI label={t("stats.bestCheckout", "Best CO")} value={String(N(r.bestCheckout, 0))} />
+                    <KPI
+                      label={t("stats.bestVisit", "Best volée")}
+                      value={String(N(r.bestVisit, 0))}
+                    />
+                    <KPI
+                      label={t("stats.bestCheckout", "Best CO")}
+                      value={String(N(r.bestCheckout, 0))}
+                    />
+                    <KPI label={t("stats.avg3", "AVG/3D")} value={fmt1(avg3v)} />
+                    <KPI
+                      label={t("stats.first9", "First 9")}
+                      value={first9 !== null ? fmt1(first9) : "—"}
+                    />
+                    <KPI
+                      label={t("stats.matches", "Matchs")}
+                      value={String(N(r.matches, 0))}
+                    />
+                    <KPI
+                      label={t("stats.darts", "Darts")}
+                      value={String(N(r.darts, 0))}
+                    />
+                    <KPI
+                      label={t("stats.checkoutPct", "Checkout %")}
+                      value={coPct !== null ? `${fmt1(coPct)}%` : "—"}
+                    />
+                    <KPI
+                      label={t("stats.doublePct", "Doubles %")}
+                      value={dblPct !== null ? `${fmt1(dblPct)}%` : "—"}
+                    />
                     <KPI
                       label={t("stats.hits", "Hits")}
-                      value={`S${N(r.hitsS, 0)} D${N(r.hitsD, 0)} T${N(r.hitsT, 0)}`}
+                      value={`S${N(r.hitsS, 0)} D${N(r.hitsD, 0)} T${N(
+                        r.hitsT,
+                        0
+                      )}`}
                     />
                     <KPI
                       label={t("stats.missBust", "Miss / Bust")}
@@ -335,8 +468,29 @@ export default function StatsDartSetsSection(props: {
                       value={`${N(r.bull, 0)} / ${N(r.dBull, 0)}`}
                     />
                     <KPI
+                      label={t("stats.bestLeg", "Best leg")}
+                      value={bestLeg !== null ? String(bestLeg) : "—"}
+                    />
+                    <KPI label={"180"} value={ton80 !== null ? String(ton80) : "—"} />
+                    <KPI
+                      label={"140+"}
+                      value={high140 !== null ? String(high140) : "—"}
+                    />
+                    <KPI
+                      label={"100+"}
+                      value={high100 !== null ? String(high100) : "—"}
+                    />
+                    <KPI
                       label={t("stats.setType", "Type")}
-                      value={my ? t("stats.dartSets.custom", "Perso") : pr ? t("stats.dartSets.preset", "Preset") : "—"}
+                      value={
+                        my
+                          ? t("stats.dartSets.custom", "Perso")
+                          : prDirect
+                          ? t("stats.dartSets.preset", "Preset")
+                          : prFromMy
+                          ? t("stats.dartSets.preset", "Preset")
+                          : "—"
+                      }
                     />
                   </div>
                 </div>
@@ -344,8 +498,13 @@ export default function StatsDartSetsSection(props: {
             })}
           </div>
 
-          {/* note */}
-          <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,.55)" }}>
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 11,
+              color: "rgba(255,255,255,.55)",
+            }}
+          >
             {t(
               "stats.dartSets.note",
               "Ces stats sont calculées uniquement sur les matchs X01 terminés, et groupées par set sélectionné."
@@ -358,9 +517,9 @@ export default function StatsDartSetsSection(props: {
 }
 
 function resolveSetName(id: string, mySets: any[], t: any) {
-  const my = mySets?.find((s: any) => s?.id === id) || null;
+  const my = mySets?.find((s: any) => String(s?.id) === String(id)) || null;
   if (my?.name) return my.name;
-  const pr = (dartPresets || []).find((p) => p.id === id) || null;
+  const pr = (dartPresets || []).find((p) => String(p?.id) === String(id)) || null;
   if (pr?.name) return pr.name;
   return t?.("stats.dartSets.unknown", "Set inconnu") ?? "Set inconnu";
 }
