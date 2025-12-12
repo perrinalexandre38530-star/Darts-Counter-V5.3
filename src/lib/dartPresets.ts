@@ -29,6 +29,13 @@ export const dartPresets: DartPreset[] = [
     theme: "gold",
   },
   {
+    id: "jack-daniels",
+    name: "Jack Daniels",
+    imgUrlMain: "/images/darts/jack-daniels-1024.png",
+    imgUrlThumb: "/images/darts/jacke-daniels-256.png",
+    theme: "grey",
+  },
+  {
     id: "rose-kuli-us",
     name: "Rose Kuli US",
     imgUrlMain: "/images/darts/rose-kuli-us-1024.png",
