@@ -6,10 +6,13 @@
 
 export type DartPresetTheme =
   | "gold"
-  | "green"
-  | "pink"
-  | "blue"
+  | "grey"
+  | "yellow"
+  | "white"
   | "red"
+  | "green"
+  | "blue"
+  | "pink"
   | "purple";
 
 export type DartPreset = {
@@ -32,7 +35,7 @@ export const dartPresets: DartPreset[] = [
     id: "jack-daniels",
     name: "Jack Daniels",
     imgUrlMain: "/images/darts/jack-daniels-1024.png",
-    imgUrlThumb: "/images/darts/jacke-daniels-256.png",
+    imgUrlThumb: "/images/darts/jack-daniels-256.png",
     theme: "grey",
   },
   {
@@ -75,7 +78,7 @@ export const dartPresets: DartPreset[] = [
     name: "Winmau Foxfire Urban",
     imgUrlMain: "/images/darts/winmau-foxfire-urban-1024.png",
     imgUrlThumb: "/images/darts/winmau-foxfire-urban-256.png",
-    theme: "Grey",
+    theme: "grey", // ⚠️ corrigé : "Grey" → "grey"
   },
   {
     id: "winmau-epix",

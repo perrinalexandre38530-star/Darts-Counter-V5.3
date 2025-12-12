@@ -3,8 +3,9 @@
 // src/pages/StatsLeaderboardsPage.tsx
 // Page CLASSEMENTS globale (tous profils)
 // - Accès depuis StatsShell via go("stats_leaderboards")
-// - V1 : on agrège TOUT l'historique (IndexedDB History + store.history)
-//   => au moins "matchs joués" / "victoires" ne sont plus à 0.
+// - Agrège TOUT l'historique (IndexedDB History + store.history)
+// - Support X01 V3 (payload.variant === "x01_v3" / payload.mode === "x01_multi")
+// - Filtre période (D/W/M/Y/ALL/TOUT)
 // =============================================================
 
 import * as React from "react";
@@ -52,7 +53,7 @@ type Row = {
   bestCheckout: number;
 };
 
-// ------ DEFS MODE + METRICS (visuel uniquement pour l’instant) ---
+// ------ DEFS MODE + METRICS ---
 
 const MODE_DEFS: {
   id: LeaderboardMode;
@@ -64,49 +65,95 @@ const MODE_DEFS: {
     label: "X01 MULTI",
     metrics: ["avg3", "wins", "winRate", "matches", "bestVisit", "bestCheckout"],
   },
-  {
-    id: "cricket",
-    label: "CRICKET",
-    metrics: ["winRate", "wins", "matches"],
-  },
-  {
-    id: "killer",
-    label: "KILLER",
-    metrics: ["wins", "winRate", "matches"],
-  },
-  {
-    id: "shanghai",
-    label: "SHANGHAI",
-    metrics: ["wins", "winRate", "matches"],
-  },
+  { id: "cricket", label: "CRICKET", metrics: ["winRate", "wins", "matches"] },
+  { id: "killer", label: "KILLER", metrics: ["wins", "winRate", "matches"] },
+  { id: "shanghai", label: "SHANGHAI", metrics: ["wins", "winRate", "matches"] },
   {
     id: "battle_royale",
     label: "BATTLE ROYALE",
     metrics: ["wins", "winRate", "matches"],
   },
-  {
-    id: "clock",
-    label: "TOUR DE L’HORLOGE",
-    metrics: ["wins", "winRate", "matches"],
-  },
+  { id: "clock", label: "TOUR DE L’HORLOGE", metrics: ["wins", "winRate", "matches"] },
 ];
 
-// --------- Helpers AGGREGATION À PARTIR D’UN TABLEAU history ------
+// ------------------------------
+// Helpers
+// ------------------------------
+
+function numOr0(...values: any[]): number {
+  for (const v of values) {
+    if (v === undefined || v === null) continue;
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
+function periodToMs(p: PeriodKey): number {
+  const day = 24 * 60 * 60 * 1000;
+  switch (p) {
+    case "D":
+      return day;
+    case "W":
+      return 7 * day;
+    case "M":
+      return 31 * day;
+    case "Y":
+      return 366 * day;
+    case "ALL":
+    case "TOUT":
+    default:
+      return 0;
+  }
+}
+
+function getRecTimestamp(rec: any): number {
+  return (
+    numOr0(
+      rec?.updatedAt,
+      rec?.createdAt,
+      rec?.summary?.updatedAt,
+      rec?.summary?.finishedAt,
+      rec?.payload?.updatedAt,
+      rec?.payload?.createdAt,
+      rec?.payload?.summary?.updatedAt
+    ) || 0
+  );
+}
+
+function inPeriod(rec: any, period: PeriodKey): boolean {
+  if (period === "ALL" || period === "TOUT") return true;
+  const dt = getRecTimestamp(rec);
+  if (!dt) return true; // si pas de date fiable, on ne jette pas
+  const span = periodToMs(period);
+  if (!span) return true;
+  return Date.now() - dt <= span;
+}
 
 // extrait un map per-player à partir de summary
 function extractPerPlayerSummary(summary: any): Record<string, any> {
   if (!summary) return {};
   const result: Record<string, any> = {};
 
+  // ✅ V3: detailedByPlayer
   if (summary.detailedByPlayer && typeof summary.detailedByPlayer === "object") {
     return summary.detailedByPlayer as Record<string, any>;
   }
 
+  // ✅ V3/V2: perPlayer[]
   if (Array.isArray(summary.perPlayer)) {
     for (const p of summary.perPlayer) {
       const pid = p.playerId || p.profileId || p.id;
       if (!pid) continue;
       result[pid] = p;
+    }
+  }
+
+  // ✅ V2/V1: players map
+  if (summary.players && typeof summary.players === "object") {
+    for (const [pid, p] of Object.entries(summary.players)) {
+      if (!pid) continue;
+      result[String(pid)] = p as any;
     }
   }
 
@@ -127,25 +174,54 @@ type ExtraInfo = {
   avatarDataUrl?: string | null;
 };
 
+function isRecordMatchingMode(rec: any, mode: LeaderboardMode, scope: Scope): boolean {
+  // scope online/local : pour l’instant on ne segmente pas réellement
+  // (tu pourras plus tard filtrer via rec.origin / rec.isOnline / etc.)
+  void scope;
+
+  const kind = rec?.kind || rec?.summary?.kind || rec?.payload?.kind;
+  const payloadMode = rec?.payload?.mode;
+  const payloadVariant = rec?.payload?.variant;
+  const game = rec?.payload?.game || rec?.summary?.game?.mode || rec?.summary?.game?.game;
+
+  // ✅ X01 MULTI : accepter V3
+  const isX01 =
+    kind === "x01" ||
+    game === "x01" ||
+    rec?.summary?.game?.mode === "x01" ||
+    payloadVariant === "x01_v3" ||
+    payloadMode === "x01_multi" ||
+    payloadMode === "x01_teams";
+
+  if (mode === "x01_multi") return isX01;
+
+  // autres modes : stub (à compléter quand tu stockes ces kinds)
+  if (mode === "cricket") return kind === "cricket" || game === "cricket";
+  if (mode === "killer") return kind === "killer" || game === "killer";
+  if (mode === "shanghai") return kind === "shanghai" || game === "shanghai";
+  if (mode === "battle_royale") return kind === "battle_royale" || game === "battle_royale";
+  if (mode === "clock") return kind === "clock" || game === "clock";
+
+  return true;
+}
+
 function computeRowsFromHistory(
   history: any[],
   profiles: Profile[],
-  _mode: LeaderboardMode,
-  _scope: Scope
+  mode: LeaderboardMode,
+  scope: Scope,
+  period: PeriodKey
 ): Row[] {
   if (import.meta.env.DEV) {
     console.log("[Leaderboards] history size =", history.length);
-    if (history[0]) {
-      console.log("[Leaderboards] sample rec =", history[0]);
-    }
   }
 
   const aggByPlayer: Record<string, Agg> = {};
   const infoByPlayer: Record<string, ExtraInfo> = {};
   const profileById: Record<string, Profile> = {};
 
-  // seed avec tous les profils (apparaitront même à 0)
-  for (const p of profiles) {
+  // seed profils locaux (si existants)
+  for (const p of profiles || []) {
     profileById[p.id] = p;
     aggByPlayer[p.id] = {
       wins: 0,
@@ -161,8 +237,14 @@ function computeRowsFromHistory(
     };
   }
 
-  for (const rec of history) {
+  for (const rec of history || []) {
     if (!rec) continue;
+
+    // filtre période
+    if (!inPeriod(rec, period)) continue;
+
+    // filtre mode
+    if (!isRecordMatchingMode(rec, mode, scope)) continue;
 
     const winnerId =
       rec.winnerId ||
@@ -174,13 +256,11 @@ function computeRowsFromHistory(
     const summary = rec.summary || rec.payload?.summary || null;
     const per = extractPerPlayerSummary(summary);
 
-    // 1) summary.detailedByPlayer / perPlayer
+    // 1) summary.detailedByPlayer / perPlayer / players-map
     if (per && Object.keys(per).length > 0) {
       for (const key of Object.keys(per)) {
         const det: any = per[key] || {};
-        const pid: string =
-          det.profileId || det.playerId || det.id || key;
-
+        const pid: string = det.profileId || det.playerId || det.id || key;
         if (!pid) continue;
 
         if (!aggByPlayer[pid]) {
@@ -193,6 +273,7 @@ function computeRowsFromHistory(
             bestCheckout: 0,
           };
         }
+
         if (!infoByPlayer[pid]) {
           infoByPlayer[pid] = {
             name: det.name || "",
@@ -204,41 +285,27 @@ function computeRowsFromHistory(
 
         // matches & wins
         agg.matches += 1;
-        if (winnerId && winnerId === pid) {
-          agg.wins += 1;
-        }
+        if (winnerId && winnerId === pid) agg.wins += 1;
 
         // avg3
-        const avg3Candidate =
-          det.avg3 ?? det.moy3 ?? det.avg ?? det.avg3d ?? 0;
-        if (typeof avg3Candidate === "number" && avg3Candidate > 0) {
+        const avg3Candidate = numOr0(det.avg3, det.moy3, det.avg, det.avg3d);
+        if (avg3Candidate > 0) {
           agg.avg3Sum += avg3Candidate;
           agg.avg3Count += 1;
         }
 
         // best visit
-        const bvCandidate =
-          det.bestVisit ?? det.bv ?? det.bestVisit3 ?? det.bv3 ?? 0;
-        if (typeof bvCandidate === "number" && bvCandidate > 0) {
-          if (bvCandidate > agg.bestVisit) agg.bestVisit = bvCandidate;
-        }
+        const bvCandidate = numOr0(det.bestVisit, det.bv, det.bestVisit3, det.bv3);
+        if (bvCandidate > 0) agg.bestVisit = Math.max(agg.bestVisit, bvCandidate);
 
         // best checkout
-        const coCandidate =
-          det.bestCheckout ??
-          det.bestCo ??
-          det.coBest ??
-          det.co ??
-          0;
-        if (typeof coCandidate === "number" && coCandidate > 0) {
-          if (coCandidate > agg.bestCheckout) agg.bestCheckout = coCandidate;
-        }
+        const coCandidate = numOr0(det.bestCheckout, det.bestCo, det.coBest, det.co);
+        if (coCandidate > 0) agg.bestCheckout = Math.max(agg.bestCheckout, coCandidate);
       }
-
-      continue; // on a tout pris via summary, pas besoin du fallback
+      continue;
     }
 
-    // 2) FALLBACK : aucun summary par joueur → on se rabat sur rec.players
+    // 2) FALLBACK : rec.players / rec.payload.players
     const playersArr: any[] = Array.isArray(rec.players)
       ? rec.players
       : Array.isArray(rec.payload?.players)
@@ -248,12 +315,14 @@ function computeRowsFromHistory(
     if (!playersArr.length) continue;
 
     for (const pl of playersArr) {
-      const pid: string | undefined =
-        pl.id || pl.profileId || pl.playerId || pl._id;
-      if (!pid) continue;
+      const pid: string | undefined = pl.id || pl.profileId || pl.playerId || pl._id || pl.pid;
+      const name = pl.name || pl.playerName || "";
+      if (!pid && !name) continue;
 
-      if (!aggByPlayer[pid]) {
-        aggByPlayer[pid] = {
+      // si pas d'id, on agrège quand même par "name" (évite le vide quand profiles locaux inexistants)
+      const key = pid || `name:${String(name).trim().toLowerCase()}`;
+      if (!aggByPlayer[key]) {
+        aggByPlayer[key] = {
           wins: 0,
           matches: 0,
           avg3Sum: 0,
@@ -262,19 +331,16 @@ function computeRowsFromHistory(
           bestCheckout: 0,
         };
       }
-
-      if (!infoByPlayer[pid]) {
-        infoByPlayer[pid] = {
-          name: pl.name || "",
+      if (!infoByPlayer[key]) {
+        infoByPlayer[key] = {
+          name: name || "—",
           avatarDataUrl: pl.avatarDataUrl ?? null,
         };
       }
 
-      const agg = aggByPlayer[pid];
+      const agg = aggByPlayer[key];
       agg.matches += 1;
-      if (winnerId && winnerId === pid) {
-        agg.wins += 1;
-      }
+      if (winnerId && pid && winnerId === pid) agg.wins += 1;
     }
   }
 
@@ -286,16 +352,12 @@ function computeRowsFromHistory(
     const matches = agg.matches;
     const wins = agg.wins;
     const winRate = matches > 0 ? (wins / matches) * 100 : 0;
-    const avg3 =
-      agg.avg3Count > 0 ? agg.avg3Sum / agg.avg3Count : 0;
+    const avg3 = agg.avg3Count > 0 ? agg.avg3Sum / agg.avg3Count : 0;
 
     return {
       id: pid,
       name: prof?.name || extra.name || "—",
-      avatarDataUrl:
-        (prof as any)?.avatarDataUrl ??
-        extra.avatarDataUrl ??
-        null,
+      avatarDataUrl: (prof as any)?.avatarDataUrl ?? extra.avatarDataUrl ?? null,
       wins,
       losses: Math.max(0, matches - wins),
       matches,
@@ -315,20 +377,20 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
 
-  const profiles: Profile[] = store?.profiles ?? [];
+  const profiles: Profile[] = (store as any)?.profiles ?? [];
 
   const [scope, setScope] = React.useState<Scope>("local");
   const [mode, setMode] = React.useState<LeaderboardMode>("x01_multi");
   const [period, setPeriod] = React.useState<PeriodKey>("ALL");
 
- // nouvelle source : History local + IDB
-const [historySource, setHistorySource] = React.useState<any[]>(
-  ((store as any)?.history as any[]) || []
+  // source : store.history (si présent)
+  const [historySource, setHistorySource] = React.useState<any[]>(
+    (((store as any)?.history) as any[]) || []
   );
 
   // garde en synchro avec store.history
   React.useEffect(() => {
-    setHistorySource((((store as any)?.history) as any[]) || []);
+    setHistorySource(((((store as any)?.history) as any[]) || []) as any[]);
   }, [store]);
 
   // charge TOUT l'historique depuis IndexedDB (History)
@@ -339,13 +401,9 @@ const [historySource, setHistorySource] = React.useState<any[]>(
         const api: any = History as any;
         let list: any[] = [];
 
-        if (typeof api.getAll === "function") {
-          list = await api.getAll();
-        } else if (typeof api.list === "function") {
-          list = await api.list();
-        } else if (typeof api.getAllSorted === "function") {
-          list = await api.getAllSorted();
-        }
+        if (typeof api.getAll === "function") list = await api.getAll();
+        else if (typeof api.list === "function") list = await api.list();
+        else if (typeof api.getAllSorted === "function") list = await api.getAllSorted();
 
         if (alive && Array.isArray(list) && list.length) {
           if (import.meta.env.DEV) {
@@ -354,34 +412,27 @@ const [historySource, setHistorySource] = React.useState<any[]>(
           setHistorySource(list);
         }
       } catch (err) {
-        if (import.meta.env.DEV) {
-          console.log("[Leaderboards] History IDB load error", err);
-        }
+        if (import.meta.env.DEV) console.log("[Leaderboards] History IDB load error", err);
       }
     })();
+
     return () => {
       alive = false;
     };
   }, []);
 
-  const initialMetric =
-    MODE_DEFS.find((m) => m.id === mode)?.metrics[0] ?? "wins";
+  const initialMetric = MODE_DEFS.find((m) => m.id === mode)?.metrics[0] ?? "wins";
   const [metric, setMetric] = React.useState<MetricKey>(initialMetric);
 
   const currentModeDef = MODE_DEFS.find((m) => m.id === mode);
   const currentModeIndex = MODE_DEFS.findIndex((m) => m.id === mode);
   const metricList = currentModeDef?.metrics ?? [];
-  const currentMetricIndex = Math.max(
-    0,
-    metricList.findIndex((m) => m === metric)
-  );
+  const currentMetricIndex = Math.max(0, metricList.findIndex((m) => m === metric));
 
   React.useEffect(() => {
     const def = MODE_DEFS.find((m) => m.id === mode);
     if (!def) return;
-    if (!def.metrics.includes(metric)) {
-      setMetric(def.metrics[0]);
-    }
+    if (!def.metrics.includes(metric)) setMetric(def.metrics[0]);
   }, [mode, metric]);
 
   const cycleMode = (dir: "prev" | "next") => {
@@ -401,15 +452,9 @@ const [historySource, setHistorySource] = React.useState<any[]>(
     setMetric(metricList[newIndex]);
   };
 
-  // 🔥 ICI : on construit les lignes à partir de historySource
+  // 🔥 construit lignes depuis historySource + filtre période + mode
   const rows = React.useMemo(() => {
-    if (!profiles.length) return [];
-    const baseRows = computeRowsFromHistory(
-      historySource,
-      profiles,
-      mode,
-      scope
-    );
+    const baseRows = computeRowsFromHistory(historySource, profiles, mode, scope, period);
 
     const value = (r: Row): number => {
       switch (metric) {
@@ -431,7 +476,7 @@ const [historySource, setHistorySource] = React.useState<any[]>(
     };
 
     return [...baseRows].sort((a, b) => value(b) - value(a));
-  }, [historySource, profiles, mode, scope, metric]);
+  }, [historySource, profiles, mode, scope, metric, period]);
 
   const hasData = rows.length > 0;
 
@@ -469,8 +514,7 @@ const [historySource, setHistorySource] = React.useState<any[]>(
     }
   };
 
-  const currentMetricLabel =
-    metricLabel(metric) || t("stats.leaderboards.metric", "Stat");
+  const currentMetricLabel = metricLabel(metric) || t("stats.leaderboards.metric", "Stat");
 
   return (
     <div
@@ -513,13 +557,7 @@ const [historySource, setHistorySource] = React.useState<any[]>(
           >
             {t("stats.leaderboards.titleMain", "CLASSEMENTS")}
           </div>
-          <div
-            style={{
-              fontSize: 12,
-              lineHeight: 1.3,
-              color: theme.textSoft,
-            }}
-          >
+          <div style={{ fontSize: 12, lineHeight: 1.3, color: theme.textSoft }}>
             Classements globaux par mode de jeu et par stat.
           </div>
         </div>
@@ -555,13 +593,7 @@ const [historySource, setHistorySource] = React.useState<any[]>(
         }}
       >
         {/* Scope LOCAL / ONLINE */}
-        <div
-          style={{
-            display: "flex",
-            gap: 6,
-            marginBottom: 8,
-          }}
-        >
+        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
           {(["local", "online"] as Scope[]).map((s) => {
             const active = s === scope;
             return (
@@ -571,21 +603,15 @@ const [historySource, setHistorySource] = React.useState<any[]>(
                 style={{
                   flex: 1,
                   borderRadius: 999,
-                  border: active
-                    ? `1px solid ${theme.primary}`
-                    : `1px solid ${theme.borderSoft}`,
+                  border: active ? `1px solid ${theme.primary}` : `1px solid ${theme.borderSoft}`,
                   padding: "6px 8px",
                   fontSize: 11,
                   fontWeight: 800,
                   textTransform: "uppercase",
                   letterSpacing: 0.8,
-                  background: active
-                    ? `linear-gradient(135deg, ${theme.primary}, #ffea9a)`
-                    : "transparent",
+                  background: active ? `linear-gradient(135deg, ${theme.primary}, #ffea9a)` : "transparent",
                   color: active ? "#000" : theme.textSoft,
-                  boxShadow: active
-                    ? `0 0 14px ${theme.primary}77`
-                    : "none",
+                  boxShadow: active ? `0 0 14px ${theme.primary}77` : "none",
                   cursor: "pointer",
                 }}
               >
@@ -595,15 +621,8 @@ const [historySource, setHistorySource] = React.useState<any[]>(
           })}
         </div>
 
-        {/* Carrousel mode : juste visuel pour l'instant */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            marginTop: 4,
-          }}
-        >
+        {/* Carrousel mode */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
           <button
             onClick={() => cycleMode("prev")}
             style={{
@@ -619,6 +638,7 @@ const [historySource, setHistorySource] = React.useState<any[]>(
           >
             {"<"}
           </button>
+
           <div
             style={{
               flex: 1,
@@ -629,14 +649,14 @@ const [historySource, setHistorySource] = React.useState<any[]>(
               fontWeight: 800,
               textTransform: "uppercase",
               letterSpacing: 0.8,
-              background:
-                "linear-gradient(135deg, rgba(255,255,255,0.08), rgba(0,0,0,0.95))",
+              background: "linear-gradient(135deg, rgba(255,255,255,0.08), rgba(0,0,0,0.95))",
               color: theme.primary,
               boxShadow: `0 0 14px ${theme.primary}33`,
             }}
           >
             {currentModeDef?.label ?? ""}
           </div>
+
           <button
             onClick={() => cycleMode("next")}
             style={{
@@ -669,14 +689,7 @@ const [historySource, setHistorySource] = React.useState<any[]>(
         }}
       >
         {/* Bandeau période */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 8,
-          }}
-        >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <div
             style={{
               fontSize: 10,
@@ -688,12 +701,8 @@ const [historySource, setHistorySource] = React.useState<any[]>(
           >
             {t("stats.leaderboards.period", "Période")}
           </div>
-          <div
-            style={{
-              display: "flex",
-              gap: 4,
-            }}
-          >
+
+          <div style={{ display: "flex", gap: 4 }}>
             {(["D", "W", "M", "Y", "ALL", "TOUT"] as PeriodKey[]).map((p) => {
               const active = p === period;
               return (
@@ -702,9 +711,7 @@ const [historySource, setHistorySource] = React.useState<any[]>(
                   onClick={() => setPeriod(p)}
                   style={{
                     borderRadius: 999,
-                    border: active
-                      ? `1px solid ${theme.primary}`
-                      : `1px solid ${theme.borderSoft}`,
+                    border: active ? `1px solid ${theme.primary}` : `1px solid ${theme.borderSoft}`,
                     padding: "3px 7px",
                     fontSize: 9,
                     fontWeight: 700,
@@ -734,13 +741,7 @@ const [historySource, setHistorySource] = React.useState<any[]>(
           {t("stats.leaderboards.sortBy", "Classement par")}
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <button
             onClick={() => cycleMetric("prev")}
             style={{
@@ -756,6 +757,7 @@ const [historySource, setHistorySource] = React.useState<any[]>(
           >
             {"<"}
           </button>
+
           <div
             style={{
               flex: 1,
@@ -766,14 +768,14 @@ const [historySource, setHistorySource] = React.useState<any[]>(
               fontWeight: 700,
               textTransform: "uppercase",
               letterSpacing: 0.7,
-              background:
-                "linear-gradient(135deg, rgba(255,255,255,0.06), rgba(0,0,0,0.95))",
+              background: "linear-gradient(135deg, rgba(255,255,255,0.06), rgba(0,0,0,0.95))",
               color: theme.primary,
               boxShadow: `0 0 10px ${theme.primary}33`,
             }}
           >
             {currentMetricLabel}
           </div>
+
           <button
             onClick={() => cycleMetric("next")}
             style={{
@@ -819,27 +821,11 @@ const [historySource, setHistorySource] = React.useState<any[]>(
         </div>
 
         {!hasData ? (
-          <div
-            style={{
-              padding: 16,
-              textAlign: "center",
-              fontSize: 11.5,
-              color: theme.textSoft,
-            }}
-          >
-            {t(
-              "stats.leaderboards.empty",
-              "Aucun profil enregistré sur cet appareil."
-            )}
+          <div style={{ padding: 16, textAlign: "center", fontSize: 11.5, color: theme.textSoft }}>
+            {t("stats.leaderboards.empty", "Aucun profil enregistré sur cet appareil.")}
           </div>
         ) : (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-            }}
-          >
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {rows.map((row, index) => {
               const rank = index + 1;
               const isFirst = rank === 1;
@@ -883,39 +869,17 @@ const [historySource, setHistorySource] = React.useState<any[]>(
                     alignItems: "center",
                     padding: "6px 8px",
                     borderRadius: 12,
-                    background:
-                      rank <= 3
-                        ? "rgba(0,0,0,0.65)"
-                        : "rgba(0,0,0,0.45)",
-                    border:
-                      rank <= 3
-                        ? `1px solid ${theme.primary}55`
-                        : `1px solid ${theme.borderSoft}`,
+                    background: rank <= 3 ? "rgba(0,0,0,0.65)" : "rgba(0,0,0,0.45)",
+                    border: rank <= 3 ? `1px solid ${theme.primary}55` : `1px solid ${theme.borderSoft}`,
                   }}
                 >
                   {/* Rang */}
-                  <div
-                    style={{
-                      width: 26,
-                      textAlign: "center",
-                      fontWeight: 900,
-                      fontSize: 13,
-                      color: rankColor,
-                    }}
-                  >
+                  <div style={{ width: 26, textAlign: "center", fontWeight: 900, fontSize: 13, color: rankColor }}>
                     {rank}
                   </div>
 
                   {/* Nom + avatar */}
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      flex: 1,
-                      minWidth: 0,
-                    }}
-                  >
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
                     <div
                       style={{
                         width: 30,
@@ -932,11 +896,7 @@ const [historySource, setHistorySource] = React.useState<any[]>(
                         <img
                           src={row.avatarDataUrl}
                           alt={row.name}
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                          }}
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
                           draggable={false}
                         />
                       ) : (
@@ -948,6 +908,7 @@ const [historySource, setHistorySource] = React.useState<any[]>(
                         />
                       )}
                     </div>
+
                     <div
                       style={{
                         fontSize: 12,
@@ -963,30 +924,9 @@ const [historySource, setHistorySource] = React.useState<any[]>(
                   </div>
 
                   {/* Valeur + matchs */}
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "flex-end",
-                      fontSize: 11,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontWeight: 800,
-                        color: theme.primary,
-                      }}
-                    >
-                      {metricValue}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 9.5,
-                        color: theme.textSoft,
-                      }}
-                    >
-                      {row.matches} matchs
-                    </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", fontSize: 11 }}>
+                    <div style={{ fontWeight: 800, color: theme.primary }}>{metricValue}</div>
+                    <div style={{ fontSize: 9.5, color: theme.textSoft }}>{row.matches} matchs</div>
                   </div>
                 </div>
               );
