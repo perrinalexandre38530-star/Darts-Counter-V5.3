@@ -564,11 +564,28 @@ export default function X01PlayV3({
   onReplayNewConfig,
 }: Props) {
   const { theme } = useTheme();
-  const { t } = useLang();
 
+  // ✅ IMPORTANT : on récupère aussi la langue courante de l’app
+  // (useLang() doit exposer "lang" ou équivalent)
+  const { t, lang } = useLang() as any;
+
+  // ✅ Preload + unlock audio
   React.useEffect(() => {
     x01SfxV3Preload();
   }, []);
+
+  // ✅ Injecte la langue au module TTS pour éviter voix EN par défaut
+  React.useEffect(() => {
+    // lang attendu: "fr" | "it" | "en" | "es" ... (ou "fr-FR", etc.)
+    // fallback sûr: français
+    try {
+      // si tu as ajouté x01SfxV3Configure dans ../lib/x01SfxV3.ts
+      // (voir bloc complet x01SfxV3.ts donné)
+      (x01SfxV3Configure as any)?.({ ttsLang: (lang as any) || "fr" });
+    } catch {
+      // ignore
+    }
+  }, [lang]);
 
   // Pour éviter de sauvegarder le match plusieurs fois (History)
   const hasSavedMatchRef = React.useRef(false);
@@ -819,19 +836,39 @@ export default function X01PlayV3({
     [arcadeEnabled, sfxVolume]
   );
 
-  const speakVisit = React.useCallback(
-    (playerName: string, visitScore: number) => {
-      if (!voiceEnabled) return;
-      // si announceVisit supporte un 3e param (options), on passe voiceId
+  // =====================================================
+// 🗣️ VOIX IA — annonce de volée (langue + voix sélectionnée)
+// =====================================================
+
+const speakVisit = React.useCallback(
+  (playerName: string, visitScore: number) => {
+    if (!voiceEnabled) return;
+
+    // sécurité
+    const name = (playerName || "").trim();
+    if (!name) return;
+
+    try {
+      // ✅ Signature étendue : (name, score, { voiceId, lang })
+      (announceVisit as any)(
+        name,
+        visitScore,
+        {
+          voiceId: voiceId || undefined,
+          lang: lang || "fr", // ← LANGUE APP (fr / it / en / es…)
+        }
+      );
+    } catch {
       try {
-        (announceVisit as any)(playerName, visitScore, voiceId ? { voiceId } : undefined);
+        // fallback 1 : signature (name, score)
+        announceVisit(name, visitScore);
       } catch {
-        // fallback si signature = (name, score)
-        announceVisit(playerName, visitScore);
+        // ignore total
       }
-    },
-    [voiceEnabled, voiceId]
-  );
+    }
+  },
+  [voiceEnabled, voiceId, lang]
+);
 
   // =====================================================
   // ÉTAT LOCAL KEYPAD (logique v1 + synchro UNDO moteur)
@@ -1257,42 +1294,51 @@ React.useEffect(() => {
   hasSavedMatchRef.current = true;
 
   // =====================================================
-  // 🔊 FIN DE MATCH : victoire + voix classement
-  // =====================================================
-  try {
-    const rankingNames = (miniRanking || [])
-      .map((r) => r?.name)
-      .filter(Boolean) as string[];
+// 🔊 FIN DE MATCH : victoire + voix classement (langue + voiceId)
+// =====================================================
+try {
+  const rankingNames = (miniRanking || [])
+    .map((r) => r?.name)
+    .filter(Boolean) as string[];
 
-    const winnerName = rankingNames[0] || "Joueur";
+  const winnerName = rankingNames[0] || "Joueur";
 
-    // ✅ Son "victory" UNIQUEMENT si "Sons Arcade" activés
-    if (arcadeEnabled) {
-      x01PlaySfxV3("victory", {
-        rateLimitMs: 800,
-        volume: 0.25, // volume "cinématique" de fin
-      });
-    }
+  // ✅ Son "victory" UNIQUEMENT si "Sons Arcade" activés
+  if (arcadeEnabled) {
+    x01PlaySfxV3("victory", {
+      rateLimitMs: 800,
+      volume: 0.25, // volume "cinématique" de fin
+    });
+  }
 
-    // ✅ Voix IA UNIQUEMENT si "Voix IA" activée
-    if (voiceEnabled) {
+  // ✅ Voix IA UNIQUEMENT si "Voix IA" activée
+  if (voiceEnabled) {
+    const opts = {
+      voiceId: voiceId || undefined,
+      lang: lang || "fr", // ← langue de l'app
+    };
+
+    try {
+      // ✅ Signature étendue (recommandée) :
+      // announceEndGame({ winnerName, rankingNames, extra? }, opts?)
+      (announceEndGame as any)({ winnerName, rankingNames }, opts);
+    } catch {
       try {
-        // si announceEndGame supporte des options, on passe la voix
-        (announceEndGame as any)(
-          { winnerName, rankingNames },
-          voiceId ? { voiceId } : undefined
-        );
+        // fallback : certaines versions ont (payload, opts?) mais sans voiceId
+        announceEndGame({ winnerName, rankingNames } as any, { lang: opts.lang } as any);
       } catch {
-        // fallback signature simple
-        announceEndGame(
-          { winnerName, rankingNames },
-          voiceId ? { voiceId } : undefined
-        );
+        try {
+          // fallback ultime : signature simple sans opts
+          announceEndGame({ winnerName, rankingNames } as any);
+        } catch {
+          // ignore
+        }
       }
     }
-  } catch (e) {
-    console.warn("[X01PlayV3] end-game sfx/voice failed", e);
   }
+} catch (e) {
+  console.warn("[X01PlayV3] end-game sfx/voice failed", e);
+}
 
   // =====================================================
   // Sauvegarde Historique / Stats
