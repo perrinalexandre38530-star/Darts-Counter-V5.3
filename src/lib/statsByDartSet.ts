@@ -1,8 +1,7 @@
 // =============================================================
 // src/lib/statsByDartSet.ts
-// Agrégation des stats X01 par set de fléchettes (dartSetId / dartPresetId)
-// Source: History (records kind="x01", status="finished")
-// Sortie: stats par dartSetId pour un profileId donné (optionnel)
+// Stats X01 agrégées par set de fléchettes (dartSetId / dartPresetId)
+// - Compatible X01 legacy + X01 V3 (mode/variant/game = "x01v3")
 // =============================================================
 
 import { History } from "./history";
@@ -10,14 +9,10 @@ import { History } from "./history";
 export type DartSetAgg = {
   dartSetId: string;
   matches: number;
-  darts: number;
 
-  // pour avg3 solide : (sumPoints / sumDarts) * 3
+  darts: number;
   avg3SumPoints: number;
   avg3SumDarts: number;
-
-  // calculé à la fin
-  avg3: number;
 
   bestVisit: number;
   bestCheckout: number;
@@ -26,137 +21,176 @@ export type DartSetAgg = {
   hitsD: number;
   hitsT: number;
   miss: number;
+
   bull: number;
   dBull: number;
   bust: number;
 };
 
-function num(v: any): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
+export type DartSetAggOut = DartSetAgg & {
+  avg3: number;
+};
 
-async function listHistorySafe(): Promise<any[]> {
-  try {
-    if ((History as any).list) return (await (History as any).list()) || [];
-  } catch {}
-  try {
-    if ((History as any).getAll) return (await (History as any).getAll()) || [];
-  } catch {}
-  try {
-    if ((History as any).all) return (await (History as any).all()) || [];
-  } catch {}
-  try {
-    if ((History as any).query) return (await (History as any).query({})) || [];
-  } catch {}
+const N = (x: any, d = 0) => (Number.isFinite(Number(x)) ? Number(x) : d);
+
+function pickPerPlayer(summary: any): any[] {
+  if (!summary) return [];
+  if (Array.isArray(summary.perPlayer)) return summary.perPlayer;
+  if (Array.isArray(summary.players)) return summary.players;
+
+  // fallback objet map { [pid]: {...} }
+  if (summary.players && typeof summary.players === "object") {
+    return Object.entries(summary.players).map(([playerId, v]) => ({
+      playerId,
+      ...(v as any),
+    }));
+  }
+  if (summary.perPlayer && typeof summary.perPlayer === "object") {
+    return Object.entries(summary.perPlayer).map(([playerId, v]) => ({
+      playerId,
+      ...(v as any),
+    }));
+  }
   return [];
 }
 
-/**
- * Stats par set de fléchettes.
- * - profileId optionnel : si fourni, filtre un seul profil (local/online)
- * - nécessite idéalement pp.profileId + pp.dartSetId/dartPresetId dans summary.perPlayer
- * - fallback si pp.profileId absent : on tente r.players[] (si ton History record le contient)
- */
+function resolveProfileId(pp: any): string | null {
+  return (
+    (pp?.profileId ?? null) ||
+    (pp?.playerId ?? null) ||
+    (pp?.id ?? null) ||
+    null
+  );
+}
+
+function resolveDartSetId(pp: any): string | null {
+  return (
+    (pp?.dartSetId ?? null) ||
+    (pp?.dartPresetId ?? null) ||
+    (pp?.dartsetId ?? null) ||
+    null
+  );
+}
+
+function resolvePoints(pp: any): number {
+  // si tu l’enregistres déjà
+  if (pp?._sumPoints !== undefined) return N(pp._sumPoints, 0);
+  if (pp?.sumPoints !== undefined) return N(pp.sumPoints, 0);
+
+  // fallback possible
+  if (pp?.points !== undefined) return N(pp.points, 0);
+  if (pp?.scoredPoints !== undefined) return N(pp.scoredPoints, 0);
+
+  return 0;
+}
+
+function resolveHits(pp: any): { S: number; D: number; T: number; M: number } {
+  const h = pp?.hits ?? pp?.hit ?? pp?.segments ?? null;
+  if (h && typeof h === "object") {
+    return {
+      S: N((h as any).S, 0),
+      D: N((h as any).D, 0),
+      T: N((h as any).T, 0),
+      M: N((h as any).M ?? (h as any).miss, 0),
+    };
+  }
+  return { S: 0, D: 0, T: 0, M: 0 };
+}
+
+function isX01Record(r: any): boolean {
+  const kind = String(r?.kind ?? "").toLowerCase();
+  const game = String(r?.game ?? "").toLowerCase();
+  const mode = String(r?.mode ?? "").toLowerCase();
+  const variant = String(r?.variant ?? "").toLowerCase();
+
+  // ✅ On accepte x01 + x01v3 partout
+  if (kind === "x01" || kind === "x01v3") return true;
+  if (game === "x01" || game === "x01v3") return true;
+  if (mode === "x01" || mode === "x01v3") return true;
+  if (variant === "x01" || variant === "x01v3") return true;
+
+  return false;
+}
+
+// ------------------------------------------------------------
+// Fonction principale
+// ------------------------------------------------------------
 export async function getX01StatsByDartSet(profileId?: string) {
-  const rows = await listHistorySafe();
+  const rows = await History.list?.();
   const agg: Record<string, DartSetAgg> = {};
 
   for (const r of rows || []) {
-    if (!r) continue;
-    if (r.kind !== "x01") continue;
-    if (r.status && r.status !== "finished") continue;
+    if (!isX01Record(r)) continue;
 
-    const perPlayer: any[] = Array.isArray(r?.summary?.perPlayer)
-      ? r.summary.perPlayer
-      : [];
+    const status = r?.status ?? r?.state ?? "";
+    // si status absent => on accepte (certains historiques n’ont pas ce champ)
+    if (status && status !== "finished") continue;
 
-    // fallback: players dans le record History (si présent)
-    const recordPlayers: any[] = Array.isArray(r?.players) ? r.players : [];
+    const summary = r?.summary ?? r?.payload?.summary ?? null;
+    const perPlayer = pickPerPlayer(summary);
 
     for (const pp of perPlayer) {
-      if (!pp) continue;
+      const pid = resolveProfileId(pp);
 
-      // --- filtre profil ---
-      if (profileId) {
-        const ppProfileId = pp.profileId ?? null;
+      // filtrage profil si demandé
+      if (profileId && pid !== profileId) continue;
 
-        let ok = false;
-
-        if (ppProfileId && ppProfileId === profileId) {
-          ok = true;
-        } else {
-          // fallback : chercher playerId dans record.players et comparer profileId
-          const pid = pp.playerId ?? pp.id ?? null;
-          if (pid) {
-            const found = recordPlayers.find((x: any) => x?.id === pid);
-            if (found?.profileId && found.profileId === profileId) ok = true;
-          }
-        }
-
-        if (!ok) continue;
-      }
-
-      const dartSetId = pp.dartSetId || pp.dartPresetId;
+      const dartSetId = resolveDartSetId(pp);
       if (!dartSetId) continue;
 
-      const a =
-        (agg[dartSetId] ||= {
-          dartSetId,
-          matches: 0,
-          darts: 0,
-          avg3SumPoints: 0,
-          avg3SumDarts: 0,
-          avg3: 0,
-          bestVisit: 0,
-          bestCheckout: 0,
-          hitsS: 0,
-          hitsD: 0,
-          hitsT: 0,
-          miss: 0,
-          bull: 0,
-          dBull: 0,
-          bust: 0,
-        });
+      const a = (agg[dartSetId] ||= {
+        dartSetId,
+        matches: 0,
+        darts: 0,
+        avg3SumPoints: 0,
+        avg3SumDarts: 0,
+        bestVisit: 0,
+        bestCheckout: 0,
+        hitsS: 0,
+        hitsD: 0,
+        hitsT: 0,
+        miss: 0,
+        bull: 0,
+        dBull: 0,
+        bust: 0,
+      });
 
       a.matches += 1;
 
-      const darts = num(pp.darts);
+      const darts = N(pp?.darts, 0);
       a.darts += darts;
 
-      // points : on prend _sumPoints si dispo (recommandé), sinon fallback pp.points
-      const points =
-        pp._sumPoints != null ? num(pp._sumPoints) : num(pp.points);
-
+      // avg3 recalcul solide : points/darts * 3
+      const points = resolvePoints(pp);
       a.avg3SumPoints += points;
       a.avg3SumDarts += darts;
 
-      a.bestVisit = Math.max(a.bestVisit, num(pp.bestVisit));
-      a.bestCheckout = Math.max(a.bestCheckout, num(pp.bestCheckout));
+      a.bestVisit = Math.max(a.bestVisit, N(pp?.bestVisit, 0));
+      a.bestCheckout = Math.max(a.bestCheckout, N(pp?.bestCheckout, 0));
 
-      const hits = pp.hits || {};
-      a.hitsS += num(hits.S);
-      a.hitsD += num(hits.D);
-      a.hitsT += num(hits.T);
-      a.miss += num(hits.M);
+      const hits = resolveHits(pp);
+      a.hitsS += hits.S;
+      a.hitsD += hits.D;
+      a.hitsT += hits.T;
+      a.miss += hits.M;
 
-      a.bull += num(pp.bull);
-      a.dBull += num(pp.dBull);
-      a.bust += num(pp.bust);
+      a.bull += N(pp?.bull, 0);
+      a.dBull += N(pp?.dBull ?? pp?.dbull, 0);
+      a.bust += N(pp?.bust, 0);
     }
   }
 
-  // sortie + avg3 final
-  const out: DartSetAgg[] = Object.values(agg).map((a) => ({
+  const out: DartSetAggOut[] = Object.values(agg).map((a) => ({
     ...a,
     avg3: a.avg3SumDarts > 0 ? (a.avg3SumPoints / a.avg3SumDarts) * 3 : 0,
   }));
 
-  // tri : meilleur avg3 puis plus de matchs
-  out.sort((x, y) => {
-    if (y.avg3 !== x.avg3) return y.avg3 - x.avg3;
-    return y.matches - x.matches;
-  });
-
+  // Tri utile : plus joués en premier, puis avg3
+  out.sort((x, y) => (y.matches - x.matches) || (y.avg3 - x.avg3));
   return out;
+}
+
+// ✅ Export attendu par StatsDartSetsSection
+export async function getX01StatsByDartSetForProfile(profileId: string) {
+  return getX01StatsByDartSet(profileId);
 }

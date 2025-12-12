@@ -8,6 +8,11 @@
 // - + BotsMap: récup avatars/noms depuis localStorage dc_bots_v1
 // - Metrics: wins / matches / winRate / avg3 / bestVisit / bestCheckout
 // - Filtre période D/W/M/Y/ALL/TOUT
+//
+// ✅ FIX: branchement KILLER (et autres modes) plus robuste :
+//    - détecte rec.kind / rec.game / rec.mode / rec.variant à plusieurs niveaux
+//    - accepte "killer_xxx", "mode:killer", etc. (includes)
+//    - winnerId récupéré via plusieurs chemins (summary/payload/winner.id)
 // =============================================================
 
 import * as React from "react";
@@ -208,30 +213,62 @@ function inPeriod(rec: any, period: PeriodKey): boolean {
   return Date.now() - dt <= span;
 }
 
+// ✅ FIX: détection mode ultra robuste (killer etc.)
 function isRecordMatchingMode(rec: any, mode: LeaderboardMode, scope: Scope): boolean {
   // scope online/local : à brancher plus tard si tu as un flag fiable
   void scope;
 
-  const kind = rec?.kind || rec?.summary?.kind || rec?.payload?.kind;
-  const payloadMode = rec?.payload?.mode;
-  const payloadVariant = rec?.payload?.variant;
-  const game = rec?.payload?.game || rec?.summary?.game?.mode || rec?.summary?.game?.game;
+  const low = (v: any) => safeStr(v).toLowerCase();
+
+  // collecte plusieurs sources possibles
+  const kinds = [
+    rec?.kind,
+    rec?.payload?.kind,
+    rec?.summary?.kind,
+    rec?.payload?.summary?.kind,
+    rec?.type,
+  ].map(low);
+
+  const games = [
+    rec?.game,
+    rec?.payload?.game,
+    rec?.summary?.game?.mode,
+    rec?.summary?.game?.game,
+    rec?.payload?.summary?.game?.mode,
+    rec?.payload?.summary?.game?.game,
+  ].map(low);
+
+  const modes = [
+    rec?.mode,
+    rec?.payload?.mode,
+    rec?.summary?.mode,
+    rec?.payload?.summary?.mode,
+  ].map(low);
+
+  const variants = [
+    rec?.variant,
+    rec?.payload?.variant,
+    rec?.summary?.variant,
+    rec?.payload?.summary?.variant,
+  ].map(low);
+
+  const blob = [...kinds, ...games, ...modes, ...variants].filter(Boolean).join(" | ");
+
+  const has = (needle: string) => blob.includes(needle);
 
   const isX01 =
-    kind === "x01" ||
-    game === "x01" ||
-    rec?.summary?.game?.mode === "x01" ||
-    payloadVariant === "x01_v3" ||
-    payloadMode === "x01_multi" ||
-    payloadMode === "x01_teams";
+    has("x01") ||
+    has("x01_v3") ||
+    has("x01_multi") ||
+    has("x01_teams");
 
   if (mode === "x01_multi") return isX01;
 
-  if (mode === "cricket") return kind === "cricket" || game === "cricket";
-  if (mode === "killer") return kind === "killer" || game === "killer";
-  if (mode === "shanghai") return kind === "shanghai" || game === "shanghai";
-  if (mode === "battle_royale") return kind === "battle_royale" || game === "battle_royale";
-  if (mode === "clock") return kind === "clock" || game === "clock";
+  if (mode === "cricket") return has("cricket");
+  if (mode === "killer") return has("killer");
+  if (mode === "shanghai") return has("shanghai");
+  if (mode === "battle_royale") return has("battle_royale") || has("battle royale");
+  if (mode === "clock") return has("clock") || has("horloge") || has("tour");
 
   return true;
 }
@@ -371,11 +408,15 @@ function computeRowsFromHistory(
     if (!inPeriod(rec, period)) continue;
     if (!isRecordMatchingMode(rec, mode, scope)) continue;
 
+    // ✅ FIX: winnerId robuste (beaucoup de formats)
     const winnerId =
-      rec.winnerId ||
-      rec.payload?.winnerId ||
-      rec.summary?.winnerId ||
-      rec.payload?.summary?.winnerId ||
+      rec?.winnerId ||
+      rec?.payload?.winnerId ||
+      rec?.summary?.winnerId ||
+      rec?.payload?.summary?.winnerId ||
+      rec?.summary?.winner?.id ||
+      rec?.payload?.summary?.winner?.id ||
+      rec?.winner?.id ||
       null;
 
     const summary = rec.summary || rec.payload?.summary || null;
@@ -423,7 +464,7 @@ function computeRowsFromHistory(
         const agg = aggByPlayer[pid];
 
         agg.matches += 1;
-        if (winnerId && winnerId === pid) agg.wins += 1;
+        if (winnerId && safeStr(winnerId) === safeStr(pid)) agg.wins += 1;
 
         const avg3Candidate = numOr0(det.avg3, det.moy3, det.avg, det.avg3d, det.avg_3);
         if (avg3Candidate > 0) {
@@ -441,12 +482,14 @@ function computeRowsFromHistory(
     }
 
     // ------------------------------
-    // 2) Fallback via players array
+    // 2) Fallback via players array (KILLER / CRICKET etc.)
     // ------------------------------
     const playersArr: any[] = Array.isArray(rec.players)
       ? rec.players
       : Array.isArray(rec.payload?.players)
       ? rec.payload.players
+      : Array.isArray(rec.summary?.players)
+      ? rec.summary.players
       : Array.isArray(rec.payload?.summary?.players)
       ? rec.payload.summary.players
       : [];
@@ -454,7 +497,7 @@ function computeRowsFromHistory(
     if (!playersArr.length) continue;
 
     for (const pl of playersArr) {
-      const pid = pickId(pl);
+      const pid = pickId(pl) || safeStr(pl?.pid) || safeStr(pl?.playerId);
       const name = pickName(pl);
       const avatar = pickAvatar(pl);
 
@@ -485,7 +528,7 @@ function computeRowsFromHistory(
 
       const agg = aggByPlayer[key];
       agg.matches += 1;
-      if (winnerId && pid && winnerId === pid) agg.wins += 1;
+      if (winnerId && pid && safeStr(winnerId) === safeStr(pid)) agg.wins += 1;
 
       const avg3Candidate = numOr0(pl.avg3, pl.moy3, pl.avg3d);
       if (avg3Candidate > 0) {

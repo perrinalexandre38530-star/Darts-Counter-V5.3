@@ -3352,15 +3352,13 @@ export default function StatsHub({
   const modeDefs = React.useMemo(
     () => [
       { key: "dashboard", label: "Dashboard global" },
-    { key: "x01_multi", label: "X01 multi" },
-    { key: "x01_compare", label: "Comparateur X01" },
-    { key: "cricket", label: "Cricket" },
-
-    // ✅ AJOUT : KILLER (dans le centre de stats)
-    { key: "killer", label: "Killer" },
-
-    { key: "leaderboards", label: "Classements" },
-    { key: "history", label: "Historique" },
+      { key: "dartsets", label: "Mes fléchettes" }, // ✅ NEW
+      { key: "x01_multi", label: "X01 multi" },
+      { key: "x01_compare", label: "Comparateur X01" },
+      { key: "cricket", label: "Cricket" },
+      { key: "killer", label: "Killer" },
+      { key: "leaderboards", label: "Classements" },
+      { key: "history", label: "Historique" },
     ],
     []
   );
@@ -4016,6 +4014,15 @@ export default function StatsHub({
             )}
           </>
         )}
+
+{currentMode === "dartsets" && (
+  <div style={card}>
+    <StatsDartSetsSection
+      activeProfileId={selectedPlayer?.id ?? null}
+      title="MES FLÉCHETTES"
+    />
+  </div>
+)}
 
         {currentMode === "x01_multi" && (
           <div style={card}>
