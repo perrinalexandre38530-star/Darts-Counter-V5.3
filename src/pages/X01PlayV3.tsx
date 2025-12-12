@@ -2707,6 +2707,9 @@ function saveX01V3MatchToHistory({
 
     perPlayer.push({
       playerId: pid,
+      dartSetId: (p as any).dartSetId ?? null,
+      dartPresetId: (p as any).dartPresetId ?? null,
+    
       avg3,
       bestVisit,
       bestCheckout,
@@ -3034,6 +3037,10 @@ function saveX01V3MatchToHistory({
     isBot: !!p.isBot,
     botLevel: p.botLevel ?? null,
     avatarDataUrl: p.avatarDataUrl ?? null,
+  
+    // ✅ IMPORTANT : set de fléchettes associé
+    dartSetId: p.dartSetId ?? null, // ex: "myset-123"
+    dartPresetId: p.dartPresetId ?? null, // optionnel si tu utilises aussi les presets
   }));
 
   const lightConfig: X01ConfigV3 = {
@@ -3080,6 +3087,8 @@ function saveX01V3MatchToHistory({
       id: p.id,
       name: p.name,
       avatarDataUrl: p.avatarDataUrl,
+      dartSetId: p.dartSetId ?? null,
+      dartPresetId: p.dartPresetId ?? null,
     })),
     winnerId,
     summary,

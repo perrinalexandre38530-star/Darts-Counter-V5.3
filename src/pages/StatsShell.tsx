@@ -3,10 +3,11 @@
 // Menu Stats — style identique à Games / Training / Profils
 // - Carte 1 : Stats joueur actif (vue complète : Général / Local / Online / Training / Cricket)
 // - Carte 2 : Stats profils locaux (multi-joueurs)
-// - Carte 3 : Training (stats sessions d’entraînement)
-// - Carte 4 : Online
-// - Carte 5 : Historique
-// - Carte 6 : Sync & Partage (exports / imports / cloud / device-à-device)
+// - Carte 3 : CLASSEMENTS globaux
+// - Carte 4 : Training (stats sessions d’entraînement)
+// - Carte 5 : Online
+// - Carte 6 : Historique
+// - Carte 7 : Sync & Partage (exports / imports / cloud / device-à-device)
 // - Bouton "i" : popin d'aide (légère aura animée comme Games)
 // ============================================
 import React from "react";
@@ -24,7 +25,7 @@ type Props = {
 type InfoMode =
   | "active"
   | "locals"
-  | "leaderboards" // 👈 classements
+  | "leaderboards"
   | "training"
   | "online"
   | "history"
@@ -82,7 +83,6 @@ export default function StatsShell({ store, go }: Props) {
           }
         }
 
-        /* Cartes avec halo très léger, scintillant */
         .stats-shell-card {
           position: relative;
         }
@@ -99,15 +99,10 @@ export default function StatsShell({ store, go }: Props) {
           mix-blend-mode: screen;
         }
         @keyframes statsCardGlow {
-          0%, 100% {
-            opacity: 0.02;
-          }
-          50% {
-            opacity: 0.12;
-          }
+          0%, 100% { opacity: 0.02; }
+          50% { opacity: 0.12; }
         }
 
-        /* Bouton "i" avec halo léger (cohérent avec Games, couleur du thème) */
         .stats-shell-info-btn {
           width: 30px;
           height: 30px;
@@ -224,7 +219,6 @@ export default function StatsShell({ store, go }: Props) {
             </div>
           </div>
 
-          {/* 🔗 Bouton SYNC & PARTAGE (accès rapide au SyncCenter) */}
           <button
             onClick={() => go("sync_center")}
             style={{
@@ -260,7 +254,6 @@ export default function StatsShell({ store, go }: Props) {
           paddingInline: 12,
         }}
       >
-        {/* STATS JOUEUR ACTIF — avatar + nom du joueur */}
         <StatsShellPlayerCard
           profile={active}
           label={playerLabel}
@@ -269,7 +262,7 @@ export default function StatsShell({ store, go }: Props) {
             if (!active) return;
             go("statsHub", {
               tab: "stats",
-              mode: "active", // 🔒 vue joueur actif
+              mode: "active",
               initialPlayerId: active.id,
               playerId: active.id,
               initialStatsSubTab: "dashboard",
@@ -278,7 +271,6 @@ export default function StatsShell({ store, go }: Props) {
           onInfo={() => setInfoMode("active")}
         />
 
-        {/* PROFILS LOCAUX (liste complète, pas de verrouillage) */}
         <StatsShellCard
           title={t("statsShell.locals.title", "PROFILS LOCAUX")}
           subtitle={t(
@@ -289,26 +281,21 @@ export default function StatsShell({ store, go }: Props) {
           onClick={() => {
             go("statsHub", {
               tab: "stats",
-              mode: "locals", // vue multi-profils
+              mode: "locals",
               initialPlayerId: null,
             });
           }}
           onInfo={() => setInfoMode("locals")}
         />
 
-        {/* CARTE : CLASSEMENTS GLOBAUX */}
         <StatsShellCard
           title="CLASSEMENTS"
           subtitle="Classements globaux par mode de jeu (X01 multi, Cricket, Killer, etc.)."
           theme={theme}
-          onClick={() => {
-            // ouvre la page de classements
-            go("stats_leaderboards");
-          }}
+          onClick={() => go("stats_leaderboards")}
           onInfo={() => setInfoMode("leaderboards")}
         />
 
-        {/* TRAINING */}
         <StatsShellCard
           title={t("statsShell.training.title", "TRAINING")}
           subtitle={t(
@@ -320,7 +307,6 @@ export default function StatsShell({ store, go }: Props) {
           onInfo={() => setInfoMode("training")}
         />
 
-        {/* ONLINE → page StatsOnline */}
         <StatsShellCard
           title={t("statsShell.online.title", "ONLINE")}
           subtitle={t(
@@ -332,7 +318,6 @@ export default function StatsShell({ store, go }: Props) {
           onInfo={() => setInfoMode("online")}
         />
 
-        {/* HISTORIQUE */}
         <StatsShellCard
           title={t("statsShell.history.title", "HISTORIQUE")}
           subtitle={t(
@@ -344,7 +329,6 @@ export default function StatsShell({ store, go }: Props) {
           onInfo={() => setInfoMode("history")}
         />
 
-        {/* SYNC & PARTAGE (carte dédiée aussi) */}
         <StatsShellCard
           title={t("statsShell.sync.title", "SYNC & PARTAGE")}
           subtitle={t(
@@ -357,10 +341,8 @@ export default function StatsShell({ store, go }: Props) {
         />
       </div>
 
-      {/* Espace BottomNav */}
       <div style={{ height: 80 }} />
 
-      {/* POPIN INFOS */}
       {infoMode && (
         <InfoOverlay
           mode={infoMode}
@@ -413,14 +395,7 @@ function StatsShellPlayerCard({
           cursor: "pointer",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            textAlign: "left",
-          }}
-        >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <StatsPlayerAvatar profile={profile} theme={theme} />
           <div
             style={{
@@ -432,6 +407,7 @@ function StatsShellPlayerCard({
               textShadow: `0 0 10px ${theme.primary}55`,
               whiteSpace: "normal",
               overflow: "hidden",
+              textAlign: "left",
             }}
           >
             {label}
@@ -439,7 +415,6 @@ function StatsShellPlayerCard({
         </div>
       </button>
 
-      {/* Bouton "i" */}
       <button
         type="button"
         className="stats-shell-info-btn"
@@ -479,15 +454,7 @@ function StatsPlayerAvatar({
       : 0;
 
   return (
-    <div
-      style={{
-        position: "relative",
-        width: AVA,
-        height: AVA,
-        flexShrink: 0,
-      }}
-    >
-      {/* Ring d’étoiles compact */}
+    <div style={{ position: "relative", width: AVA, height: AVA, flexShrink: 0 }}>
       <div
         aria-hidden
         style={{
@@ -509,7 +476,6 @@ function StatsPlayerAvatar({
         />
       </div>
 
-      {/* Médaillon avatar */}
       <div
         style={{
           position: "absolute",
@@ -525,11 +491,7 @@ function StatsPlayerAvatar({
           <img
             src={(profile as any).avatarDataUrl}
             alt={profile.name}
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-            }}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
             draggable={false}
           />
         ) : (
@@ -555,7 +517,7 @@ function StatsPlayerAvatar({
   );
 }
 
-/* ---------- Carte générique (style = Games) ---------- */
+/* ---------- Carte générique ---------- */
 function StatsShellCard({
   title,
   subtitle,
@@ -595,14 +557,7 @@ function StatsShellCard({
           cursor: "pointer",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 3,
-            textAlign: "left",
-          }}
-        >
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, textAlign: "left" }}>
           <div
             style={{
               fontSize: "var(--menu-title)",
@@ -632,7 +587,6 @@ function StatsShellCard({
         </div>
       </button>
 
-      {/* Bouton "i" */}
       <button
         type="button"
         className="stats-shell-info-btn"
@@ -681,14 +635,14 @@ function InfoOverlay({
       title = t("statsShell.info.locals.title", "STATS — Profils locaux");
       body = t(
         "statsShell.info.locals.body",
-        "Retrouve les mêmes vues de statistiques (y compris l’onglet Cricket) pour tous les profils enregistrés sur cet appareil et compare leurs performances."
+        "Retrouve les mêmes vues de statistiques pour tous les profils enregistrés sur cet appareil et compare leurs performances."
       );
       break;
     case "leaderboards":
       title = t("statsShell.info.leaderboards.title", "CLASSEMENTS");
       body = t(
         "statsShell.info.leaderboards.body",
-        "Vue dédiée aux classements globaux : tous les profils sont comparés pour chaque mode de jeu (X01 multi, Cricket, Killer, etc.), avec nombre de matchs, pourcentage de victoires, best visits, moyennes 3 darts, et plus."
+        "Vue dédiée aux classements globaux : tous les profils sont comparés pour chaque mode de jeu (X01 multi, Cricket, Killer, etc.)."
       );
       break;
     case "training":
@@ -716,7 +670,7 @@ function InfoOverlay({
       title = t("statsShell.info.sync.title", "SYNC & PARTAGE");
       body = t(
         "statsShell.info.sync.body",
-        "Centralise toutes les options d’export / import : fichiers, JSON, sync directe entre appareils et synchronisation via le cloud. Idéal pour récupérer les stats d’un profil local sur un nouveau téléphone."
+        "Centralise toutes les options d’export / import : fichiers, JSON, sync directe entre appareils et synchronisation via le cloud."
       );
       break;
   }

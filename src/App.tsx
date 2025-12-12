@@ -128,7 +128,7 @@ type Tab =
   | "cricket"
   | "killer"
   | "killer_config" // ✅ NEW
-  | "killer_play"   // ✅ NEW
+  | "killer_play" // ✅ NEW
   | "shanghai"
   | "battle_royale"
   | "training"
@@ -254,26 +254,19 @@ function getX01DefaultStart(store: Store): 301 | 501 | 701 | 901 {
   const settingsDefault =
     (store.settings.defaultX01 as 301 | 501 | 701 | 901) || 501;
 
-  if (!active) {
-    return settingsDefault;
-  }
+  if (!active) return settingsDefault;
 
   const pi = ((active as any).privateInfo || {}) as {
     prefX01StartScore?: number;
     prefAutoApplyPrefs?: boolean;
   };
 
-  // Si l’auto-apply n’est pas activé → on reste sur le réglage global
-  if (!pi.prefAutoApplyPrefs) {
-    return settingsDefault;
-  }
+  if (!pi.prefAutoApplyPrefs) return settingsDefault;
 
   const pref = Number(pi.prefX01StartScore ?? 0);
   const allowed: (301 | 501 | 701 | 901)[] = [301, 501, 701, 901];
 
-  if (allowed.includes(pref as any)) {
-    return pref as 301 | 501 | 701 | 901;
-  }
+  if (allowed.includes(pref as any)) return pref as 301 | 501 | 701 | 901;
 
   return settingsDefault;
 }
@@ -544,6 +537,7 @@ function App() {
       payload: { ...(m as any), players },
     };
 
+    /* mémoire locale */
     update((s) => {
       const list = [...(s.history ?? [])];
       const i = list.findIndex((r: any) => r.id === saved.id);
@@ -552,10 +546,12 @@ function App() {
       return { ...s, history: list };
     });
 
+    /* Historique détaillé IDB */
     try {
       (History as any)?.upsert?.(saved);
     } catch {}
 
+    /* miroir LocalStorage pour StatsOnline */
     try {
       const raw = localStorage.getItem(LS_ONLINE_MATCHES_KEY);
       const list = raw ? JSON.parse(raw) : [];
@@ -575,6 +571,7 @@ function App() {
       );
     } catch {}
 
+    /* upload online (best effort) */
     try {
       const supported = ["x01", "cricket", "killer", "shanghai"];
       if (supported.includes(saved.kind)) {
@@ -608,7 +605,6 @@ function App() {
   /* --------------------------------------------
         ROUTING SWITCH
   -------------------------------------------- */
-
   let page: React.ReactNode = null;
 
   if (loading) {
@@ -696,11 +692,7 @@ function App() {
 
       case "statsDetail":
         page = (
-          <StatsDetailRoute
-            store={store}
-            go={go}
-            params={routeParams}
-          />
+          <StatsDetailRoute store={store} go={go} params={routeParams} />
         );
         break;
 
@@ -847,7 +839,6 @@ function App() {
           rawStart >= 901 ? 901 : (rawStart as 301 | 501 | 701 | 901);
 
         const outMode = effectiveConfig?.doubleOut ? "double" : "simple";
-
         const playerIds = effectiveConfig?.playerIds ?? [];
 
         const freshToken = routeParams?.fresh ?? Date.now();
@@ -932,9 +923,8 @@ function App() {
         break;
       }
 
-      // ✅ Alias (si tu as encore des anciens appels go("killer"))
+      // ✅ Alias (anciens appels go("killer"))
       case "killer": {
-        // redirige proprement vers la config
         page = <KillerConfig store={store} go={go} />;
         break;
       }
@@ -945,7 +935,7 @@ function App() {
         break;
       }
 
-      // ✅ NEW: KILLER PLAY
+      // ✅ NEW: KILLER PLAY (câblage final)
       case "killer_play": {
         const cfg = routeParams?.config;
         if (!cfg) {
@@ -970,7 +960,6 @@ function App() {
       }
 
       case "shanghai": {
-        // (si tu veux : future config shanghai)
         page = <ShanghaiPlay playerIds={[]} onFinish={pushHistory} />;
         break;
       }

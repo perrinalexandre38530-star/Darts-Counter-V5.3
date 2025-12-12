@@ -67,6 +67,27 @@ export const dartPresets: DartPreset[] = [
     theme: "white",
   },
   {
+    id: "koto-kingprove",
+    name: "Koto Kingprove",
+    imgUrlMain: "/images/darts/koto-kingprove-1024.png",
+    imgUrlThumb: "/images/darts/koto-kingprove-256.png",
+    theme: "blue",
+  },
+  {
+    id: "winmau-aspria",
+    name: "Winmau Aspria",
+    imgUrlMain: "/images/darts/winmau-aspria-1024.png",
+    imgUrlThumb: "/images/darts/winmau-aspria-256.png",
+    theme: "grey",
+  },
+  {
+    id: "winmau-firestorm",
+    name: "Winmau Firestorm",
+    imgUrlMain: "/images/darts/winmau-firestorm-1024.png",
+    imgUrlThumb: "/images/darts/winmau-firestorm-256.png",
+    theme: "grey",
+  },
+  {
     id: "winmau-xenon",
     name: "Winmau Xenon",
     imgUrlMain: "/images/darts/winmau-xenon-1024.png",

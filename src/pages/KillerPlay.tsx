@@ -1,489 +1,673 @@
-// =============================================================
+// ============================================
 // src/pages/KillerPlay.tsx
-// KILLER — PLAY (DC-V5) — V1.6 (SAVE + STATS BASIC)
-// - Volées (3 fléchettes) + auto fin de tour
-// - Undo UI (sans rewind engine)
-// - Auto-skip dead players
-// - Profils réels via config.players[].profileId
-// - Enregistrement match (kind:"killer") via onFinish -> pushHistory(App)
-// - Stats BASIC (kills/deaths/hits/turnsToKiller) dans payload.stats.killer
-// =============================================================
-
-import * as React from "react";
+// KILLER — PLAY (V1.1)
+// ✅ MISS (0) + BULL (25 / DBULL)
+// ✅ UNDO RÉEL (rollback état complet)
+// ✅ Auto-fin de tour quand dartsLeft = 0
+// ✅ Hook input externe (CustomEvent "dc:throw")
+// - Reçoit config depuis KillerConfig : routeParams.config
+// - Tour par tour (3 fléchettes)
+// - Devenir Killer en touchant SON numéro (règle single/double)
+// - Quand Killer : toucher le numéro d’un autre joueur -> retire des vies
+// - Élimination à 0 vie ; dernier vivant gagne
+// - onFinish(matchRecord) => App.pushHistory()
+// ============================================
+import React from "react";
 import type { Store, MatchRecord } from "../lib/types";
-import { useTheme } from "../contexts/ThemeContext";
-import { useLang } from "../contexts/LangContext";
-import ProfileAvatar from "../components/ProfileAvatar";
-import ProfileStarRing from "../components/ProfileStarRing";
-import { useKillerEngine, type KillerHit } from "../hooks/useKillerEngine";
-import type { KillerMatchConfig } from "./KillerConfig";
+import type {
+  KillerConfig,
+  KillerDamageRule,
+  KillerBecomeRule,
+} from "./KillerConfig";
 
 type Props = {
   store: Store;
   go: (tab: any, params?: any) => void;
-  config: KillerMatchConfig;
-  onFinish: (m: MatchRecord) => void;
+  config: KillerConfig;
+  onFinish: (m: MatchRecord | any) => void;
 };
 
-type DartRecord = KillerHit;
+type Mult = 1 | 2 | 3;
 
-const SEGMENTS = Array.from({ length: 20 }, (_, i) => i + 1);
-const MAX_DARTS = 3;
+type ThrowInput = {
+  target: number; // 0 = MISS, 1..20, 25 = BULL
+  mult: Mult; // S=1 D=2 T=3 (sur bull on utilise surtout 1/2)
+};
 
-function uid() {
-  return `killer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+type KillerPlayerState = {
+  id: string;
+  name: string;
+  avatarDataUrl?: string | null;
+  number: number; // 1..20
+  lives: number; // >=0
+  isKiller: boolean;
+  eliminated: boolean;
+  kills: number;
+  hitsOnSelf: number;
+};
+
+type Snapshot = {
+  players: KillerPlayerState[];
+  turnIndex: number;
+  dartsLeft: number;
+  visit: ThrowInput[];
+  log: string[];
+  finished: boolean;
+};
+
+function clampInt(n: any, min: number, max: number, fallback: number) {
+  const x = Math.floor(Number(n));
+  if (!Number.isFinite(x)) return fallback;
+  return Math.max(min, Math.min(max, x));
 }
 
-export default function KillerPlay({ store, go, config, onFinish }: Props) {
-  const { theme } = useTheme();
-  const { t } = useLang();
+function isDouble(mult: Mult) {
+  return mult === 2;
+}
 
-  const primary = (theme as any)?.primary || "#f7c948";
-  const stroke = "rgba(255,255,255,.12)";
-  const card = "rgba(255,255,255,.06)";
-  const bg = "rgba(8,10,16,.96)";
+function canBecomeKiller(rule: KillerBecomeRule, t: ThrowInput) {
+  if (rule === "single") return true;
+  return isDouble(t.mult);
+}
 
-  // ------------------------------------------------------------
-  // Mapping matchPid -> profileId (important)
-  // ------------------------------------------------------------
-  const pidToProfileId = React.useMemo(() => {
-    const m = new Map<string, string>();
-    (config.players || []).forEach((p) => m.set(p.pid, p.profileId));
-    return m;
-  }, [config.players]);
+function dmgFrom(mult: Mult, rule: KillerDamageRule): number {
+  return rule === "multiplier" ? mult : 1;
+}
 
-  const getProfile = React.useCallback(
-    (matchPid: string) => {
-      const profileId = pidToProfileId.get(matchPid) || "";
-      const prof = (store.profiles || []).find((p: any) => p?.id === profileId) || null;
-      return prof;
-    },
-    [pidToProfileId, store.profiles]
-  );
-
-  // ------------------------------------------------------------
-  // Engine
-  // ------------------------------------------------------------
-  const engine = useKillerEngine({
-    players: config.players.map((p) => ({
-      pid: p.pid, // match pid
-      name: p.name,
-      killerNumber: p.killerNumber,
-    })),
-    params: config.params,
-  });
-
-  const { state } = engine;
-  const current = engine.getCurrent();
-
-  // ------------------------------------------------------------
-  // Volée management
-  // ------------------------------------------------------------
-  const [dartIndex, setDartIndex] = React.useState(0);
-  const [visit, setVisit] = React.useState<DartRecord[]>([]);
-  const [selectedMult, setSelectedMult] = React.useState<1 | 2 | 3>(1);
-
-  React.useEffect(() => {
-    setDartIndex(0);
-    setVisit([]);
-    setSelectedMult(1);
-  }, [state.currentIndex]);
-
-  // Auto-skip dead current
-  React.useEffect(() => {
-    if (!current) return;
-    if (current.isDead) engine.nextPlayer();
-  }, [current, engine]);
-
-  // ------------------------------------------------------------
-  // BASIC STATS (local runtime)
-  // ------------------------------------------------------------
-  type PStats = {
-    hitsOwn: number;
-    hitsOther: number;
-    kills: number;
-    deaths: number;
-    turnsToKiller: number | null;
-    becameKillerTurn: number | null;
-  };
-
-  const [pstats, setPstats] = React.useState<Record<string, PStats>>(() => {
-    const init: Record<string, PStats> = {};
-    state.players.forEach((p) => {
-      init[p.pid] = {
-        hitsOwn: 0,
-        hitsOther: 0,
-        kills: 0,
-        deaths: 0,
-        turnsToKiller: null,
-        becameKillerTurn: null,
-      };
-    });
-    return init;
-  });
-
-  // Keep keys in sync if needed
-  React.useEffect(() => {
-    setPstats((prev) => {
-      const next = { ...prev };
-      state.players.forEach((p) => {
-        if (!next[p.pid]) {
-          next[p.pid] = {
-            hitsOwn: 0,
-            hitsOther: 0,
-            kills: 0,
-            deaths: 0,
-            turnsToKiller: null,
-            becameKillerTurn: null,
-          };
-        }
-      });
-      return next;
-    });
-  }, [state.players]);
-
-  // Listen engine events for stats (minimal)
-  React.useEffect(() => {
-    const ev = state.lastEvent as any;
-    if (!ev) return;
-
-    setPstats((prev) => {
-      const next = { ...prev };
-
-      if (ev.kind === "hit_own") {
-        const pid = ev.pid as string;
-        if (next[pid]) next[pid] = { ...next[pid], hitsOwn: next[pid].hitsOwn + 1 };
-      }
-
-      if (ev.kind === "became_killer") {
-        const pid = ev.pid as string;
-        if (next[pid] && next[pid].becameKillerTurn == null) {
-          next[pid] = {
-            ...next[pid],
-            becameKillerTurn: state.turn,
-            turnsToKiller: state.turn, // simple : turn où il devient killer
-          };
-        }
-      }
-
-      if (ev.kind === "hit_other") {
-        const a = ev.attackerPid as string;
-        if (next[a]) next[a] = { ...next[a], hitsOther: next[a].hitsOther + 1 };
-      }
-
-      if (ev.kind === "killed") {
-        const a = ev.attackerPid as string;
-        const tpid = ev.targetPid as string;
-        if (next[a]) next[a] = { ...next[a], kills: next[a].kills + 1 };
-        if (next[tpid]) next[tpid] = { ...next[tpid], deaths: next[tpid].deaths + 1 };
-      }
-
-      return next;
-    });
-  }, [state.lastEvent, state.turn]);
-
-  // ------------------------------------------------------------
-  // Throw / Undo / End turn
-  // ------------------------------------------------------------
-  const throwDart = (value: number) => {
-    if (!current || current.isDead) return;
-    if (state.phase === "ended") return;
-    if (dartIndex >= MAX_DARTS) return;
-
-    const hit: KillerHit = { value, mult: selectedMult };
-    engine.throwDart(hit);
-
-    setVisit((h) => [...h, hit]);
-    setDartIndex((d) => d + 1);
-
-    if (dartIndex + 1 >= MAX_DARTS) {
-      setTimeout(() => engine.nextPlayer(), 160);
-    }
-  };
-
-  const undoDart = () => {
-    if (!visit.length) return;
-    // UI only (pas de rewind engine)
-    setVisit((h) => h.slice(0, -1));
-    setDartIndex((d) => Math.max(0, d - 1));
-  };
-
-  const endTurnNow = () => {
-    engine.nextPlayer();
-  };
-
-  // ------------------------------------------------------------
-  // SAVE MATCH once at end
-  // ------------------------------------------------------------
-  const didFinishRef = React.useRef(false);
-
-  React.useEffect(() => {
-    if (state.phase !== "ended") return;
-    if (!state.winnerPid) return;
-    if (didFinishRef.current) return;
-
-    didFinishRef.current = true;
-
-    const now = Date.now();
-    const matchId = uid();
-    const winnerMatchPid = state.winnerPid;
-    const winnerProfileId = pidToProfileId.get(winnerMatchPid) || null;
-
-    const playersForHistory = state.players.map((p) => {
-      const profileId = pidToProfileId.get(p.pid) || null;
-      const prof = profileId
-        ? (store.profiles || []).find((x: any) => x?.id === profileId) || null
-        : null;
-
-      return {
-        id: profileId, // IMPORTANT: id = profileId (comme X01/Cricket)
-        name: p.name || prof?.name || "",
-        avatarDataUrl: prof?.avatarDataUrl ?? null,
-      };
-    });
-
-    const statsKiller = {
-      version: 1,
-      maxLives: config.params.maxLives,
-      params: { ...config.params },
-      perPlayer: state.players.map((p) => {
-        const profileId = pidToProfileId.get(p.pid) || null;
-        const s = pstats[p.pid] || {
-          hitsOwn: 0,
-          hitsOther: 0,
-          kills: 0,
-          deaths: 0,
-          turnsToKiller: null,
-          becameKillerTurn: null,
-        };
-        return {
-          matchPid: p.pid,
-          profileId,
-          name: p.name,
-          killerNumber: p.killerNumber,
-          livesEnd: p.lives,
-          isDead: p.isDead,
-          ...s,
-        };
-      }),
-    };
-
-    const summary = {
-      mode: "killer",
-      turnCount: state.turn,
-      winnerProfileId,
-      winnerMatchPid,
-    };
-
-    const record: any = {
-      id: matchId,
-      kind: "killer",
-      createdAt: now,
-      updatedAt: now,
-      players: playersForHistory,
-      winnerId: winnerProfileId,
-      summary,
-      payload: {
-        kind: "killer",
-        createdAt: now,
-        updatedAt: now,
-        summary,
-        config,
-        engineEndState: {
-          turn: state.turn,
-          winnerPid: state.winnerPid,
-          players: state.players,
-        },
-        stats: { killer: statsKiller },
-      },
-    };
-
-    try {
-      onFinish(record as MatchRecord);
-    } catch {
-      // si onFinish crash, on retombe au menu jeux
-      go("games");
-    }
-  }, [state.phase, state.winnerPid, state.turn, state.players, pidToProfileId, store.profiles, config, pstats, onFinish, go]);
-
-  // ------------------------------------------------------------
-  // Winner overlay (affichage) — la sauvegarde est faite via effect
-  // ------------------------------------------------------------
-  if (state.phase === "ended" && state.winnerPid) {
-    const prof = getProfile(state.winnerPid);
-    const winnerName =
-      state.players.find((p) => p.pid === state.winnerPid)?.name || prof?.name || "—";
-
-    return (
-      <div style={{ minHeight: "100vh", background: bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-        <div style={{ maxWidth: 420, width: "100%", borderRadius: 24, border: `1px solid ${stroke}`, background: card, padding: 24, textAlign: "center", boxShadow: "0 25px 80px rgba(0,0,0,.55)" }}>
-          <div style={{ fontSize: 30, fontWeight: 1100, letterSpacing: 1.6, color: primary, textTransform: "uppercase" }}>
-            👑 Winner 👑
-          </div>
-
-          <div style={{ marginTop: 16, display: "flex", justifyContent: "center" }}>
-            <div style={{ position: "relative" }}>
-              <ProfileAvatar profile={prof as any} size={96} />
-              <div style={{ position: "absolute", inset: -12 }}>
-                <ProfileStarRing size={120} active />
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 14, fontSize: 22, fontWeight: 1000, color: "#fff" }}>
-            {winnerName}
-          </div>
-
-          <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
-            <button onClick={() => go("games")} style={btnSoft}>
-              {t?.("Quit") || "Quitter"}
-            </button>
-            <button onClick={() => go("killer_config")} style={btnGold}>
-              {t?.("Play again") || "Rejouer"}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+function nextAliveIndex(players: KillerPlayerState[], from: number) {
+  if (!players.length) return 0;
+  for (let i = 1; i <= players.length; i++) {
+    const idx = (from + i) % players.length;
+    if (!players[idx].eliminated) return idx;
   }
+  return from;
+}
 
-  // ------------------------------------------------------------
-  // Main UI
-  // ------------------------------------------------------------
+function winner(players: KillerPlayerState[]) {
+  const alive = players.filter((p) => !p.eliminated);
+  return alive.length === 1 ? alive[0] : null;
+}
+
+function fmtThrow(t: ThrowInput) {
+  const m = t.mult === 1 ? "S" : t.mult === 2 ? "D" : "T";
+  if (t.target === 0) return "MISS";
+  if (t.target === 25) return t.mult === 2 ? "DBULL" : "BULL";
+  return `${m}${t.target}`;
+}
+
+/* -----------------------------
+   ThrowPad (UI simple)
+----------------------------- */
+function ThrowPad({
+  disabled,
+  dartsLeft,
+  onThrow,
+  onEndTurn,
+  onUndo,
+}: {
+  disabled: boolean;
+  dartsLeft: number;
+  onThrow: (t: ThrowInput) => void;
+  onEndTurn: () => void;
+  onUndo: () => void;
+}) {
+  const [mult, setMult] = React.useState<Mult>(1);
+
   return (
-    <div style={{ minHeight: "100vh", background: bg, padding: 14 }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button style={btnSoft} onClick={() => go("killer_config")}>←</button>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 22, fontWeight: 1000, color: "#fff" }}>KILLER</div>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,.65)" }}>
-            {String(state.phase || "build").toUpperCase()} • Tour {state.turn}
-          </div>
-        </div>
-      </div>
+    <div
+      style={{
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 12,
+        border: "1px solid rgba(255,255,255,.10)",
+        background: "rgba(255,255,255,.04)",
+      }}
+    >
+      <div style={{ fontWeight: 900, marginBottom: 8 }}>Saisie fléchette</div>
 
-      {/* Players bar */}
-      <div style={{ display: "flex", gap: 10, overflowX: "auto", marginTop: 12 }}>
-        {state.players.map((p) => {
-          const prof = getProfile(p.pid);
-          const isCurrent = current?.pid === p.pid;
-          const isKiller = engine.isPlayerKiller(p.pid);
-
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        {[1, 2, 3].map((m) => {
+          const mm = m as Mult;
+          const active = mult === mm;
           return (
-            <div
-              key={p.pid}
+            <button
+              key={m}
+              onClick={() => setMult(mm)}
               style={{
-                minWidth: 160,
-                padding: 10,
-                borderRadius: 16,
-                border: `1px solid ${stroke}`,
-                background: p.isDead
-                  ? "rgba(255,80,80,.14)"
-                  : isCurrent
-                  ? "linear-gradient(180deg, rgba(255,215,120,.22), rgba(255,255,255,.06))"
-                  : card,
-                opacity: p.isDead ? 0.45 : 1,
+                flex: 1,
+                padding: "10px 10px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,.12)",
+                background: active
+                  ? "rgba(255,198,58,.85)"
+                  : "rgba(0,0,0,.25)",
+                color: active ? "#1b1508" : "inherit",
+                fontWeight: 900,
+                cursor: "pointer",
               }}
             >
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <div style={{ position: "relative" }}>
-                  <ProfileAvatar profile={prof as any} size={42} />
-                  {isKiller && (
-                    <div style={{ position: "absolute", inset: -6 }}>
-                      <ProfileStarRing size={54} active />
-                    </div>
-                  )}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 900, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {p.name}
-                  </div>
-                  <div style={{ fontSize: 12, color: "rgba(255,255,255,.7)" }}>🎯 {p.killerNumber}</div>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
-                {Array.from({ length: config.params.maxLives }).map((_, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      flex: 1,
-                      height: 10,
-                      borderRadius: 6,
-                      background: i < p.lives ? "linear-gradient(180deg,#ff5c5c,#ff2e2e)" : "rgba(255,255,255,.18)",
-                    }}
-                  />
-                ))}
-              </div>
-
-              {p.isDead ? (
-                <div style={{ marginTop: 6, fontSize: 12, fontWeight: 900, color: "#ff6b6b", textAlign: "center" }}>☠ DEAD</div>
-              ) : isKiller ? (
-                <div style={{ marginTop: 6, fontSize: 12, fontWeight: 900, color: primary, textAlign: "center" }}>👑 KILLER</div>
-              ) : null}
-            </div>
+              {mm === 1 ? "S" : mm === 2 ? "D" : "T"}
+            </button>
           );
         })}
       </div>
 
-      {/* Current */}
-      <div style={{ marginTop: 14, padding: 14, borderRadius: 18, border: `1px solid ${stroke}`, background: card }}>
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,.65)" }}>Joueur actuel</div>
-        <div style={{ fontSize: 22, fontWeight: 1100, color: "#fff" }}>{current?.name}</div>
-        <div style={{ marginTop: 6, fontSize: 12, color: primary }}>
-          Fléchette {Math.min(dartIndex + 1, MAX_DARTS)} / {MAX_DARTS}
-        </div>
+      {/* Quick actions: MISS / BULL */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <button
+          disabled={disabled}
+          onClick={() => onThrow({ target: 0, mult: 1 })}
+          style={{
+            flex: 1,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,.12)",
+            background: "rgba(0,0,0,.25)",
+            color: "inherit",
+            fontWeight: 900,
+            cursor: disabled ? "not-allowed" : "pointer",
+            opacity: disabled ? 0.5 : 1,
+          }}
+        >
+          MISS
+        </button>
+
+        <button
+          disabled={disabled}
+          onClick={() => onThrow({ target: 25, mult: 1 })}
+          style={{
+            flex: 1,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,.12)",
+            background: "rgba(0,0,0,.25)",
+            color: "inherit",
+            fontWeight: 900,
+            cursor: disabled ? "not-allowed" : "pointer",
+            opacity: disabled ? 0.5 : 1,
+          }}
+        >
+          BULL
+        </button>
+
+        <button
+          disabled={disabled}
+          onClick={() => onThrow({ target: 25, mult: 2 })}
+          style={{
+            flex: 1,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,.12)",
+            background: "rgba(0,0,0,.25)",
+            color: "inherit",
+            fontWeight: 900,
+            cursor: disabled ? "not-allowed" : "pointer",
+            opacity: disabled ? 0.5 : 1,
+          }}
+        >
+          DBULL
+        </button>
       </div>
 
-      {/* Hitpad */}
-      <div style={{ marginTop: 12, padding: 14, borderRadius: 18, border: `1px solid ${stroke}`, background: card }}>
-        <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-          {[1, 2, 3].map((m) => (
-            <button
-              key={m}
-              onClick={() => setSelectedMult(m as any)}
-              style={{
-                ...btnSoft,
-                flex: 1,
-                background: selectedMult === m ? "linear-gradient(180deg,#ffd98a,#e6a93c)" : btnSoft.background,
-                color: selectedMult === m ? "#000" : "#fff",
-              }}
-            >
-              {m === 1 ? "S" : m === 2 ? "D" : "T"}
-            </button>
-          ))}
-        </div>
+      {/* Numbers */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(5, 1fr)",
+          gap: 8,
+        }}
+      >
+        {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
+          <button
+            key={n}
+            disabled={disabled}
+            onClick={() => onThrow({ target: n, mult })}
+            style={{
+              padding: "10px 0",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,.10)",
+              background: "rgba(0,0,0,.25)",
+              color: "inherit",
+              fontWeight: 900,
+              cursor: disabled ? "not-allowed" : "pointer",
+              opacity: disabled ? 0.5 : 1,
+            }}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 }}>
-          {SEGMENTS.map((v) => (
-            <button key={v} style={btnSoft} onClick={() => throwDart(v)}>
-              {v}
-            </button>
-          ))}
-        </div>
+      <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
+        <button
+          onClick={onEndTurn}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,.12)",
+            background: "rgba(0,0,0,.25)",
+            color: "inherit",
+            fontWeight: 900,
+            cursor: "pointer",
+            flex: 1,
+          }}
+        >
+          Fin de tour
+        </button>
 
-        <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-          <button style={btnSoft} onClick={undoDart}>Undo</button>
-          <button style={btnGold} onClick={endTurnNow}>Fin de tour</button>
-        </div>
+        <button
+          onClick={onUndo}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,.12)",
+            background: "rgba(0,0,0,.25)",
+            color: "inherit",
+            fontWeight: 900,
+            cursor: "pointer",
+            opacity: 0.9,
+          }}
+          title="Annuler la dernière fléchette"
+        >
+          Undo
+        </button>
+      </div>
+
+      <div style={{ marginTop: 10, fontSize: 12, opacity: 0.85 }}>
+        Darts restantes : <b>{dartsLeft}</b>
       </div>
     </div>
   );
 }
 
-const btnSoft: React.CSSProperties = {
-  padding: "12px",
-  borderRadius: 14,
-  border: "1px solid rgba(255,255,255,.15)",
-  background: "rgba(255,255,255,.08)",
-  color: "#fff",
-  fontWeight: 900,
-  cursor: "pointer",
-};
+export default function KillerPlay({ store, go, config, onFinish }: Props) {
+  const startedAt = React.useMemo(() => Date.now(), []);
+  const initialPlayers: KillerPlayerState[] = React.useMemo(() => {
+    const lives = clampInt(config?.lives, 1, 9, 3);
+    return (config?.players || []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      avatarDataUrl: p.avatarDataUrl ?? null,
+      number: clampInt(p.number, 1, 20, 1),
+      lives,
+      isKiller: false,
+      eliminated: false,
+      kills: 0,
+      hitsOnSelf: 0,
+    }));
+  }, [config]);
 
-const btnGold: React.CSSProperties = {
-  ...btnSoft,
-  background: "linear-gradient(180deg,#ffd98a,#e6a93c)",
-  color: "#000",
-};
+  const [players, setPlayers] = React.useState<KillerPlayerState[]>(initialPlayers);
+  const [turnIndex, setTurnIndex] = React.useState<number>(() => {
+    const i = initialPlayers.findIndex((p) => !p.eliminated);
+    return i >= 0 ? i : 0;
+  });
+  const [dartsLeft, setDartsLeft] = React.useState<number>(3);
+  const [visit, setVisit] = React.useState<ThrowInput[]>([]);
+  const [log, setLog] = React.useState<string[]>([]);
+  const [finished, setFinished] = React.useState<boolean>(false);
+
+  // UNDO stack
+  const undoRef = React.useRef<Snapshot[]>([]);
+
+  const current = players[turnIndex] ?? players[0];
+  const w = winner(players);
+  const inputDisabled = finished || dartsLeft <= 0 || !!w || !current || current.eliminated;
+
+  function pushLog(line: string) {
+    setLog((prev) => [line, ...prev].slice(0, 80));
+  }
+
+  function snapshot() {
+    const snap: Snapshot = {
+      players: players.map((p) => ({ ...p })),
+      turnIndex,
+      dartsLeft,
+      visit: visit.map((t) => ({ ...t })),
+      log: log.slice(),
+      finished,
+    };
+    undoRef.current = [snap, ...undoRef.current].slice(0, 50);
+  }
+
+  function undo() {
+    const s = undoRef.current[0];
+    if (!s) return;
+    undoRef.current = undoRef.current.slice(1);
+    setPlayers(s.players);
+    setTurnIndex(s.turnIndex);
+    setDartsLeft(s.dartsLeft);
+    setVisit(s.visit);
+    setLog(s.log);
+    setFinished(s.finished);
+  }
+
+  function endTurn() {
+    setVisit([]);
+    setDartsLeft(3);
+    setTurnIndex((prev) => nextAliveIndex(players, prev));
+  }
+
+  function buildMatchRecord(finalPlayers: KillerPlayerState[], winnerId: string) {
+    const finishedAt = Date.now();
+
+    const rec: any = {
+      kind: "killer",
+      createdAt: startedAt,
+      updatedAt: finishedAt,
+      winnerId,
+      players: finalPlayers.map((p) => ({
+        id: p.id,
+        name: p.name,
+        avatarDataUrl: p.avatarDataUrl ?? null,
+      })),
+      summary: {
+        mode: "killer",
+        livesStart: config.lives,
+        becomeRule: config.becomeRule,
+        damageRule: config.damageRule,
+        players: finalPlayers.map((p) => ({
+          id: p.id,
+          name: p.name,
+          number: p.number,
+          lives: p.lives,
+          eliminated: p.eliminated,
+          isKiller: p.isKiller,
+          kills: p.kills,
+        })),
+      },
+      payload: {
+        mode: "killer",
+        config,
+        state: { players: finalPlayers },
+      },
+    };
+
+    return rec as MatchRecord;
+  }
+
+  function applyThrow(t: ThrowInput) {
+    if (inputDisabled) return;
+
+    // snapshot BEFORE changes (pour UNDO)
+    snapshot();
+
+    const thr: ThrowInput = {
+      target: clampInt(t.target, 0, 25, 0),
+      mult: (clampInt(t.mult, 1, 3, 1) as Mult),
+    };
+
+    setVisit((v) => [...v, thr]);
+    setDartsLeft((d) => Math.max(0, d - 1));
+
+    setPlayers((prev) => {
+      const next = prev.map((p) => ({ ...p }));
+      const me = next[turnIndex];
+      if (!me || me.eliminated) return prev;
+
+      // MISS / BULL n'a aucun effet sur les numéros (pour l’instant)
+      if (thr.target === 0) {
+        pushLog(`🎯 ${me.name} : MISS`);
+        return next;
+      }
+      if (thr.target === 25) {
+        pushLog(`🎯 ${me.name} : ${fmtThrow(thr)}`);
+        return next;
+      }
+
+      // 1) devenir killer
+      if (!me.isKiller && thr.target === me.number && canBecomeKiller(config.becomeRule, thr)) {
+        me.isKiller = true;
+        me.hitsOnSelf += 1;
+        pushLog(`🟡 ${me.name} devient KILLER en touchant ${fmtThrow(thr)} (#${thr.target})`);
+        return next;
+      }
+
+      // 2) dégâts si killer : toucher le numéro d’un autre joueur
+      if (me.isKiller) {
+        const victimIdx = next.findIndex(
+          (p, idx) => idx !== turnIndex && !p.eliminated && p.number === thr.target
+        );
+        if (victimIdx >= 0) {
+          const victim = next[victimIdx];
+          const dmg = dmgFrom(thr.mult, config.damageRule);
+          victim.lives = Math.max(0, victim.lives - dmg);
+          if (victim.lives <= 0) {
+            victim.eliminated = true;
+            me.kills += 1;
+            pushLog(`💀 ${me.name} élimine ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg})`);
+          } else {
+            pushLog(`🔻 ${me.name} touche ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg}) → ${victim.lives} vie(s)`);
+          }
+          return next;
+        }
+      }
+
+      // 3) neutre
+      pushLog(`🎯 ${me.name} : ${fmtThrow(thr)}`);
+      return next;
+    });
+  }
+
+  // Auto fin de tour quand dartsLeft arrive à 0 (si pas fini)
+  React.useEffect(() => {
+    if (finished) return;
+    if (winner(players)) return;
+    if (dartsLeft === 0) {
+      endTurn();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dartsLeft]);
+
+  // Détection victoire
+  React.useEffect(() => {
+    const ww = winner(players);
+    if (ww && !finished) {
+      setFinished(true);
+      pushLog(`🏆 ${ww.name} gagne !`);
+      const rec = buildMatchRecord(players, ww.id);
+      onFinish(rec);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [players]);
+
+  // Si joueur courant éliminé => saute au prochain vivant
+  React.useEffect(() => {
+    if (!players.length) return;
+    if (!current || current.eliminated) {
+      setTurnIndex((prev) => nextAliveIndex(players, prev));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [players]);
+
+  // ✅ Hook input externe
+  // Tu peux faire:
+  // window.dispatchEvent(new CustomEvent("dc:throw",{detail:{target:20,mult:3}}))
+  React.useEffect(() => {
+    function onExternal(ev: any) {
+      const d = ev?.detail || {};
+      const target = clampInt(d.target, 0, 25, 0);
+      const mult = clampInt(d.mult, 1, 3, 1) as Mult;
+      applyThrow({ target, mult });
+    }
+    window.addEventListener("dc:throw", onExternal as any);
+    return () => window.removeEventListener("dc:throw", onExternal as any);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [players, turnIndex, dartsLeft, finished, visit, log]);
+
+  if (!config || !config.players || config.players.length < 2) {
+    return (
+      <div style={{ padding: 16 }}>
+        <button onClick={() => go("killer_config")}>← Retour</button>
+        <p>Configuration KILLER invalide.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 16, paddingBottom: 90 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={() => go("killer_config")}>←</button>
+        <h2 style={{ margin: 0 }}>KILLER — Partie</h2>
+      </div>
+
+      <div style={{ marginTop: 10, fontSize: 13, opacity: 0.85 }}>
+        Règles : devenir killer = <b>{config.becomeRule === "double" ? "Double" : "Simple"}</b> ·
+        dégâts = <b>{config.damageRule === "multiplier" ? "Multiplier" : "-1"}</b> ·
+        vies = <b>{config.lives}</b>
+      </div>
+
+      {/* Current */}
+      <div
+        style={{
+          marginTop: 12,
+          padding: 12,
+          borderRadius: 12,
+          border: "1px solid rgba(255,255,255,.10)",
+          background: "rgba(255,255,255,.04)",
+        }}
+      >
+        <div style={{ fontSize: 12, opacity: 0.75 }}>Tour de</div>
+        <div style={{ fontSize: 18, fontWeight: 900 }}>
+          {current?.name ?? "—"}{" "}
+          <span style={{ fontSize: 13, opacity: 0.85 }}>
+            (#{current?.number ?? "?"})
+          </span>
+          {current?.isKiller && (
+            <span style={{ marginLeft: 8, fontSize: 13, fontWeight: 900 }}>
+              🔥 KILLER
+            </span>
+          )}
+        </div>
+        <div style={{ marginTop: 6, fontSize: 13, opacity: 0.9 }}>
+          Vies : <b>{current?.lives ?? 0}</b> · Darts : <b>{dartsLeft}</b>
+        </div>
+      </div>
+
+      {/* Scoreboard */}
+      <div style={{ marginTop: 14 }}>
+        <div style={{ fontWeight: 900, marginBottom: 8 }}>Joueurs</div>
+        <div style={{ display: "grid", gap: 8 }}>
+          {players.map((p, idx) => {
+            const isMe = idx === turnIndex;
+            return (
+              <div
+                key={p.id}
+                style={{
+                  padding: "10px 10px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,.10)",
+                  background: isMe
+                    ? "radial-gradient(circle at 0% 0%, rgba(255,198,58,.22), transparent 60%)"
+                    : "rgba(255,255,255,.04)",
+                  opacity: p.eliminated ? 0.5 : 1,
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto",
+                  gap: 8,
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <div style={{ fontWeight: 900 }}>
+                    {p.name}{" "}
+                    <span style={{ fontSize: 12, opacity: 0.8 }}>
+                      #{p.number}
+                    </span>
+                    {p.isKiller && <span style={{ marginLeft: 6 }}>🔥</span>}
+                    {p.eliminated && <span style={{ marginLeft: 6 }}>💀</span>}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.75 }}>
+                    kills: {p.kills} · vies: {p.lives}
+                  </div>
+                </div>
+
+                <div style={{ fontWeight: 900, fontSize: 13 }}>
+                  {p.eliminated ? "OUT" : `${p.lives} ♥`}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Visit recap */}
+      <div style={{ marginTop: 14, fontSize: 13, opacity: 0.9 }}>
+        Volée : {visit.length ? visit.map(fmtThrow).join(" · ") : "—"}
+      </div>
+
+      {/* Input */}
+      {!w && !finished && (
+        <ThrowPad
+          disabled={inputDisabled}
+          dartsLeft={dartsLeft}
+          onThrow={applyThrow}
+          onEndTurn={endTurn}
+          onUndo={undo}
+        />
+      )}
+
+      {/* Log */}
+      <div style={{ marginTop: 14 }}>
+        <div style={{ fontWeight: 900, marginBottom: 8 }}>Log</div>
+        <div
+          style={{
+            maxHeight: 220,
+            overflow: "auto",
+            padding: 10,
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,.10)",
+            background: "rgba(0,0,0,.20)",
+            fontSize: 12,
+            lineHeight: 1.35,
+            opacity: 0.95,
+          }}
+        >
+          {log.length === 0 ? (
+            <div style={{ opacity: 0.7 }}>—</div>
+          ) : (
+            log.map((l, i) => (
+              <div key={i} style={{ padding: "3px 0" }}>
+                {l}
+              </div>
+            ))
+          )}
+        </div>
+
+        <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
+          <button
+            onClick={() => go("killer_config")}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,.12)",
+              background: "rgba(0,0,0,.25)",
+              color: "inherit",
+              fontWeight: 900,
+              cursor: "pointer",
+              flex: 1,
+            }}
+          >
+            Quitter
+          </button>
+
+          <button
+            onClick={undo}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,.12)",
+              background: "rgba(0,0,0,.25)",
+              color: "inherit",
+              fontWeight: 900,
+              cursor: "pointer",
+              opacity: 0.9,
+            }}
+            title="Undo"
+          >
+            Undo
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

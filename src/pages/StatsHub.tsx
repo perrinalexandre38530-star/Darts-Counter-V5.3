@@ -24,6 +24,8 @@ import StatsX01Compare from "./StatsX01Compare";
 import StatsTrainingSummary from "../components/stats/StatsTrainingSummary";
 import { useCurrentProfile } from "../hooks/useCurrentProfile";
 import StatsLeaderboardsTab from "../components/stats/StatsLeaderboardsTab";
+import StatsKiller from "./StatsKiller";
+import StatsDartSetsSection from "../components/StatsDartSetsSection";
 
 // Effet "shimmer" à l'intérieur des lettres du nom du joueur
 const statsNameCss = `
@@ -3350,11 +3352,15 @@ export default function StatsHub({
   const modeDefs = React.useMemo(
     () => [
       { key: "dashboard", label: "Dashboard global" },
-      { key: "x01_multi", label: "X01 multi" },
-      { key: "x01_compare", label: "Comparateur X01" }, // 👈 inséré ici
-      { key: "cricket", label: "Cricket" },
-      { key: "leaderboards", label: "Classements" },
-      { key: "history", label: "Historique" },
+    { key: "x01_multi", label: "X01 multi" },
+    { key: "x01_compare", label: "Comparateur X01" },
+    { key: "cricket", label: "Cricket" },
+
+    // ✅ AJOUT : KILLER (dans le centre de stats)
+    { key: "killer", label: "Killer" },
+
+    { key: "leaderboards", label: "Classements" },
+    { key: "history", label: "Historique" },
     ],
     []
   );
@@ -4055,11 +4061,29 @@ export default function StatsHub({
           </div>
         )}
 
-        {currentMode === "leaderboards" && (
-          <div style={card}>
-            <StatsLeaderboardsTab />
-          </div>
-        )}
+        {currentMode === "killer" && (
+  <div style={card}>
+    <StatsKiller
+      profiles={storeProfiles as any}
+      memHistory={records as any}
+      playerId={
+        mode === "active"
+          ? (activePlayerId ?? null)
+          : (selectedPlayerId ?? null)
+      }
+      title="KILLER"
+    />
+  </div>
+)}
+
+{currentMode === "leaderboards" && (
+  <div style={card}>
+    <StatsLeaderboardsTab
+      records={records as any}
+      profiles={storeProfiles as any}
+    />
+  </div>
+)}
 
         {currentMode === "history" && (
           <div style={card}>
