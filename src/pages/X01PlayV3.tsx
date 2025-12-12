@@ -33,6 +33,8 @@ import { StatsBridge } from "../lib/statsBridge";
 import {
   x01SfxV3Preload,
   x01PlaySfxV3,
+  x01SfxV3Configure,      // ✅ AJOUT
+  x01EnsureAudioUnlocked, // ✅ AJOUT
   isBull,
   isDBull,
   isDouble,
@@ -566,25 +568,57 @@ export default function X01PlayV3({
   const { theme } = useTheme();
 
   // ✅ IMPORTANT : on récupère aussi la langue courante de l’app
-  // (useLang() doit exposer "lang" ou équivalent)
   const { t, lang } = useLang() as any;
 
-  // ✅ Preload + unlock audio
-  React.useEffect(() => {
-    x01SfxV3Preload();
+  // =====================================================
+  // 🔓 UNLOCK AUDIO (réutilisable)
+  // -> on le fait au mount, ET tu pourras l’appeler au 1er tir/1er clic
+  // =====================================================
+  const ensureAudioUnlockedNow = React.useCallback(() => {
+    try {
+      x01EnsureAudioUnlocked();
+    } catch {}
   }, []);
+
+  // ✅ Preload + unlock audio + warm-up voices
+  React.useEffect(() => {
+    // ✅ installe l’unlock + preload sfx + warm-up voices
+    x01SfxV3Preload();
+
+    // ✅ tente un unlock immédiat (desktop / certains navigateurs)
+    ensureAudioUnlockedNow();
+
+    // ✅ warm-up voices (Chrome peut être vide au 1er getVoices)
+    try {
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.getVoices?.();
+        // certains navigateurs remplissent plus tard
+        const handler = () => {
+          try {
+            window.speechSynthesis.getVoices?.();
+          } catch {}
+        };
+        window.speechSynthesis.onvoiceschanged = handler;
+      }
+    } catch {}
+  }, [ensureAudioUnlockedNow]);
 
   // ✅ Injecte la langue au module TTS pour éviter voix EN par défaut
   React.useEffect(() => {
     // lang attendu: "fr" | "it" | "en" | "es" ... (ou "fr-FR", etc.)
     // fallback sûr: français
     try {
-      // si tu as ajouté x01SfxV3Configure dans ../lib/x01SfxV3.ts
-      // (voir bloc complet x01SfxV3.ts donné)
       (x01SfxV3Configure as any)?.({ ttsLang: (lang as any) || "fr" });
     } catch {
       // ignore
     }
+
+    // ✅ re-warm voices au changement de langue (utile sur Chrome)
+    try {
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.getVoices?.();
+      }
+    } catch {}
   }, [lang]);
 
   // Pour éviter de sauvegarder le match plusieurs fois (History)
@@ -679,7 +713,6 @@ export default function X01PlayV3({
     if (typeof window === "undefined") return;
 
     try {
-      // ID de match stable : d'abord matchId du moteur, sinon ref locale
       const engineMatchId: string | undefined = (state as any)?.matchId;
       const matchId =
         historyIdRef.current ||
@@ -688,7 +721,6 @@ export default function X01PlayV3({
 
       historyIdRef.current = matchId;
 
-      // Snapshot pour autosave localStorage (reprise rapide)
       const snap: X01V3AutosaveSnapshot = {
         id: matchId,
         createdAt: Date.now(),
@@ -697,7 +729,6 @@ export default function X01PlayV3({
       };
       window.localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(snap));
 
-      // --------- En parallèle : enregistre la partie EN COURS dans History ---------
       const lightPlayers = (config.players || []).map((p: any) => ({
         id: p.id,
         name: p.name,
@@ -712,7 +743,6 @@ export default function X01PlayV3({
         startScore: config.startScore,
         matchId,
         config: { ...config, players: lightPlayers },
-        // on stocke juste la liste complète des darts pour pouvoir rejouer
         darts: replayDartsRef.current,
       };
 
@@ -731,7 +761,6 @@ export default function X01PlayV3({
         payload,
       };
 
-      // fire-and-forget, on ne bloque pas l'UI
       History.upsert(record).catch((err) => {
         console.warn("[X01PlayV3] History.upsert(in_progress) failed", err);
       });
@@ -754,7 +783,6 @@ export default function X01PlayV3({
 
       const snapPlayers = (snap.config?.players ?? []) as any[];
 
-      // Compat rapide : même startScore + même nombre de joueurs + mêmes noms à l’index
       if (
         snap.config?.startScore !== config.startScore ||
         !Array.isArray(snapPlayers) ||
@@ -769,7 +797,6 @@ export default function X01PlayV3({
       });
       if (!sameNames) return;
 
-      // OK, on rejoue
       isReplayingRef.current = true;
       replayDartsRef.current = snap.darts.slice();
 
@@ -796,6 +823,11 @@ export default function X01PlayV3({
       }
     }
   }, [status]);
+
+  // ✅ NOTE :
+  // Tu peux maintenant appeler ensureAudioUnlockedNow() au 1er clic user (ex: pushDart/validateThrow)
+  // pour garantir que les SFX arcade partent.
+
 
   // =====================================================
   // AUDIO FLAGS (depuis config) + helpers SFX/VOICE
@@ -940,16 +972,17 @@ const speakVisit = React.useCallback(
   }, [activePlayerId]);
 
   function pushDart(value: number) {
+    // ✅ au premier geste user, on unlock audio pour les mp3
+    ensureAudioUnlockedNow();
+  
     // saisie locale
     currentThrowFromEngineRef.current = false;
-
+  
     // pas plus de 3 fléchettes
     if (currentThrow.length >= 3) return;
-
+  
     const dart: UIDart = { v: value, mult: multiplier } as UIDart;
-
-    // ✅ ADAPTATEUR vers shape attendu par isBull/isDouble/...
-    // (tes helpers SFX ne lisent PAS {v,mult}, ils lisent {segment,multiplier})
+  
     const engineDart = {
       segment: dart.v === 25 ? 25 : dart.v,
       multiplier: dart.mult,
@@ -1012,6 +1045,7 @@ const speakVisit = React.useCallback(
   };
 
   const validateThrow = () => {
+    ensureAudioUnlockedNow();
     if (!currentThrow.length) return;
 
     if (isValidatingRef.current) return;
@@ -1363,6 +1397,7 @@ try {
   arcadeEnabled,
   voiceEnabled,
   voiceId,
+  lang, // ✅ AJOUT
 ]);
 
   // =====================================================

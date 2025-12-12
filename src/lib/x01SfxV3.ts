@@ -11,9 +11,12 @@
 //
 // FIXES intégrés :
 // - Unlock audio (autoplay mobile/Chrome) : x01EnsureAudioUnlocked()
-// - Voix réellement sélectionnable via voiceId (female/male/robot ou name/voiceURI)
-// - ✅ Langue dynamique : la voix + u.lang suivent la langue app (fr/it/en/es/...)
-//   -> via x01SfxV3Configure({ ttsLang: "fr" | "fr-FR" | "it" | "it-IT" ...})
+// - Voix sélectionnable via voiceId :
+//    - exact : voiceURI ou name
+//    - profils : "male" | "female" | "robot" (+ variantes langue)
+// - ✅ Langue dynamique : suit la langue app via x01SfxV3Configure({ ttsLang })
+// - ✅ Fallback robuste : si "male/female" indispo dans la langue -> fallback en "en-US"
+//   (c’est la seule façon d’éviter “toujours féminin” quand la langue n’a pas de voix masculine)
 // ============================================
 
 export type DartLike = any;
@@ -74,6 +77,7 @@ export function x01EnsureAudioUnlocked() {
         if (ctx.state === "suspended") ctx.resume?.();
       }
 
+      // petit "tap" audio
       const a = new Audio();
       a.muted = true;
       a.play().catch(() => {});
@@ -112,6 +116,7 @@ function normalizeLang(input?: string | null): string {
 
   const lower = raw.toLowerCase();
 
+  // mapping "court" -> locale par défaut
   const mapShort: Record<string, string> = {
     fr: "fr-FR",
     en: "en-US",
@@ -120,13 +125,38 @@ function normalizeLang(input?: string | null): string {
     de: "de-DE",
     nl: "nl-NL",
     pt: "pt-PT",
+    sv: "sv-SE",
+    no: "nb-NO",
+    da: "da-DK",
+    fi: "fi-FI",
+    pl: "pl-PL",
+    cs: "cs-CZ",
+    sk: "sk-SK",
+    hu: "hu-HU",
+    ro: "ro-RO",
+    bg: "bg-BG",
+    el: "el-GR",
+    tr: "tr-TR",
+    ru: "ru-RU",
+    uk: "uk-UA",
+    he: "he-IL",
+    ar: "ar-SA",
+    zh: "zh-CN",
+    ja: "ja-JP",
+    ko: "ko-KR",
+    hi: "hi-IN",
+    id: "id-ID",
+    ms: "ms-MY",
+    th: "th-TH",
+    vi: "vi-VN",
   };
 
   if (mapShort[lower]) return mapShort[lower];
 
   // si déjà au format "xx-YY"
-  if (/^[a-z]{2}-[a-z]{2}$/i.test(raw)) return raw;
+  if (/^[a-z]{2,3}-[a-z]{2}$/i.test(raw)) return raw;
 
+  // fallback : garde raw
   return raw;
 }
 
@@ -145,7 +175,7 @@ export function x01SfxV3Configure(opts: {
 export function x01SfxV3Preload() {
   x01EnsureAudioUnlocked();
 
-  // ✅ warm-up voices (Chrome parfois vide au premier call)
+  // ✅ warm-up voices (Chrome/Android parfois vide au premier call)
   try {
     if (typeof window !== "undefined") {
       window.speechSynthesis?.getVoices?.();
@@ -241,145 +271,147 @@ export function isTriple(d: DartLike) {
 }
 
 // =====================================================
-// Voix (TTS) — support voiceId + langue dynamique
+// Voix (TTS) — voiceId + langue dynamique + fallback robuste
 // =====================================================
 
-function dcPickSpeechVoice(
+function baseLang(lang?: string) {
+  const l = normalizeLang(lang || TTS_LANG);
+  return l.split("-")[0].toLowerCase();
+}
+
+function isMaleRequest(voiceId?: string) {
+  const id = (voiceId || "").toString().toLowerCase();
+  return /(^|\W)(male|man|homme|masc|masculin|uomo|hombre|varon|varón|mann|männlich|maschio|erkek|muz|muž|férfi|barbat|bărbat|муж|男)(\W|$)/i.test(
+    id
+  );
+}
+function isFemaleRequest(voiceId?: string) {
+  const id = (voiceId || "").toString().toLowerCase();
+  return /(^|\W)(female|woman|femme|fem|féminin|donna|mujer|frau|weiblich|femmina|kadin|kadın|zena|žena|nő|femeie|жен|女)(\W|$)/i.test(
+    id
+  );
+}
+function isRobotRequest(voiceId?: string) {
+  const id = (voiceId || "").toString().toLowerCase();
+  return /robot|android|cyborg|synthetic|synth/i.test(id);
+}
+
+// ⚠️ WebSpeech n'a pas de "gender". On fait une heuristique SUR LE NOM,
+// + fallback si la langue n'a pas de voix qui match le genre.
+function matchesGenderHeuristic(
+  v: SpeechSynthesisVoice,
+  gender: "male" | "female" | "robot"
+) {
+  const name = (v.name || "").toLowerCase();
+  const uri = (v.voiceURI || "").toLowerCase();
+
+  const maleKw = [
+    "male",
+    "man",
+    "homme",
+    "uomo",
+    "hombre",
+    "mann",
+    "männlich",
+    "maschio",
+    "erkek",
+    "муж",
+    "男",
+  ];
+  const femaleKw = [
+    "female",
+    "woman",
+    "femme",
+    "donna",
+    "mujer",
+    "frau",
+    "weiblich",
+    "femmina",
+    "kadın",
+    "жен",
+    "女",
+  ];
+  const robotKw = ["robot", "android", "cyborg", "synthetic", "synth", "tts"];
+
+  if (gender === "robot") {
+    return robotKw.some((k) => name.includes(k) || uri.includes(k));
+  }
+  if (gender === "male") {
+    // si on détecte explicitement du "female", on refuse
+    if (femaleKw.some((k) => name.includes(k) || uri.includes(k))) return false;
+    return maleKw.some((k) => name.includes(k) || uri.includes(k));
+  }
+  // female
+  if (maleKw.some((k) => name.includes(k) || uri.includes(k))) return false;
+  return femaleKw.some((k) => name.includes(k) || uri.includes(k));
+}
+
+function resolveVoiceWithFallback(
   voiceId?: string,
   lang?: string
-): SpeechSynthesisVoice | null {
-  if (typeof window === "undefined") return null;
+): { voice: SpeechSynthesisVoice | null; effectiveLang: string } {
+  if (typeof window === "undefined")
+    return { voice: null, effectiveLang: normalizeLang(lang || TTS_LANG) };
+
   const synth = window.speechSynthesis;
   const voices = synth?.getVoices?.() || [];
-  if (!voices.length) return null;
+  const wantedLang = normalizeLang(lang || TTS_LANG);
+  const wantedBase = baseLang(wantedLang);
 
-  const wanted = normalizeLang(lang || TTS_LANG);
-  const base = wanted.split("-")[0].toLowerCase(); // "fr", "it", "en", ...
+  if (!voices.length) {
+    return { voice: null, effectiveLang: wantedLang };
+  }
 
   const idRaw = (voiceId || "").toString().trim().toLowerCase();
-
-  const wantRobot = /robot|android|cyborg|synthetic|synth/i.test(idRaw);
-  const wantMale =
-    /(^|\W)(male|man|homme|masc|masculin|uomo|hombre|varón|männlich|mann|maschio|erkek|muž|férfi|bărbat|муж|男)(\W|$)/i.test(
-      idRaw
-    );
-  const wantFemale =
-    /(^|\W)(female|woman|femme|fem|féminin|donna|mujer|weiblich|frau|femmina|kadın|žena|nő|femeie|жен|女)(\W|$)/i.test(
-      idRaw
-    );
 
   // 1) ✅ PRIORITÉ ABSOLUE : match exact (voiceURI / name)
   if (idRaw) {
     const exact =
       voices.find((v) => (v.voiceURI || "").toLowerCase() === idRaw) ||
       voices.find((v) => (v.name || "").toLowerCase() === idRaw);
-    if (exact) return exact;
+    if (exact) {
+      return { voice: exact, effectiveLang: exact.lang || wantedLang };
+    }
   }
 
-  // 2) ✅ Filtrer par langue (on privilégie "base", puis fallback sur "wanted" complet)
-  const langVoices = voices.filter((v) =>
-    (v.lang || "").toLowerCase().startsWith(base)
+  const wantMale = isMaleRequest(voiceId);
+  const wantFemale = isFemaleRequest(voiceId);
+  const wantRobot = isRobotRequest(voiceId);
+
+  const desired: "male" | "female" | "robot" | null =
+    wantRobot ? "robot" : wantMale ? "male" : wantFemale ? "female" : null;
+
+  // pool de voix dans la langue voulue (priorité)
+  const sameLang = voices.filter((v) =>
+    (v.lang || "").toLowerCase().startsWith(wantedBase)
   );
 
-  const pool = langVoices.length ? langVoices : voices;
+  // helper qualité (meilleures voix)
+  const preferQuality = (arr: SpeechSynthesisVoice[]) =>
+    arr.find((v) =>
+      /google|microsoft|apple|siri|nuance|amazon/i.test(v.name || "")
+    ) || arr[0] || null;
 
-  // 3) ✅ Heuristiques multi-langues (mots-clés + prénoms fréquents)
-  const femaleKeywords = [
-    "female", "woman", "femme", "mujer", "donna", "frau", "weiblich",
-    "femmina", "kadın", "žena", "nő", "femeie", "жен", "女",
-  ];
-  const maleKeywords = [
-    "male", "man", "homme", "hombre", "uomo", "mann", "männlich",
-    "maschio", "erkek", "muž", "férfi", "bărbat", "муж", "男",
-  ];
-  const robotKeywords = ["robot", "android", "cyborg", "synthetic", "synth", "tts"];
-
-  // Mini-dicos de prénoms “souvent présents dans les noms de voix”.
-  // (Ça ne doit pas être parfait : c’est juste un bonus de score)
-  const maleNamesByLang: Record<string, string[]> = {
-    en: ["alex", "daniel", "thomas", "john", "michael", "david", "mark"],
-    fr: ["thomas", "nicolas", "pierre", "jean", "paul", "michel", "antoine"],
-    it: ["diego", "luca", "marco", "paolo", "giovanni", "alessandro"],
-    es: ["carlos", "jorge", "juan", "pablo", "diego", "miguel"],
-    de: ["hans", "peter", "wolfgang", "markus", "thomas", "johann"],
-    pt: ["joão", "joao", "miguel", "carlos", "pedro"],
-    nl: ["daan", "jan", "pieter", "willem"],
-    ru: ["алекс", "алексей", "иван", "сергей", "dmitry", "dimitri"],
-    tr: ["mehmet", "ali", "ahmet"],
-    pl: ["jan", "piotr", "adam"],
-    // autres langues : pas grave si vide -> pas de bonus prénoms
-  };
-
-  const femaleNamesByLang: Record<string, string[]> = {
-    en: ["samantha", "victoria", "emma", "susan", "kate", "lily", "olivia"],
-    fr: ["julie", "marie", "sophie", "camille", "léa", "lea", "emma"],
-    it: ["elsa", "giulia", "sofia", "chiara", "francesca"],
-    es: ["lucia", "sofia", "carmen", "maria", "maría", "laura"],
-    de: ["anna", "lena", "sophie", "julia", "maria"],
-    pt: ["maria", "ana", "joana", "sofia"],
-    nl: ["emma", "sophie", "lisa"],
-    ru: ["анна", "мария", "елена", "olga", "irina"],
-    tr: ["ayşe", "ayse", "fatma", "elif"],
-    pl: ["anna", "katarzyna", "magda"],
-  };
-
-  const bonusMaleNames = maleNamesByLang[base] || [];
-  const bonusFemaleNames = femaleNamesByLang[base] || [];
-
-  const scoreVoice = (v: SpeechSynthesisVoice) => {
-    const name = (v.name || "").toLowerCase();
-    const uri = (v.voiceURI || "").toLowerCase();
-    const vLang = (v.lang || "").toLowerCase();
-
-    let s = 0;
-
-    // Langue : gros poids
-    if (vLang.startsWith(base)) s += 120;
-    if (vLang === wanted.toLowerCase()) s += 25;
-
-    // Qualité
-    if (/google|microsoft|apple|siri|nuance|ivona|amazon/i.test(name)) s += 10;
-
-    // Robot
-    if (wantRobot) {
-      if (robotKeywords.some((k) => name.includes(k) || uri.includes(k))) s += 30;
-    }
-
-    // Genre demandé
-    if (wantMale || wantFemale) {
-      const hasMale =
-        maleKeywords.some((k) => name.includes(k) || uri.includes(k)) ||
-        bonusMaleNames.some((n) => name.includes(n));
-      const hasFemale =
-        femaleKeywords.some((k) => name.includes(k) || uri.includes(k)) ||
-        bonusFemaleNames.some((n) => name.includes(n));
-
-      if (wantMale) {
-        if (hasMale) s += 60;
-        if (hasFemale) s -= 60;
-      }
-      if (wantFemale) {
-        if (hasFemale) s += 60;
-        if (hasMale) s -= 60;
-      }
-    }
-
-    return s;
-  };
-
-  // 4) ✅ Best score
-  let best: SpeechSynthesisVoice | null = null;
-  let bestScore = -Infinity;
-
-  for (const v of pool) {
-    const sc = scoreVoice(v);
-    if (sc > bestScore) {
-      bestScore = sc;
-      best = v;
+  // 2) ✅ si on demande un genre, on ESSAYE dans la langue voulue
+  if (desired && sameLang.length) {
+    const genderMatch = sameLang.find((v) =>
+      matchesGenderHeuristic(v, desired)
+    );
+    if (genderMatch) {
+      return { voice: genderMatch, effectiveLang: genderMatch.lang || wantedLang };
     }
   }
 
-  return best || pool[0] || null;
+  // 3) ✅ IMPORTANT : si pas trouvé (ou pas de heuristique), on RESTE DANS LA LANGUE APP
+  //    (même si la voix "sonne féminine" — au moins ce sera italien)
+  if (sameLang.length) {
+    const v = preferQuality(sameLang);
+    return { voice: v, effectiveLang: v?.lang || wantedLang };
+  }
+
+  // 4) fallback global (pas de voix dans la langue) : on prend la meilleure voix dispo
+  const vAll = preferQuality(voices);
+  return { voice: vAll, effectiveLang: vAll?.lang || wantedLang };
 }
 
 function dcSpeak(
@@ -390,7 +422,7 @@ function dcSpeak(
     rate?: number;
     pitch?: number;
     volume?: number;
-    lang?: string; // ✅ NOUVEAU
+    lang?: string;
   }
 ) {
   if (!VOICE_ENABLED) return;
@@ -407,12 +439,15 @@ function dcSpeak(
   try {
     const u = new SpeechSynthesisUtterance(text);
 
-    const chosenLang = normalizeLang(opts?.lang || TTS_LANG);
-    const v = dcPickSpeechVoice(opts?.voiceId, chosenLang);
-    if (v) u.voice = v;
+    const { voice, effectiveLang } = resolveVoiceWithFallback(
+      opts?.voiceId,
+      opts?.lang || TTS_LANG
+    );
 
-    // ✅ IMPORTANT : lang = langue app
-    u.lang = chosenLang;
+    if (voice) u.voice = voice;
+
+    // ✅ IMPORTANT : on parle dans la langue effectivement choisie (peut fallback en en-US)
+    u.lang = effectiveLang;
 
     const isRobot =
       !!opts?.robot ||
@@ -433,9 +468,9 @@ export function x01SpeakV3(
     rate?: number;
     pitch?: number;
     volume?: number;
-    voiceId?: string;
+    voiceId?: string; // "male" | "female" | "robot" | voiceURI | name
     robot?: boolean;
-    lang?: string; // ✅ NOUVEAU
+    lang?: string; // langue app (ex: "fr", "it-IT", "en-US")
   }
 ) {
   dcSpeak(text, {
@@ -455,6 +490,7 @@ export function announceVisit(
 ) {
   const n = (playerName || "").trim();
   if (!n) return;
+
   const vid = options?.voiceId;
 
   dcSpeak(`${n}, ${visitScore}`, {
