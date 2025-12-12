@@ -28,7 +28,18 @@ import EndOfLegOverlay from "../components/EndOfLegOverlay";
 import type { LegStats } from "../lib/stats";
 import { buildLegStatsFromV3LiveForOverlay } from "../lib/x01v3/x01V3LegStatsAdapter";
 
-import { StatsBridge } from "../lib/statsBridge"; 
+import { StatsBridge } from "../lib/statsBridge";
+
+import {
+  x01SfxV3Preload,
+  x01PlaySfxV3,
+  isBull,
+  isDBull,
+  isDouble,
+  isTriple,
+  announceVisit,
+  announceEndGame,
+} from "../lib/x01SfxV3";
 
 // ---------------- Constantes visuelles / autosave ----------------
 
@@ -555,6 +566,10 @@ export default function X01PlayV3({
   const { theme } = useTheme();
   const { t } = useLang();
 
+  React.useEffect(() => {
+    x01SfxV3Preload();
+  }, []);
+
   // Pour éviter de sauvegarder le match plusieurs fois (History)
   const hasSavedMatchRef = React.useRef(false);
   // ID unique de la partie dans l'historique (même id pour "en cours" et "terminé")
@@ -764,9 +779,10 @@ export default function X01PlayV3({
       }
     }
   }, [status]);
-  
-  // =====================================================
+
+     // =====================================================
   // ÉTAT LOCAL KEYPAD (logique v1 + synchro UNDO moteur)
+  // + SFX fiables (BULL/DBULL/DOUBLE/TRIPLE) sans isBull/isDouble
   // =====================================================
 
   const [multiplier, setMultiplier] = React.useState<1 | 2 | 3>(1);
@@ -785,22 +801,46 @@ export default function X01PlayV3({
   //    ou de la saisie locale sur le keypad
   const currentThrowFromEngineRef = React.useRef(false);
 
+  // =====================================================
+  // 🔊 Helper SFX : 1 fléchette (fiable, basé sur segment + multiplier)
+  // =====================================================
+  const playDartSfx = React.useCallback((input: X01DartInputV3) => {
+    // 1) hit (toujours)
+    x01PlaySfxV3("dart_hit", { rateLimitMs: 40, volume: 0.75 });
+
+    const seg = input.segment;
+    const mult = input.multiplier;
+
+    // bull / dbull
+    if (seg === 25 && mult === 2) {
+      x01PlaySfxV3("dbull");
+      return;
+    }
+    if (seg === 25 && mult === 1) {
+      x01PlaySfxV3("bull");
+      return;
+    }
+
+    // MISS
+    if (seg <= 0) return;
+
+    // double / triple
+    if (mult === 3) x01PlaySfxV3("triple");
+    else if (mult === 2) x01PlaySfxV3("double");
+  }, []);
+
   // 🔄 SYNC AVEC LE MOTEUR UNIQUEMENT POUR LES CAS "ENGINE-DRIVEN"
   //    (UNDO global, rebuild, etc.)
   React.useEffect(() => {
-    // si ce flag est false, on NE TOUCHE PAS à currentThrow
-    // → jeu normal (humain ou bot) = aucun risque de "copier" la volée d'un autre
     if (!currentThrowFromEngineRef.current) return;
 
     const v: any = state.visit;
 
-    // 👉 Pas de visite active (nouveau leg / set) → on nettoie la volée locale
     if (!v) {
       setCurrentThrow([]);
       return;
     }
 
-    // Deux formats possibles selon le moteur : darts ou dartsThrown
     const raw: UIDart[] =
       v.darts && Array.isArray(v.darts) && v.darts.length
         ? v.darts.map((d: any) => ({
@@ -814,14 +854,12 @@ export default function X01PlayV3({
           }))
         : [];
 
-    // 👉 Visite active mais sans fléchette → on vide aussi
     if (!raw.length) {
       setCurrentThrow([]);
       return;
     }
 
     setCurrentThrow((prev) => {
-      // si c'est déjà identique, on ne touche pas pour éviter les boucles
       if (
         prev.length === raw.length &&
         prev.every((d, i) => d.v === raw[i].v && d.mult === raw[i].mult)
@@ -835,26 +873,31 @@ export default function X01PlayV3({
   // 🔄 CHANGEMENT DE JOUEUR ACTIF → on vide la volée locale
   //    (sauf en cas d'UNDO/rebuild où c'est le moteur qui pilote)
   React.useEffect(() => {
-    if (currentThrowFromEngineRef.current) {
-      // si on est dans un cycle piloté par le moteur (UNDO),
-      // on laisse l'autre effet gérer la synchro
-      return;
-    }
-    // nouveau joueur (humain ou bot) → on repart sur une volée vide
+    if (currentThrowFromEngineRef.current) return;
     setCurrentThrow([]);
     setMultiplier(1);
   }, [activePlayerId]);
 
   function pushDart(value: number) {
-    // Saisie locale → ce n'est plus un état reconstruit par le moteur
+    // saisie locale
     currentThrowFromEngineRef.current = false;
 
-    setCurrentThrow((prev) => {
-      if (prev.length >= 3) return prev;
-      const next: UIDart = { v: value, mult: multiplier } as UIDart;
-      return [...prev, next];
-    });
-    // ✅ on désélectionne Double / Triple après CHAQUE fléchette
+    // pas plus de 3 fléchettes
+    if (currentThrow.length >= 3) return;
+
+    const dart: UIDart = { v: value, mult: multiplier } as UIDart;
+
+    // 🔊 sons fiables basés sur segment+multiplier
+    const inputForSfx: X01DartInputV3 = {
+      segment: value === 25 ? 25 : value,
+      multiplier,
+    };
+    playDartSfx(inputForSfx);
+
+    // UI
+    setCurrentThrow((prev) => [...prev, dart]);
+
+    // reset multiplicateur
     setMultiplier(1);
   }
 
@@ -873,37 +916,27 @@ export default function X01PlayV3({
   };
 
   const handleCancel = () => {
-    // 1) Si une volée saisie LOCALLEMENT est en cours -> on enlève UNIQUEMENT le dernier hit
+    // 1) édition locale : enlève le dernier hit de la volée en cours
     if (currentThrow.length > 0 && !currentThrowFromEngineRef.current) {
       setCurrentThrow((prev) => prev.slice(0, -1));
       setMultiplier(1);
       return;
     }
 
-    // 2) Sinon -> UNDO GLOBAL : on remonte d'UN dart dans tout le match (moteur V3)
-    if (!replayDartsRef.current.length) {
-      // rien à annuler
-      return;
-    }
+    // 2) UNDO GLOBAL : remonte d'UN dart dans tout le match
+    if (!replayDartsRef.current.length) return;
 
-    // 🛡️ on indique qu'on est en train de faire un UNDO global,
-    // pour empêcher des effets secondaires côté BOT
     botUndoGuardRef.current = true;
 
-    // On enlève la DERNIÈRE fléchette du log global (autosave)
+    // enlève la DERNIÈRE fléchette du log global (autosave)
     replayDartsRef.current.pop();
 
-    // 👉 à partir d'ici, on veut que ce soit le moteur qui
-    //     reconduise currentThrow (visit partielle du bon joueur)
+    // à partir d'ici, on veut que le moteur resynchronise la visit partielle
     currentThrowFromEngineRef.current = true;
 
-    // On demande au moteur V3 de revenir d'un dart en arrière
     undoLastDart();
-
-    // On persiste l'autosave avec une fléchette en moins
     persistAutosave();
 
-    // On relâche le garde BOT juste après ce cycle de rendu
     setTimeout(() => {
       botUndoGuardRef.current = false;
     }, 0);
@@ -913,14 +946,43 @@ export default function X01PlayV3({
     // 🛑 volée vide
     if (!currentThrow.length) return;
 
-    // 🛑 déjà en train de valider (double tap, spam bouton, etc.)
+    // 🛑 déjà en train de valider
     if (isValidatingRef.current) return;
     isValidatingRef.current = true;
 
     const toSend = [...currentThrow];
-
-    // 🔍 on mémorise la volée pour les pastilles UI
     const pid = activePlayerId;
+
+    // =====================================================
+    // 🔊 FIN DE VOLÉE : bust / 180 / voix
+    // =====================================================
+    try {
+      const playerName = activePlayer?.name || "Joueur";
+      const scoreBefore = (pid ? scores[pid] : undefined) ?? config.startScore;
+
+      const visitScore = toSend.reduce(
+        (s, d) => s + (d.v === 25 && d.mult === 2 ? 50 : d.v * d.mult),
+        0
+      );
+
+      const isBustNow =
+        scoreBefore - visitScore < 0 ||
+        (doubleOut && scoreBefore - visitScore === 1);
+
+      if (isBustNow) {
+        x01PlaySfxV3("bust");
+      } else {
+        if (visitScore === 180 && toSend.length === 3) {
+          x01PlaySfxV3("score_180", { rateLimitMs: 300 });
+        }
+      }
+
+      announceVisit(playerName, visitScore);
+    } catch (e) {
+      console.warn("[X01PlayV3] end-of-visit sfx/voice failed", e);
+    }
+
+    // mémorise la volée pour les pastilles UI
     if (pid) {
       setLastVisitsByPlayer((m) => ({
         ...m,
@@ -934,31 +996,32 @@ export default function X01PlayV3({
       multiplier: d.mult as 1 | 2 | 3,
     }));
 
-    // 🔐 UI : on reset tout de suite
+    // UI reset immédiat
     setCurrentThrow([]);
     setMultiplier(1);
 
-    // Saisie humaine → c'est la UI qui pilote, plus le moteur
+    // Saisie humaine → c'est la UI qui pilote, pas le moteur
     currentThrowFromEngineRef.current = false;
 
-    // Autosave : on enrichit le log complet + on persiste
+    // Autosave
     replayDartsRef.current = replayDartsRef.current.concat(inputs);
     persistAutosave();
 
-    // ⚠️ POINT CRITIQUE :
-    // On NE fait PLUS un forEach synchrone.
-    // On enchaîne les darts avec de petits setTimeout pour
-    // laisser React appliquer le nouvel état entre chaque dart.
+    // throwDart séquencé (évite les effets bizarres)
     inputs.forEach((input, index) => {
       setTimeout(() => {
+        // ⚠️ On NE rejoue pas playDartSfx ici sinon double-son
+        // (déjà joué au moment de pushDart)
         throwDart(input);
 
-        // dernière fléchette : on relâche le verrou
         if (index === inputs.length - 1) {
           isValidatingRef.current = false;
         }
-      }, index * 10); // 0 / 10 / 20 ms → invisible pour le joueur
+      }, index * 10);
     });
+
+    // sécurité
+    if (!inputs.length) isValidatingRef.current = false;
   };
 
   // =====================================================
@@ -1156,26 +1219,52 @@ export default function X01PlayV3({
     startNextLeg();
   }
 
+ // =====================================================
+// Sauvegarde du match dans l'Historique / Stats
+// + 🔊 FIN DE MATCH : victoire + voix classement
+// =====================================================
+
+React.useEffect(() => {
+  if (status !== "match_end") return;
+  if (hasSavedMatchRef.current) return;
+  hasSavedMatchRef.current = true;
+
   // =====================================================
-  // Sauvegarde du match dans l'Historique / Stats
+  // 🔊 FIN DE MATCH : victoire + voix classement
   // =====================================================
 
-  React.useEffect(() => {
-    if (status !== "match_end") return;
-    if (hasSavedMatchRef.current) return;
-    hasSavedMatchRef.current = true;
+  try {
+    const rankingNames = miniRanking.map((r) => r.name);
+    const winnerName = rankingNames[0] || "Joueur";
 
-    try {
-      saveX01V3MatchToHistory({
-        config,
-        state,
-        scores,
-        liveStatsByPlayer,
-      });
-    } catch (err) {
-      console.warn("[X01PlayV3] saveX01V3MatchToHistory failed", err);
-    }
-  }, [status, config, state, scores, liveStatsByPlayer]);
+    // Son de victoire (une seule fois)
+    x01PlaySfxV3("victory", { rateLimitMs: 800, volume: 0.25 });
+
+    // Voix IA : vainqueur + classement
+    announceEndGame({
+      winnerName,
+      rankingNames,
+    });
+  } catch (e) {
+    console.warn("[X01PlayV3] end-game sfx/voice failed", e);
+  }
+
+  // =====================================================
+  // Sauvegarde Historique / Stats
+  // =====================================================
+
+  try {
+    saveX01V3MatchToHistory({
+      config,
+      state,
+      scores,
+      liveStatsByPlayer,
+    });
+  } catch (err) {
+    console.warn("[X01PlayV3] saveX01V3MatchToHistory failed", err);
+  }
+}, [status, config, state, scores, liveStatsByPlayer, miniRanking]);
+
 
   // =====================================================
   // BOT : tour auto si joueur courant est un BOT
