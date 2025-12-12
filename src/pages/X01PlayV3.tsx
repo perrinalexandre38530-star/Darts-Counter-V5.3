@@ -197,7 +197,8 @@ function formatCheckoutFromVisit(suggestion: any): string {
 // Pastilles pour la dernière volée d’un joueur
 function renderLastVisitChips(
   pid: string,
-  lastVisits: Record<string, UIDart[]>
+  lastVisits: Record<string, UIDart[]>,
+  isBust?: boolean
 ) {
   const darts = lastVisits[pid] ?? [];
   if (!darts.length) return null;
@@ -206,6 +207,11 @@ function renderLastVisitChips(
     <span style={{ display: "inline-flex", gap: 6 }}>
       {darts.map((d, i) => {
         const st = chipStyle(d, false);
+
+        const bg = isBust ? "rgba(200,30,30,.18)" : (st.background as string);
+        const bd = isBust ? "1px solid rgba(255,80,80,.35)" : (st.border as string);
+        const co = isBust ? "#ff8a8a" : (st.color as string);
+
         return (
           <span
             key={i}
@@ -215,9 +221,9 @@ function renderLastVisitChips(
               borderRadius: 10,
               fontSize: 11,
               fontWeight: 700,
-              background: st.background,
-              border: st.border as string,
-              color: st.color as string,
+              background: bg,
+              border: bd,
+              color: co,
             }}
           >
             {fmt(d)}
@@ -227,6 +233,7 @@ function renderLastVisitChips(
     </span>
   );
 }
+
 
 /* ---------------------------------------------------
    Petit "cerveau" BOT local (placeholder)
@@ -942,238 +949,292 @@ const speakVisit = React.useCallback(
 );
 
   // =====================================================
-  // ÉTAT LOCAL KEYPAD (logique v1 + synchro UNDO moteur)
-  // =====================================================
+// ÉTAT LOCAL KEYPAD (logique v1 + synchro UNDO moteur)
+// =====================================================
 
-  const [multiplier, setMultiplier] = React.useState<1 | 2 | 3>(1);
-  const [currentThrow, setCurrentThrow] = React.useState<UIDart[]>([]);
-  const [lastVisitsByPlayer, setLastVisitsByPlayer] = React.useState<
-    Record<string, UIDart[]>
-  >({});
+const [multiplier, setMultiplier] = React.useState<1 | 2 | 3>(1);
+const [currentThrow, setCurrentThrow] = React.useState<UIDart[]>([]);
 
-  // 🔒 garde-fou anti double-validation HUMAIN
-  const isValidatingRef = React.useRef(false);
+// ✅ ÉTAT: dernière volée par joueur (sert à PlayersListOnly + bust preview)
+const [lastVisitsByPlayer, setLastVisitsByPlayer] = React.useState<
+  Record<string, UIDart[]>
+>({});
 
-  // 🔒 garde-fou BOT : (gardé si tu veux le réutiliser plus tard)
-  const botUndoGuardRef = React.useRef(false);
+const [lastVisitIsBustByPlayer, setLastVisitIsBustByPlayer] = React.useState<
+  Record<string, boolean>
+>({});
 
-  // 🔒 indique si currentThrow vient du moteur (rebuild / UNDO)
-  //    ou de la saisie locale sur le keypad
-  const currentThrowFromEngineRef = React.useRef(false);
+// 🔒 garde-fou anti double-validation HUMAIN
+const isValidatingRef = React.useRef(false);
 
-  // 🔄 SYNC AVEC LE MOTEUR UNIQUEMENT POUR LES CAS "ENGINE-DRIVEN"
-  //    (UNDO global, rebuild, etc.)
-  React.useEffect(() => {
-    if (!currentThrowFromEngineRef.current) return;
+// 🔒 garde-fou BOT : (gardé si tu veux le réutiliser plus tard)
+const botUndoGuardRef = React.useRef(false);
 
-    const v: any = state.visit;
+// 🔊 anti double-bust (bust preview déjà joué avant validation)
+const bustPreviewPlayedRef = React.useRef(false);
 
-    if (!v) {
-      setCurrentThrow([]);
-      return;
-    }
+// 🔊 timer pour déclencher le BUST avec délai
+const bustSoundTimeoutRef = React.useRef<number | null>(null);
 
-    const raw: UIDart[] =
-      v.darts && Array.isArray(v.darts) && v.darts.length
-        ? v.darts.map((d: any) => ({
-            v: d.segment,
-            mult: d.multiplier as 1 | 2 | 3,
-          }))
-        : v.dartsThrown && Array.isArray(v.dartsThrown) && v.dartsThrown.length
-        ? v.dartsThrown.map((d: any) => ({
-            v: d.value,
-            mult: d.mult as 1 | 2 | 3,
-          }))
-        : [];
+// 🔒 indique si currentThrow vient du moteur (rebuild / UNDO)
+//    ou de la saisie locale sur le keypad
+const currentThrowFromEngineRef = React.useRef(false);
 
-    if (!raw.length) {
-      setCurrentThrow([]);
-      return;
-    }
+// 🔄 SYNC AVEC LE MOTEUR UNIQUEMENT POUR LES CAS "ENGINE-DRIVEN"
+//    (UNDO global, rebuild, etc.)
+React.useEffect(() => {
+  if (!currentThrowFromEngineRef.current) return;
 
-    setCurrentThrow((prev) => {
-      if (
-        prev.length === raw.length &&
-        prev.every((d, i) => d.v === raw[i].v && d.mult === raw[i].mult)
-      ) {
-        return prev;
-      }
-      return raw;
-    });
-  }, [state]);
+  const v: any = state.visit;
 
-  // 🔄 CHANGEMENT DE JOUEUR ACTIF → on vide la volée locale
-  //    (sauf en cas d'UNDO/rebuild où c'est le moteur qui pilote)
-  React.useEffect(() => {
-    if (currentThrowFromEngineRef.current) return;
+  if (!v) {
     setCurrentThrow([]);
-    setMultiplier(1);
-  }, [activePlayerId]);
+    return;
+  }
 
-  function pushDart(value: number) {
-    // ✅ 1) unlock audio au premier geste user
-    ensureAudioUnlockedNow();
-  
-    // saisie locale (pas moteur)
-    currentThrowFromEngineRef.current = false;
-  
-    // max 3 fléchettes
-    if (currentThrow.length >= 3) return;
-  
-    const dart: UIDart = { v: value, mult: multiplier } as UIDart;
-  
-    // ===============================
-    // 🔊 SONS À CHAQUE FLÉCHETTE
-    // ===============================
-  
-    // 0) hit sec (bruitage léger)
-    try {
-      playHitSfx("dart_hit", { rateLimitMs: 40, volume: 0.55 });
-    } catch {}
-  
-    // 1) BULL / DBULL — PRIORITÉ ABSOLUE
-    // ⚠️ DBULL est EXCLUSIF → PAS de son "double"
-    const isDBull = dart.v === 25 && dart.mult === 2;
-    const isBull = dart.v === 25 && dart.mult === 1;
-  
-    try {
-      if (isDBull) {
-        playArcadeSfx("dbull", { rateLimitMs: 80 });
-      } else if (isBull) {
-        playArcadeSfx("bull", { rateLimitMs: 80 });
-      }
-    } catch {}
-  
-    // 2) DOUBLE / TRIPLE
-    // ⚠️ double UNIQUEMENT si ce n'est PAS un DBULL
-    try {
-      if (!isDBull) {
-        if (dart.mult === 3) {
-          playArcadeSfx("triple", { rateLimitMs: 80 });
-        } else if (dart.mult === 2) {
-          playArcadeSfx("double", { rateLimitMs: 80 });
-        }
-      }
-    } catch {}
-  
-    // ===============================
-    // UI
-    // ===============================
-    setCurrentThrow((prev) => [...prev, dart]);
-    setMultiplier(1);
-  }  
+  const raw: UIDart[] =
+    v.darts && Array.isArray(v.darts) && v.darts.length
+      ? v.darts.map((d: any) => ({
+          v: d.segment,
+          mult: d.multiplier as 1 | 2 | 3,
+        }))
+      : v.dartsThrown && Array.isArray(v.dartsThrown) && v.dartsThrown.length
+      ? v.dartsThrown.map((d: any) => ({
+          v: d.value,
+          mult: d.mult as 1 | 2 | 3,
+        }))
+      : [];
 
-  const handleNumber = (value: number) => pushDart(value);
-  const handleBull = () => pushDart(25);
+  if (!raw.length) {
+    setCurrentThrow([]);
+    return;
+  }
 
-  const handleBackspace = () => {
-    currentThrowFromEngineRef.current = false;
-    setCurrentThrow((prev) => prev.slice(0, -1));
-  };
-
-  const handleCancel = () => {
-    // 1) édition locale : enlève le dernier hit de la volée en cours
-    if (currentThrow.length > 0 && !currentThrowFromEngineRef.current) {
-      setCurrentThrow((prev) => prev.slice(0, -1));
-      setMultiplier(1);
-      return;
+  setCurrentThrow((prev) => {
+    if (
+      prev.length === raw.length &&
+      prev.every((d, i) => d.v === raw[i].v && d.mult === raw[i].mult)
+    ) {
+      return prev;
     }
+    return raw;
+  });
+}, [state]);
 
-    // 2) UNDO GLOBAL : remonte d'UN dart dans tout le match
-    if (!replayDartsRef.current.length) return;
+// 🔄 CHANGEMENT DE JOUEUR ACTIF → on vide la volée locale
+//    (sauf en cas d'UNDO/rebuild où c'est le moteur qui pilote)
+React.useEffect(() => {
+  if (currentThrowFromEngineRef.current) return;
+  setCurrentThrow([]);
+  setMultiplier(1);
+}, [activePlayerId]);
 
-    botUndoGuardRef.current = true;
+function pushDart(value: number) {
+  ensureAudioUnlockedNow();
+  currentThrowFromEngineRef.current = false;
 
-    replayDartsRef.current.pop();
+  if (!activePlayerId) return;
+  if (currentThrow.length >= 3) return;
 
-    // à partir d'ici, on veut que le moteur resynchronise la visit partielle
-    currentThrowFromEngineRef.current = true;
+  const dart: UIDart = { v: value, mult: multiplier } as UIDart;
 
-    undoLastDart();
-    persistAutosave();
+  // 1) hit
+  playHitSfx("dart_hit", { rateLimitMs: 40, volume: 0.55 });
 
-    setTimeout(() => {
-      botUndoGuardRef.current = false;
-    }, 0);
-  };
+  // 2) arcade bull/dbull + 3) double/triple (avec DBULL exclusif)
+  const isDbull = dart.v === 25 && dart.mult === 2;
+  const isBullNow = dart.v === 25 && dart.mult === 1;
 
-  const validateThrow = () => {
-    ensureAudioUnlockedNow();
-    if (!currentThrow.length) return;
+  if (isDbull) playArcadeMapped("dbull");
+  else if (isBullNow) playArcadeMapped("bull");
 
-    if (isValidatingRef.current) return;
-    isValidatingRef.current = true;
+  if (!isDbull) {
+    if (dart.mult === 3) playArcadeMapped("triple");
+    else if (dart.mult === 2) playArcadeMapped("double");
+  }
 
-    const toSend = [...currentThrow];
-    const pid = activePlayerId;
+  const nextThrow = [...currentThrow, dart];
+  setCurrentThrow(nextThrow);
+  setMultiplier(1);
 
-    // =====================================================
-    // 🔊 FIN DE VOLÉE : bust / 180 / voix
-    // =====================================================
-    try {
-      const playerName = activePlayer?.name || "Joueur";
-      const scoreBefore = (pid ? scores[pid] : undefined) ?? config.startScore;
+  // ---- BUST PREVIEW (dès que ça devient bust) + son BUST décalé 1.5s
+  if (bustSoundTimeoutRef.current) {
+    window.clearTimeout(bustSoundTimeoutRef.current);
+    bustSoundTimeoutRef.current = null;
+  }
 
-      const visitScore = toSend.reduce(
-        (s, d) => s + (d.v === 25 && d.mult === 2 ? 50 : d.v * d.mult),
-        0
-      );
+  try {
+    const scoreBefore = currentScore;
 
-      const isBustNow =
-        scoreBefore - visitScore < 0 ||
-        (doubleOut && scoreBefore - visitScore === 1);
+    const visitScore = nextThrow.reduce(
+      (s, d) => s + (d.v === 25 && d.mult === 2 ? 50 : d.v * d.mult),
+      0
+    );
 
-      if (isBustNow) {
-        playArcadeMapped("bust");
-      } else {
-        if (visitScore === 180 && toSend.length === 3) {
-          playArcadeMapped("score_180", { rateLimitMs: 300 });
-        }
-      }
+    const remainingAfter = scoreBefore - visitScore;
+    const willBustNow =
+      remainingAfter < 0 || (doubleOut && remainingAfter === 1);
 
-      // voix IA (si activée)
-      speakVisit(playerName, visitScore);
-    } catch (e) {
-      console.warn("[X01PlayV3] end-of-visit sfx/voice failed", e);
-    }
-
-    // mémorise la volée pour les pastilles UI
-    if (pid) {
+    if (willBustNow) {
+      // ✅ afficher la volée bust en rouge (liste joueurs)
       setLastVisitsByPlayer((m) => ({
         ...m,
-        [pid]: toSend,
+        [activePlayerId]: nextThrow,
+      }));
+      setLastVisitIsBustByPlayer((m) => ({
+        ...m,
+        [activePlayerId]: true,
+      }));
+
+      if (!bustPreviewPlayedRef.current) {
+        bustPreviewPlayedRef.current = true;
+
+        bustSoundTimeoutRef.current = window.setTimeout(() => {
+          playArcadeMapped("bust", { rateLimitMs: 220 });
+          bustSoundTimeoutRef.current = null;
+        }, 1500);
+      }
+    } else {
+      bustPreviewPlayedRef.current = false;
+      setLastVisitIsBustByPlayer((m) => ({
+        ...m,
+        [activePlayerId]: false,
       }));
     }
+  } catch {
+    // ignore
+  }
+}
 
-    // Conversion UI -> moteur V3
-    const inputs: X01DartInputV3[] = toSend.map((d) => ({
-      segment: d.v === 25 ? 25 : d.v,
-      multiplier: d.mult as 1 | 2 | 3,
+const handleNumber = (value: number) => pushDart(value);
+const handleBull = () => pushDart(25);
+
+const handleBackspace = () => {
+  currentThrowFromEngineRef.current = false;
+
+  bustPreviewPlayedRef.current = false;
+  if (bustSoundTimeoutRef.current) {
+    window.clearTimeout(bustSoundTimeoutRef.current);
+    bustSoundTimeoutRef.current = null;
+  }
+
+  setCurrentThrow((prev) => prev.slice(0, -1));
+};
+
+const handleCancel = () => {
+  bustPreviewPlayedRef.current = false;
+  if (bustSoundTimeoutRef.current) {
+    window.clearTimeout(bustSoundTimeoutRef.current);
+    bustSoundTimeoutRef.current = null;
+  }
+
+  if (activePlayerId) {
+    setLastVisitIsBustByPlayer((m: Record<string, boolean>) => ({
+      ...m,
+      [activePlayerId]: false,
     }));
+  }
 
-    // UI reset immédiat
-    setCurrentThrow([]);
+  // si on est en saisie locale -> retire juste 1 dart
+  if (currentThrow.length > 0 && !currentThrowFromEngineRef.current) {
+    setCurrentThrow((prev) => prev.slice(0, -1));
     setMultiplier(1);
+    return;
+  }
 
-    currentThrowFromEngineRef.current = false;
+  // sinon -> UNDO moteur (si on a de l'historique)
+  if (!replayDartsRef.current.length) return;
 
-    // Autosave
-    replayDartsRef.current = replayDartsRef.current.concat(inputs);
-    persistAutosave();
+  botUndoGuardRef.current = true;
 
-    // throwDart séquencé
-    inputs.forEach((input, index) => {
-      setTimeout(() => {
-        throwDart(input);
+  replayDartsRef.current.pop();
+  currentThrowFromEngineRef.current = true;
 
-        if (index === inputs.length - 1) {
-          isValidatingRef.current = false;
-        }
-      }, index * 10);
-    });
+  undoLastDart();
+  persistAutosave();
 
-    if (!inputs.length) isValidatingRef.current = false;
-  };
+  setTimeout(() => {
+    botUndoGuardRef.current = false;
+  }, 0);
+};
+
+const validateThrow = () => {
+  ensureAudioUnlockedNow();
+  if (!activePlayerId) return;
+  if (!currentThrow.length) return;
+
+  if (isValidatingRef.current) return;
+  isValidatingRef.current = true;
+
+  const toSend = [...currentThrow];
+  const pid = activePlayerId;
+
+  // ✅ on coupe tout timer bust “prévu”
+  bustPreviewPlayedRef.current = false;
+  if (bustSoundTimeoutRef.current) {
+    window.clearTimeout(bustSoundTimeoutRef.current);
+    bustSoundTimeoutRef.current = null;
+  }
+
+  try {
+    const playerName = activePlayer?.name || "Joueur";
+    const scoreBefore = scores[pid] ?? config.startScore;
+
+    const visitScore = toSend.reduce(
+      (s, d) => s + (d.v === 25 && d.mult === 2 ? 50 : d.v * d.mult),
+      0
+    );
+
+    const isBustNow =
+      scoreBefore - visitScore < 0 || (doubleOut && scoreBefore - visitScore === 1);
+
+    // ✅ 180 uniquement si pas bust
+    if (!isBustNow && visitScore === 180 && toSend.length === 3) {
+      playArcadeMapped("score_180", { rateLimitMs: 300 });
+    }
+
+    // ✅ voix IA
+    speakVisit(playerName, visitScore);
+
+    // ✅ volée validée : reset le flag rouge
+    setLastVisitIsBustByPlayer((m: Record<string, boolean>) => ({
+      ...m,
+      [pid]: false,
+    }));
+  } catch (e) {
+    console.warn("[X01PlayV3] end-of-visit sfx/voice failed", e);
+  }
+
+  setLastVisitsByPlayer((m: Record<string, UIDart[]>) => ({
+    ...m,
+    [pid]: toSend,
+  }));
+
+  const inputs: X01DartInputV3[] = toSend.map((d) => ({
+    segment: d.v === 25 ? 25 : d.v,
+    multiplier: d.mult as 1 | 2 | 3,
+  }));
+
+  setCurrentThrow([]);
+  setMultiplier(1);
+
+  currentThrowFromEngineRef.current = false;
+
+  replayDartsRef.current = replayDartsRef.current.concat(inputs);
+  persistAutosave();
+
+  inputs.forEach((input, index) => {
+    setTimeout(() => {
+      throwDart(input);
+
+      if (index === inputs.length - 1) {
+        isValidatingRef.current = false;
+      }
+    }, index * 10);
+  });
+
+  if (!inputs.length) isValidatingRef.current = false;
+};
 
   // =====================================================
   // STATS LIVE & MINI-RANKING
@@ -1730,6 +1791,7 @@ try {
           setsWon={(state as any).setsWon ?? {}}
           useSets={useSetsUi}
           lastVisitsByPlayer={lastVisitsByPlayer}
+          lastVisitIsBustByPlayer={lastVisitIsBustByPlayer}
           avg3ByPlayer={avg3ByPlayer}
         />
       </div>
@@ -2132,10 +2194,7 @@ function HeaderBlock(props: {
 
 function PlayersListOnly(props: {
   players: any[];
-  profileById: Record<
-    string,
-    { avatarDataUrl: string | null; name: string }
-  >;
+  profileById: Record<string, { avatarDataUrl: string | null; name: string }>;
   liveStatsByPlayer: Record<string, any>;
   start: number;
   scoresByPlayer: Record<string, number>;
@@ -2143,6 +2202,7 @@ function PlayersListOnly(props: {
   setsWon: Record<string, number>;
   useSets: boolean;
   lastVisitsByPlayer: Record<string, UIDart[]>;
+  lastVisitIsBustByPlayer: Record<string, boolean>;
   avg3ByPlayer: Record<string, number>;
 }) {
   const {
@@ -2155,8 +2215,10 @@ function PlayersListOnly(props: {
     setsWon,
     useSets,
     lastVisitsByPlayer,
+    lastVisitIsBustByPlayer,
     avg3ByPlayer,
   } = props;
+
 
   return (
     <div
@@ -2270,7 +2332,7 @@ function PlayersListOnly(props: {
                 </div>
 
                 {/* Pastilles dernière volée */}
-                {renderLastVisitChips(p.id, lastVisitsByPlayer)}
+                {renderLastVisitChips(p.id, lastVisitsByPlayer, (lastVisitIsBustByPlayer as any)?.[p.id])}
               </div>
               <div
                 style={{

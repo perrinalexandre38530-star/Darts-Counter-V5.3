@@ -321,15 +321,15 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
   const [mode, setMode] = React.useState<LeaderboardMode>("x01_multi");
   const [period, setPeriod] = React.useState<PeriodKey>("ALL");
 
-  // 🔥 nouvelle source : history local + IDB
-  const [historySource, setHistorySource] = React.useState<any[]>(
-    (store.history as any[]) || []
+ // nouvelle source : History local + IDB
+const [historySource, setHistorySource] = React.useState<any[]>(
+  ((store as any)?.history as any[]) || []
   );
 
   // garde en synchro avec store.history
   React.useEffect(() => {
-    setHistorySource((store.history as any[]) || []);
-  }, [store.history]);
+    setHistorySource((((store as any)?.history) as any[]) || []);
+  }, [store]);
 
   // charge TOUT l'historique depuis IndexedDB (History)
   React.useEffect(() => {
