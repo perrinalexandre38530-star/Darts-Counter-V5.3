@@ -29,6 +29,7 @@ import type { LegStats } from "../lib/stats";
 import { buildLegStatsFromV3LiveForOverlay } from "../lib/x01v3/x01V3LegStatsAdapter";
 
 import { StatsBridge } from "../lib/statsBridge";
+import { loadBots } from "./ProfilesBots";
 
 import {
   x01SfxV3Preload,
@@ -638,25 +639,74 @@ export default function X01PlayV3({
   const isReplayingRef = React.useRef(false);
   const hasReplayedRef = React.useRef(false);
 
-  // Overlay "Résumé de la manche" (EndOfLegOverlay)
-  const [summaryOpen, setSummaryOpen] = React.useState(false);
-  const [summaryLegStats, setSummaryLegStats] =
-    React.useState<LegStats | null>(null);
+ // =====================================================
+// ✅ Bot avatars fallback (si un BOT n'a pas avatarDataUrl dans config)
+// -> on charge la liste des bots et on résout l'avatar proprement
+// =====================================================
 
-  const summaryPlayersById = React.useMemo(
-    () =>
-      Object.fromEntries(
-        (config.players || []).map((p) => [
-          p.id,
-          {
-            id: p.id,
-            name: p.name || "Joueur",
-            avatarDataUrl: p.avatarDataUrl ?? null,
-          },
-        ])
-      ),
-    [config.players]
+const botsMap = React.useMemo(() => {
+  try {
+    const bots = (loadBots as any)?.() || [];
+    const m: Record<string, any> = {};
+    for (const b of bots) {
+      if (b?.id) m[String(b.id)] = b;
+    }
+    return m;
+  } catch {
+    return {};
+  }
+}, []);
+
+// ✅ AVATAR RESOLVER UNIQUE (humains + bots)
+const resolveAvatar = React.useCallback(
+  (p: any): string | null => {
+    if (!p) return null;
+
+    // 1) champs directs sur le player (humain ou bot)
+    const direct =
+      p.avatarDataUrl ??
+      p.avatarUrl ??
+      p.photoUrl ??
+      p.avatar ??
+      null;
+
+    if (direct) return direct;
+
+    // 2) fallback BOT : on tente via botsMap (id du player)
+    if (p.isBot) {
+      const b = botsMap[String(p.id)];
+      return (
+        b?.avatarDataUrl ??
+        b?.avatarUrl ??
+        b?.photoUrl ??
+        b?.avatar ??
+        null
+      );
+    }
+
+    return null;
+  },
+  [botsMap]
+);
+
+// Overlay "Résumé de la manche" (EndOfLegOverlay)
+const [summaryOpen, setSummaryOpen] = React.useState(false);
+const [summaryLegStats, setSummaryLegStats] = React.useState<LegStats | null>(
+  null
+);
+
+const summaryPlayersById = React.useMemo(() => {
+  return Object.fromEntries(
+    (config.players || []).map((p) => [
+      p.id,
+      {
+        id: p.id,
+        name: p.name || "Joueur",
+        avatarDataUrl: resolveAvatar(p),
+      },
+    ])
   );
+}, [config.players, resolveAvatar]);
 
   const {
     state,
@@ -685,21 +735,16 @@ export default function X01PlayV3({
 
   // ---------------- Avatars (depuis config.players) ----------------
 
-  const profileById = React.useMemo(() => {
-    const m: Record<string, { avatarDataUrl: string | null; name: string }> =
-      {};
-    for (const p of players as any[]) {
-      m[p.id] = {
-        avatarDataUrl:
-          p.avatarDataUrl ??
-          (p as any).avatarUrl ??
-          (p as any).photoUrl ??
-          null,
-        name: p.name,
-      };
-    }
-    return m;
-  }, [players]);
+const profileById = React.useMemo(() => {
+  const m: Record<string, { avatarDataUrl: string | null; name: string }> = {};
+  for (const p of players as any[]) {
+    m[p.id] = {
+      avatarDataUrl: resolveAvatar(p),
+      name: p.name,
+    };
+  }
+  return m;
+}, [players]);
 
   const currentScore =
     (activePlayer && scores[activePlayer.id]) ?? config.startScore;

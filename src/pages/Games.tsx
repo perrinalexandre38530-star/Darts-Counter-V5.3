@@ -106,8 +106,8 @@ const GAMES: GameDef[] = [
     infoBodyKey: "games.killer.infoBody",
     infoBodyDefault:
       "Chaque joueur possède un numéro. Deviens Killer en touchant le tien, puis élimine les autres joueurs.",
-    tab: null,
-    enabled: false,
+    tab: "killer_config", // ✅ active la navigation vers ta page KillerConfig
+    enabled: true,        // ✅ enlève le grisage
   },
   {
     id: "shanghai",

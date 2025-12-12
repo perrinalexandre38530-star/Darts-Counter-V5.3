@@ -40,7 +40,11 @@ import X01Setup from "./pages/X01Setup";
 import X01Play from "./pages/X01Play";
 import X01OnlineSetup from "./pages/X01OnlineSetup";
 import CricketPlay from "./pages/CricketPlay";
+
+// ✅ KILLER (CONFIG + PLAY)
+import KillerConfig from "./pages/KillerConfig";
 import KillerPlay from "./pages/KillerPlay";
+
 import ShanghaiPlay from "./pages/ShanghaiPlay";
 import LobbyPick from "./pages/LobbyPick";
 import X01End from "./pages/X01End";
@@ -123,7 +127,10 @@ type Tab =
   | "x01_end"
   | "cricket"
   | "killer"
+  | "killer_config" // ✅ NEW
+  | "killer_play"   // ✅ NEW
   | "shanghai"
+  | "battle_royale"
   | "training"
   | "training_x01"
   | "training_stats"
@@ -403,13 +410,8 @@ function App() {
 
   /* Boot: persistance + nettoyage localStorage + warm-up */
   React.useEffect(() => {
-    // Demande de persistance (IndexedDB / OPFS si possible)
     ensurePersisted().catch(() => {});
-
-    // 🔒 Nettoyage localStorage si trop plein / legacy
     purgeLegacyLocalStorageIfNeeded();
-
-    // Warm-up agrégateur (stats lite)
     try {
       warmAggOnce();
     } catch {}
@@ -464,9 +466,6 @@ function App() {
           const hasProfiles = (base.profiles ?? []).length > 0;
           const hasActive = !!base.activeProfileId;
 
-          // 🔐 Si aucun profil actif (et généralement aucun profil),
-          // on force le passage par Profils > "Mon profil"
-          // avec le bloc UnifiedAuthBlock (connexion / création).
           if (!hasProfiles || !hasActive) {
             setRouteParams({ view: "me", autoCreate: true });
             setTab("profiles");
@@ -545,7 +544,6 @@ function App() {
       payload: { ...(m as any), players },
     };
 
-    /* mémoire locale */
     update((s) => {
       const list = [...(s.history ?? [])];
       const i = list.findIndex((r: any) => r.id === saved.id);
@@ -554,12 +552,10 @@ function App() {
       return { ...s, history: list };
     });
 
-    /* Historique détaillé IDB */
     try {
       (History as any)?.upsert?.(saved);
     } catch {}
 
-    /* miroir LocalStorage pour StatsOnline */
     try {
       const raw = localStorage.getItem(LS_ONLINE_MATCHES_KEY);
       const list = raw ? JSON.parse(raw) : [];
@@ -579,7 +575,6 @@ function App() {
       );
     } catch {}
 
-    /* upload online (best effort) */
     try {
       const supported = ["x01", "cricket", "killer", "shanghai"];
       if (supported.includes(saved.kind)) {
@@ -719,7 +714,6 @@ function App() {
           <SyncCenter
             store={store}
             go={go}
-            // profileId optionnel pour cibler un joueur précis
             profileId={routeParams?.profileId ?? null}
           />
         );
@@ -751,9 +745,8 @@ function App() {
         );
         break;
 
-      /* ---------- X01 ONLINE SETUP (FULLWEB / Worker DO) ---------- */
+      /* ---------- X01 ONLINE SETUP ---------- */
       case "x01_online_setup": {
-        // On sécurise d'abord un profil actif
         const activeProfile =
           store.profiles.find((p) => p.id === store.activeProfileId) ??
           store.profiles[0] ??
@@ -761,7 +754,6 @@ function App() {
 
         const lobbyCode = routeParams?.lobbyCode ?? null;
 
-        // Si vraiment aucun profil => message plutôt que crash / écran noir
         if (!activeProfile) {
           page = (
             <div className="container" style={{ padding: 16 }}>
@@ -791,8 +783,6 @@ function App() {
           break;
         }
 
-        // On passe un store "overridé" pour que X01OnlineSetup
-        // voie bien ce profil comme actif, même si activeProfileId était nul.
         const storeForOnline: Store = {
           ...store,
           activeProfileId: activeProfile.id,
@@ -815,7 +805,6 @@ function App() {
 
         let effectiveConfig = x01Config;
 
-        // Cas ONLINE lancé sans passer par X01Setup
         if (!effectiveConfig && isOnline && !isResume) {
           const activeProfile =
             store.profiles.find((p) => p.id === store.activeProfileId) ??
@@ -892,7 +881,7 @@ function App() {
               setX01ConfigV3(cfg);
               go("x01_play_v3", { fresh: Date.now() });
             }}
-            go={go} // pour "Créer BOT"
+            go={go}
           />
         );
         break;
@@ -937,19 +926,51 @@ function App() {
         page = (
           <CricketPlay
             profiles={store.profiles ?? []}
-            // 🔗 enregistre la manche dans History + Stats
             onFinish={(m: any) => pushHistory(m)}
           />
         );
         break;
       }
 
+      // ✅ Alias (si tu as encore des anciens appels go("killer"))
       case "killer": {
-        page = <KillerPlay playerIds={[]} onFinish={pushHistory} />;
+        // redirige proprement vers la config
+        page = <KillerConfig store={store} go={go} />;
+        break;
+      }
+
+      // ✅ NEW: KILLER CONFIG
+      case "killer_config": {
+        page = <KillerConfig store={store} go={go} />;
+        break;
+      }
+
+      // ✅ NEW: KILLER PLAY
+      case "killer_play": {
+        const cfg = routeParams?.config;
+        if (!cfg) {
+          page = (
+            <div style={{ padding: 16 }}>
+              <button onClick={() => go("killer_config")}>← Retour</button>
+              <p>Configuration KILLER manquante.</p>
+            </div>
+          );
+          break;
+        }
+
+        page = (
+          <KillerPlay
+            store={store}
+            go={go}
+            config={cfg}
+            onFinish={(m: any) => pushHistory(m)} // ✅ SAVE History + stats mirror
+          />
+        );
         break;
       }
 
       case "shanghai": {
+        // (si tu veux : future config shanghai)
         page = <ShanghaiPlay playerIds={[]} onFinish={pushHistory} />;
         break;
       }
