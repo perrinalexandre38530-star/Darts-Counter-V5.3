@@ -3,6 +3,7 @@
 // Paramètres X01 V3 — style "Cricket params" + gestion d'équipes
 // + Sélection de BOTS IA créés dans Profils (LS "dc_bots_v1")
 // + Intégration de BOTS IA "pro" prédéfinis (Green Machine, Snake King…)
+// + NEW : audio config (Sons Arcade / Bruitages / Voix IA + voix sélection)
 // =============================================================
 
 import React from "react";
@@ -65,6 +66,16 @@ const TEAM_COLORS: Record<TeamId, string> = {
 
 // Clé locale BOTS (même que Profils>Bots)
 const LS_BOTS_KEY = "dc_bots_v1";
+
+// ---------- Audio / voix ----------
+type VoiceOption = { id: string; label: string };
+
+const VOICE_OPTIONS: VoiceOption[] = [
+  { id: "default", label: "Défaut" },
+  { id: "female", label: "Voix féminine" },
+  { id: "male", label: "Voix masculine" },
+  { id: "robot", label: "Voix robot" },
+];
 
 type BotLite = {
   id: string;
@@ -133,74 +144,76 @@ const PlayerDartBadge: React.FC<PlayerDartBadgeProps> = ({
       ? "Dart-Set"
       : "Dart set";
 
-      return (
-        <button
-          type="button"
-          onClick={handleClick}
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      style={{
+        marginTop: 6,
+        alignSelf: "center",
+        padding: "4px 10px",
+        borderRadius: 999,
+        border: "1px solid rgba(255,255,255,.18)",
+        background:
+          "radial-gradient(circle at 0% 0%, rgba(245,195,91,.22), rgba(8,8,20,.96))",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        color: "#fff",
+        fontSize: 10,
+        maxWidth: 180,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }}
+      aria-label={labelBase}
+      title={labelBase}
+    >
+      {/* Mini visuel fléchettes */}
+      {current.thumbImageUrl ? (
+        <img
+          src={current.thumbImageUrl}
           style={{
-            marginTop: 6,
-            alignSelf: "center",
-            padding: "4px 10px",
-            borderRadius: 999,
-            border: "1px solid rgba(255,255,255,.18)",
-            background:
-              "radial-gradient(circle at 0% 0%, rgba(245,195,91,.22), rgba(8,8,20,.96))",
+            width: 20,
+            height: 20,
+            borderRadius: "50%",
+            objectFit: "cover",
+            boxShadow: "0 0 6px rgba(0,0,0,.9)",
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: "50%",
+            background: current.bgColor || "#050509",
             display: "flex",
             alignItems: "center",
-            gap: 6,
-            color: "#fff",
-            fontSize: 10,
-            maxWidth: 180,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
+            justifyContent: "center",
+            fontSize: 12,
+            boxShadow: "0 0 6px rgba(0,0,0,.9)",
+            border: `1px solid rgba(245,195,91,.8)`,
           }}
         >
-          {/* Mini visuel fléchettes */}
-          {current.thumbImageUrl ? (
-            <img
-              src={current.thumbImageUrl}
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: "50%",
-                objectFit: "cover",
-                boxShadow: "0 0 6px rgba(0,0,0,.9)",
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: "50%",
-                background: current.bgColor || "#050509",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 12,
-                boxShadow: "0 0 6px rgba(0,0,0,.9)",
-                border: "1px solid rgba(245,195,91,.8)",
-              }}
-            >
-              🎯
-            </div>
-          )}
-      
-          {/* Nom du set UNIQUEMENT */}
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              whiteSpace: "nowrap",
-              textOverflow: "ellipsis",
-              overflow: "hidden",
-            }}
-          >
-            {current.name}
-          </span>
-        </button>
-      );
+          🎯
+        </div>
+      )}
+
+      {/* Nom du set UNIQUEMENT */}
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          whiteSpace: "nowrap",
+          textOverflow: "ellipsis",
+          overflow: "hidden",
+        }}
+      >
+        {current.name}
+      </span>
+    </button>
+  );
 };
 
 // ------------------------------------------------------
@@ -381,13 +394,7 @@ const PlayerDartChip: React.FC<PlayerDartChipProps> = ({
       }}
     >
       <span style={{ fontSize: 13 }}>🎯</span>
-      <span
-        style={{
-          opacity: 0.9,
-        }}
-      >
-        {text}
-      </span>
+      <span style={{ opacity: 0.9 }}>{text}</span>
     </button>
   );
 };
@@ -415,7 +422,6 @@ export default function X01ConfigV3({
       const parsed = JSON.parse(raw) as any[];
 
       const mapped: BotLite[] = parsed.map((b) => {
-        // On récupère le libellé de niveau depuis plusieurs clés possibles
         const levelLabel: string =
           b.botLevel ??
           b.levelLabel ??
@@ -482,12 +488,43 @@ export default function X01ConfigV3({
     React.useState<ServiceModeV3>("alternate");
   const [matchMode, setMatchMode] = React.useState<MatchModeV3>("solo");
 
+  // ---- NEW : AUDIO OPTIONS (pour X01PlayV3) ----
+  const [arcadeEnabled, setArcadeEnabled] = React.useState<boolean>(true);
+  const [hitEnabled, setHitEnabled] = React.useState<boolean>(true);
+  const [voiceEnabled, setVoiceEnabled] = React.useState<boolean>(true);
+  const [voiceId, setVoiceId] = React.useState<string>("default");
+
+  // évite d’écraser le choix manuel si on change de joueur sélectionné
+  const voiceTouchedRef = React.useRef(false);
+
   const [selectedIds, setSelectedIds] = React.useState<string[]>(() => {
     if (humanProfiles.length >= 2)
       return [humanProfiles[0].id, humanProfiles[1].id];
     if (humanProfiles.length === 1) return [humanProfiles[0].id];
     return [];
   });
+
+  // ⚙️ pré-remplit la voix depuis le 1er profil humain sélectionné (si dispo)
+  React.useEffect(() => {
+    if (voiceTouchedRef.current) return;
+
+    const firstHumanSelectedId =
+      selectedIds.find((id) => humanProfiles.some((p) => p.id === id)) ??
+      humanProfiles[0]?.id ??
+      null;
+
+    if (!firstHumanSelectedId) return;
+
+    const p: any = humanProfiles.find((x) => x.id === firstHumanSelectedId);
+    if (!p) return;
+
+    const candidate: string | undefined =
+      p.ttsVoice ?? p.voiceId ?? p.voice ?? p.tts ?? undefined;
+
+    if (candidate && typeof candidate === "string") {
+      setVoiceId(candidate);
+    }
+  }, [selectedIds, humanProfiles]);
 
   // playerId -> teamId
   const [teamAssignments, setTeamAssignments] = React.useState<
@@ -707,6 +744,14 @@ export default function X01ConfigV3({
       matchMode,
       players,
       createdAt: Date.now(),
+
+      // ✅ NEW : audio config consommée par X01PlayV3
+      audio: {
+        arcadeEnabled,
+        hitEnabled,
+        voiceEnabled,
+        voiceId,
+      },
     };
 
     if (matchMode === "teams" && teams) {
@@ -743,18 +788,8 @@ export default function X01ConfigV3({
       }}
     >
       {/* HEADER */}
-      <header
-        style={{
-          marginBottom: 4,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            marginBottom: 6,
-          }}
-        >
+      <header style={{ marginBottom: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
           <button
             type="button"
             onClick={onBack}
@@ -774,11 +809,7 @@ export default function X01ConfigV3({
             <span>{t("x01v3.config.back", "Retour")}</span>
           </button>
         </div>
-        <div
-          style={{
-            textAlign: "center",
-          }}
-        >
+        <div style={{ textAlign: "center" }}>
           <div
             style={{
               fontSize: 26,
@@ -840,9 +871,7 @@ export default function X01ConfigV3({
           </div>
 
           {humanProfiles.length === 0 ? (
-            <p
-              style={{ fontSize: 13, color: "#b3b8d0", marginBottom: 8 }}
-            >
+            <p style={{ fontSize: 13, color: "#b3b8d0", marginBottom: 8 }}>
               {t(
                 "x01v3.noProfiles",
                 "Aucun profil local. Tu peux créer des joueurs et des BOTS dans le menu Profils."
@@ -953,9 +982,7 @@ export default function X01ConfigV3({
                         <PlayerDartBadge
                           profileId={p.id}
                           dartSetId={playerDartSets[p.id] ?? null}
-                          onChange={(id) =>
-                            handleChangePlayerDartSet(p.id, id)
-                          }
+                          onChange={(id) => handleChangePlayerDartSet(p.id, id)}
                         />
                       </div>
                     </div>
@@ -963,9 +990,7 @@ export default function X01ConfigV3({
                 })}
               </div>
 
-              <p
-                style={{ fontSize: 11, color: "#7c80a0", marginBottom: 0 }}
-              >
+              <p style={{ fontSize: 11, color: "#7c80a0", marginBottom: 0 }}>
                 {t(
                   "x01v3.playersHint",
                   "2 joueurs pour un duel, 3+ pour Multi ou Équipes."
@@ -1001,13 +1026,7 @@ export default function X01ConfigV3({
 
           {/* Score de départ */}
           <div style={{ marginBottom: 12 }}>
-            <div
-              style={{
-                fontSize: 12,
-                color: "#c8cbe4",
-                marginBottom: 6,
-              }}
-            >
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
               {t("x01v3.startScore", "Score de départ")}
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -1026,13 +1045,7 @@ export default function X01ConfigV3({
 
           {/* Mode d'entrée */}
           <div style={{ marginBottom: 12 }}>
-            <div
-              style={{
-                fontSize: 12,
-                color: "#c8cbe4",
-                marginBottom: 6,
-              }}
-            >
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
               {t("x01v3.inMode", "Mode d'entrée")}
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -1061,14 +1074,8 @@ export default function X01ConfigV3({
           </div>
 
           {/* Mode de sortie */}
-          <div>
-            <div
-              style={{
-                fontSize: 12,
-                color: "#c8cbe4",
-                marginBottom: 6,
-              }}
-            >
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
               {t("x01v3.outMode", "Mode de sortie")}
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -1093,6 +1100,155 @@ export default function X01ConfigV3({
                 primary={primary}
                 primarySoft={primarySoft}
               />
+            </div>
+          </div>
+
+          {/* ✅ NEW : AUDIO / VOIX */}
+          <div
+            style={{
+              marginTop: 10,
+              paddingTop: 10,
+              borderTop: "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: 1,
+                fontWeight: 700,
+                color: primary,
+                marginBottom: 8,
+              }}
+            >
+              {t("x01v3.audio.title", "Audio")}
+            </div>
+
+            {/* Sons Arcade */}
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
+                {t("x01v3.audio.arcade", "Sons Arcade")}
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <PillButton
+                  label={t("common.on", "ON")}
+                  active={arcadeEnabled === true}
+                  onClick={() => setArcadeEnabled(true)}
+                  primary={primary}
+                  primarySoft={primarySoft}
+                  compact
+                />
+                <PillButton
+                  label={t("common.off", "OFF")}
+                  active={arcadeEnabled === false}
+                  onClick={() => setArcadeEnabled(false)}
+                  primary={primary}
+                  primarySoft={primarySoft}
+                  compact
+                />
+              </div>
+              <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
+                {t(
+                  "x01v3.audio.arcadeHint",
+                  "DBULL / BULL / DOUBLE / TRIPLE / 180 / BUST / victoire"
+                )}
+              </div>
+            </div>
+
+            {/* Bruitages (dart_hit) */}
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
+                {t("x01v3.audio.hit", "Bruitages")}
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <PillButton
+                  label={t("common.on", "ON")}
+                  active={hitEnabled === true}
+                  onClick={() => setHitEnabled(true)}
+                  primary={primary}
+                  primarySoft={primarySoft}
+                  compact
+                />
+                <PillButton
+                  label={t("common.off", "OFF")}
+                  active={hitEnabled === false}
+                  onClick={() => setHitEnabled(false)}
+                  primary={primary}
+                  primarySoft={primarySoft}
+                  compact
+                />
+              </div>
+              <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
+                {t("x01v3.audio.hitHint", "Son de fléchette (dart-hit)")}
+              </div>
+            </div>
+
+            {/* Voix IA + sélection */}
+            <div>
+              <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
+                {t("x01v3.audio.voice", "Voix IA")}
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <PillButton
+                  label={t("common.on", "ON")}
+                  active={voiceEnabled === true}
+                  onClick={() => setVoiceEnabled(true)}
+                  primary={primary}
+                  primarySoft={primarySoft}
+                  compact
+                />
+                <PillButton
+                  label={t("common.off", "OFF")}
+                  active={voiceEnabled === false}
+                  onClick={() => setVoiceEnabled(false)}
+                  primary={primary}
+                  primarySoft={primarySoft}
+                  compact
+                />
+              </div>
+
+              <div style={{ marginTop: 10 }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "#c8cbe4",
+                    marginBottom: 6,
+                  }}
+                >
+                  {t("x01v3.audio.voiceSelect", "Voix")}
+                </div>
+                <select
+                  value={voiceId}
+                  onChange={(e) => {
+                    voiceTouchedRef.current = true;
+                    setVoiceId(e.target.value);
+                  }}
+                  style={{
+                    width: "100%",
+                    height: 38,
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.10)",
+                    background: "rgba(9,11,20,0.9)",
+                    color: "#f2f2ff",
+                    padding: "0 10px",
+                    fontSize: 13,
+                    outline: "none",
+                  }}
+                >
+                  {VOICE_OPTIONS.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+
+                <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
+                  {t(
+                    "x01v3.audio.voiceHint",
+                    "Utilisée pour l'annonce des scores / fin de match."
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -1123,13 +1279,7 @@ export default function X01ConfigV3({
 
           {/* Legs par set */}
           <div style={{ marginBottom: 10 }}>
-            <div
-              style={{
-                fontSize: 12,
-                color: "#c8cbe4",
-                marginBottom: 6,
-              }}
-            >
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
               {t("x01v3.legsPerSet", "Manches par set")}
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -1149,13 +1299,7 @@ export default function X01ConfigV3({
 
           {/* Sets à gagner */}
           <div>
-            <div
-              style={{
-                fontSize: 12,
-                color: "#c8cbe4",
-                marginBottom: 6,
-              }}
-            >
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
               {t("x01v3.setsToWin", "Sets à gagner")}
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -1187,13 +1331,7 @@ export default function X01ConfigV3({
         >
           {/* Service / ordre de départ */}
           <div style={{ marginBottom: 12 }}>
-            <div
-              style={{
-                fontSize: 12,
-                color: "#c8cbe4",
-                marginBottom: 6,
-              }}
-            >
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
               {t("x01v3.service", "Service / ordre de départ")}
             </div>
             <div style={{ display: "flex", gap: 6 }}>
@@ -1205,10 +1343,7 @@ export default function X01ConfigV3({
                 primarySoft={primarySoft}
               />
               <PillButton
-                label={t(
-                  "x01v3.service.alternate",
-                  "Alterné (officiel)"
-                )}
+                label={t("x01v3.service.alternate", "Alterné (officiel)")}
                 active={serveMode === "alternate"}
                 onClick={() => setServeMode("alternate")}
                 primary={primary}
@@ -1219,13 +1354,7 @@ export default function X01ConfigV3({
 
           {/* Mode de match */}
           <div>
-            <div
-              style={{
-                fontSize: 12,
-                color: "#c8cbe4",
-                marginBottom: 6,
-              }}
-            >
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
               {t("x01v3.matchMode", "Mode de match")}
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -1300,13 +1429,7 @@ export default function X01ConfigV3({
             {t("x01v3.bots.title", "Bots IA")}
           </h3>
 
-          <p
-            style={{
-              fontSize: 11,
-              color: "#7c80a0",
-              marginBottom: 10,
-            }}
-          >
+          <p style={{ fontSize: 11, color: "#7c80a0", marginBottom: 10 }}>
             {t(
               "x01v3.bots.subtitle",
               'Ajoute des BOTS IA à ta partie : bots "pro" prédéfinis ou BOTS que tu as créés dans le menu Profils.'
@@ -1367,13 +1490,7 @@ export default function X01ConfigV3({
                   </div>
 
                   {/* Chip BOT bleu néon */}
-                  <div
-                    style={{
-                      marginTop: 2,
-                      display: "flex",
-                      justifyContent: "center",
-                    }}
-                  >
+                  <div style={{ marginTop: 2, display: "flex", justifyContent: "center" }}>
                     <span
                       style={{
                         padding: "2px 8px",
@@ -1494,15 +1611,11 @@ function TeamsSection({
 
   const orderedTeams: TeamId[] = ["gold", "pink", "blue", "green"];
 
-  const maxTeams =
-    totalPlayers <= 4 ? 2 : totalPlayers <= 6 ? 3 : 4;
+  const maxTeams = totalPlayers <= 4 ? 2 : totalPlayers <= 6 ? 3 : 4;
 
-  const maxPerTeamBase =
-    totalPlayers >= 8 ? 4 : totalPlayers >= 6 ? 3 : 2;
+  const maxPerTeamBase = totalPlayers >= 8 ? 4 : totalPlayers >= 6 ? 3 : 2;
 
-  const usedTeamsCount = orderedTeams.filter(
-    (tid) => counts[tid] > 0
-  ).length;
+  const usedTeamsCount = orderedTeams.filter((tid) => counts[tid] > 0).length;
 
   const maxPerTeam = usedTeamsCount >= 3 ? 2 : maxPerTeamBase;
 
@@ -1529,13 +1642,7 @@ function TeamsSection({
       >
         {t("x01v3.teams.title", "Composition des équipes")}
       </h3>
-      <p
-        style={{
-          fontSize: 11,
-          color: "#7c80a0",
-          marginBottom: 10,
-        }}
-      >
+      <p style={{ fontSize: 11, color: "#7c80a0", marginBottom: 10 }}>
         {t(
           "x01v3.teams.subtitle",
           "Assigne chaque joueur à une Team : Gold, Pink, Blue ou Green. Combos possibles : 2v2, 3v3, 4v4, 2v2v2 ou 2v2v2v2."
@@ -1558,14 +1665,7 @@ function TeamsSection({
                 gap: 8,
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  minWidth: 0,
-                }}
-              >
+              <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                 <ProfileAvatar profile={p} size={28} />
                 <span
                   style={{
@@ -1580,19 +1680,10 @@ function TeamsSection({
                   {p.name}
                 </span>
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 4,
-                  flexWrap: "wrap",
-                  justifyContent: "flex-end",
-                }}
-              >
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
                 {orderedTeams.map((tid, idx) => {
                   const allowedTeamSlot = idx < maxTeams;
-                  const full =
-                    counts[tid] >= maxPerTeam && team !== tid;
-
+                  const full = counts[tid] >= maxPerTeam && team !== tid;
                   const disabled = !allowedTeamSlot || full;
 
                   return (
@@ -1625,49 +1716,25 @@ function resolveBotLevel(botLevelRaw?: string | null): { level: number } {
 
   if (!v) return { level: 1 };
 
-  // Si un chiffre apparaît dans la chaîne (ex: "lvl2", "3/5", "level 4")
   const digits = v.replace(/[^0-9]/g, "");
   if (digits) {
     const n = parseInt(digits, 10);
-    if (Number.isFinite(n) && n >= 1 && n <= 5) {
-      return { level: n };
-    }
+    if (Number.isFinite(n) && n >= 1 && n <= 5) return { level: n };
   }
 
-  // Mots-clés
   if (v.includes("legend") || v.includes("légende")) return { level: 5 };
-
   if (v.includes("pro")) return { level: 4 };
 
-  if (
-    v.includes("fort") ||
-    v.includes("strong") ||
-    v.includes("hard") ||
-    v.includes("difficile")
-  ) {
+  if (v.includes("fort") || v.includes("strong") || v.includes("hard") || v.includes("difficile")) {
     return { level: 3 };
   }
-
-  if (
-    v.includes("standard") ||
-    v.includes("normal") ||
-    v.includes("medium") ||
-    v.includes("moyen")
-  ) {
+  if (v.includes("standard") || v.includes("normal") || v.includes("medium") || v.includes("moyen")) {
     return { level: 2 };
   }
-
-  if (
-    v.includes("easy") ||
-    v.includes("facile") ||
-    v.includes("beginner") ||
-    v.includes("débutant") ||
-    v.includes("rookie")
-  ) {
+  if (v.includes("easy") || v.includes("facile") || v.includes("beginner") || v.includes("débutant") || v.includes("rookie")) {
     return { level: 1 };
   }
 
-  // défaut : 1 étoile
   return { level: 1 };
 }
 
@@ -1681,37 +1748,21 @@ function BotMedallion({
   level: number; // 1..5
   active: boolean;
 }) {
-  // 1) BOT PRO IA ?
   const isPro = bot.id.startsWith("bot_pro_");
-
-  // 2) Couleurs selon type
   const COLOR = isPro ? "#f7c85c" : "#00b4ff";
-  const COLOR_GLOW = isPro
-    ? "rgba(247,200,92,0.9)"
-    : "rgba(0,172,255,0.65)";
+  const COLOR_GLOW = isPro ? "rgba(247,200,92,0.9)" : "rgba(0,172,255,0.65)";
 
-  // 3) Tailles
   const SCALE = 0.6;
   const AVATAR = 96 * SCALE;
   const MEDALLION = 104 * SCALE;
   const STAR = 18 * SCALE;
   const WRAP = MEDALLION + STAR;
 
-  // 4) Densité d’étoiles (simple mapping 1..5)
   const lvl = Math.max(1, Math.min(5, level));
   const fakeAvg3d = 15 + (lvl - 1) * 12;
 
   return (
-    <div
-      style={{
-        position: "relative",
-        width: WRAP,
-        height: WRAP,
-        flex: "0 0 auto",
-        overflow: "visible",
-      }}
-    >
-      {/* ⭐ Anneau d'étoiles */}
+    <div style={{ position: "relative", width: WRAP, height: WRAP, flex: "0 0 auto", overflow: "visible" }}>
       <div
         aria-hidden
         style={{
@@ -1732,7 +1783,6 @@ function BotMedallion({
         />
       </div>
 
-      {/* Cercle principal (or si PRO, bleu sinon) */}
       <div
         style={{
           position: "absolute",
@@ -1759,13 +1809,12 @@ function BotMedallion({
           transition: "transform .15s ease, box-shadow .15s ease",
           border: active
             ? `2px solid ${COLOR}`
-            : `2px solid ${
-                isPro ? "rgba(247,200,92,0.5)" : "rgba(144,228,255,0.9)"
-              }`,
+            : `2px solid ${isPro ? "rgba(247,200,92,0.5)" : "rgba(144,228,255,0.9)"}`,
         }}
       >
         <ProfileAvatar
           size={AVATAR}
+          // @ts-ignore (ProfileAvatar supporte déjà dataUrl chez toi)
           dataUrl={bot.avatarDataUrl ?? undefined}
           label={bot.name?.[0]?.toUpperCase() || "B"}
           showStars={false}
@@ -1810,11 +1859,7 @@ function PillButton({
     ? `1px solid ${primary}`
     : "1px solid rgba(255,255,255,0.07)";
 
-  const color = isDisabled
-    ? "#777b92"
-    : active
-    ? "#fdf9ee"
-    : "#d0d3ea";
+  const color = isDisabled ? "#777b92" : active ? "#fdf9ee" : "#d0d3ea";
 
   return (
     <button
@@ -1829,8 +1874,7 @@ function PillButton({
         color,
         fontSize: 12,
         fontWeight: active && !isDisabled ? 600 : 500,
-        boxShadow:
-          active && !isDisabled ? "0 0 12px rgba(0,0,0,0.7)" : "none",
+        boxShadow: active && !isDisabled ? "0 0 12px rgba(0,0,0,0.7)" : "none",
         whiteSpace: "nowrap",
         opacity: isDisabled ? 0.7 : 1,
         cursor: isDisabled ? "default" : "pointer",
@@ -1876,8 +1920,7 @@ function TeamPillButton({
         color: disabled ? "#777b92" : baseColor,
         fontSize: 11,
         fontWeight: 600,
-        boxShadow:
-          active && !disabled ? `0 0 10px ${color}55` : "none",
+        boxShadow: active && !disabled ? `0 0 10px ${color}55` : "none",
         whiteSpace: "nowrap",
         cursor: disabled ? "default" : "pointer",
         opacity: disabled ? 0.6 : 1,

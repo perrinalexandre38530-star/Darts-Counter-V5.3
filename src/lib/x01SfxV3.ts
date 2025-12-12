@@ -8,6 +8,10 @@
 // - 180: fin de volée si score=180 avec 3 darts
 // - bust: à chaque bust
 // - victoire: fin de match + voix classement
+//
+// FIXES intégrés :
+// - Unlock audio (autoplay mobile/Chrome) : x01EnsureAudioUnlocked()
+// - Voix réellement sélectionnable via voiceId (female/male/robot ou name/voiceURI)
 // ============================================
 
 export type DartLike = any;
@@ -45,6 +49,53 @@ function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
 }
 
+// =====================================================
+// 🔓 UNLOCK AUDIO (autoplay policies)
+// =====================================================
+
+let __dcAudioUnlocked = false;
+
+export function x01EnsureAudioUnlocked() {
+  if (typeof window === "undefined") return;
+  if (__dcAudioUnlocked) return;
+
+  const unlock = () => {
+    try {
+      // Déverrouille WebAudio si utilisé ailleurs (au cas où)
+      const AC =
+        (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (AC) {
+        const ctx = (window as any).__dcAudioCtx || new AC();
+        (window as any).__dcAudioCtx = ctx;
+        if (ctx.state === "suspended") ctx.resume?.();
+      }
+
+      // Déverrouille aussi HTMLAudio (iOS/Chrome)
+      const a = new Audio();
+      a.muted = true;
+      a.play().catch(() => {});
+      a.pause();
+    } catch {}
+
+    __dcAudioUnlocked = true;
+
+    window.removeEventListener("pointerdown", unlock);
+    window.removeEventListener("touchstart", unlock);
+    window.removeEventListener("mousedown", unlock);
+    window.removeEventListener("keydown", unlock);
+  };
+
+  // 1er geste user = unlock
+  window.addEventListener("pointerdown", unlock, { once: true } as any);
+  window.addEventListener("touchstart", unlock, { once: true } as any);
+  window.addEventListener("mousedown", unlock, { once: true } as any);
+  window.addEventListener("keydown", unlock, { once: true } as any);
+}
+
+// =====================================================
+// SFX
+// =====================================================
+
 function getAudio(key: SfxKey) {
   if (cache[key]) return cache[key]!;
   const a = new Audio(SFX_URL[key]);
@@ -53,13 +104,27 @@ function getAudio(key: SfxKey) {
   return a;
 }
 
-export function x01SfxV3Configure(opts: { enabled?: boolean; voiceEnabled?: boolean; volume?: number }) {
+export function x01SfxV3Configure(opts: {
+  enabled?: boolean;
+  voiceEnabled?: boolean;
+  volume?: number;
+}) {
   if (typeof opts.enabled === "boolean") ENABLED = opts.enabled;
   if (typeof opts.voiceEnabled === "boolean") VOICE_ENABLED = opts.voiceEnabled;
   if (typeof opts.volume === "number") VOLUME = clamp01(opts.volume);
 }
 
 export function x01SfxV3Preload() {
+  // 🔓 important : prépare l’unlock au 1er geste user
+  x01EnsureAudioUnlocked();
+
+  // ✅ warm-up voices (Chrome parfois vide au premier call)
+  try {
+    if (typeof window !== "undefined") {
+      window.speechSynthesis?.getVoices?.();
+    }
+  } catch {}
+
   (Object.keys(SFX_URL) as SfxKey[]).forEach((k) => {
     try {
       getAudio(k);
@@ -67,7 +132,13 @@ export function x01SfxV3Preload() {
   });
 }
 
-export async function x01PlaySfxV3(key: SfxKey, opts?: { volume?: number; rateLimitMs?: number }) {
+export async function x01PlaySfxV3(
+  key: SfxKey,
+  opts?: { volume?: number; rateLimitMs?: number }
+) {
+  // 🔓 important : s’assure que l’audio est déverrouillé
+  x01EnsureAudioUnlocked();
+
   if (!ENABLED) return;
   const now = Date.now();
   const rl = opts?.rateLimitMs ?? 80;
@@ -101,7 +172,10 @@ export function parseDart(d: DartLike): { mult: "S" | "D" | "T"; value: number }
   const mult1 = normStr(d?.mult || d?.ring || d?.m);
   const num1 = Number(d?.num ?? d?.number ?? d?.value);
 
-  if ((mult1 === "S" || mult1 === "D" || mult1 === "T") && Number.isFinite(num1)) {
+  if (
+    (mult1 === "S" || mult1 === "D" || mult1 === "T") &&
+    Number.isFinite(num1)
+  ) {
     return { mult: mult1 as any, value: num1 };
   }
 
@@ -114,7 +188,8 @@ export function parseDart(d: DartLike): { mult: "S" | "D" | "T"; value: number }
   // 3) segment string "T20", "D16", "S25", "DBULL", etc
   const seg = normStr(d?.segment || d?.seg || d?.code);
   if (seg) {
-    if (seg === "DBULL" || seg === "DOUBLEBULL") return { mult: "D", value: 25 }; // 50
+    if (seg === "DBULL" || seg === "DOUBLEBULL")
+      return { mult: "D", value: 25 }; // 50
     if (seg === "BULL" || seg === "SBULL") return { mult: "S", value: 25 };
     const m = seg[0];
     const rest = Number(seg.slice(1));
@@ -144,54 +219,149 @@ export function isTriple(d: DartLike) {
   return parseDart(d).mult === "T";
 }
 
-// --------- Voix (TTS) ---------
+// =====================================================
+// Voix (TTS) — support voiceId (female/male/robot ou name/voiceURI)
+// =====================================================
 
-function pickFrenchVoice(): SpeechSynthesisVoice | null {
-  const voices = window.speechSynthesis?.getVoices?.() || [];
-  const fr =
-    voices.find((v) => /fr/i.test(v.lang) && /google|microsoft|apple|siri/i.test(v.name)) ||
-    voices.find((v) => /fr/i.test(v.lang)) ||
-    null;
-  return fr;
+function dcPickSpeechVoice(voiceId?: string): SpeechSynthesisVoice | null {
+  if (typeof window === "undefined") return null;
+  const synth = window.speechSynthesis;
+  const voices = synth?.getVoices?.() || [];
+  if (!voices.length) return null;
+
+  if (!voiceId) {
+    // fallback FR si pas de voiceId
+    const fr =
+      voices.find(
+        (v) =>
+          /fr/i.test(v.lang) &&
+          /google|microsoft|apple|siri/i.test(v.name || "")
+      ) ||
+      voices.find((v) => /fr/i.test(v.lang)) ||
+      null;
+    return fr;
+  }
+
+  const id = String(voiceId).toLowerCase().trim();
+
+  // match exact voiceURI / name
+  const exact =
+    voices.find((v) => (v.voiceURI || "").toLowerCase() === id) ||
+    voices.find((v) => (v.name || "").toLowerCase() === id);
+  if (exact) return exact;
+
+  // heuristiques “femme/homme/robot”
+  const isFemale =
+    id.includes("female") || id.includes("femme") || id.includes("woman");
+  const isMale = id.includes("male") || id.includes("homme") || id.includes("man");
+  const isRobot = id.includes("robot");
+
+  if (isFemale) {
+    return (
+      voices.find((v) => /female|woman|fem/i.test(v.name || "")) ||
+      voices.find((v) => /fr/i.test(v.lang)) ||
+      voices[0] ||
+      null
+    );
+  }
+  if (isMale) {
+    return (
+      voices.find((v) => /male|man/i.test(v.name || "")) ||
+      voices.find((v) => /fr/i.test(v.lang)) ||
+      voices[0] ||
+      null
+    );
+  }
+
+  // robot : on garde une voix FR si possible, mais le rendu “robot” se fait via pitch/rate
+  if (isRobot) {
+    return voices.find((v) => /fr/i.test(v.lang)) || voices[0] || null;
+  }
+
+  // défaut
+  return voices.find((v) => /fr/i.test(v.lang)) || voices[0] || null;
 }
 
-export function x01SpeakV3(text: string, opts?: { rate?: number; pitch?: number; volume?: number }) {
+function dcSpeak(
+  text: string,
+  opts?: { voiceId?: string; robot?: boolean; rate?: number; pitch?: number; volume?: number }
+) {
   if (!VOICE_ENABLED) return;
   if (typeof window === "undefined") return;
   if (!("speechSynthesis" in window)) return;
 
+  const synth = window.speechSynthesis;
+  if (!synth) return;
+
+  try {
+    // évite que le navigateur garde une ancienne voix
+    synth.cancel();
+  } catch {}
+
   try {
     const u = new SpeechSynthesisUtterance(text);
-    const v = pickFrenchVoice();
+
+    const v = dcPickSpeechVoice(opts?.voiceId);
     if (v) u.voice = v;
+
     u.lang = v?.lang || "fr-FR";
-    u.rate = opts?.rate ?? 1.02;
-    u.pitch = opts?.pitch ?? 1.0;
+
+    const isRobot = !!opts?.robot || (!!opts?.voiceId && String(opts.voiceId).toLowerCase().includes("robot"));
+
+    // réglages
+    u.rate = opts?.rate ?? (isRobot ? 0.95 : 1.02);
+    u.pitch = opts?.pitch ?? (isRobot ? 0.65 : 1.0);
     u.volume = clamp01(opts?.volume ?? VOLUME);
 
-    // évite empilement de phrases
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
+    synth.speak(u);
   } catch {}
 }
 
-export function announceVisit(playerName: string, visitScore: number) {
-  const n = (playerName || "").trim();
-  if (!n) return;
-  x01SpeakV3(`${n}, ${visitScore}`);
+// API publique (si tu veux parler directement)
+export function x01SpeakV3(
+  text: string,
+  opts?: { rate?: number; pitch?: number; volume?: number; voiceId?: string; robot?: boolean }
+) {
+  dcSpeak(text, {
+    voiceId: opts?.voiceId,
+    robot: opts?.robot,
+    rate: opts?.rate,
+    pitch: opts?.pitch,
+    volume: opts?.volume,
+  });
 }
 
-export function announceEndGame(opts: {
-  winnerName: string;
-  rankingNames: string[]; // ["Alice","Bob","Chris"]
-  extra?: string; // ex: "Score final deux sets à un"
-}) {
-  const w = (opts.winnerName || "").trim();
-  const rk = (opts.rankingNames || []).filter(Boolean);
+// ✅ annonceVisit supporte options.voiceId
+export function announceVisit(
+  playerName: string,
+  visitScore: number,
+  options?: { voiceId?: string }
+) {
+  const n = (playerName || "").trim();
+  if (!n) return;
+  const vid = options?.voiceId;
+
+  dcSpeak(`${n}, ${visitScore}`, {
+    voiceId: vid,
+    robot: !!vid && String(vid).toLowerCase().includes("robot"),
+  });
+}
+
+// ✅ announceEndGame supporte options.voiceId
+export function announceEndGame(
+  data: {
+    winnerName: string;
+    rankingNames: string[]; // ["Alice","Bob","Chris"]
+    extra?: string; // ex: "Score final deux sets à un"
+  },
+  options?: { voiceId?: string }
+) {
+  const w = (data.winnerName || "").trim();
+  const rk = (data.rankingNames || []).filter(Boolean);
 
   const parts: string[] = [];
   if (w) parts.push(`Victoire de ${w}.`);
-  if (opts.extra) parts.push(opts.extra);
+  if (data.extra) parts.push(data.extra);
 
   if (rk.length) {
     const places = rk
@@ -201,6 +371,13 @@ export function announceEndGame(opts: {
     parts.push(`Classement. ${places}.`);
   }
 
-  const text = parts.join(" ");
-  if (text.trim()) x01SpeakV3(text);
+  const text = parts.join(" ").trim();
+  if (!text) return;
+
+  const vid = options?.voiceId;
+
+  dcSpeak(text, {
+    voiceId: vid,
+    robot: !!vid && String(vid).toLowerCase().includes("robot"),
+  });
 }

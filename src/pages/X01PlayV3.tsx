@@ -780,9 +780,61 @@ export default function X01PlayV3({
     }
   }, [status]);
 
-     // =====================================================
+  // =====================================================
+  // AUDIO FLAGS (depuis config) + helpers SFX/VOICE
+  // =====================================================
+
+  // ⚙️ defaults = ON
+  const audioCfg = (config as any)?.audio ?? {};
+
+  // "Sons Arcade" : DBULL/BULL/180/DOUBLE/TRIPLE/BUST/VICTORY
+  const arcadeEnabled: boolean = audioCfg.arcadeEnabled !== false;
+
+  // "Bruitages" : dart-hit (et éventuellement d'autres "hits" secs)
+  const hitEnabled: boolean = audioCfg.hitEnabled !== false;
+
+  // "Voix IA" : announceVisit / announceEndGame
+  const voiceEnabled: boolean = audioCfg.voiceEnabled !== false;
+
+  // Voice sélectionnée (depuis écran Profil / paramètres joueur)
+  const voiceId: string | undefined = audioCfg.voiceId ?? undefined;
+
+  // Volume SFX global (si tu veux le brancher plus tard sur un slider)
+  const sfxVolume: number =
+    typeof audioCfg.sfxVolume === "number" ? audioCfg.sfxVolume : 0.75;
+
+  const playHitSfx = React.useCallback(
+    (kind: any, opts?: any) => {
+      if (!hitEnabled) return;
+      x01PlaySfxV3(kind, { volume: sfxVolume, ...(opts || {}) });
+    },
+    [hitEnabled, sfxVolume]
+  );
+
+  const playArcadeSfx = React.useCallback(
+    (kind: any, opts?: any) => {
+      if (!arcadeEnabled) return;
+      x01PlaySfxV3(kind, { volume: sfxVolume, ...(opts || {}) });
+    },
+    [arcadeEnabled, sfxVolume]
+  );
+
+  const speakVisit = React.useCallback(
+    (playerName: string, visitScore: number) => {
+      if (!voiceEnabled) return;
+      // si announceVisit supporte un 3e param (options), on passe voiceId
+      try {
+        (announceVisit as any)(playerName, visitScore, voiceId ? { voiceId } : undefined);
+      } catch {
+        // fallback si signature = (name, score)
+        announceVisit(playerName, visitScore);
+      }
+    },
+    [voiceEnabled, voiceId]
+  );
+
+  // =====================================================
   // ÉTAT LOCAL KEYPAD (logique v1 + synchro UNDO moteur)
-  // + SFX fiables (BULL/DBULL/DOUBLE/TRIPLE) sans isBull/isDouble
   // =====================================================
 
   const [multiplier, setMultiplier] = React.useState<1 | 2 | 3>(1);
@@ -800,34 +852,6 @@ export default function X01PlayV3({
   // 🔒 indique si currentThrow vient du moteur (rebuild / UNDO)
   //    ou de la saisie locale sur le keypad
   const currentThrowFromEngineRef = React.useRef(false);
-
-  // =====================================================
-  // 🔊 Helper SFX : 1 fléchette (fiable, basé sur segment + multiplier)
-  // =====================================================
-  const playDartSfx = React.useCallback((input: X01DartInputV3) => {
-    // 1) hit (toujours)
-    x01PlaySfxV3("dart_hit", { rateLimitMs: 40, volume: 0.75 });
-
-    const seg = input.segment;
-    const mult = input.multiplier;
-
-    // bull / dbull
-    if (seg === 25 && mult === 2) {
-      x01PlaySfxV3("dbull");
-      return;
-    }
-    if (seg === 25 && mult === 1) {
-      x01PlaySfxV3("bull");
-      return;
-    }
-
-    // MISS
-    if (seg <= 0) return;
-
-    // double / triple
-    if (mult === 3) x01PlaySfxV3("triple");
-    else if (mult === 2) x01PlaySfxV3("double");
-  }, []);
 
   // 🔄 SYNC AVEC LE MOTEUR UNIQUEMENT POUR LES CAS "ENGINE-DRIVEN"
   //    (UNDO global, rebuild, etc.)
@@ -887,12 +911,27 @@ export default function X01PlayV3({
 
     const dart: UIDart = { v: value, mult: multiplier } as UIDart;
 
-    // 🔊 sons fiables basés sur segment+multiplier
-    const inputForSfx: X01DartInputV3 = {
-      segment: value === 25 ? 25 : value,
-      multiplier,
+    // ✅ ADAPTATEUR vers shape attendu par isBull/isDouble/...
+    // (tes helpers SFX ne lisent PAS {v,mult}, ils lisent {segment,multiplier})
+    const engineDart = {
+      segment: dart.v === 25 ? 25 : dart.v,
+      multiplier: dart.mult,
     };
-    playDartSfx(inputForSfx);
+
+    // ===============================
+    // 🔊 SONS À CHAQUE FLÉCHETTE
+    // ===============================
+
+    // 1) hit (toujours, si "Bruitages" activés)
+    playHitSfx("dart_hit", { rateLimitMs: 40, volume: 0.55 }); // 🔉 un peu plus doux
+
+    // 2) bull / dbull (Sons Arcade)
+    if (isDBull(engineDart as any)) playArcadeSfx("dbull");
+    else if (isBull(engineDart as any)) playArcadeSfx("bull");
+
+    // 3) double / triple (Sons Arcade)
+    if (isTriple(engineDart as any)) playArcadeSfx("triple");
+    else if (isDouble(engineDart as any)) playArcadeSfx("double");
 
     // UI
     setCurrentThrow((prev) => [...prev, dart]);
@@ -901,16 +940,10 @@ export default function X01PlayV3({
     setMultiplier(1);
   }
 
-  const handleNumber = (value: number) => {
-    pushDart(value);
-  };
-
-  const handleBull = () => {
-    pushDart(25);
-  };
+  const handleNumber = (value: number) => pushDart(value);
+  const handleBull = () => pushDart(25);
 
   const handleBackspace = () => {
-    // Backspace = édition locale uniquement
     currentThrowFromEngineRef.current = false;
     setCurrentThrow((prev) => prev.slice(0, -1));
   };
@@ -928,7 +961,6 @@ export default function X01PlayV3({
 
     botUndoGuardRef.current = true;
 
-    // enlève la DERNIÈRE fléchette du log global (autosave)
     replayDartsRef.current.pop();
 
     // à partir d'ici, on veut que le moteur resynchronise la visit partielle
@@ -943,10 +975,8 @@ export default function X01PlayV3({
   };
 
   const validateThrow = () => {
-    // 🛑 volée vide
     if (!currentThrow.length) return;
 
-    // 🛑 déjà en train de valider
     if (isValidatingRef.current) return;
     isValidatingRef.current = true;
 
@@ -970,14 +1000,15 @@ export default function X01PlayV3({
         (doubleOut && scoreBefore - visitScore === 1);
 
       if (isBustNow) {
-        x01PlaySfxV3("bust");
+        playArcadeSfx("bust");
       } else {
         if (visitScore === 180 && toSend.length === 3) {
-          x01PlaySfxV3("score_180", { rateLimitMs: 300 });
+          playArcadeSfx("score_180", { rateLimitMs: 300 });
         }
       }
 
-      announceVisit(playerName, visitScore);
+      // voix IA (si activée)
+      speakVisit(playerName, visitScore);
     } catch (e) {
       console.warn("[X01PlayV3] end-of-visit sfx/voice failed", e);
     }
@@ -1000,18 +1031,15 @@ export default function X01PlayV3({
     setCurrentThrow([]);
     setMultiplier(1);
 
-    // Saisie humaine → c'est la UI qui pilote, pas le moteur
     currentThrowFromEngineRef.current = false;
 
     // Autosave
     replayDartsRef.current = replayDartsRef.current.concat(inputs);
     persistAutosave();
 
-    // throwDart séquencé (évite les effets bizarres)
+    // throwDart séquencé
     inputs.forEach((input, index) => {
       setTimeout(() => {
-        // ⚠️ On NE rejoue pas playDartSfx ici sinon double-son
-        // (déjà joué au moment de pushDart)
         throwDart(input);
 
         if (index === inputs.length - 1) {
@@ -1020,7 +1048,6 @@ export default function X01PlayV3({
       }, index * 10);
     });
 
-    // sécurité
     if (!inputs.length) isValidatingRef.current = false;
   };
 
@@ -1219,9 +1246,9 @@ export default function X01PlayV3({
     startNextLeg();
   }
 
- // =====================================================
+// =====================================================
 // Sauvegarde du match dans l'Historique / Stats
-// + 🔊 FIN DE MATCH : victoire + voix classement
+// + 🔊 FIN DE MATCH : victoire + voix classement (respecte arcadeEnabled/voiceEnabled)
 // =====================================================
 
 React.useEffect(() => {
@@ -1232,19 +1259,37 @@ React.useEffect(() => {
   // =====================================================
   // 🔊 FIN DE MATCH : victoire + voix classement
   // =====================================================
-
   try {
-    const rankingNames = miniRanking.map((r) => r.name);
+    const rankingNames = (miniRanking || [])
+      .map((r) => r?.name)
+      .filter(Boolean) as string[];
+
     const winnerName = rankingNames[0] || "Joueur";
 
-    // Son de victoire (une seule fois)
-    x01PlaySfxV3("victory", { rateLimitMs: 800, volume: 0.25 });
+    // ✅ Son "victory" UNIQUEMENT si "Sons Arcade" activés
+    if (arcadeEnabled) {
+      x01PlaySfxV3("victory", {
+        rateLimitMs: 800,
+        volume: 0.25, // volume "cinématique" de fin
+      });
+    }
 
-    // Voix IA : vainqueur + classement
-    announceEndGame({
-      winnerName,
-      rankingNames,
-    });
+    // ✅ Voix IA UNIQUEMENT si "Voix IA" activée
+    if (voiceEnabled) {
+      try {
+        // si announceEndGame supporte des options, on passe la voix
+        (announceEndGame as any)(
+          { winnerName, rankingNames },
+          voiceId ? { voiceId } : undefined
+        );
+      } catch {
+        // fallback signature simple
+        announceEndGame(
+          { winnerName, rankingNames },
+          voiceId ? { voiceId } : undefined
+        );
+      }
+    }
   } catch (e) {
     console.warn("[X01PlayV3] end-game sfx/voice failed", e);
   }
@@ -1252,7 +1297,6 @@ React.useEffect(() => {
   // =====================================================
   // Sauvegarde Historique / Stats
   // =====================================================
-
   try {
     saveX01V3MatchToHistory({
       config,
@@ -1263,8 +1307,17 @@ React.useEffect(() => {
   } catch (err) {
     console.warn("[X01PlayV3] saveX01V3MatchToHistory failed", err);
   }
-}, [status, config, state, scores, liveStatsByPlayer, miniRanking]);
-
+}, [
+  status,
+  config,
+  state,
+  scores,
+  liveStatsByPlayer,
+  miniRanking,
+  arcadeEnabled,
+  voiceEnabled,
+  voiceId,
+]);
 
   // =====================================================
   // BOT : tour auto si joueur courant est un BOT
