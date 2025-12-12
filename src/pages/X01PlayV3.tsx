@@ -869,6 +869,45 @@ export default function X01PlayV3({
   );
 
   // =====================================================
+// 🧩 ARCADE KEY MAPPER (si les IDs audio ne matchent pas)
+// -> essaye plusieurs keys connues avant d'abandonner
+// =====================================================
+
+const tryPlayAny = React.useCallback(
+  (kinds: string[], opts?: any) => {
+    for (const k of kinds) {
+      try {
+        x01PlaySfxV3(k as any, opts);
+        return; // si ça ne throw pas, on considère OK
+      } catch {}
+    }
+    // debug (visible en console)
+    console.warn("[X01PlayV3] Arcade SFX: aucun key n'a matché", kinds);
+  },
+  [/* rien */]
+);
+
+const playArcadeMapped = React.useCallback(
+  (event: "dbull" | "bull" | "double" | "triple" | "bust" | "score_180" | "victory", opts?: any) => {
+    if (!arcadeEnabled) return;
+
+    // ⚠️ Variantes courantes selon l’implémentation du fichier x01SfxV3.ts
+    const MAP: Record<string, string[]> = {
+      dbull: ["dbull", "dBull", "double_bull", "dbull_hit", "arcade_dbull", "sfx_dbull"],
+      bull: ["bull", "oBull", "outer_bull", "bull_hit", "arcade_bull", "sfx_bull"],
+      double: ["double", "dbl", "hit_double", "arcade_double", "sfx_double"],
+      triple: ["triple", "tpl", "hit_triple", "arcade_triple", "sfx_triple"],
+      bust: ["bust", "busted", "arcade_bust", "sfx_bust"],
+      score_180: ["score_180", "180", "one_eighty", "arcade_180", "sfx_180"],
+      victory: ["victory", "win", "winner", "arcade_victory", "sfx_victory"],
+    };
+
+    tryPlayAny(MAP[event] || [event], { volume: sfxVolume, ...(opts || {}) });
+  },
+  [arcadeEnabled, sfxVolume, tryPlayAny]
+);
+
+  // =====================================================
 // 🗣️ VOIX IA — annonce de volée (langue + voix sélectionnée)
 // =====================================================
 
@@ -972,43 +1011,57 @@ const speakVisit = React.useCallback(
   }, [activePlayerId]);
 
   function pushDart(value: number) {
-    // ✅ au premier geste user, on unlock audio pour les mp3
+    // ✅ 1) unlock audio au premier geste user
     ensureAudioUnlockedNow();
   
-    // saisie locale
+    // saisie locale (pas moteur)
     currentThrowFromEngineRef.current = false;
   
-    // pas plus de 3 fléchettes
+    // max 3 fléchettes
     if (currentThrow.length >= 3) return;
   
     const dart: UIDart = { v: value, mult: multiplier } as UIDart;
   
-    const engineDart = {
-      segment: dart.v === 25 ? 25 : dart.v,
-      multiplier: dart.mult,
-    };
-
     // ===============================
     // 🔊 SONS À CHAQUE FLÉCHETTE
     // ===============================
-
-    // 1) hit (toujours, si "Bruitages" activés)
-    playHitSfx("dart_hit", { rateLimitMs: 40, volume: 0.55 }); // 🔉 un peu plus doux
-
-    // 2) bull / dbull (Sons Arcade)
-    if (isDBull(engineDart as any)) playArcadeSfx("dbull");
-    else if (isBull(engineDart as any)) playArcadeSfx("bull");
-
-    // 3) double / triple (Sons Arcade)
-    if (isTriple(engineDart as any)) playArcadeSfx("triple");
-    else if (isDouble(engineDart as any)) playArcadeSfx("double");
-
+  
+    // 0) hit sec (bruitage léger)
+    try {
+      playHitSfx("dart_hit", { rateLimitMs: 40, volume: 0.55 });
+    } catch {}
+  
+    // 1) BULL / DBULL — PRIORITÉ ABSOLUE
+    // ⚠️ DBULL est EXCLUSIF → PAS de son "double"
+    const isDBull = dart.v === 25 && dart.mult === 2;
+    const isBull = dart.v === 25 && dart.mult === 1;
+  
+    try {
+      if (isDBull) {
+        playArcadeSfx("dbull", { rateLimitMs: 80 });
+      } else if (isBull) {
+        playArcadeSfx("bull", { rateLimitMs: 80 });
+      }
+    } catch {}
+  
+    // 2) DOUBLE / TRIPLE
+    // ⚠️ double UNIQUEMENT si ce n'est PAS un DBULL
+    try {
+      if (!isDBull) {
+        if (dart.mult === 3) {
+          playArcadeSfx("triple", { rateLimitMs: 80 });
+        } else if (dart.mult === 2) {
+          playArcadeSfx("double", { rateLimitMs: 80 });
+        }
+      }
+    } catch {}
+  
+    // ===============================
     // UI
+    // ===============================
     setCurrentThrow((prev) => [...prev, dart]);
-
-    // reset multiplicateur
     setMultiplier(1);
-  }
+  }  
 
   const handleNumber = (value: number) => pushDart(value);
   const handleBull = () => pushDart(25);
@@ -1071,10 +1124,10 @@ const speakVisit = React.useCallback(
         (doubleOut && scoreBefore - visitScore === 1);
 
       if (isBustNow) {
-        playArcadeSfx("bust");
+        playArcadeMapped("bust");
       } else {
         if (visitScore === 180 && toSend.length === 3) {
-          playArcadeSfx("score_180", { rateLimitMs: 300 });
+          playArcadeMapped("score_180", { rateLimitMs: 300 });
         }
       }
 
@@ -1339,10 +1392,7 @@ try {
 
   // ✅ Son "victory" UNIQUEMENT si "Sons Arcade" activés
   if (arcadeEnabled) {
-    x01PlaySfxV3("victory", {
-      rateLimitMs: 800,
-      volume: 0.25, // volume "cinématique" de fin
-    });
+    playArcadeMapped("victory", { rateLimitMs: 800, volume: 0.25 });
   }
 
   // ✅ Voix IA UNIQUEMENT si "Voix IA" activée

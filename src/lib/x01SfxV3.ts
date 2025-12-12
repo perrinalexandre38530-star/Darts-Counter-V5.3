@@ -58,44 +58,87 @@ function clamp01(x: number) {
 }
 
 // =====================================================
-// 🔓 UNLOCK AUDIO (autoplay policies)
+// 🔓 UNLOCK AUDIO (autoplay policies) — FIX RÉEL
+// - Ne marque "unlocked" QUE si succès réel
+// - Garde les listeners tant que pas unlock
+// - Tente un unlock immédiat si appelée pendant un geste user
 // =====================================================
 
 let __dcAudioUnlocked = false;
+let __dcUnlockInstalled = false;
 
 export function x01EnsureAudioUnlocked() {
   if (typeof window === "undefined") return;
   if (__dcAudioUnlocked) return;
 
-  const unlock = () => {
+  const tryUnlock = () => {
+    if (__dcAudioUnlocked) return;
+
+    // 1) AudioContext (si dispo) : resume = souvent suffisant sur Android/Chrome
     try {
       const AC =
         (window as any).AudioContext || (window as any).webkitAudioContext;
       if (AC) {
         const ctx = (window as any).__dcAudioCtx || new AC();
         (window as any).__dcAudioCtx = ctx;
-        if (ctx.state === "suspended") ctx.resume?.();
-      }
 
-      // petit "tap" audio
-      const a = new Audio();
-      a.muted = true;
-      a.play().catch(() => {});
-      a.pause();
+        if (ctx.state === "suspended") {
+          // resume est async, mais on tente
+          ctx.resume?.().catch?.(() => {});
+        }
+
+        // si déjà running, on peut considérer unlock OK
+        if (ctx.state === "running") {
+          __dcAudioUnlocked = true;
+        }
+      }
     } catch {}
 
-    __dcAudioUnlocked = true;
+    // 2) Test Audio element : SEUL "then()" valide l’unlock
+    try {
+      const a = new Audio();
+      a.muted = true;
+      a.preload = "auto";
 
-    window.removeEventListener("pointerdown", unlock);
-    window.removeEventListener("touchstart", unlock);
-    window.removeEventListener("mousedown", unlock);
-    window.removeEventListener("keydown", unlock);
+      const p = a.play();
+      if (p && typeof (p as any).then === "function") {
+        (p as Promise<void>)
+          .then(() => {
+            try {
+              a.pause();
+              a.currentTime = 0;
+            } catch {}
+            __dcAudioUnlocked = true;
+
+            // ✅ on retire les listeners SEULEMENT ici (succès réel)
+            window.removeEventListener("pointerdown", tryUnlock);
+            window.removeEventListener("touchstart", tryUnlock);
+            window.removeEventListener("mousedown", tryUnlock);
+            window.removeEventListener("keydown", tryUnlock);
+          })
+          .catch(() => {
+            // ❌ autoplay bloqué : on NE PASSE PAS unlocked
+            // on garde les listeners -> prochain geste retentera
+          });
+      } else {
+        // navigateur chelou : on ne valide pas l'unlock ici
+      }
+    } catch {
+      // ignore
+    }
   };
 
-  window.addEventListener("pointerdown", unlock, { once: true } as any);
-  window.addEventListener("touchstart", unlock, { once: true } as any);
-  window.addEventListener("mousedown", unlock, { once: true } as any);
-  window.addEventListener("keydown", unlock, { once: true } as any);
+  // installe UNE SEULE FOIS
+  if (!__dcUnlockInstalled) {
+    __dcUnlockInstalled = true;
+    window.addEventListener("pointerdown", tryUnlock, { passive: true } as any);
+    window.addEventListener("touchstart", tryUnlock, { passive: true } as any);
+    window.addEventListener("mousedown", tryUnlock, { passive: true } as any);
+    window.addEventListener("keydown", tryUnlock, { passive: true } as any);
+  }
+
+  // ✅ tentative immédiate : si on est déjà dans un geste user, ça unlock tout de suite
+  tryUnlock();
 }
 
 // =====================================================
