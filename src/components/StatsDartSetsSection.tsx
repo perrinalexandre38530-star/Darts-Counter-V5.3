@@ -3,6 +3,7 @@
 // Section StatsHub — "Stats par fléchettes"
 // - Agrège les matchs X01 depuis History (legacy + V3 via statsByDartSet)
 // - Affiche les stats par dartSetId (ou dartPresetId)
+// - ✅ NEW : un mini-carrousel "Derniers matchs" DANS CHAQUE set
 // =============================================================
 
 import React from "react";
@@ -12,6 +13,7 @@ import { useLang } from "../contexts/LangContext";
 import { getDartSetsForProfile, type DartSet } from "../lib/dartSetsStore";
 import { dartPresets } from "../lib/dartPresets";
 import { getX01StatsByDartSetForProfile } from "../lib/statsByDartSet";
+import { History } from "../lib/history";
 
 const N = (x: any, d = 0) => (Number.isFinite(Number(x)) ? Number(x) : d);
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
@@ -21,11 +23,22 @@ function fmt1(n: number) {
   return v.toFixed(1);
 }
 
-function presetById(id: string) {
-  return (dartPresets || []).find((p) => String(p?.id) === String(id)) || null;
+function safeLower(s: any) {
+  return String(s ?? "").trim().toLowerCase();
 }
 
-// ✅ accepte string OU import d’asset (module avec default), etc.
+function isX01Record(r: any): boolean {
+  const kind = safeLower(r?.kind);
+  const game = safeLower(r?.game);
+  const mode = safeLower(r?.mode);
+  const variant = safeLower(r?.variant);
+  if (kind === "x01" || kind === "x01v3") return true;
+  if (game === "x01" || game === "x01v3") return true;
+  if (mode === "x01" || mode === "x01v3") return true;
+  if (variant === "x01" || variant === "x01v3") return true;
+  return false;
+}
+
 function asUrl(v: any): string | null {
   if (!v) return null;
   if (typeof v === "string") return v;
@@ -35,6 +48,22 @@ function asUrl(v: any): string | null {
     if (typeof (v as any).url === "string") return (v as any).url;
   }
   return null;
+}
+
+function presetById(id: string) {
+  const sid = String(id || "");
+  return (dartPresets || []).find((p: any) => String(p?.id) === sid) || null;
+}
+
+function presetByName(name: string) {
+  const n = safeLower(name);
+  if (!n) return null;
+  return (
+    (dartPresets || []).find((p: any) => safeLower(p?.name) === n) ||
+    (dartPresets || []).find((p: any) => safeLower(p?.name).includes(n)) ||
+    (dartPresets || []).find((p: any) => n.includes(safeLower(p?.name))) ||
+    null
+  );
 }
 
 function presetImage(pr: any): string | null {
@@ -55,6 +84,48 @@ function presetImage(pr: any): string | null {
   );
 }
 
+function pickAccent(theme: any) {
+  return theme?.primary || theme?.accent || theme?.colors?.primary || "#F6C256";
+}
+
+function pickPerPlayer(summary: any): any[] {
+  if (!summary) return [];
+  if (Array.isArray(summary.perPlayer)) return summary.perPlayer;
+  if (Array.isArray(summary.players)) return summary.players;
+
+  if (summary.players && typeof summary.players === "object") {
+    return Object.entries(summary.players).map(([playerId, v]) => ({
+      playerId,
+      ...(v as any),
+    }));
+  }
+  if (summary.perPlayer && typeof summary.perPlayer === "object") {
+    return Object.entries(summary.perPlayer).map(([playerId, v]) => ({
+      playerId,
+      ...(v as any),
+    }));
+  }
+  return [];
+}
+
+function resolveProfileId(pp: any): string | null {
+  return (
+    (pp?.profileId ?? null) ||
+    (pp?.playerId ?? null) ||
+    (pp?.id ?? null) ||
+    null
+  );
+}
+
+function resolveDartSetId(pp: any): string | null {
+  return (
+    (pp?.dartSetId ?? null) ||
+    (pp?.dartPresetId ?? null) ||
+    (pp?.dartsetId ?? null) ||
+    null
+  );
+}
+
 function pickNum(r: any, ...keys: string[]) {
   for (const k of keys) {
     const v = Number(r?.[k]);
@@ -63,8 +134,98 @@ function pickNum(r: any, ...keys: string[]) {
   return null;
 }
 
-function pickAccent(theme: any) {
-  return theme?.primary || theme?.accent || theme?.colors?.primary || "#F6C256";
+function fmtDateShort(ts: any) {
+  const d = new Date(ts || 0);
+  if (!Number.isFinite(d.getTime())) return "—";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}`;
+}
+
+type MiniMatch = {
+  id: string;
+  at: number;
+  dateLabel: string;
+  label: string; // ex: "Win" / "Lose" / "Match"
+  score?: string;
+  opponent?: string;
+};
+
+function buildRecentMatchesMap(allHistory: any[], profileId: string): Record<string, MiniMatch[]> {
+  const map: Record<string, MiniMatch[]> = {};
+
+  for (const r of allHistory || []) {
+    if (!isX01Record(r)) continue;
+
+    const status = r?.status ?? r?.state ?? "";
+    if (status && status !== "finished") continue;
+
+    const summary = r?.summary ?? r?.payload?.summary ?? null;
+    const perPlayer = pickPerPlayer(summary);
+
+    const mine = perPlayer.find((pp: any) => resolveProfileId(pp) === profileId);
+    if (!mine) continue;
+
+    const dsid = resolveDartSetId(mine);
+    if (!dsid) continue;
+
+    const at =
+      N(r?.endedAt, 0) ||
+      N(r?.finishedAt, 0) ||
+      N(r?.createdAt, 0) ||
+      N(r?.at, 0) ||
+      Date.now();
+
+    // opponent name (best-effort)
+    const others = perPlayer.filter((pp: any) => resolveProfileId(pp) !== profileId);
+    const oppName =
+      (others[0]?.name ?? null) ||
+      (others[0]?.playerName ?? null) ||
+      (others[0]?.profileName ?? null) ||
+      null;
+
+    // win/lose (best-effort)
+    const winnerId =
+      summary?.winnerId ?? summary?.winnerPid ?? summary?.winnerPlayerId ?? null;
+    const isWinner =
+      (mine?.isWinner === true) ||
+      (mine?.win === true) ||
+      (mine?.won === true) ||
+      (winnerId && String(winnerId) === String(profileId));
+
+    // score (best-effort)
+    const legsW = pickNum(mine, "legsWin", "legsWon", "legsW");
+    const legsL = pickNum(mine, "legsLose", "legsLost", "legsL");
+    const setsW = pickNum(mine, "setsWin", "setsWon", "setsW");
+    const setsL = pickNum(mine, "setsLose", "setsLost", "setsL");
+
+    let score: string | undefined = undefined;
+    if (setsW !== null || setsL !== null) {
+      score = `${N(setsW, 0)}-${N(setsL, 0)}`;
+      if (legsW !== null || legsL !== null) score += ` • ${N(legsW, 0)}-${N(legsL, 0)}`;
+    } else if (legsW !== null || legsL !== null) {
+      score = `${N(legsW, 0)}-${N(legsL, 0)}`;
+    }
+
+    const item: MiniMatch = {
+      id: String(r?.id ?? r?.matchId ?? `${dsid}-${at}`),
+      at,
+      dateLabel: fmtDateShort(at),
+      label: isWinner ? "WIN" : "LOSE",
+      score,
+      opponent: oppName ? String(oppName) : undefined,
+    };
+
+    (map[String(dsid)] ||= []).push(item);
+  }
+
+  // tri desc + limit
+  for (const k of Object.keys(map)) {
+    map[k].sort((a, b) => b.at - a.at);
+    map[k] = map[k].slice(0, 10);
+  }
+
+  return map;
 }
 
 export default function StatsDartSetsSection(props: {
@@ -82,6 +243,7 @@ export default function StatsDartSetsSection(props: {
   const [rows, setRows] = React.useState<any[]>([]);
   const [err, setErr] = React.useState<string | null>(null);
   const [mySets, setMySets] = React.useState<DartSet[]>([]);
+  const [recentBySet, setRecentBySet] = React.useState<Record<string, MiniMatch[]>>({});
 
   React.useEffect(() => {
     let mounted = true;
@@ -103,6 +265,15 @@ export default function StatsDartSetsSection(props: {
         if (mounted) setRows(Array.isArray(stats) ? stats : []);
       } catch (e: any) {
         if (mounted) setErr(e?.message || "failed");
+      }
+
+      // ✅ mini-carrousels : on lit History une seule fois
+      try {
+        const all = await History.list?.();
+        const map = buildRecentMatchesMap(all || [], activeProfileId);
+        if (mounted) setRecentBySet(map);
+      } catch {
+        if (mounted) setRecentBySet({});
       } finally {
         if (mounted) setLoading(false);
       }
@@ -203,15 +374,8 @@ export default function StatsDartSetsSection(props: {
         </div>
       )}
 
-      {/* States */}
       {loading ? (
-        <div
-          style={{
-            color: "rgba(255,255,255,.75)",
-            fontSize: 12,
-            padding: 8,
-          }}
-        >
+        <div style={{ color: "rgba(255,255,255,.75)", fontSize: 12, padding: 8 }}>
           {t("common.loading", "Chargement...")}
         </div>
       ) : err ? (
@@ -219,21 +383,12 @@ export default function StatsDartSetsSection(props: {
           {t("common.error", "Erreur")} : {String(err)}
         </div>
       ) : !rows.length ? (
-        <div
-          style={{
-            color: "rgba(255,255,255,.75)",
-            fontSize: 12,
-            padding: 8,
-          }}
-        >
-          {t(
-            "stats.dartSets.empty",
-            "Aucune partie X01 trouvée pour ce profil."
-          )}
+        <div style={{ color: "rgba(255,255,255,.75)", fontSize: 12, padding: 8 }}>
+          {t("stats.dartSets.empty", "Aucune partie X01 trouvée pour ce profil.")}
         </div>
       ) : (
         <>
-          {/* Carrousel */}
+          {/* Carrousel principal : 1 carte par set */}
           <div
             style={{
               marginTop: 10,
@@ -247,13 +402,9 @@ export default function StatsDartSetsSection(props: {
             {rows.map((r: any, idx: number) => {
               const id: string = String(r.dartSetId || "");
 
-              // set perso ?
               const my = mySets.find((s: any) => String(s?.id) === id) || null;
-
-              // preset direct (si la stat est un preset id)
               const prDirect = !my ? presetById(id) : null;
 
-              // ✅ si c’est un set perso SANS photo, on tente de retrouver son preset d’origine
               const myPresetId =
                 (my as any)?.dartPresetId ||
                 (my as any)?.presetId ||
@@ -262,16 +413,16 @@ export default function StatsDartSetsSection(props: {
                 (my as any)?.refPresetId ||
                 null;
 
-              const prFromMy = myPresetId ? presetById(String(myPresetId)) : null;
+              const prFromMyId = myPresetId ? presetById(String(myPresetId)) : null;
+              const prFromMyName = !prFromMyId && my?.name ? presetByName(String(my.name)) : null;
 
-              const pr = prDirect || prFromMy;
+              const pr = prDirect || prFromMyId || prFromMyName;
 
               const name =
                 my?.name ||
                 pr?.name ||
                 t("stats.dartSets.unknown", "Set inconnu");
 
-              // ✅ image: photo perso > imgUrl du set > image preset (même si Type=Perso)
               const img =
                 asUrl((my as any)?.photoDataUrl) ||
                 asUrl((my as any)?.imgUrlMain) ||
@@ -280,30 +431,18 @@ export default function StatsDartSetsSection(props: {
                 null;
 
               const avg3v = pickNum(r, "avg3") ?? 0;
-
               const quality = clamp01(avg3v / 90);
               const badgeColor =
-                quality > 0.72
-                  ? "#7fe2a9"
-                  : quality > 0.45
-                  ? accent
-                  : "#cfd1d7";
+                quality > 0.72 ? "#7fe2a9" : quality > 0.45 ? accent : "#cfd1d7";
 
-              // stats enrichies (si présentes)
-              const bestLeg = pickNum(r, "bestLeg", "bestLegScore");
-              const first9 = pickNum(r, "first9", "avgFirst9", "avg9");
-              const coPct = pickNum(r, "checkoutPct", "coPct", "checkoutRate");
-              const dblPct = pickNum(r, "doublePct", "dblPct", "doublesRate");
-              const ton80 = pickNum(r, "ton80", "s180", "count180");
-              const high140 = pickNum(r, "high140", "count140");
-              const high100 = pickNum(r, "high100", "count100");
+              const recent = recentBySet?.[id] || [];
 
               return (
                 <div
                   key={id || String(idx)}
                   style={{
-                    minWidth: 252,
-                    maxWidth: 252,
+                    minWidth: 268,
+                    maxWidth: 268,
                     borderRadius: 18,
                     border: "1px solid rgba(255,255,255,.10)",
                     background: `radial-gradient(circle at 0% 0%, ${accentSoft}, transparent 60%), linear-gradient(180deg, rgba(18,18,22,.92), rgba(10,10,12,.90))`,
@@ -311,7 +450,7 @@ export default function StatsDartSetsSection(props: {
                     padding: 10,
                   }}
                 >
-                  {/* Top row */}
+                  {/* top row */}
                   <div style={{ display: "flex", gap: 10 }}>
                     <div
                       style={{
@@ -328,10 +467,6 @@ export default function StatsDartSetsSection(props: {
                         <img
                           src={img}
                           alt={name}
-                          onError={(e) => {
-                            // fallback visuel si url cassée
-                            (e.currentTarget as any).style.display = "none";
-                          }}
                           style={{
                             width: "100%",
                             height: "100%",
@@ -354,26 +489,6 @@ export default function StatsDartSetsSection(props: {
                           ?
                         </div>
                       )}
-
-                      {/* si img fail et cachée, on met un fallback par-dessus */}
-                      {img ? (
-                        <div
-                          style={{
-                            position: "relative",
-                            marginTop: -66,
-                            width: 66,
-                            height: 66,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            pointerEvents: "none",
-                            color: "rgba(255,255,255,.40)",
-                            fontWeight: 900,
-                          }}
-                        >
-                          {/* visible uniquement si l'image a été cachée via onError */}
-                        </div>
-                      ) : null}
                     </div>
 
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -390,26 +505,10 @@ export default function StatsDartSetsSection(props: {
                         {name}
                       </div>
 
-                      <div
-                        style={{
-                          marginTop: 6,
-                          display: "flex",
-                          gap: 6,
-                          flexWrap: "wrap",
-                        }}
-                      >
+                      <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
                         <Pill text={`AVG/3D ${fmt1(avg3v)}`} color={badgeColor} />
-                        <Pill
-                          text={`${t("stats.matches", "Matchs")} ${N(
-                            r.matches,
-                            0
-                          )}`}
-                          color={"rgba(255,255,255,.75)"}
-                        />
-                        <Pill
-                          text={`${t("stats.darts", "Darts")} ${N(r.darts, 0)}`}
-                          color={"rgba(255,255,255,.75)"}
-                        />
+                        <Pill text={`${t("stats.matches", "Matchs")} ${N(r.matches, 0)}`} color={"rgba(255,255,255,.75)"} />
+                        <Pill text={`${t("stats.darts", "Darts")} ${N(r.darts, 0)}`} color={"rgba(255,255,255,.75)"} />
                       </div>
                     </div>
                   </div>
@@ -423,88 +522,132 @@ export default function StatsDartSetsSection(props: {
                       gap: 8,
                     }}
                   >
-                    <KPI
-                      label={t("stats.bestVisit", "Best volée")}
-                      value={String(N(r.bestVisit, 0))}
-                    />
-                    <KPI
-                      label={t("stats.bestCheckout", "Best CO")}
-                      value={String(N(r.bestCheckout, 0))}
-                    />
-                    <KPI label={t("stats.avg3", "AVG/3D")} value={fmt1(avg3v)} />
-                    <KPI
-                      label={t("stats.first9", "First 9")}
-                      value={first9 !== null ? fmt1(first9) : "—"}
-                    />
-                    <KPI
-                      label={t("stats.matches", "Matchs")}
-                      value={String(N(r.matches, 0))}
-                    />
-                    <KPI
-                      label={t("stats.darts", "Darts")}
-                      value={String(N(r.darts, 0))}
-                    />
-                    <KPI
-                      label={t("stats.checkoutPct", "Checkout %")}
-                      value={coPct !== null ? `${fmt1(coPct)}%` : "—"}
-                    />
-                    <KPI
-                      label={t("stats.doublePct", "Doubles %")}
-                      value={dblPct !== null ? `${fmt1(dblPct)}%` : "—"}
-                    />
-                    <KPI
-                      label={t("stats.hits", "Hits")}
-                      value={`S${N(r.hitsS, 0)} D${N(r.hitsD, 0)} T${N(
-                        r.hitsT,
-                        0
-                      )}`}
-                    />
-                    <KPI
-                      label={t("stats.missBust", "Miss / Bust")}
-                      value={`${N(r.miss, 0)} / ${N(r.bust, 0)}`}
-                    />
-                    <KPI
-                      label={t("stats.bull", "Bull / DBull")}
-                      value={`${N(r.bull, 0)} / ${N(r.dBull, 0)}`}
-                    />
-                    <KPI
-                      label={t("stats.bestLeg", "Best leg")}
-                      value={bestLeg !== null ? String(bestLeg) : "—"}
-                    />
-                    <KPI label={"180"} value={ton80 !== null ? String(ton80) : "—"} />
-                    <KPI
-                      label={"140+"}
-                      value={high140 !== null ? String(high140) : "—"}
-                    />
-                    <KPI
-                      label={"100+"}
-                      value={high100 !== null ? String(high100) : "—"}
-                    />
+                    <KPI label={t("stats.bestVisit", "Best volée")} value={String(N(r.bestVisit, 0))} />
+                    <KPI label={t("stats.bestCheckout", "Best CO")} value={String(N(r.bestCheckout, 0))} />
+                    <KPI label={t("stats.hits", "Hits")} value={`S${N(r.hitsS, 0)} D${N(r.hitsD, 0)} T${N(r.hitsT, 0)}`} />
+                    <KPI label={t("stats.missBust", "Miss / Bust")} value={`${N(r.miss, 0)} / ${N(r.bust, 0)}`} />
+                    <KPI label={t("stats.bull", "Bull / DBull")} value={`${N(r.bull, 0)} / ${N(r.dBull, 0)}`} />
                     <KPI
                       label={t("stats.setType", "Type")}
                       value={
                         my
                           ? t("stats.dartSets.custom", "Perso")
-                          : prDirect
-                          ? t("stats.dartSets.preset", "Preset")
-                          : prFromMy
+                          : prDirect || prFromMyId || prFromMyName
                           ? t("stats.dartSets.preset", "Preset")
                           : "—"
                       }
                     />
+                  </div>
+
+                  {/* ✅ NEW : carrousel par set */}
+                  <div
+                    style={{
+                      marginTop: 10,
+                      borderRadius: 14,
+                      border: "1px solid rgba(255,255,255,.08)",
+                      background: "rgba(0,0,0,.22)",
+                      padding: 8,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "baseline",
+                        justifyContent: "space-between",
+                        gap: 8,
+                        marginBottom: 6,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 900,
+                          color: "rgba(255,255,255,.80)",
+                          letterSpacing: 0.5,
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {t("stats.dartSets.recent", "Derniers matchs")}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", fontWeight: 800 }}>
+                        {recent.length ? `${recent.length}` : "0"}
+                      </div>
+                    </div>
+
+                    {!recent.length ? (
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,.55)" }}>
+                        {t("stats.dartSets.noRecent", "Aucun match récent pour ce set.")}
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          overflowX: "auto",
+                          paddingBottom: 2,
+                          WebkitOverflowScrolling: "touch",
+                        }}
+                      >
+                        {recent.map((m) => {
+                          const win = m.label === "WIN";
+                          const c = win ? "#7fe2a9" : "#ff8a8a";
+                          return (
+                            <div
+                              key={m.id}
+                              style={{
+                                minWidth: 130,
+                                maxWidth: 130,
+                                borderRadius: 12,
+                                border: `1px solid ${c}22`,
+                                background: `radial-gradient(circle at 0% 0%, ${c}22, transparent 60%), rgba(255,255,255,.03)`,
+                                padding: 8,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "baseline",
+                                  gap: 6,
+                                }}
+                              >
+                                <div style={{ fontWeight: 900, color: "#fff", fontSize: 12 }}>
+                                  {m.dateLabel}
+                                </div>
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    fontWeight: 900,
+                                    color: c,
+                                    border: `1px solid ${c}33`,
+                                    padding: "2px 6px",
+                                    borderRadius: 999,
+                                    background: "rgba(0,0,0,.25)",
+                                  }}
+                                >
+                                  {m.label}
+                                </span>
+                              </div>
+
+                              <div style={{ marginTop: 6, fontSize: 11, color: "rgba(255,255,255,.75)", fontWeight: 800 }}>
+                                {m.opponent ? `${t("stats.vs", "vs")} ${m.opponent}` : t("stats.match", "Match")}
+                              </div>
+
+                              <div style={{ marginTop: 4, fontSize: 11.5, color: "#fff", fontWeight: 900 }}>
+                                {m.score || "—"}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
             })}
           </div>
 
-          <div
-            style={{
-              marginTop: 8,
-              fontSize: 11,
-              color: "rgba(255,255,255,.55)",
-            }}
-          >
+          <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,.55)" }}>
             {t(
               "stats.dartSets.note",
               "Ces stats sont calculées uniquement sur les matchs X01 terminés, et groupées par set sélectionné."
@@ -519,7 +662,7 @@ export default function StatsDartSetsSection(props: {
 function resolveSetName(id: string, mySets: any[], t: any) {
   const my = mySets?.find((s: any) => String(s?.id) === String(id)) || null;
   if (my?.name) return my.name;
-  const pr = (dartPresets || []).find((p) => String(p?.id) === String(id)) || null;
+  const pr = (dartPresets || []).find((p: any) => String(p?.id) === String(id)) || null;
   if (pr?.name) return pr.name;
   return t?.("stats.dartSets.unknown", "Set inconnu") ?? "Set inconnu";
 }
