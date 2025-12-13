@@ -507,7 +507,7 @@ function LineChart({
   );
 }
 
-/* ---------- Bar chart + blocs valeurs ---------- */
+/* ---------- Bar chart (responsive) + ✅ valeurs affichées sur chaque barre ---------- */
 function BarChart({
   data,
   height = 240,
@@ -525,72 +525,28 @@ function BarChart({
 }) {
   const svgW = Math.max(220, width - 32);
   const buckets: VisitBucket[] = ["0-59", "60-99", "100+", "140+", "180"];
-  const vals = buckets.map((b) => data[b] ?? 0);
+  const vals = buckets.map((b) => Number(data?.[b] ?? 0));
   const max = niceMax(Math.max(1, ...vals));
+
   const plotW = svgW - padding * 2;
   const plotH = height - padding * 2;
   const gap = 16;
   const barW = (plotW - gap * (buckets.length - 1)) / buckets.length;
 
+  const glow = accentSoft || `${accent}33`;
+
   return (
-    <section
-      style={
-        {
-          ...glassCard,
-          width: "100%",
-          overflow: "hidden",
-          // @ts-ignore
-          "--dc-accent": accent,
-          // @ts-ignore
-          "--dc-accent-soft": accentSoft,
-        } as React.CSSProperties
-      }
-    >
+    <section style={{ ...glassCard, width: "100%", overflow: "hidden" }}>
       <div style={{ padding: "16px 16px 8px", display: "flex", alignItems: "center", gap: 12 }}>
         <div style={iconBadge}>
           <IconBars color={T.gold} />
         </div>
         <div style={{ minWidth: 0 }}>
-          <BlockTitle text="Répartition des volées" accent={accent} accentSoft={accentSoft} style={{ fontSize: 12 }} />
-          <div style={{ fontSize: 12, color: T.text60 }}>Nombre de visites par tranche (3 fléchettes)</div>
+          <BlockTitle text="Répartition des volées" accent={accent} accentSoft={glow} style={{ fontSize: 12 }} />
+          <div style={{ fontSize: 12, color: T.text60 }}>Valeurs affichées par segment</div>
         </div>
       </div>
 
-      {/* ✅ BLOCS VALEURS (couleur + shimmer) */}
-      <div
-        style={{
-          padding: "0 16px 10px",
-          display: "grid",
-          gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-          gap: 8,
-        }}
-      >
-        {buckets.map((b, i) => {
-          const v = vals[i] ?? 0;
-          return (
-            <div
-              key={b}
-              style={{
-                borderRadius: 14,
-                padding: "10px 10px",
-                border: "1px solid rgba(255,255,255,.10)",
-                background: `radial-gradient(circle at 0% 0%, ${accentSoft}, transparent 65%), rgba(255,255,255,.02)`,
-                boxShadow: `inset 0 0 0 1px rgba(255,255,255,.02), 0 0 18px ${accentSoft}`,
-                minWidth: 0,
-              }}
-            >
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,.75)", fontWeight: 900, letterSpacing: 0.6 }}>
-                {b}
-              </div>
-              <div style={{ marginTop: 6, fontSize: 18, lineHeight: "18px" }}>
-                <span className="dc-shimmer-val">{v}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ✅ CHART */}
       <div style={{ padding: "0 0 12px" }}>
         <svg
           width={svgW}
@@ -599,9 +555,40 @@ function BarChart({
           viewBox={`0 0 ${svgW} ${height}`}
           preserveAspectRatio="xMidYMid meet"
         >
+          <defs>
+            {/* micro “shimmer” uniquement pour le texte (local au SVG) */}
+            <linearGradient id="dcBarValueGrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor={accent} stopOpacity="0.9" />
+              <stop offset="50%" stopColor="#FFFFFF" stopOpacity="0.95" />
+              <stop offset="100%" stopColor={accent} stopOpacity="0.9" />
+              <animate attributeName="x1" values="-1;1" dur="2.6s" repeatCount="indefinite" />
+              <animate attributeName="x2" values="0;2" dur="2.6s" repeatCount="indefinite" />
+            </linearGradient>
+
+            <filter id="dcTextGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2.2" result="blur" />
+              <feColorMatrix
+                in="blur"
+                type="matrix"
+                values="
+                  1 0 0 0 0
+                  0 1 0 0 0
+                  0 0 1 0 0
+                  0 0 0 0.9 0"
+                result="glow"
+              />
+              <feMerge>
+                <feMergeNode in="glow" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          {/* axes */}
           <line x1={padding} y1={height - padding} x2={svgW - padding} y2={height - padding} stroke={T.axis} />
           <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke={T.axis} />
 
+          {/* grid + labels Y */}
           {rng(5).map((i) => {
             const y = padding + (i / 4) * plotH;
             const label = Math.round(((4 - i) / 4) * max);
@@ -615,20 +602,39 @@ function BarChart({
             );
           })}
 
+          {/* bars + ✅ value labels */}
           {buckets.map((b, i) => {
-            const v = vals[i];
+            const v = vals[i] ?? 0;
             const h = (v / max) * plotH;
+
             const x = padding + i * (barW + gap);
             const y = padding + (plotH - h);
-            const ty = Math.max(padding + 12, y - 10);
+
+            // position du label : au-dessus si barre assez haute, sinon à l’intérieur
+            const labelInside = h >= 34;
+            const labelY = labelInside ? y + 18 : Math.max(padding + 12, y - 10);
 
             return (
               <g key={b}>
                 <rect x={x} y={y} width={barW} height={h} rx={12} fill={accent} />
                 <rect x={x} y={y} width={barW} height={h} rx={12} fill="transparent" stroke="rgba(122,90,22,.35)" />
-                <text x={x + barW / 2} y={ty} textAnchor="middle" style={{ fontSize: 11, fontWeight: 900, fill: accent }}>
+
+                {/* ✅ valeur */}
+                <text
+                  x={x + barW / 2}
+                  y={labelY}
+                  textAnchor="middle"
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 900,
+                    fill: "url(#dcBarValueGrad)",
+                  }}
+                  filter="url(#dcTextGlow)"
+                >
                   {v}
                 </text>
+
+                {/* label bucket */}
                 <text
                   x={x + barW / 2}
                   y={height - (padding - 14)}

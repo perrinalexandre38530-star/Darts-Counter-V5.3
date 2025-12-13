@@ -560,9 +560,10 @@ function buildDashboardForPlayer(
   records: SavedMatch[],
   quick: any
 ): PlayerDashboardStats | null {
-  const pid = player.id;
+  const pid = player?.id;
   if (!pid) return null;
 
+  // --------- Accumulateurs fallback (si quick absent / incomplet)
   let fbAvg3 = 0;
   let fbBestVisit = 0;
   let fbBestCO = 0;
@@ -580,10 +581,14 @@ function buildDashboardForPlayer(
   const evo: Array<{ date: string; avg3: number }> = [];
   const byDate: Array<{ t: number; a3: number }> = [];
 
-  // ✅ AJOUT SAFE : compteur de sessions par mode
+  // ✅ Compteur de sessions par mode
   const sessionsByMode: Record<string, number> = {};
 
-  // ✅ AJOUT SAFE : normalisation buckets (tolère variantes de clés)
+  // --------- Helpers
+  const toArrLoc = <T,>(v: any): T[] => (Array.isArray(v) ? v : []);
+  const Nloc = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : 0);
+
+  // ✅ Normalisation buckets (tolère variantes de clés / formats)
   const normalizeBuckets = (raw: any): Record<string, number> => {
     const out: Record<string, number> = {
       "0-59": 0,
@@ -592,17 +597,37 @@ function buildDashboardForPlayer(
       "140+": 0,
       "180": 0,
     };
-
     if (!raw || typeof raw !== "object") return out;
 
-    const Nn = (v: any) =>
-      Number.isFinite(Number(v)) ? Number(v) : 0;
+    const Nn = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
-    const pick = (k: string) =>
-      (raw as any)[k] ??
-      (raw as any)[k.replace("-", "_")] ??
-      (raw as any)[k.replace("+", "plus")] ??
-      null;
+    // cherche une clé dans plusieurs variantes possibles
+    const pick = (k: string) => {
+      const r: any = raw;
+
+      // 1) clé exacte
+      if (r[k] != null) return r[k];
+
+      // 2) variantes simples
+      const kUnd = k.replace("-", "_");
+      if (r[kUnd] != null) return r[kUnd];
+
+      // 3) variantes "+" -> "plus"
+      const kPlusWord = k.replace("+", "plus"); // "100plus"
+      if (r[kPlusWord] != null) return r[kPlusWord];
+
+      // 4) variantes "+", "_" combinées
+      const kPlusUnd = k.replace("+", "_plus"); // "100_plus"
+      if (r[kPlusUnd] != null) return r[kPlusUnd];
+
+      // 5) variantes "0_59"
+      if (k.includes("-")) {
+        const k0 = k.split("-").join("_");
+        if (r[k0] != null) return r[k0];
+      }
+
+      return null;
+    };
 
     out["0-59"] = Nn(pick("0-59") ?? pick("0_59"));
     out["60-99"] = Nn(pick("60-99") ?? pick("60_99"));
@@ -613,31 +638,37 @@ function buildDashboardForPlayer(
     return out;
   };
 
-  const toArrLoc = <T,>(v: any): T[] => (Array.isArray(v) ? v : []);
-  const Nloc = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : 0);
+  // ✅ Ajoute un bucket normalisé dans fbBuckets (somme)
+  const addBucketsToFb = (raw: any) => {
+    const nb = normalizeBuckets(raw);
+    fbBuckets["0-59"] += Nloc(nb["0-59"]);
+    fbBuckets["60-99"] += Nloc(nb["60-99"]);
+    fbBuckets["100+"] += Nloc(nb["100+"]);
+    fbBuckets["140+"] += Nloc(nb["140+"]);
+    fbBuckets["180"] += Nloc(nb["180"]);
+  };
 
-  for (const r of records) {
-    const inMatch = toArrLoc<PlayerLite>(r.players).some(
-      (p) => p?.id === pid
-    );
+  // --------- Loop records
+  for (const r of records || []) {
+    const inMatch = toArrLoc<PlayerLite>((r as any)?.players).some((p) => p?.id === pid);
     if (!inMatch) continue;
 
     fbMatches++;
 
-    // ✅ AJOUT SAFE : on compte le mode via classifyRecordMode()
-    const modeKey = classifyRecordMode(r); // "x01" | "cricket" | "killer" | "battle_royale" | "other"
-    sessionsByMode[modeKey] = (sessionsByMode[modeKey] || 0) + 1;
+    // ✅ Compte le mode (safe)
+    try {
+      const modeKey = classifyRecordMode(r) || "other";
+      sessionsByMode[modeKey] = (sessionsByMode[modeKey] || 0) + 1;
+    } catch {
+      sessionsByMode.other = (sessionsByMode.other || 0) + 1;
+    }
 
-    const ss: any = r.summary ?? r.payload?.summary ?? {};
-    const per: any[] =
-      ss.perPlayer ??
-      ss.players ??
-      r.payload?.summary?.perPlayer ??
-      [];
+    const ss: any = (r as any)?.summary ?? (r as any)?.payload?.summary ?? {};
+    const per: any[] = ss.perPlayer ?? ss.players ?? (r as any)?.payload?.summary?.perPlayer ?? [];
 
     const pstat =
       per.find((x) => x?.playerId === pid) ??
-      (ss[pid] || ss.players?.[pid] || ss.perPlayer?.[pid]) ??
+      (ss?.[pid] || ss?.players?.[pid] || ss?.perPlayer?.[pid]) ??
       {};
 
     const a3 =
@@ -651,7 +682,7 @@ function buildDashboardForPlayer(
 
     if (a3 > 0) {
       byDate.push({
-        t: Nloc(r.updatedAt ?? r.createdAt),
+        t: Nloc((r as any)?.updatedAt ?? (r as any)?.createdAt),
         a3,
       });
     }
@@ -659,19 +690,17 @@ function buildDashboardForPlayer(
     fbAvg3 += a3;
     fbBestVisit = Math.max(fbBestVisit, bestV);
     fbBestCO = Math.max(fbBestCO, bestCO);
-    if (r.winnerId === pid) fbWins++;
+    if ((r as any)?.winnerId === pid) fbWins++;
 
-    const buckets = ss.buckets?.[pid] ?? pstat.buckets ?? null;
+    // Buckets : on tente plusieurs sources
+    const bucketsFromSummary = ss?.buckets?.[pid];
+    const bucketsFromPstat = pstat?.buckets;
+    const bucketsRaw = bucketsFromSummary ?? bucketsFromPstat ?? null;
 
-    if (buckets) {
-      fbBuckets["0-59"] += Nloc((buckets as any)["0-59"]);
-      fbBuckets["60-99"] += Nloc((buckets as any)["60-99"]);
-      fbBuckets["100+"] += Nloc((buckets as any)["100+"]);
-      fbBuckets["140+"] += Nloc((buckets as any)["140+"]);
-      fbBuckets["180"] += Nloc((buckets as any)["180"]);
-    }
+    if (bucketsRaw) addBucketsToFb(bucketsRaw);
   }
 
+  // --------- Evolution (20 derniers points)
   byDate.sort((a, b) => a.t - b.t);
   for (const it of byDate.slice(-20)) {
     evo.push({
@@ -680,38 +709,37 @@ function buildDashboardForPlayer(
     });
   }
 
+  // --------- Fallback stats
   const fbAvg3Mean = fbMatches > 0 ? fbAvg3 / fbMatches : 0;
-  const fbWinPct =
-    fbMatches > 0
-      ? Math.round((fbWins / fbMatches) * 1000) / 10
-      : 0;
+  const fbWinPct = fbMatches > 0 ? Math.round((fbWins / fbMatches) * 1000) / 10 : 0;
 
   // Si aucun match et aucune quick-stat dispo → on laisse le composant gérer
   if (!fbMatches && !quick) return null;
 
+  // ✅ Distribution finale : priorité quick (mais normalisée), sinon fbBuckets (déjà agrégés)
+  const finalDistribution = normalizeBuckets(quick?.buckets ?? fbBuckets);
+
   return {
     playerId: pid,
-    playerName: player.name || "Joueur",
-    avg3Overall: quick?.avg3 ?? fbAvg3Mean,
-    bestVisit: quick?.bestVisit ?? fbBestVisit,
-    bestCheckout: quick?.bestCheckout ?? fbBestCO,
-    winRatePct: Number.isFinite(quick?.winRatePct ?? null)
-      ? quick!.winRatePct
-      : fbWinPct,
+    playerName: player?.name || "Joueur",
+    avg3Overall: Number.isFinite(Number(quick?.avg3)) ? Number(quick?.avg3) : fbAvg3Mean,
+    bestVisit: Number.isFinite(Number(quick?.bestVisit)) ? Number(quick?.bestVisit) : fbBestVisit,
+    bestCheckout: Number.isFinite(Number(quick?.bestCheckout)) ? Number(quick?.bestCheckout) : fbBestCO,
+    winRatePct: Number.isFinite(Number(quick?.winRatePct)) ? Number(quick?.winRatePct) : fbWinPct,
 
-    // ✅ IMPORTANT : on normalise pour éviter buckets vides / clés différentes
-    distribution: normalizeBuckets(quick?.buckets ?? fbBuckets),
+    // ✅ IMPORTANT : normalisé pour éviter clés différentes / 0 fantômes
+    distribution: finalDistribution,
 
     evolution: evo.length
       ? evo
       : [
           {
             date: new Date().toLocaleDateString(),
-            avg3: quick?.avg3 ?? fbAvg3Mean,
+            avg3: Number.isFinite(Number(quick?.avg3)) ? Number(quick?.avg3) : fbAvg3Mean,
           },
         ],
 
-    // ✅ AJOUT UNIQUE dans le return
+    // ✅ sessionsByMode (pour "mode préféré" + ranking)
     sessionsByMode,
   };
 }

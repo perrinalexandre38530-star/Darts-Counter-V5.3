@@ -1,8 +1,11 @@
+// @ts-nocheck
 // ============================================
 // src/pages/StatsKiller.tsx
 // Onglet KILLER dans le "Centre de statistiques" (StatsHub)
-// - Stats globales ou par joueur
-// - Basé sur statsKiller.ts (agrégateur)
+// ✅ Les STATS vivent dans ../lib/statsKiller
+// - Robuste: lit memHistory (agrégé App.tsx) et filtre kind === "killer"
+// - Support: playerId (profil actif) => stats perso complètes
+// - Affiche: matchs / wins / win% / kills / fav segment / fav numéro / hits total + historique
 // ============================================
 
 import React from "react";
@@ -12,14 +15,19 @@ import { computeKillerStatsAggForProfile } from "../lib/statsKiller";
 
 type Props = {
   profiles: Profile[];
-  memHistory: any[];
-  playerId?: string | null;
-  title?: string;
+  memHistory: any[];              // records déjà "withAvatars"
+  playerId?: string | null;       // si défini, filtre par joueur
+  title?: string;                // optionnel
 };
 
 function pct(n: number) {
   if (!Number.isFinite(n)) return "0";
   return String(Math.round(n));
+}
+
+function fixed1(n: number) {
+  if (!Number.isFinite(n)) return "0.0";
+  return n.toFixed(1);
 }
 
 export default function StatsKiller({
@@ -31,16 +39,49 @@ export default function StatsKiller({
   const { theme } = useTheme();
 
   const agg = React.useMemo(() => {
-    return computeKillerStatsAggForProfile(memHistory, playerId);
+    return computeKillerStatsAggForProfile(memHistory, playerId || null);
   }, [memHistory, playerId]);
 
-  const lastStr = agg.lastPlayedAt
-    ? new Date(agg.lastPlayedAt).toLocaleString()
-    : "—";
+  const historyItems = React.useMemo(() => {
+    const list = Array.isArray(memHistory) ? memHistory : [];
+    const killer = list.filter((r) => (r?.kind || r?.payload?.kind) === "killer");
+
+    const filtered = playerId
+      ? killer.filter((r) =>
+          (r?.players || r?.payload?.players || []).some((p: any) => String(p?.id) === String(playerId))
+        )
+      : killer;
+
+    const sorted = filtered
+      .slice()
+      .sort((a: any, b: any) => Number(b?.updatedAt ?? b?.createdAt ?? 0) - Number(a?.updatedAt ?? a?.createdAt ?? 0));
+
+    return sorted.slice(0, 20).map((r: any) => {
+      const when = Number(r?.updatedAt ?? r?.createdAt ?? 0);
+      const w = r?.winnerId ?? r?.payload?.winnerId ?? null;
+
+      const players = (r?.players || r?.payload?.players || []) as any[];
+      const names = players.map((p) => p?.name).filter(Boolean).join(" · ");
+
+      const winnerName =
+        w ? (profiles.find((p) => p.id === w)?.name ?? players.find((p) => p?.id === w)?.name ?? "—") : "—";
+
+      return { id: r?.id ?? `${when}-${Math.random()}`, when, names, winnerName };
+    });
+  }, [memHistory, playerId, profiles]);
+
+  const lastStr = agg.lastAt ? new Date(agg.lastAt).toLocaleString() : "—";
+
+  const favNumLabel = agg.favNumber ? `#${agg.favNumber}` : "—";
+  const favNumSub =
+    agg.favNumberHits > 0 ? `${agg.favNumberHits} hit(s)` : `${agg.totalHits || 0} hit(s)`;
+
+  const favSegLabel = agg.favSegment ? `${agg.favSegment}` : "—";
+  const favSegSub =
+    agg.favSegmentHits > 0 ? `${agg.favSegmentHits} hit(s)` : `${agg.totalHits || 0} hit(s)`;
 
   return (
     <div style={{ padding: 12 }}>
-      {/* TITLE */}
       <div
         style={{
           fontSize: 12,
@@ -64,54 +105,81 @@ export default function StatsKiller({
           marginBottom: 12,
         }}
       >
-        <Kpi label="Matchs joués" value={`${agg.totalMatches}`} theme={theme} />
-        <Kpi label="Victoires" value={`${agg.wins}`} theme={theme} />
-        <Kpi label="Win %" value={pct(agg.winRate * 100)} theme={theme} />
-        <Kpi label="Kills total" value={`${agg.totalKills}`} theme={theme} />
-        <Kpi label="Kills / match" value={agg.avgKills.toFixed(2)} theme={theme} />
-        <Kpi label="Éliminations" value={`${agg.deaths}`} theme={theme} />
+        <Kpi label="Matchs" value={`${agg.played}`} theme={theme} />
+
+        <Kpi
+          label={playerId ? "Victoires" : "Dernier match"}
+          value={playerId ? `${agg.wins}` : lastStr}
+          theme={theme}
+        />
+
+        {playerId && (
+          <>
+            <Kpi label="Win %" value={`${pct(agg.winRate)}`} theme={theme} />
+            <Kpi label="Kills" value={`${agg.killsTotal || 0}`} theme={theme} />
+            <Kpi label="Kills / match" value={fixed1(agg.killsAvg || 0)} theme={theme} />
+            <Kpi label="Hits total" value={`${agg.totalHits || 0}`} theme={theme} />
+            <Kpi label="Segment favori" value={favSegLabel} sub={favSegSub} theme={theme} />
+            <Kpi label="Numéro favori" value={favNumLabel} sub={favNumSub} theme={theme} />
+          </>
+        )}
       </div>
 
-      {/* META */}
+      {/* HISTORIQUE */}
       <div
         style={{
           borderRadius: 14,
           border: `1px solid ${theme.borderSoft}`,
           background: theme.card,
-          padding: "10px 12px",
+          overflow: "hidden",
           boxShadow: `0 14px 28px rgba(0,0,0,.55), 0 0 14px ${theme.primary}22`,
         }}
       >
         <div
           style={{
-            fontSize: 11,
+            padding: "10px 12px",
+            borderBottom: `1px solid ${theme.borderSoft}`,
             color: theme.textSoft,
-            textTransform: "uppercase",
-            letterSpacing: 0.7,
-            marginBottom: 6,
+            fontSize: 12,
           }}
         >
-          Dernière partie
+          Historique KILLER (20 derniers)
         </div>
-        <div style={{ fontSize: 13, fontWeight: 800, color: theme.text }}>
-          {lastStr}
-        </div>
+
+        {historyItems.length === 0 ? (
+          <div style={{ padding: 12, color: theme.textSoft, fontSize: 12 }}>
+            Aucun match KILLER trouvé.
+          </div>
+        ) : (
+          historyItems.map((it: any) => (
+            <div
+              key={it.id}
+              style={{
+                padding: "10px 12px",
+                borderBottom: `1px solid ${theme.borderSoft}`,
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: theme.text }}>
+                {it.when ? new Date(it.when).toLocaleString() : "—"}
+              </div>
+              <div style={{ fontSize: 12, color: theme.textSoft }}>
+                {it.names || "—"}
+              </div>
+              <div style={{ fontSize: 12, color: theme.primary }}>
+                Vainqueur : {it.winnerName}
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
 }
 
-// --------------------------------------------
-
-function Kpi({
-  label,
-  value,
-  theme,
-}: {
-  label: string;
-  value: string;
-  theme: any;
-}) {
+function Kpi({ label, value, sub, theme }: any) {
   return (
     <div
       style={{
@@ -133,19 +201,21 @@ function Kpi({
           marginBottom: 6,
           textTransform: "uppercase",
           letterSpacing: 0.7,
+          fontWeight: 800,
         }}
       >
         {label}
       </div>
-      <div
-        style={{
-          fontSize: 16,
-          fontWeight: 900,
-          color: theme.text,
-        }}
-      >
+
+      <div style={{ fontSize: 16, fontWeight: 900, color: theme.text, lineHeight: 1.05 }}>
         {value}
       </div>
+
+      {sub ? (
+        <div style={{ marginTop: 6, fontSize: 10.5, color: theme.textSoft, opacity: 0.9 }}>
+          {sub}
+        </div>
+      ) : null}
     </div>
   );
 }

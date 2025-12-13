@@ -8,6 +8,7 @@
 // - Ajout bots : PRO + bots user depuis localStorage dc_bots_v1 (fallback)
 // - Corrige warning: pas de <button> imbriqués
 // - Sort un KillerConfig consommé par KillerPlay (routeParams.config)
+// - FIX: onStart peut être absent -> fallback go("killer_play", { config })
 // =============================================================
 
 import React from "react";
@@ -64,9 +65,15 @@ export type KillerConfig = {
 
 type Props = {
   store: Store;
-  go: (tab: any, params?: any) => void;
+
+  // ✅ parfois tu as go, parfois non
+  go?: (tab: any, params?: any) => void;
   onBack?: () => void;
-  onStart: (cfg: KillerConfig) => void;
+
+  // ✅ selon les pages, le parent peut exposer différents noms
+  onStart?: (cfg: KillerConfig) => void;
+  onStartGame?: (cfg: KillerConfig) => void;
+  onPlay?: (cfg: KillerConfig) => void;
 };
 
 type BotLite = {
@@ -267,7 +274,16 @@ function uniqueKillerNumbers(selected: Record<string, number>) {
   return out;
 }
 
-export default function KillerConfigPage({ store, go, onBack, onStart }: Props) {
+export default function KillerConfigPage(props: Props) {
+  const { store, go, onBack } = props;
+
+  // ✅ FIX: onStart peut être absent / mauvais nom -> on résout un callback fiable
+  const startCb =
+    (typeof (props as any).onStart === "function" && (props as any).onStart) ||
+    (typeof (props as any).onStartGame === "function" && (props as any).onStartGame) ||
+    (typeof (props as any).onPlay === "function" && (props as any).onPlay) ||
+    null;
+
   const { theme } = useTheme();
   const { t } = useLang();
 
@@ -276,7 +292,7 @@ export default function KillerConfigPage({ store, go, onBack, onStart }: Props) 
   const textMain = theme?.text ?? "#f5f5ff";
   const cardBg = "rgba(10, 12, 24, 0.96)";
 
-  // ✅ Profils robustes (c’est là que ton écran était “vide”)
+  // ✅ Profils robustes
   const profiles: Profile[] = ((store as any)?.profiles || []) as Profile[];
   const humanProfiles = (profiles || []).filter((p: any) => !p?.isBot);
   const storeBots = (profiles || []).filter((p: any) => !!p?.isBot);
@@ -442,7 +458,25 @@ export default function KillerConfigPage({ store, go, onBack, onStart }: Props) 
       players,
     };
 
-    onStart(cfg);
+    // ✅ FIX: onStart absent -> fallback go(...)
+    if (startCb) {
+      startCb(cfg);
+      return;
+    }
+
+    if (typeof go === "function") {
+      go("killer_play", { config: cfg });
+      return;
+    }
+
+    console.error("[KillerConfig] Aucun callback de start fourni (onStart/onStartGame/onPlay/go).", {
+      onStart: typeof (props as any).onStart,
+      onStartGame: typeof (props as any).onStartGame,
+      onPlay: typeof (props as any).onPlay,
+      go: typeof go,
+    });
+
+    alert("Impossible de lancer : callback manquant (voir console).");
   }
 
   // ------------------ render ------------------
@@ -463,7 +497,7 @@ export default function KillerConfigPage({ store, go, onBack, onStart }: Props) 
         <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
           <button
             type="button"
-            onClick={() => (onBack ? onBack() : go("games"))}
+            onClick={() => (onBack ? onBack() : (typeof go === "function" ? go("games") : null))}
             style={{
               borderRadius: 999,
               border: "1px solid rgba(255,255,255,0.12)",
@@ -567,7 +601,6 @@ export default function KillerConfigPage({ store, go, onBack, onStart }: Props) 
                   const num = killerNumberById[p.id] ?? 20;
 
                   return (
-                    // ✅ pas un <button> -> évite le warning si tu mets des boutons dedans
                     <div
                       key={p.id}
                       role="button"
@@ -646,7 +679,9 @@ export default function KillerConfigPage({ store, go, onBack, onStart }: Props) 
                         <button
                           type="button"
                           onClick={() =>
-                            setKillerNumberById((prev) => uniqueKillerNumbers({ ...prev, [p.id]: (num - 1) < 1 ? 20 : (num - 1) }))
+                            setKillerNumberById((prev) =>
+                              uniqueKillerNumbers({ ...prev, [p.id]: num - 1 < 1 ? 20 : num - 1 })
+                            )
                           }
                           style={{
                             width: 28,
@@ -684,7 +719,9 @@ export default function KillerConfigPage({ store, go, onBack, onStart }: Props) 
                         <button
                           type="button"
                           onClick={() =>
-                            setKillerNumberById((prev) => uniqueKillerNumbers({ ...prev, [p.id]: (num + 1) > 20 ? 1 : (num + 1) }))
+                            setKillerNumberById((prev) =>
+                              uniqueKillerNumbers({ ...prev, [p.id]: num + 1 > 20 ? 1 : num + 1 })
+                            )
                           }
                           style={{
                             width: 28,
@@ -954,7 +991,7 @@ export default function KillerConfigPage({ store, go, onBack, onStart }: Props) 
 
           <button
             type="button"
-            onClick={() => go("profiles_bots")}
+            onClick={() => (typeof go === "function" ? go("profiles_bots") : null)}
             style={{
               padding: "6px 10px",
               borderRadius: 999,
