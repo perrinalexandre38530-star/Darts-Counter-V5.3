@@ -2,6 +2,7 @@
 // src/lib/statsByDartSet.ts
 // Stats X01 agrégées par set de fléchettes (dartSetId / dartPresetId)
 // - Compatible X01 legacy + X01 V3 (mode/variant/game = "x01v3")
+// - Ajoute quelques stats utiles si présentes dans summary (first9, checkout, doubles, records)
 // =============================================================
 
 import { History } from "./history";
@@ -11,8 +12,14 @@ export type DartSetAgg = {
   matches: number;
 
   darts: number;
+
+  // AVG/3D solide
   avg3SumPoints: number;
   avg3SumDarts: number;
+
+  // optionnel si dispo (sinon restera 0)
+  first9SumPoints: number;
+  first9SumDarts: number; // souvent 9 par match, mais on reste safe
 
   bestVisit: number;
   bestCheckout: number;
@@ -25,10 +32,24 @@ export type DartSetAgg = {
   bull: number;
   dBull: number;
   bust: number;
+
+  // checkout/doubles si dispo
+  checkoutMade: number;
+  checkoutAtt: number;
+  doublesHit: number;
+  doublesAtt: number;
+
+  // records si dispo
+  n180: number;
+  n140: number;
+  n100: number;
 };
 
 export type DartSetAggOut = DartSetAgg & {
   avg3: number;
+  first9: number;
+  checkoutPct: number;
+  doublesPct: number;
 };
 
 const N = (x: any, d = 0) => (Number.isFinite(Number(x)) ? Number(x) : d);
@@ -73,34 +94,94 @@ function resolveDartSetId(pp: any): string | null {
 }
 
 function resolvePoints(pp: any): number {
-  // si tu l’enregistres déjà
   if (pp?._sumPoints !== undefined) return N(pp._sumPoints, 0);
   if (pp?.sumPoints !== undefined) return N(pp.sumPoints, 0);
-
-  // fallback possible
   if (pp?.points !== undefined) return N(pp.points, 0);
   if (pp?.scoredPoints !== undefined) return N(pp.scoredPoints, 0);
-
+  if (pp?.totalPoints !== undefined) return N(pp.totalPoints, 0);
   return 0;
 }
 
-// ✅ AVG/3D : certains résumés (souvent X01 V3) stockent déjà avg3 / avgPer3,
-// mais pas forcément sumPoints. On le récupère en priorité.
-function resolveAvg3(pp: any): number | null {
-  const v =
-    pp?.avg3 ??
-    pp?.avgPer3 ??
-    pp?.avgPer3D ??
-    pp?.avg_3 ??
-    pp?.avg_per_3 ??
-    null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+function resolveFirst9(pp: any): { points: number; darts: number } {
+  // ultra tolérant : plusieurs clés possibles selon tes anciens résumés
+  const p =
+    pp?.first9Points ??
+    pp?.first9_sumPoints ??
+    pp?.sumFirst9Points ??
+    pp?.f9Points ??
+    (pp?.first9 && (pp.first9.points ?? pp.first9.sumPoints)) ??
+    0;
+
+  const d =
+    pp?.first9Darts ??
+    pp?.first9_sumDarts ??
+    pp?.sumFirst9Darts ??
+    pp?.f9Darts ??
+    (pp?.first9 && (pp.first9.darts ?? pp.first9.sumDarts)) ??
+    0;
+
+  return { points: N(p, 0), darts: N(d, 0) };
 }
 
-function pointsFromAvg3(avg3: number, darts: number): number {
-  // avg3 = points / darts * 3  => points = avg3/3 * darts
-  return (avg3 / 3) * darts;
+function resolveCheckout(pp: any): { made: number; att: number } {
+  const made =
+    pp?.checkoutMade ??
+    pp?.coMade ??
+    (pp?.checkout && (pp.checkout.made ?? pp.checkout.done)) ??
+    0;
+  const att =
+    pp?.checkoutAttempts ??
+    pp?.checkoutAtt ??
+    pp?.coAtt ??
+    (pp?.checkout && (pp.checkout.att ?? pp.checkout.attempts)) ??
+    0;
+  return { made: N(made, 0), att: N(att, 0) };
+}
+
+function resolveDoubles(pp: any): { hit: number; att: number } {
+  const hit =
+    pp?.doublesHit ??
+    pp?.dblHit ??
+    (pp?.doubles && (pp.doubles.hit ?? pp.doubles.made)) ??
+    0;
+  const att =
+    pp?.doublesAttempts ??
+    pp?.dblAtt ??
+    (pp?.doubles && (pp.doubles.att ?? pp.doubles.attempts)) ??
+    0;
+  return { hit: N(hit, 0), att: N(att, 0) };
+}
+
+function resolveRecords(pp: any): { n180: number; n140: number; n100: number } {
+  // selon comment tu logges (records / tops / visits)
+  const rec = pp?.records ?? pp?.tops ?? pp?.visits ?? null;
+
+  const n180 =
+    pp?.n180 ??
+    pp?.count180 ??
+    rec?.n180 ??
+    rec?.["180"] ??
+    rec?.top180 ??
+    0;
+
+  const n140 =
+    pp?.n140 ??
+    pp?.count140 ??
+    rec?.n140 ??
+    rec?.["140"] ??
+    rec?.top140 ??
+    0;
+
+  const n100 =
+    pp?.n100 ??
+    pp?.count100 ??
+    rec?.n100 ??
+    rec?.["100"] ??
+    rec?.top100 ??
+    rec?.top100Plus ??
+    0;
+
+  return { n180: N(n180, 0), n140: N(n140, 0), n100: N(n100, 0) };
 }
 
 function resolveHits(pp: any): { S: number; D: number; T: number; M: number } {
@@ -122,7 +203,6 @@ function isX01Record(r: any): boolean {
   const mode = String(r?.mode ?? "").toLowerCase();
   const variant = String(r?.variant ?? "").toLowerCase();
 
-  // ✅ On accepte x01 + x01v3 partout
   if (kind === "x01" || kind === "x01v3") return true;
   if (game === "x01" || game === "x01v3") return true;
   if (mode === "x01" || mode === "x01v3") return true;
@@ -142,7 +222,6 @@ export async function getX01StatsByDartSet(profileId?: string) {
     if (!isX01Record(r)) continue;
 
     const status = r?.status ?? r?.state ?? "";
-    // si status absent => on accepte (certains historiques n’ont pas ce champ)
     if (status && status !== "finished") continue;
 
     const summary = r?.summary ?? r?.payload?.summary ?? null;
@@ -150,8 +229,6 @@ export async function getX01StatsByDartSet(profileId?: string) {
 
     for (const pp of perPlayer) {
       const pid = resolveProfileId(pp);
-
-      // filtrage profil si demandé
       if (profileId && pid !== profileId) continue;
 
       const dartSetId = resolveDartSetId(pp);
@@ -161,17 +238,33 @@ export async function getX01StatsByDartSet(profileId?: string) {
         dartSetId,
         matches: 0,
         darts: 0,
+
         avg3SumPoints: 0,
         avg3SumDarts: 0,
+
+        first9SumPoints: 0,
+        first9SumDarts: 0,
+
         bestVisit: 0,
         bestCheckout: 0,
+
         hitsS: 0,
         hitsD: 0,
         hitsT: 0,
         miss: 0,
+
         bull: 0,
         dBull: 0,
         bust: 0,
+
+        checkoutMade: 0,
+        checkoutAtt: 0,
+        doublesHit: 0,
+        doublesAtt: 0,
+
+        n180: 0,
+        n140: 0,
+        n100: 0,
       });
 
       a.matches += 1;
@@ -179,18 +272,13 @@ export async function getX01StatsByDartSet(profileId?: string) {
       const darts = N(pp?.darts, 0);
       a.darts += darts;
 
-      // ✅ AVG/3D : priorité à la valeur déjà calculée si présente (X01 V3 souvent)
-      // sinon fallback sur points
-      const avg3 = resolveAvg3(pp);
+      const points = resolvePoints(pp);
+      a.avg3SumPoints += points;
+      a.avg3SumDarts += darts;
 
-      if (avg3 !== null && darts > 0) {
-        a.avg3SumPoints += pointsFromAvg3(avg3, darts);
-        a.avg3SumDarts += darts;
-      } else {
-        const points = resolvePoints(pp);
-        a.avg3SumPoints += points;
-        a.avg3SumDarts += darts;
-      }
+      const f9 = resolveFirst9(pp);
+      a.first9SumPoints += f9.points;
+      a.first9SumDarts += f9.darts;
 
       a.bestVisit = Math.max(a.bestVisit, N(pp?.bestVisit, 0));
       a.bestCheckout = Math.max(a.bestCheckout, N(pp?.bestCheckout, 0));
@@ -204,20 +292,40 @@ export async function getX01StatsByDartSet(profileId?: string) {
       a.bull += N(pp?.bull, 0);
       a.dBull += N(pp?.dBull ?? pp?.dbull, 0);
       a.bust += N(pp?.bust, 0);
+
+      const co = resolveCheckout(pp);
+      a.checkoutMade += co.made;
+      a.checkoutAtt += co.att;
+
+      const db = resolveDoubles(pp);
+      a.doublesHit += db.hit;
+      a.doublesAtt += db.att;
+
+      const rec = resolveRecords(pp);
+      a.n180 += rec.n180;
+      a.n140 += rec.n140;
+      a.n100 += rec.n100;
     }
   }
 
-  const out: DartSetAggOut[] = Object.values(agg).map((a) => ({
-    ...a,
-    avg3: a.avg3SumDarts > 0 ? (a.avg3SumPoints / a.avg3SumDarts) * 3 : 0,
-  }));
+  const out: DartSetAggOut[] = Object.values(agg).map((a) => {
+    const avg3 = a.avg3SumDarts > 0 ? (a.avg3SumPoints / a.avg3SumDarts) * 3 : 0;
+    const first9 =
+      a.first9SumDarts > 0 ? (a.first9SumPoints / a.first9SumDarts) * 3 : 0;
 
-  // Tri utile : plus joués en premier, puis avg3
+    const checkoutPct =
+      a.checkoutAtt > 0 ? (a.checkoutMade / a.checkoutAtt) * 100 : 0;
+
+    const doublesPct =
+      a.doublesAtt > 0 ? (a.doublesHit / a.doublesAtt) * 100 : 0;
+
+    return { ...a, avg3, first9, checkoutPct, doublesPct };
+  });
+
   out.sort((x, y) => (y.matches - x.matches) || (y.avg3 - x.avg3));
   return out;
 }
 
-// ✅ Export attendu par StatsDartSetsSection
 export async function getX01StatsByDartSetForProfile(profileId: string) {
   return getX01StatsByDartSet(profileId);
 }

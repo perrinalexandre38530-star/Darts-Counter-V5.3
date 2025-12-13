@@ -134,21 +134,24 @@ const DartSetImageUploader: React.FC<DartSetImageUploaderProps> = ({
   const currentUrl =
     (dartSet as any).thumbImageUrl || (dartSet as any).mainImageUrl || "";
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const dataUrl = reader.result as string;
 
       try {
-        updateDartSet(dartSet.id, {
-          mainImageUrl: dataUrl,
-          thumbImageUrl: dataUrl,
-          kind: "photo",
-          presetId: undefined,
-        } as any);
+        // ✅ IMPORTANT : await + on ne swallow pas l'erreur
+        await Promise.resolve(
+          updateDartSet(dartSet.id, {
+            mainImageUrl: dataUrl,
+            thumbImageUrl: dataUrl,
+            kind: "photo",
+            presetId: undefined,
+          } as any)
+        );
 
         const updated: DartSet = {
           ...dartSet,
@@ -162,6 +165,11 @@ const DartSetImageUploader: React.FC<DartSetImageUploaderProps> = ({
         onUpdated(updated);
       } catch (err) {
         console.warn("[DartSetImageUploader] update error", err);
+        alert(
+          lang === "fr"
+            ? "Erreur : impossible d’enregistrer la photo."
+            : "Error: unable to save photo."
+        );
       }
     };
     reader.readAsDataURL(file);
@@ -282,23 +290,6 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
   // Carrousel
   const [activeIndex, setActiveIndex] = React.useState(0);
 
-  // Chargement initial
-  React.useEffect(() => {
-    if (!profile?.id) return;
-    const all = getDartSetsForProfile(profile.id);
-    const sorted = sortSets(all);
-    setSets(sorted);
-    setActiveIndex((idx) =>
-      sorted.length === 0 ? 0 : Math.min(idx, sorted.length - 1)
-    );
-  }, [profile?.id]);
-
-  const hasSets = sets.length > 0;
-  const activeSet: DartSet | null =
-    hasSets && activeIndex >= 0 && activeIndex < sets.length
-      ? sets[activeIndex]
-      : null;
-
   function sortSets(list: DartSet[]): DartSet[] {
     return list
       .slice()
@@ -312,14 +303,36 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       });
   }
 
-  const reloadSets = () => {
+  // ✅ loader tolérant (getDartSetsForProfile peut être sync OU async)
+  const loadSets = React.useCallback(async () => {
     if (!profile?.id) return;
-    const updated = sortSets(getDartSetsForProfile(profile.id));
-    setSets(updated);
-    setActiveIndex((idx) =>
-      updated.length === 0 ? 0 : Math.min(idx, updated.length - 1)
-    );
-  };
+    try {
+      const all = await Promise.resolve(getDartSetsForProfile(profile.id) as any);
+      const sorted = sortSets((all || []) as DartSet[]);
+      setSets(sorted);
+      setActiveIndex((idx) =>
+        sorted.length === 0 ? 0 : Math.min(idx, sorted.length - 1)
+      );
+    } catch (err) {
+      console.warn("[DartSetsPanel] load error", err);
+    }
+  }, [profile?.id]);
+
+  // Chargement initial + quand profile change
+  React.useEffect(() => {
+    loadSets();
+  }, [loadSets]);
+
+  const reloadSets = React.useCallback(() => {
+    // fire-and-forget safe (mais garde l'ordre des updates)
+    void loadSets();
+  }, [loadSets]);
+
+  const hasSets = sets.length > 0;
+  const activeSet: DartSet | null =
+    hasSets && activeIndex >= 0 && activeIndex < sets.length
+      ? sets[activeIndex]
+      : null;
 
   // ------------------------------------------------------------------
   // Handlers formulaires
@@ -364,7 +377,8 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
     reader.readAsDataURL(file);
   };
 
-  const handleCreate = (e: React.FormEvent) => {
+  // ✅ IMPORTANT : async + await createDartSet + reload après (fix création photo)
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.id) return;
 
@@ -397,8 +411,8 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
     }
 
     try {
-      createDartSet({
-        profileId: profile.id,
+      const payload = {
+        profileId: profile.id, // ✅ FIX: toujours présent
         name,
         brand: brand || undefined,
         weightGrams,
@@ -409,13 +423,23 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
         scope,
         kind,
         presetId,
-      } as any);
+      } as any;
 
+      // debug utile si besoin
+      // console.log("[CREATE DART SET payload]", payload);
+
+      await Promise.resolve(createDartSet(payload));
       reloadSets();
+
       setForm(createEmptyForm(primary));
       setIsCreating(false);
     } catch (err) {
       console.warn("[DartSetsPanel] create error", err);
+      alert(
+        lang === "fr"
+          ? "Erreur : création impossible (voir console)."
+          : "Error: creation failed (see console)."
+      );
     }
   };
 
@@ -447,7 +471,8 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
     setEditForm(null);
   };
 
-  const handleUpdate = (e: React.FormEvent) => {
+  // ✅ IMPORTANT : async + await updateDartSet + reload
+  const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.id || !editingId || !editForm) return;
 
@@ -471,28 +496,35 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
     }
 
     try {
-      updateDartSet(editingId, {
-        name,
-        brand: brand || undefined,
-        weightGrams,
-        notes: notes || undefined,
-        bgColor: editForm.bgColor || DEFAULT_BG,
-        scope,
-        ...(chosenPreset && kind === "preset"
-          ? {
-              mainImageUrl: chosenPreset.imgUrlMain,
-              thumbImageUrl: chosenPreset.imgUrlThumb,
-            }
-          : {}),
-        kind,
-        presetId: chosenPreset ? chosenPreset.id : undefined,
-      } as any);
+      await Promise.resolve(
+        updateDartSet(editingId, {
+          name,
+          brand: brand || undefined,
+          weightGrams,
+          notes: notes || undefined,
+          bgColor: editForm.bgColor || DEFAULT_BG,
+          scope,
+          ...(chosenPreset && kind === "preset"
+            ? {
+                mainImageUrl: chosenPreset.imgUrlMain,
+                thumbImageUrl: chosenPreset.imgUrlThumb,
+              }
+            : {}),
+          kind,
+          presetId: chosenPreset ? chosenPreset.id : undefined,
+        } as any)
+      );
 
       reloadSets();
       setEditingId(null);
       setEditForm(null);
     } catch (err) {
       console.warn("[DartSetsPanel] update error", err);
+      alert(
+        lang === "fr"
+          ? "Erreur : mise à jour impossible (voir console)."
+          : "Error: update failed (see console)."
+      );
     }
   };
 
@@ -601,9 +633,6 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       : lang === "de"
       ? "Foto hochladen"
       : "Upload photo";
-
-  // (DEMANDE) : virer le cadre "AUCUN VISUEL" → supprimé, mais on garde le libellé pour l’UI si besoin
-  // const noVisualLabel = ...
 
   // ------------------------------------------------------------------
   // Helper UI : sélecteur de preset (SANS "AUCUN VISUEL")

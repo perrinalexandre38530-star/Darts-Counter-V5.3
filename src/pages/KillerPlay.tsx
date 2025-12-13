@@ -1,12 +1,18 @@
 // @ts-nocheck
 // ============================================
 // src/pages/KillerPlay.tsx
-// KILLER — PLAY (V1.1)
+// KILLER — PLAY (V1.2)
 // ✅ MISS (0) + BULL (25 / DBULL)
 // ✅ UNDO RÉEL (rollback état complet)
 // ✅ Auto-fin de tour quand dartsLeft = 0
 // ✅ Hook input externe (CustomEvent "dc:throw")
-// ✅ OPTION A (NEW): hitsBySegment par joueur (pour stats/classements)
+// ✅ NEW (Stats Killer enrichies - Option A étendue)
+//    - totalThrows / killerThrows / offensiveThrows
+//    - hitsBySegment (S20/T8/DBULL...) + hitsByNumber (1..20 + 25)
+//    - livesTaken / livesLost
+//    - killerHits / uselessHits
+//    - throwsToBecomeKiller
+//    - survivalTimeMs + finalRank (calcul fin de match)
 // - Reçoit config depuis KillerConfig : routeParams.config
 // - Tour par tour (3 fléchettes)
 // - Devenir Killer en touchant SON numéro (règle single/double)
@@ -14,16 +20,10 @@
 // - Élimination à 0 vie ; dernier vivant gagne
 // - onFinish(matchRecord) => App.pushHistory()
 // ============================================
+
 import React from "react";
 import type { Store, MatchRecord } from "../lib/types";
-import type {
-  KillerConfig,
-  KillerDamageRule,
-  KillerBecomeRule,
-} from "./KillerConfig";
-
-// ✅ NEW (Option A)
-import { createHitsAccumulator } from "../lib/hitsBySegment";
+import type { KillerConfig, KillerDamageRule, KillerBecomeRule } from "./KillerConfig";
 
 type Props = {
   store: Store;
@@ -49,6 +49,20 @@ type KillerPlayerState = {
   eliminated: boolean;
   kills: number;
   hitsOnSelf: number;
+
+  // -----------------------------
+  // ✅ NEW: Stats Killer enrichies
+  // -----------------------------
+  totalThrows: number;          // toutes fléchettes (inclut MISS/BULL)
+  killerThrows: number;          // fléchettes lancées quand isKiller = true
+  offensiveThrows: number;       // fléchettes “ciblant” un numéro adverse (quand killer, target = numéro d’un adversaire vivant)
+  killerHits: number;            // fléchettes qui infligent des dégâts (touches effectives sur un adversaire)
+  uselessHits: number;           // fléchettes “neutres” (ne font rien : bull/miss/numéro sans effet)
+  livesTaken: number;            // total vies retirées aux autres
+  livesLost: number;             // total vies perdues
+  throwsToBecomeKiller: number;  // combien de lancers jusqu’à devenir killer (si devient)
+  becameAtThrow?: number | null; // interne: index de throw quand devient killer
+  eliminatedAt?: number | null;  // timestamp élimination (pour survival)
 };
 
 type Snapshot = {
@@ -58,6 +72,7 @@ type Snapshot = {
   visit: ThrowInput[];
   log: string[];
   finished: boolean;
+  elimOrder: string[]; // ✅ NEW
 };
 
 function clampInt(n: any, min: number, max: number, fallback: number) {
@@ -98,6 +113,19 @@ function fmtThrow(t: ThrowInput) {
   if (t.target === 0) return "MISS";
   if (t.target === 25) return t.mult === 2 ? "DBULL" : "BULL";
   return `${m}${t.target}`;
+}
+
+function segmentKey(t: ThrowInput) {
+  if (t.target === 0) return "MISS";
+  if (t.target === 25) return t.mult === 2 ? "DBULL" : "BULL";
+  return fmtThrow(t); // "S20" / "D16" / "T8"
+}
+
+function incMap(map: any, key: any, by = 1) {
+  const k = String(key);
+  const next = { ...(map || {}) };
+  next[k] = (Number(next[k]) || 0) + by;
+  return next;
 }
 
 /* -----------------------------
@@ -143,9 +171,7 @@ function ThrowPad({
                 padding: "10px 10px",
                 borderRadius: 12,
                 border: "1px solid rgba(255,255,255,.12)",
-                background: active
-                  ? "rgba(255,198,58,.85)"
-                  : "rgba(0,0,0,.25)",
+                background: active ? "rgba(255,198,58,.85)" : "rgba(0,0,0,.25)",
                 color: active ? "#1b1508" : "inherit",
                 fontWeight: 900,
                 cursor: "pointer",
@@ -287,11 +313,6 @@ function ThrowPad({
 
 export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const startedAt = React.useMemo(() => Date.now(), []);
-
-  // ✅ NEW (Option A): accumulate hitsBySegment per player for this match
-  const hitsAccRef = React.useRef<any>(null);
-  if (!hitsAccRef.current) hitsAccRef.current = createHitsAccumulator();
-
   const initialPlayers: KillerPlayerState[] = React.useMemo(() => {
     const lives = clampInt(config?.lives, 1, 9, 3);
     return (config?.players || []).map((p) => ({
@@ -304,6 +325,22 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       eliminated: false,
       kills: 0,
       hitsOnSelf: 0,
+
+      // ✅ init stats
+      totalThrows: 0,
+      killerThrows: 0,
+      offensiveThrows: 0,
+      killerHits: 0,
+      uselessHits: 0,
+      livesTaken: 0,
+      livesLost: 0,
+      throwsToBecomeKiller: 0,
+      becameAtThrow: null,
+      eliminatedAt: null,
+
+      // maps
+      hitsBySegment: {},
+      hitsByNumber: {},
     }));
   }, [config]);
 
@@ -317,6 +354,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const [log, setLog] = React.useState<string[]>([]);
   const [finished, setFinished] = React.useState<boolean>(false);
 
+  // ✅ NEW: ordre d’élimination (chronologique) pour ranks
+  const [elimOrder, setElimOrder] = React.useState<string[]>([]);
+
   // UNDO stack
   const undoRef = React.useRef<Snapshot[]>([]);
 
@@ -325,7 +365,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const inputDisabled = finished || dartsLeft <= 0 || !!w || !current || current.eliminated;
 
   function pushLog(line: string) {
-    setLog((prev) => [line, ...prev].slice(0, 80));
+    setLog((prev) => [line, ...prev].slice(0, 120));
   }
 
   function snapshot() {
@@ -336,8 +376,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       visit: visit.map((t) => ({ ...t })),
       log: log.slice(),
       finished,
+      elimOrder: elimOrder.slice(),
     };
-    undoRef.current = [snap, ...undoRef.current].slice(0, 50);
+    undoRef.current = [snap, ...undoRef.current].slice(0, 60);
   }
 
   function undo() {
@@ -350,9 +391,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     setVisit(s.visit);
     setLog(s.log);
     setFinished(s.finished);
-
-    // ⚠️ Note: on ne rollback pas hitsAccRef ici (Option A) pour rester léger.
-    // Si tu veux un UNDO 100% parfait sur hitsBySegment aussi, on le fera après (Option A+).
+    setElimOrder(s.elimOrder || []);
   }
 
   function endTurn() {
@@ -361,20 +400,95 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     setTurnIndex((prev) => nextAliveIndex(players, prev));
   }
 
-  function buildMatchRecord(finalPlayers: KillerPlayerState[], winnerId: string) {
-    const finishedAt = Date.now();
+  function computeFinalRanks(finalPlayers: KillerPlayerState[], winnerId: string, elim: string[]) {
+    const n = finalPlayers.length;
+    const rankById: Record<string, number> = {};
 
-    // ✅ NEW (Option A): inject hitsBySegment into summary.perPlayer
-    const hitsMap = hitsAccRef.current?.toJSON?.() || {};
-    const perPlayer = finalPlayers.map((p) => ({
-      playerId: p.id,
-      profileId: p.id,
-      id: p.id,
-      name: p.name,
-      avatarDataUrl: p.avatarDataUrl ?? null,
-      hitsBySegment: hitsMap?.[p.id] || {},
-      // tu pourras ajouter plus tard: favSegment / favNumber / etc
-    }));
+    // elimOrder = [firstElim, secondElim, ...] (chronologique)
+    // rank worst = n, next = n-1, ... ; winner = 1
+    let rank = n;
+    for (const pid of (elim || [])) {
+      if (!pid) continue;
+      if (rankById[pid] == null) {
+        rankById[pid] = rank;
+        rank -= 1;
+      }
+    }
+
+    // Les survivants non listés (normalement winner uniquement) => ranks restants
+    const alive = finalPlayers.filter((p) => !p.eliminated).map((p) => p.id);
+    // winner au rang 1
+    rankById[winnerId] = 1;
+
+    // si jamais (bug) plusieurs survivants, on les place ensuite
+    let nextRank = 2;
+    for (const pid of alive) {
+      if (pid === winnerId) continue;
+      if (rankById[pid] == null) {
+        rankById[pid] = nextRank++;
+      }
+    }
+
+    // les autres non présents (edge-case) -> rang max restant
+    for (const p of finalPlayers) {
+      if (rankById[p.id] == null) rankById[p.id] = Math.max(2, n);
+    }
+
+    return rankById;
+  }
+
+  function buildMatchRecord(finalPlayersRaw: KillerPlayerState[], winnerId: string, elim: string[]) {
+    const finishedAt = Date.now();
+    const rankById = computeFinalRanks(finalPlayersRaw, winnerId, elim);
+
+    // enrich survivalTimeMs + finalRank
+    const finalPlayers = finalPlayersRaw.map((p) => {
+      const eliminatedAt = p.eliminatedAt || (p.eliminated ? finishedAt : null);
+      const survivalTimeMs = p.eliminated
+        ? Math.max(0, (eliminatedAt || finishedAt) - startedAt)
+        : Math.max(0, finishedAt - startedAt);
+
+      return {
+        ...p,
+        finalRank: rankById[p.id] || 0,
+        survivalTimeMs,
+      };
+    });
+
+    // perPlayer (format robuste pour StatsLeaderboardsPage)
+    const detailedByPlayer: Record<string, any> = {};
+    for (const p of finalPlayers) {
+      detailedByPlayer[p.id] = {
+        playerId: p.id,
+        profileId: p.id,
+        id: p.id,
+        name: p.name,
+        avatarDataUrl: p.avatarDataUrl ?? null,
+
+        // core killer
+        number: p.number,
+        eliminated: !!p.eliminated,
+        isKiller: !!p.isKiller,
+        kills: p.kills,
+        hitsOnSelf: p.hitsOnSelf,
+
+        // NEW stats
+        totalThrows: p.totalThrows,
+        killerThrows: p.killerThrows,
+        offensiveThrows: p.offensiveThrows,
+        killerHits: p.killerHits,
+        uselessHits: p.uselessHits,
+        livesTaken: p.livesTaken,
+        livesLost: p.livesLost,
+        throwsToBecomeKiller: p.becameAtThrow ? p.becameAtThrow : 0,
+
+        hitsBySegment: p.hitsBySegment || {},
+        hitsByNumber: p.hitsByNumber || {},
+
+        finalRank: p.finalRank || 0,
+        survivalTimeMs: p.survivalTimeMs || 0,
+      };
+    }
 
     const rec: any = {
       kind: "killer",
@@ -392,9 +506,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         becomeRule: config.becomeRule,
         damageRule: config.damageRule,
 
-        // ✅ NEW: pour StatsLeaderboardsPage (extractPerPlayerSummary)
-        perPlayer,
+        // ✅ robust stats container
+        detailedByPlayer,
 
+        // ✅ keep a simple array too (fallback)
         players: finalPlayers.map((p) => ({
           id: p.id,
           name: p.name,
@@ -403,15 +518,23 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           eliminated: p.eliminated,
           isKiller: p.isKiller,
           kills: p.kills,
+
+          // NEW minimal for quick UIs
+          finalRank: p.finalRank || 0,
+          survivalTimeMs: p.survivalTimeMs || 0,
+          livesTaken: p.livesTaken || 0,
+          livesLost: p.livesLost || 0,
+          totalThrows: p.totalThrows || 0,
+          hitsOnSelf: p.hitsOnSelf || 0,
         })),
       },
       payload: {
         mode: "killer",
         config,
-        state: { players: finalPlayers },
+        state: { players: finalPlayers, elimOrder: elim || [] },
         summary: {
           mode: "killer",
-          perPlayer,
+          detailedByPlayer,
         },
       },
     };
@@ -430,18 +553,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       mult: clampInt(t.mult, 1, 3, 1) as Mult,
     };
 
-    // ✅ NEW (Option A): comptage segment touché par joueur (S20 / T8 / SB / DB)
-    try {
-      const pid = String(current?.id || "");
-      // on fournit un "dart object" compatible avec segmentKeyFromDart()
-      hitsAccRef.current?.addFromDart(pid, {
-        number: thr.target,
-        mult: thr.mult,
-        isBull: thr.target === 25 && thr.mult === 1,
-        isDBull: thr.target === 25 && thr.mult === 2,
-      });
-    } catch {}
-
     setVisit((v) => [...v, thr]);
     setDartsLeft((d) => Math.max(0, d - 1));
 
@@ -450,12 +561,35 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       const me = next[turnIndex];
       if (!me || me.eliminated) return prev;
 
-      // MISS / BULL n'a aucun effet sur les numéros (pour l’instant)
+      // ✅ stats: count throw always
+      me.totalThrows += 1;
+
+      // maps (segment/number) — on compte tout sauf MISS pour favoris (MISS reste dans segment si tu veux)
+      const seg = segmentKey(thr);
+      me.hitsBySegment = incMap(me.hitsBySegment, seg, 1);
+
+      // num fav: inclut 25, ignore MISS (0)
+      if (thr.target !== 0) {
+        me.hitsByNumber = incMap(me.hitsByNumber, thr.target, 1);
+      }
+
+      // throws to become killer
+      if (!me.isKiller && !me.becameAtThrow) {
+        me.throwsToBecomeKiller += 1;
+      }
+
+      if (me.isKiller) {
+        me.killerThrows += 1;
+      }
+
+      // MISS / BULL n'a aucun effet sur les numéros (mais compte en stats)
       if (thr.target === 0) {
+        me.uselessHits += 1;
         pushLog(`🎯 ${me.name} : MISS`);
         return next;
       }
       if (thr.target === 25) {
+        me.uselessHits += 1;
         pushLog(`🎯 ${me.name} : ${fmtThrow(thr)}`);
         return next;
       }
@@ -464,6 +598,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       if (!me.isKiller && thr.target === me.number && canBecomeKiller(config.becomeRule, thr)) {
         me.isKiller = true;
         me.hitsOnSelf += 1;
+
+        // ✅ lock “throws to become killer”
+        if (!me.becameAtThrow) me.becameAtThrow = me.throwsToBecomeKiller;
+
         pushLog(`🟡 ${me.name} devient KILLER en touchant ${fmtThrow(thr)} (#${thr.target})`);
         return next;
       }
@@ -473,13 +611,32 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         const victimIdx = next.findIndex(
           (p, idx) => idx !== turnIndex && !p.eliminated && p.number === thr.target
         );
+
         if (victimIdx >= 0) {
           const victim = next[victimIdx];
+
+          me.offensiveThrows += 1;
+
           const dmg = dmgFrom(thr.mult, config.damageRule);
+          const before = victim.lives;
           victim.lives = Math.max(0, victim.lives - dmg);
+
+          const actualLoss = Math.max(0, before - victim.lives);
+
+          if (actualLoss > 0) {
+            me.killerHits += 1;
+            me.livesTaken += actualLoss;
+            victim.livesLost += actualLoss;
+          }
+
           if (victim.lives <= 0) {
             victim.eliminated = true;
+            victim.eliminatedAt = Date.now();
             me.kills += 1;
+
+            // ✅ keep elimination order for ranks
+            setElimOrder((prevOrder) => [...prevOrder, victim.id]);
+
             pushLog(`💀 ${me.name} élimine ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg})`);
           } else {
             pushLog(
@@ -491,6 +648,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       }
 
       // 3) neutre
+      me.uselessHits += 1;
       pushLog(`🎯 ${me.name} : ${fmtThrow(thr)}`);
       return next;
     });
@@ -512,7 +670,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     if (ww && !finished) {
       setFinished(true);
       pushLog(`🏆 ${ww.name} gagne !`);
-      const rec = buildMatchRecord(players, ww.id);
+      const rec = buildMatchRecord(players, ww.id, elimOrder);
       onFinish(rec);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -528,7 +686,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   }, [players]);
 
   // ✅ Hook input externe
-  // Tu peux faire:
   // window.dispatchEvent(new CustomEvent("dc:throw",{detail:{target:20,mult:3}}))
   React.useEffect(() => {
     function onExternal(ev: any) {
@@ -577,17 +734,26 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         <div style={{ fontSize: 12, opacity: 0.75 }}>Tour de</div>
         <div style={{ fontSize: 18, fontWeight: 900 }}>
           {current?.name ?? "—"}{" "}
-          <span style={{ fontSize: 13, opacity: 0.85 }}>
-            (#{current?.number ?? "?"})
-          </span>
+          <span style={{ fontSize: 13, opacity: 0.85 }}>(#{current?.number ?? "?"})</span>
           {current?.isKiller && (
-            <span style={{ marginLeft: 8, fontSize: 13, fontWeight: 900 }}>
-              🔥 KILLER
-            </span>
+            <span style={{ marginLeft: 8, fontSize: 13, fontWeight: 900 }}>🔥 KILLER</span>
           )}
         </div>
         <div style={{ marginTop: 6, fontSize: 13, opacity: 0.9 }}>
           Vies : <b>{current?.lives ?? 0}</b> · Darts : <b>{dartsLeft}</b>
+        </div>
+
+        {/* ✅ mini stats live (debug + fun) */}
+        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
+          <span style={{ marginRight: 10 }}>
+            Throws: <b>{current?.totalThrows ?? 0}</b>
+          </span>
+          <span style={{ marginRight: 10 }}>
+            Dégâts: <b>{current?.livesTaken ?? 0}</b>
+          </span>
+          <span>
+            Kills: <b>{current?.kills ?? 0}</b>
+          </span>
         </div>
       </div>
 
@@ -617,14 +783,12 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
                 <div style={{ display: "flex", flexDirection: "column" }}>
                   <div style={{ fontWeight: 900 }}>
                     {p.name}{" "}
-                    <span style={{ fontSize: 12, opacity: 0.8 }}>
-                      #{p.number}
-                    </span>
+                    <span style={{ fontSize: 12, opacity: 0.8 }}>#{p.number}</span>
                     {p.isKiller && <span style={{ marginLeft: 6 }}>🔥</span>}
                     {p.eliminated && <span style={{ marginLeft: 6 }}>💀</span>}
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.75 }}>
-                    kills: {p.kills} · vies: {p.lives}
+                    kills: {p.kills} · vies: {p.lives} · dmg: {p.livesTaken} · throws: {p.totalThrows}
                   </div>
                 </div>
 

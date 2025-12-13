@@ -712,6 +712,8 @@ function metricLabel(m: MetricKey) {
       return "Segment favori";
     case "totalHits":
       return "Hits total";
+    default:
+      return "Stat";
   }
 }
 
@@ -729,6 +731,8 @@ function periodLabel(p: PeriodKey) {
       return "All";
     case "TOUT":
       return "Tout";
+    default:
+      return "All";
   }
 }
 
@@ -784,7 +788,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
     const def = MODE_DEFS.find((m) => m.id === mode);
     if (!def) return;
     if (!def.metrics.includes(metric)) setMetric(def.metrics[0]);
-  }, [mode]);
+  }, [mode]); // eslint-disable-line
 
   const currentModeIndex = MODE_DEFS.findIndex((m) => m.id === mode);
   const currentMetricIndex = Math.max(0, metricList.findIndex((m) => m === metric));
@@ -936,7 +940,9 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
                   fontWeight: 800,
                   textTransform: "uppercase",
                   letterSpacing: 0.8,
-                  background: active ? `linear-gradient(135deg, ${theme.primary}, #ffea9a)` : "transparent",
+                  background: active
+                    ? `linear-gradient(135deg, ${theme.primary}, #ffea9a)`
+                    : "transparent",
                   color: active ? "#000" : theme.textSoft,
                   boxShadow: active ? `0 0 14px ${theme.primary}77` : "none",
                   cursor: "pointer",
@@ -1016,7 +1022,14 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
         }}
       >
         {/* Période */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 8,
+          }}
+        >
           <div
             style={{
               fontSize: 10,
@@ -1200,11 +1213,15 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
                   break;
                 case "favNumberHits":
                   metricValue = row.favNumber ? `#${row.favNumber}` : "—";
-                  metricSub = row.favNumberHits ? `${row.favNumberHits} hit(s)` : `${row.totalHits || 0} hit(s)`;
+                  metricSub = row.favNumberHits
+                    ? `${row.favNumberHits} hit(s)`
+                    : `${row.totalHits || 0} hit(s)`;
                   break;
                 case "favSegmentHits":
                   metricValue = row.favSegment ? `${row.favSegment}` : "—";
-                  metricSub = row.favSegmentHits ? `${row.favSegmentHits} hit(s)` : `${row.totalHits || 0} hit(s)`;
+                  metricSub = row.favSegmentHits
+                    ? `${row.favSegmentHits} hit(s)`
+                    : `${row.totalHits || 0} hit(s)`;
                   break;
                 case "totalHits":
                   metricValue = `${row.totalHits || 0}`;
@@ -1232,7 +1249,15 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
                   }}
                 >
                   {/* Rang */}
-                  <div style={{ width: 26, textAlign: "center", fontWeight: 900, fontSize: 13, color: rankColor }}>
+                  <div
+                    style={{
+                      width: 26,
+                      textAlign: "center",
+                      fontWeight: 900,
+                      fontSize: 13,
+                      color: rankColor,
+                    }}
+                  >
                     {rank}
                   </div>
 
@@ -1262,7 +1287,13 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
                         />
                       ) : (
                         // ✅ fallback BOT-friendly (évite les "?" vides)
-                        <ProfileAvatar size={30} dataUrl={null} label={letter || "🤖"} showStars={false} isBot={true} />
+                        <ProfileAvatar
+                          size={30}
+                          dataUrl={null}
+                          label={letter || "🤖"}
+                          showStars={false}
+                          isBot={true}
+                        />
                       )}
                     </div>
 

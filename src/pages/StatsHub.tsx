@@ -14,6 +14,7 @@ import HistoryPage from "./HistoryPage";
 import SparklinePro from "../components/SparklinePro";
 import TrainingRadar from "../components/TrainingRadar";
 import ProfileAvatar from "../components/ProfileAvatar";
+import ProfileStarRing from "../components/ProfileStarRing";
 import type { Dart as UIDart } from "../lib/types";
 import { getCricketProfileStats, getX01MultiLegsSetsForProfile, type X01MultiLegsSets, } from "../lib/statsBridge";
 import type { CricketProfileStats } from "../lib/cricketStats";
@@ -3660,444 +3661,532 @@ export default function StatsHub({
     );
   }
 
-  // ============================================================
-  //  VUE PAR DÉFAUT : "STATS"
-  // ============================================================
+ // ============================================================
+//  VUE PAR DÉFAUT : "STATS"
+// ============================================================
 
-  return (
-    <div style={{ padding: 16, paddingBottom: 80 }}>
-      {/* HEADER : titre centré + carrousel modes */}
+return (
+  <div style={{ padding: 16, paddingBottom: 80 }}>
+    {/* HEADER : titre centré + carrousel modes */}
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 8,
+        marginBottom: 12,
+      }}
+    >
+      {/* Titre centré */}
       <div
         style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 12,
-        }}
-      >
-        {/* Titre centré */}
-        <div
-          style={{
-            fontSize: 15,
-            fontWeight: 900,
-            textTransform: "uppercase",
-            letterSpacing: 1.1,
-            color: T.accent ?? T.gold,
-            textShadow: `
+          fontSize: 15,
+          fontWeight: 900,
+          textTransform: "uppercase",
+          letterSpacing: 1.1,
+          color: T.accent ?? T.gold,
+          textShadow: `
               0 0 10px ${T.accent ?? T.gold},
              0 0 22px ${T.accentGlow ?? T.gold}
             `,
-          }}
-        >
-          Centre de statistiques
-        </div>
+        }}
+      >
+        Centre de statistiques
+      </div>
 
-        {/* Carrousel modes */}
-        <div
-          style={{
-            marginTop: 2,
-            padding: 8,
-            borderRadius: 18,
-            border: `1px solid ${T.accent30}`,
-            background:
-              "linear-gradient(180deg,rgba(18,18,22,.98),rgba(9,9,12,.96))",
-            boxShadow: `
+      {/* Carrousel modes */}
+      <div
+        style={{
+          marginTop: 2,
+          padding: 8,
+          borderRadius: 18,
+          border: `1px solid ${T.accent30}`,
+          background:
+            "linear-gradient(180deg,rgba(18,18,22,.98),rgba(9,9,12,.96))",
+          boxShadow: `
               0 0 0 1px ${T.accent20},
               0 8px 20px rgba(0,0,0,.55)
             `,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 6,
+          width: "100%",
+        }}
+      >
+        {/* Flèche gauche */}
+        <button
+          type="button"
+          onClick={goPrevMode}
+          disabled={!canScrollModes}
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 999,
+            border: `1px solid ${T.accent50}`,
+            background: canScrollModes
+              ? `radial-gradient(circle at 30% 30%, ${T.accent40}, transparent 55%)`
+              : "rgba(0,0,0,.45)",
+            color: T.accent,
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
-            gap: 6,
-            width: "100%",
+            justifyContent: "center",
+            cursor: canScrollModes ? "pointer" : "default",
+            fontSize: 13,
           }}
         >
-          {/* Flèche gauche */}
+          ◀
+        </button>
+
+        {/* Pilule centrale */}
+        <div
+          style={{
+            flex: 1,
+            padding: "7px 10px",
+            borderRadius: 999,
+            border: `1px solid ${T.accent}`,
+            background: `radial-gradient(circle at 0% 0%, ${T.accent40}, transparent 65%)`,
+            textAlign: "center",
+            fontSize: 13,
+            fontWeight: 900,
+            textTransform: "uppercase",
+            letterSpacing: 0.9,
+            color: T.accent,
+            textShadow: `
+                0 0 8px ${T.accent},
+                0 0 16px ${T.accentGlow ?? T.accent}
+              `,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {currentModeLabel}
+        </div>
+
+        {/* Flèche droite */}
+        <button
+          type="button"
+          onClick={goNextMode}
+          disabled={!canScrollModes}
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 999,
+            border: `1px solid ${T.accent50}`,
+            background: canScrollModes
+              ? `radial-gradient(circle at 70% 30%, ${T.accent40}, transparent 55%)`
+              : "rgba(0,0,0,.45)",
+            color: T.accent,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: canScrollModes ? "pointer" : "default",
+            fontSize: 13,
+          }}
+        >
+          ▶
+        </button>
+      </div>
+    </div>
+
+    {/* CONTENU PRINCIPAL : carrousel profil + panels pilotés par currentMode */}
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+      }}
+    >
+      {/* --------- CARROUSEL PROFIL --------- */}
+<div style={card}>
+  {filteredPlayers.length ? (
+    <>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
+        {/* Flèche gauche — MASQUÉE UNIQUEMENT POUR PROFIL ACTIF */}
+        {mode === "active" ? (
+          <div style={{ width: 26, height: 26 }} />
+        ) : (
           <button
             type="button"
-            onClick={goPrevMode}
-            disabled={!canScrollModes}
+            onClick={goPrevPlayer}
+            disabled={!canScrollPlayers}
             style={{
               width: 26,
               height: 26,
               borderRadius: 999,
-              border: `1px solid ${T.accent50}`,
-              background: canScrollModes
-                ? `radial-gradient(circle at 30% 30%, ${T.accent40}, transparent 55%)`
+              border: `1px solid ${T.text30}`,
+              background: canScrollPlayers
+                ? `radial-gradient(circle at 30% 30%, ${T.text30}, transparent 55%)`
                 : "rgba(0,0,0,.45)",
-              color: T.accent,
+              color: T.text,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              cursor: canScrollModes ? "pointer" : "default",
+              cursor: canScrollPlayers ? "pointer" : "default",
               fontSize: 13,
             }}
           >
             ◀
           </button>
+        )}
 
-          {/* Pilule centrale */}
+        {/* Avatar XXL + StarRing + nom (shimmer) */}
+<div
+  style={{
+    flex: 1,
+    display: "flex",
+    justifyContent: "center",
+    minWidth: 0,
+    overflow: "visible", // ✅ évite le clipping par un parent
+  }}
+>
+  {selectedPlayer &&
+    (() => {
+      // ⭐ avg3D (ultra safe, tolérant à la forme de "quick")
+      const pid = selectedPlayer.id;
+      const q: any = quick as any;
+
+      const pick = (...vals: any[]) => {
+        for (const v of vals) {
+          const n = Number(v);
+          if (Number.isFinite(n) && n >= 0) return n;
+        }
+        return 0;
+      };
+
+      const avg3d = pick(
+        q?.byId?.[pid]?.avg3d,
+        q?.byId?.[pid]?.avg3,
+        q?.[pid]?.avg3d,
+        q?.[pid]?.avg3,
+        q?.avg3d,
+        q?.avg3
+      );
+
+      // ✅ fallback : si 0, on affiche quand même un ring (sinon parfois “0 étoile”)
+      const avg3dForRing = Number.isFinite(avg3d) && avg3d > 0 ? avg3d : 20;
+
+      const AVATAR = 110;
+      const BORDER = 10;
+      const MEDALLION = AVATAR + BORDER; // 120
+      const STAR = 12;
+
+      return (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 6,
+            overflow: "visible",
+          }}
+        >
+          {/* Médaillon + anneau étoiles */}
           <div
             style={{
-              flex: 1,
-              padding: "7px 10px",
-              borderRadius: 999,
-              border: `1px solid ${T.accent}`,
-              background: `radial-gradient(circle at 0% 0%, ${T.accent40}, transparent 65%)`,
-              textAlign: "center",
-              fontSize: 13,
-              fontWeight: 900,
-              textTransform: "uppercase",
-              letterSpacing: 0.9,
-              color: T.accent,
-              textShadow: `
-                0 0 8px ${T.accent},
-                0 0 16px ${T.accentGlow ?? T.accent}
-              `,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
+              position: "relative",
+              width: MEDALLION,
+              height: MEDALLION,
+              borderRadius: "50%",
+              padding: 0,
+              background: "transparent",
+              boxShadow: "none",
+              overflow: "visible", // ✅ important
             }}
           >
-            {currentModeLabel}
+            {/* StarRing au-dessus */}
+            <div
+              aria-hidden
+              style={{
+                position: "absolute",
+                left: -(STAR / 2),
+                top: -(STAR / 2),
+                width: MEDALLION + STAR,
+                height: MEDALLION + STAR,
+                pointerEvents: "none",
+                zIndex: 10, // ✅ au-dessus de tout
+                overflow: "visible",
+              }}
+            >
+              <ProfileStarRing
+                anchorSize={MEDALLION}
+                avg3d={avg3dForRing}
+                gapPx={-1}
+                starSize={STAR}
+                stepDeg={10}
+                rotationDeg={0}
+                animateGlow={true}
+              />
+            </div>
+
+            {/* Avatar centré (ne clippe pas le ring) */}
+            <div
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                width: AVATAR,
+                height: AVATAR,
+                transform: "translate(-50%,-50%)",
+                borderRadius: "50%",
+                overflow: "hidden",
+                boxShadow: `0 0 18px ${T.accent}`,
+                zIndex: 2,
+                background: "transparent",
+              }}
+            >
+              <ProfileAvatar
+                size={AVATAR}
+                dataUrl={selectedPlayer.avatarDataUrl ?? undefined}
+                label={selectedName?.[0]?.toUpperCase() || "?"}
+                showStars={false}
+              />
+            </div>
           </div>
 
-          {/* Flèche droite */}
+          {/* Nom shimmer */}
+          <span
+            className="dc-stats-name-wrapper"
+            style={
+              {
+                "--dc-accent": T.accent,
+                "--dc-accent-soft": T.accent20,
+                maxWidth: "80vw",
+                display: "block",
+              } as React.CSSProperties
+            }
+          >
+            <span
+              className="dc-stats-name-base"
+              style={{
+                fontSize: nameFontSize,
+                fontWeight: 900,
+                fontFamily: '"Luckiest Guy","Impact","system-ui",sans-serif',
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                display: "block",
+                textAlign: "center",
+              }}
+            >
+              {selectedName}
+            </span>
+
+            <span
+              className="dc-stats-name-shimmer"
+              style={{
+                fontSize: nameFontSize,
+                fontWeight: 900,
+                fontFamily: '"Luckiest Guy","Impact","system-ui",sans-serif',
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                display: "block",
+                textAlign: "center",
+              }}
+            >
+              {selectedName}
+            </span>
+          </span>
+        </div>
+      );
+    })()}
+</div>
+
+        {/* Flèche droite — MASQUÉE UNIQUEMENT POUR PROFIL ACTIF */}
+        {mode === "active" ? (
+          <div style={{ width: 26, height: 26 }} />
+        ) : (
           <button
             type="button"
-            onClick={goNextMode}
-            disabled={!canScrollModes}
+            onClick={goNextPlayer}
+            disabled={!canScrollPlayers}
             style={{
               width: 26,
               height: 26,
               borderRadius: 999,
-              border: `1px solid ${T.accent50}`,
-              background: canScrollModes
-                ? `radial-gradient(circle at 70% 30%, ${T.accent40}, transparent 55%)`
+              border: `1px solid ${T.text30}`,
+              background: canScrollPlayers
+                ? `radial-gradient(circle at 70% 30%, ${T.text30}, transparent 55%)`
                 : "rgba(0,0,0,.45)",
-              color: T.accent,
+              color: T.text,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              cursor: canScrollModes ? "pointer" : "default",
+              cursor: canScrollPlayers ? "pointer" : "default",
               fontSize: 13,
             }}
           >
             ▶
           </button>
-        </div>
+        )}
       </div>
 
-      {/* CONTENU PRINCIPAL : carrousel profil + panels pilotés par currentMode */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
-      >
-        {/* --------- CARROUSEL PROFIL --------- */}
-        <div style={card}>
-          {filteredPlayers.length ? (
-            <>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                }}
-              >
-                {/* Flèche gauche */}
-                <button
-                  type="button"
-                  onClick={goPrevPlayer}
-                  disabled={!canScrollPlayers}
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 999,
-                    border: `1px solid ${T.text30}`,
-                    background: canScrollPlayers
-                      ? `radial-gradient(circle at 30% 30%, ${T.text30}, transparent 55%)`
-                      : "rgba(0,0,0,.45)",
-                    color: T.text,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: canScrollPlayers ? "pointer" : "default",
-                    fontSize: 13,
-                  }}
-                >
-                  ◀
-                </button>
+      {/* Option BOTS — UNIQUEMENT en mode "locals" */}
+      {mode === "locals" && (
+        <div
+          style={{
+            marginTop: 6,
+            display: "flex",
+            justifyContent: "flex-end",
+          }}
+        >
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 10,
+              color: T.text70,
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showBots}
+              onChange={(e) => setShowBots(e.target.checked)}
+              style={{
+                width: 12,
+                height: 12,
+                accentColor: T.accent,
+              }}
+            />
+            <span>Inclure les BOTS</span>
+          </label>
+        </div>
+      )}
+    </>
+  ) : (
+    <span style={{ color: T.text70, fontSize: 13 }}>
+      Aucun joueur trouvé.
+    </span>
+  )}
+</div>
 
-                {/* Avatar XXL + nom (shimmer) */}
-                <div
-                  style={{
-                    flex: 1,
-                    display: "flex",
-                    justifyContent: "center",
-                    minWidth: 0,
-                  }}
-                >
-                  {selectedPlayer && (
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: 4,
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 110,
-                          height: 110,
-                          borderRadius: "50%",
-                          overflow: "hidden",
-                          boxShadow: `0 0 18px ${T.accent}`,
-                        }}
-                      >
-                        <ProfileAvatar
-                          size={110}
-                          dataUrl={
-                            selectedPlayer.avatarDataUrl ?? undefined
-                          }
-                        />
-                      </div>
-
-                      <span
-                        className="dc-stats-name-wrapper"
-                        style={
-                          {
-                            "--dc-accent": T.accent,
-                            "--dc-accent-soft": T.accent20,
-                            maxWidth: "80vw",
-                            display: "block",
-                          } as React.CSSProperties
-                        }
-                      >
-                        <span
-                          className="dc-stats-name-base"
-                          style={{
-                            fontSize: nameFontSize,
-                            fontWeight: 900,
-                            fontFamily:
-                              '"Luckiest Guy","Impact","system-ui",sans-serif',
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            display: "block",
-                            textAlign: "center",
-                          }}
-                        >
-                          {selectedName}
-                        </span>
-
-                        <span
-                          className="dc-stats-name-shimmer"
-                          style={{
-                            fontSize: nameFontSize,
-                            fontWeight: 900,
-                            fontFamily:
-                              '"Luckiest Guy","Impact","system-ui",sans-serif',
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            display: "block",
-                            textAlign: "center",
-                          }}
-                        >
-                          {selectedName}
-                        </span>
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Flèche droite */}
-                <button
-                  type="button"
-                  onClick={goNextPlayer}
-                  disabled={!canScrollPlayers}
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 999,
-                    border: `1px solid ${T.text30}`,
-                    background: canScrollPlayers
-                      ? `radial-gradient(circle at 70% 30%, ${T.text30}, transparent 55%)`
-                      : "rgba(0,0,0,.45)",
-                    color: T.text,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: canScrollPlayers ? "pointer" : "default",
-                    fontSize: 13,
-                  }}
-                >
-                  ▶
-                </button>
+      {/* ========= CONTENU PILOTÉ PAR LE CARROUSEL DE MODES ========= */}
+      {currentMode === "dashboard" && (
+        <>
+          <div style={row}>
+            {selectedPlayer ? (
+              <StatsPlayerDashboard
+                data={buildDashboardForPlayer(
+                  selectedPlayer,
+                  records,
+                  quick || null
+                )}
+                x01MultiLegsSets={x01MultiLegsSets}
+              />
+            ) : (
+              <div style={{ color: T.text70, fontSize: 13 }}>
+                Sélectionne un joueur pour afficher le dashboard.
               </div>
+            )}
+          </div>
 
-              {/* Option BOTS — UNIQUEMENT en mode "locals" */}
-              {mode === "locals" && (
-                <div
-                  style={{
-                    marginTop: 6,
-                    display: "flex",
-                    justifyContent: "flex-end",
-                  }}
-                >
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                      fontSize: 10,
-                      color: T.text70,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={showBots}
-                      onChange={(e) => setShowBots(e.target.checked)}
-                      style={{
-                        width: 12,
-                        height: 12,
-                        accentColor: T.accent,
-                      }}
-                    />
-                    <span>Inclure les BOTS</span>
-                  </label>
-                </div>
-              )}
-            </>
+          {/* RÉSUMÉ TRAINING (X01 + Horloge) */}
+          {selectedPlayer && (
+            <div style={{ ...card, marginTop: 8 }}>
+              <StatsTrainingSummary profileId={selectedPlayer.id} />
+            </div>
+          )}
+
+          {/* RÉSUMÉ CRICKET */}
+          {selectedPlayer && cricketStats && (
+            <div style={{ ...card, marginTop: 8 }}>
+              <StatsCricketDashboard stats={cricketStats} />
+            </div>
+          )}
+        </>
+      )}
+
+      {currentMode === "dartsets" && (
+        <div style={card}>
+          <StatsDartSetsSection
+            activeProfileId={selectedPlayer?.id ?? null}
+            title="MES FLÉCHETTES"
+          />
+        </div>
+      )}
+
+      {currentMode === "x01_multi" && (
+        <div style={card}>
+          {selectedPlayer ? (
+            <X01MultiStatsTabFull records={records} playerId={selectedPlayer.id} />
           ) : (
-            <span style={{ color: T.text70, fontSize: 13 }}>
-              Aucun joueur trouvé.
-            </span>
+            <div style={{ color: T.text70, fontSize: 13 }}>
+              Sélectionne un joueur pour afficher les stats X01 multi.
+            </div>
           )}
         </div>
+      )}
 
-        {/* ========= CONTENU PILOTÉ PAR LE CARROUSEL DE MODES ========= */}
-        {currentMode === "dashboard" && (
-          <>
-            <div style={row}>
-      {selectedPlayer ? (
-        <StatsPlayerDashboard
-        data={buildDashboardForPlayer(selectedPlayer, records, quick || null)}
-        x01MultiLegsSets={x01MultiLegsSets}
-        />
-      ) : (
-        <div style={{ color: T.text70, fontSize: 13 }}>
-          Sélectionne un joueur pour afficher le dashboard.
+      {/* ✅ NOUVEAU : onglet COMPARATEUR X01 */}
+      {currentMode === "x01_compare" && (
+        <div style={card}>
+          {selectedPlayer ? (
+            <StatsX01Compare
+              store={pseudoStoreForCompare as any}
+              profileId={selectedPlayer.id}
+              compact
+            />
+          ) : (
+            <div style={{ color: T.text70, fontSize: 13 }}>
+              Sélectionne un joueur pour afficher le comparateur X01.
+            </div>
+          )}
+        </div>
+      )}
+
+      {currentMode === "cricket" && (
+        <div style={card}>
+          {cricketStats ? (
+            <StatsCricketDashboard stats={cricketStats} />
+          ) : (
+            <div style={{ color: T.text70, fontSize: 13 }}>
+              Aucune statistique Cricket disponible.
+            </div>
+          )}
+        </div>
+      )}
+
+      {currentMode === "killer" && (
+        <div style={card}>
+          <StatsKiller
+            profiles={storeProfiles as any}
+            memHistory={records as any}
+            playerId={
+              mode === "active"
+                ? (activePlayerId ?? null)
+                : (selectedPlayerId ?? null)
+            }
+            title="KILLER"
+          />
+        </div>
+      )}
+
+      {currentMode === "leaderboards" && (
+        <div style={card}>
+          <StatsLeaderboardsTab
+            records={records as any}
+            profiles={storeProfiles as any}
+          />
+        </div>
+      )}
+
+      {currentMode === "history" && (
+        <div style={card}>
+          <HistoryPage go={go} />
         </div>
       )}
     </div>
-
-            {/* RÉSUMÉ TRAINING (X01 + Horloge) */}
-            {selectedPlayer && (
-              <div style={{ ...card, marginTop: 8 }}>
-                <StatsTrainingSummary profileId={selectedPlayer.id} />
-              </div>
-            )}
-
-            {/* RÉSUMÉ CRICKET */}
-            {selectedPlayer && cricketStats && (
-              <div style={{ ...card, marginTop: 8 }}>
-                <StatsCricketDashboard stats={cricketStats} />
-              </div>
-            )}
-          </>
-        )}
-
-{currentMode === "dartsets" && (
-  <div style={card}>
-    <StatsDartSetsSection
-      activeProfileId={selectedPlayer?.id ?? null}
-      title="MES FLÉCHETTES"
-    />
   </div>
-)}
-
-        {currentMode === "x01_multi" && (
-          <div style={card}>
-            {selectedPlayer ? (
-              <X01MultiStatsTabFull
-                records={records}
-                playerId={selectedPlayer.id}
-              />
-            ) : (
-              <div style={{ color: T.text70, fontSize: 13 }}>
-                Sélectionne un joueur pour afficher les stats X01 multi.
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ✅ NOUVEAU : onglet COMPARATEUR X01 */}
-        {currentMode === "x01_compare" && (
-          <div style={card}>
-            {selectedPlayer ? (
-              <StatsX01Compare
-                store={pseudoStoreForCompare as any}
-                profileId={selectedPlayer.id}
-                compact
-              />
-            ) : (
-              <div style={{ color: T.text70, fontSize: 13 }}>
-                Sélectionne un joueur pour afficher le comparateur X01.
-              </div>
-            )}
-          </div>
-        )}
-
-        {currentMode === "cricket" && (
-          <div style={card}>
-            {cricketStats ? (
-              <StatsCricketDashboard stats={cricketStats} />
-            ) : (
-              <div style={{ color: T.text70, fontSize: 13 }}>
-                Aucune statistique Cricket disponible.
-              </div>
-            )}
-          </div>
-        )}
-
-        {currentMode === "killer" && (
-  <div style={card}>
-    <StatsKiller
-      profiles={storeProfiles as any}
-      memHistory={records as any}
-      playerId={
-        mode === "active"
-          ? (activePlayerId ?? null)
-          : (selectedPlayerId ?? null)
-      }
-      title="KILLER"
-    />
-  </div>
-)}
-
-{currentMode === "leaderboards" && (
-  <div style={card}>
-    <StatsLeaderboardsTab
-      records={records as any}
-      profiles={storeProfiles as any}
-    />
-  </div>
-)}
-
-        {currentMode === "history" && (
-          <div style={card}>
-            <HistoryPage go={go} />
-          </div>
-        )}
-      </div>
-    </div>
-  );
+);
 }
