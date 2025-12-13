@@ -521,6 +521,39 @@ function useStoreHistory(): SavedMatch[] {
   return rows;
 }
 
+/* ---------- Compte les "sessions" par mode pour un joueur ---------- */
+type SessionsByMode = Record<string, number>;
+
+function classifyRecordMode(rec: SavedMatch): string {
+  const kind = String(rec.kind ?? "").toLowerCase();
+  const game = String(rec.game ?? "").toLowerCase();
+  const mode = String(rec.mode ?? "").toLowerCase();
+  const variant = String(rec.variant ?? "").toLowerCase();
+
+  const tag = `${kind}|${game}|${mode}|${variant}`;
+
+  // X01 (inclut ton patch x01v3 => game="x01")
+  if (
+    tag.includes("x01") ||
+    tag.includes("301") ||
+    tag.includes("501") ||
+    tag.includes("701")
+  ) {
+    return "x01";
+  }
+
+  // Cricket
+  if (tag.includes("cricket")) return "cricket";
+
+  // Killer
+  if (tag.includes("killer")) return "killer";
+
+  // Battle Royale (si tu l’utilises dans History)
+  if (tag.includes("battle") || tag.includes("royale")) return "battle_royale";
+
+  return "other";
+}
+
 /* ---------- Adaptateur → PlayerDashboardStats ---------- */
 function buildDashboardForPlayer(
   player: PlayerLite,
@@ -547,6 +580,39 @@ function buildDashboardForPlayer(
   const evo: Array<{ date: string; avg3: number }> = [];
   const byDate: Array<{ t: number; a3: number }> = [];
 
+  // ✅ AJOUT SAFE : compteur de sessions par mode
+  const sessionsByMode: Record<string, number> = {};
+
+  // ✅ AJOUT SAFE : normalisation buckets (tolère variantes de clés)
+  const normalizeBuckets = (raw: any): Record<string, number> => {
+    const out: Record<string, number> = {
+      "0-59": 0,
+      "60-99": 0,
+      "100+": 0,
+      "140+": 0,
+      "180": 0,
+    };
+
+    if (!raw || typeof raw !== "object") return out;
+
+    const Nn = (v: any) =>
+      Number.isFinite(Number(v)) ? Number(v) : 0;
+
+    const pick = (k: string) =>
+      (raw as any)[k] ??
+      (raw as any)[k.replace("-", "_")] ??
+      (raw as any)[k.replace("+", "plus")] ??
+      null;
+
+    out["0-59"] = Nn(pick("0-59") ?? pick("0_59"));
+    out["60-99"] = Nn(pick("60-99") ?? pick("60_99"));
+    out["100+"] = Nn(pick("100+") ?? pick("100plus") ?? pick("100_plus"));
+    out["140+"] = Nn(pick("140+") ?? pick("140plus") ?? pick("140_plus"));
+    out["180"] = Nn(pick("180"));
+
+    return out;
+  };
+
   const toArrLoc = <T,>(v: any): T[] => (Array.isArray(v) ? v : []);
   const Nloc = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : 0);
 
@@ -557,6 +623,10 @@ function buildDashboardForPlayer(
     if (!inMatch) continue;
 
     fbMatches++;
+
+    // ✅ AJOUT SAFE : on compte le mode via classifyRecordMode()
+    const modeKey = classifyRecordMode(r); // "x01" | "cricket" | "killer" | "battle_royale" | "other"
+    sessionsByMode[modeKey] = (sessionsByMode[modeKey] || 0) + 1;
 
     const ss: any = r.summary ?? r.payload?.summary ?? {};
     const per: any[] =
@@ -591,15 +661,14 @@ function buildDashboardForPlayer(
     fbBestCO = Math.max(fbBestCO, bestCO);
     if (r.winnerId === pid) fbWins++;
 
-    const buckets =
-      ss.buckets?.[pid] ?? pstat.buckets ?? null;
+    const buckets = ss.buckets?.[pid] ?? pstat.buckets ?? null;
 
     if (buckets) {
-      fbBuckets["0-59"] += Nloc(buckets["0-59"]);
-      fbBuckets["60-99"] += Nloc(buckets["60-99"]);
-      fbBuckets["100+"] += Nloc(buckets["100+"]);
-      fbBuckets["140+"] += Nloc(buckets["140+"]);
-      fbBuckets["180"] += Nloc(buckets["180"]);
+      fbBuckets["0-59"] += Nloc((buckets as any)["0-59"]);
+      fbBuckets["60-99"] += Nloc((buckets as any)["60-99"]);
+      fbBuckets["100+"] += Nloc((buckets as any)["100+"]);
+      fbBuckets["140+"] += Nloc((buckets as any)["140+"]);
+      fbBuckets["180"] += Nloc((buckets as any)["180"]);
     }
   }
 
@@ -613,7 +682,9 @@ function buildDashboardForPlayer(
 
   const fbAvg3Mean = fbMatches > 0 ? fbAvg3 / fbMatches : 0;
   const fbWinPct =
-    fbMatches > 0 ? Math.round((fbWins / fbMatches) * 1000) / 10 : 0;
+    fbMatches > 0
+      ? Math.round((fbWins / fbMatches) * 1000) / 10
+      : 0;
 
   // Si aucun match et aucune quick-stat dispo → on laisse le composant gérer
   if (!fbMatches && !quick) return null;
@@ -627,7 +698,10 @@ function buildDashboardForPlayer(
     winRatePct: Number.isFinite(quick?.winRatePct ?? null)
       ? quick!.winRatePct
       : fbWinPct,
-    distribution: quick?.buckets ?? fbBuckets,
+
+    // ✅ IMPORTANT : on normalise pour éviter buckets vides / clés différentes
+    distribution: normalizeBuckets(quick?.buckets ?? fbBuckets),
+
     evolution: evo.length
       ? evo
       : [
@@ -636,6 +710,9 @@ function buildDashboardForPlayer(
             avg3: quick?.avg3 ?? fbAvg3Mean,
           },
         ],
+
+    // ✅ AJOUT UNIQUE dans le return
+    sessionsByMode,
   };
 }
 

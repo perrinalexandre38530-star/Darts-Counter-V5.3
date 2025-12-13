@@ -1,7 +1,7 @@
 // @ts-nocheck
 // ============================================
 // src/pages/KillerPlay.tsx
-// KILLER — PLAY (V1.2)
+// KILLER — PLAY (V1.3 + BOTS)
 // ✅ MISS (0) + BULL (25 / DBULL)
 // ✅ UNDO RÉEL (rollback état complet)
 // ✅ Auto-fin de tour quand dartsLeft = 0
@@ -13,6 +13,10 @@
 //    - killerHits / uselessHits
 //    - throwsToBecomeKiller
 //    - survivalTimeMs + finalRank (calcul fin de match)
+// ✅ IMPORTANT : écrit summary.perPlayer + summary.detailedByPlayer (compat statsKiller.ts + leaderboards)
+// ✅ NEW : BOTS autoplay (si player.isBot)
+//    - utilise botLevel pour viser + mult
+//    - stats/record incluent isBot/botLevel
 // - Reçoit config depuis KillerConfig : routeParams.config
 // - Tour par tour (3 fléchettes)
 // - Devenir Killer en touchant SON numéro (règle single/double)
@@ -43,6 +47,11 @@ type KillerPlayerState = {
   id: string;
   name: string;
   avatarDataUrl?: string | null;
+
+  // ✅ bots
+  isBot?: boolean;
+  botLevel?: string;
+
   number: number; // 1..20
   lives: number; // >=0
   isKiller: boolean;
@@ -50,19 +59,21 @@ type KillerPlayerState = {
   kills: number;
   hitsOnSelf: number;
 
-  // -----------------------------
-  // ✅ NEW: Stats Killer enrichies
-  // -----------------------------
-  totalThrows: number;          // toutes fléchettes (inclut MISS/BULL)
-  killerThrows: number;          // fléchettes lancées quand isKiller = true
-  offensiveThrows: number;       // fléchettes “ciblant” un numéro adverse (quand killer, target = numéro d’un adversaire vivant)
-  killerHits: number;            // fléchettes qui infligent des dégâts (touches effectives sur un adversaire)
-  uselessHits: number;           // fléchettes “neutres” (ne font rien : bull/miss/numéro sans effet)
-  livesTaken: number;            // total vies retirées aux autres
-  livesLost: number;             // total vies perdues
-  throwsToBecomeKiller: number;  // combien de lancers jusqu’à devenir killer (si devient)
-  becameAtThrow?: number | null; // interne: index de throw quand devient killer
-  eliminatedAt?: number | null;  // timestamp élimination (pour survival)
+  // ✅ NEW stats
+  totalThrows: number;
+  killerThrows: number;
+  offensiveThrows: number;
+  killerHits: number;
+  uselessHits: number;
+  livesTaken: number;
+  livesLost: number;
+  throwsToBecomeKiller: number;
+  becameAtThrow?: number | null;
+  eliminatedAt?: number | null;
+
+  // ✅ Option A maps (utilisées par statsKiller + leaderboards)
+  hitsBySegment: Record<string, number>;
+  hitsByNumber: Record<string, number>;
 };
 
 type Snapshot = {
@@ -72,7 +83,7 @@ type Snapshot = {
   visit: ThrowInput[];
   log: string[];
   finished: boolean;
-  elimOrder: string[]; // ✅ NEW
+  elimOrder: string[];
 };
 
 function clampInt(n: any, min: number, max: number, fallback: number) {
@@ -118,7 +129,7 @@ function fmtThrow(t: ThrowInput) {
 function segmentKey(t: ThrowInput) {
   if (t.target === 0) return "MISS";
   if (t.target === 25) return t.mult === 2 ? "DBULL" : "BULL";
-  return fmtThrow(t); // "S20" / "D16" / "T8"
+  return fmtThrow(t);
 }
 
 function incMap(map: any, key: any, by = 1) {
@@ -126,6 +137,104 @@ function incMap(map: any, key: any, by = 1) {
   const next = { ...(map || {}) };
   next[k] = (Number(next[k]) || 0) + by;
   return next;
+}
+
+// -----------------------------
+// BOT helpers
+// -----------------------------
+function resolveBotSkill(botLevelRaw?: string | null): number {
+  const v = String(botLevelRaw || "")
+    .toLowerCase()
+    .trim();
+
+  if (!v) return 2;
+
+  const digits = v.replace(/[^0-9]/g, "");
+  if (digits) {
+    const n = parseInt(digits, 10);
+    if (Number.isFinite(n)) return Math.max(1, Math.min(5, n));
+  }
+
+  if (v.includes("legend") || v.includes("légende")) return 5;
+  if (v.includes("prodige")) return 4;
+  if (v.includes("pro")) return 4;
+  if (v.includes("fort") || v.includes("hard") || v.includes("difficile")) return 3;
+  if (v.includes("standard") || v.includes("normal") || v.includes("moyen")) return 2;
+  if (v.includes("easy") || v.includes("facile") || v.includes("débutant")) return 1;
+  return 2;
+}
+
+function rand01() {
+  return Math.random();
+}
+
+// distribution mult selon skill
+function pickMultForBot(skill: number, becomeRule: KillerBecomeRule, wantsDouble: boolean): Mult {
+  // skill 1 => surtout S
+  // skill 5 => plus de D/T
+  const r = rand01();
+
+  if (wantsDouble) {
+    // pour devenir killer en règle "double", on force + de D
+    if (skill >= 4) return r < 0.78 ? 2 : r < 0.90 ? 3 : 1;
+    if (skill === 3) return r < 0.65 ? 2 : r < 0.78 ? 1 : 3;
+    if (skill === 2) return r < 0.55 ? 2 : r < 0.90 ? 1 : 3;
+    return r < 0.45 ? 2 : 1;
+  }
+
+  // sinon mult “naturel”
+  if (skill >= 5) return r < 0.55 ? 2 : r < 0.80 ? 3 : 1;
+  if (skill === 4) return r < 0.45 ? 2 : r < 0.65 ? 3 : 1;
+  if (skill === 3) return r < 0.30 ? 2 : r < 0.40 ? 3 : 1;
+  if (skill === 2) return r < 0.18 ? 2 : r < 0.22 ? 3 : 1;
+  return r < 0.10 ? 2 : 1;
+}
+
+function decideBotThrow(me: KillerPlayerState, all: KillerPlayerState[], config: KillerConfig): ThrowInput {
+  const skill = resolveBotSkill(me.botLevel);
+  const aliveOthers = all.filter((p) => !p.eliminated && p.id !== me.id);
+
+  // chance d’erreur / miss
+  const missRate = skill <= 1 ? 0.22 : skill === 2 ? 0.16 : skill === 3 ? 0.10 : skill === 4 ? 0.06 : 0.03;
+
+  // bull = coup “inutile” parfois (ça fait joli)
+  const bullRate = skill >= 4 ? 0.03 : 0.015;
+
+  const r = rand01();
+  if (r < missRate) return { target: 0, mult: 1 };
+  if (r < missRate + bullRate) return { target: 25, mult: rand01() < 0.25 ? 2 : 1 };
+
+  // pas killer -> vise son numéro (avec précision selon skill)
+  if (!me.isKiller) {
+    const wantsDouble = config.becomeRule === "double";
+    const hitOwnRate = skill <= 1 ? 0.55 : skill === 2 ? 0.68 : skill === 3 ? 0.78 : skill === 4 ? 0.88 : 0.94;
+
+    if (rand01() < hitOwnRate) {
+      return { target: me.number, mult: pickMultForBot(skill, config.becomeRule, wantsDouble) };
+    }
+
+    // erreur: vise un numéro random
+    const n = 1 + Math.floor(Math.random() * 20);
+    return { target: n, mult: pickMultForBot(skill, config.becomeRule, false) };
+  }
+
+  // killer -> vise un vivant (avec précision)
+  const hitVictimRate = skill <= 1 ? 0.52 : skill === 2 ? 0.66 : skill === 3 ? 0.76 : skill === 4 ? 0.86 : 0.92;
+
+  if (aliveOthers.length === 0) {
+    return { target: 0, mult: 1 };
+  }
+
+  if (rand01() < hitVictimRate) {
+    // cible: de préférence celui avec le moins de vies (finir)
+    const sorted = [...aliveOthers].sort((a, b) => (a.lives ?? 0) - (b.lives ?? 0));
+    const pick = sorted[0];
+    return { target: pick.number, mult: pickMultForBot(skill, config.becomeRule, false) };
+  }
+
+  // erreur: vise un numéro pas forcément assigné
+  const n = 1 + Math.floor(Math.random() * 20);
+  return { target: n, mult: pickMultForBot(skill, config.becomeRule, false) };
 }
 
 /* -----------------------------
@@ -194,7 +303,6 @@ function ThrowPad({
             borderRadius: 12,
             border: "1px solid rgba(255,255,255,.12)",
             background: "rgba(0,0,0,.25)",
-            color: "inherit",
             fontWeight: 900,
             cursor: disabled ? "not-allowed" : "pointer",
             opacity: disabled ? 0.5 : 1,
@@ -212,7 +320,6 @@ function ThrowPad({
             borderRadius: 12,
             border: "1px solid rgba(255,255,255,.12)",
             background: "rgba(0,0,0,.25)",
-            color: "inherit",
             fontWeight: 900,
             cursor: disabled ? "not-allowed" : "pointer",
             opacity: disabled ? 0.5 : 1,
@@ -230,7 +337,6 @@ function ThrowPad({
             borderRadius: 12,
             border: "1px solid rgba(255,255,255,.12)",
             background: "rgba(0,0,0,.25)",
-            color: "inherit",
             fontWeight: 900,
             cursor: disabled ? "not-allowed" : "pointer",
             opacity: disabled ? 0.5 : 1,
@@ -241,13 +347,7 @@ function ThrowPad({
       </div>
 
       {/* Numbers */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(5, 1fr)",
-          gap: 8,
-        }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
         {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
           <button
             key={n}
@@ -258,7 +358,6 @@ function ThrowPad({
               borderRadius: 12,
               border: "1px solid rgba(255,255,255,.10)",
               background: "rgba(0,0,0,.25)",
-              color: "inherit",
               fontWeight: 900,
               cursor: disabled ? "not-allowed" : "pointer",
               opacity: disabled ? 0.5 : 1,
@@ -277,7 +376,6 @@ function ThrowPad({
             borderRadius: 12,
             border: "1px solid rgba(255,255,255,.12)",
             background: "rgba(0,0,0,.25)",
-            color: "inherit",
             fontWeight: 900,
             cursor: "pointer",
             flex: 1,
@@ -293,7 +391,6 @@ function ThrowPad({
             borderRadius: 12,
             border: "1px solid rgba(255,255,255,.12)",
             background: "rgba(0,0,0,.25)",
-            color: "inherit",
             fontWeight: 900,
             cursor: "pointer",
             opacity: 0.9,
@@ -313,12 +410,21 @@ function ThrowPad({
 
 export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const startedAt = React.useMemo(() => Date.now(), []);
+  const finishedRef = React.useRef(false);
+
+  // ✅ elimOrder en ref (évite setState dans setPlayers + évite les stales)
+  const elimOrderRef = React.useRef<string[]>([]);
+
   const initialPlayers: KillerPlayerState[] = React.useMemo(() => {
     const lives = clampInt(config?.lives, 1, 9, 3);
     return (config?.players || []).map((p) => ({
       id: p.id,
       name: p.name,
       avatarDataUrl: p.avatarDataUrl ?? null,
+
+      isBot: !!p.isBot,
+      botLevel: p.botLevel ?? "",
+
       number: clampInt(p.number, 1, 20, 1),
       lives,
       isKiller: false,
@@ -326,7 +432,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       kills: 0,
       hitsOnSelf: 0,
 
-      // ✅ init stats
       totalThrows: 0,
       killerThrows: 0,
       offensiveThrows: 0,
@@ -338,7 +443,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       becameAtThrow: null,
       eliminatedAt: null,
 
-      // maps
       hitsBySegment: {},
       hitsByNumber: {},
     }));
@@ -354,11 +458,12 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const [log, setLog] = React.useState<string[]>([]);
   const [finished, setFinished] = React.useState<boolean>(false);
 
-  // ✅ NEW: ordre d’élimination (chronologique) pour ranks
-  const [elimOrder, setElimOrder] = React.useState<string[]>([]);
-
   // UNDO stack
   const undoRef = React.useRef<Snapshot[]>([]);
+
+  // BOT timers
+  const botTimerRef = React.useRef<any>(null);
+  const botBusyRef = React.useRef(false);
 
   const current = players[turnIndex] ?? players[0];
   const w = winner(players);
@@ -370,13 +475,13 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
 
   function snapshot() {
     const snap: Snapshot = {
-      players: players.map((p) => ({ ...p })),
+      players: players.map((p) => ({ ...p, hitsBySegment: { ...p.hitsBySegment }, hitsByNumber: { ...p.hitsByNumber } })),
       turnIndex,
       dartsLeft,
       visit: visit.map((t) => ({ ...t })),
       log: log.slice(),
       finished,
-      elimOrder: elimOrder.slice(),
+      elimOrder: (elimOrderRef.current || []).slice(),
     };
     undoRef.current = [snap, ...undoRef.current].slice(0, 60);
   }
@@ -385,29 +490,37 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     const s = undoRef.current[0];
     if (!s) return;
     undoRef.current = undoRef.current.slice(1);
+
+    // stop bot “en vol”
+    if (botTimerRef.current) {
+      clearTimeout(botTimerRef.current);
+      botTimerRef.current = null;
+    }
+    botBusyRef.current = false;
+
     setPlayers(s.players);
     setTurnIndex(s.turnIndex);
     setDartsLeft(s.dartsLeft);
     setVisit(s.visit);
     setLog(s.log);
     setFinished(s.finished);
-    setElimOrder(s.elimOrder || []);
+    finishedRef.current = !!s.finished;
+    elimOrderRef.current = (s.elimOrder || []).slice();
   }
 
-  function endTurn() {
+  function endTurn(nextPlayers?: KillerPlayerState[]) {
     setVisit([]);
     setDartsLeft(3);
-    setTurnIndex((prev) => nextAliveIndex(players, prev));
+    const base = nextPlayers || players;
+    setTurnIndex((prev) => nextAliveIndex(base, prev));
   }
 
   function computeFinalRanks(finalPlayers: KillerPlayerState[], winnerId: string, elim: string[]) {
     const n = finalPlayers.length;
     const rankById: Record<string, number> = {};
 
-    // elimOrder = [firstElim, secondElim, ...] (chronologique)
-    // rank worst = n, next = n-1, ... ; winner = 1
     let rank = n;
-    for (const pid of (elim || [])) {
+    for (const pid of elim || []) {
       if (!pid) continue;
       if (rankById[pid] == null) {
         rankById[pid] = rank;
@@ -415,21 +528,15 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       }
     }
 
-    // Les survivants non listés (normalement winner uniquement) => ranks restants
-    const alive = finalPlayers.filter((p) => !p.eliminated).map((p) => p.id);
-    // winner au rang 1
     rankById[winnerId] = 1;
 
-    // si jamais (bug) plusieurs survivants, on les place ensuite
     let nextRank = 2;
+    const alive = finalPlayers.filter((p) => !p.eliminated).map((p) => p.id);
     for (const pid of alive) {
       if (pid === winnerId) continue;
-      if (rankById[pid] == null) {
-        rankById[pid] = nextRank++;
-      }
+      if (rankById[pid] == null) rankById[pid] = nextRank++;
     }
 
-    // les autres non présents (edge-case) -> rang max restant
     for (const p of finalPlayers) {
       if (rankById[p.id] == null) rankById[p.id] = Math.max(2, n);
     }
@@ -441,7 +548,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     const finishedAt = Date.now();
     const rankById = computeFinalRanks(finalPlayersRaw, winnerId, elim);
 
-    // enrich survivalTimeMs + finalRank
     const finalPlayers = finalPlayersRaw.map((p) => {
       const eliminatedAt = p.eliminatedAt || (p.eliminated ? finishedAt : null);
       const survivalTimeMs = p.eliminated
@@ -455,7 +561,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       };
     });
 
-    // perPlayer (format robuste pour StatsLeaderboardsPage)
     const detailedByPlayer: Record<string, any> = {};
     for (const p of finalPlayers) {
       detailedByPlayer[p.id] = {
@@ -465,14 +570,16 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         name: p.name,
         avatarDataUrl: p.avatarDataUrl ?? null,
 
-        // core killer
+        // ✅ bots
+        isBot: !!p.isBot,
+        botLevel: p.botLevel ?? "",
+
         number: p.number,
         eliminated: !!p.eliminated,
         isKiller: !!p.isKiller,
         kills: p.kills,
         hitsOnSelf: p.hitsOnSelf,
 
-        // NEW stats
         totalThrows: p.totalThrows,
         killerThrows: p.killerThrows,
         offensiveThrows: p.offensiveThrows,
@@ -480,7 +587,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         uselessHits: p.uselessHits,
         livesTaken: p.livesTaken,
         livesLost: p.livesLost,
-        throwsToBecomeKiller: p.becameAtThrow ? p.becameAtThrow : 0,
+        throwsToBecomeKiller: p.becameAtThrow ? p.becameAtThrow : p.throwsToBecomeKiller,
 
         hitsBySegment: p.hitsBySegment || {},
         hitsByNumber: p.hitsByNumber || {},
@@ -489,6 +596,32 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         survivalTimeMs: p.survivalTimeMs || 0,
       };
     }
+
+    const perPlayer = finalPlayers.map((p) => ({
+      id: p.id,
+      playerId: p.id,
+      profileId: p.id,
+      name: p.name,
+      avatarDataUrl: p.avatarDataUrl ?? null,
+
+      // ✅ bots
+      isBot: !!p.isBot,
+      botLevel: p.botLevel ?? "",
+
+      hitsBySegment: p.hitsBySegment || {},
+      hitsByNumber: p.hitsByNumber || {},
+
+      totalThrows: p.totalThrows,
+      killerThrows: p.killerThrows,
+      offensiveThrows: p.offensiveThrows,
+      killerHits: p.killerHits,
+      uselessHits: p.uselessHits,
+      livesTaken: p.livesTaken,
+      livesLost: p.livesLost,
+      kills: p.kills,
+      finalRank: p.finalRank || 0,
+      survivalTimeMs: p.survivalTimeMs || 0,
+    }));
 
     const rec: any = {
       kind: "killer",
@@ -499,6 +632,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         id: p.id,
         name: p.name,
         avatarDataUrl: p.avatarDataUrl ?? null,
+        isBot: !!p.isBot,
+        botLevel: p.botLevel ?? "",
       })),
       summary: {
         mode: "killer",
@@ -506,10 +641,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         becomeRule: config.becomeRule,
         damageRule: config.damageRule,
 
-        // ✅ robust stats container
         detailedByPlayer,
+        perPlayer,
 
-        // ✅ keep a simple array too (fallback)
         players: finalPlayers.map((p) => ({
           id: p.id,
           name: p.name,
@@ -519,7 +653,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           isKiller: p.isKiller,
           kills: p.kills,
 
-          // NEW minimal for quick UIs
+          // ✅ bots
+          isBot: !!p.isBot,
+          botLevel: p.botLevel ?? "",
+
           finalRank: p.finalRank || 0,
           survivalTimeMs: p.survivalTimeMs || 0,
           livesTaken: p.livesTaken || 0,
@@ -535,6 +672,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         summary: {
           mode: "killer",
           detailedByPlayer,
+          perPlayer,
         },
       },
     };
@@ -545,7 +683,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   function applyThrow(t: ThrowInput) {
     if (inputDisabled) return;
 
-    // snapshot BEFORE changes (pour UNDO)
     snapshot();
 
     const thr: ThrowInput = {
@@ -557,32 +694,26 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     setDartsLeft((d) => Math.max(0, d - 1));
 
     setPlayers((prev) => {
-      const next = prev.map((p) => ({ ...p }));
+      const next = prev.map((p) => ({
+        ...p,
+        hitsBySegment: { ...(p.hitsBySegment || {}) },
+        hitsByNumber: { ...(p.hitsByNumber || {}) },
+      }));
       const me = next[turnIndex];
       if (!me || me.eliminated) return prev;
 
-      // ✅ stats: count throw always
       me.totalThrows += 1;
 
-      // maps (segment/number) — on compte tout sauf MISS pour favoris (MISS reste dans segment si tu veux)
       const seg = segmentKey(thr);
       me.hitsBySegment = incMap(me.hitsBySegment, seg, 1);
+      if (thr.target !== 0) me.hitsByNumber = incMap(me.hitsByNumber, thr.target, 1);
 
-      // num fav: inclut 25, ignore MISS (0)
-      if (thr.target !== 0) {
-        me.hitsByNumber = incMap(me.hitsByNumber, thr.target, 1);
-      }
-
-      // throws to become killer
       if (!me.isKiller && !me.becameAtThrow) {
         me.throwsToBecomeKiller += 1;
       }
+      if (me.isKiller) me.killerThrows += 1;
 
-      if (me.isKiller) {
-        me.killerThrows += 1;
-      }
-
-      // MISS / BULL n'a aucun effet sur les numéros (mais compte en stats)
+      // MISS / BULL => neutre
       if (thr.target === 0) {
         me.uselessHits += 1;
         pushLog(`🎯 ${me.name} : MISS`);
@@ -599,14 +730,13 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         me.isKiller = true;
         me.hitsOnSelf += 1;
 
-        // ✅ lock “throws to become killer”
         if (!me.becameAtThrow) me.becameAtThrow = me.throwsToBecomeKiller;
 
         pushLog(`🟡 ${me.name} devient KILLER en touchant ${fmtThrow(thr)} (#${thr.target})`);
         return next;
       }
 
-      // 2) dégâts si killer : toucher le numéro d’un autre joueur
+      // 2) dégâts si killer : toucher numéro d’un autre vivant
       if (me.isKiller) {
         const victimIdx = next.findIndex(
           (p, idx) => idx !== turnIndex && !p.eliminated && p.number === thr.target
@@ -622,7 +752,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           victim.lives = Math.max(0, victim.lives - dmg);
 
           const actualLoss = Math.max(0, before - victim.lives);
-
           if (actualLoss > 0) {
             me.killerHits += 1;
             me.livesTaken += actualLoss;
@@ -634,8 +763,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             victim.eliminatedAt = Date.now();
             me.kills += 1;
 
-            // ✅ keep elimination order for ranks
-            setElimOrder((prevOrder) => [...prevOrder, victim.id]);
+            elimOrderRef.current = [...(elimOrderRef.current || []), victim.id];
 
             pushLog(`💀 ${me.name} élimine ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg})`);
           } else {
@@ -643,6 +771,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
               `🔻 ${me.name} touche ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg}) → ${victim.lives} vie(s)`
             );
           }
+
           return next;
         }
       }
@@ -654,29 +783,28 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     });
   }
 
-  // Auto fin de tour quand dartsLeft arrive à 0 (si pas fini)
+  // Auto fin de tour
   React.useEffect(() => {
-    if (finished) return;
+    if (finishedRef.current) return;
     if (winner(players)) return;
-    if (dartsLeft === 0) {
-      endTurn();
-    }
+    if (dartsLeft === 0) endTurn(players);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dartsLeft]);
 
-  // Détection victoire
+  // Détection victoire (une seule fois)
   React.useEffect(() => {
     const ww = winner(players);
-    if (ww && !finished) {
+    if (ww && !finishedRef.current) {
+      finishedRef.current = true;
       setFinished(true);
       pushLog(`🏆 ${ww.name} gagne !`);
-      const rec = buildMatchRecord(players, ww.id, elimOrder);
+      const rec = buildMatchRecord(players, ww.id, elimOrderRef.current || []);
       onFinish(rec);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [players]);
 
-  // Si joueur courant éliminé => saute au prochain vivant
+  // Si joueur courant éliminé => saute
   React.useEffect(() => {
     if (!players.length) return;
     if (!current || current.eliminated) {
@@ -685,8 +813,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [players]);
 
-  // ✅ Hook input externe
-  // window.dispatchEvent(new CustomEvent("dc:throw",{detail:{target:20,mult:3}}))
+  // Hook input externe
   React.useEffect(() => {
     function onExternal(ev: any) {
       const d = ev?.detail || {};
@@ -697,7 +824,63 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     window.addEventListener("dc:throw", onExternal as any);
     return () => window.removeEventListener("dc:throw", onExternal as any);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [players, turnIndex, dartsLeft, finished, visit, log]);
+  }, [turnIndex, dartsLeft, finished, inputDisabled]);
+
+  // ✅ BOT AUTOPLAY
+  React.useEffect(() => {
+    if (!players.length) return;
+    if (finishedRef.current) return;
+    if (finished) return;
+    if (winner(players)) return;
+
+    const me = players[turnIndex];
+    if (!me || me.eliminated) return;
+
+    const isBot = !!me.isBot;
+    if (!isBot) return;
+
+    // si plus de darts, la logique auto-fin va déjà endTurn
+    if (dartsLeft <= 0) return;
+
+    // évite double scheduling
+    if (botBusyRef.current) return;
+    botBusyRef.current = true;
+
+    // petite latence “humaine”
+    const delay = 380 + Math.floor(Math.random() * 420); // 380..800ms
+
+    botTimerRef.current = setTimeout(() => {
+      botTimerRef.current = null;
+
+      // recheck rapide (si undo / fin / etc.)
+      if (finishedRef.current || finished) {
+        botBusyRef.current = false;
+        return;
+      }
+
+      const nowMe = players[turnIndex];
+      if (!nowMe || nowMe.eliminated || !nowMe.isBot) {
+        botBusyRef.current = false;
+        return;
+      }
+
+      const thr = decideBotThrow(nowMe, players, config);
+      applyThrow(thr);
+
+      // libère le lock après le throw (sinon boucle infinie)
+      botBusyRef.current = false;
+    }, delay);
+
+    return () => {
+      // cleanup sur changement de deps
+      if (botTimerRef.current) {
+        clearTimeout(botTimerRef.current);
+        botTimerRef.current = null;
+      }
+      botBusyRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnIndex, dartsLeft, finished, players]);
 
   if (!config || !config.players || config.players.length < 2) {
     return (
@@ -708,6 +891,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     );
   }
 
+  const isBotTurn = !!current?.isBot;
+
   return (
     <div style={{ padding: 16, paddingBottom: 90 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -716,9 +901,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       </div>
 
       <div style={{ marginTop: 10, fontSize: 13, opacity: 0.85 }}>
-        Règles : devenir killer = <b>{config.becomeRule === "double" ? "Double" : "Simple"}</b> ·
-        dégâts = <b>{config.damageRule === "multiplier" ? "Multiplier" : "-1"}</b> ·
-        vies = <b>{config.lives}</b>
+        Règles : devenir killer = <b>{config.becomeRule === "double" ? "Double" : "Simple"}</b> · dégâts ={" "}
+        <b>{config.damageRule === "multiplier" ? "Multiplicateur" : "-1"}</b> · vies = <b>{config.lives}</b>
       </div>
 
       {/* Current */}
@@ -735,26 +919,34 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         <div style={{ fontSize: 18, fontWeight: 900 }}>
           {current?.name ?? "—"}{" "}
           <span style={{ fontSize: 13, opacity: 0.85 }}>(#{current?.number ?? "?"})</span>
-          {current?.isKiller && (
-            <span style={{ marginLeft: 8, fontSize: 13, fontWeight: 900 }}>🔥 KILLER</span>
+          {current?.isKiller && <span style={{ marginLeft: 8, fontSize: 13, fontWeight: 900 }}>🔥 KILLER</span>}
+          {current?.isBot && (
+            <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 900, opacity: 0.9 }}>
+              🤖 BOT{current?.botLevel ? ` · ${current.botLevel}` : ""}
+            </span>
           )}
         </div>
         <div style={{ marginTop: 6, fontSize: 13, opacity: 0.9 }}>
           Vies : <b>{current?.lives ?? 0}</b> · Darts : <b>{dartsLeft}</b>
         </div>
 
-        {/* ✅ mini stats live (debug + fun) */}
         <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
           <span style={{ marginRight: 10 }}>
-            Throws: <b>{current?.totalThrows ?? 0}</b>
+            Lancers : <b>{current?.totalThrows ?? 0}</b>
           </span>
           <span style={{ marginRight: 10 }}>
-            Dégâts: <b>{current?.livesTaken ?? 0}</b>
+            Dégâts : <b>{current?.livesTaken ?? 0}</b>
           </span>
           <span>
-            Kills: <b>{current?.kills ?? 0}</b>
+            Kills : <b>{current?.kills ?? 0}</b>
           </span>
         </div>
+
+        {isBotTurn && !finished && !w && (
+          <div style={{ marginTop: 10, fontSize: 12, opacity: 0.85 }}>
+            🤖 Le bot joue automatiquement…
+          </div>
+        )}
       </div>
 
       {/* Scoreboard */}
@@ -782,19 +974,21 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
               >
                 <div style={{ display: "flex", flexDirection: "column" }}>
                   <div style={{ fontWeight: 900 }}>
-                    {p.name}{" "}
-                    <span style={{ fontSize: 12, opacity: 0.8 }}>#{p.number}</span>
+                    {p.name} <span style={{ fontSize: 12, opacity: 0.8 }}>#{p.number}</span>
                     {p.isKiller && <span style={{ marginLeft: 6 }}>🔥</span>}
                     {p.eliminated && <span style={{ marginLeft: 6 }}>💀</span>}
+                    {p.isBot && (
+                      <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.85 }}>
+                        🤖{p.botLevel ? ` ${p.botLevel}` : ""}
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.75 }}>
-                    kills: {p.kills} · vies: {p.lives} · dmg: {p.livesTaken} · throws: {p.totalThrows}
+                    kills: {p.kills} · vies: {p.lives} · dmg: {p.livesTaken} · lancers: {p.totalThrows}
                   </div>
                 </div>
 
-                <div style={{ fontWeight: 900, fontSize: 13 }}>
-                  {p.eliminated ? "OUT" : `${p.lives} ♥`}
-                </div>
+                <div style={{ fontWeight: 900, fontSize: 13 }}>{p.eliminated ? "OUT" : `${p.lives} ♥`}</div>
               </div>
             );
           })}
@@ -806,13 +1000,13 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         Volée : {visit.length ? visit.map(fmtThrow).join(" · ") : "—"}
       </div>
 
-      {/* Input */}
-      {!w && !finished && (
+      {/* Input (humain uniquement) */}
+      {!w && !finished && !isBotTurn && (
         <ThrowPad
           disabled={inputDisabled}
           dartsLeft={dartsLeft}
           onThrow={applyThrow}
-          onEndTurn={endTurn}
+          onEndTurn={() => endTurn(players)}
           onUndo={undo}
         />
       )}
@@ -852,7 +1046,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
               borderRadius: 12,
               border: "1px solid rgba(255,255,255,.12)",
               background: "rgba(0,0,0,.25)",
-              color: "inherit",
               fontWeight: 900,
               cursor: "pointer",
               flex: 1,
@@ -868,7 +1061,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
               borderRadius: 12,
               border: "1px solid rgba(255,255,255,.12)",
               background: "rgba(0,0,0,.25)",
-              color: "inherit",
               fontWeight: 900,
               cursor: "pointer",
               opacity: 0.9,

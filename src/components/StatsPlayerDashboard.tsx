@@ -1,22 +1,18 @@
 // ============================================
 // src/components/StatsPlayerDashboard.tsx
 // Dashboard joueur — Verre dépoli OR (responsive sans dépassement)
+// ✅ Répartition des volées: valeurs visibles + badges scintillants (par bucket)
+// ✅ Mode préféré + Top modes (3 lignes max, sinon carrousel horizontal)
+// ✅ sessionsByMode supporté (si fourni par buildDashboardForPlayer)
 // ============================================
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import type { X01MultiLegsSets } from "../lib/statsBridge";
 
-/* CSS global : shimmer + zoom léger, même logique que StatsHub/Home */
+/* CSS global : shimmer nom + shimmer titres + shimmer valeurs */
 const statsNameCss = `
-.dc-stats-name-wrapper {
-  position: relative;
-  isolation: isolate;
-}
-
-.dc-stats-name-base,
-.dc-stats-name-shimmer {
-  position: relative;
-}
+.dc-stats-name-wrapper { position: relative; isolation: isolate; }
+.dc-stats-name-base, .dc-stats-name-shimmer { position: relative; }
 
 .dc-stats-name-base {
   color: var(--dc-accent, #f6c256);
@@ -29,41 +25,87 @@ const statsNameCss = `
 .dc-stats-name-shimmer {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    120deg,
+  background: linear-gradient(120deg,
     transparent 0%,
-    rgba(255,255,255,0.1) 20%,
-    rgba(255,255,255,0.95) 50%,
+    rgba(255,255,255,0.10) 20%,
+    rgba(255,255,255,0.92) 50%,
     rgba(255,255,255,0.15) 80%,
-    transparent 100%
-  );
+    transparent 100%);
   background-size: 220% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  opacity: 0.9;
+  opacity: 0.95;
   mix-blend-mode: screen;
   animation: dcStatsNameShimmer 3.6s ease-in-out infinite;
 }
-
 @keyframes dcStatsNameShimmer {
-  0% {
-    background-position: -80% 0;
-    transform: scale(1);
-  }
-  45% {
-    background-position: 130% 0;
-    transform: scale(1.05);
-  }
-  100% {
-    background-position: 130% 0;
-    transform: scale(1);
-  }
+  0% { background-position: -80% 0; transform: scale(1); }
+  45% { background-position: 130% 0; transform: scale(1.05); }
+  100% { background-position: 130% 0; transform: scale(1); }
+}
+
+/* ✅ Titres de blocs scintillants */
+.dc-block-title {
+  position: relative;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .9px;
+  color: var(--dc-accent, #f6c256);
+  text-shadow:
+    0 0 8px var(--dc-accent, #f6c256),
+    0 0 18px var(--dc-accent-soft, rgba(246,194,86,0.35));
+}
+.dc-block-title::after {
+  content: attr(data-t);
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg,
+    transparent 0%,
+    rgba(255,255,255,0.08) 22%,
+    rgba(255,255,255,0.92) 50%,
+    rgba(255,255,255,0.14) 78%,
+    transparent 100%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  opacity: .90;
+  mix-blend-mode: screen;
+  animation: dcBlockTitleShimmer 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes dcBlockTitleShimmer {
+  0% { background-position: -90% 0; }
+  55% { background-position: 140% 0; }
+  100% { background-position: 140% 0; }
+}
+
+/* ✅ Shimmer valeurs */
+.dc-shimmer-val {
+  position: relative;
+  font-weight: 900;
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    var(--dc-accent, #f6c256),
+    rgba(255,255,255,.92),
+    var(--dc-accent, #f6c256)
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: dcValShimmer 2.4s linear infinite;
+  text-shadow: 0 0 10px var(--dc-accent-soft, rgba(246,194,86,0.35));
+}
+@keyframes dcValShimmer {
+  0% { background-position: -80% 0; }
+  100% { background-position: 120% 0; }
 }
 `;
 
 function useInjectStatsNameCss() {
-  React.useEffect(() => {
+  useEffect(() => {
     if (typeof document === "undefined") return;
     if (document.getElementById("dc-stats-name-css")) return;
     const style = document.createElement("style");
@@ -84,11 +126,13 @@ export type PlayerDashboardStats = {
   bestVisit: number;
   winRatePct: number;
   bestCheckout?: number;
+
   evolution: PlayerGamePoint[];
   distribution: PlayerDistribution;
+
+  sessionsByMode?: Record<string, number>;
 };
 
-// ✅ Props complètes : data (+ null/undefined) + X01 multi legs/sets
 type StatsPlayerDashboardProps = {
   data: PlayerDashboardStats | null | undefined;
   x01MultiLegsSets?: X01MultiLegsSets | null;
@@ -97,11 +141,9 @@ type StatsPlayerDashboardProps = {
 /* ---------- Thème ---------- */
 const T = {
   gold: "#F6C256",
-  goldEdge: "rgba(246,194,86,.55)",
   goldEdgeStrong: "rgba(246,194,86,.9)",
   text: "#FFFFFF",
   text70: "rgba(255,255,255,.70)",
-  text75: "rgba(255,255,255,.75)",
   text60: "rgba(255,255,255,.60)",
   edge: "rgba(255,255,255,.10)",
   card: "linear-gradient(180deg,rgba(17,18,20,.94),rgba(13,14,17,.92))",
@@ -111,7 +153,6 @@ const T = {
   grid: "rgba(36,37,40,1)",
 };
 
-/* ---------- Base styles ---------- */
 const glassCard: React.CSSProperties = {
   background: T.card,
   border: `1px solid ${T.edge}`,
@@ -119,6 +160,7 @@ const glassCard: React.CSSProperties = {
   boxShadow: "0 10px 26px rgba(0,0,0,.35)",
   backdropFilter: "blur(10px)",
 };
+
 const tile: React.CSSProperties = {
   background: T.tile,
   border: `1px solid ${T.edge}`,
@@ -126,6 +168,7 @@ const tile: React.CSSProperties = {
   padding: 16,
   boxShadow: "inset 0 0 0 1px rgba(255,255,255,.02)",
 };
+
 const iconBadge: React.CSSProperties = {
   width: 36,
   height: 36,
@@ -137,33 +180,7 @@ const iconBadge: React.CSSProperties = {
   color: T.gold,
 };
 
-/* ---------- Icônes ---------- */
-const IconBars = ({ size = 18, color = T.text }: { size?: number; color?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <rect x="3" y="11" width="4" height="8" rx="1.5" stroke={color} strokeWidth="1.8" />
-    <rect x="10" y="7" width="4" height="12" rx="1.5" stroke={color} strokeWidth="1.8" />
-    <rect x="17" y="4" width="4" height="15" rx="1.5" stroke={color} strokeWidth="1.8" />
-  </svg>
-);
-const IconTarget = ({ size = 18, color = T.text }: { size?: number; color?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <circle cx="12" cy="12" r="8" stroke={color} strokeWidth="1.8" />
-    <circle cx="12" cy="12" r="3" stroke={color} strokeWidth="1.8" />
-  </svg>
-);
-const IconPercent = ({ size = 18, color = T.text }: { size?: number; color?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <path d="M6 18L18 6" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
-    <circle cx="7" cy="7" r="2.4" stroke={color} strokeWidth="1.8" />
-    <circle cx="17" cy="17" r="2.4" stroke={color} strokeWidth="1.8" />
-  </svg>
-);
-const IconHourglass = ({ size = 18, color = T.text }: { size?: number; color?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <path d="M7 4h10M7 20h10M8 4c0 5 8 5 8 8s-8 3-8 8" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
-  </svg>
-);
-
+// ✅ Exports attendus par StatsHub (ne pas supprimer)
 export function GoldPill({
   children,
   active = false,
@@ -191,19 +208,10 @@ export function GoldPill({
     whiteSpace: "nowrap",
   };
 
-  const merged: React.CSSProperties = {
-    ...base,
-    ...(style || {}),
-  };
-
   return (
-    <button type="button" style={merged} onClick={onClick}>
-      {leftIcon ? (
-        <span style={{ display: "grid", placeItems: "center" }}>
-          {leftIcon}
-        </span>
-      ) : null}
-      <span style={{ fontWeight: 600 }}>{children}</span>
+    <button type="button" style={{ ...base, ...(style || {}) }} onClick={onClick}>
+      {leftIcon ? <span style={{ display: "grid", placeItems: "center" }}>{leftIcon}</span> : null}
+      <span style={{ fontWeight: 800 }}>{children}</span>
     </button>
   );
 }
@@ -229,30 +237,98 @@ export function ProfilePill({
     alignItems: "center",
     gap: 8,
   };
+
   return (
-    <button style={base} onClick={onClick}>
+    <button type="button" style={base} onClick={onClick}>
       {avatarDataUrl ? (
         <img src={avatarDataUrl} alt={name} width={22} height={22} style={{ borderRadius: 999, objectFit: "cover" }} />
       ) : (
         <div style={{ width: 22, height: 22, borderRadius: 999, background: "rgba(255,255,255,.10)" }} />
       )}
-      <span style={{ fontWeight: 700, fontSize: 13 }}>{name}</span>
+      <span style={{ fontWeight: 900, fontSize: 13, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>
+        {name}
+      </span>
     </button>
   );
 }
 
+/* ---------- Icônes ---------- */
+const IconBars = ({ size = 18, color = T.text }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <rect x="3" y="11" width="4" height="8" rx="1.5" stroke={color} strokeWidth="1.8" />
+    <rect x="10" y="7" width="4" height="12" rx="1.5" stroke={color} strokeWidth="1.8" />
+    <rect x="17" y="4" width="4" height="15" rx="1.5" stroke={color} strokeWidth="1.8" />
+  </svg>
+);
+
+const IconTarget = ({ size = 18, color = T.text }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <circle cx="12" cy="12" r="8" stroke={color} strokeWidth="1.8" />
+    <circle cx="12" cy="12" r="3" stroke={color} strokeWidth="1.8" />
+  </svg>
+);
+
+const IconPercent = ({ size = 18, color = T.text }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <path d="M6 18L18 6" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+    <circle cx="7" cy="7" r="2.4" stroke={color} strokeWidth="1.8" />
+    <circle cx="17" cy="17" r="2.4" stroke={color} strokeWidth="1.8" />
+  </svg>
+);
+
+const IconHourglass = ({ size = 18, color = T.text }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <path
+      d="M7 4h10M7 20h10M8 4c0 5 8 5 8 8s-8 3-8 8"
+      stroke={color}
+      strokeWidth="1.8"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
 /* ---------- Titres ---------- */
 const H1 = ({ children }: { children: React.ReactNode }) => (
-  <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.2, color: T.text }}>{children}</div>
+  <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: -0.2, color: T.text }}>{children}</div>
 );
-const Sub = ({ children }: { children: React.ReactNode }) => (
-  <div style={{ fontSize: 13, color: T.text70 }}>{children}</div>
-);
+
+const Sub = ({ children }: { children: React.ReactNode }) => <div style={{ fontSize: 13, color: T.text70 }}>{children}</div>;
+
+function BlockTitle({
+  text,
+  accent,
+  accentSoft,
+  style,
+}: {
+  text: string;
+  accent: string;
+  accentSoft: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div
+      className="dc-block-title"
+      data-t={text}
+      style={
+        {
+          ...(style || {}),
+          // @ts-ignore
+          "--dc-accent": accent,
+          // @ts-ignore
+          "--dc-accent-soft": accentSoft,
+        } as React.CSSProperties
+      }
+    >
+      {text}
+    </div>
+  );
+}
 
 /* ---------- Hook largeur conteneur ---------- */
 function useContainerWidth<T extends HTMLElement>(min = 300): [React.RefObject<T>, number] {
   const ref = useRef<T>(null);
   const [w, setW] = useState(min);
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -261,6 +337,7 @@ function useContainerWidth<T extends HTMLElement>(min = 300): [React.RefObject<T
     setW(Math.max(min, Math.floor(el.clientWidth)));
     return () => ro.disconnect();
   }, [min]);
+
   return [ref, w];
 }
 
@@ -270,39 +347,95 @@ const rng = (n: number) => [...Array(n).keys()];
 const niceMax = (v: number) =>
   v <= 10 ? 10 : v <= 20 ? 20 : v <= 40 ? 40 : v <= 60 ? 60 : v <= 80 ? 80 : v <= 100 ? 100 : Math.ceil(v / 50) * 50;
 
+function safeDate(d: string): Date | null {
+  if (!d) return null;
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt;
+}
+function fmtStart(d: string): string {
+  const dt = safeDate(d);
+  if (!dt) return "Début";
+  const m = dt.getMonth() + 1;
+  const y = dt.getFullYear();
+  return `${String(m).padStart(2, "0")}/${y}`;
+}
+
 /* ---------- Tiles ---------- */
-function Tile({ label, value, sub, icon }: { label: string; value: string; sub?: string; icon?: React.ReactNode }) {
+function Tile({
+  label,
+  value,
+  sub,
+  icon,
+  accent,
+  accentSoft,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  icon?: React.ReactNode;
+  accent: string;
+  accentSoft: string;
+}) {
   return (
-    <div style={tile}>
+    <div
+      style={
+        {
+          ...tile,
+          // @ts-ignore
+          "--dc-accent": accent,
+          // @ts-ignore
+          "--dc-accent-soft": accentSoft,
+        } as React.CSSProperties
+      }
+    >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <span style={{ fontSize: 13, color: T.text75 }}>{label}</span>
+        <BlockTitle
+          text={label}
+          accent={accent}
+          accentSoft={accentSoft}
+          style={{ fontSize: 11, opacity: 0.95, textTransform: "none", letterSpacing: 0.2 }}
+        />
         <span style={iconBadge}>{icon ?? <IconBars color={T.gold} />}</span>
       </div>
-      <div style={{ fontSize: 28, lineHeight: "28px", fontWeight: 600, color: T.text }}>{value}</div>
-      {sub && <div style={{ marginTop: 4, fontSize: 12, color: T.text60 }}>{sub}</div>}
+      <div className="dc-shimmer-val" style={{ fontSize: 28, lineHeight: "28px" }}>
+        {value}
+      </div>
+      {sub ? <div style={{ marginTop: 4, fontSize: 12, color: T.text60 }}>{sub}</div> : null}
     </div>
   );
 }
 
-/* ---------- Line chart (responsive, no overflow) ---------- */
+/* ---------- Line chart ---------- */
 function LineChart({
   points,
   height = 240,
   padding = 36,
   width,
+  accent,
+  accentSoft,
 }: {
   points: PlayerGamePoint[];
   height?: number;
   padding?: number;
-  width: number; // largeur mesurée du conteneur
+  width: number;
+  accent: string;
+  accentSoft: string;
 }) {
   const svgW = Math.max(220, width - 32);
+
   const pts =
     points.length >= 2
       ? points
-      : [{ date: points[0]?.date ?? "—", avg3: points[0]?.avg3 ?? 50 }, { date: "", avg3: points[0]?.avg3 ?? 50 }];
+      : [
+          { date: points[0]?.date ?? "—", avg3: points[0]?.avg3 ?? 50 },
+          { date: points[0]?.date ?? "", avg3: points[0]?.avg3 ?? 50 },
+        ];
 
-  const { path, area, xTicks, yTicks } = useMemo(() => {
+  const startLabel = fmtStart(pts[0]?.date ?? "");
+  const endLabel = "Aujourd’hui";
+
+  const { path, area, yTicks } = useMemo(() => {
     const max = niceMax(Math.max(...pts.map((p) => p.avg3), 10));
     const plotW = svgW - padding * 2;
     const plotH = height - padding * 2;
@@ -312,13 +445,12 @@ function LineChart({
     const d = pts.map((p, i) => `${i ? "L" : "M"} ${x(i)} ${y(p.avg3)}`).join(" ");
     const a = `${d} L ${x(pts.length - 1)} ${height - padding} L ${x(0)} ${height - padding} Z`;
 
-    const xTicks = pts.map((p, i) => ({ x: x(i), label: p.date || "" }));
-    const yTicks = rng(5).map((k) => {
+    const ticks = rng(5).map((k) => {
       const val = (k / 4) * max;
       return { y: y(val), label: Math.round(val).toString() };
     });
 
-    return { path: d, area: a, xTicks, yTicks };
+    return { path: d, area: a, yTicks: ticks };
   }, [pts, height, padding, svgW]);
 
   return (
@@ -327,8 +459,8 @@ function LineChart({
         <div style={iconBadge}>
           <IconBars color={T.gold} />
         </div>
-        <div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,.85)" }}>Évolution</div>
+        <div style={{ minWidth: 0 }}>
+          <BlockTitle text="Évolution" accent={accent} accentSoft={accentSoft} style={{ fontSize: 12, marginBottom: 2 }} />
           <div style={{ fontSize: 12, color: T.text60 }}>Moyenne par partie</div>
         </div>
       </div>
@@ -343,8 +475,8 @@ function LineChart({
         >
           <defs>
             <linearGradient id="goldArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={T.gold} stopOpacity="0.28" />
-              <stop offset="100%" stopColor={T.gold} stopOpacity="0.02" />
+              <stop offset="0%" stopColor={accent} stopOpacity="0.28" />
+              <stop offset="100%" stopColor={accent} stopOpacity="0.02" />
             </linearGradient>
           </defs>
 
@@ -354,50 +486,42 @@ function LineChart({
           {yTicks.map((t, i) => (
             <g key={i}>
               <line x1={padding} y1={t.y} x2={svgW - padding} y2={t.y} stroke={T.grid} />
-              <text
-                x={padding - 10}
-                y={t.y + 4}
-                textAnchor="end"
-                style={{ fontSize: 10, fill: "rgba(255,255,255,.65)" }}
-              >
+              <text x={padding - 10} y={t.y + 4} textAnchor="end" style={{ fontSize: 10, fill: "rgba(255,255,255,.65)" }}>
                 {t.label}
               </text>
             </g>
           ))}
 
           <path d={area} fill="url(#goldArea)" />
-          <path d={path} fill="none" stroke={T.gold} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+          <path d={path} fill="none" stroke={accent} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
 
-          {xTicks.map((t, i) =>
-            i % Math.max(1, Math.ceil(xTicks.length / 6)) === 0 ? (
-              <text
-                key={i}
-                x={t.x}
-                y={height - (padding - 12)}
-                textAnchor="middle"
-                style={{ fontSize: 10, fill: "rgba(255,255,255,.65)" }}
-              >
-                {t.label}
-              </text>
-            ) : null
-          )}
+          <text x={padding} y={height - (padding - 14)} textAnchor="start" style={{ fontSize: 10, fill: "rgba(255,255,255,.70)" }}>
+            {startLabel}
+          </text>
+          <text x={svgW - padding} y={height - (padding - 14)} textAnchor="end" style={{ fontSize: 10, fill: "rgba(255,255,255,.80)" }}>
+            {endLabel}
+          </text>
         </svg>
       </div>
     </section>
   );
 }
 
-/* ---------- Bar chart (responsive, no overflow) ---------- */
+/* ---------- Bar chart + blocs valeurs ---------- */
 function BarChart({
   data,
   height = 240,
   padding = 36,
   width,
+  accent,
+  accentSoft,
 }: {
   data: PlayerDistribution;
   height?: number;
   padding?: number;
   width: number;
+  accent: string;
+  accentSoft: string;
 }) {
   const svgW = Math.max(220, width - 32);
   const buckets: VisitBucket[] = ["0-59", "60-99", "100+", "140+", "180"];
@@ -409,14 +533,64 @@ function BarChart({
   const barW = (plotW - gap * (buckets.length - 1)) / buckets.length;
 
   return (
-    <section style={{ ...glassCard, width: "100%", overflow: "hidden" }}>
+    <section
+      style={
+        {
+          ...glassCard,
+          width: "100%",
+          overflow: "hidden",
+          // @ts-ignore
+          "--dc-accent": accent,
+          // @ts-ignore
+          "--dc-accent-soft": accentSoft,
+        } as React.CSSProperties
+      }
+    >
       <div style={{ padding: "16px 16px 8px", display: "flex", alignItems: "center", gap: 12 }}>
         <div style={iconBadge}>
           <IconBars color={T.gold} />
         </div>
-        <div style={{ fontSize: 13, color: "rgba(255,255,255,.85)" }}>Répartition des volées</div>
+        <div style={{ minWidth: 0 }}>
+          <BlockTitle text="Répartition des volées" accent={accent} accentSoft={accentSoft} style={{ fontSize: 12 }} />
+          <div style={{ fontSize: 12, color: T.text60 }}>Nombre de visites par tranche (3 fléchettes)</div>
+        </div>
       </div>
 
+      {/* ✅ BLOCS VALEURS (couleur + shimmer) */}
+      <div
+        style={{
+          padding: "0 16px 10px",
+          display: "grid",
+          gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+          gap: 8,
+        }}
+      >
+        {buckets.map((b, i) => {
+          const v = vals[i] ?? 0;
+          return (
+            <div
+              key={b}
+              style={{
+                borderRadius: 14,
+                padding: "10px 10px",
+                border: "1px solid rgba(255,255,255,.10)",
+                background: `radial-gradient(circle at 0% 0%, ${accentSoft}, transparent 65%), rgba(255,255,255,.02)`,
+                boxShadow: `inset 0 0 0 1px rgba(255,255,255,.02), 0 0 18px ${accentSoft}`,
+                minWidth: 0,
+              }}
+            >
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,.75)", fontWeight: 900, letterSpacing: 0.6 }}>
+                {b}
+              </div>
+              <div style={{ marginTop: 6, fontSize: 18, lineHeight: "18px" }}>
+                <span className="dc-shimmer-val">{v}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ✅ CHART */}
       <div style={{ padding: "0 0 12px" }}>
         <svg
           width={svgW}
@@ -434,12 +608,7 @@ function BarChart({
             return (
               <g key={i}>
                 <line x1={padding} y1={y} x2={svgW - padding} y2={y} stroke={T.grid} />
-                <text
-                  x={padding - 10}
-                  y={y + 4}
-                  textAnchor="end"
-                  style={{ fontSize: 10, fill: "rgba(255,255,255,.65)" }}
-                >
+                <text x={padding - 10} y={y + 4} textAnchor="end" style={{ fontSize: 10, fill: "rgba(255,255,255,.65)" }}>
                   {label}
                 </text>
               </g>
@@ -451,10 +620,15 @@ function BarChart({
             const h = (v / max) * plotH;
             const x = padding + i * (barW + gap);
             const y = padding + (plotH - h);
+            const ty = Math.max(padding + 12, y - 10);
+
             return (
               <g key={b}>
-                <rect x={x} y={y} width={barW} height={h} rx={12} fill={T.gold} />
+                <rect x={x} y={y} width={barW} height={h} rx={12} fill={accent} />
                 <rect x={x} y={y} width={barW} height={h} rx={12} fill="transparent" stroke="rgba(122,90,22,.35)" />
+                <text x={x + barW / 2} y={ty} textAnchor="middle" style={{ fontSize: 11, fontWeight: 900, fill: accent }}>
+                  {v}
+                </text>
                 <text
                   x={x + barW / 2}
                   y={height - (padding - 14)}
@@ -472,30 +646,125 @@ function BarChart({
   );
 }
 
+/* ---------- Favorite mode helpers ---------- */
+type ModeStat = { label: string; n: number };
+
+function normalizeModeLabel(k: string) {
+  const s = String(k || "").trim().toLowerCase();
+  if (!s) return null;
+  if (s === "x01" || s === "x01v3") return "X01";
+  if (s === "cricket") return "CRICKET";
+  if (s === "killer") return "KILLER";
+  if (s === "shanghai") return "SHANGHAI";
+  return s.toUpperCase();
+}
+
+function getModeStats(data: PlayerDashboardStats, x01MultiLegsSets?: X01MultiLegsSets | null): ModeStat[] {
+  const sbm = data.sessionsByMode;
+  if (sbm && typeof sbm === "object") {
+    const entries = Object.entries(sbm)
+      .map(([k, v]) => ({ label: normalizeModeLabel(k) || String(k).toUpperCase(), n: Number(v) || 0 }))
+      .filter((x) => x.n > 0);
+    entries.sort((a, b) => b.n - a.n);
+    return entries;
+  }
+
+  const stats: ModeStat[] = [];
+  const x01Sessions = Array.isArray(data.evolution) ? data.evolution.length : 0;
+  if (x01Sessions > 0) stats.push({ label: "X01", n: x01Sessions });
+
+  const duoM = Number((x01MultiLegsSets as any)?.duo?.matches ?? 0);
+  const multiM = Number((x01MultiLegsSets as any)?.multi?.matches ?? 0);
+  const teamM = Number((x01MultiLegsSets as any)?.team?.matches ?? 0);
+
+  if (duoM > 0) stats.push({ label: "X01 DUO", n: duoM });
+  if (teamM > 0) stats.push({ label: "X01 TEAM", n: teamM });
+  if (multiM > 0) stats.push({ label: "X01 MULTI", n: multiM });
+
+  stats.sort((a, b) => b.n - a.n);
+  return stats;
+}
+
+function computeFavoriteModeLabel(stats: ModeStat[]): string {
+  return stats.length ? stats[0].label : "—";
+}
+function computeFavoriteModeCount(stats: ModeStat[]): number {
+  return stats.length ? stats[0].n || 0 : 0;
+}
+
+function ModeRanking({
+  stats,
+  accent,
+  accentSoft,
+}: {
+  stats: ModeStat[];
+  accent: string;
+  accentSoft: string;
+}) {
+  if (!stats.length) return null;
+
+  const hasMore = stats.length > 3;
+
+  const rowStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "22px 1fr auto",
+    alignItems: "center",
+    gap: 10,
+    padding: "6px 8px",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,.10)",
+    background: "rgba(255,255,255,.03)",
+    boxShadow: "inset 0 0 0 1px rgba(255,255,255,.02)",
+    minWidth: hasMore ? 220 : undefined,
+  };
+
+  const rankBadge = (i: number): React.CSSProperties => ({
+    width: 20,
+    height: 20,
+    borderRadius: 8,
+    display: "grid",
+    placeItems: "center",
+    fontWeight: 900,
+    fontSize: 12,
+    color: "#111",
+    background: i === 0 ? `linear-gradient(180deg, ${accent}, rgba(246,194,86,.65))` : "rgba(255,255,255,.14)",
+    boxShadow: i === 0 ? `0 0 14px ${accentSoft}` : "none",
+  });
+
+  const row = (m: ModeStat, i: number) => (
+    <div key={`${m.label}-${i}`} style={rowStyle}>
+      <div style={rankBadge(i)}>{i + 1}</div>
+      <div style={{ fontWeight: 900, letterSpacing: 0.6, textTransform: "uppercase", fontSize: 11, color: T.text }}>
+        {m.label}
+      </div>
+      <div style={{ fontWeight: 900, fontSize: 12, color: accent, textShadow: `0 0 10px ${accentSoft}`, whiteSpace: "nowrap" }}>
+        <span className="dc-shimmer-val">{m.n}</span> sess.
+      </div>
+    </div>
+  );
+
+  if (!hasMore) {
+    return <div style={{ display: "grid", gap: 6 }}>{stats.slice(0, 3).map(row)}</div>;
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 6, WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+      {stats.map(row)}
+    </div>
+  );
+}
+
 /* ---------- Composant principal ---------- */
-export default function StatsPlayerDashboard({
-  data,
-  x01MultiLegsSets,
-}: StatsPlayerDashboardProps) {
-  // Injection CSS shimmer nom joueur
+export default function StatsPlayerDashboard({ data, x01MultiLegsSets }: StatsPlayerDashboardProps) {
   useInjectStatsNameCss();
 
   const { theme } = useTheme();
   const accent = theme?.primary ?? T.gold;
   const accentSoft = (theme as any)?.accent20 ?? `${accent}33`;
 
-  // Sécurité : si jamais "data" n'arrive pas
   if (!data) {
     return (
-      <div
-        style={{
-          background: "rgba(20,20,20,.8)",
-          padding: 16,
-          borderRadius: 16,
-          textAlign: "center",
-          color: T.text,
-        }}
-      >
+      <div style={{ background: "rgba(20,20,20,.8)", padding: 16, borderRadius: 16, textAlign: "center", color: T.text }}>
         Aucune donnée à afficher.
       </div>
     );
@@ -503,20 +772,11 @@ export default function StatsPlayerDashboard({
 
   const profileName = data.playerName?.trim() || "—";
 
-  // --- Normalisation stats ---
-  const avg3 =
-    Number.isFinite(Number(data.avg3Overall)) && Number(data.avg3Overall) >= 0 ? Number(data.avg3Overall) : 0;
-  const bestVisit =
-    Number.isFinite(Number(data.bestVisit)) && Number(data.bestVisit) >= 0 ? Number(data.bestVisit) : 0;
-  const winRate = clamp(
-    Number.isFinite(Number(data.winRatePct)) ? Number(data.winRatePct) : 0,
-    0,
-    100
-  );
+  const avg3 = Number.isFinite(Number(data.avg3Overall)) && Number(data.avg3Overall) >= 0 ? Number(data.avg3Overall) : 0;
+  const bestVisit = Number.isFinite(Number(data.bestVisit)) && Number(data.bestVisit) >= 0 ? Number(data.bestVisit) : 0;
+  const winRate = clamp(Number.isFinite(Number(data.winRatePct)) ? Number(data.winRatePct) : 0, 0, 100);
   const bestCheckout =
-    data.bestCheckout != null && Number.isFinite(Number(data.bestCheckout)) && Number(data.bestCheckout) > 0
-      ? Number(data.bestCheckout)
-      : undefined;
+    data.bestCheckout != null && Number.isFinite(Number(data.bestCheckout)) && Number(data.bestCheckout) > 0 ? Number(data.bestCheckout) : undefined;
 
   const distribution: PlayerDistribution = {
     "0-59": Number(data.distribution?.["0-59"] ?? 0),
@@ -528,262 +788,129 @@ export default function StatsPlayerDashboard({
 
   const evolution: PlayerGamePoint[] = Array.isArray(data.evolution)
     ? data.evolution
-        .filter((p) => p && Number.isFinite(Number(p.avg3)))
-        .map((p) => ({ date: p.date ?? "", avg3: Number(p.avg3) }))
+        .filter((p) => p && Number.isFinite(Number((p as any).avg3)))
+        .map((p) => ({ date: String((p as any).date ?? ""), avg3: Number((p as any).avg3) }))
     : [];
 
-  // ---------- X01 multi : helpers locaux ----------
-  const duo = x01MultiLegsSets?.duo;
-  const multi = x01MultiLegsSets?.multi;
-  const team = x01MultiLegsSets?.team;
-
-  const winPct = (won?: number, total?: number) => {
-    const w = won ?? 0;
-    const t = total ?? 0;
-    if (!t) return "0%";
-    return `${Math.round((w / t) * 1000) / 10}%`;
-  };
+  const modeStats = useMemo(() => getModeStats(data, x01MultiLegsSets), [data, x01MultiLegsSets]);
+  const favoriteMode = useMemo(() => computeFavoriteModeLabel(modeStats), [modeStats]);
+  const favoriteModeCount = useMemo(() => computeFavoriteModeCount(modeStats), [modeStats]);
 
   const [refL, wL] = useContainerWidth<HTMLDivElement>(320);
   const [refB, wB] = useContainerWidth<HTMLDivElement>(320);
 
   return (
-    <section style={{ color: T.text }}>
-      {/* Header lié au joueur */}
+    <section
+      style={
+        {
+          color: T.text,
+          // @ts-ignore
+          "--dc-accent": accent,
+          // @ts-ignore
+          "--dc-accent-soft": accentSoft,
+        } as React.CSSProperties
+      }
+    >
+      {/* Header */}
       <div style={{ ...glassCard, padding: 16, marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={iconBadge}>
             <IconBars color={T.gold} />
           </div>
-          <div>
-            <H1>
-              Statistiques —{" "}
-              <span
-                className="dc-stats-name-wrapper"
-                style={
-                  {
-                    "--dc-accent": accent,
-                    "--dc-accent-soft": accentSoft,
-                    maxWidth: "80vw",
-                    display: "inline-block",
-                  } as React.CSSProperties
-                }
-              >
-                <span
-                  className="dc-stats-name-base"
-                  style={{
-                    fontSize: 22,
-                    fontWeight: 900,
-                    fontFamily:
-                      '"Luckiest Guy","Impact","system-ui",sans-serif',
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    display: "block",
-                  }}
-                >
-                  {profileName}
-                </span>
-
-                <span
-                  className="dc-stats-name-shimmer"
-                  style={{
-                    fontSize: 22,
-                    fontWeight: 900,
-                    fontFamily:
-                      '"Luckiest Guy","Impact","system-ui",sans-serif',
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    display: "block",
-                  }}
-                >
-                  {profileName}
-                </span>
-              </span>
-            </H1>
+          <div style={{ minWidth: 0 }}>
+            <H1>Statistiques</H1>
             <Sub>Analyse des performances par joueur — X01, Cricket & entraînements</Sub>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 10, display: "flex", justifyContent: "center" }}>
+          <span className="dc-stats-name-wrapper" style={{ maxWidth: "80vw", display: "block", textAlign: "center" }}>
+            <span
+              className="dc-stats-name-base"
+              style={{
+                fontSize: 24,
+                fontWeight: 900,
+                fontFamily: '"Luckiest Guy","Impact","system-ui",sans-serif',
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                display: "block",
+                textAlign: "center",
+              }}
+            >
+              {profileName}
+            </span>
+            <span
+              className="dc-stats-name-shimmer"
+              style={{
+                fontSize: 24,
+                fontWeight: 900,
+                fontFamily: '"Luckiest Guy","Impact","system-ui",sans-serif',
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                display: "block",
+                textAlign: "center",
+              }}
+            >
+              {profileName}
+            </span>
+          </span>
+        </div>
+
+        {/* Mode préféré + Top */}
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <BlockTitle text="Mode de jeu préféré" accent={accent} accentSoft={accentSoft} style={{ fontSize: 11 }} />
+            <div
+              style={{
+                padding: "8px 10px",
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,.14)",
+                background: `radial-gradient(circle at 0% 0%, ${accentSoft}, transparent 60%), rgba(255,255,255,.04)`,
+                boxShadow: "inset 0 0 0 1px rgba(255,255,255,.02)",
+                fontWeight: 900,
+                letterSpacing: 0.7,
+                color: accent,
+                textShadow: `0 0 10px ${accentSoft}`,
+                textTransform: "uppercase",
+                fontSize: 11,
+                minWidth: 160,
+                textAlign: "center",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <span className="dc-shimmer-val">
+                {favoriteMode}
+                {favoriteModeCount > 0 ? ` · ${favoriteModeCount} sessions` : ""}
+              </span>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <BlockTitle text="Top modes" accent={accent} accentSoft={accentSoft} style={{ fontSize: 11, marginBottom: 8 }} />
+            <ModeRanking stats={modeStats} accent={accent} accentSoft={accentSoft} />
           </div>
         </div>
       </div>
 
       {/* KPIs */}
       <div style={{ display: "grid", gap: 12 }}>
-        <div
-          style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(1, minmax(0,1fr))" }}
-          className="sm:grid-cols-2 xl:grid-cols-4"
-        >
-          <Tile
-            label="Moyenne / 3 flèches"
-            value={`${avg3.toFixed(1)} pts`}
-            sub="Visites moyennes"
-            icon={<IconBars color={T.gold} />}
-          />
-          <Tile
-            label="Meilleure volée"
-            value={`${bestVisit} pts`}
-            sub="Record personnel"
-            icon={<IconTarget color={T.gold} />}
-          />
-          <Tile
-            label="Taux de victoire"
-            value={`${winRate.toFixed(0)} %`}
-            sub="Toutes manches"
-            icon={<IconPercent color={T.gold} />}
-          />
-          <Tile
-            label="Plus haut checkout"
-            value={bestCheckout != null ? `${bestCheckout}` : "—"}
-            sub="X01"
-            icon={<IconHourglass color={T.gold} />}
-          />
+        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(1, minmax(0,1fr))" }} className="sm:grid-cols-2 xl:grid-cols-4">
+          <Tile label="Moyenne / 3 flèches" value={`${avg3.toFixed(1)} pts`} sub="Visites moyennes" icon={<IconBars color={T.gold} />} accent={accent} accentSoft={accentSoft} />
+          <Tile label="Meilleure volée" value={`${bestVisit} pts`} sub="Record personnel" icon={<IconTarget color={T.gold} />} accent={accent} accentSoft={accentSoft} />
+          <Tile label="Taux de victoire" value={`${winRate.toFixed(0)} %`} sub="Toutes manches" icon={<IconPercent color={T.gold} />} accent={accent} accentSoft={accentSoft} />
+          <Tile label="Plus haut checkout" value={bestCheckout != null ? `${bestCheckout}` : "—"} sub="X01" icon={<IconHourglass color={T.gold} />} accent={accent} accentSoft={accentSoft} />
         </div>
-
-        {/* =======================================================
-            X01 – Matchs / Legs / Sets par format
-            (DUO / MULTI / TEAM)
-            ======================================================= */}
-        {x01MultiLegsSets && (
-          <div
-            style={{
-              marginTop: 4,
-              borderRadius: 20,
-              padding: 12,
-              background: "linear-gradient(180deg,#15171B,#0E0F12)",
-              border: "1px solid rgba(255,255,255,.14)",
-              boxShadow: "0 8px 20px rgba(0,0,0,.6)",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 800,
-                textTransform: "uppercase",
-                letterSpacing: 0.8,
-                color: "#F6C256",
-                marginBottom: 6,
-              }}
-            >
-              X01 — Matchs / Legs / Sets
-            </div>
-
-            {[
-              ["DUO", duo],
-              ["MULTI", multi],
-              ["TEAM", team],
-            ].map(([label, bloc]) =>
-              bloc ? (
-                <div key={label as string} style={{ marginBottom: 6 }}>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: "rgba(255,255,255,.55)",
-                      textTransform: "uppercase",
-                      marginBottom: 2,
-                    }}
-                  >
-                    {label}
-                  </div>
-
-                  {/* Tableau Matchs / Legs / Sets */}
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1.4fr 1.1fr 1fr",
-                      fontSize: 11,
-                      padding: "4px 0",
-                      borderTop: "1px solid rgba(255,255,255,.10)",
-                    }}
-                  >
-                    {/* Matchs */}
-                    <div style={{ color: "rgba(255,255,255,.75)" }}>
-                      Matchs
-                    </div>
-                    <div
-                      style={{
-                        textAlign: "center",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {(bloc as any).matchesWon ?? 0} /{" "}
-                      {(bloc as any).matches ?? 0}
-                    </div>
-                    <div
-                      style={{
-                        textAlign: "right",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {winPct(
-                        (bloc as any).matchesWon,
-                        (bloc as any).matches
-                      )}
-                    </div>
-
-                    {/* Legs */}
-                    <div style={{ color: "rgba(255,255,255,.75)" }}>
-                      Legs
-                    </div>
-                    <div
-                      style={{
-                        textAlign: "center",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {(bloc as any).legsWon ?? 0} /{" "}
-                      {(bloc as any).legs ?? 0}
-                    </div>
-                    <div
-                      style={{
-                        textAlign: "right",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {winPct(
-                        (bloc as any).legsWon,
-                        (bloc as any).legs
-                      )}
-                    </div>
-
-                    {/* Sets */}
-                    <div style={{ color: "rgba(255,255,255,.75)" }}>
-                      Sets
-                    </div>
-                    <div
-                      style={{
-                        textAlign: "center",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {(bloc as any).setsWon ?? 0} /{" "}
-                      {(bloc as any).sets ?? 0}
-                    </div>
-                    <div
-                      style={{
-                        textAlign: "right",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {winPct(
-                        (bloc as any).setsWon,
-                        (bloc as any).sets
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ) : null
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Graphs responsives (aucun dépassement) */}
+      {/* Graphs */}
       <div style={{ display: "grid", gap: 12, marginTop: 16 }} className="lg:grid-cols-2">
         <div ref={refL} style={{ width: "100%" }}>
-          <LineChart points={evolution} width={wL} />
+          <LineChart points={evolution} width={wL} accent={accent} accentSoft={accentSoft} />
         </div>
         <div ref={refB} style={{ width: "100%" }}>
-          <BarChart data={distribution} width={wB} />
+          <BarChart data={distribution} width={wB} accent={accent} accentSoft={accentSoft} />
         </div>
       </div>
     </section>

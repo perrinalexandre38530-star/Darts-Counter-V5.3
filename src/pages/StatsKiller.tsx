@@ -7,6 +7,7 @@
 import React from "react";
 import type { Profile } from "../lib/types";
 import { useTheme } from "../contexts/ThemeContext";
+import { computeKillerStatsAggForProfile } from "../lib/statsKiller";
 
 type Props = {
   profiles: Profile[];

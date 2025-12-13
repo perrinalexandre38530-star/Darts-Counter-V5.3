@@ -1,243 +1,217 @@
+// @ts-nocheck
 // ============================================
-// src/lib/statsKiller.ts
-// Agrégateur KILLER à partir de l'historique (store.history / memHistory)
-// - totalMatches, wins, winRate (0..1)
-// - totalKills, avgKills
-// - deaths (fois éliminé), avgDeaths
-// - lastPlayedAt
-// ✅ Option A (NEW):
-// - totalDarts, avgDarts (depuis hitsBySegment)
-// - favSegment (ex: "T20", "S7", "DB", "SB")
-// - favNumber  (ex: "20", "7", "BULL")
+// src/pages/StatsKiller.tsx
+// Page STATS KILLER (StatsHub)
+// - Affiche stats détaillées quand playerId est fourni
+// - Utilise l'agrégateur unique statsKillerAgg.ts
 // ============================================
 
-export type KillerStatsAgg = {
-  totalMatches: number;
-  wins: number;
-  winRate: number; // 0..1
+import React from "react";
+import type { Profile } from "../lib/types";
+import { useTheme } from "../contexts/ThemeContext";
+import { computeKillerAgg } from "../lib/statsKillerAgg";
 
-  totalKills: number;
-  avgKills: number;
-
-  deaths: number; // fois éliminé
-  avgDeaths: number;
-
-  lastPlayedAt: number | null;
-
-  // ✅ Option A
-  totalDarts: number; // somme des hitsBySegment
-  avgDarts: number;
-  favSegment: string | null;
-  favNumber: string | null;
+type Props = {
+  profiles: Profile[];
+  memHistory: any[];
+  playerId?: string | null;
+  title?: string;
 };
 
-function safeNum(n: any, fb = 0) {
-  const x = Number(n);
-  return Number.isFinite(x) ? x : fb;
+// ✅ bots map (fallback pour name/avatar)
+function loadBotsMap(): Record<string, { avatarDataUrl?: string | null; name?: string }> {
+  try {
+    const raw = localStorage.getItem("dc_bots_v1");
+    if (!raw) return {};
+    const bots = JSON.parse(raw);
+    const map: Record<string, any> = {};
+    for (const b of bots || []) {
+      if (!b?.id) continue;
+      map[b.id] = { avatarDataUrl: b.avatarDataUrl ?? null, name: b.name };
+    }
+    return map;
+  } catch {
+    return {};
+  }
 }
 
-function safeArr(a: any) {
-  return Array.isArray(a) ? a : [];
+function pct(n: number) {
+  if (!Number.isFinite(n)) return "0";
+  return String(Math.round(n));
 }
 
-function safeObj(o: any) {
-  return o && typeof o === "object" ? o : null;
-}
+export default function StatsKiller({
+  profiles,
+  memHistory,
+  playerId = null,
+  title = "KILLER",
+}: Props) {
+  const { theme } = useTheme();
 
-function pickId(obj: any) {
-  if (!obj) return "";
+  const data = React.useMemo(() => {
+    const botsMap = loadBotsMap();
+    const agg = computeKillerAgg(memHistory || [], profiles || [], botsMap);
+
+    const player = playerId ? agg[playerId] : null;
+
+    // historique (20 derniers)
+    const list = Array.isArray(memHistory) ? memHistory : [];
+    const killer = list
+      .filter((r) => (r?.kind || r?.payload?.kind) === "killer" || (r?.payload?.mode) === "killer")
+      .slice()
+      .sort((a: any, b: any) => Number(b?.updatedAt ?? b?.createdAt ?? 0) - Number(a?.updatedAt ?? a?.createdAt ?? 0))
+      .slice(0, 20)
+      .map((r: any) => {
+        const when = Number(r?.updatedAt ?? r?.createdAt ?? 0);
+        const w = r?.winnerId ?? r?.payload?.winnerId ?? null;
+        const players = (r?.players || r?.payload?.players || []) as any[];
+        const names = players.map((p) => p?.name).filter(Boolean).join(" · ");
+        const winnerName =
+          w ? (profiles.find((p) => p.id === w)?.name ?? players.find((p) => p?.id === w)?.name ?? "—") : "—";
+        return { id: r?.id || `${when}-${Math.random()}`, when, names, winnerName };
+      });
+
+    const lastAt = killer.length ? killer[0].when : 0;
+
+    return { agg, player, killer, lastAt };
+  }, [memHistory, profiles, playerId]);
+
+  const lastStr = data.lastAt ? new Date(data.lastAt).toLocaleString() : "—";
+
+  const player = data.player;
+
   return (
-    obj.profileId ||
-    obj.playerId ||
-    obj.pid ||
-    obj.id ||
-    obj._id ||
-    obj.uid ||
-    ""
+    <div style={{ padding: 12 }}>
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 900,
+          letterSpacing: 1,
+          textTransform: "uppercase",
+          color: theme.primary,
+          textShadow: `0 0 12px ${theme.primary}66`,
+          marginBottom: 10,
+        }}
+      >
+        {title}
+      </div>
+
+      {/* ✅ STATS (si playerId) */}
+      {playerId && player ? (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 10,
+            marginBottom: 12,
+          }}
+        >
+          <Kpi label="Matchs" value={`${player.played}`} theme={theme} />
+          <Kpi label="Victoires" value={`${player.wins}`} theme={theme} />
+          <Kpi label="Win %" value={`${pct(player.winRate)}`} theme={theme} />
+          <Kpi label="Kills" value={`${player.kills}`} theme={theme} />
+          <Kpi label="Hits total" value={`${player.totalHits}`} theme={theme} />
+          <Kpi
+            label="Segment favori"
+            value={player.favSegment ? `${player.favSegment} (${player.favSegmentHits})` : "—"}
+            theme={theme}
+          />
+          <Kpi
+            label="Numéro favori"
+            value={player.favNumber ? `#${player.favNumber} (${player.favNumberHits})` : "—"}
+            theme={theme}
+          />
+          <Kpi label="Dernier match" value={lastStr} theme={theme} />
+        </div>
+      ) : (
+        // scope global
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 10,
+            marginBottom: 12,
+          }}
+        >
+          <Kpi label="Dernier match" value={lastStr} theme={theme} />
+          <Kpi label="Total joueurs" value={`${Object.keys(data.agg || {}).length}`} theme={theme} />
+        </div>
+      )}
+
+      {/* HISTORIQUE */}
+      <div
+        style={{
+          borderRadius: 14,
+          border: `1px solid ${theme.borderSoft}`,
+          background: theme.card,
+          overflow: "hidden",
+          boxShadow: `0 14px 28px rgba(0,0,0,.55), 0 0 14px ${theme.primary}22`,
+        }}
+      >
+        <div
+          style={{
+            padding: "10px 12px",
+            borderBottom: `1px solid ${theme.borderSoft}`,
+            color: theme.textSoft,
+            fontSize: 12,
+          }}
+        >
+          Historique KILLER (20 derniers)
+        </div>
+
+        {data.killer.length === 0 ? (
+          <div style={{ padding: 12, color: theme.textSoft, fontSize: 12 }}>
+            Aucun match KILLER trouvé.
+          </div>
+        ) : (
+          data.killer.map((it: any) => (
+            <div
+              key={it.id}
+              style={{
+                padding: "10px 12px",
+                borderBottom: `1px solid ${theme.borderSoft}`,
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: theme.text }}>
+                {new Date(it.when).toLocaleString()}
+              </div>
+              <div style={{ fontSize: 12, color: theme.textSoft }}>{it.names || "—"}</div>
+              <div style={{ fontSize: 12, color: theme.primary }}>Vainqueur : {it.winnerName}</div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 }
 
-function isKillerRecord(rec: any) {
-  const kind = rec?.kind || rec?.summary?.kind || rec?.payload?.kind;
-  const mode = rec?.mode || rec?.summary?.mode || rec?.payload?.mode || rec?.payload?.summary?.mode;
-  return kind === "killer" || mode === "killer";
-}
-
-// --- Lecture "players" (kills/eliminated/number/lives) ---
-function readKillerPlayersFromRecord(rec: any) {
-  const sumPlayers = safeArr(rec?.summary?.players);
-  if (sumPlayers.length) return sumPlayers;
-
-  const sumPlayers2 = safeArr(rec?.payload?.summary?.players);
-  if (sumPlayers2.length) return sumPlayers2;
-
-  const stPlayers = safeArr(rec?.payload?.state?.players);
-  if (stPlayers.length) return stPlayers;
-
-  return [];
-}
-
-// --- Lecture perPlayer Option A (hitsBySegment) ---
-function readPerPlayerFromRecord(rec: any): Record<string, any> {
-  const summary = rec?.summary || rec?.payload?.summary || null;
-
-  const perArr = safeArr(summary?.perPlayer);
-  if (perArr.length) {
-    const out: Record<string, any> = {};
-    for (const p of perArr) {
-      const pid = String(pickId(p) || p?.id || "");
-      if (!pid) continue;
-      out[pid] = p;
-    }
-    return out;
-  }
-
-  const perObj = safeObj(summary?.detailedByPlayer) || safeObj(summary?.perPlayerMap);
-  if (perObj) {
-    const out: Record<string, any> = {};
-    for (const [k, v] of Object.entries(perObj)) out[String(k)] = v as any;
-    return out;
-  }
-
-  return {};
-}
-
-function sumHits(hitsBySegment: any): number {
-  const obj = safeObj(hitsBySegment);
-  if (!obj) return 0;
-  let s = 0;
-  for (const v of Object.values(obj)) s += safeNum(v, 0);
-  return s;
-}
-
-function mergeHits(into: Record<string, number>, hitsBySegment: any) {
-  const obj = safeObj(hitsBySegment);
-  if (!obj) return;
-  for (const [k, v] of Object.entries(obj)) {
-    const key = String(k);
-    const n = safeNum(v, 0);
-    if (n <= 0) continue;
-    into[key] = (into[key] || 0) + n;
-  }
-}
-
-function computeFavFromHits(hitsMerged: Record<string, number>): { favSegment: string | null; favNumber: string | null } {
-  const entries = Object.entries(hitsMerged || {});
-  if (!entries.length) return { favSegment: null, favNumber: null };
-
-  let bestSeg: string | null = null;
-  let bestSegVal = -1;
-
-  const byNumber: Record<string, number> = {};
-
-  for (const [k, v] of entries) {
-    const vv = safeNum(v, 0);
-    if (vv <= 0) continue;
-
-    if (vv > bestSegVal) {
-      bestSegVal = vv;
-      bestSeg = k;
-    }
-
-    const up = String(k).toUpperCase();
-    let numKey = "OTHER";
-
-    if (up === "SB" || up === "DB" || up.includes("BULL")) {
-      numKey = "BULL";
-    } else {
-      const m = up.match(/(\d{1,2})$/);
-      if (m?.[1]) numKey = m[1];
-    }
-
-    byNumber[numKey] = (byNumber[numKey] || 0) + vv;
-  }
-
-  let bestNum: string | null = null;
-  let bestNumVal = -1;
-  for (const [nk, nv] of Object.entries(byNumber)) {
-    if (nv > bestNumVal) {
-      bestNumVal = nv;
-      bestNum = nk;
-    }
-  }
-
-  return { favSegment: bestSeg, favNumber: bestNum };
-}
-
-export function computeKillerStatsAggForProfile(
-  records: any[],
-  profileId: string | null | undefined
-): KillerStatsAgg {
-  const agg: KillerStatsAgg = {
-    totalMatches: 0,
-    wins: 0,
-    winRate: 0,
-
-    totalKills: 0,
-    avgKills: 0,
-
-    deaths: 0,
-    avgDeaths: 0,
-
-    lastPlayedAt: null,
-
-    // ✅ Option A
-    totalDarts: 0,
-    avgDarts: 0,
-    favSegment: null,
-    favNumber: null,
-  };
-
-  if (!profileId) return agg;
-
-  const list = safeArr(records).filter((r) => isKillerRecord(r));
-
-  const mergedHits: Record<string, number> = {};
-
-  for (const rec of list) {
-    const players = readKillerPlayersFromRecord(rec);
-
-    const me = players.find((p: any) => String(p?.id) === String(profileId));
-    if (!me) continue;
-
-    agg.totalMatches += 1;
-
-    const winnerId =
-      rec?.winnerId ??
-      rec?.payload?.winnerId ??
-      rec?.summary?.winnerId ??
-      rec?.payload?.summary?.winnerId ??
-      null;
-
-    if (winnerId && String(winnerId) === String(profileId)) agg.wins += 1;
-
-    const kills = safeNum(me?.kills, 0);
-    agg.totalKills += kills;
-
-    const eliminated = !!me?.eliminated;
-    if (eliminated) agg.deaths += 1;
-
-    const when = safeNum(rec?.updatedAt ?? rec?.finishedAt ?? rec?.createdAt ?? rec?.ts ?? rec?.date, 0);
-    if (when) agg.lastPlayedAt = Math.max(agg.lastPlayedAt ?? 0, when);
-
-    // ✅ Option A: hitsBySegment via summary.perPlayer
-    const perMap = readPerPlayerFromRecord(rec);
-    const det = perMap?.[String(profileId)] || null;
-    if (det?.hitsBySegment) {
-      agg.totalDarts += sumHits(det.hitsBySegment);
-      mergeHits(mergedHits, det.hitsBySegment);
-    }
-  }
-
-  agg.winRate = agg.totalMatches > 0 ? agg.wins / agg.totalMatches : 0;
-  agg.avgKills = agg.totalMatches > 0 ? agg.totalKills / agg.totalMatches : 0;
-  agg.avgDeaths = agg.totalMatches > 0 ? agg.deaths / agg.totalMatches : 0;
-
-  // ✅ Option A
-  agg.avgDarts = agg.totalMatches > 0 ? agg.totalDarts / agg.totalMatches : 0;
-  const fav = computeFavFromHits(mergedHits);
-  agg.favSegment = fav.favSegment;
-  agg.favNumber = fav.favNumber;
-
-  return agg;
+function Kpi({ label, value, theme }: any) {
+  return (
+    <div
+      style={{
+        borderRadius: 14,
+        border: `1px solid ${theme.borderSoft}`,
+        background: theme.card,
+        padding: "10px 12px",
+        boxShadow: `0 12px 24px rgba(0,0,0,.45), 0 0 12px ${theme.primary}18`,
+        minHeight: 64,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          color: theme.textSoft,
+          marginBottom: 6,
+          textTransform: "uppercase",
+          letterSpacing: 0.7,
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 900, color: theme.text }}>{value}</div>
+    </div>
+  );
 }

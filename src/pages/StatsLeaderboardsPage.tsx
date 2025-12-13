@@ -17,6 +17,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import ProfileAvatar from "../components/ProfileAvatar";
 import { History } from "../lib/history";
+import { computeKillerAgg } from "../lib/statsKillerAgg";
 
 type Props = {
   store: Store;
@@ -810,8 +811,51 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
   };
 
   const rows = React.useMemo(() => {
-    const baseRows = computeRowsFromHistory(historySource, profiles, mode, scope, period);
+    // ✅ KILLER: on classe depuis l'agrégateur unique
+if (mode === "killer") {
+  const botsMap = (function loadBotsMap() {
+    try {
+      const raw = localStorage.getItem("dc_bots_v1");
+      if (!raw) return {};
+      const bots = JSON.parse(raw);
+      const map: any = {};
+      for (const b of bots || []) if (b?.id) map[b.id] = { name: b.name, avatarDataUrl: b.avatarDataUrl ?? null };
+      return map;
+    } catch {
+      return {};
+    }
+  })();
 
+  const agg = computeKillerAgg(historySource || [], profiles || [], botsMap);
+  const base = Object.values(agg);
+
+  const value = (r: any) => {
+    switch (metric) {
+      case "wins":
+        return r.wins;
+      case "winRate":
+        return r.winRate;
+      case "matches":
+        return r.played;
+      case "kills":
+        return r.kills;
+      case "favSegmentHits":
+        return r.favSegmentHits;
+      case "favNumberHits":
+        return r.favNumberHits;
+      case "totalHits":
+        return r.totalHits;
+      default:
+        return 0;
+    }
+  };
+
+  return [...base].sort((a, b) => value(b) - value(a));
+}
+  
+    // ✅ autres modes: logique actuelle
+    const baseRows = computeRowsFromHistory(historySource, profiles, mode, scope, period);
+  
     const value = (r: Row): number => {
       switch (metric) {
         case "wins":
@@ -826,8 +870,8 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
           return r.bestVisit;
         case "bestCheckout":
           return r.bestCheckout;
-
-        // ✅ NEW
+  
+        // ✅ NEW (killer option A, mais ici pour les autres modes ça reste 0)
         case "kills":
           return r.kills;
         case "favNumberHits":

@@ -3,15 +3,10 @@
 // Section StatsHub — "Stats par fléchettes"
 // - Agrège les matchs X01 depuis History (legacy + V3 via statsByDartSet)
 // - Affiche les stats par dartSetId (ou dartPresetId)
-// - ✅ Carrousel principal : 1 carte par set
-// - ✅ Mini-carrousel "Derniers matchs" DANS CHAQUE set
-// - ✅ Ticker sans icône (label "Nombre" + valeur "X preset(s)")
-// - ✅ Petit classement "Meilleurs presets" sous le ticker (max 3 lignes sinon scroll horizontal)
-// - ✅ Photo plus grosse + nom centré + halo
-// - ✅ KPIs en "boutons néon" sur UNE LIGNE (adaptatif)
-// - ✅ Sparkline (AVG/3D derniers matchs du set)
-// - ✅ Radar Hits (S/D/T + Bull/DBull)
-// - ✅ Hits par segments (Top segments, scroll si trop)
+// - ✅ Header centré desktop + KPI NOMBRE sans "preset"
+// - ✅ Bloc "Meilleur set" (libellé court) + nom centré + glow thème
+// - ✅ Carte set : PHOTO puis NOM (centré) puis KPIs tous au même format (comme AVG/3D)
+// - ✅ Sparkline / Radar / Segments déplacés plus bas + en plein largeur
 // =============================================================
 
 import React from "react";
@@ -23,7 +18,6 @@ import { dartPresets } from "../lib/dartPresets";
 import { getX01StatsByDartSetForProfile } from "../lib/statsByDartSet";
 import { History } from "../lib/history";
 
-// recharts déjà utilisé chez toi (EndOfLegOverlay, etc.)
 import {
   ResponsiveContainer,
   RadarChart,
@@ -37,13 +31,13 @@ const N = (x: any, d = 0) => (Number.isFinite(Number(x)) ? Number(x) : d);
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
 
 function fmt1(n: number) {
-  return (N(n, 0)).toFixed(1);
+  return N(n, 0).toFixed(1);
 }
 function fmt0(n: number) {
   return String(Math.round(N(n, 0)));
 }
 function fmtPct1(n: number) {
-  return (N(n, 0)).toFixed(1);
+  return N(n, 0).toFixed(1);
 }
 
 function safeLower(s: any) {
@@ -178,10 +172,7 @@ type MiniMatch = {
   avg3?: number | null; // pour sparkline fallback
 };
 
-function buildRecentMatchesMap(
-  allHistory: any[],
-  profileId: string
-): Record<string, MiniMatch[]> {
+function buildRecentMatchesMap(allHistory: any[], profileId: string): Record<string, MiniMatch[]> {
   const map: Record<string, MiniMatch[]> = {};
 
   for (const r of allHistory || []) {
@@ -214,8 +205,7 @@ function buildRecentMatchesMap(
       (others[0]?.profileName ?? null) ||
       null;
 
-    const winnerId =
-      summary?.winnerId ?? summary?.winnerPid ?? summary?.winnerPlayerId ?? null;
+    const winnerId = summary?.winnerId ?? summary?.winnerPid ?? summary?.winnerPlayerId ?? null;
     const isWinner =
       mine?.isWinner === true ||
       mine?.win === true ||
@@ -235,7 +225,6 @@ function buildRecentMatchesMap(
       score = `${N(legsW, 0)}-${N(legsL, 0)}`;
     }
 
-    // avg3 fallback (si disponible dans summary/perPlayer)
     const avg3 =
       pickNum(mine, "avg3", "avg3d", "avgPer3", "avgPerThree") ??
       pickNum(summary, "avg3", "avg3d") ??
@@ -267,10 +256,14 @@ function buildRecentMatchesMap(
 type SegMap = Record<string, number>;
 
 function normalizeSegKey(k: string) {
-  return String(k || "").trim().toUpperCase().replace(/\s+/g, "");
+  return String(k || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/_/g, "")
+    .replace(/-/g, "");
 }
 
-// essaie de récupérer le mapping segments depuis tes stats calculées
 function extractSegmentsMap(r: any): SegMap | null {
   const obj =
     pickObj(
@@ -281,7 +274,9 @@ function extractSegmentsMap(r: any): SegMap | null {
       "segmentHits",
       "hitsBySeg",
       "segHits",
-      "segments"
+      "segments",
+      "bySegment",
+      "segmentsMap"
     ) || null;
 
   if (!obj) return null;
@@ -298,8 +293,7 @@ function extractSegmentsMap(r: any): SegMap | null {
   return Object.keys(out).length ? out : null;
 }
 
-// top segments triés
-function topSegments(map: SegMap, limit = 12) {
+function topSegments(map: SegMap, limit = 18) {
   return Object.entries(map)
     .sort((a, b) => (b[1] || 0) - (a[1] || 0))
     .slice(0, limit)
@@ -309,17 +303,14 @@ function topSegments(map: SegMap, limit = 12) {
 /** ---------- Sparkline helpers ---------- **/
 
 function extractSparkValuesFromRow(r: any, recent: MiniMatch[]): number[] {
-  // 1) si tes statsByDartSet fournit déjà un array (idéal)
   const arr =
-    pickArr(r, "spark", "sparkline", "avg3Spark", "avg3Series", "seriesAvg3", "lastAvg3") ||
-    null;
+    pickArr(r, "spark", "sparkline", "avg3Spark", "avg3Series", "seriesAvg3", "lastAvg3") || null;
 
   if (arr && arr.length) {
     const vals = arr.map((x: any) => N(x, 0)).filter((n: number) => Number.isFinite(n));
     if (vals.length >= 2) return vals.slice(-18);
   }
 
-  // 2) fallback : avg3 des récents matchs
   const vals2 = (recent || [])
     .slice()
     .reverse()
@@ -328,7 +319,6 @@ function extractSparkValuesFromRow(r: any, recent: MiniMatch[]): number[] {
 
   if (vals2.length >= 2) return vals2.slice(-18);
 
-  // 3) rien
   return [];
 }
 
@@ -339,7 +329,6 @@ function extractRadarData(r: any) {
   const b = N(r?.bull ?? r?.hitsBull ?? 0, 0);
   const db = N(r?.dBull ?? r?.dbull ?? r?.hitsDBull ?? 0, 0);
 
-  // radar recharts -> [{k:"S", v:..}, ...]
   return [
     { k: "S", v: s },
     { k: "D", v: d },
@@ -347,6 +336,49 @@ function extractRadarData(r: any) {
     { k: "B", v: b },
     { k: "DB", v: db },
   ];
+}
+
+/** Résolution nom + image : blindé (évite les “?” inutiles) */
+function resolveSetName(id: string, mySets: DartSet[], t: any) {
+  const sid = String(id ?? "");
+  const mine = (mySets || []).find((s: any) => String(s?.id) === sid) || null;
+  if (mine?.name) return String(mine.name);
+
+  const pr = (dartPresets || []).find((p: any) => String(p?.id) === sid) || null;
+  if (pr?.name) return String(pr.name);
+
+  return t?.("stats.dartSets.unknown", "Set inconnu") ?? "Set inconnu";
+}
+
+function resolveSetImage(id: string, mySets: DartSet[]) {
+  const sid = String(id ?? "");
+  const mine: any = (mySets || []).find((s: any) => String(s?.id) === sid) || null;
+
+  const mineImg =
+    asUrl(mine?.photoDataUrl) ||
+    asUrl(mine?.photoUrl) ||
+    asUrl(mine?.imageDataUrl) ||
+    asUrl(mine?.imageUrl) ||
+    asUrl(mine?.imgUrlMain) ||
+    asUrl(mine?.imgUrlThumb) ||
+    asUrl(mine?.imgUrl) ||
+    null;
+
+  if (mineImg) return mineImg;
+
+  const myPresetId =
+    mine?.dartPresetId ||
+    mine?.presetId ||
+    mine?.preset ||
+    mine?.basePresetId ||
+    mine?.refPresetId ||
+    null;
+
+  const prFromMine = myPresetId ? presetById(String(myPresetId)) : null;
+  const prById = presetById(sid);
+  const pr = prFromMine || prById || (mine?.name ? presetByName(String(mine.name)) : null);
+
+  return presetImage(pr) || null;
 }
 
 export default function StatsDartSetsSection(props: {
@@ -415,7 +447,7 @@ export default function StatsDartSetsSection(props: {
   const bestPresets = (rows || [])
     .map((r: any) => {
       const id = String(r?.dartSetId || "");
-      const isMy = !!mySets.find((s: any) => String(s?.id) === id);
+      const isMy = !!(mySets || []).find((s: any) => String(s?.id) === id);
       if (isMy) return null;
       const pr = presetById(id);
       if (!pr) return null;
@@ -430,6 +462,8 @@ export default function StatsDartSetsSection(props: {
   return (
     <div
       style={{
+        maxWidth: 560,
+        margin: "0 auto",
         borderRadius: 22,
         border: "1px solid rgba(255,255,255,.10)",
         background: cardBg,
@@ -453,17 +487,17 @@ export default function StatsDartSetsSection(props: {
           {title || t("stats.dartSets.title", "Stats par fléchettes")}
         </div>
 
-        {/* ticker SANS icône */}
+        {/* ✅ NOMBRE : sans "preset" */}
         <div style={{ marginLeft: "auto" }}>
-          <NeonTicker
+          <NeonCountKPI
             accent={accent}
             label={t("stats.dartSets.countLabel", "Nombre")}
-            value={`${countPresets} ${t("stats.dartSets.countValue", "preset")}${countPresets > 1 ? "s" : ""}`}
+            value={`${countPresets}`}
           />
         </div>
       </div>
 
-      {/* petit classement sous ticker */}
+      {/* petit classement sous header */}
       {bestTop.length > 0 && !loading && !err && (
         <div style={{ marginTop: 10 }}>
           <div
@@ -481,7 +515,13 @@ export default function StatsDartSetsSection(props: {
           {bestTop.length <= 3 ? (
             <div style={{ marginTop: 6, display: "grid", gap: 6 }}>
               {bestTop.slice(0, 3).map((b, i) => (
-                <RankRow key={b.id} accent={accent} rank={i + 1} name={b.name} value={`AVG/3D ${fmt1(b.avg3)}`} />
+                <RankRow
+                  key={b.id}
+                  accent={accent}
+                  rank={i + 1}
+                  name={b.name}
+                  value={`AVG/3D ${fmt1(b.avg3)}`}
+                />
               ))}
             </div>
           ) : (
@@ -505,7 +545,7 @@ export default function StatsDartSetsSection(props: {
         </div>
       )}
 
-      {/* mini résumé */}
+      {/* ✅ mini résumé "Meilleur set" (libellé court + nom centré + glow) */}
       {top && !loading && !err && (
         <div
           style={{
@@ -516,32 +556,48 @@ export default function StatsDartSetsSection(props: {
             padding: 10,
           }}
         >
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,.70)" }}>
-            {t("stats.dartSets.best", "Meilleur set (sur la période totale)")}
+          <div
+            style={{
+              fontSize: 11,
+              color: "rgba(255,255,255,.70)",
+              fontWeight: 950,
+              letterSpacing: 0.4,
+              textTransform: "uppercase",
+            }}
+          >
+            {t("stats.dartSets.best", "Meilleur set")}
           </div>
 
           <div
             style={{
               marginTop: 6,
-              display: "grid",
-              gridTemplateColumns: "1fr auto",
-              gap: 10,
+              display: "flex",
               alignItems: "center",
+              gap: 10,
             }}
           >
-            <div
-              style={{
-                fontWeight: 950,
-                color: "#fff",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {resolveSetName(top.dartSetId, mySets, t)}
+            <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center" }}>
+              <div
+                style={{
+                  fontWeight: 950,
+                  color: "#fff",
+                  textAlign: "center",
+                  maxWidth: "100%",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  textShadow: `0 0 12px ${accent}66, 0 0 26px ${accent}33`,
+                }}
+              >
+                {resolveSetName(top.dartSetId, mySets, t)}
+              </div>
             </div>
 
-            <NeonKPIButton accent={accent} label={"AVG/3D"} value={fmt1(pickNum(top, "avg3") ?? 0)} />
+            <NeonKPIButton
+              accent={accent}
+              label={"AVG/3D"}
+              value={fmt1(pickNum(top, "avg3") ?? 0)}
+            />
           </div>
         </div>
       )}
@@ -573,16 +629,16 @@ export default function StatsDartSetsSection(props: {
           >
             {rows.map((r: any, idx: number) => {
               const id: string = String(r.dartSetId || "");
+              const my: any = (mySets || []).find((s: any) => String(s?.id) === id) || null;
 
-              const my = mySets.find((s: any) => String(s?.id) === id) || null;
               const prDirect = !my ? presetById(id) : null;
 
               const myPresetId =
-                (my as any)?.dartPresetId ||
-                (my as any)?.presetId ||
-                (my as any)?.preset ||
-                (my as any)?.basePresetId ||
-                (my as any)?.refPresetId ||
+                my?.dartPresetId ||
+                my?.presetId ||
+                my?.preset ||
+                my?.basePresetId ||
+                my?.refPresetId ||
                 null;
 
               const prFromMyId = myPresetId ? presetById(String(myPresetId)) : null;
@@ -591,13 +647,7 @@ export default function StatsDartSetsSection(props: {
               const pr = prDirect || prFromMyId || prFromMyName;
 
               const name = my?.name || pr?.name || t("stats.dartSets.unknown", "Set inconnu");
-
-              const img =
-                asUrl((my as any)?.photoDataUrl) ||
-                asUrl((my as any)?.imgUrlMain) ||
-                asUrl((my as any)?.imgUrlThumb) ||
-                presetImage(pr) ||
-                null;
+              const img = resolveSetImage(id, mySets);
 
               const avg3v = pickNum(r, "avg3") ?? 0;
 
@@ -606,7 +656,6 @@ export default function StatsDartSetsSection(props: {
 
               const recent = recentBySet?.[id] || [];
 
-              // KPIs étendus
               const first9 = pickNum(r, "first9") ?? 0;
               const checkoutPct = pickNum(r, "checkoutPct") ?? 0;
               const doublesPct = pickNum(r, "doublesPct") ?? 0;
@@ -614,22 +663,18 @@ export default function StatsDartSetsSection(props: {
               const n140 = pickNum(r, "n140") ?? 0;
               const n100 = pickNum(r, "n100") ?? 0;
 
-              // Sparkline values
               const sparkVals = extractSparkValuesFromRow(r, recent);
-
-              // Radar
               const radar = extractRadarData(r);
 
-              // Segments
               const segMap = extractSegmentsMap(r);
-              const segTop = segMap ? topSegments(segMap, 12) : [];
+              const segTop = segMap ? topSegments(segMap, 18) : [];
 
               return (
                 <div
                   key={id || String(idx)}
                   style={{
-                    minWidth: 304,
-                    maxWidth: 304,
+                    minWidth: 316,
+                    maxWidth: 316,
                     borderRadius: 18,
                     border: "1px solid rgba(255,255,255,.10)",
                     background: `radial-gradient(circle at 0% 0%, ${accentSoft}, transparent 60%), linear-gradient(180deg, rgba(18,18,22,.92), rgba(10,10,12,.90))`,
@@ -637,168 +682,122 @@ export default function StatsDartSetsSection(props: {
                     padding: 10,
                   }}
                 >
-                  {/* TOP : photo + nom centré */}
-                  <div style={{ display: "grid", gridTemplateColumns: "86px 1fr", gap: 10, alignItems: "center" }}>
-                    <div
-                      style={{
-                        width: 86,
-                        height: 86,
-                        borderRadius: 18,
-                        overflow: "hidden",
-                        background: "rgba(255,255,255,.06)",
-                        border: "1px solid rgba(255,255,255,.10)",
-                        flex: "0 0 auto",
-                      }}
-                    >
-                      {img ? (
-                        <img
-                          src={img}
-                          alt={name}
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                            display: "block",
-                          }}
-                        />
-                      ) : (
-                        <div
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            color: "rgba(255,255,255,.55)",
-                            fontWeight: 900,
-                          }}
-                        >
-                          ?
-                        </div>
-                      )}
-                    </div>
+                  {/* ================= TOP SET ================= */}
+<div
+  style={{
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 8,
+  }}
+>
+  {/* 🔥 MEILLEUR SET — OR SCINTILLANT */}
+  <div
+    style={{
+      fontSize: 11,
+      fontWeight: 950,
+      letterSpacing: 1.1,
+      textTransform: "uppercase",
+      color: "#F6C256",
+      textShadow:
+        "0 0 8px #F6C256, 0 0 16px rgba(246,194,86,.85), 0 0 28px rgba(246,194,86,.45)",
+    }}
+  >
+    MEILLEUR SET
+  </div>
 
-                    <div style={{ minWidth: 0 }}>
-                      {/* nom : theme + halo + 2 lignes */}
-                      <div
-                        style={{
-                          fontWeight: 950,
-                          color: accent,
-                          fontSize: 13.8,
-                          textAlign: "center",
-                          textShadow: `0 0 12px ${accent}55`,
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                          lineHeight: 1.15,
-                        }}
-                      >
-                        {name}
-                      </div>
+  {/* PHOTO */}
+  <div
+    style={{
+      width: 92,
+      height: 92,
+      borderRadius: 20,
+      overflow: "hidden",
+      background: "rgba(255,255,255,.06)",
+      border: `1px solid ${accent}44`,
+      boxShadow: `0 0 22px ${accent}55, 0 0 44px ${accent}22`,
+    }}
+  >
+    {img ? (
+      <img
+        src={img}
+        alt={name}
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          display: "block",
+        }}
+      />
+    ) : (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "rgba(255,255,255,.55)",
+          fontWeight: 900,
+        }}
+      >
+        ?
+      </div>
+    )}
+  </div>
 
-                      {/* KPI boutons néon — UNE LIGNE (wrap si besoin) */}
-                      <div
-                        style={{
-                          marginTop: 8,
-                          display: "flex",
-                          gap: 8,
-                          justifyContent: "center",
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <NeonKPIButton accent={glow} label="AVG/3D" value={fmt1(avg3v)} />
-                        <NeonPill accent={accent} text={`${t("stats.matches", "Matchs")} ${fmt0(N(r.matches, 0))}`} />
-                        <NeonPill accent={accent} text={`${t("stats.darts", "Darts")} ${fmt0(N(r.darts, 0))}`} />
-                      </div>
-                    </div>
-                  </div>
+  {/* NOM DU PRESET — HALO THEME */}
+  <div
+    style={{
+      marginTop: 2,
+      fontWeight: 950,
+      color: accent,
+      fontSize: 14,
+      textAlign: "center",
+      textShadow: `0 0 12px ${accent}88, 0 0 22px ${accent}55`,
+      display: "-webkit-box",
+      WebkitLineClamp: 2,
+      WebkitBoxOrient: "vertical",
+      overflow: "hidden",
+      lineHeight: 1.15,
+    }}
+  >
+    {name}
+  </div>
 
-                  {/* Sparkline + Radar (comme demandé) */}
-                  <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <BoxTitle title={t("stats.dartSets.spark", "Sparkline AVG/3D")} />
-                    <BoxTitle title={t("stats.dartSets.radarHits", "Radar Hits")} />
-                  </div>
+  {/* ================= KPIs — UNE SEULE LIGNE (RESPONSIVE) ================= */}
+<div
+  style={{
+    marginTop: 6,
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))", // ✅ 3 blocs toujours sur 1 ligne
+    gap: 8,
+    width: "100%",
+    alignItems: "stretch",
+  }}
+>
+  {/* AVG/3D — OR */}
+  <NeonKPIButton
+    accent="#F6C256"
+    label="AVG/3D"
+    value={fmt1(avg3v)}
+  />
 
-                  <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <div style={boxStyle()}>
-                      {sparkVals.length >= 2 ? (
-                        <Sparkline values={sparkVals} accent={accent} />
-                      ) : (
-                        <EmptySmall text={t("common.na", "—")} />
-                      )}
-                    </div>
+  {/* SESSIONS — ROSE */}
+  <NeonKPIButton
+    accent="#FF4FD8"
+    label="Sessions"
+    value={fmt0(N(r.matches, 0))}
+  />
 
-                    <div style={boxStyle()}>
-                      <div style={{ width: "100%", height: 86 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <RadarChart data={radar}>
-                            <PolarGrid stroke="rgba(255,255,255,.10)" />
-                            <PolarAngleAxis dataKey="k" tick={{ fill: "rgba(255,255,255,.80)", fontSize: 10 }} />
-                            <Radar
-                              dataKey="v"
-                              stroke={accent}
-                              fill={accent}
-                              fillOpacity={0.18}
-                              strokeWidth={2}
-                            />
-                            <Tooltip
-                              contentStyle={{
-                                background: "rgba(0,0,0,.85)",
-                                border: "1px solid rgba(255,255,255,.12)",
-                                borderRadius: 12,
-                                color: "#fff",
-                                fontWeight: 900,
-                              }}
-                              formatter={(value: any) => [String(value), ""]}
-                            />
-                          </RadarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Hits par segments */}
-                  <div style={{ marginTop: 10 }}>
-                    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 950,
-                          color: "rgba(255,255,255,.80)",
-                          letterSpacing: 0.5,
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        {t("stats.dartSets.hitsBySegment", "Hits par segments")}
-                      </div>
-                      <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", fontWeight: 900 }}>
-                        {segTop.length ? `${segTop.length}` : "0"}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 6,
-                        borderRadius: 14,
-                        border: "1px solid rgba(255,255,255,.08)",
-                        background: "rgba(0,0,0,.22)",
-                        padding: 8,
-                      }}
-                    >
-                      {!segTop.length ? (
-                        <div style={{ fontSize: 11, color: "rgba(255,255,255,.55)" }}>
-                          {t("stats.dartSets.noSegments", "Segments non disponibles pour ce set.")}
-                        </div>
-                      ) : (
-                        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
-                          {segTop.map((s) => (
-                            <SegChip key={s.seg} accent={accent} seg={s.seg} count={s.count} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+  {/* HITS — VERT */}
+  <NeonKPIButton
+    accent="#7FE2A9"
+    label="Hits"
+    value={fmt0(N(r.darts, 0))}
+  />
+</div>
+</div>
 
                   {/* KPIs (stats enrichies) */}
                   <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -828,17 +827,87 @@ export default function StatsDartSetsSection(props: {
                     />
                   </div>
 
-                  {/* carrousel "Derniers matchs" */}
+                  {/* ✅ Déplacés plus bas + plus gros : Sparkline */}
+                  <div style={{ marginTop: 12 }}>
+                    <BlockTitle title={t("stats.dartSets.spark", "Sparkline AVG/3D")} />
+                    <div style={wideBoxStyle()}>
+                      {sparkVals.length >= 2 ? (
+                        <Sparkline values={sparkVals} accent={accent} height={84} />
+                      ) : (
+                        <EmptySmall text={t("common.na", "—")} />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ✅ Déplacé plus bas + plus gros : Radar */}
+                  <div style={{ marginTop: 12 }}>
+                    <BlockTitle title={t("stats.dartSets.radarHits", "Radar Hits")} />
+                    <div style={wideBoxStyle()}>
+                      <div style={{ width: "100%", height: 160 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <RadarChart data={radar}>
+                            <PolarGrid stroke="rgba(255,255,255,.10)" />
+                            <PolarAngleAxis dataKey="k" tick={{ fill: "rgba(255,255,255,.80)", fontSize: 11 }} />
+                            <Radar dataKey="v" stroke={accent} fill={accent} fillOpacity={0.18} strokeWidth={2} />
+                            <Tooltip
+                              contentStyle={{
+                                background: "rgba(0,0,0,.85)",
+                                border: "1px solid rgba(255,255,255,.12)",
+                                borderRadius: 12,
+                                color: "#fff",
+                                fontWeight: 900,
+                              }}
+                              formatter={(value: any) => [String(value), ""]}
+                            />
+                          </RadarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ✅ Déplacé plus bas + plein largeur : Hits par segments */}
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+                      <BlockTitle title={t("stats.dartSets.hitsBySegment", "Hits par segments")} />
+                      <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", fontWeight: 900 }}>
+                        {segTop.length ? `${segTop.length}` : "0"}
+                      </div>
+                    </div>
+
+                    <div style={wideBoxStyle()}>
+                      {!segTop.length ? (
+                        <div style={{ fontSize: 11, color: "rgba(255,255,255,.55)" }}>
+                          {t("stats.dartSets.noSegments", "Segments non disponibles pour ce set.")}
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
+                          {segTop.map((s) => (
+                            <SegChip key={s.seg} accent={accent} seg={s.seg} count={s.count} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Derniers matchs */}
                   <div
                     style={{
-                      marginTop: 10,
+                      marginTop: 12,
                       borderRadius: 14,
                       border: "1px solid rgba(255,255,255,.08)",
                       background: "rgba(0,0,0,.22)",
                       padding: 8,
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "baseline",
+                        justifyContent: "space-between",
+                        gap: 8,
+                        marginBottom: 6,
+                      }}
+                    >
                       <div
                         style={{
                           fontSize: 11,
@@ -873,20 +942,15 @@ export default function StatsDartSetsSection(props: {
           </div>
 
           <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,.55)" }}>
-            {t("stats.dartSets.note", "Ces stats sont calculées uniquement sur les matchs X01 terminés, et groupées par set sélectionné.")}
+            {t(
+              "stats.dartSets.note",
+              "Ces stats sont calculées uniquement sur les matchs X01 terminés, et groupées par set sélectionné."
+            )}
           </div>
         </>
       )}
     </div>
   );
-}
-
-function resolveSetName(id: string, mySets: any[], t: any) {
-  const my = mySets?.find((s: any) => String(s?.id) === String(id)) || null;
-  if (my?.name) return my.name;
-  const pr = (dartPresets || []).find((p: any) => String(p?.id) === String(id)) || null;
-  if (pr?.name) return pr.name;
-  return t?.("stats.dartSets.unknown", "Set inconnu") ?? "Set inconnu";
 }
 
 /* ---------------- UI bits ---------------- */
@@ -900,44 +964,90 @@ function boxStyle(): React.CSSProperties {
   };
 }
 
-function BoxTitle(props: { title: string }) {
+function wideBoxStyle(): React.CSSProperties {
+  return {
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,.08)",
+    background: "rgba(0,0,0,.22)",
+    padding: 10,
+  };
+}
+
+function BlockTitle(props: { title: string }) {
   return (
-    <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.70)", fontWeight: 950, textTransform: "uppercase", letterSpacing: 0.4 }}>
+    <div
+      style={{
+        fontSize: 11,
+        color: "rgba(255,255,255,.80)",
+        fontWeight: 950,
+        textTransform: "uppercase",
+        letterSpacing: 0.5,
+      }}
+    >
       {props.title}
     </div>
   );
 }
 
 function EmptySmall(props: { text: string }) {
-  return <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(255,255,255,.55)", padding: "12px 6px", textAlign: "center" }}>{props.text}</div>;
+  return (
+    <div
+      style={{
+        fontSize: 12,
+        fontWeight: 900,
+        color: "rgba(255,255,255,.55)",
+        padding: "12px 6px",
+        textAlign: "center",
+      }}
+    >
+      {props.text}
+    </div>
+  );
 }
 
-function NeonTicker(props: { accent: string; label: string; value: string }) {
+/** ✅ KPI NOMBRE (label au-dessus / valeur en dessous) — sans suffix */
+function NeonCountKPI(props: { accent: string; label: string; value: string }) {
   const { accent, label, value } = props;
   return (
     <div
       style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "6px 10px",
-        borderRadius: 999,
-        border: `1px solid rgba(255,255,255,.12)`,
-        background: "rgba(0,0,0,.35)",
-        boxShadow: `0 0 18px ${accent}22`,
+        borderRadius: 12,
+        border: `1px solid ${accent}88`,
+        background: `radial-gradient(circle at 50% 0%, ${accent}22, transparent 62%), rgba(0,0,0,.40)`,
+        padding: "7px 10px",
+        minWidth: 86,
+        textAlign: "center",
+        boxShadow: `0 0 18px ${accent}40`,
       }}
     >
-      <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.65)", fontWeight: 950, letterSpacing: 0.5, textTransform: "uppercase" }}>
+      <div
+        style={{
+          fontSize: 10.5,
+          color: "#fff",
+          opacity: 0.85,
+          fontWeight: 950,
+          letterSpacing: 0.4,
+          textTransform: "uppercase",
+        }}
+      >
         {label}
       </div>
-      <div style={{ fontSize: 11.5, color: accent, fontWeight: 950, textShadow: `0 0 12px ${accent}55`, whiteSpace: "nowrap" }}>
+      <div
+        style={{
+          marginTop: 2,
+          fontWeight: 950,
+          color: accent,
+          fontSize: 13.5,
+          textShadow: `0 0 14px ${accent}88`,
+        }}
+      >
         {value}
       </div>
     </div>
   );
 }
 
-/** KPI "bouton néon" (celui que tu demandes : valeur + label, même couleur, très visible) */
+/** KPI "bouton néon" */
 function NeonKPIButton(props: { accent: string; label: string; value: string }) {
   const { accent, label, value } = props;
   return (
@@ -952,44 +1062,46 @@ function NeonKPIButton(props: { accent: string; label: string; value: string }) 
         boxShadow: `0 0 18px ${accent}40`,
       }}
     >
-      <div style={{ fontSize: 10.5, color: accent, fontWeight: 950, letterSpacing: 0.4, textShadow: `0 0 12px ${accent}66` }}>
+      <div
+        style={{
+          fontSize: 10.5,
+          color: accent,
+          fontWeight: 950,
+          letterSpacing: 0.4,
+          textShadow: `0 0 12px ${accent}66`,
+        }}
+      >
         {label}
       </div>
-      <div style={{ marginTop: 2, fontWeight: 950, color: accent, fontSize: 13.5, textShadow: `0 0 14px ${accent}88` }}>
+      <div
+        style={{
+          marginTop: 2,
+          fontWeight: 950,
+          color: accent,
+          fontSize: 13.5,
+          textShadow: `0 0 14px ${accent}88`,
+        }}
+      >
         {value}
       </div>
     </div>
   );
 }
 
-function NeonPill(props: { accent: string; text: string }) {
-  const { accent, text } = props;
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        padding: "6px 10px",
-        borderRadius: 999,
-        border: `1px solid ${accent}44`,
-        background: "rgba(0,0,0,.28)",
-        color: "rgba(255,255,255,.90)",
-        fontWeight: 950,
-        fontSize: 10.6,
-        letterSpacing: 0.2,
-        boxShadow: `0 0 14px ${accent}22`,
-        whiteSpace: "nowrap",
-      }}
-    >
-      {text}
-    </span>
-  );
-}
-
 function KPI(props: { label: string; value: string }) {
   const { label, value } = props;
   return (
-    <div style={{ borderRadius: 12, border: "1px solid rgba(255,255,255,.08)", background: "rgba(255,255,255,.04)", padding: "7px 8px" }}>
-      <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.70)", marginBottom: 2, textTransform: "uppercase", letterSpacing: 0.4, fontWeight: 950 }}>
+    <div style={boxStyle()}>
+      <div
+        style={{
+          fontSize: 10.5,
+          color: "rgba(255,255,255,.70)",
+          marginBottom: 2,
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+          fontWeight: 950,
+        }}
+      >
         {label}
       </div>
       <div style={{ fontWeight: 950, color: "#fff", fontSize: 12.6 }}>{value}</div>
@@ -1015,12 +1127,32 @@ function MatchChip(props: { item: MiniMatch }) {
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
         <div style={{ fontWeight: 950, color: "#fff", fontSize: 12 }}>{item.dateLabel}</div>
-        <span style={{ fontSize: 10, fontWeight: 950, color: c, border: `1px solid ${c}33`, padding: "2px 6px", borderRadius: 999, background: "rgba(0,0,0,.25)" }}>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 950,
+            color: c,
+            border: `1px solid ${c}33`,
+            padding: "2px 6px",
+            borderRadius: 999,
+            background: "rgba(0,0,0,.25)",
+          }}
+        >
           {item.label}
         </span>
       </div>
 
-      <div style={{ marginTop: 6, fontSize: 11, color: "rgba(255,255,255,.75)", fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      <div
+        style={{
+          marginTop: 6,
+          fontSize: 11,
+          color: "rgba(255,255,255,.75)",
+          fontWeight: 900,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
         {item.opponent ? `vs ${item.opponent}` : "Match"}
       </div>
 
@@ -1065,12 +1197,29 @@ function RankRow(props: { accent: string; rank: number; name: string; value: str
       </div>
 
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 950, color: "#fff", fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <div
+          style={{
+            fontWeight: 950,
+            color: "#fff",
+            fontSize: 12,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
           {name}
         </div>
       </div>
 
-      <div style={{ fontWeight: 950, fontSize: 11, color: accent, textShadow: `0 0 10px ${accent}55`, whiteSpace: "nowrap" }}>
+      <div
+        style={{
+          fontWeight: 950,
+          fontSize: 11,
+          color: accent,
+          textShadow: `0 0 10px ${accent}55`,
+          whiteSpace: "nowrap",
+        }}
+      >
         {value}
       </div>
     </div>
@@ -1089,17 +1238,19 @@ function SegChip(props: { accent: string; seg: string; count: number }) {
         padding: "7px 8px",
       }}
     >
-      <div style={{ fontWeight: 950, color: accent, fontSize: 12, textShadow: `0 0 12px ${accent}55` }}>{seg}</div>
+      <div style={{ fontWeight: 950, color: accent, fontSize: 12, textShadow: `0 0 12px ${accent}55` }}>
+        {seg}
+      </div>
       <div style={{ marginTop: 2, fontWeight: 950, color: "#fff", fontSize: 12.5 }}>{fmt0(count)}</div>
     </div>
   );
 }
 
 /** Sparkline SVG (léger, sans dépendances) */
-function Sparkline(props: { values: number[]; accent: string }) {
+function Sparkline(props: { values: number[]; accent: string; height?: number }) {
   const { values, accent } = props;
-  const w = 220;
-  const h = 60;
+  const h = Math.max(58, Math.min(120, Number(props.height ?? 60)));
+  const w = 260;
   const pad = 6;
 
   const vals = values.slice(-18);
@@ -1114,11 +1265,10 @@ function Sparkline(props: { values: number[]; accent: string }) {
   });
 
   const d = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ");
-
   const last = pts[pts.length - 1]?.v ?? null;
 
   return (
-    <div style={{ display: "grid", gap: 6 }}>
+    <div style={{ display: "grid", gap: 8 }}>
       <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
         <path d={d} fill="none" stroke={accent} strokeWidth="2.2" />
         <path
