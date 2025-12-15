@@ -14,11 +14,16 @@
 // ✅ NEW: logo KILLER (PNG transparent) remplace 🔥 partout
 // ✅ NEW: logo DEAD (rouge, sans halo) + ligne DEAD en rouge
 // ✅ FIX: fin de partie -> overlay victoire + classement + bouton Terminer
+// ✅ NEW: Terminer / Voir résumé -> SAVE + go("killer_summary", { matchId })
 // ============================================
 
 import React from "react";
 import type { Store, MatchRecord, Dart as UIDart } from "../lib/types";
-import type { KillerConfig, KillerDamageRule, KillerBecomeRule } from "./KillerConfig";
+import type {
+  KillerConfig,
+  KillerDamageRule,
+  KillerBecomeRule,
+} from "./KillerConfig";
 import Keypad from "../components/Keypad";
 import InfoDot from "../components/InfoDot";
 
@@ -155,9 +160,16 @@ function resolveBotSkill(botLevelRaw?: string | null): number {
   if (v.includes("legend") || v.includes("légende")) return 5;
   if (v.includes("prodige")) return 4;
   if (v.includes("pro")) return 4;
-  if (v.includes("fort") || v.includes("hard") || v.includes("difficile")) return 3;
-  if (v.includes("standard") || v.includes("normal") || v.includes("moyen")) return 2;
-  if (v.includes("easy") || v.includes("facile") || v.includes("débutant")) return 1;
+  if (v.includes("fort") || v.includes("hard") || v.includes("difficile"))
+    return 3;
+  if (
+    v.includes("standard") ||
+    v.includes("normal") ||
+    v.includes("moyen")
+  )
+    return 2;
+  if (v.includes("easy") || v.includes("facile") || v.includes("débutant"))
+    return 1;
 
   return 2;
 }
@@ -166,7 +178,11 @@ function rand01() {
   return Math.random();
 }
 
-function pickMultForBot(skill: number, becomeRule: KillerBecomeRule, wantsDouble: boolean): Mult {
+function pickMultForBot(
+  skill: number,
+  becomeRule: KillerBecomeRule,
+  wantsDouble: boolean
+): Mult {
   const r = rand01();
 
   if (wantsDouble) {
@@ -183,32 +199,73 @@ function pickMultForBot(skill: number, becomeRule: KillerBecomeRule, wantsDouble
   return r < 0.1 ? 2 : 1;
 }
 
-function decideBotThrow(me: KillerPlayerState, all: KillerPlayerState[], config: KillerConfig): ThrowInput {
+function decideBotThrow(
+  me: KillerPlayerState,
+  all: KillerPlayerState[],
+  config: KillerConfig
+): ThrowInput {
   const skill = resolveBotSkill(me.botLevel);
   const aliveOthers = all.filter((p) => !p.eliminated && p.id !== me.id);
 
-  const missRate = skill <= 1 ? 0.22 : skill === 2 ? 0.16 : skill === 3 ? 0.1 : skill === 4 ? 0.06 : 0.03;
+  const missRate =
+    skill <= 1
+      ? 0.22
+      : skill === 2
+      ? 0.16
+      : skill === 3
+      ? 0.1
+      : skill === 4
+      ? 0.06
+      : 0.03;
   const bullRate = skill >= 4 ? 0.03 : 0.015;
 
   const r = rand01();
   if (r < missRate) return { target: 0, mult: 1 };
-  if (r < missRate + bullRate) return { target: 25, mult: rand01() < 0.25 ? 2 : 1 };
+  if (r < missRate + bullRate)
+    return { target: 25, mult: rand01() < 0.25 ? 2 : 1 };
 
   if (!me.isKiller) {
     const wantsDouble = config.becomeRule === "double";
-    const hitOwnRate = skill <= 1 ? 0.55 : skill === 2 ? 0.68 : skill === 3 ? 0.78 : skill === 4 ? 0.88 : 0.94;
-    if (rand01() < hitOwnRate) return { target: me.number, mult: pickMultForBot(skill, config.becomeRule, wantsDouble) };
+    const hitOwnRate =
+      skill <= 1
+        ? 0.55
+        : skill === 2
+        ? 0.68
+        : skill === 3
+        ? 0.78
+        : skill === 4
+        ? 0.88
+        : 0.94;
+    if (rand01() < hitOwnRate)
+      return {
+        target: me.number,
+        mult: pickMultForBot(skill, config.becomeRule, wantsDouble),
+      };
     const n = 1 + Math.floor(Math.random() * 20);
     return { target: n, mult: pickMultForBot(skill, config.becomeRule, false) };
   }
 
-  const hitVictimRate = skill <= 1 ? 0.52 : skill === 2 ? 0.66 : skill === 3 ? 0.76 : skill === 4 ? 0.86 : 0.92;
+  const hitVictimRate =
+    skill <= 1
+      ? 0.52
+      : skill === 2
+      ? 0.66
+      : skill === 3
+      ? 0.76
+      : skill === 4
+      ? 0.86
+      : 0.92;
   if (aliveOthers.length === 0) return { target: 0, mult: 1 };
 
   if (rand01() < hitVictimRate) {
-    const sorted = [...aliveOthers].sort((a, b) => (a.lives ?? 0) - (b.lives ?? 0));
+    const sorted = [...aliveOthers].sort(
+      (a, b) => (a.lives ?? 0) - (b.lives ?? 0)
+    );
     const pick = sorted[0];
-    return { target: pick.number, mult: pickMultForBot(skill, config.becomeRule, false) };
+    return {
+      target: pick.number,
+      mult: pickMultForBot(skill, config.becomeRule, false),
+    };
   }
 
   const n = 1 + Math.floor(Math.random() * 20);
@@ -222,7 +279,8 @@ const pageBg =
   "radial-gradient(circle at 25% 0%, rgba(255,198,58,.18) 0, rgba(0,0,0,0) 35%), radial-gradient(circle at 80% 30%, rgba(255,198,58,.10) 0, rgba(0,0,0,0) 40%), linear-gradient(180deg, #0a0a0c, #050507 60%, #020203)";
 
 const card: React.CSSProperties = {
-  background: "linear-gradient(180deg, rgba(22,22,23,.85), rgba(12,12,14,.95))",
+  background:
+    "linear-gradient(180deg, rgba(22,22,23,.85), rgba(12,12,14,.95))",
   border: "1px solid rgba(255,255,255,.08)",
   borderRadius: 18,
   boxShadow: "0 10px 30px rgba(0,0,0,.35)",
@@ -273,13 +331,40 @@ function chipStyleBig(d?: UIDart): React.CSSProperties {
 
   if (d.v === 25) {
     return d.mult === 2
-      ? { ...base, background: "rgba(255,80,80,.14)", border: "1px solid rgba(255,80,80,.30)", color: "#ffd2d2" }
-      : { ...base, background: "rgba(80,180,255,.14)", border: "1px solid rgba(80,180,255,.30)", color: "#d6efff" };
+      ? {
+          ...base,
+          background: "rgba(255,80,80,.14)",
+          border: "1px solid rgba(255,80,80,.30)",
+          color: "#ffd2d2",
+        }
+      : {
+          ...base,
+          background: "rgba(80,180,255,.14)",
+          border: "1px solid rgba(80,180,255,.30)",
+          color: "#d6efff",
+        };
   }
 
-  if (d.mult === 3) return { ...base, background: "rgba(164,80,255,.14)", border: "1px solid rgba(164,80,255,.30)", color: "#e8d6ff" };
-  if (d.mult === 2) return { ...base, background: "rgba(80,200,255,.12)", border: "1px solid rgba(80,200,255,.30)", color: "#d6f3ff" };
-  return { ...base, background: "rgba(255,198,58,.10)", border: "1px solid rgba(255,198,58,.22)", color: "#ffe7b0" };
+  if (d.mult === 3)
+    return {
+      ...base,
+      background: "rgba(164,80,255,.14)",
+      border: "1px solid rgba(164,80,255,.30)",
+      color: "#e8d6ff",
+    };
+  if (d.mult === 2)
+    return {
+      ...base,
+      background: "rgba(80,200,255,.12)",
+      border: "1px solid rgba(80,200,255,.30)",
+      color: "#d6f3ff",
+    };
+  return {
+    ...base,
+    background: "rgba(255,198,58,.10)",
+    border: "1px solid rgba(255,198,58,.22)",
+    color: "#ffe7b0",
+  };
 }
 
 // chips MINI
@@ -305,13 +390,40 @@ function chipStyleMini(d?: UIDart): React.CSSProperties {
 
   if (d.v === 25) {
     return d.mult === 2
-      ? { ...base, background: "rgba(255,80,80,.14)", border: "1px solid rgba(255,80,80,.30)", color: "#ffd2d2" }
-      : { ...base, background: "rgba(80,180,255,.14)", border: "1px solid rgba(80,180,255,.30)", color: "#d6efff" };
+      ? {
+          ...base,
+          background: "rgba(255,80,80,.14)",
+          border: "1px solid rgba(255,80,80,.30)",
+          color: "#ffd2d2",
+        }
+      : {
+          ...base,
+          background: "rgba(80,180,255,.14)",
+          border: "1px solid rgba(80,180,255,.30)",
+          color: "#d6efff",
+        };
   }
 
-  if (d.mult === 3) return { ...base, background: "rgba(164,80,255,.14)", border: "1px solid rgba(164,80,255,.30)", color: "#e8d6ff" };
-  if (d.mult === 2) return { ...base, background: "rgba(80,200,255,.12)", border: "1px solid rgba(80,200,255,.30)", color: "#d6f3ff" };
-  return { ...base, background: "rgba(255,198,58,.10)", border: "1px solid rgba(255,198,58,.22)", color: "#ffe7b0" };
+  if (d.mult === 3)
+    return {
+      ...base,
+      background: "rgba(164,80,255,.14)",
+      border: "1px solid rgba(164,80,255,.30)",
+      color: "#e8d6ff",
+    };
+  if (d.mult === 2)
+    return {
+      ...base,
+      background: "rgba(80,200,255,.12)",
+      border: "1px solid rgba(80,200,255,.30)",
+      color: "#d6f3ff",
+    };
+  return {
+    ...base,
+    background: "rgba(255,198,58,.10)",
+    border: "1px solid rgba(255,198,58,.22)",
+    color: "#ffe7b0",
+  };
 }
 
 function rulesText(config: KillerConfig) {
@@ -328,22 +440,71 @@ function rulesText(config: KillerConfig) {
       : "Quand tu touches le numéro d’un adversaire, il perd toujours 1 vie (S/D/T ne change rien).";
 
   return [
-    { title: "But", body: "Tu as un numéro (#1…#20). D’abord tu dois devenir KILLER, puis éliminer les autres en touchant leur numéro." },
-    { title: "Départ", body: `Chaque joueur commence avec ${lives} vie(s). Un joueur est éliminé quand ses vies tombent à 0.` },
-    { title: "Devenir KILLER", body: `${becomeRuleText}\nImportant : toucher un autre numéro que le tien ne te rend pas KILLER.` },
-    { title: "Attaquer (quand tu es KILLER)", body: `${damageText}\nSi tu réduis un joueur à 0 vie → il est DEAD immédiatement.` },
-    { title: "Ce qui ne fait rien", body: "MISS (0) : aucun effet.\nBULL / DBULL : aucun effet.\nToucher un joueur déjà DEAD : aucun effet." },
-    { title: "Tour de jeu", body: "À ton tour : 3 fléchettes.\nPuis VALIDER pour passer au joueur suivant." },
-    { title: "Fin de partie", body: "La partie se termine quand il ne reste plus qu’un seul joueur vivant : il gagne 🏆" },
+    {
+      title: "But",
+      body: "Tu as un numéro (#1…#20). D’abord tu dois devenir KILLER, puis éliminer les autres en touchant leur numéro.",
+    },
+    {
+      title: "Départ",
+      body: `Chaque joueur commence avec ${lives} vie(s). Un joueur est éliminé quand ses vies tombent à 0.`,
+    },
+    {
+      title: "Devenir KILLER",
+      body: `${becomeRuleText}\nImportant : toucher un autre numéro que le tien ne te rend pas KILLER.`,
+    },
+    {
+      title: "Attaquer (quand tu es KILLER)",
+      body: `${damageText}\nSi tu réduis un joueur à 0 vie → il est DEAD immédiatement.`,
+    },
+    {
+      title: "Ce qui ne fait rien",
+      body: "MISS (0) : aucun effet.\nBULL / DBULL : aucun effet.\nToucher un joueur déjà DEAD : aucun effet.",
+    },
+    {
+      title: "Tour de jeu",
+      body: "À ton tour : 3 fléchettes.\nPuis VALIDER pour passer au joueur suivant.",
+    },
+    {
+      title: "Fin de partie",
+      body: "La partie se termine quand il ne reste plus qu’un seul joueur vivant : il gagne 🏆",
+    },
   ];
 }
 
-function AvatarMedallion({ size, src, name }: { size: number; src?: string | null; name?: string }) {
-  const initials = String(name || "J").trim().slice(0, 1).toUpperCase();
+function AvatarMedallion({
+  size,
+  src,
+  name,
+}: {
+  size: number;
+  src?: string | null;
+  name?: string;
+}) {
+  const initials = String(name || "J")
+    .trim()
+    .slice(0, 1)
+    .toUpperCase();
   return (
-    <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", background: "transparent" }}>
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        overflow: "hidden",
+        background: "transparent",
+      }}
+    >
       {src ? (
-        <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        <img
+          src={src}
+          alt=""
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            display: "block",
+          }}
+        />
       ) : (
         <div
           style={{
@@ -365,42 +526,111 @@ function AvatarMedallion({ size, src, name }: { size: number; src?: string | nul
   );
 }
 
-function KillerIcon({ size = 26, variant = "active" }: { size?: number; variant?: "active" | "list" }) {
+function KillerIcon({
+  size = 26,
+  variant = "active",
+}: {
+  size?: number;
+  variant?: "active" | "list";
+}) {
   const src = variant === "list" ? killerListIcon : killerActiveIcon;
   return (
     <img
       src={src}
       alt="Killer"
-      style={{ width: size, height: size, marginLeft: 6, display: "inline-block", verticalAlign: "middle", objectFit: "contain", filter: "contrast(1.1) brightness(1.05)" }}
+      style={{
+        width: size,
+        height: size,
+        marginLeft: 6,
+        display: "inline-block",
+        verticalAlign: "middle",
+        objectFit: "contain",
+        filter: "contrast(1.1) brightness(1.05)",
+      }}
     />
   );
 }
 
-function DeadIcon({ size = 18, variant = "list" }: { size?: number; variant?: "active" | "list" }) {
+function DeadIcon({
+  size = 18,
+  variant = "list",
+}: {
+  size?: number;
+  variant?: "active" | "list";
+}) {
   const src = variant === "active" ? deadActiveIcon : deadListIcon;
   return (
     <img
       src={src}
       alt="Dead"
-      style={{ width: size, height: size, marginLeft: 6, display: "inline-block", verticalAlign: "middle", objectFit: "contain", filter: "contrast(1.15) brightness(1.05)" }}
+      style={{
+        width: size,
+        height: size,
+        marginLeft: 6,
+        display: "inline-block",
+        verticalAlign: "middle",
+        objectFit: "contain",
+        filter: "contrast(1.15) brightness(1.05)",
+      }}
     />
   );
 }
 
 function StatRow({ label, value }: { label: string; value: any }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        gap: 10,
+        alignItems: "center",
+      }}
+    >
       <div style={{ fontSize: 11, opacity: 0.85 }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 1000 }}>{value}</div>
     </div>
   );
 }
 
-function StatBox({ label, value, small }: { label: string; value: any; small?: boolean }) {
+function StatBox({
+  label,
+  value,
+  small,
+}: {
+  label: string;
+  value: any;
+  small?: boolean;
+}) {
   return (
-    <div style={{ borderRadius: 14, border: "1px solid rgba(255,255,255,.10)", background: "rgba(0,0,0,.30)", padding: "8px 6px", textAlign: "center" }}>
-      <div style={{ fontSize: 9, opacity: 0.85, fontWeight: 900, letterSpacing: 0.8 }}>{label}</div>
-      <div style={{ fontSize: small ? 12 : 22, fontWeight: 1000, color: "#ffe7b0", lineHeight: 1.0 }}>{value}</div>
+    <div
+      style={{
+        borderRadius: 14,
+        border: "1px solid rgba(255,255,255,.10)",
+        background: "rgba(0,0,0,.30)",
+        padding: "8px 6px",
+        textAlign: "center",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9,
+          opacity: 0.85,
+          fontWeight: 900,
+          letterSpacing: 0.8,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: small ? 12 : 22,
+          fontWeight: 1000,
+          color: "#ffe7b0",
+          lineHeight: 1.0,
+        }}
+      >
+        {value}
+      </div>
     </div>
   );
 }
@@ -440,7 +670,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     }));
   }, [config]);
 
-  const [players, setPlayers] = React.useState<KillerPlayerState[]>(initialPlayers);
+  const [players, setPlayers] = React.useState<KillerPlayerState[]>(
+    initialPlayers
+  );
   const [turnIndex, setTurnIndex] = React.useState<number>(() => {
     const i = initialPlayers.findIndex((p) => !p.eliminated);
     return i >= 0 ? i : 0;
@@ -467,8 +699,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const totalCount = players.length;
   const isBotTurn = !!current?.isBot;
 
-  const inputDisabledBase = finished || !!w || !current || current.eliminated || showEnd;
-  const waitingValidate = !inputDisabledBase && !isBotTurn && dartsLeft === 0;
+  const inputDisabledBase =
+    finished || !!w || !current || current.eliminated || showEnd;
+  const waitingValidate =
+    !inputDisabledBase && !isBotTurn && dartsLeft === 0;
 
   function pushLog(line: string) {
     setLog((prev) => [line, ...prev].slice(0, 120));
@@ -524,7 +758,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     setPlayers((prev) => {
       const next = prev.map((p, i) => {
         if (i !== turnIndex) return p;
-        return { ...p, lastVisit: (visit || []).slice(0, 3).map((t) => ({ ...t })) };
+        return {
+          ...p,
+          lastVisit: (visit || []).slice(0, 3).map((t) => ({ ...t })),
+        };
       });
       return next;
     });
@@ -535,7 +772,11 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     setTurnIndex((prev) => nextAliveIndex(base, prev));
   }
 
-  function computeFinalRanks(finalPlayers: KillerPlayerState[], winnerId: string, elim: string[]) {
+  function computeFinalRanks(
+    finalPlayers: KillerPlayerState[],
+    winnerId: string,
+    elim: string[]
+  ) {
     const n = finalPlayers.length;
     const rankById: Record<string, number> = {};
     let rank = n;
@@ -556,8 +797,22 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     return rankById;
   }
 
-  function buildMatchRecord(finalPlayersRaw: KillerPlayerState[], winnerId: string, elim: string[]) {
+  // ✅ IMPORTANT: on génère un id stable pour killer_summary
+  function makeMatchId(prefix: string, ts: number) {
+    return `${prefix}-${ts}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function buildMatchRecord(
+    finalPlayersRaw: KillerPlayerState[],
+    winnerId: string,
+    elim: string[]
+  ) {
     const finishedAt = Date.now();
+
+    // ✅ ADD: id / resumeId
+    const id = makeMatchId("killer", finishedAt);
+    const resumeId = id;
+
     const rankById = computeFinalRanks(finalPlayersRaw, winnerId, elim);
 
     const detailedByPlayer: Record<string, any> = {};
@@ -582,7 +837,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         uselessHits: p.uselessHits,
         livesTaken: p.livesTaken,
         livesLost: p.livesLost,
-        throwsToBecomeKiller: p.becameAtThrow ? p.becameAtThrow : p.throwsToBecomeKiller,
+        throwsToBecomeKiller: p.becameAtThrow
+          ? p.becameAtThrow
+          : p.throwsToBecomeKiller,
         hitsBySegment: p.hitsBySegment || {},
         hitsByNumber: p.hitsByNumber || {},
         finalRank: rankById[p.id] || 0,
@@ -611,6 +868,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     }));
 
     const rec: any = {
+      // ✅ ADD
+      id,
+      resumeId,
+
       kind: "killer",
       createdAt: startedAt,
       updatedAt: finishedAt,
@@ -630,7 +891,12 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         detailedByPlayer,
         perPlayer,
       },
-      payload: { mode: "killer", config, summary: { mode: "killer", detailedByPlayer, perPlayer } },
+      payload: {
+        mode: "killer",
+        config,
+        resumeId, // ✅ ADD (pratique si ton History l’utilise)
+        summary: { mode: "killer", detailedByPlayer, perPlayer },
+      },
     };
 
     return rec as MatchRecord;
@@ -683,16 +949,27 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         return next;
       }
 
-      if (!me.isKiller && thr.target === me.number && canBecomeKiller(config.becomeRule, thr)) {
+      if (
+        !me.isKiller &&
+        thr.target === me.number &&
+        canBecomeKiller(config.becomeRule, thr)
+      ) {
         me.isKiller = true;
         me.hitsOnSelf += 1;
         if (!me.becameAtThrow) me.becameAtThrow = me.throwsToBecomeKiller;
-        pushLog(`🟡 ${me.name} devient KILLER en touchant ${fmtThrow(thr)} (#${thr.target})`);
+        pushLog(
+          `🟡 ${me.name} devient KILLER en touchant ${fmtThrow(thr)} (#${thr.target})`
+        );
         return next;
       }
 
       if (me.isKiller) {
-        const victimIdx = next.findIndex((p, idx) => idx !== turnIndex && !p.eliminated && p.number === thr.target);
+        const victimIdx = next.findIndex(
+          (p, idx) =>
+            idx !== turnIndex &&
+            !p.eliminated &&
+            p.number === thr.target
+        );
         if (victimIdx >= 0) {
           const victim = next[victimIdx];
 
@@ -715,9 +992,13 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             me.kills += 1;
 
             elimOrderRef.current = [...(elimOrderRef.current || []), victim.id];
-            pushLog(`💀 ${me.name} élimine ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg})`);
+            pushLog(
+              `💀 ${me.name} élimine ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg})`
+            );
           } else {
-            pushLog(`🔻 ${me.name} touche ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg}) → ${victim.lives} vie(s)`);
+            pushLog(
+              `🔻 ${me.name} touche ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg}) → ${victim.lives} vie(s)`
+            );
           }
 
           return next;
@@ -824,7 +1105,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
 
         const seg = segmentKey(thrSafe);
         me2.hitsBySegment = incMap(me2.hitsBySegment, seg, 1);
-        if (thrSafe.target !== 0) me2.hitsByNumber = incMap(me2.hitsByNumber, thrSafe.target, 1);
+        if (thrSafe.target !== 0)
+          me2.hitsByNumber = incMap(me2.hitsByNumber, thrSafe.target, 1);
 
         if (!me2.isKiller && !me2.becameAtThrow) me2.throwsToBecomeKiller += 1;
         if (me2.isKiller) me2.killerThrows += 1;
@@ -841,16 +1123,27 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           return next;
         }
 
-        if (!me2.isKiller && thrSafe.target === me2.number && canBecomeKiller(config.becomeRule, thrSafe)) {
+        if (
+          !me2.isKiller &&
+          thrSafe.target === me2.number &&
+          canBecomeKiller(config.becomeRule, thrSafe)
+        ) {
           me2.isKiller = true;
           me2.hitsOnSelf += 1;
           if (!me2.becameAtThrow) me2.becameAtThrow = me2.throwsToBecomeKiller;
-          pushLog(`🟡 ${me2.name} devient KILLER en touchant ${fmtThrow(thrSafe)} (#${thrSafe.target})`);
+          pushLog(
+            `🟡 ${me2.name} devient KILLER en touchant ${fmtThrow(thrSafe)} (#${thrSafe.target})`
+          );
           return next;
         }
 
         if (me2.isKiller) {
-          const victimIdx = next.findIndex((p, idx) => idx !== turnIndex && !p.eliminated && p.number === thrSafe.target);
+          const victimIdx = next.findIndex(
+            (p, idx) =>
+              idx !== turnIndex &&
+              !p.eliminated &&
+              p.number === thrSafe.target
+          );
           if (victimIdx >= 0) {
             const victim = next[victimIdx];
 
@@ -873,9 +1166,13 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
               me2.kills += 1;
 
               elimOrderRef.current = [...(elimOrderRef.current || []), victim.id];
-              pushLog(`💀 ${me2.name} élimine ${victim.name} (${fmtThrow(thrSafe)} sur #${thrSafe.target}, -${dmg})`);
+              pushLog(
+                `💀 ${me2.name} élimine ${victim.name} (${fmtThrow(thrSafe)} sur #${thrSafe.target}, -${dmg})`
+              );
             } else {
-              pushLog(`🔻 ${me2.name} touche ${victim.name} (${fmtThrow(thrSafe)} sur #${thrSafe.target}, -${dmg}) → ${victim.lives} vie(s)`);
+              pushLog(
+                `🔻 ${me2.name} touche ${victim.name} (${fmtThrow(thrSafe)} sur #${thrSafe.target}, -${dmg}) → ${victim.lives} vie(s)`
+              );
             }
 
             return next;
@@ -902,7 +1199,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   React.useEffect(() => {
     if (!players.length) return;
     const me = players[turnIndex];
-    if (!me || me.eliminated) setTurnIndex((prev) => nextAliveIndex(players, prev));
+    if (!me || me.eliminated)
+      setTurnIndex((prev) => nextAliveIndex(players, prev));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [players]);
 
@@ -916,7 +1214,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   }
 
   const currentThrow = toKeypadThrow(visit);
-  const canValidateTurn = !inputDisabledBase && !isBotTurn && (visit.length > 0 || dartsLeft === 0);
+  const canValidateTurn =
+    !inputDisabledBase && !isBotTurn && (visit.length > 0 || dartsLeft === 0);
 
   function handleValidate() {
     if (inputDisabledBase) return;
@@ -926,6 +1225,23 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   }
 
   const RULES = rulesText(config);
+
+  // ✅ helper: sauvegarde + ouvre le résumé
+  function saveAndGoSummary(rec: any) {
+    try {
+      if (rec) onFinish(rec);
+    } catch {}
+    const matchId =
+      rec?.id ||
+      rec?.matchId ||
+      rec?.resumeId ||
+      rec?.payload?.resumeId ||
+      rec?.payload?.matchId ||
+      null;
+
+    if (matchId) go("killer_summary", { matchId });
+    else go("statsHub", { tab: "history", mode: "killer" });
+  }
 
   return (
     <div
@@ -968,8 +1284,22 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
               boxShadow: "0 18px 55px rgba(0,0,0,.6)",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-              <div style={{ fontWeight: 1000, letterSpacing: 1.2, color: gold, textTransform: "uppercase" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 1000,
+                  letterSpacing: 1.2,
+                  color: gold,
+                  textTransform: "uppercase",
+                }}
+              >
                 Règles KILLER
               </div>
               <button
@@ -1003,10 +1333,25 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
                     padding: 10,
                   }}
                 >
-                  <div style={{ fontWeight: 950, fontSize: 12, color: "#ffe7b0", textTransform: "uppercase" }}>
+                  <div
+                    style={{
+                      fontWeight: 950,
+                      fontSize: 12,
+                      color: "#ffe7b0",
+                      textTransform: "uppercase",
+                    }}
+                  >
                     {r.title}
                   </div>
-                  <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9, lineHeight: 1.35, whiteSpace: "pre-line" }}>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 12,
+                      opacity: 0.9,
+                      lineHeight: 1.35,
+                      whiteSpace: "pre-line",
+                    }}
+                  >
                     {r.body}
                   </div>
                 </div>
@@ -1044,15 +1389,39 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             }}
           >
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 12, fontWeight: 1000, letterSpacing: 1.6, textTransform: "uppercase", color: gold, opacity: 0.95 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 1000,
+                  letterSpacing: 1.6,
+                  textTransform: "uppercase",
+                  color: gold,
+                  opacity: 0.95,
+                }}
+              >
                 FIN DE PARTIE
               </div>
 
-              <div style={{ marginTop: 6, fontSize: 20, fontWeight: 1000, color: "#fff" }}>
+              <div
+                style={{
+                  marginTop: 6,
+                  fontSize: 20,
+                  fontWeight: 1000,
+                  color: "#fff",
+                }}
+              >
                 🏆 {(winner(players)?.name || "—")} gagne !
               </div>
 
-              <div style={{ marginTop: 10, height: 6, borderRadius: 999, background: "rgba(255,198,58,.14)", overflow: "hidden" }}>
+              <div
+                style={{
+                  marginTop: 10,
+                  height: 6,
+                  borderRadius: 999,
+                  background: "rgba(255,198,58,.14)",
+                  overflow: "hidden",
+                }}
+              >
                 <div
                   style={{
                     height: "100%",
@@ -1074,13 +1443,23 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
 
             {/* CLASSEMENT */}
             <div style={{ marginTop: 14 }}>
-              <div style={{ fontWeight: 1000, color: "#ffe7b0", fontSize: 12, textTransform: "uppercase", letterSpacing: 1.2 }}>
+              <div
+                style={{
+                  fontWeight: 1000,
+                  color: "#ffe7b0",
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: 1.2,
+                }}
+              >
                 Classement
               </div>
 
               <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
                 {(() => {
-                  const recPlayers = (endRec?.summary?.perPlayer || endRec?.payload?.summary?.perPlayer || null) as any[] | null;
+                  const recPlayers = (endRec?.summary?.perPlayer ||
+                    endRec?.payload?.summary?.perPlayer ||
+                    null) as any[] | null;
 
                   let rows: any[] = [];
                   if (recPlayers && Array.isArray(recPlayers) && recPlayers.length) {
@@ -1095,12 +1474,12 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
                       }))
                       .sort((a, b) => a.rank - b.rank);
                   } else {
-                    // fallback sans record
                     const ww = winner(players);
                     const elim = (elimOrderRef.current || []).slice();
                     const rankById: Record<string, number> = {};
                     let r = players.length;
-                    for (const id of elim) if (rankById[id] == null) rankById[id] = r--;
+                    for (const id of elim)
+                      if (rankById[id] == null) rankById[id] = r--;
                     if (ww?.id) rankById[ww.id] = 1;
 
                     rows = players
@@ -1126,20 +1505,60 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
                         padding: "8px 10px",
                         borderRadius: 14,
                         border: "1px solid rgba(255,255,255,.08)",
-                        background: i === 0 ? "rgba(255,198,58,.10)" : "rgba(0,0,0,.22)",
+                        background:
+                          i === 0
+                            ? "rgba(255,198,58,.10)"
+                            : "rgba(0,0,0,.22)",
                       }}
                     >
-                      <div style={{ fontWeight: 1000, color: i === 0 ? gold : "#fff", textAlign: "center" }}>{i + 1}</div>
+                      <div
+                        style={{
+                          fontWeight: 1000,
+                          color: i === 0 ? gold : "#fff",
+                          textAlign: "center",
+                        }}
+                      >
+                        {i + 1}
+                      </div>
 
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                        <AvatarMedallion size={28} src={p.avatarDataUrl} name={p.name} />
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          minWidth: 0,
+                        }}
+                      >
+                        <AvatarMedallion
+                          size={28}
+                          src={p.avatarDataUrl}
+                          name={p.name}
+                        />
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 1000, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
-                          <div style={{ fontSize: 11, opacity: 0.78 }}>kills {p.kills} · dmg {p.taken}</div>
+                          <div
+                            style={{
+                              fontWeight: 1000,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {p.name}
+                          </div>
+                          <div style={{ fontSize: 11, opacity: 0.78 }}>
+                            kills {p.kills} · dmg {p.taken}
+                          </div>
                         </div>
                       </div>
 
-                      <div style={{ fontWeight: 1000, color: i === 0 ? gold : "#ffe7b0" }}>{i === 0 ? "WIN" : ""}</div>
+                      <div
+                        style={{
+                          fontWeight: 1000,
+                          color: i === 0 ? gold : "#ffe7b0",
+                        }}
+                      >
+                        {i === 0 ? "WIN" : ""}
+                      </div>
                     </div>
                   ));
                 })()}
@@ -1147,13 +1566,21 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             </div>
 
             {/* ACTIONS */}
-            <div style={{ marginTop: 14, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+            <div
+              style={{
+                marginTop: 14,
+                display: "flex",
+                gap: 10,
+                justifyContent: "center",
+                flexWrap: "wrap",
+              }}
+            >
               <button
                 type="button"
                 onClick={() => {
                   setShowEnd(false);
-                  if (endRec) onFinish(endRec);
-                  else go("history");
+                  // ✅ SAVE + GO SUMMARY
+                  saveAndGoSummary(endRec);
                 }}
                 style={{
                   height: 42,
@@ -1173,7 +1600,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
               <button
                 type="button"
                 onClick={() => {
-                  // plus tard: go("killer_summary", { rec: endRec })
+                  // ✅ SAVE + GO SUMMARY (même logique)
+                  saveAndGoSummary(endRec);
                 }}
                 style={{
                   height: 42,
@@ -1225,7 +1653,16 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         </button>
 
         <div style={{ textAlign: "center", lineHeight: 1 }}>
-          <span style={{ display: "inline-block", color: gold, fontWeight: 1000, textTransform: "uppercase", letterSpacing: 1.6, textShadow: "0 0 14px rgba(255,198,58,.25)" }}>
+          <span
+            style={{
+              display: "inline-block",
+              color: gold,
+              fontWeight: 1000,
+              textTransform: "uppercase",
+              letterSpacing: 1.6,
+              textShadow: "0 0 14px rgba(255,198,58,.25)",
+            }}
+          >
             KILLER
           </span>
         </div>
@@ -1236,10 +1673,29 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       </div>
 
       {/* ================= ACTIVE PLAYER ================= */}
-      <div style={{ marginTop: 10, ...card, padding: 12, flex: "0 0 auto", position: "relative" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "92px 1fr 104px", gap: 10, alignItems: "center" }}>
+      <div
+        style={{
+          marginTop: 10,
+          ...card,
+          padding: 12,
+          flex: "0 0 auto",
+          position: "relative",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "92px 1fr 104px",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
           <div style={{ display: "grid", justifyItems: "center", gap: 8 }}>
-            <AvatarMedallion size={84} src={current?.avatarDataUrl} name={current?.name} />
+            <AvatarMedallion
+              size={84}
+              src={current?.avatarDataUrl}
+              name={current?.name}
+            />
             <div
               style={{
                 fontSize: 14,
@@ -1258,7 +1714,16 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             </div>
           </div>
 
-          <div style={{ borderRadius: 16, border: "1px solid rgba(255,255,255,.08)", background: "rgba(0,0,0,.28)", padding: 10, display: "grid", gap: 8 }}>
+          <div
+            style={{
+              borderRadius: 16,
+              border: "1px solid rgba(255,255,255,.08)",
+              background: "rgba(0,0,0,.28)",
+              padding: 10,
+              display: "grid",
+              gap: 8,
+            }}
+          >
             <StatRow label="Darts" value={dartsLeft} />
             <StatRow label="Lancers" value={current?.totalThrows ?? 0} />
             <StatRow label="Dégâts" value={current?.livesTaken ?? 0} />
@@ -1266,16 +1731,58 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           </div>
 
           <div style={{ display: "grid", justifyItems: "end", gap: 8 }}>
-            <div style={{ width: 96, textAlign: "center", fontWeight: 1000, fontSize: 22, color: gold, letterSpacing: 0.8 }}>
+            <div
+              style={{
+                width: 96,
+                textAlign: "center",
+                fontWeight: 1000,
+                fontSize: 22,
+                color: gold,
+                letterSpacing: 0.8,
+              }}
+            >
               #{current?.number ?? "?"}
               {current?.isKiller && <KillerIcon size={46} variant="active" />}
               {current?.eliminated && <DeadIcon size={46} variant="active" />}
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, width: 96 }}>
-              <div style={{ borderRadius: 14, border: "1px solid rgba(255,198,58,.20)", background: "rgba(255,198,58,.08)", padding: "8px 6px", textAlign: "center" }}>
-                <div style={{ fontSize: 9, opacity: 0.85, fontWeight: 900, letterSpacing: 0.8 }}>VIES</div>
-                <div style={{ fontSize: 22, fontWeight: 1000, color: gold, lineHeight: 1.0 }}>{current?.lives ?? 0}</div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+                width: 96,
+              }}
+            >
+              <div
+                style={{
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,198,58,.20)",
+                  background: "rgba(255,198,58,.08)",
+                  padding: "8px 6px",
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 9,
+                    opacity: 0.85,
+                    fontWeight: 900,
+                    letterSpacing: 0.8,
+                  }}
+                >
+                  VIES
+                </div>
+                <div
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 1000,
+                    color: gold,
+                    lineHeight: 1.0,
+                  }}
+                >
+                  {current?.lives ?? 0}
+                </div>
               </div>
 
               <StatBox label="SURV." value={`${aliveCount}/${totalCount}`} small />
@@ -1305,7 +1812,16 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       </div>
 
       {/* ================= LISTE JOUEURS ================= */}
-      <div style={{ marginTop: 10, flex: "1 1 auto", minHeight: 0, overflow: "auto", paddingRight: 2, WebkitOverflowScrolling: "touch" }}>
+      <div
+        style={{
+          marginTop: 10,
+          flex: "1 1 auto",
+          minHeight: 0,
+          overflow: "auto",
+          paddingRight: 2,
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
         <div style={{ display: "grid", gap: 10 }}>
           {players.map((p, idx) => {
             const isMe = idx === turnIndex;
