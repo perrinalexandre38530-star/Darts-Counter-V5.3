@@ -5,6 +5,10 @@
 // - Source de vérité pour StatsKiller.tsx (page stats)
 // - Lit memHistory (records withAvatars) / store.history / IDB history
 // - Support summary.detailedByPlayer + summary.perPlayer + fallbacks summary.players
+// - ✅ NEW robustness:
+//    - filtre joueur via players array multi-sources (rec / payload / summary / payload.summary)
+//    - lit hitsBySegmentByPlayer maps si dispo
+//    - fallback kills/lives via summary.players même si perPlayer existe mais incomplet
 // - Expose:
 //    played, wins, winRate, lastAt
 //    killsTotal, killsAvg
@@ -50,15 +54,7 @@ function numOr0(...vals: any[]): number {
 
 function pickId(obj: any): string {
   if (!obj) return "";
-  return (
-    obj.profileId ||
-    obj.playerId ||
-    obj.pid ||
-    obj.id ||
-    obj._id ||
-    obj.uid ||
-    ""
-  );
+  return obj.profileId || obj.playerId || obj.pid || obj.id || obj._id || obj.uid || "";
 }
 
 function getRecTimestamp(rec: any): number {
@@ -81,9 +77,15 @@ function getRecTimestamp(rec: any): number {
 }
 
 function isKillerRecord(rec: any): boolean {
-  const kind = rec?.kind || rec?.summary?.kind || rec?.payload?.kind;
+  const kind =
+    rec?.kind ||
+    rec?.summary?.kind ||
+    rec?.payload?.kind ||
+    rec?.payload?.summary?.kind;
+
   const game = rec?.payload?.game || rec?.summary?.game?.mode || rec?.summary?.game?.game;
-  const payloadMode = rec?.payload?.mode;
+  const payloadMode = rec?.payload?.mode || rec?.payload?.summary?.mode;
+
   return kind === "killer" || game === "killer" || payloadMode === "killer";
 }
 
@@ -95,6 +97,7 @@ function extractPerPlayer(summary: any): Record<string, any> {
   }
 
   const out: Record<string, any> = {};
+
   if (Array.isArray(summary.perPlayer)) {
     for (const p of summary.perPlayer) {
       const pid = pickId(p) || safeStr(p?.id);
@@ -115,6 +118,31 @@ function extractPerPlayer(summary: any): Record<string, any> {
   }
 
   return {};
+}
+
+// ✅ NEW: extrait players[] depuis plusieurs sources
+function extractPlayersArray(rec: any): any[] {
+  const summary = rec?.summary || rec?.payload?.summary || null;
+
+  const arr =
+    (Array.isArray(rec?.players) && rec.players) ||
+    (Array.isArray(rec?.payload?.players) && rec.payload.players) ||
+    (Array.isArray(summary?.players) && summary.players) ||
+    (Array.isArray(rec?.payload?.summary?.players) && rec.payload.summary.players) ||
+    [];
+
+  return Array.isArray(arr) ? arr : [];
+}
+
+// ✅ NEW: hitsBySegmentByPlayer map (Option A)
+function extractHitsBySegmentMap(summary: any): any | null {
+  if (!summary) return null;
+  return (
+    summary.hitsBySegmentByPlayer ||
+    summary.hits_by_segment_by_player ||
+    summary.hitsBySegment ||
+    null
+  );
 }
 
 function parseSegmentKeyToNumber(segKey: string): number {
@@ -186,11 +214,10 @@ export function computeKillerStatsAggForProfile(memHistory: any[], playerId: str
   const killer = list.filter(isKillerRecord);
 
   const filtered = playerId
-    ? killer.filter((r) =>
-        (r?.players || r?.payload?.players || r?.summary?.players || r?.payload?.summary?.players || []).some(
-          (p: any) => String(p?.id || p?.playerId || p?.profileId) === String(playerId)
-        )
-      )
+    ? killer.filter((r) => {
+        const arr = extractPlayersArray(r);
+        return arr.some((p: any) => String(pickId(p) || p?.id) === String(playerId));
+      })
     : killer;
 
   let played = 0;
@@ -227,49 +254,64 @@ export function computeKillerStatsAggForProfile(memHistory: any[], playerId: str
     if (!playerId) continue;
 
     const me = per?.[playerId] || per?.[String(playerId)] || null;
-    if (me) {
-      const k = numOr0(me.kills, me.killCount, me.k);
-      if (k > 0) killsTotal += k;
 
-      const lt = numOr0(me.livesTaken, me.damageDealt, me.dmgDealt);
-      if (lt > 0) livesTakenTotal += lt;
+    // ✅ fallback player summary.players même si per existe (au cas où per est incomplet)
+    const arrSummaryPlayers: any[] = Array.isArray(summary?.players) ? summary.players : [];
+    const sp =
+      arrSummaryPlayers.find((x) => String(pickId(x) || x?.id) === String(playerId)) ||
+      null;
 
-      const ll = numOr0(me.livesLost, me.damageTaken, me.dmgTaken);
-      if (ll > 0) livesLostTotal += ll;
+    // -------- kills / lives --------
+    const k = numOr0(me?.kills, me?.killCount, me?.k, sp?.kills, sp?.killCount, sp?.k);
+    if (k > 0) killsTotal += k;
 
-      // Option A hitsBySegment
-      const hbs = me.hitsBySegment || me.hits_by_segment || me.hits || null;
-      if (hbs && typeof hbs === "object") {
-        for (const [seg, c0] of Object.entries(hbs)) {
-          const c = numOr0(c0);
-          if (c <= 0) continue;
-          const s = safeStr(seg).toUpperCase();
-          hitsBySegmentAgg[s] = (hitsBySegmentAgg[s] || 0) + c;
-        }
+    const lt = numOr0(
+      me?.livesTaken, me?.damageDealt, me?.dmgDealt,
+      sp?.livesTaken, sp?.damageDealt, sp?.dmgDealt
+    );
+    if (lt > 0) livesTakenTotal += lt;
+
+    const ll = numOr0(
+      me?.livesLost, me?.damageTaken, me?.dmgTaken,
+      sp?.livesLost, sp?.damageTaken, sp?.dmgTaken
+    );
+    if (ll > 0) livesLostTotal += ll;
+
+    // -------- hits by segment (Option A) --------
+    // 1) det
+    const hbs1 = me?.hitsBySegment || me?.hits_by_segment || me?.hits || null;
+    if (hbs1 && typeof hbs1 === "object") {
+      for (const [seg, c0] of Object.entries(hbs1)) {
+        const c = numOr0(c0);
+        if (c <= 0) continue;
+        const s = safeStr(seg).toUpperCase();
+        if (s === "MISS") continue;
+        hitsBySegmentAgg[s] = (hitsBySegmentAgg[s] || 0) + c;
       }
-    } else {
-      // fallback : summary.players array
-      const arr: any[] = Array.isArray(summary?.players) ? summary.players : [];
-      const sp = arr.find((x) => String(pickId(x) || x?.id) === String(playerId));
-      if (sp) {
-        const k = numOr0(sp.kills, sp.killCount, sp.k);
-        if (k > 0) killsTotal += k;
+    }
 
-        const lt = numOr0(sp.livesTaken, sp.damageDealt, sp.dmgDealt);
-        if (lt > 0) livesTakenTotal += lt;
+    // 2) fallback: summary.players[i].hitsBySegment
+    const hbs2 = sp?.hitsBySegment || sp?.hits_by_segment || sp?.hits || null;
+    if (hbs2 && typeof hbs2 === "object") {
+      for (const [seg, c0] of Object.entries(hbs2)) {
+        const c = numOr0(c0);
+        if (c <= 0) continue;
+        const s = safeStr(seg).toUpperCase();
+        if (s === "MISS") continue;
+        hitsBySegmentAgg[s] = (hitsBySegmentAgg[s] || 0) + c;
+      }
+    }
 
-        const ll = numOr0(sp.livesLost, sp.damageTaken, sp.dmgTaken);
-        if (ll > 0) livesLostTotal += ll;
-
-        const hbs = sp.hitsBySegment || sp.hits_by_segment || sp.hits || null;
-        if (hbs && typeof hbs === "object") {
-          for (const [seg, c0] of Object.entries(hbs)) {
-            const c = numOr0(c0);
-            if (c <= 0) continue;
-            const s = safeStr(seg).toUpperCase();
-            hitsBySegmentAgg[s] = (hitsBySegmentAgg[s] || 0) + c;
-          }
-        }
+    // 3) ✅ NEW: hitsBySegmentByPlayer map
+    const map = extractHitsBySegmentMap(summary);
+    const mapForMe = map?.[playerId] || map?.[String(playerId)] || null;
+    if (mapForMe && typeof mapForMe === "object") {
+      for (const [seg, c0] of Object.entries(mapForMe)) {
+        const c = numOr0(c0);
+        if (c <= 0) continue;
+        const s = safeStr(seg).toUpperCase();
+        if (s === "MISS") continue;
+        hitsBySegmentAgg[s] = (hitsBySegmentAgg[s] || 0) + c;
       }
     }
   }

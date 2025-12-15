@@ -7,7 +7,7 @@
 // - Avatars: récup depuis profiles OU history.players OU summary
 // - + BotsMap: récup avatars/noms depuis localStorage dc_bots_v1
 // - Metrics: wins / matches / winRate / avg3 / bestVisit / bestCheckout
-// - ✅ NEW (KILLER Option A): kills / favNumber / favSegment / favHits
+// - ✅ NEW (KILLER Option A): kills / favNumberHits / favSegmentHits / totalHits
 // - Filtre période D/W/M/Y/ALL/TOUT
 // =============================================================
 
@@ -92,16 +92,8 @@ const MODE_DEFS: {
   },
 
   { id: "shanghai", label: "SHANGHAI", metrics: ["wins", "winRate", "matches"] },
-  {
-    id: "battle_royale",
-    label: "BATTLE ROYALE",
-    metrics: ["wins", "winRate", "matches"],
-  },
-  {
-    id: "clock",
-    label: "TOUR DE L’HORLOGE",
-    metrics: ["wins", "winRate", "matches"],
-  },
+  { id: "battle_royale", label: "BATTLE ROYALE", metrics: ["wins", "winRate", "matches"] },
+  { id: "clock", label: "TOUR DE L’HORLOGE", metrics: ["wins", "winRate", "matches"] },
 ];
 
 // ------------------------------
@@ -142,28 +134,12 @@ function pickAvatar(obj: any): string | null {
 
 function pickName(obj: any): string {
   if (!obj) return "";
-  return (
-    obj.name ||
-    obj.playerName ||
-    obj.profileName ||
-    obj.label ||
-    obj.nickname ||
-    obj.displayName ||
-    ""
-  );
+  return obj.name || obj.playerName || obj.profileName || obj.label || obj.nickname || obj.displayName || "";
 }
 
 function pickId(obj: any): string {
   if (!obj) return "";
-  return (
-    obj.profileId ||
-    obj.playerId ||
-    obj.pid ||
-    obj.id ||
-    obj._id ||
-    obj.uid ||
-    ""
-  );
+  return obj.profileId || obj.playerId || obj.pid || obj.id || obj._id || obj.uid || "";
 }
 
 // ✅ NEW: récupère tous les bots depuis le storage (pour avatars manquants en history)
@@ -175,10 +151,7 @@ function loadBotsMap(): Record<string, { avatarDataUrl?: string | null; name?: s
     const map: Record<string, any> = {};
     for (const b of bots || []) {
       if (!b?.id) continue;
-      map[b.id] = {
-        avatarDataUrl: b.avatarDataUrl ?? null,
-        name: b.name,
-      };
+      map[b.id] = { avatarDataUrl: b.avatarDataUrl ?? null, name: b.name };
     }
     return map;
   } catch {
@@ -226,14 +199,13 @@ function getRecTimestamp(rec: any): number {
 function inPeriod(rec: any, period: PeriodKey): boolean {
   if (period === "ALL" || period === "TOUT") return true;
   const dt = getRecTimestamp(rec);
-  if (!dt) return true; // si pas de date fiable, on conserve
+  if (!dt) return true;
   const span = periodToMs(period);
   if (!span) return true;
   return Date.now() - dt <= span;
 }
 
 function isRecordMatchingMode(rec: any, mode: LeaderboardMode, scope: Scope): boolean {
-  // scope online/local : à brancher plus tard si tu as un flag fiable
   void scope;
 
   const kind = rec?.kind || rec?.summary?.kind || rec?.payload?.kind;
@@ -305,7 +277,6 @@ function extractPerPlayerSummary(summary: any): Record<string, any> {
     summary.coByPlayer ||
     null;
 
-  // ✅ NEW: hitsBySegment map possible (Option A)
   const hitsBySegMap =
     summary.hitsBySegmentByPlayer ||
     summary.hits_by_segment_by_player ||
@@ -359,7 +330,6 @@ function parseSegmentKeyToNumber(segKey: string): number {
   const k = safeStr(segKey).toUpperCase();
   if (k === "SB" || k === "BULL") return 25;
   if (k === "DB" || k === "DBULL") return 25;
-  // format S20 / D8 / T19
   const m = k.match(/^([SDT])(\d{1,2})$/);
   if (m) {
     const n = Number(m[2]);
@@ -378,6 +348,7 @@ function computeFavsFromHitsMap(hitsBySegment: any) {
       const k = safeStr(k0).toUpperCase();
       const c = numOr0(v0);
       if (c <= 0) continue;
+
       segCounts[k] = (segCounts[k] || 0) + c;
       totalHits += c;
 
@@ -420,7 +391,6 @@ type Agg = {
   bestVisit: number;
   bestCheckout: number;
 
-  // ✅ NEW
   kills: number;
   hitsBySegmentAgg: Record<string, number>;
   totalHits: number;
@@ -442,10 +412,10 @@ function computeRowsFromHistory(
   const infoByPlayer: Record<string, ExtraInfo> = {};
   const profileById: Record<string, Profile> = {};
 
-  // ✅ NEW: map bots (corrige avatars manquants des bots dans history)
-  const botsMap = loadBotsMap();
+  // ✅ bots map 1 seule fois
+  const botsMap0 = loadBotsMap();
 
-  // seed profils locaux (y compris bots si ils sont dans store.profiles)
+  // seed profils locaux
   for (const p of profiles || []) {
     profileById[p.id] = p;
     aggByPlayer[p.id] = {
@@ -481,12 +451,9 @@ function computeRowsFromHistory(
     const summary = rec.summary || rec.payload?.summary || null;
     const per = extractPerPlayerSummary(summary);
 
-    // For killer: sometimes summary.players contains kills, but perPlayer has hitsBySegment
     const summaryPlayersArr: any[] = Array.isArray(summary?.players) ? summary.players : [];
 
-    // ------------------------------
-    // 1) Per-player via summary (meilleur câblage)
-    // ------------------------------
+    // 1) per-player
     if (per && Object.keys(per).length > 0) {
       for (const key of Object.keys(per)) {
         const det: any = per[key] || {};
@@ -507,31 +474,22 @@ function computeRowsFromHistory(
           };
         }
 
-        // infos (nom/avatar) : ne remplace pas si déjà mieux
         if (!infoByPlayer[pid]) infoByPlayer[pid] = {};
 
         if (!infoByPlayer[pid].name) {
-          infoByPlayer[pid].name =
-            pickName(det) ||
-            botsMap?.[pid]?.name ||
-            infoByPlayer[pid].name ||
-            "";
+          infoByPlayer[pid].name = pickName(det) || botsMap0?.[pid]?.name || infoByPlayer[pid].name || "";
         }
 
         if (!infoByPlayer[pid].avatarDataUrl) {
           infoByPlayer[pid].avatarDataUrl =
-            pickAvatar(det) ||
-            botsMap?.[pid]?.avatarDataUrl ||
-            infoByPlayer[pid].avatarDataUrl ||
-            null;
+            pickAvatar(det) || botsMap0?.[pid]?.avatarDataUrl || infoByPlayer[pid].avatarDataUrl || null;
         }
 
         const agg = aggByPlayer[pid];
 
         agg.matches += 1;
-        if (winnerId && winnerId === pid) agg.wins += 1;
+        if (winnerId && String(winnerId) === String(pid)) agg.wins += 1;
 
-        // X01 metrics
         const avg3Candidate = numOr0(det.avg3, det.moy3, det.avg, det.avg3d, det.avg_3);
         if (avg3Candidate > 0) {
           agg.avg3Sum += avg3Candidate;
@@ -544,37 +502,36 @@ function computeRowsFromHistory(
         const coCandidate = numOr0(det.bestCheckout, det.bestCo, det.coBest, det.co, det.best_co);
         if (coCandidate > 0) agg.bestCheckout = Math.max(agg.bestCheckout, coCandidate);
 
-        // ✅ KILLER: kills (si dispo dans summary.players)
-        if (mode === "killer" && summaryPlayersArr.length) {
-          const sp = summaryPlayersArr.find((x) => String(pickId(x) || x?.id) === String(pid));
-          if (sp) {
-            const k = numOr0(sp.kills, sp.killCount, sp.k);
+        if (mode === "killer") {
+          // kills: prefer summary.players
+          if (summaryPlayersArr.length) {
+            const sp = summaryPlayersArr.find((x) => String(pickId(x) || x?.id) === String(pid));
+            if (sp) {
+              const k = numOr0(sp.kills, sp.killCount, sp.k);
+              if (k > 0) agg.kills += k;
+            }
+          } else {
+            const k = numOr0(det.kills, det.killCount, det.k);
             if (k > 0) agg.kills += k;
           }
-        } else if (mode === "killer") {
-          // fallback si kills packé dans det
-          const k = numOr0(det.kills, det.killCount, det.k);
-          if (k > 0) agg.kills += k;
-        }
 
-        // ✅ KILLER Option A: hitsBySegment
-        const hbs = det.hitsBySegment || det.hits_by_segment || det.hits || null;
-        if (hbs && typeof hbs === "object") {
-          for (const [seg, c0] of Object.entries(hbs)) {
-            const c = numOr0(c0);
-            if (c <= 0) continue;
-            const s = safeStr(seg).toUpperCase();
-            agg.hitsBySegmentAgg[s] = (agg.hitsBySegmentAgg[s] || 0) + c;
-            agg.totalHits += c;
+          // hitsBySegment
+          const hbs = det.hitsBySegment || det.hits_by_segment || det.hits || null;
+          if (hbs && typeof hbs === "object") {
+            for (const [seg, c0] of Object.entries(hbs)) {
+              const c = numOr0(c0);
+              if (c <= 0) continue;
+              const s = safeStr(seg).toUpperCase();
+              agg.hitsBySegmentAgg[s] = (agg.hitsBySegmentAgg[s] || 0) + c;
+              agg.totalHits += c;
+            }
           }
         }
       }
       continue;
     }
 
-    // ------------------------------
-    // 2) Fallback via players array
-    // ------------------------------
+    // 2) fallback via players array
     const playersArr: any[] = Array.isArray(rec.players)
       ? rec.players
       : Array.isArray(rec.payload?.players)
@@ -590,7 +547,6 @@ function computeRowsFromHistory(
       const name = pickName(pl);
       const avatar = pickAvatar(pl);
 
-      // si pas d'id on agrège quand même par nom (évite le vide)
       const key = pid || `name:${safeStr(name).trim().toLowerCase()}`;
       if (!key) continue;
 
@@ -612,18 +568,17 @@ function computeRowsFromHistory(
       if (!infoByPlayer[key]) infoByPlayer[key] = {};
 
       if (!infoByPlayer[key].name) {
-        infoByPlayer[key].name = name || botsMap?.[pid]?.name || "—";
+        infoByPlayer[key].name = name || botsMap0?.[pid]?.name || "—";
       }
 
       if (!infoByPlayer[key].avatarDataUrl) {
-        infoByPlayer[key].avatarDataUrl = avatar || botsMap?.[pid]?.avatarDataUrl || null;
+        infoByPlayer[key].avatarDataUrl = avatar || botsMap0?.[pid]?.avatarDataUrl || null;
       }
 
       const agg = aggByPlayer[key];
       agg.matches += 1;
-      if (winnerId && pid && winnerId === pid) agg.wins += 1;
+      if (winnerId && pid && String(winnerId) === String(pid)) agg.wins += 1;
 
-      // X01 fallbacks
       const avg3Candidate = numOr0(pl.avg3, pl.moy3, pl.avg3d);
       if (avg3Candidate > 0) {
         agg.avg3Sum += avg3Candidate;
@@ -634,7 +589,6 @@ function computeRowsFromHistory(
       const coCandidate = numOr0(pl.bestCheckout, pl.bestCo, pl.coBest);
       if (coCandidate > 0) agg.bestCheckout = Math.max(agg.bestCheckout, coCandidate);
 
-      // KILLER fallback kills
       if (mode === "killer") {
         const k = numOr0(pl.kills, pl.killCount, pl.k);
         if (k > 0) agg.kills += k;
@@ -647,16 +601,18 @@ function computeRowsFromHistory(
     const prof = profileById[pid];
     const extra = infoByPlayer[pid] || {};
 
-    const matches = agg.matches;
-    const wins = agg.wins;
+    const matches = agg.matches || 0;
+    const wins = agg.wins || 0;
     const winRate = matches > 0 ? (wins / matches) * 100 : 0;
     const avg3 = agg.avg3Count > 0 ? agg.avg3Sum / agg.avg3Count : 0;
 
-    const fav = computeFavsFromHitsMap(agg.hitsBySegmentAgg);
+    const fav =
+      mode === "killer"
+        ? computeFavsFromHitsMap(agg.hitsBySegmentAgg)
+        : { favSegment: "", favSegmentHits: 0, favNumber: 0, favNumberHits: 0, totalHits: 0 };
 
-    // ✅ NEW: si avatar manquant, on tente botsMap (utile si row seed par name:xxx ou info manquante)
-    const botFallbackAvatar = botsMap?.[pid]?.avatarDataUrl || null;
-    const botFallbackName = botsMap?.[pid]?.name || undefined;
+    const botFallbackAvatar = botsMap0?.[pid]?.avatarDataUrl || null;
+    const botFallbackName = botsMap0?.[pid]?.name || undefined;
 
     return {
       id: pid,
@@ -674,8 +630,8 @@ function computeRowsFromHistory(
       winRate,
 
       avg3,
-      bestVisit: agg.bestVisit,
-      bestCheckout: agg.bestCheckout,
+      bestVisit: agg.bestVisit || 0,
+      bestCheckout: agg.bestCheckout || 0,
 
       kills: agg.kills || 0,
       favNumber: fav.favNumber || 0,
@@ -703,8 +659,6 @@ function metricLabel(m: MetricKey) {
       return "Best visit";
     case "bestCheckout":
       return "Best CO";
-
-    // ✅ NEW
     case "kills":
       return "Kills";
     case "favNumberHits":
@@ -811,51 +765,41 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
   };
 
   const rows = React.useMemo(() => {
-    // ✅ KILLER: on classe depuis l'agrégateur unique
-if (mode === "killer") {
-  const botsMap = (function loadBotsMap() {
-    try {
-      const raw = localStorage.getItem("dc_bots_v1");
-      if (!raw) return {};
-      const bots = JSON.parse(raw);
-      const map: any = {};
-      for (const b of bots || []) if (b?.id) map[b.id] = { name: b.name, avatarDataUrl: b.avatarDataUrl ?? null };
-      return map;
-    } catch {
-      return {};
+    // ✅ KILLER : classement depuis l’agrégateur dédié
+    if (mode === "killer") {
+      const botsMap = loadBotsMap();
+
+      // NOTE: on passe scope/period en plus -> si computeKillerAgg ne les utilise pas, ça ne casse pas (args extra ignorés)
+      const agg = computeKillerAgg(historySource || [], profiles || [], scope, period, botsMap);
+      const base = Object.values(agg || {});
+
+      const value = (r: any): number => {
+        switch (metric) {
+          case "wins":
+            return numOr0(r.wins);
+          case "winRate":
+            return numOr0(r.winRate);
+          case "matches":
+            return numOr0(r.matches, r.played);
+          case "kills":
+            return numOr0(r.kills);
+          case "favSegmentHits":
+            return numOr0(r.favSegmentHits);
+          case "favNumberHits":
+            return numOr0(r.favNumberHits);
+          case "totalHits":
+            return numOr0(r.totalHits);
+          default:
+            return 0;
+        }
+      };
+
+      return [...base].sort((a, b) => value(b) - value(a));
     }
-  })();
 
-  const agg = computeKillerAgg(historySource || [], profiles || [], botsMap);
-  const base = Object.values(agg);
-
-  const value = (r: any) => {
-    switch (metric) {
-      case "wins":
-        return r.wins;
-      case "winRate":
-        return r.winRate;
-      case "matches":
-        return r.played;
-      case "kills":
-        return r.kills;
-      case "favSegmentHits":
-        return r.favSegmentHits;
-      case "favNumberHits":
-        return r.favNumberHits;
-      case "totalHits":
-        return r.totalHits;
-      default:
-        return 0;
-    }
-  };
-
-  return [...base].sort((a, b) => value(b) - value(a));
-}
-  
     // ✅ autres modes: logique actuelle
     const baseRows = computeRowsFromHistory(historySource, profiles, mode, scope, period);
-  
+
     const value = (r: Row): number => {
       switch (metric) {
         case "wins":
@@ -870,8 +814,6 @@ if (mode === "killer") {
           return r.bestVisit;
         case "bestCheckout":
           return r.bestCheckout;
-  
-        // ✅ NEW (killer option A, mais ici pour les autres modes ça reste 0)
         case "kills":
           return r.kills;
         case "favNumberHits":
@@ -1066,23 +1008,8 @@ if (mode === "killer") {
         }}
       >
         {/* Période */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 8,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: 0.7,
-              color: theme.primary,
-            }}
-          >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.7, color: theme.primary }}>
             {t("stats.leaderboards.period", "Période")}
           </div>
 
@@ -1112,16 +1039,7 @@ if (mode === "killer") {
         </div>
 
         {/* Tri */}
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            textTransform: "uppercase",
-            letterSpacing: 0.7,
-            color: theme.primary,
-            marginBottom: 4,
-          }}
-        >
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.7, color: theme.primary, marginBottom: 4 }}>
           {t("stats.leaderboards.sortBy", "Classement par")}
         </div>
 
@@ -1191,16 +1109,7 @@ if (mode === "killer") {
           marginBottom: 24,
         }}
       >
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            textTransform: "uppercase",
-            letterSpacing: 0.8,
-            color: theme.textSoft,
-            marginBottom: 6,
-          }}
-        >
+        <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.8, color: theme.textSoft, marginBottom: 6 }}>
           {t("stats.leaderboards.titleList", "Classements")}
         </div>
 
@@ -1210,7 +1119,7 @@ if (mode === "killer") {
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {rows.map((row, index) => {
+            {rows.map((row: any, index: number) => {
               const rank = index + 1;
               const isFirst = rank === 1;
               const isSecond = rank === 2;
@@ -1226,46 +1135,41 @@ if (mode === "killer") {
 
               switch (metric) {
                 case "wins":
-                  metricValue = `${row.wins}`;
-                  metricSub = `${row.matches} matchs`;
+                  metricValue = `${row.wins || 0}`;
+                  metricSub = `${row.matches || row.played || 0} matchs`;
                   break;
                 case "winRate":
-                  metricValue = `${row.winRate.toFixed(1)}%`;
-                  metricSub = `${row.wins}/${row.matches}`;
+                  metricValue = `${numOr0(row.winRate).toFixed(1)}%`;
+                  metricSub = `${row.wins || 0}/${row.matches || row.played || 0}`;
                   break;
                 case "matches":
-                  metricValue = `${row.matches}`;
-                  metricSub = `${row.wins} win`;
+                  metricValue = `${row.matches || row.played || 0}`;
+                  metricSub = `${row.wins || 0} win`;
                   break;
                 case "avg3":
-                  metricValue = row.avg3 ? row.avg3.toFixed(1) : "0.0";
-                  metricSub = `${row.matches} matchs`;
+                  metricValue = row.avg3 ? Number(row.avg3).toFixed(1) : "0.0";
+                  metricSub = `${row.matches || 0} matchs`;
                   break;
                 case "bestVisit":
                   metricValue = `${row.bestVisit || 0}`;
-                  metricSub = `${row.matches} matchs`;
+                  metricSub = `${row.matches || 0} matchs`;
                   break;
                 case "bestCheckout":
                   metricValue = `${row.bestCheckout || 0}`;
-                  metricSub = `${row.matches} matchs`;
+                  metricSub = `${row.matches || 0} matchs`;
                   break;
 
-                // ✅ NEW (killer)
                 case "kills":
                   metricValue = `${row.kills || 0}`;
-                  metricSub = `${row.matches} matchs`;
+                  metricSub = `${row.matches || row.played || 0} matchs`;
                   break;
                 case "favNumberHits":
                   metricValue = row.favNumber ? `#${row.favNumber}` : "—";
-                  metricSub = row.favNumberHits
-                    ? `${row.favNumberHits} hit(s)`
-                    : `${row.totalHits || 0} hit(s)`;
+                  metricSub = row.favNumberHits ? `${row.favNumberHits} hit(s)` : `${row.totalHits || 0} hit(s)`;
                   break;
                 case "favSegmentHits":
                   metricValue = row.favSegment ? `${row.favSegment}` : "—";
-                  metricSub = row.favSegmentHits
-                    ? `${row.favSegmentHits} hit(s)`
-                    : `${row.totalHits || 0} hit(s)`;
+                  metricSub = row.favSegmentHits ? `${row.favSegmentHits} hit(s)` : `${row.totalHits || 0} hit(s)`;
                   break;
                 case "totalHits":
                   metricValue = `${row.totalHits || 0}`;
@@ -1274,7 +1178,7 @@ if (mode === "killer") {
 
                 default:
                   metricValue = "0";
-                  metricSub = `${row.matches} matchs`;
+                  metricSub = `${row.matches || row.played || 0} matchs`;
               }
 
               const label = row.name || "—";
@@ -1282,7 +1186,7 @@ if (mode === "killer") {
 
               return (
                 <div
-                  key={row.id}
+                  key={row.id || `${label}-${index}`}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -1293,15 +1197,7 @@ if (mode === "killer") {
                   }}
                 >
                   {/* Rang */}
-                  <div
-                    style={{
-                      width: 26,
-                      textAlign: "center",
-                      fontWeight: 900,
-                      fontSize: 13,
-                      color: rankColor,
-                    }}
-                  >
+                  <div style={{ width: 26, textAlign: "center", fontWeight: 900, fontSize: 13, color: rankColor }}>
                     {rank}
                   </div>
 
@@ -1330,14 +1226,7 @@ if (mode === "killer") {
                           draggable={false}
                         />
                       ) : (
-                        // ✅ fallback BOT-friendly (évite les "?" vides)
-                        <ProfileAvatar
-                          size={30}
-                          dataUrl={null}
-                          label={letter || "🤖"}
-                          showStars={false}
-                          isBot={true}
-                        />
+                        <ProfileAvatar size={30} dataUrl={null} label={letter || "🤖"} showStars={false} isBot={true} />
                       )}
                     </div>
 
@@ -1358,9 +1247,7 @@ if (mode === "killer") {
                   {/* Valeur */}
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", fontSize: 11 }}>
                     <div style={{ fontWeight: 800, color: theme.primary }}>{metricValue}</div>
-                    <div style={{ fontSize: 9.5, color: theme.textSoft }}>
-                      {metricSub ?? `${row.matches} matchs`}
-                    </div>
+                    <div style={{ fontSize: 9.5, color: theme.textSoft }}>{metricSub ?? `${row.matches || row.played || 0} matchs`}</div>
                   </div>
                 </div>
               );

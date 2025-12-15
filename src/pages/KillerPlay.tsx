@@ -1,33 +1,23 @@
 // @ts-nocheck
 // ============================================
 // src/pages/KillerPlay.tsx
-// KILLER — PLAY (V1.3 + BOTS)
-// ✅ MISS (0) + BULL (25 / DBULL)
-// ✅ UNDO RÉEL (rollback état complet)
-// ✅ Auto-fin de tour quand dartsLeft = 0
-// ✅ Hook input externe (CustomEvent "dc:throw")
-// ✅ NEW (Stats Killer enrichies - Option A étendue)
-//    - totalThrows / killerThrows / offensiveThrows
-//    - hitsBySegment (S20/T8/DBULL...) + hitsByNumber (1..20 + 25)
-//    - livesTaken / livesLost
-//    - killerHits / uselessHits
-//    - throwsToBecomeKiller
-//    - survivalTimeMs + finalRank (calcul fin de match)
-// ✅ IMPORTANT : écrit summary.perPlayer + summary.detailedByPlayer (compat statsKiller.ts + leaderboards)
-// ✅ NEW : BOTS autoplay (si player.isBot)
-//    - utilise botLevel pour viser + mult
-//    - stats/record incluent isBot/botLevel
-// - Reçoit config depuis KillerConfig : routeParams.config
-// - Tour par tour (3 fléchettes)
-// - Devenir Killer en touchant SON numéro (règle single/double)
-// - Quand Killer : toucher le numéro d’un autre joueur -> retire des vies
-// - Élimination à 0 vie ; dernier vivant gagne
-// - onFinish(matchRecord) => App.pushHistory()
+// KILLER — PLAY (V1.3 + BOTS) — UI refacto X01-like
+// ✅ Liste joueurs scrollable (header + joueur actif + keypad restent visibles)
+// ✅ "i" = InfoDot (style Games) + texte "i" blanc
+// ✅ Supprime tous les halos autour du médaillon du profil actif
+// ✅ Liste joueurs : plus de “fond blanc/halo” derrière les avatars
+// ✅ Affiche dernière volée du joueur (3 chips colorées) à côté du nom (style X01MultiV3)
+// ✅ Message “Appuie sur VALIDER…” => 1 seule phrase dans un petit bloc flottant
+// ✅ FIX: chips au-dessus du Keypad restent GROS (chipStyleBig)
+// ✅ FIX: chips mini dans la liste joueurs (chipStyleMini)
+// ✅ FIX: DOUBLE/TRIPLE reset après chaque lancer (setMultiplier(1) après snapshot())
 // ============================================
 
 import React from "react";
-import type { Store, MatchRecord } from "../lib/types";
+import type { Store, MatchRecord, Dart as UIDart } from "../lib/types";
 import type { KillerConfig, KillerDamageRule, KillerBecomeRule } from "./KillerConfig";
+import Keypad from "../components/Keypad";
+import InfoDot from "../components/InfoDot";
 
 type Props = {
   store: Store;
@@ -40,15 +30,13 @@ type Mult = 1 | 2 | 3;
 
 type ThrowInput = {
   target: number; // 0 = MISS, 1..20, 25 = BULL
-  mult: Mult; // S=1 D=2 T=3 (sur bull on utilise surtout 1/2)
+  mult: Mult; // S=1 D=2 T=3
 };
 
 type KillerPlayerState = {
   id: string;
   name: string;
   avatarDataUrl?: string | null;
-
-  // ✅ bots
   isBot?: boolean;
   botLevel?: string;
 
@@ -56,24 +44,27 @@ type KillerPlayerState = {
   lives: number; // >=0
   isKiller: boolean;
   eliminated: boolean;
+
   kills: number;
   hitsOnSelf: number;
-
-  // ✅ NEW stats
   totalThrows: number;
   killerThrows: number;
   offensiveThrows: number;
   killerHits: number;
   uselessHits: number;
+
   livesTaken: number;
   livesLost: number;
+
   throwsToBecomeKiller: number;
   becameAtThrow?: number | null;
   eliminatedAt?: number | null;
 
-  // ✅ Option A maps (utilisées par statsKiller + leaderboards)
   hitsBySegment: Record<string, number>;
   hitsByNumber: Record<string, number>;
+
+  // ✅ UI: dernière volée jouée (affichage liste joueurs)
+  lastVisit?: ThrowInput[] | null;
 };
 
 type Snapshot = {
@@ -84,6 +75,7 @@ type Snapshot = {
   log: string[];
   finished: boolean;
   elimOrder: string[];
+  multiplier: Mult;
 };
 
 function clampInt(n: any, min: number, max: number, fallback: number) {
@@ -143,10 +135,7 @@ function incMap(map: any, key: any, by = 1) {
 // BOT helpers
 // -----------------------------
 function resolveBotSkill(botLevelRaw?: string | null): number {
-  const v = String(botLevelRaw || "")
-    .toLowerCase()
-    .trim();
-
+  const v = String(botLevelRaw || "").toLowerCase().trim();
   if (!v) return 2;
 
   const digits = v.replace(/[^0-9]/g, "");
@@ -161,6 +150,7 @@ function resolveBotSkill(botLevelRaw?: string | null): number {
   if (v.includes("fort") || v.includes("hard") || v.includes("difficile")) return 3;
   if (v.includes("standard") || v.includes("normal") || v.includes("moyen")) return 2;
   if (v.includes("easy") || v.includes("facile") || v.includes("débutant")) return 1;
+
   return 2;
 }
 
@@ -168,242 +158,265 @@ function rand01() {
   return Math.random();
 }
 
-// distribution mult selon skill
 function pickMultForBot(skill: number, becomeRule: KillerBecomeRule, wantsDouble: boolean): Mult {
-  // skill 1 => surtout S
-  // skill 5 => plus de D/T
   const r = rand01();
 
   if (wantsDouble) {
-    // pour devenir killer en règle "double", on force + de D
-    if (skill >= 4) return r < 0.78 ? 2 : r < 0.90 ? 3 : 1;
+    if (skill >= 4) return r < 0.78 ? 2 : r < 0.9 ? 3 : 1;
     if (skill === 3) return r < 0.65 ? 2 : r < 0.78 ? 1 : 3;
-    if (skill === 2) return r < 0.55 ? 2 : r < 0.90 ? 1 : 3;
+    if (skill === 2) return r < 0.55 ? 2 : r < 0.9 ? 1 : 3;
     return r < 0.45 ? 2 : 1;
   }
 
-  // sinon mult “naturel”
-  if (skill >= 5) return r < 0.55 ? 2 : r < 0.80 ? 3 : 1;
+  if (skill >= 5) return r < 0.55 ? 2 : r < 0.8 ? 3 : 1;
   if (skill === 4) return r < 0.45 ? 2 : r < 0.65 ? 3 : 1;
-  if (skill === 3) return r < 0.30 ? 2 : r < 0.40 ? 3 : 1;
+  if (skill === 3) return r < 0.3 ? 2 : r < 0.4 ? 3 : 1;
   if (skill === 2) return r < 0.18 ? 2 : r < 0.22 ? 3 : 1;
-  return r < 0.10 ? 2 : 1;
+  return r < 0.1 ? 2 : 1;
 }
 
 function decideBotThrow(me: KillerPlayerState, all: KillerPlayerState[], config: KillerConfig): ThrowInput {
   const skill = resolveBotSkill(me.botLevel);
+
   const aliveOthers = all.filter((p) => !p.eliminated && p.id !== me.id);
 
-  // chance d’erreur / miss
-  const missRate = skill <= 1 ? 0.22 : skill === 2 ? 0.16 : skill === 3 ? 0.10 : skill === 4 ? 0.06 : 0.03;
-
-  // bull = coup “inutile” parfois (ça fait joli)
+  const missRate = skill <= 1 ? 0.22 : skill === 2 ? 0.16 : skill === 3 ? 0.1 : skill === 4 ? 0.06 : 0.03;
   const bullRate = skill >= 4 ? 0.03 : 0.015;
 
   const r = rand01();
   if (r < missRate) return { target: 0, mult: 1 };
   if (r < missRate + bullRate) return { target: 25, mult: rand01() < 0.25 ? 2 : 1 };
 
-  // pas killer -> vise son numéro (avec précision selon skill)
   if (!me.isKiller) {
     const wantsDouble = config.becomeRule === "double";
     const hitOwnRate = skill <= 1 ? 0.55 : skill === 2 ? 0.68 : skill === 3 ? 0.78 : skill === 4 ? 0.88 : 0.94;
+    if (rand01() < hitOwnRate) return { target: me.number, mult: pickMultForBot(skill, config.becomeRule, wantsDouble) };
 
-    if (rand01() < hitOwnRate) {
-      return { target: me.number, mult: pickMultForBot(skill, config.becomeRule, wantsDouble) };
-    }
-
-    // erreur: vise un numéro random
     const n = 1 + Math.floor(Math.random() * 20);
     return { target: n, mult: pickMultForBot(skill, config.becomeRule, false) };
   }
 
-  // killer -> vise un vivant (avec précision)
   const hitVictimRate = skill <= 1 ? 0.52 : skill === 2 ? 0.66 : skill === 3 ? 0.76 : skill === 4 ? 0.86 : 0.92;
-
-  if (aliveOthers.length === 0) {
-    return { target: 0, mult: 1 };
-  }
+  if (aliveOthers.length === 0) return { target: 0, mult: 1 };
 
   if (rand01() < hitVictimRate) {
-    // cible: de préférence celui avec le moins de vies (finir)
     const sorted = [...aliveOthers].sort((a, b) => (a.lives ?? 0) - (b.lives ?? 0));
     const pick = sorted[0];
     return { target: pick.number, mult: pickMultForBot(skill, config.becomeRule, false) };
   }
 
-  // erreur: vise un numéro pas forcément assigné
   const n = 1 + Math.floor(Math.random() * 20);
   return { target: n, mult: pickMultForBot(skill, config.becomeRule, false) };
 }
 
-/* -----------------------------
-   ThrowPad (UI simple)
------------------------------ */
-function ThrowPad({
-  disabled,
-  dartsLeft,
-  onThrow,
-  onEndTurn,
-  onUndo,
+// -----------------------------
+// UI helpers
+// -----------------------------
+const pageBg =
+  "radial-gradient(circle at 25% 0%, rgba(255,198,58,.18) 0, rgba(0,0,0,0) 35%), radial-gradient(circle at 80% 30%, rgba(255,198,58,.10) 0, rgba(0,0,0,0) 40%), linear-gradient(180deg, #0a0a0c, #050507 60%, #020203)";
+
+const card: React.CSSProperties = {
+  background: "linear-gradient(180deg, rgba(22,22,23,.85), rgba(12,12,14,.95))",
+  border: "1px solid rgba(255,255,255,.08)",
+  borderRadius: 18,
+  boxShadow: "0 10px 30px rgba(0,0,0,.35)",
+};
+
+const gold = "#ffc63a";
+const gold2 = "#ffaf00";
+
+function toKeypadThrow(visit: ThrowInput[]): UIDart[] {
+  const v = (visit || []).slice(0, 3);
+  const out: UIDart[] = [];
+  for (const t of v) {
+    const target = clampInt(t?.target, 0, 25, 0);
+    const mult = clampInt(t?.mult, 1, 3, 1) as any;
+    out.push({ v: target, mult });
+  }
+  while (out.length < 3) out.push(undefined as any);
+  return out;
+}
+
+function fmtChip(d?: UIDart) {
+  if (!d) return "—";
+  if (d.v === 0) return "MISS";
+  if (d.v === 25) return d.mult === 2 ? "DBULL" : "BULL";
+  return `${d.mult === 3 ? "T" : d.mult === 2 ? "D" : "S"}${d.v}`;
+}
+
+// ✅ chips BIG (au-dessus du Keypad)
+function chipStyleBig(d?: UIDart): React.CSSProperties {
+  const base: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 56,
+    height: 34,
+    padding: "0 14px",
+    borderRadius: 14,
+    fontWeight: 900,
+    fontSize: 12,
+    letterSpacing: 0.5,
+    border: "1px solid rgba(255,255,255,.08)",
+    background: "rgba(0,0,0,.55)",
+    boxShadow: "0 0 22px rgba(250,213,75,.18)",
+  };
+
+  if (!d) return base;
+  if (d.v === 0) return { ...base, color: "rgba(255,255,255,.65)" };
+
+  if (d.v === 25) {
+    return d.mult === 2
+      ? { ...base, background: "rgba(255,80,80,.14)", border: "1px solid rgba(255,80,80,.30)", color: "#ffd2d2" }
+      : { ...base, background: "rgba(80,180,255,.14)", border: "1px solid rgba(80,180,255,.30)", color: "#d6efff" };
+  }
+
+  if (d.mult === 3) return { ...base, background: "rgba(164,80,255,.14)", border: "1px solid rgba(164,80,255,.30)", color: "#e8d6ff" };
+  if (d.mult === 2) return { ...base, background: "rgba(80,200,255,.12)", border: "1px solid rgba(80,200,255,.30)", color: "#d6f3ff" };
+  return { ...base, background: "rgba(255,198,58,.10)", border: "1px solid rgba(255,198,58,.22)", color: "#ffe7b0" };
+}
+
+// ✅ chips MINI (dans la liste joueurs)
+function chipStyleMini(d?: UIDart): React.CSSProperties {
+  const base: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 28,
+    height: 18,
+    padding: "0 6px",
+    borderRadius: 999,
+    fontWeight: 1000,
+    fontSize: 10,
+    letterSpacing: 0,
+    border: "1px solid rgba(255,255,255,.10)",
+    background: "rgba(0,0,0,.55)",
+    lineHeight: "18px",
+    transform: "translateY(-1px)",
+  };
+
+  if (!d) return base;
+  if (d.v === 0) return { ...base, color: "rgba(255,255,255,.60)" };
+
+  if (d.v === 25) {
+    return d.mult === 2
+      ? { ...base, background: "rgba(255,80,80,.14)", border: "1px solid rgba(255,80,80,.30)", color: "#ffd2d2" }
+      : { ...base, background: "rgba(80,180,255,.14)", border: "1px solid rgba(80,180,255,.30)", color: "#d6efff" };
+  }
+
+  if (d.mult === 3) return { ...base, background: "rgba(164,80,255,.14)", border: "1px solid rgba(164,80,255,.30)", color: "#e8d6ff" };
+  if (d.mult === 2) return { ...base, background: "rgba(80,200,255,.12)", border: "1px solid rgba(80,200,255,.30)", color: "#d6f3ff" };
+  return { ...base, background: "rgba(255,198,58,.10)", border: "1px solid rgba(255,198,58,.22)", color: "#ffe7b0" };
+}
+
+function rulesText(config: KillerConfig) {
+  const lives = clampInt((config as any)?.lives, 1, 9, 3);
+
+  const becomeRuleText =
+    config.becomeRule === "double"
+      ? "Tu deviens KILLER uniquement si tu touches TON numéro en DOUBLE (Dxx)."
+      : "Tu deviens KILLER dès que tu touches TON numéro, même en SIMPLE (Sxx).";
+
+  const damageText =
+    config.damageRule === "multiplier"
+      ? "Quand tu touches le numéro d’un adversaire, il perd 1/2/3 vies selon S/D/T."
+      : "Quand tu touches le numéro d’un adversaire, il perd toujours 1 vie (S/D/T ne change rien).";
+
+  return [
+    {
+      title: "But",
+      body:
+        "Tu as un numéro (#1…#20). D’abord tu dois devenir KILLER, puis éliminer les autres en touchant leur numéro.",
+    },
+
+    {
+      title: "Départ",
+      body:
+        `Chaque joueur commence avec ${lives} vie(s). Un joueur est éliminé quand ses vies tombent à 0.`,
+    },
+
+    {
+      title: "Devenir KILLER",
+      body:
+        `${becomeRuleText}\n` +
+        "Important : toucher un autre numéro que le tien ne te rend pas KILLER.",
+    },
+
+    {
+      title: "Attaquer (quand tu es KILLER)",
+      body:
+        `${damageText}\n` +
+        "Seuls les adversaires vivants peuvent perdre des vies. Si tu réduis un joueur à 0 vie → il est OUT immédiatement.",
+    },
+
+    {
+      title: "Ce qui ne fait rien",
+      body:
+        "MISS (0) : aucun effet.\n" +
+        "BULL / DBULL : aucun effet (ni pour devenir KILLER, ni pour enlever des vies).\n" +
+        "Toucher un numéro d’un joueur déjà OUT : aucun effet.",
+    },
+
+    {
+      title: "Tour de jeu",
+      body:
+        "À ton tour : 3 fléchettes.\n" +
+        "Le changement de joueur se fait en appuyant sur VALIDER (après tes 3 fléchettes ou quand tu veux finir le tour).",
+    },
+
+    {
+      title: "Fin de partie",
+      body:
+        "La partie se termine quand il ne reste plus qu’un seul joueur vivant : il gagne 🏆",
+    },
+  ];
+}
+
+
+function AvatarMedallion({
+  size,
+  src,
+  name,
 }: {
-  disabled: boolean;
-  dartsLeft: number;
-  onThrow: (t: ThrowInput) => void;
-  onEndTurn: () => void;
-  onUndo: () => void;
+  size: number;
+  src?: string | null;
+  name?: string;
 }) {
-  const [mult, setMult] = React.useState<Mult>(1);
+  const initials = String(name || "J").trim().slice(0, 1).toUpperCase();
 
   return (
     <div
       style={{
-        marginTop: 12,
-        padding: 12,
-        borderRadius: 12,
-        border: "1px solid rgba(255,255,255,.10)",
-        background: "rgba(255,255,255,.04)",
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        overflow: "hidden",
+        background: "transparent", // ✅ aucun halo / aucun fond “blanc”
       }}
     >
-      <div style={{ fontWeight: 900, marginBottom: 8 }}>Saisie fléchette</div>
-
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        {[1, 2, 3].map((m) => {
-          const mm = m as Mult;
-          const active = mult === mm;
-          return (
-            <button
-              key={m}
-              onClick={() => setMult(mm)}
-              style={{
-                flex: 1,
-                padding: "10px 10px",
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,.12)",
-                background: active ? "rgba(255,198,58,.85)" : "rgba(0,0,0,.25)",
-                color: active ? "#1b1508" : "inherit",
-                fontWeight: 900,
-                cursor: "pointer",
-              }}
-            >
-              {mm === 1 ? "S" : mm === 2 ? "D" : "T"}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Quick actions: MISS / BULL */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <button
-          disabled={disabled}
-          onClick={() => onThrow({ target: 0, mult: 1 })}
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        />
+      ) : (
+        <div
           style={{
-            flex: 1,
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,.12)",
-            background: "rgba(0,0,0,.25)",
-            fontWeight: 900,
-            cursor: disabled ? "not-allowed" : "pointer",
-            opacity: disabled ? 0.5 : 1,
+            width: "100%",
+            height: "100%",
+            display: "grid",
+            placeItems: "center",
+            borderRadius: "50%",
+            background: "rgba(255,255,255,.06)",
+            border: "1px solid rgba(255,255,255,.10)",
+            fontWeight: 1000,
+            color: "#fff",
           }}
         >
-          MISS
-        </button>
-
-        <button
-          disabled={disabled}
-          onClick={() => onThrow({ target: 25, mult: 1 })}
-          style={{
-            flex: 1,
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,.12)",
-            background: "rgba(0,0,0,.25)",
-            fontWeight: 900,
-            cursor: disabled ? "not-allowed" : "pointer",
-            opacity: disabled ? 0.5 : 1,
-          }}
-        >
-          BULL
-        </button>
-
-        <button
-          disabled={disabled}
-          onClick={() => onThrow({ target: 25, mult: 2 })}
-          style={{
-            flex: 1,
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,.12)",
-            background: "rgba(0,0,0,.25)",
-            fontWeight: 900,
-            cursor: disabled ? "not-allowed" : "pointer",
-            opacity: disabled ? 0.5 : 1,
-          }}
-        >
-          DBULL
-        </button>
-      </div>
-
-      {/* Numbers */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
-        {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
-          <button
-            key={n}
-            disabled={disabled}
-            onClick={() => onThrow({ target: n, mult })}
-            style={{
-              padding: "10px 0",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,.10)",
-              background: "rgba(0,0,0,.25)",
-              fontWeight: 900,
-              cursor: disabled ? "not-allowed" : "pointer",
-              opacity: disabled ? 0.5 : 1,
-            }}
-          >
-            {n}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
-        <button
-          onClick={onEndTurn}
-          style={{
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,.12)",
-            background: "rgba(0,0,0,.25)",
-            fontWeight: 900,
-            cursor: "pointer",
-            flex: 1,
-          }}
-        >
-          Fin de tour
-        </button>
-
-        <button
-          onClick={onUndo}
-          style={{
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,.12)",
-            background: "rgba(0,0,0,.25)",
-            fontWeight: 900,
-            cursor: "pointer",
-            opacity: 0.9,
-          }}
-          title="Annuler la dernière fléchette"
-        >
-          Undo
-        </button>
-      </div>
-
-      <div style={{ marginTop: 10, fontSize: 12, opacity: 0.85 }}>
-        Darts restantes : <b>{dartsLeft}</b>
-      </div>
+          {initials}
+        </div>
+      )}
     </div>
   );
 }
@@ -411,8 +424,6 @@ function ThrowPad({
 export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const startedAt = React.useMemo(() => Date.now(), []);
   const finishedRef = React.useRef(false);
-
-  // ✅ elimOrder en ref (évite setState dans setPlayers + évite les stales)
   const elimOrderRef = React.useRef<string[]>([]);
 
   const initialPlayers: KillerPlayerState[] = React.useMemo(() => {
@@ -421,7 +432,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       id: p.id,
       name: p.name,
       avatarDataUrl: p.avatarDataUrl ?? null,
-
       isBot: !!p.isBot,
       botLevel: p.botLevel ?? "",
 
@@ -429,22 +439,26 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       lives,
       isKiller: false,
       eliminated: false,
+
       kills: 0,
       hitsOnSelf: 0,
-
       totalThrows: 0,
       killerThrows: 0,
       offensiveThrows: 0,
       killerHits: 0,
       uselessHits: 0,
+
       livesTaken: 0,
       livesLost: 0,
+
       throwsToBecomeKiller: 0,
       becameAtThrow: null,
       eliminatedAt: null,
 
       hitsBySegment: {},
       hitsByNumber: {},
+
+      lastVisit: null,
     }));
   }, [config]);
 
@@ -453,21 +467,26 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     const i = initialPlayers.findIndex((p) => !p.eliminated);
     return i >= 0 ? i : 0;
   });
+
   const [dartsLeft, setDartsLeft] = React.useState<number>(3);
   const [visit, setVisit] = React.useState<ThrowInput[]>([]);
   const [log, setLog] = React.useState<string[]>([]);
   const [finished, setFinished] = React.useState<boolean>(false);
+  const [multiplier, setMultiplier] = React.useState<Mult>(1);
+  const [showRules, setShowRules] = React.useState(false);
 
-  // UNDO stack
   const undoRef = React.useRef<Snapshot[]>([]);
-
-  // BOT timers
   const botTimerRef = React.useRef<any>(null);
   const botBusyRef = React.useRef(false);
 
   const current = players[turnIndex] ?? players[0];
   const w = winner(players);
-  const inputDisabled = finished || dartsLeft <= 0 || !!w || !current || current.eliminated;
+  const aliveCount = players.filter((p) => !p.eliminated).length;
+  const totalCount = players.length;
+  const isBotTurn = !!current?.isBot;
+
+  const inputDisabledBase = finished || !!w || !current || current.eliminated;
+  const waitingValidate = !inputDisabledBase && !isBotTurn && dartsLeft === 0;
 
   function pushLog(line: string) {
     setLog((prev) => [line, ...prev].slice(0, 120));
@@ -475,13 +494,19 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
 
   function snapshot() {
     const snap: Snapshot = {
-      players: players.map((p) => ({ ...p, hitsBySegment: { ...p.hitsBySegment }, hitsByNumber: { ...p.hitsByNumber } })),
+      players: players.map((p) => ({
+        ...p,
+        hitsBySegment: { ...p.hitsBySegment },
+        hitsByNumber: { ...p.hitsByNumber },
+        lastVisit: (p.lastVisit || []).map((t) => ({ ...t })),
+      })),
       turnIndex,
       dartsLeft,
       visit: visit.map((t) => ({ ...t })),
       log: log.slice(),
       finished,
       elimOrder: (elimOrderRef.current || []).slice(),
+      multiplier,
     };
     undoRef.current = [snap, ...undoRef.current].slice(0, 60);
   }
@@ -489,9 +514,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   function undo() {
     const s = undoRef.current[0];
     if (!s) return;
+
     undoRef.current = undoRef.current.slice(1);
 
-    // stop bot “en vol”
     if (botTimerRef.current) {
       clearTimeout(botTimerRef.current);
       botTimerRef.current = null;
@@ -504,14 +529,27 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     setVisit(s.visit);
     setLog(s.log);
     setFinished(s.finished);
+    setMultiplier((s.multiplier || 1) as Mult);
+
     finishedRef.current = !!s.finished;
     elimOrderRef.current = (s.elimOrder || []).slice();
   }
 
   function endTurn(nextPlayers?: KillerPlayerState[]) {
+    const base = nextPlayers || players;
+
+    // ✅ mémorise la dernière volée du joueur courant (liste joueurs)
+    setPlayers((prev) => {
+      const next = prev.map((p, i) => {
+        if (i !== turnIndex) return p;
+        return { ...p, lastVisit: (visit || []).slice(0, 3).map((t) => ({ ...t })) };
+      });
+      return next;
+    });
+
     setVisit([]);
     setDartsLeft(3);
-    const base = nextPlayers || players;
+    setMultiplier(1);
     setTurnIndex((prev) => nextAliveIndex(base, prev));
   }
 
@@ -569,17 +607,13 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         id: p.id,
         name: p.name,
         avatarDataUrl: p.avatarDataUrl ?? null,
-
-        // ✅ bots
         isBot: !!p.isBot,
         botLevel: p.botLevel ?? "",
-
         number: p.number,
         eliminated: !!p.eliminated,
         isKiller: !!p.isKiller,
         kills: p.kills,
         hitsOnSelf: p.hitsOnSelf,
-
         totalThrows: p.totalThrows,
         killerThrows: p.killerThrows,
         offensiveThrows: p.offensiveThrows,
@@ -588,10 +622,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         livesTaken: p.livesTaken,
         livesLost: p.livesLost,
         throwsToBecomeKiller: p.becameAtThrow ? p.becameAtThrow : p.throwsToBecomeKiller,
-
         hitsBySegment: p.hitsBySegment || {},
         hitsByNumber: p.hitsByNumber || {},
-
         finalRank: p.finalRank || 0,
         survivalTimeMs: p.survivalTimeMs || 0,
       };
@@ -603,14 +635,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       profileId: p.id,
       name: p.name,
       avatarDataUrl: p.avatarDataUrl ?? null,
-
-      // ✅ bots
       isBot: !!p.isBot,
       botLevel: p.botLevel ?? "",
-
       hitsBySegment: p.hitsBySegment || {},
       hitsByNumber: p.hitsByNumber || {},
-
       totalThrows: p.totalThrows,
       killerThrows: p.killerThrows,
       offensiveThrows: p.offensiveThrows,
@@ -640,40 +668,13 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         livesStart: config.lives,
         becomeRule: config.becomeRule,
         damageRule: config.damageRule,
-
         detailedByPlayer,
         perPlayer,
-
-        players: finalPlayers.map((p) => ({
-          id: p.id,
-          name: p.name,
-          number: p.number,
-          lives: p.lives,
-          eliminated: p.eliminated,
-          isKiller: p.isKiller,
-          kills: p.kills,
-
-          // ✅ bots
-          isBot: !!p.isBot,
-          botLevel: p.botLevel ?? "",
-
-          finalRank: p.finalRank || 0,
-          survivalTimeMs: p.survivalTimeMs || 0,
-          livesTaken: p.livesTaken || 0,
-          livesLost: p.livesLost || 0,
-          totalThrows: p.totalThrows || 0,
-          hitsOnSelf: p.hitsOnSelf || 0,
-        })),
       },
       payload: {
         mode: "killer",
         config,
-        state: { players: finalPlayers, elimOrder: elim || [] },
-        summary: {
-          mode: "killer",
-          detailedByPlayer,
-          perPlayer,
-        },
+        summary: { mode: "killer", detailedByPlayer, perPlayer },
       },
     };
 
@@ -681,16 +682,19 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   }
 
   function applyThrow(t: ThrowInput) {
-    if (inputDisabled) return;
+    if (inputDisabledBase) return;
+    if (dartsLeft <= 0) return;
+    if (isBotTurn) return;
 
     snapshot();
+    setMultiplier(1); // ✅ reset Double/Triple après un lancer
 
     const thr: ThrowInput = {
       target: clampInt(t.target, 0, 25, 0),
       mult: clampInt(t.mult, 1, 3, 1) as Mult,
     };
 
-    setVisit((v) => [...v, thr]);
+    setVisit((v) => [...v, thr].slice(0, 3));
     setDartsLeft((d) => Math.max(0, d - 1));
 
     setPlayers((prev) => {
@@ -699,6 +703,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         hitsBySegment: { ...(p.hitsBySegment || {}) },
         hitsByNumber: { ...(p.hitsByNumber || {}) },
       }));
+
       const me = next[turnIndex];
       if (!me || me.eliminated) return prev;
 
@@ -708,40 +713,31 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       me.hitsBySegment = incMap(me.hitsBySegment, seg, 1);
       if (thr.target !== 0) me.hitsByNumber = incMap(me.hitsByNumber, thr.target, 1);
 
-      if (!me.isKiller && !me.becameAtThrow) {
-        me.throwsToBecomeKiller += 1;
-      }
+      if (!me.isKiller && !me.becameAtThrow) me.throwsToBecomeKiller += 1;
       if (me.isKiller) me.killerThrows += 1;
 
-      // MISS / BULL => neutre
       if (thr.target === 0) {
         me.uselessHits += 1;
         pushLog(`🎯 ${me.name} : MISS`);
         return next;
       }
+
       if (thr.target === 25) {
         me.uselessHits += 1;
         pushLog(`🎯 ${me.name} : ${fmtThrow(thr)}`);
         return next;
       }
 
-      // 1) devenir killer
       if (!me.isKiller && thr.target === me.number && canBecomeKiller(config.becomeRule, thr)) {
         me.isKiller = true;
         me.hitsOnSelf += 1;
-
         if (!me.becameAtThrow) me.becameAtThrow = me.throwsToBecomeKiller;
-
         pushLog(`🟡 ${me.name} devient KILLER en touchant ${fmtThrow(thr)} (#${thr.target})`);
         return next;
       }
 
-      // 2) dégâts si killer : toucher numéro d’un autre vivant
       if (me.isKiller) {
-        const victimIdx = next.findIndex(
-          (p, idx) => idx !== turnIndex && !p.eliminated && p.number === thr.target
-        );
-
+        const victimIdx = next.findIndex((p, idx) => idx !== turnIndex && !p.eliminated && p.number === thr.target);
         if (victimIdx >= 0) {
           const victim = next[victimIdx];
 
@@ -764,34 +760,21 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             me.kills += 1;
 
             elimOrderRef.current = [...(elimOrderRef.current || []), victim.id];
-
             pushLog(`💀 ${me.name} élimine ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg})`);
           } else {
-            pushLog(
-              `🔻 ${me.name} touche ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg}) → ${victim.lives} vie(s)`
-            );
+            pushLog(`🔻 ${me.name} touche ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg}) → ${victim.lives} vie(s)`);
           }
 
           return next;
         }
       }
 
-      // 3) neutre
       me.uselessHits += 1;
       pushLog(`🎯 ${me.name} : ${fmtThrow(thr)}`);
       return next;
     });
   }
 
-  // Auto fin de tour
-  React.useEffect(() => {
-    if (finishedRef.current) return;
-    if (winner(players)) return;
-    if (dartsLeft === 0) endTurn(players);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dartsLeft]);
-
-  // Détection victoire (une seule fois)
   React.useEffect(() => {
     const ww = winner(players);
     if (ww && !finishedRef.current) {
@@ -804,29 +787,27 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [players]);
 
-  // Si joueur courant éliminé => saute
   React.useEffect(() => {
     if (!players.length) return;
-    if (!current || current.eliminated) {
-      setTurnIndex((prev) => nextAliveIndex(players, prev));
-    }
+    if (!current || current.eliminated) setTurnIndex((prev) => nextAliveIndex(players, prev));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [players]);
 
-  // Hook input externe
   React.useEffect(() => {
     function onExternal(ev: any) {
       const d = ev?.detail || {};
       const target = clampInt(d.target, 0, 25, 0);
       const mult = clampInt(d.mult, 1, 3, 1) as Mult;
+      if (dartsLeft <= 0) return;
+      if (isBotTurn) return;
       applyThrow({ target, mult });
     }
     window.addEventListener("dc:throw", onExternal as any);
     return () => window.removeEventListener("dc:throw", onExternal as any);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [turnIndex, dartsLeft, finished, inputDisabled]);
+  }, [turnIndex, dartsLeft, finished, isBotTurn, inputDisabledBase]);
 
-  // ✅ BOT AUTOPLAY
+  // BOT AUTOPLAY (3 flèches puis VALIDER auto)
   React.useEffect(() => {
     if (!players.length) return;
     if (finishedRef.current) return;
@@ -835,24 +816,36 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
 
     const me = players[turnIndex];
     if (!me || me.eliminated) return;
+    if (!me.isBot) return;
 
-    const isBot = !!me.isBot;
-    if (!isBot) return;
+    if (dartsLeft <= 0) {
+      if (botBusyRef.current) return;
+      botBusyRef.current = true;
+      botTimerRef.current = setTimeout(() => {
+        botTimerRef.current = null;
+        if (finishedRef.current || finished) {
+          botBusyRef.current = false;
+          return;
+        }
+        endTurn(players);
+        botBusyRef.current = false;
+      }, 380);
 
-    // si plus de darts, la logique auto-fin va déjà endTurn
-    if (dartsLeft <= 0) return;
+      return () => {
+        if (botTimerRef.current) {
+          clearTimeout(botTimerRef.current);
+          botTimerRef.current = null;
+        }
+        botBusyRef.current = false;
+      };
+    }
 
-    // évite double scheduling
     if (botBusyRef.current) return;
     botBusyRef.current = true;
 
-    // petite latence “humaine”
-    const delay = 380 + Math.floor(Math.random() * 420); // 380..800ms
-
+    const delay = 380 + Math.floor(Math.random() * 420);
     botTimerRef.current = setTimeout(() => {
       botTimerRef.current = null;
-
-      // recheck rapide (si undo / fin / etc.)
       if (finishedRef.current || finished) {
         botBusyRef.current = false;
         return;
@@ -864,15 +857,98 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         return;
       }
 
-      const thr = decideBotThrow(nowMe, players, config);
-      applyThrow(thr);
+      snapshot();
 
-      // libère le lock après le throw (sinon boucle infinie)
+      const thr = decideBotThrow(nowMe, players, config);
+      const thrSafe: ThrowInput = {
+        target: clampInt(thr.target, 0, 25, 0),
+        mult: clampInt(thr.mult, 1, 3, 1) as Mult,
+      };
+
+      setVisit((v) => [...v, thrSafe].slice(0, 3));
+      setDartsLeft((d) => Math.max(0, d - 1));
+
+      setPlayers((prev) => {
+        const next = prev.map((p) => ({
+          ...p,
+          hitsBySegment: { ...(p.hitsBySegment || {}) },
+          hitsByNumber: { ...(p.hitsByNumber || {}) },
+        }));
+
+        const me2 = next[turnIndex];
+        if (!me2 || me2.eliminated) return prev;
+
+        me2.totalThrows += 1;
+
+        const seg = segmentKey(thrSafe);
+        me2.hitsBySegment = incMap(me2.hitsBySegment, seg, 1);
+        if (thrSafe.target !== 0) me2.hitsByNumber = incMap(me2.hitsByNumber, thrSafe.target, 1);
+
+        if (!me2.isKiller && !me2.becameAtThrow) me2.throwsToBecomeKiller += 1;
+        if (me2.isKiller) me2.killerThrows += 1;
+
+        if (thrSafe.target === 0) {
+          me2.uselessHits += 1;
+          pushLog(`🎯 ${me2.name} : MISS`);
+          return next;
+        }
+
+        if (thrSafe.target === 25) {
+          me2.uselessHits += 1;
+          pushLog(`🎯 ${me2.name} : ${fmtThrow(thrSafe)}`);
+          return next;
+        }
+
+        if (!me2.isKiller && thrSafe.target === me2.number && canBecomeKiller(config.becomeRule, thrSafe)) {
+          me2.isKiller = true;
+          me2.hitsOnSelf += 1;
+          if (!me2.becameAtThrow) me2.becameAtThrow = me2.throwsToBecomeKiller;
+          pushLog(`🟡 ${me2.name} devient KILLER en touchant ${fmtThrow(thrSafe)} (#${thrSafe.target})`);
+          return next;
+        }
+
+        if (me2.isKiller) {
+          const victimIdx = next.findIndex((p, idx) => idx !== turnIndex && !p.eliminated && p.number === thrSafe.target);
+          if (victimIdx >= 0) {
+            const victim = next[victimIdx];
+
+            me2.offensiveThrows += 1;
+
+            const dmg = dmgFrom(thrSafe.mult, config.damageRule);
+            const before = victim.lives;
+            victim.lives = Math.max(0, victim.lives - dmg);
+
+            const actualLoss = Math.max(0, before - victim.lives);
+            if (actualLoss > 0) {
+              me2.killerHits += 1;
+              me2.livesTaken += actualLoss;
+              victim.livesLost += actualLoss;
+            }
+
+            if (victim.lives <= 0) {
+              victim.eliminated = true;
+              victim.eliminatedAt = Date.now();
+              me2.kills += 1;
+
+              elimOrderRef.current = [...(elimOrderRef.current || []), victim.id];
+              pushLog(`💀 ${me2.name} élimine ${victim.name} (${fmtThrow(thrSafe)} sur #${thrSafe.target}, -${dmg})`);
+            } else {
+              pushLog(`🔻 ${me2.name} touche ${victim.name} (${fmtThrow(thrSafe)} sur #${thrSafe.target}, -${dmg}) → ${victim.lives} vie(s)`);
+            }
+
+            return next;
+          }
+        }
+
+        me2.uselessHits += 1;
+        pushLog(`🎯 ${me2.name} : ${fmtThrow(thrSafe)}`);
+        return next;
+      });
+
       botBusyRef.current = false;
     }, delay);
 
     return () => {
-      // cleanup sur changement de deps
       if (botTimerRef.current) {
         clearTimeout(botTimerRef.current);
         botTimerRef.current = null;
@@ -891,186 +967,420 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     );
   }
 
-  const isBotTurn = !!current?.isBot;
+  const currentThrow = toKeypadThrow(visit);
+  const canValidateTurn = !inputDisabledBase && !isBotTurn && (visit.length > 0 || dartsLeft === 0);
+
+  function handleValidate() {
+    if (inputDisabledBase) return;
+    if (isBotTurn) return;
+    if (!canValidateTurn) return;
+    endTurn(players);
+  }
+
+  const RULES = rulesText(config);
 
   return (
-    <div style={{ padding: 16, paddingBottom: 90 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={() => go("killer_config")}>←</button>
-        <h2 style={{ margin: 0 }}>KILLER — Partie</h2>
-      </div>
+    <div
+      style={{
+        height: "100vh",
+        overflow: "hidden",
+        background: pageBg,
+        color: "#fff",
+        display: "flex",
+        flexDirection: "column",
+        padding: "10px 12px 92px",
+      }}
+    >
+      {/* RULES POPIN */}
+      {showRules && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setShowRules(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.55)",
+            zIndex: 9999,
+            padding: 14,
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 520,
+              ...card,
+              padding: 14,
+              marginTop: 70,
+              border: "1px solid rgba(255,198,58,.25)",
+              boxShadow: "0 18px 55px rgba(0,0,0,.6)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <div style={{ fontWeight: 1000, letterSpacing: 1.2, color: gold, textTransform: "uppercase" }}>
+                Règles KILLER
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRules(false)}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,.10)",
+                  background: "rgba(255,255,255,.06)",
+                  color: "#fff",
+                  fontWeight: 900,
+                  cursor: "pointer",
+                }}
+                aria-label="Fermer"
+                title="Fermer"
+              >
+                ✕
+              </button>
+            </div>
 
-      <div style={{ marginTop: 10, fontSize: 13, opacity: 0.85 }}>
-        Règles : devenir killer = <b>{config.becomeRule === "double" ? "Double" : "Simple"}</b> · dégâts ={" "}
-        <b>{config.damageRule === "multiplier" ? "Multiplicateur" : "-1"}</b> · vies = <b>{config.lives}</b>
-      </div>
+            <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+              {RULES.map((r, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    borderRadius: 14,
+                    border: "1px solid rgba(255,255,255,.08)",
+                    background: "rgba(0,0,0,.25)",
+                    padding: 10,
+                  }}
+                >
+                  <div style={{ fontWeight: 950, fontSize: 12, color: "#ffe7b0", textTransform: "uppercase" }}>
+                    {r.title}
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9, lineHeight: 1.35 }}>{r.body}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* Current */}
+      {/* HEADER */}
       <div
         style={{
-          marginTop: 12,
-          padding: 12,
-          borderRadius: 12,
-          border: "1px solid rgba(255,255,255,.10)",
-          background: "rgba(255,255,255,.04)",
+          ...card,
+          padding: 10,
+          display: "grid",
+          gridTemplateColumns: "auto 1fr auto",
+          alignItems: "center",
+          gap: 10,
+          flex: "0 0 auto",
         }}
       >
-        <div style={{ fontSize: 12, opacity: 0.75 }}>Tour de</div>
-        <div style={{ fontSize: 18, fontWeight: 900 }}>
-          {current?.name ?? "—"}{" "}
-          <span style={{ fontSize: 13, opacity: 0.85 }}>(#{current?.number ?? "?"})</span>
-          {current?.isKiller && <span style={{ marginLeft: 8, fontSize: 13, fontWeight: 900 }}>🔥 KILLER</span>}
-          {current?.isBot && (
-            <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 900, opacity: 0.9 }}>
-              🤖 BOT{current?.botLevel ? ` · ${current.botLevel}` : ""}
-            </span>
-          )}
-        </div>
-        <div style={{ marginTop: 6, fontSize: 13, opacity: 0.9 }}>
-          Vies : <b>{current?.lives ?? 0}</b> · Darts : <b>{dartsLeft}</b>
+        <button
+          type="button"
+          onClick={() => go("killer_config")}
+          style={{
+            height: 34,
+            padding: "0 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,180,0,.30)",
+            background: `linear-gradient(180deg, ${gold}, ${gold2})`,
+            color: "#1a1a1a",
+            fontWeight: 1000,
+            cursor: "pointer",
+            boxShadow: "0 10px 22px rgba(255,170,0,.18)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          ← Quitter
+        </button>
+
+        <div style={{ textAlign: "center", lineHeight: 1 }}>
+          <span
+            style={{
+              display: "inline-block",
+              color: gold,
+              fontWeight: 1000,
+              textTransform: "uppercase",
+              letterSpacing: 1.6,
+              textShadow: "0 0 14px rgba(255,198,58,.25)",
+              filter: "drop-shadow(0 0 10px rgba(255,198,58,.15))",
+              animation: "killerGlowPulse 1.6s ease-in-out infinite",
+            }}
+          >
+            KILLER
+          </span>
+          <style>{`
+            @keyframes killerGlowPulse {
+              0%   { text-shadow: 0 0 10px rgba(255,198,58,.20); }
+              50%  { text-shadow: 0 0 18px rgba(255,198,58,.35); }
+              100% { text-shadow: 0 0 10px rgba(255,198,58,.20); }
+            }
+          `}</style>
         </div>
 
-        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
-          <span style={{ marginRight: 10 }}>
-            Lancers : <b>{current?.totalThrows ?? 0}</b>
-          </span>
-          <span style={{ marginRight: 10 }}>
-            Dégâts : <b>{current?.livesTaken ?? 0}</b>
-          </span>
-          <span>
-            Kills : <b>{current?.kills ?? 0}</b>
-          </span>
+        {/* ✅ “i” à l’extrême droite (InfoDot style Games) */}
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <InfoDot onClick={() => setShowRules(true)} size={30} color="#FFFFFF" glow="rgba(255,198,58,.45)" />
+        </div>
+      </div>
+
+      {/* ACTIVE PLAYER */}
+      <div style={{ marginTop: 10, ...card, padding: 12, flex: "0 0 auto", position: "relative" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "92px 1fr 104px", gap: 10, alignItems: "center" }}>
+          {/* ✅ Médaillon SANS halo */}
+          <div style={{ display: "grid", justifyItems: "center", gap: 8 }}>
+            <AvatarMedallion size={84} src={current?.avatarDataUrl} name={current?.name} />
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 1000,
+                color: gold,
+                letterSpacing: 1,
+                textTransform: "uppercase",
+                textAlign: "center",
+                width: 92,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+              title={current?.name}
+            >
+              {current?.name ?? "—"}
+            </div>
+          </div>
+
+          {/* mini bloc KPI central */}
+          <div
+            style={{
+              borderRadius: 16,
+              border: "1px solid rgba(255,255,255,.08)",
+              background: "rgba(0,0,0,.28)",
+              padding: 10,
+              display: "grid",
+              gap: 8,
+            }}
+          >
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 10 }}>
+              <div style={{ fontSize: 11, opacity: 0.85 }}>Darts</div>
+              <div style={{ fontSize: 13, fontWeight: 1000 }}>{dartsLeft}</div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 10 }}>
+              <div style={{ fontSize: 11, opacity: 0.85 }}>Lancers</div>
+              <div style={{ fontSize: 13, fontWeight: 1000 }}>{current?.totalThrows ?? 0}</div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 10 }}>
+              <div style={{ fontSize: 11, opacity: 0.85 }}>Dégâts</div>
+              <div style={{ fontSize: 13, fontWeight: 1000 }}>{current?.livesTaken ?? 0}</div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 10 }}>
+              <div style={{ fontSize: 11, opacity: 0.85 }}>Kills</div>
+              <div style={{ fontSize: 13, fontWeight: 1000 }}>{current?.kills ?? 0}</div>
+            </div>
+          </div>
+
+          {/* ✅ colonne droite compactée et alignée */}
+          <div style={{ display: "grid", justifyItems: "end", gap: 8 }}>
+            <div
+              style={{
+                width: 96,
+                textAlign: "center",
+                fontWeight: 1000,
+                fontSize: 22,
+                color: gold,
+                letterSpacing: 0.8,
+                textShadow: "0 0 14px rgba(255,198,58,.18)",
+                marginBottom: -2,
+              }}
+            >
+              #{current?.number ?? "?"}
+              {current?.isKiller && <span style={{ marginLeft: 6, fontSize: 18 }}>🔥</span>}
+              {current?.isBot && <span style={{ marginLeft: 6, fontSize: 16, opacity: 0.9 }}>🤖</span>}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, width: 96 }}>
+              {/* VIES */}
+              <div
+                style={{
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,198,58,.20)",
+                  background: "rgba(255,198,58,.08)",
+                  padding: "8px 6px",
+                  textAlign: "center",
+                }}
+              >
+                <div style={{ fontSize: 9, opacity: 0.85, fontWeight: 900, letterSpacing: 0.8 }}>VIES</div>
+                <div
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 1000,
+                    color: gold,
+                    fontFamily: "Baloo 2, Comic Sans MS, system-ui",
+                    lineHeight: 1.0,
+                  }}
+                >
+                  {current?.lives ?? 0}
+                </div>
+              </div>
+
+              {/* SURVIVANTS */}
+              <div
+                style={{
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,255,255,.10)",
+                  background: "rgba(0,0,0,.30)",
+                  padding: "8px 6px",
+                  textAlign: "center",
+                }}
+              >
+                <div style={{ fontSize: 9, opacity: 0.85, fontWeight: 900, letterSpacing: 0.8 }}>SURV.</div>
+                <div style={{ fontSize: 12, fontWeight: 1000, color: "#ffe7b0", lineHeight: 1.0 }}>
+                  {aliveCount}/{totalCount}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {isBotTurn && !finished && !w && (
-          <div style={{ marginTop: 10, fontSize: 12, opacity: 0.85 }}>
-            🤖 Le bot joue automatiquement…
+        {/* ✅ UN SEUL message, dans un petit bloc flottant */}
+        {(waitingValidate || isBotTurn) && !finished && !w && (
+          <div style={{ marginTop: 10, display: "flex", justifyContent: "center" }}>
+            <div
+              style={{
+                borderRadius: 999,
+                padding: "8px 12px",
+                background: "rgba(0,0,0,.35)",
+                border: "1px solid rgba(255,198,58,.18)",
+                boxShadow: "0 12px 35px rgba(0,0,0,.35)",
+                fontSize: 12,
+                fontWeight: 900,
+                color: "#ffe7b0",
+                textAlign: "center",
+              }}
+            >
+              {isBotTurn ? "🤖 Le bot joue…" : "Appuie sur VALIDER pour passer au joueur suivant"}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Scoreboard */}
-      <div style={{ marginTop: 14 }}>
-        <div style={{ fontWeight: 900, marginBottom: 8 }}>Joueurs</div>
-        <div style={{ display: "grid", gap: 8 }}>
+      {/* ✅ ZONE SCROLLABLE : LISTE JOUEURS UNIQUEMENT */}
+      <div
+        style={{
+          marginTop: 10,
+          flex: "1 1 auto",
+          minHeight: 0,
+          overflow: "auto",
+          paddingRight: 2,
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        <div style={{ display: "grid", gap: 10 }}>
           {players.map((p, idx) => {
             const isMe = idx === turnIndex;
+            const last = (p.lastVisit || []).slice(0, 3);
+            const lastDarts = toKeypadThrow(last as any);
+
             return (
               <div
                 key={p.id}
                 style={{
-                  padding: "10px 10px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,.10)",
+                  ...card,
+                  padding: 10,
+                  opacity: p.eliminated ? 0.55 : 1,
+                  border: isMe ? "1px solid rgba(255,198,58,.35)" : "1px solid rgba(255,255,255,.08)",
                   background: isMe
-                    ? "radial-gradient(circle at 0% 0%, rgba(255,198,58,.22), transparent 60%)"
-                    : "rgba(255,255,255,.04)",
-                  opacity: p.eliminated ? 0.5 : 1,
+                    ? "radial-gradient(circle at 0% 0%, rgba(255,198,58,.18), rgba(12,12,14,.95) 65%)"
+                    : "linear-gradient(180deg, rgba(22,22,23,.78), rgba(12,12,14,.95))",
                   display: "grid",
-                  gridTemplateColumns: "1fr auto",
-                  gap: 8,
+                  gridTemplateColumns: "auto 1fr auto",
                   alignItems: "center",
+                  gap: 10,
                 }}
               >
-                <div style={{ display: "flex", flexDirection: "column" }}>
-                  <div style={{ fontWeight: 900 }}>
-                    {p.name} <span style={{ fontSize: 12, opacity: 0.8 }}>#{p.number}</span>
-                    {p.isKiller && <span style={{ marginLeft: 6 }}>🔥</span>}
-                    {p.eliminated && <span style={{ marginLeft: 6 }}>💀</span>}
-                    {p.isBot && (
-                      <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.85 }}>
-                        🤖{p.botLevel ? ` ${p.botLevel}` : ""}
+                {/* ✅ avatar sans fond blanc/halo */}
+                <AvatarMedallion size={44} src={p.avatarDataUrl} name={p.name} />
+
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                    <div style={{ fontWeight: 1000, minWidth: 0 }}>
+                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {p.name} <span style={{ fontSize: 12, opacity: 0.8 }}>#{p.number}</span>
                       </span>
-                    )}
+                      {p.isKiller && <span style={{ marginLeft: 6 }}>🔥</span>}
+                      {p.eliminated && <span style={{ marginLeft: 6 }}>💀</span>}
+                      {p.isBot && (
+                        <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.85, whiteSpace: "nowrap" }}>
+                          🤖{p.botLevel ? ` ${p.botLevel}` : ""}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* ✅ dernière volée (chips MINI) */}
+                    <div style={{ display: "flex", gap: 4, flex: "0 0 auto", transform: "scale(.92)", transformOrigin: "right center" }}>
+                      <span style={chipStyleMini(lastDarts[0])}>{fmtChip(lastDarts[0])}</span>
+                      <span style={chipStyleMini(lastDarts[1])}>{fmtChip(lastDarts[1])}</span>
+                      <span style={chipStyleMini(lastDarts[2])}>{fmtChip(lastDarts[2])}</span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12, opacity: 0.75 }}>
-                    kills: {p.kills} · vies: {p.lives} · dmg: {p.livesTaken} · lancers: {p.totalThrows}
+
+                  <div style={{ fontSize: 12, opacity: 0.78, marginTop: 4 }}>
+                    kills: {p.kills} · dmg: {p.livesTaken} · lancers: {p.totalThrows}
                   </div>
                 </div>
 
-                <div style={{ fontWeight: 900, fontSize: 13 }}>{p.eliminated ? "OUT" : `${p.lives} ♥`}</div>
+                <div
+                  style={{
+                    minWidth: 54,
+                    textAlign: "center",
+                    fontWeight: 1000,
+                    borderRadius: 14,
+                    padding: "8px 10px",
+                    background: "rgba(0,0,0,.45)",
+                    border: "1px solid rgba(255,255,255,.08)",
+                    color: p.eliminated ? "#aaa" : gold,
+                  }}
+                >
+                  {p.eliminated ? "OUT" : `${p.lives} ♥`}
+                </div>
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* Visit recap */}
-      <div style={{ marginTop: 14, fontSize: 13, opacity: 0.9 }}>
-        Volée : {visit.length ? visit.map(fmtThrow).join(" · ") : "—"}
-      </div>
-
-      {/* Input (humain uniquement) */}
+      {/* CHIPS VOLÉE (au-dessus du Keypad) — ✅ RESTENT GROS */}
       {!w && !finished && !isBotTurn && (
-        <ThrowPad
-          disabled={inputDisabled}
-          dartsLeft={dartsLeft}
-          onThrow={applyThrow}
-          onEndTurn={() => endTurn(players)}
-          onUndo={undo}
-        />
+        <div style={{ marginTop: 12, display: "flex", justifyContent: "center", gap: 10, flex: "0 0 auto" }}>
+          <span style={chipStyleBig(currentThrow[0])}>{fmtChip(currentThrow[0])}</span>
+          <span style={chipStyleBig(currentThrow[1])}>{fmtChip(currentThrow[1])}</span>
+          <span style={chipStyleBig(currentThrow[2])}>{fmtChip(currentThrow[2])}</span>
+        </div>
       )}
 
-      {/* Log */}
-      <div style={{ marginTop: 14 }}>
-        <div style={{ fontWeight: 900, marginBottom: 8 }}>Log</div>
-        <div
-          style={{
-            maxHeight: 220,
-            overflow: "auto",
-            padding: 10,
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,.10)",
-            background: "rgba(0,0,0,.20)",
-            fontSize: 12,
-            lineHeight: 1.35,
-            opacity: 0.95,
-          }}
-        >
-          {log.length === 0 ? (
-            <div style={{ opacity: 0.7 }}>—</div>
-          ) : (
-            log.map((l, i) => (
-              <div key={i} style={{ padding: "3px 0" }}>
-                {l}
-              </div>
-            ))
-          )}
-        </div>
-
-        <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
-          <button
-            onClick={() => go("killer_config")}
-            style={{
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,.12)",
-              background: "rgba(0,0,0,.25)",
-              fontWeight: 900,
-              cursor: "pointer",
-              flex: 1,
+      {/* KEYPAD (toujours visible) */}
+      {!w && !finished && !isBotTurn && (
+        <div style={{ marginTop: 10, flex: "0 0 auto" }}>
+          <Keypad
+            currentThrow={currentThrow}
+            multiplier={multiplier}
+            onSimple={() => setMultiplier(1)}
+            onDouble={() => setMultiplier(2)}
+            onTriple={() => setMultiplier(3)}
+            onBackspace={() => {}}
+            onCancel={undo} // ✅ ANNULER = undo réel
+            onNumber={(n: number) => applyThrow({ target: n, mult: multiplier })}
+            onBull={() => {
+              const m: Mult = multiplier === 2 ? 2 : 1;
+              applyThrow({ target: 25, mult: m });
             }}
-          >
-            Quitter
-          </button>
-
-          <button
-            onClick={undo}
-            style={{
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,.12)",
-              background: "rgba(0,0,0,.25)",
-              fontWeight: 900,
-              cursor: "pointer",
-              opacity: 0.9,
-            }}
-            title="Undo"
-          >
-            Undo
-          </button>
+            onValidate={handleValidate}
+            hidePreview={true}
+          />
         </div>
-      </div>
+      )}
     </div>
   );
 }
