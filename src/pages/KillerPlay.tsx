@@ -11,6 +11,9 @@
 // ✅ FIX: chips au-dessus du Keypad restent GROS (chipStyleBig)
 // ✅ FIX: chips mini dans la liste joueurs (chipStyleMini)
 // ✅ FIX: DOUBLE/TRIPLE reset après chaque lancer (setMultiplier(1) après snapshot())
+// ✅ NEW: logo KILLER (PNG transparent) remplace 🔥 partout
+// ✅ NEW: logo DEAD (rouge, sans halo) + ligne DEAD en rouge
+// ✅ FIX: fin de partie -> overlay victoire + classement + bouton Terminer
 // ============================================
 
 import React from "react";
@@ -18,6 +21,11 @@ import type { Store, MatchRecord, Dart as UIDart } from "../lib/types";
 import type { KillerConfig, KillerDamageRule, KillerBecomeRule } from "./KillerConfig";
 import Keypad from "../components/Keypad";
 import InfoDot from "../components/InfoDot";
+
+import killerActiveIcon from "../assets/icons/killer-active.png";
+import killerListIcon from "../assets/icons/killer-list.png";
+import deadActiveIcon from "../assets/icons/dead-active.png";
+import deadListIcon from "../assets/icons/dead-list.png";
 
 type Props = {
   store: Store;
@@ -63,7 +71,7 @@ type KillerPlayerState = {
   hitsBySegment: Record<string, number>;
   hitsByNumber: Record<string, number>;
 
-  // ✅ UI: dernière volée jouée (affichage liste joueurs)
+  // UI: dernière volée jouée (affichage liste joueurs)
   lastVisit?: ThrowInput[] | null;
 };
 
@@ -177,7 +185,6 @@ function pickMultForBot(skill: number, becomeRule: KillerBecomeRule, wantsDouble
 
 function decideBotThrow(me: KillerPlayerState, all: KillerPlayerState[], config: KillerConfig): ThrowInput {
   const skill = resolveBotSkill(me.botLevel);
-
   const aliveOthers = all.filter((p) => !p.eliminated && p.id !== me.id);
 
   const missRate = skill <= 1 ? 0.22 : skill === 2 ? 0.16 : skill === 3 ? 0.1 : skill === 4 ? 0.06 : 0.03;
@@ -191,7 +198,6 @@ function decideBotThrow(me: KillerPlayerState, all: KillerPlayerState[], config:
     const wantsDouble = config.becomeRule === "double";
     const hitOwnRate = skill <= 1 ? 0.55 : skill === 2 ? 0.68 : skill === 3 ? 0.78 : skill === 4 ? 0.88 : 0.94;
     if (rand01() < hitOwnRate) return { target: me.number, mult: pickMultForBot(skill, config.becomeRule, wantsDouble) };
-
     const n = 1 + Math.floor(Math.random() * 20);
     return { target: n, mult: pickMultForBot(skill, config.becomeRule, false) };
   }
@@ -244,7 +250,7 @@ function fmtChip(d?: UIDart) {
   return `${d.mult === 3 ? "T" : d.mult === 2 ? "D" : "S"}${d.v}`;
 }
 
-// ✅ chips BIG (au-dessus du Keypad)
+// chips BIG
 function chipStyleBig(d?: UIDart): React.CSSProperties {
   const base: React.CSSProperties = {
     display: "inline-flex",
@@ -276,7 +282,7 @@ function chipStyleBig(d?: UIDart): React.CSSProperties {
   return { ...base, background: "rgba(255,198,58,.10)", border: "1px solid rgba(255,198,58,.22)", color: "#ffe7b0" };
 }
 
-// ✅ chips MINI (dans la liste joueurs)
+// chips MINI
 function chipStyleMini(d?: UIDart): React.CSSProperties {
   const base: React.CSSProperties = {
     display: "inline-flex",
@@ -288,7 +294,6 @@ function chipStyleMini(d?: UIDart): React.CSSProperties {
     borderRadius: 999,
     fontWeight: 1000,
     fontSize: 10,
-    letterSpacing: 0,
     border: "1px solid rgba(255,255,255,.10)",
     background: "rgba(0,0,0,.55)",
     lineHeight: "18px",
@@ -323,83 +328,22 @@ function rulesText(config: KillerConfig) {
       : "Quand tu touches le numéro d’un adversaire, il perd toujours 1 vie (S/D/T ne change rien).";
 
   return [
-    {
-      title: "But",
-      body:
-        "Tu as un numéro (#1…#20). D’abord tu dois devenir KILLER, puis éliminer les autres en touchant leur numéro.",
-    },
-
-    {
-      title: "Départ",
-      body:
-        `Chaque joueur commence avec ${lives} vie(s). Un joueur est éliminé quand ses vies tombent à 0.`,
-    },
-
-    {
-      title: "Devenir KILLER",
-      body:
-        `${becomeRuleText}\n` +
-        "Important : toucher un autre numéro que le tien ne te rend pas KILLER.",
-    },
-
-    {
-      title: "Attaquer (quand tu es KILLER)",
-      body:
-        `${damageText}\n` +
-        "Seuls les adversaires vivants peuvent perdre des vies. Si tu réduis un joueur à 0 vie → il est OUT immédiatement.",
-    },
-
-    {
-      title: "Ce qui ne fait rien",
-      body:
-        "MISS (0) : aucun effet.\n" +
-        "BULL / DBULL : aucun effet (ni pour devenir KILLER, ni pour enlever des vies).\n" +
-        "Toucher un numéro d’un joueur déjà OUT : aucun effet.",
-    },
-
-    {
-      title: "Tour de jeu",
-      body:
-        "À ton tour : 3 fléchettes.\n" +
-        "Le changement de joueur se fait en appuyant sur VALIDER (après tes 3 fléchettes ou quand tu veux finir le tour).",
-    },
-
-    {
-      title: "Fin de partie",
-      body:
-        "La partie se termine quand il ne reste plus qu’un seul joueur vivant : il gagne 🏆",
-    },
+    { title: "But", body: "Tu as un numéro (#1…#20). D’abord tu dois devenir KILLER, puis éliminer les autres en touchant leur numéro." },
+    { title: "Départ", body: `Chaque joueur commence avec ${lives} vie(s). Un joueur est éliminé quand ses vies tombent à 0.` },
+    { title: "Devenir KILLER", body: `${becomeRuleText}\nImportant : toucher un autre numéro que le tien ne te rend pas KILLER.` },
+    { title: "Attaquer (quand tu es KILLER)", body: `${damageText}\nSi tu réduis un joueur à 0 vie → il est DEAD immédiatement.` },
+    { title: "Ce qui ne fait rien", body: "MISS (0) : aucun effet.\nBULL / DBULL : aucun effet.\nToucher un joueur déjà DEAD : aucun effet." },
+    { title: "Tour de jeu", body: "À ton tour : 3 fléchettes.\nPuis VALIDER pour passer au joueur suivant." },
+    { title: "Fin de partie", body: "La partie se termine quand il ne reste plus qu’un seul joueur vivant : il gagne 🏆" },
   ];
 }
 
-
-function AvatarMedallion({
-  size,
-  src,
-  name,
-}: {
-  size: number;
-  src?: string | null;
-  name?: string;
-}) {
+function AvatarMedallion({ size, src, name }: { size: number; src?: string | null; name?: string }) {
   const initials = String(name || "J").trim().slice(0, 1).toUpperCase();
-
   return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        borderRadius: "50%",
-        overflow: "hidden",
-        background: "transparent", // ✅ aucun halo / aucun fond “blanc”
-      }}
-    >
+    <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", background: "transparent" }}>
       {src ? (
-        <img
-          src={src}
-          alt=""
-          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-        />
+        <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
       ) : (
         <div
           style={{
@@ -421,6 +365,46 @@ function AvatarMedallion({
   );
 }
 
+function KillerIcon({ size = 26, variant = "active" }: { size?: number; variant?: "active" | "list" }) {
+  const src = variant === "list" ? killerListIcon : killerActiveIcon;
+  return (
+    <img
+      src={src}
+      alt="Killer"
+      style={{ width: size, height: size, marginLeft: 6, display: "inline-block", verticalAlign: "middle", objectFit: "contain", filter: "contrast(1.1) brightness(1.05)" }}
+    />
+  );
+}
+
+function DeadIcon({ size = 18, variant = "list" }: { size?: number; variant?: "active" | "list" }) {
+  const src = variant === "active" ? deadActiveIcon : deadListIcon;
+  return (
+    <img
+      src={src}
+      alt="Dead"
+      style={{ width: size, height: size, marginLeft: 6, display: "inline-block", verticalAlign: "middle", objectFit: "contain", filter: "contrast(1.15) brightness(1.05)" }}
+    />
+  );
+}
+
+function StatRow({ label, value }: { label: string; value: any }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
+      <div style={{ fontSize: 11, opacity: 0.85 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 1000 }}>{value}</div>
+    </div>
+  );
+}
+
+function StatBox({ label, value, small }: { label: string; value: any; small?: boolean }) {
+  return (
+    <div style={{ borderRadius: 14, border: "1px solid rgba(255,255,255,.10)", background: "rgba(0,0,0,.30)", padding: "8px 6px", textAlign: "center" }}>
+      <div style={{ fontSize: 9, opacity: 0.85, fontWeight: 900, letterSpacing: 0.8 }}>{label}</div>
+      <div style={{ fontSize: small ? 12 : 22, fontWeight: 1000, color: "#ffe7b0", lineHeight: 1.0 }}>{value}</div>
+    </div>
+  );
+}
+
 export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const startedAt = React.useMemo(() => Date.now(), []);
   const finishedRef = React.useRef(false);
@@ -434,12 +418,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       avatarDataUrl: p.avatarDataUrl ?? null,
       isBot: !!p.isBot,
       botLevel: p.botLevel ?? "",
-
       number: clampInt(p.number, 1, 20, 1),
       lives,
       isKiller: false,
       eliminated: false,
-
       kills: 0,
       hitsOnSelf: 0,
       totalThrows: 0,
@@ -447,17 +429,13 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       offensiveThrows: 0,
       killerHits: 0,
       uselessHits: 0,
-
       livesTaken: 0,
       livesLost: 0,
-
       throwsToBecomeKiller: 0,
       becameAtThrow: null,
       eliminatedAt: null,
-
       hitsBySegment: {},
       hitsByNumber: {},
-
       lastVisit: null,
     }));
   }, [config]);
@@ -475,6 +453,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const [multiplier, setMultiplier] = React.useState<Mult>(1);
   const [showRules, setShowRules] = React.useState(false);
 
+  // ✅ écran de fin local
+  const [endRec, setEndRec] = React.useState<any>(null);
+  const [showEnd, setShowEnd] = React.useState(false);
+
   const undoRef = React.useRef<Snapshot[]>([]);
   const botTimerRef = React.useRef<any>(null);
   const botBusyRef = React.useRef(false);
@@ -485,7 +467,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const totalCount = players.length;
   const isBotTurn = !!current?.isBot;
 
-  const inputDisabledBase = finished || !!w || !current || current.eliminated;
+  const inputDisabledBase = finished || !!w || !current || current.eliminated || showEnd;
   const waitingValidate = !inputDisabledBase && !isBotTurn && dartsLeft === 0;
 
   function pushLog(line: string) {
@@ -496,8 +478,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     const snap: Snapshot = {
       players: players.map((p) => ({
         ...p,
-        hitsBySegment: { ...p.hitsBySegment },
-        hitsByNumber: { ...p.hitsByNumber },
+        hitsBySegment: { ...(p.hitsBySegment || {}) },
+        hitsByNumber: { ...(p.hitsByNumber || {}) },
         lastVisit: (p.lastVisit || []).map((t) => ({ ...t })),
       })),
       turnIndex,
@@ -538,7 +520,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   function endTurn(nextPlayers?: KillerPlayerState[]) {
     const base = nextPlayers || players;
 
-    // ✅ mémorise la dernière volée du joueur courant (liste joueurs)
+    // mémorise la dernière volée du joueur courant
     setPlayers((prev) => {
       const next = prev.map((p, i) => {
         if (i !== turnIndex) return p;
@@ -556,8 +538,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   function computeFinalRanks(finalPlayers: KillerPlayerState[], winnerId: string, elim: string[]) {
     const n = finalPlayers.length;
     const rankById: Record<string, number> = {};
-
     let rank = n;
+
     for (const pid of elim || []) {
       if (!pid) continue;
       if (rankById[pid] == null) {
@@ -568,17 +550,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
 
     rankById[winnerId] = 1;
 
-    let nextRank = 2;
-    const alive = finalPlayers.filter((p) => !p.eliminated).map((p) => p.id);
-    for (const pid of alive) {
-      if (pid === winnerId) continue;
-      if (rankById[pid] == null) rankById[pid] = nextRank++;
-    }
-
     for (const p of finalPlayers) {
       if (rankById[p.id] == null) rankById[p.id] = Math.max(2, n);
     }
-
     return rankById;
   }
 
@@ -586,21 +560,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     const finishedAt = Date.now();
     const rankById = computeFinalRanks(finalPlayersRaw, winnerId, elim);
 
-    const finalPlayers = finalPlayersRaw.map((p) => {
-      const eliminatedAt = p.eliminatedAt || (p.eliminated ? finishedAt : null);
-      const survivalTimeMs = p.eliminated
-        ? Math.max(0, (eliminatedAt || finishedAt) - startedAt)
-        : Math.max(0, finishedAt - startedAt);
-
-      return {
-        ...p,
-        finalRank: rankById[p.id] || 0,
-        survivalTimeMs,
-      };
-    });
-
     const detailedByPlayer: Record<string, any> = {};
-    for (const p of finalPlayers) {
+    for (const p of finalPlayersRaw) {
       detailedByPlayer[p.id] = {
         playerId: p.id,
         profileId: p.id,
@@ -624,12 +585,11 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         throwsToBecomeKiller: p.becameAtThrow ? p.becameAtThrow : p.throwsToBecomeKiller,
         hitsBySegment: p.hitsBySegment || {},
         hitsByNumber: p.hitsByNumber || {},
-        finalRank: p.finalRank || 0,
-        survivalTimeMs: p.survivalTimeMs || 0,
+        finalRank: rankById[p.id] || 0,
       };
     }
 
-    const perPlayer = finalPlayers.map((p) => ({
+    const perPlayer = finalPlayersRaw.map((p) => ({
       id: p.id,
       playerId: p.id,
       profileId: p.id,
@@ -647,8 +607,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       livesTaken: p.livesTaken,
       livesLost: p.livesLost,
       kills: p.kills,
-      finalRank: p.finalRank || 0,
-      survivalTimeMs: p.survivalTimeMs || 0,
+      finalRank: rankById[p.id] || 0,
     }));
 
     const rec: any = {
@@ -656,7 +615,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       createdAt: startedAt,
       updatedAt: finishedAt,
       winnerId,
-      players: finalPlayers.map((p) => ({
+      players: finalPlayersRaw.map((p) => ({
         id: p.id,
         name: p.name,
         avatarDataUrl: p.avatarDataUrl ?? null,
@@ -671,11 +630,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         detailedByPlayer,
         perPlayer,
       },
-      payload: {
-        mode: "killer",
-        config,
-        summary: { mode: "killer", detailedByPlayer, perPlayer },
-      },
+      payload: { mode: "killer", config, summary: { mode: "killer", detailedByPlayer, perPlayer } },
     };
 
     return rec as MatchRecord;
@@ -687,7 +642,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     if (isBotTurn) return;
 
     snapshot();
-    setMultiplier(1); // ✅ reset Double/Triple après un lancer
+    setMultiplier(1); // reset double/triple après un lancer
 
     const thr: ThrowInput = {
       target: clampInt(t.target, 0, 25, 0),
@@ -775,43 +730,31 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     });
   }
 
+  // ✅ Fin de partie : overlay (PAS de onFinish direct)
   React.useEffect(() => {
     const ww = winner(players);
     if (ww && !finishedRef.current) {
       finishedRef.current = true;
       setFinished(true);
       pushLog(`🏆 ${ww.name} gagne !`);
-      const rec = buildMatchRecord(players, ww.id, elimOrderRef.current || []);
-      onFinish(rec);
+
+      let rec: any = null;
+      try {
+        rec = buildMatchRecord(players, ww.id, elimOrderRef.current || []);
+      } catch (e) {
+        rec = null;
+      }
+
+      setEndRec(rec);
+      setShowEnd(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [players]);
 
+  // BOT AUTOPLAY (3 flèches puis VALIDER)
   React.useEffect(() => {
     if (!players.length) return;
-    if (!current || current.eliminated) setTurnIndex((prev) => nextAliveIndex(players, prev));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [players]);
-
-  React.useEffect(() => {
-    function onExternal(ev: any) {
-      const d = ev?.detail || {};
-      const target = clampInt(d.target, 0, 25, 0);
-      const mult = clampInt(d.mult, 1, 3, 1) as Mult;
-      if (dartsLeft <= 0) return;
-      if (isBotTurn) return;
-      applyThrow({ target, mult });
-    }
-    window.addEventListener("dc:throw", onExternal as any);
-    return () => window.removeEventListener("dc:throw", onExternal as any);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [turnIndex, dartsLeft, finished, isBotTurn, inputDisabledBase]);
-
-  // BOT AUTOPLAY (3 flèches puis VALIDER auto)
-  React.useEffect(() => {
-    if (!players.length) return;
-    if (finishedRef.current) return;
-    if (finished) return;
+    if (finishedRef.current || finished) return;
     if (winner(players)) return;
 
     const me = players[turnIndex];
@@ -829,13 +772,11 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         }
         endTurn(players);
         botBusyRef.current = false;
-      }, 380);
+      }, 360);
 
       return () => {
-        if (botTimerRef.current) {
-          clearTimeout(botTimerRef.current);
-          botTimerRef.current = null;
-        }
+        if (botTimerRef.current) clearTimeout(botTimerRef.current);
+        botTimerRef.current = null;
         botBusyRef.current = false;
       };
     }
@@ -843,7 +784,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     if (botBusyRef.current) return;
     botBusyRef.current = true;
 
-    const delay = 380 + Math.floor(Math.random() * 420);
+    const delay = 360 + Math.floor(Math.random() * 420);
     botTimerRef.current = setTimeout(() => {
       botTimerRef.current = null;
       if (finishedRef.current || finished) {
@@ -858,6 +799,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       }
 
       snapshot();
+      setMultiplier(1);
 
       const thr = decideBotThrow(nowMe, players, config);
       const thrSafe: ThrowInput = {
@@ -949,18 +891,24 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     }, delay);
 
     return () => {
-      if (botTimerRef.current) {
-        clearTimeout(botTimerRef.current);
-        botTimerRef.current = null;
-      }
+      if (botTimerRef.current) clearTimeout(botTimerRef.current);
+      botTimerRef.current = null;
       botBusyRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turnIndex, dartsLeft, finished, players]);
 
+  // keep turnIndex safe
+  React.useEffect(() => {
+    if (!players.length) return;
+    const me = players[turnIndex];
+    if (!me || me.eliminated) setTurnIndex((prev) => nextAliveIndex(players, prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [players]);
+
   if (!config || !config.players || config.players.length < 2) {
     return (
-      <div style={{ padding: 16 }}>
+      <div style={{ padding: 16, color: "#fff" }}>
         <button onClick={() => go("killer_config")}>← Retour</button>
         <p>Configuration KILLER invalide.</p>
       </div>
@@ -1058,7 +1006,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
                   <div style={{ fontWeight: 950, fontSize: 12, color: "#ffe7b0", textTransform: "uppercase" }}>
                     {r.title}
                   </div>
-                  <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9, lineHeight: 1.35 }}>{r.body}</div>
+                  <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9, lineHeight: 1.35, whiteSpace: "pre-line" }}>
+                    {r.body}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1066,7 +1016,184 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         </div>
       )}
 
-      {/* HEADER */}
+      {/* ✅ END OVERLAY (FIN DE PARTIE) */}
+      {showEnd && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.72)",
+            zIndex: 10000,
+            padding: 14,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 520,
+              ...card,
+              padding: 14,
+              border: "1px solid rgba(255,198,58,.22)",
+              boxShadow: "0 18px 65px rgba(0,0,0,.65)",
+            }}
+          >
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 12, fontWeight: 1000, letterSpacing: 1.6, textTransform: "uppercase", color: gold, opacity: 0.95 }}>
+                FIN DE PARTIE
+              </div>
+
+              <div style={{ marginTop: 6, fontSize: 20, fontWeight: 1000, color: "#fff" }}>
+                🏆 {(winner(players)?.name || "—")} gagne !
+              </div>
+
+              <div style={{ marginTop: 10, height: 6, borderRadius: 999, background: "rgba(255,198,58,.14)", overflow: "hidden" }}>
+                <div
+                  style={{
+                    height: "100%",
+                    width: "100%",
+                    transformOrigin: "left center",
+                    animation: "killerEndBar 900ms ease-out forwards",
+                    background: `linear-gradient(90deg, ${gold2}, ${gold})`,
+                  }}
+                />
+              </div>
+
+              <style>{`
+                @keyframes killerEndBar {
+                  from { transform: scaleX(0); opacity: .2; }
+                  to   { transform: scaleX(1); opacity: 1; }
+                }
+              `}</style>
+            </div>
+
+            {/* CLASSEMENT */}
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontWeight: 1000, color: "#ffe7b0", fontSize: 12, textTransform: "uppercase", letterSpacing: 1.2 }}>
+                Classement
+              </div>
+
+              <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                {(() => {
+                  const recPlayers = (endRec?.summary?.perPlayer || endRec?.payload?.summary?.perPlayer || null) as any[] | null;
+
+                  let rows: any[] = [];
+                  if (recPlayers && Array.isArray(recPlayers) && recPlayers.length) {
+                    rows = [...recPlayers]
+                      .map((p) => ({
+                        id: p.id || p.playerId,
+                        name: p.name || "Joueur",
+                        avatarDataUrl: p.avatarDataUrl,
+                        rank: Number(p.finalRank) || 999,
+                        kills: Number(p.kills) || 0,
+                        taken: Number(p.livesTaken) || 0,
+                      }))
+                      .sort((a, b) => a.rank - b.rank);
+                  } else {
+                    // fallback sans record
+                    const ww = winner(players);
+                    const elim = (elimOrderRef.current || []).slice();
+                    const rankById: Record<string, number> = {};
+                    let r = players.length;
+                    for (const id of elim) if (rankById[id] == null) rankById[id] = r--;
+                    if (ww?.id) rankById[ww.id] = 1;
+
+                    rows = players
+                      .map((p) => ({
+                        id: p.id,
+                        name: p.name,
+                        avatarDataUrl: p.avatarDataUrl,
+                        rank: rankById[p.id] ?? 999,
+                        kills: p.kills || 0,
+                        taken: p.livesTaken || 0,
+                      }))
+                      .sort((a, b) => a.rank - b.rank);
+                  }
+
+                  return rows.map((p, i) => (
+                    <div
+                      key={p.id || i}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "34px 1fr auto",
+                        gap: 10,
+                        alignItems: "center",
+                        padding: "8px 10px",
+                        borderRadius: 14,
+                        border: "1px solid rgba(255,255,255,.08)",
+                        background: i === 0 ? "rgba(255,198,58,.10)" : "rgba(0,0,0,.22)",
+                      }}
+                    >
+                      <div style={{ fontWeight: 1000, color: i === 0 ? gold : "#fff", textAlign: "center" }}>{i + 1}</div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                        <AvatarMedallion size={28} src={p.avatarDataUrl} name={p.name} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 1000, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
+                          <div style={{ fontSize: 11, opacity: 0.78 }}>kills {p.kills} · dmg {p.taken}</div>
+                        </div>
+                      </div>
+
+                      <div style={{ fontWeight: 1000, color: i === 0 ? gold : "#ffe7b0" }}>{i === 0 ? "WIN" : ""}</div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
+
+            {/* ACTIONS */}
+            <div style={{ marginTop: 14, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEnd(false);
+                  if (endRec) onFinish(endRec);
+                  else go("history");
+                }}
+                style={{
+                  height: 42,
+                  padding: "0 14px",
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,180,0,.30)",
+                  background: `linear-gradient(180deg, ${gold}, ${gold2})`,
+                  color: "#1a1a1a",
+                  fontWeight: 1000,
+                  cursor: "pointer",
+                  boxShadow: "0 10px 22px rgba(255,170,0,.18)",
+                }}
+              >
+                Terminer
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  // plus tard: go("killer_summary", { rec: endRec })
+                }}
+                style={{
+                  height: 42,
+                  padding: "0 14px",
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,255,255,.12)",
+                  background: "rgba(255,255,255,.06)",
+                  color: "#fff",
+                  fontWeight: 1000,
+                  cursor: "pointer",
+                }}
+              >
+                Voir résumé
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= HEADER ================= */}
       <div
         style={{
           ...card,
@@ -1098,39 +1225,19 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         </button>
 
         <div style={{ textAlign: "center", lineHeight: 1 }}>
-          <span
-            style={{
-              display: "inline-block",
-              color: gold,
-              fontWeight: 1000,
-              textTransform: "uppercase",
-              letterSpacing: 1.6,
-              textShadow: "0 0 14px rgba(255,198,58,.25)",
-              filter: "drop-shadow(0 0 10px rgba(255,198,58,.15))",
-              animation: "killerGlowPulse 1.6s ease-in-out infinite",
-            }}
-          >
+          <span style={{ display: "inline-block", color: gold, fontWeight: 1000, textTransform: "uppercase", letterSpacing: 1.6, textShadow: "0 0 14px rgba(255,198,58,.25)" }}>
             KILLER
           </span>
-          <style>{`
-            @keyframes killerGlowPulse {
-              0%   { text-shadow: 0 0 10px rgba(255,198,58,.20); }
-              50%  { text-shadow: 0 0 18px rgba(255,198,58,.35); }
-              100% { text-shadow: 0 0 10px rgba(255,198,58,.20); }
-            }
-          `}</style>
         </div>
 
-        {/* ✅ “i” à l’extrême droite (InfoDot style Games) */}
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <InfoDot onClick={() => setShowRules(true)} size={30} color="#FFFFFF" glow="rgba(255,198,58,.45)" />
+          <InfoDot onClick={() => setShowRules(true)} size={30} color="#FFFFFF" />
         </div>
       </div>
 
-      {/* ACTIVE PLAYER */}
+      {/* ================= ACTIVE PLAYER ================= */}
       <div style={{ marginTop: 10, ...card, padding: 12, flex: "0 0 auto", position: "relative" }}>
         <div style={{ display: "grid", gridTemplateColumns: "92px 1fr 104px", gap: 10, alignItems: "center" }}>
-          {/* ✅ Médaillon SANS halo */}
           <div style={{ display: "grid", justifyItems: "center", gap: 8 }}>
             <AvatarMedallion size={84} src={current?.avatarDataUrl} name={current?.name} />
             <div
@@ -1138,7 +1245,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
                 fontSize: 14,
                 fontWeight: 1000,
                 color: gold,
-                letterSpacing: 1,
                 textTransform: "uppercase",
                 textAlign: "center",
                 width: 92,
@@ -1152,99 +1258,31 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             </div>
           </div>
 
-          {/* mini bloc KPI central */}
-          <div
-            style={{
-              borderRadius: 16,
-              border: "1px solid rgba(255,255,255,.08)",
-              background: "rgba(0,0,0,.28)",
-              padding: 10,
-              display: "grid",
-              gap: 8,
-            }}
-          >
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: 11, opacity: 0.85 }}>Darts</div>
-              <div style={{ fontSize: 13, fontWeight: 1000 }}>{dartsLeft}</div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: 11, opacity: 0.85 }}>Lancers</div>
-              <div style={{ fontSize: 13, fontWeight: 1000 }}>{current?.totalThrows ?? 0}</div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: 11, opacity: 0.85 }}>Dégâts</div>
-              <div style={{ fontSize: 13, fontWeight: 1000 }}>{current?.livesTaken ?? 0}</div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: 11, opacity: 0.85 }}>Kills</div>
-              <div style={{ fontSize: 13, fontWeight: 1000 }}>{current?.kills ?? 0}</div>
-            </div>
+          <div style={{ borderRadius: 16, border: "1px solid rgba(255,255,255,.08)", background: "rgba(0,0,0,.28)", padding: 10, display: "grid", gap: 8 }}>
+            <StatRow label="Darts" value={dartsLeft} />
+            <StatRow label="Lancers" value={current?.totalThrows ?? 0} />
+            <StatRow label="Dégâts" value={current?.livesTaken ?? 0} />
+            <StatRow label="Kills" value={current?.kills ?? 0} />
           </div>
 
-          {/* ✅ colonne droite compactée et alignée */}
           <div style={{ display: "grid", justifyItems: "end", gap: 8 }}>
-            <div
-              style={{
-                width: 96,
-                textAlign: "center",
-                fontWeight: 1000,
-                fontSize: 22,
-                color: gold,
-                letterSpacing: 0.8,
-                textShadow: "0 0 14px rgba(255,198,58,.18)",
-                marginBottom: -2,
-              }}
-            >
+            <div style={{ width: 96, textAlign: "center", fontWeight: 1000, fontSize: 22, color: gold, letterSpacing: 0.8 }}>
               #{current?.number ?? "?"}
-              {current?.isKiller && <span style={{ marginLeft: 6, fontSize: 18 }}>🔥</span>}
-              {current?.isBot && <span style={{ marginLeft: 6, fontSize: 16, opacity: 0.9 }}>🤖</span>}
+              {current?.isKiller && <KillerIcon size={46} variant="active" />}
+              {current?.eliminated && <DeadIcon size={46} variant="active" />}
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, width: 96 }}>
-              {/* VIES */}
-              <div
-                style={{
-                  borderRadius: 14,
-                  border: "1px solid rgba(255,198,58,.20)",
-                  background: "rgba(255,198,58,.08)",
-                  padding: "8px 6px",
-                  textAlign: "center",
-                }}
-              >
+              <div style={{ borderRadius: 14, border: "1px solid rgba(255,198,58,.20)", background: "rgba(255,198,58,.08)", padding: "8px 6px", textAlign: "center" }}>
                 <div style={{ fontSize: 9, opacity: 0.85, fontWeight: 900, letterSpacing: 0.8 }}>VIES</div>
-                <div
-                  style={{
-                    fontSize: 22,
-                    fontWeight: 1000,
-                    color: gold,
-                    fontFamily: "Baloo 2, Comic Sans MS, system-ui",
-                    lineHeight: 1.0,
-                  }}
-                >
-                  {current?.lives ?? 0}
-                </div>
+                <div style={{ fontSize: 22, fontWeight: 1000, color: gold, lineHeight: 1.0 }}>{current?.lives ?? 0}</div>
               </div>
 
-              {/* SURVIVANTS */}
-              <div
-                style={{
-                  borderRadius: 14,
-                  border: "1px solid rgba(255,255,255,.10)",
-                  background: "rgba(0,0,0,.30)",
-                  padding: "8px 6px",
-                  textAlign: "center",
-                }}
-              >
-                <div style={{ fontSize: 9, opacity: 0.85, fontWeight: 900, letterSpacing: 0.8 }}>SURV.</div>
-                <div style={{ fontSize: 12, fontWeight: 1000, color: "#ffe7b0", lineHeight: 1.0 }}>
-                  {aliveCount}/{totalCount}
-                </div>
-              </div>
+              <StatBox label="SURV." value={`${aliveCount}/${totalCount}`} small />
             </div>
           </div>
         </div>
 
-        {/* ✅ UN SEUL message, dans un petit bloc flottant */}
         {(waitingValidate || isBotTurn) && !finished && !w && (
           <div style={{ marginTop: 10, display: "flex", justifyContent: "center" }}>
             <div
@@ -1266,17 +1304,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         )}
       </div>
 
-      {/* ✅ ZONE SCROLLABLE : LISTE JOUEURS UNIQUEMENT */}
-      <div
-        style={{
-          marginTop: 10,
-          flex: "1 1 auto",
-          minHeight: 0,
-          overflow: "auto",
-          paddingRight: 2,
-          WebkitOverflowScrolling: "touch",
-        }}
-      >
+      {/* ================= LISTE JOUEURS ================= */}
+      <div style={{ marginTop: 10, flex: "1 1 auto", minHeight: 0, overflow: "auto", paddingRight: 2, WebkitOverflowScrolling: "touch" }}>
         <div style={{ display: "grid", gap: 10 }}>
           {players.map((p, idx) => {
             const isMe = idx === turnIndex;
@@ -1289,9 +1318,15 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
                 style={{
                   ...card,
                   padding: 10,
-                  opacity: p.eliminated ? 0.55 : 1,
-                  border: isMe ? "1px solid rgba(255,198,58,.35)" : "1px solid rgba(255,255,255,.08)",
-                  background: isMe
+                  opacity: p.eliminated ? 0.92 : 1,
+                  border: p.eliminated
+                    ? "1px solid rgba(255,80,80,.55)"
+                    : isMe
+                    ? "1px solid rgba(255,198,58,.35)"
+                    : "1px solid rgba(255,255,255,.08)",
+                  background: p.eliminated
+                    ? "linear-gradient(180deg, rgba(70,10,10,.90), rgba(16,8,10,.98))"
+                    : isMe
                     ? "radial-gradient(circle at 0% 0%, rgba(255,198,58,.18), rgba(12,12,14,.95) 65%)"
                     : "linear-gradient(180deg, rgba(22,22,23,.78), rgba(12,12,14,.95))",
                   display: "grid",
@@ -1300,17 +1335,21 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
                   gap: 10,
                 }}
               >
-                {/* ✅ avatar sans fond blanc/halo */}
                 <AvatarMedallion size={44} src={p.avatarDataUrl} name={p.name} />
 
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                     <div style={{ fontWeight: 1000, minWidth: 0 }}>
                       <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {p.name} <span style={{ fontSize: 12, opacity: 0.8 }}>#{p.number}</span>
+                        <span style={{ color: p.eliminated ? "rgba(255,140,140,.95)" : "#fff" }}>{p.name}</span>{" "}
+                        <span style={{ fontSize: 12, opacity: 0.8, color: p.eliminated ? "rgba(255,140,140,.85)" : "rgba(255,255,255,.8)" }}>
+                          #{p.number}
+                        </span>
                       </span>
-                      {p.isKiller && <span style={{ marginLeft: 6 }}>🔥</span>}
-                      {p.eliminated && <span style={{ marginLeft: 6 }}>💀</span>}
+
+                      {p.isKiller && !p.eliminated && <KillerIcon size={18} variant="list" />}
+                      {p.eliminated && <DeadIcon size={18} variant="list" />}
+
                       {p.isBot && (
                         <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.85, whiteSpace: "nowrap" }}>
                           🤖{p.botLevel ? ` ${p.botLevel}` : ""}
@@ -1318,7 +1357,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
                       )}
                     </div>
 
-                    {/* ✅ dernière volée (chips MINI) */}
                     <div style={{ display: "flex", gap: 4, flex: "0 0 auto", transform: "scale(.92)", transformOrigin: "right center" }}>
                       <span style={chipStyleMini(lastDarts[0])}>{fmtChip(lastDarts[0])}</span>
                       <span style={chipStyleMini(lastDarts[1])}>{fmtChip(lastDarts[1])}</span>
@@ -1326,7 +1364,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
                     </div>
                   </div>
 
-                  <div style={{ fontSize: 12, opacity: 0.78, marginTop: 4 }}>
+                  <div style={{ fontSize: 12, opacity: 0.78, marginTop: 4, color: p.eliminated ? "rgba(255,140,140,.85)" : "rgba(255,255,255,.78)" }}>
                     kills: {p.kills} · dmg: {p.livesTaken} · lancers: {p.totalThrows}
                   </div>
                 </div>
@@ -1338,12 +1376,12 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
                     fontWeight: 1000,
                     borderRadius: 14,
                     padding: "8px 10px",
-                    background: "rgba(0,0,0,.45)",
-                    border: "1px solid rgba(255,255,255,.08)",
-                    color: p.eliminated ? "#aaa" : gold,
+                    background: p.eliminated ? "rgba(255,80,80,.12)" : "rgba(0,0,0,.45)",
+                    border: p.eliminated ? "1px solid rgba(255,80,80,.35)" : "1px solid rgba(255,255,255,.08)",
+                    color: p.eliminated ? "rgba(255,140,140,.95)" : gold,
                   }}
                 >
-                  {p.eliminated ? "OUT" : `${p.lives} ♥`}
+                  {p.eliminated ? "DEAD" : `${p.lives} ♥`}
                 </div>
               </div>
             );
@@ -1351,35 +1389,34 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         </div>
       </div>
 
-      {/* CHIPS VOLÉE (au-dessus du Keypad) — ✅ RESTENT GROS */}
-      {!w && !finished && !isBotTurn && (
-        <div style={{ marginTop: 12, display: "flex", justifyContent: "center", gap: 10, flex: "0 0 auto" }}>
-          <span style={chipStyleBig(currentThrow[0])}>{fmtChip(currentThrow[0])}</span>
-          <span style={chipStyleBig(currentThrow[1])}>{fmtChip(currentThrow[1])}</span>
-          <span style={chipStyleBig(currentThrow[2])}>{fmtChip(currentThrow[2])}</span>
-        </div>
-      )}
+      {/* ================= CHIPS + KEYPAD ================= */}
+      {!w && !finished && !isBotTurn && !showEnd && (
+        <>
+          <div style={{ marginTop: 12, display: "flex", justifyContent: "center", gap: 10, flex: "0 0 auto" }}>
+            <span style={chipStyleBig(currentThrow[0])}>{fmtChip(currentThrow[0])}</span>
+            <span style={chipStyleBig(currentThrow[1])}>{fmtChip(currentThrow[1])}</span>
+            <span style={chipStyleBig(currentThrow[2])}>{fmtChip(currentThrow[2])}</span>
+          </div>
 
-      {/* KEYPAD (toujours visible) */}
-      {!w && !finished && !isBotTurn && (
-        <div style={{ marginTop: 10, flex: "0 0 auto" }}>
-          <Keypad
-            currentThrow={currentThrow}
-            multiplier={multiplier}
-            onSimple={() => setMultiplier(1)}
-            onDouble={() => setMultiplier(2)}
-            onTriple={() => setMultiplier(3)}
-            onBackspace={() => {}}
-            onCancel={undo} // ✅ ANNULER = undo réel
-            onNumber={(n: number) => applyThrow({ target: n, mult: multiplier })}
-            onBull={() => {
-              const m: Mult = multiplier === 2 ? 2 : 1;
-              applyThrow({ target: 25, mult: m });
-            }}
-            onValidate={handleValidate}
-            hidePreview={true}
-          />
-        </div>
+          <div style={{ marginTop: 10, flex: "0 0 auto" }}>
+            <Keypad
+              currentThrow={currentThrow}
+              multiplier={multiplier}
+              onSimple={() => setMultiplier(1)}
+              onDouble={() => setMultiplier(2)}
+              onTriple={() => setMultiplier(3)}
+              onBackspace={() => {}}
+              onCancel={undo}
+              onNumber={(n: number) => applyThrow({ target: n, mult: multiplier })}
+              onBull={() => {
+                const m: Mult = multiplier === 2 ? 2 : 1;
+                applyThrow({ target: 25, mult: m });
+              }}
+              onValidate={handleValidate}
+              hidePreview={true}
+            />
+          </div>
+        </>
       )}
     </div>
   );

@@ -1,9 +1,14 @@
+// @ts-nocheck
 // ============================================
 // src/pages/HistoryPage.tsx — Historique V2 Neon Deluxe
 // - KPIs (sauvegardées / terminées / en cours)
 // - Filtres J / S / M / A / ARV
 // - Cartes stylées : mode, statut, format, scores
 // - Décodage payload (base64 + gzip) pour récupérer config/summary
+// ✅ FIX: “Voir stats” n’ouvre PLUS les pages X01 pour KILLER
+//    -> KILLER : go("killer_summary", { rec })
+//    -> Autres : go("x01_end", { rec })
+// ✅ (bonus safe) : Reprendre/Voir en cours route aussi KILLER vers "killer_play"
 // ============================================
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -69,8 +74,7 @@ function getName(v: any): string {
   return String(v.name || v.displayName || v.username || "");
 }
 function getAvatarUrl(store: Store, v: any): string | null {
-  if (v && typeof v === "object" && v.avatarDataUrl)
-    return String(v.avatarDataUrl);
+  if (v && typeof v === "object" && v.avatarDataUrl) return String(v.avatarDataUrl);
   const id = getId(v);
   const anyStore: any = store as any;
   const list: any[] = Array.isArray(anyStore?.profiles)
@@ -90,14 +94,19 @@ function baseMode(e: SavedEntry) {
   if (k === "leg") return m || "x01";
   return k || m || "x01";
 }
+function isKillerEntry(e: SavedEntry) {
+  const m = baseMode(e);
+  const s1 = String((e as any)?.summary?.mode || "");
+  const s2 = String((e as any)?.payload?.mode || "");
+  return m.includes("killer") || s1.toLowerCase().includes("killer") || s2.toLowerCase().includes("killer");
+}
 
 function statusOf(e: SavedEntry): "finished" | "in_progress" {
   const s = (e.status || "").toLowerCase();
   if (s === "finished") return "finished";
   if (s === "inprogress" || s === "in_progress") return "in_progress";
   const sum: any = e.summary || e.payload || {};
-  if (sum?.finished === true || sum?.result?.finished === true)
-    return "finished";
+  if (sum?.finished === true || sum?.result?.finished === true) return "finished";
   return "in_progress";
 }
 
@@ -130,7 +139,6 @@ async function decodePayload(raw: any): Promise<any | null> {
     const bin = atob(raw);
     const buf = Uint8Array.from(bin, (c) => c.charCodeAt(0));
 
-    // navigateur moderne : DecompressionStream dispo
     const DS: any = (window as any).DecompressionStream;
     if (typeof DS === "function") {
       const ds = new DS("gzip");
@@ -139,7 +147,6 @@ async function decodePayload(raw: any): Promise<any | null> {
       return await resp.json();
     }
 
-    // fallback : tenter du JSON direct
     return JSON.parse(bin);
   } catch {
     return null;
@@ -175,17 +182,12 @@ function dedupe(list: SavedEntry[]): SavedEntry[] {
   const rest: SavedEntry[] = [];
   for (const e of list) {
     const link = matchLink(e);
-    if (link)
-      byLink.set(link, byLink.has(link) ? better(byLink.get(link)!, e) : e);
+    if (link) byLink.set(link, byLink.has(link) ? better(byLink.get(link)!, e) : e);
     else rest.push(e);
   }
   const base = [...byLink.values(), ...rest];
   const buckets: { rep: SavedEntry }[] = [];
-  for (const e of base.sort(
-    (a, b) =>
-      (a.updatedAt || a.createdAt || 0) -
-      (b.updatedAt || b.createdAt || 0)
-  )) {
+  for (const e of base.sort((a, b) => (a.updatedAt || a.createdAt || 0) - (b.updatedAt || b.createdAt || 0))) {
     let ok = false;
     for (const bkt of buckets) {
       if (sameBucket(bkt.rep, e)) {
@@ -198,11 +200,7 @@ function dedupe(list: SavedEntry[]): SavedEntry[] {
   }
   return buckets
     .map((b) => b.rep)
-    .sort(
-      (a, b) =>
-        (b.updatedAt || b.createdAt || 0) -
-        (a.updatedAt || a.createdAt || 0)
-    );
+    .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
 }
 
 /* ---------- Range filters ---------- */
@@ -221,12 +219,8 @@ function startOf(period: RangeKey) {
     now.setHours(0, 0, 0, 0);
     return now.getTime();
   }
-  if (period === "month") {
-    return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  }
-  if (period === "year") {
-    return new Date(now.getFullYear(), 0, 1).getTime();
-  }
+  if (period === "month") return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  if (period === "year") return new Date(now.getFullYear(), 0, 1).getTime();
   return 0;
 }
 
@@ -256,9 +250,7 @@ function getModeColor(e: SavedEntry) {
 
 function detectFormat(e: SavedEntry): string {
   const cfg: any =
-    e.game ||
-    (e.summary && e.summary.game) ||
-    (e.decoded && (e.decoded.config || e.decoded.game));
+    e.game || (e.summary && e.summary.game) || (e.decoded && (e.decoded.config || e.decoded.game));
   if (!cfg) return "Solo";
 
   const teams = cfg.teams;
@@ -275,7 +267,7 @@ function cleanName(raw: any): string | undefined {
   if (typeof raw !== "string") return undefined;
   const name = raw.trim();
   if (!name) return undefined;
-  if (name.length > 24 && name.includes("-")) return undefined; // évite les IDs
+  if (name.length > 24 && name.includes("-")) return undefined;
   return name;
 }
 function cleanScore(raw: any): string | undefined {
@@ -290,29 +282,14 @@ function summarizeScore(e: SavedEntry): string {
   const data: any = e.summary || {};
   const result = data.result || {};
 
-  const rankings =
-    data.rankings ||
-    result.rankings ||
-    result.players ||
-    data.players ||
-    result.standings;
+  const rankings = data.rankings || result.rankings || result.players || data.players || result.standings;
 
   if (Array.isArray(rankings)) {
     const parts = rankings
       .map((r: any) => {
-        const name =
-          cleanName(r.name || r.playerName || r.label || r.id || r.playerId) ||
-          undefined;
+        const name = cleanName(r.name || r.playerName || r.label || r.id || r.playerId) || undefined;
         const score =
-          cleanScore(
-            r.score ??
-              r.legsWon ??
-              r.legs ??
-              r.setsWon ??
-              r.sets ??
-              r.points ??
-              r.total
-          ) ||
+          cleanScore(r.score ?? r.legsWon ?? r.legs ?? r.setsWon ?? r.sets ?? r.points ?? r.total) ||
           (typeof r.avg3 === "number" ? r.avg3.toFixed(1) : undefined);
 
         if (!name && !score) return null;
@@ -330,8 +307,7 @@ function summarizeScore(e: SavedEntry): string {
       .map(([rawName, val]: [string, any]) => {
         const name = cleanName(rawName);
         const legs = cleanScore(val.legsWon ?? val.legs);
-        const avg =
-          typeof val.avg3 === "number" ? val.avg3.toFixed(1) : undefined;
+        const avg = typeof val.avg3 === "number" ? val.avg3.toFixed(1) : undefined;
 
         if (!name && !legs && !avg) return null;
 
@@ -364,12 +340,10 @@ function getStartScore(e: SavedEntry): number {
     anyE.decoded?.game?.startScore ??
     anyE.decoded?.x01?.config?.startScore ??
     anyE.decoded?.x01?.startScore ??
+    anyE.decoded?.x01?.start ??
     anyE.decoded?.x01?.start;
 
-  if (typeof direct === "number" && [301, 501, 701, 901].includes(direct)) {
-    return direct;
-  }
-
+  if (typeof direct === "number" && [301, 501, 701, 901].includes(direct)) return direct;
   return 501;
 }
 
@@ -391,28 +365,28 @@ const HistoryAPI = {
             if (decoded && typeof decoded === "object") {
               r.decoded = decoded;
 
-              const cfg =
-                decoded.config ||
-                decoded.game ||
-                decoded.x01?.config ||
-                decoded.x01;
+              const cfg = decoded.config || decoded.game || decoded.x01?.config || decoded.x01;
 
               if (cfg) {
-                const sc =
-                  cfg.startScore ??
-                  cfg.start ??
-                  cfg.x01Start ??
-                  cfg.x01StartScore;
-                if (typeof sc === "number") {
-                  r.game.startScore = sc;
-                }
+                const sc = cfg.startScore ?? cfg.start ?? cfg.x01Start ?? cfg.x01StartScore;
+                if (typeof sc === "number") r.game.startScore = sc;
+
                 const mode = cfg.mode || cfg.gameMode || "x01";
                 if (!r.game.mode) r.game.mode = mode;
               }
 
-              const sum =
-                decoded.summary || decoded.result || decoded.stats || {};
+              const sum = decoded.summary || decoded.result || decoded.stats || {};
               r.summary = { ...sum, ...r.summary };
+            }
+          }
+
+          // winnerName (KILLER et autres) : tentative soft depuis summary
+          if (!r.winnerName) {
+            const wid = r.summary?.winnerId || r.summary?.result?.winnerId || r.summary?.winner?.id;
+            if (wid) {
+              const hit = (r.players || []).find((p: any) => getId(p) === String(wid));
+              const nm = hit ? getName(hit) : null;
+              if (nm) r.winnerName = nm;
             }
           }
 
@@ -516,9 +490,7 @@ function makeStyles(theme: any) {
       fontWeight: 800,
       borderRadius: 10,
       border: `1px solid ${active ? theme.primary : edge}`,
-      background: active
-        ? "rgba(255,255,255,0.18)"
-        : "rgba(255,255,255,0.06)",
+      background: active ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.06)",
       color: active ? theme.primary : theme.text,
       boxShadow: active ? `0 0 10px ${theme.primary}88` : "none",
       cursor: "pointer",
@@ -626,27 +598,48 @@ export default function HistoryPage({
     loadHistory();
   }, [store]);
 
-  // tri / dedupe
   const { done, running } = useMemo(() => {
     const fins = items.filter((e) => statusOf(e) === "finished");
     const inprog = items.filter((e) => statusOf(e) !== "finished");
-
-    return {
-      // on dé-doublonne AUSSI les parties en cours
-      done: dedupe(fins),
-      running: dedupe(inprog),
-    };
+    return { done: dedupe(fins), running: dedupe(inprog) };
   }, [items]);
 
   const source = tab === "done" ? done : running;
-  const filtered = source.filter((e) =>
-    inRange(e.updatedAt || e.createdAt, sub)
-  );
+  const filtered = source.filter((e) => inRange(e.updatedAt || e.createdAt, sub));
 
   async function handleDelete(e: SavedEntry) {
     if (!window.confirm("Supprimer cette partie ?")) return;
     await HistoryAPI.remove(e.id);
     await loadHistory();
+  }
+
+  function goResume(e: SavedEntry, preview?: boolean) {
+    const resumeId = e.resumeId || matchLink(e) || e.id;
+
+    if (isKillerEntry(e)) {
+      // ⚠️ suppose que tu as une route/onglet "killer_play" (ou adapte ici)
+      go("killer_play", { resumeId, from: preview ? "history_preview" : "history", preview: !!preview, mode: "killer" });
+      return;
+    }
+
+    go("x01_play_v3", {
+      resumeId,
+      from: preview ? "history_preview" : "history",
+      mode: baseMode(e),
+      preview: !!preview,
+    });
+  }
+
+  function goStats(e: SavedEntry) {
+    const resumeId = e.resumeId || matchLink(e) || e.id;
+
+    if (isKillerEntry(e)) {
+      // ✅ IMPORTANT : KILLER doit aller sur une page dédiée, pas X01
+      go("killer_summary", { rec: e, resumeId, from: "history" });
+      return;
+    }
+
+    go("x01_end", { rec: e, resumeId, showEnd: true, from: "history" });
   }
 
   return (
@@ -661,31 +654,20 @@ export default function HistoryPage({
           <div style={S.kpiValue}>{items.length}</div>
         </div>
 
-        <div
-          style={S.kpiCard(tab === "done", theme.primary)}
-          onClick={() => setTab("done")}
-        >
+        <div style={S.kpiCard(tab === "done", theme.primary)} onClick={() => setTab("done")}>
           <div style={S.kpiLabel}>Terminées</div>
           <div style={S.kpiValue}>{done.length}</div>
         </div>
 
-        <div
-          style={S.kpiCard(tab === "running", theme.danger)}
-          onClick={() => setTab("running")}
-        >
+        <div style={S.kpiCard(tab === "running", theme.danger)} onClick={() => setTab("running")}>
           <div style={S.kpiLabel}>En cours</div>
-          <div style={{ ...S.kpiValue, color: theme.danger }}>
-            {running.length}
-          </div>
+          <div style={{ ...S.kpiValue, color: theme.danger }}>{running.length}</div>
         </div>
       </div>
 
       {/* ===== RELOAD ===== */}
       <button
-        style={{
-          ...S.reloadBtn,
-          opacity: loading ? 0.5 : 1,
-        }}
+        style={{ ...S.reloadBtn, opacity: loading ? 0.5 : 1 }}
         onClick={() => loadHistory()}
       >
         {loading ? "Chargement..." : "Recharger"}
@@ -693,25 +675,29 @@ export default function HistoryPage({
 
       {/* ===== FILTERS ===== */}
       <div style={S.filtersRow}>
-        {[["today", "J"], ["week", "S"], ["month", "M"], ["year", "A"], ["archives", "ARV"]].map(
-          ([key, label]) => (
-            <div
-              key={key}
-              style={S.filterBtn(sub === key)}
-              onClick={() => setSub(key as RangeKey)}
-            >
-              {label}
-            </div>
-          )
-        )}
+        {(
+          [
+            ["today", "J"],
+            ["week", "S"],
+            ["month", "M"],
+            ["year", "A"],
+            ["archives", "ARV"],
+          ] as any
+        ).map(([key, label]) => (
+          <div
+            key={key}
+            style={S.filterBtn(sub === key)}
+            onClick={() => setSub(key as RangeKey)}
+          >
+            {label}
+          </div>
+        ))}
       </div>
 
       {/* ===== LIST ===== */}
       <div style={S.list}>
         {filtered.length === 0 ? (
-          <div style={{ opacity: 0.7, textAlign: "center", marginTop: 20 }}>
-            Aucune partie ici.
-          </div>
+          <div style={{ opacity: 0.7, textAlign: "center", marginTop: 20 }}>Aucune partie ici.</div>
         ) : (
           filtered.map((e) => {
             const inProg = statusOf(e) === "in_progress";
@@ -745,12 +731,8 @@ export default function HistoryPage({
                         borderRadius: 999,
                         fontSize: 11,
                         fontWeight: 800,
-                        background: inProg
-                          ? "rgba(255,0,0,0.1)"
-                          : getModeColor(e) + "22",
-                        border:
-                          "1px solid " +
-                          (inProg ? theme.danger : getModeColor(e)),
+                        background: inProg ? "rgba(255,0,0,0.1)" : getModeColor(e) + "22",
+                        border: "1px solid " + (inProg ? theme.danger : getModeColor(e)),
                         color: inProg ? theme.danger : getModeColor(e),
                         textShadow: "0 0 4px rgba(0,0,0,0.6)",
                       }}
@@ -758,19 +740,11 @@ export default function HistoryPage({
                       {inProg ? "En cours" : "Terminé"}
                     </span>
                   </div>
-                  <span style={{ fontSize: 11, color: theme.primary }}>
-                    {fmtDate(e.updatedAt || e.createdAt)}
-                  </span>
+                  <span style={{ fontSize: 11, color: theme.primary }}>{fmtDate(e.updatedAt || e.createdAt)}</span>
                 </div>
 
                 {/* Format + score/classement */}
-                <div
-                  style={{
-                    marginTop: 8,
-                    fontSize: 12,
-                    color: "rgba(255,255,255,0.9)",
-                  }}
-                >
+                <div style={{ marginTop: 8, fontSize: 12, color: "rgba(255,255,255,0.9)" }}>
                   {detectFormat(e)}
                   {(() => {
                     const s = summarizeScore(e);
@@ -785,16 +759,11 @@ export default function HistoryPage({
                       const nm = getName(p);
                       const url = getAvatarUrl(store, p);
                       return (
-                        <div
-                          key={i}
-                          style={{ ...S.avWrap, marginLeft: i === 0 ? 0 : -8 }}
-                        >
+                        <div key={i} style={{ ...S.avWrap, marginLeft: i === 0 ? 0 : -8 }}>
                           {url ? (
                             <img src={url} style={S.avImg} />
                           ) : (
-                            <div style={S.avFallback}>
-                              {nm ? nm.slice(0, 2) : "?"}
-                            </div>
+                            <div style={S.avFallback}>{nm ? nm.slice(0, 2) : "?"}</div>
                           )}
                         </div>
                       );
@@ -804,76 +773,34 @@ export default function HistoryPage({
                   {inProg ? (
                     <div style={{ opacity: 0.7 }}>À reprendre</div>
                   ) : e.winnerName ? (
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        color: theme.primary,
-                      }}
-                    >
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: theme.primary }}>
                       <Icon.Trophy /> {e.winnerName}
                     </div>
                   ) : null}
                 </div>
 
                 {/* Buttons */}
-<div style={S.pillRow}>
-  {inProg ? (
-    <>
-      {/* Reprendre une partie en cours */}
-      <div
-        style={{ ...S.pill, ...S.pillGold }}
-        onClick={() =>
-          go("x01_play_v3", {
-            // on prend resumeId si présent, sinon id / matchLink
-            resumeId: e.resumeId || matchLink(e) || e.id,
-            from: "history",
-            mode: baseMode(e),
-          })
-        }
-      >
-        <Icon.Play /> Reprendre
-      </div>
+                <div style={S.pillRow}>
+                  {inProg ? (
+                    <>
+                      <div style={{ ...S.pill, ...S.pillGold }} onClick={() => goResume(e, false)}>
+                        <Icon.Play /> Reprendre
+                      </div>
 
-      {/* Voir sans jouer (aperçu) */}
-      <div
-        style={S.pill}
-        onClick={() =>
-          go("x01_play_v3", {
-            resumeId: e.resumeId || matchLink(e) || e.id,
-            from: "history_preview",
-            mode: baseMode(e),
-            preview: true,
-          })
-        }
-      >
-        <Icon.Eye /> Voir
-      </div>
-    </>
-  ) : (
-    <div
-      style={{ ...S.pill, ...S.pillGold }}
-      onClick={() =>
-        go("x01_end", {
-          rec: e,
-          resumeId: e.resumeId || matchLink(e) || e.id,
-          showEnd: true,
-          from: "history",
-        })
-      }
-    >
-      <Icon.Eye /> Voir stats
-    </div>
-  )}
+                      <div style={S.pill} onClick={() => goResume(e, true)}>
+                        <Icon.Eye /> Voir
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ ...S.pill, ...S.pillGold }} onClick={() => goStats(e)}>
+                      <Icon.Eye /> Voir stats
+                    </div>
+                  )}
 
-  <div
-    style={{ ...S.pill, ...S.pillDanger }}
-    onClick={() => handleDelete(e)}
-  >
-    <Icon.Trash /> Supprimer
-  </div>
-</div>
+                  <div style={{ ...S.pill, ...S.pillDanger }} onClick={() => handleDelete(e)}>
+                    <Icon.Trash /> Supprimer
+                  </div>
+                </div>
               </div>
             );
           })

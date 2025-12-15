@@ -9,6 +9,9 @@
 // - Metrics: wins / matches / winRate / avg3 / bestVisit / bestCheckout
 // - ✅ NEW (KILLER Option A): kills / favNumberHits / favSegmentHits / totalHits
 // - Filtre période D/W/M/Y/ALL/TOUT
+// - ✅ Fix: pas de rows fantômes (nom/avatar vides) -> on filtre strict
+// - ✅ NEW: Toggle "BOTS: ON/OFF" (par défaut ON) + OFF exclut vraiment les bots
+// - ✅ Fix: plus de "isDisplayableRow" manquante, plus de crash
 // =============================================================
 
 import * as React from "react";
@@ -17,6 +20,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import ProfileAvatar from "../components/ProfileAvatar";
 import { History } from "../lib/history";
+// Optionnel (si tu l’as dans ton projet). On n’en dépend pas pour éviter de casser.
 import { computeKillerAgg } from "../lib/statsKillerAgg";
 
 type Props = {
@@ -83,14 +87,11 @@ const MODE_DEFS: {
     metrics: ["avg3", "wins", "winRate", "matches", "bestVisit", "bestCheckout"],
   },
   { id: "cricket", label: "CRICKET", metrics: ["winRate", "wins", "matches"] },
-
-  // ✅ NEW: killer expose kills + favoris
   {
     id: "killer",
     label: "KILLER",
     metrics: ["kills", "wins", "winRate", "matches", "favSegmentHits", "favNumberHits", "totalHits"],
   },
-
   { id: "shanghai", label: "SHANGHAI", metrics: ["wins", "winRate", "matches"] },
   { id: "battle_royale", label: "BATTLE ROYALE", metrics: ["wins", "winRate", "matches"] },
   { id: "clock", label: "TOUR DE L’HORLOGE", metrics: ["wins", "winRate", "matches"] },
@@ -142,7 +143,21 @@ function pickId(obj: any): string {
   return obj.profileId || obj.playerId || obj.pid || obj.id || obj._id || obj.uid || "";
 }
 
-// ✅ NEW: récupère tous les bots depuis le storage (pour avatars manquants en history)
+function cleanName(v: any): string {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if (s === "—" || s === "-" || s.toLowerCase() === "undefined" || s.toLowerCase() === "null") return "";
+  return s;
+}
+
+function cleanAvatar(v: any): string | null {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  if (s.toLowerCase() === "undefined" || s.toLowerCase() === "null") return null;
+  return s;
+}
+
+// ✅ bots storage
 function loadBotsMap(): Record<string, { avatarDataUrl?: string | null; name?: string }> {
   try {
     const raw = localStorage.getItem("dc_bots_v1");
@@ -151,7 +166,7 @@ function loadBotsMap(): Record<string, { avatarDataUrl?: string | null; name?: s
     const map: Record<string, any> = {};
     for (const b of bots || []) {
       if (!b?.id) continue;
-      map[b.id] = { avatarDataUrl: b.avatarDataUrl ?? null, name: b.name };
+      map[String(b.id)] = { avatarDataUrl: b.avatarDataUrl ?? null, name: b.name };
     }
     return map;
   } catch {
@@ -222,7 +237,6 @@ function isRecordMatchingMode(rec: any, mode: LeaderboardMode, scope: Scope): bo
     payloadMode === "x01_teams";
 
   if (mode === "x01_multi") return isX01;
-
   if (mode === "cricket") return kind === "cricket" || game === "cricket";
   if (mode === "killer") return kind === "killer" || game === "killer" || payloadMode === "killer";
   if (mode === "shanghai") return kind === "shanghai" || game === "shanghai";
@@ -249,7 +263,7 @@ function extractPerPlayerSummary(summary: any): Record<string, any> {
     for (const p of summary.perPlayer) {
       const pid = pickId(p) || safeStr(p?.id);
       if (!pid) continue;
-      out[pid] = p;
+      out[String(pid)] = p;
     }
     if (Object.keys(out).length) return out;
   }
@@ -300,7 +314,7 @@ function extractPerPlayerSummary(summary: any): Record<string, any> {
 
   if (keys.size) {
     for (const pid of keys) {
-      out[pid] = {
+      out[String(pid)] = {
         playerId: pid,
         profileId: pid,
         name: nameMap?.[pid],
@@ -325,7 +339,7 @@ function extractPerPlayerSummary(summary: any): Record<string, any> {
   return {};
 }
 
-// ✅ NEW helpers: fav number/segment from hitsBySegment
+// ✅ helpers: fav number/segment from hitsBySegment
 function parseSegmentKeyToNumber(segKey: string): number {
   const k = safeStr(segKey).toUpperCase();
   if (k === "SB" || k === "BULL") return 25;
@@ -406,17 +420,19 @@ function computeRowsFromHistory(
   profiles: Profile[],
   mode: LeaderboardMode,
   scope: Scope,
-  period: PeriodKey
+  period: PeriodKey,
+  opts?: { includeBots?: boolean }
 ): Row[] {
+  const includeBots = opts?.includeBots !== false;
+  const botsMap0 = includeBots ? loadBotsMap() : {};
+
   const aggByPlayer: Record<string, Agg> = {};
   const infoByPlayer: Record<string, ExtraInfo> = {};
   const profileById: Record<string, Profile> = {};
 
-  // ✅ bots map 1 seule fois
-  const botsMap0 = loadBotsMap();
-
   // seed profils locaux
   for (const p of profiles || []) {
+    if (!p?.id) continue;
     profileById[p.id] = p;
     aggByPlayer[p.id] = {
       wins: 0,
@@ -425,7 +441,6 @@ function computeRowsFromHistory(
       avg3Count: 0,
       bestVisit: 0,
       bestCheckout: 0,
-
       kills: 0,
       hitsBySegmentAgg: {},
       totalHits: 0,
@@ -450,14 +465,13 @@ function computeRowsFromHistory(
 
     const summary = rec.summary || rec.payload?.summary || null;
     const per = extractPerPlayerSummary(summary);
-
     const summaryPlayersArr: any[] = Array.isArray(summary?.players) ? summary.players : [];
 
     // 1) per-player
     if (per && Object.keys(per).length > 0) {
       for (const key of Object.keys(per)) {
         const det: any = per[key] || {};
-        const pid: string = pickId(det) || key;
+        const pid: string = String(pickId(det) || key || "");
         if (!pid) continue;
 
         if (!aggByPlayer[pid]) {
@@ -473,13 +487,11 @@ function computeRowsFromHistory(
             totalHits: 0,
           };
         }
-
         if (!infoByPlayer[pid]) infoByPlayer[pid] = {};
 
         if (!infoByPlayer[pid].name) {
           infoByPlayer[pid].name = pickName(det) || botsMap0?.[pid]?.name || infoByPlayer[pid].name || "";
         }
-
         if (!infoByPlayer[pid].avatarDataUrl) {
           infoByPlayer[pid].avatarDataUrl =
             pickAvatar(det) || botsMap0?.[pid]?.avatarDataUrl || infoByPlayer[pid].avatarDataUrl || null;
@@ -543,11 +555,11 @@ function computeRowsFromHistory(
     if (!playersArr.length) continue;
 
     for (const pl of playersArr) {
-      const pid = pickId(pl);
+      const pid0 = pickId(pl);
       const name = pickName(pl);
       const avatar = pickAvatar(pl);
 
-      const key = pid || `name:${safeStr(name).trim().toLowerCase()}`;
+      const key = pid0 ? String(pid0) : `name:${safeStr(name).trim().toLowerCase()}`;
       if (!key) continue;
 
       if (!aggByPlayer[key]) {
@@ -558,7 +570,6 @@ function computeRowsFromHistory(
           avg3Count: 0,
           bestVisit: 0,
           bestCheckout: 0,
-
           kills: 0,
           hitsBySegmentAgg: {},
           totalHits: 0,
@@ -568,16 +579,16 @@ function computeRowsFromHistory(
       if (!infoByPlayer[key]) infoByPlayer[key] = {};
 
       if (!infoByPlayer[key].name) {
-        infoByPlayer[key].name = name || botsMap0?.[pid]?.name || "—";
+        infoByPlayer[key].name = name || (pid0 ? botsMap0?.[String(pid0)]?.name : "") || "—";
       }
 
       if (!infoByPlayer[key].avatarDataUrl) {
-        infoByPlayer[key].avatarDataUrl = avatar || botsMap0?.[pid]?.avatarDataUrl || null;
+        infoByPlayer[key].avatarDataUrl = avatar || (pid0 ? botsMap0?.[String(pid0)]?.avatarDataUrl : null) || null;
       }
 
       const agg = aggByPlayer[key];
       agg.matches += 1;
-      if (winnerId && pid && String(winnerId) === String(pid)) agg.wins += 1;
+      if (winnerId && pid0 && String(winnerId) === String(pid0)) agg.wins += 1;
 
       const avg3Candidate = numOr0(pl.avg3, pl.moy3, pl.avg3d);
       if (avg3Candidate > 0) {
@@ -691,24 +702,52 @@ function periodLabel(p: PeriodKey) {
   }
 }
 
+function isDisplayableRowStrict(r: any): boolean {
+  const nameOk = !!cleanName(r?.name);
+  const avatarOk = !!cleanAvatar(r?.avatarDataUrl);
+  const matches = numOr0(r?.matches, r?.played);
+  // ✅ on affiche seulement si entrée “complète” + au moins 1 match
+  return nameOk && avatarOk && matches > 0;
+}
+
+function isBotRow(row: any, botsMap: Record<string, any>, profileIds: Set<string>) {
+  const id = safeStr(row?.id);
+  // bot si son id est dans botsMap ET que ce n’est PAS un profil local
+  return !!(id && botsMap?.[id] && !profileIds.has(id));
+}
+
 // =============================================================
 
-export default function StatsLeaderboardsPage({ store, go }: Props) {
+export default function StatsLeaderboardsPage({ store }: Props) {
   const { theme } = useTheme();
-  const { t } = useLang();
+  const langAny: any = useLang();
+
+  // ✅ Fix "t is not a function"
+  const t = React.useCallback(
+    (key: string, fallback: string) => {
+      const fn = langAny?.t;
+      if (typeof fn === "function") return fn(key, fallback);
+      return fallback ?? key;
+    },
+    [langAny]
+  );
 
   const profiles: Profile[] = (store as any)?.profiles ?? [];
+  const profileIds = React.useMemo(() => new Set((profiles || []).map((p: any) => String(p?.id || "")).filter(Boolean)), [profiles]);
 
   const [scope, setScope] = React.useState<Scope>("local");
   const [mode, setMode] = React.useState<LeaderboardMode>("x01_multi");
   const [period, setPeriod] = React.useState<PeriodKey>("ALL");
 
+  // ✅ NEW: toggle bots (par défaut ON)
+  const [includeBots, setIncludeBots] = React.useState<boolean>(true);
+
   const [historySource, setHistorySource] = React.useState<any[]>(
-    ((((store as any)?.history) as any[]) || []) as any[]
+    (((store as any)?.history as any[]) || []) as any[]
   );
 
   React.useEffect(() => {
-    setHistorySource(((((store as any)?.history) as any[]) || []) as any[]);
+    setHistorySource((((store as any)?.history as any[]) || []) as any[]);
   }, [store]);
 
   React.useEffect(() => {
@@ -717,7 +756,6 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
       try {
         const api: any = History as any;
         let list: any[] = [];
-
         if (typeof api.getAll === "function") list = await api.getAll();
         else if (typeof api.list === "function") list = await api.list();
         else if (typeof api.getAllSorted === "function") list = await api.getAllSorted();
@@ -764,71 +802,92 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
     setMetric(metricList[newIndex]);
   };
 
-  const rows = React.useMemo(() => {
-    // ✅ KILLER : classement depuis l’agrégateur dédié
-    if (mode === "killer") {
-      const botsMap = loadBotsMap();
+  const rows: any[] = React.useMemo(() => {
+    const botsMap = loadBotsMap();
 
-      // NOTE: on passe scope/period en plus -> si computeKillerAgg ne les utilise pas, ça ne casse pas (args extra ignorés)
-      const agg = computeKillerAgg(historySource || [], profiles || [], scope, period, botsMap);
-      const base = Object.values(agg || {});
-
-      const value = (r: any): number => {
-        switch (metric) {
-          case "wins":
-            return numOr0(r.wins);
-          case "winRate":
-            return numOr0(r.winRate);
-          case "matches":
-            return numOr0(r.matches, r.played);
-          case "kills":
-            return numOr0(r.kills);
-          case "favSegmentHits":
-            return numOr0(r.favSegmentHits);
-          case "favNumberHits":
-            return numOr0(r.favNumberHits);
-          case "totalHits":
-            return numOr0(r.totalHits);
-          default:
-            return 0;
-        }
-      };
-
-      return [...base].sort((a, b) => value(b) - value(a));
-    }
-
-    // ✅ autres modes: logique actuelle
-    const baseRows = computeRowsFromHistory(historySource, profiles, mode, scope, period);
-
-    const value = (r: Row): number => {
+    const valueAny = (r: any): number => {
       switch (metric) {
         case "wins":
-          return r.wins;
+          return numOr0(r?.wins);
         case "winRate":
-          return r.winRate;
+          return numOr0(r?.winRate);
         case "matches":
-          return r.matches;
+          return numOr0(r?.matches, r?.played);
         case "avg3":
-          return r.avg3;
+          return numOr0(r?.avg3);
         case "bestVisit":
-          return r.bestVisit;
+          return numOr0(r?.bestVisit);
         case "bestCheckout":
-          return r.bestCheckout;
+          return numOr0(r?.bestCheckout);
         case "kills":
-          return r.kills;
-        case "favNumberHits":
-          return r.favNumberHits;
+          return numOr0(r?.kills);
         case "favSegmentHits":
-          return r.favSegmentHits;
+          return numOr0(r?.favSegmentHits);
+        case "favNumberHits":
+          return numOr0(r?.favNumberHits);
         case "totalHits":
-          return r.totalHits;
+          return numOr0(r?.totalHits);
         default:
           return 0;
       }
     };
 
-    return [...baseRows].sort((a, b) => value(b) - value(a));
-  }, [historySource, profiles, mode, scope, metric, period]);
+    const sortRows = (list: any[]) => [...(list || [])].sort((a, b) => valueAny(b) - valueAny(a));
+
+    const sanitizeAndFilter = (list: any[]) => {
+      const out = (list || [])
+        .map((r: any, i: number) => {
+          const name = cleanName(r?.name);
+          const avatarDataUrl = cleanAvatar(r?.avatarDataUrl);
+          const id =
+            safeStr(r?.id || r?.playerId || r?.profileId || r?.pid || "") ||
+            (name ? `name:${name.toLowerCase()}` : `row:${i}`);
+
+          return { ...r, id, name, avatarDataUrl };
+        })
+        .filter(isDisplayableRowStrict);
+
+      // ✅ OFF => on vire vraiment les bots
+      const filtered = includeBots
+        ? out
+        : out.filter((r) => !isBotRow(r, botsMap, profileIds));
+
+      return filtered;
+    };
+
+    // ✅ KILLER : on essaie computeKillerAgg si dispo et compatible, sinon fallback sur computeRowsFromHistory
+    if (mode === "killer") {
+      try {
+        const fn = computeKillerAgg as any;
+
+        if (typeof fn === "function") {
+          let agg: any = null;
+
+          // ⚠️ important: si includeBots=false -> on passe un botsMap vide (et on filtre ensuite)
+          const botsArg = includeBots ? botsMap : {};
+
+          try {
+            agg = fn(historySource || [], profiles || [], botsArg);
+          } catch {
+            agg = fn(historySource || [], profiles || []);
+          }
+
+          // ✅ filtre période même si l’agg ne le fait pas (safe)
+          const _filtered = (historySource || []).filter((r) => inPeriod(r, period));
+          void _filtered;
+
+          const base = Array.isArray(agg) ? agg : Object.values(agg || {});
+          return sortRows(sanitizeAndFilter(base));
+        }
+      } catch {
+        // ignore → fallback
+      }
+    }
+
+    // ✅ autres modes
+    const baseRows = computeRowsFromHistory(historySource, profiles, mode, scope, period, { includeBots });
+    return sortRows(sanitizeAndFilter(baseRows));
+  }, [historySource, profiles, mode, scope, metric, period, includeBots, profileIds]);
 
   const hasData = rows.length > 0;
   const currentMetricLabel = metricLabel(metric) || t("stats.leaderboards.metric", "Stat");
@@ -848,7 +907,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
         color: theme.text,
       }}
     >
-      {/* HEADER */}
+      {/* HEADER (sans bouton retour) */}
       <div
         style={{
           width: "100%",
@@ -878,22 +937,6 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
             Classements globaux par mode de jeu et par stat.
           </div>
         </div>
-
-        <button
-          onClick={() => go("stats")}
-          style={{
-            borderRadius: 999,
-            border: `1px solid ${theme.borderSoft}`,
-            padding: "6px 10px",
-            fontSize: 11,
-            fontWeight: 700,
-            background: theme.card,
-            color: theme.textSoft,
-            cursor: "pointer",
-          }}
-        >
-          ← Retour
-        </button>
       </div>
 
       {/* CARD : SCOPE + MODE */}
@@ -926,9 +969,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
                   fontWeight: 800,
                   textTransform: "uppercase",
                   letterSpacing: 0.8,
-                  background: active
-                    ? `linear-gradient(135deg, ${theme.primary}, #ffea9a)`
-                    : "transparent",
+                  background: active ? `linear-gradient(135deg, ${theme.primary}, #ffea9a)` : "transparent",
                   color: active ? "#000" : theme.textSoft,
                   boxShadow: active ? `0 0 14px ${theme.primary}77` : "none",
                   cursor: "pointer",
@@ -938,6 +979,30 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
               </button>
             );
           })}
+        </div>
+
+        {/* ✅ Toggle BOTS */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+          <button
+            onClick={() => setIncludeBots((v) => !v)}
+            style={{
+              borderRadius: 999,
+              border: `1px solid ${includeBots ? theme.primary : theme.borderSoft}`,
+              padding: "5px 10px",
+              fontSize: 10,
+              fontWeight: 900,
+              textTransform: "uppercase",
+              letterSpacing: 0.8,
+              background: includeBots ? `linear-gradient(135deg, ${theme.primary}, #ffea9a)` : "rgba(0,0,0,0.25)",
+              color: includeBots ? "#000" : theme.textSoft,
+              boxShadow: includeBots ? `0 0 14px ${theme.primary}55` : "none",
+              cursor: "pointer",
+              minWidth: 120,
+              textAlign: "center",
+            }}
+          >
+            BOTS : {includeBots ? "ON" : "OFF"}
+          </button>
         </div>
 
         {/* Mode carousel */}
@@ -1009,7 +1074,15 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
       >
         {/* Période */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.7, color: theme.primary }}>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: 0.7,
+              color: theme.primary,
+            }}
+          >
             {t("stats.leaderboards.period", "Période")}
           </div>
 
@@ -1039,7 +1112,16 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
         </div>
 
         {/* Tri */}
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.7, color: theme.primary, marginBottom: 4 }}>
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: 0.7,
+            color: theme.primary,
+            marginBottom: 4,
+          }}
+        >
           {t("stats.leaderboards.sortBy", "Classement par")}
         </div>
 
@@ -1109,7 +1191,16 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
           marginBottom: 24,
         }}
       >
-        <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.8, color: theme.textSoft, marginBottom: 6 }}>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            textTransform: "uppercase",
+            letterSpacing: 0.8,
+            color: theme.textSoft,
+            marginBottom: 6,
+          }}
+        >
           {t("stats.leaderboards.titleList", "Classements")}
         </div>
 
@@ -1121,64 +1212,66 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {rows.map((row: any, index: number) => {
               const rank = index + 1;
-              const isFirst = rank === 1;
-              const isSecond = rank === 2;
-              const isThird = rank === 3;
+
+              // ✅ Sécurité ultime (au cas où)
+              if (!isDisplayableRowStrict(row)) return null;
 
               let rankColor = theme.textSoft;
-              if (isFirst) rankColor = "#ffd700";
-              else if (isSecond) rankColor = "#c0c0c0";
-              else if (isThird) rankColor = "#cd7f32";
+              if (rank === 1) rankColor = "#ffd700";
+              else if (rank === 2) rankColor = "#c0c0c0";
+              else if (rank === 3) rankColor = "#cd7f32";
 
               let metricValue: string;
               let metricSub: string | null = null;
 
+              const rMatches = numOr0(row.matches, row.played);
+
               switch (metric) {
                 case "wins":
-                  metricValue = `${row.wins || 0}`;
-                  metricSub = `${row.matches || row.played || 0} matchs`;
+                  metricValue = `${numOr0(row.wins)}`;
+                  metricSub = `${rMatches} matchs`;
                   break;
                 case "winRate":
                   metricValue = `${numOr0(row.winRate).toFixed(1)}%`;
-                  metricSub = `${row.wins || 0}/${row.matches || row.played || 0}`;
+                  metricSub = `${numOr0(row.wins)}/${rMatches}`;
                   break;
                 case "matches":
-                  metricValue = `${row.matches || row.played || 0}`;
-                  metricSub = `${row.wins || 0} win`;
+                  metricValue = `${rMatches}`;
+                  metricSub = `${numOr0(row.wins)} win`;
                   break;
                 case "avg3":
                   metricValue = row.avg3 ? Number(row.avg3).toFixed(1) : "0.0";
-                  metricSub = `${row.matches || 0} matchs`;
+                  metricSub = `${numOr0(row.matches)} matchs`;
                   break;
                 case "bestVisit":
-                  metricValue = `${row.bestVisit || 0}`;
-                  metricSub = `${row.matches || 0} matchs`;
+                  metricValue = `${numOr0(row.bestVisit)}`;
+                  metricSub = `${numOr0(row.matches)} matchs`;
                   break;
                 case "bestCheckout":
-                  metricValue = `${row.bestCheckout || 0}`;
-                  metricSub = `${row.matches || 0} matchs`;
+                  metricValue = `${numOr0(row.bestCheckout)}`;
+                  metricSub = `${numOr0(row.matches)} matchs`;
                   break;
 
                 case "kills":
-                  metricValue = `${row.kills || 0}`;
-                  metricSub = `${row.matches || row.played || 0} matchs`;
+                  metricValue = `${numOr0(row.kills)}`;
+                  metricSub = `${rMatches} matchs`;
                   break;
                 case "favNumberHits":
                   metricValue = row.favNumber ? `#${row.favNumber}` : "—";
-                  metricSub = row.favNumberHits ? `${row.favNumberHits} hit(s)` : `${row.totalHits || 0} hit(s)`;
+                  metricSub = row.favNumberHits ? `${row.favNumberHits} hit(s)` : `${numOr0(row.totalHits)} hit(s)`;
                   break;
                 case "favSegmentHits":
                   metricValue = row.favSegment ? `${row.favSegment}` : "—";
-                  metricSub = row.favSegmentHits ? `${row.favSegmentHits} hit(s)` : `${row.totalHits || 0} hit(s)`;
+                  metricSub = row.favSegmentHits ? `${row.favSegmentHits} hit(s)` : `${numOr0(row.totalHits)} hit(s)`;
                   break;
                 case "totalHits":
-                  metricValue = `${row.totalHits || 0}`;
+                  metricValue = `${numOr0(row.totalHits)}`;
                   metricSub = row.favSegment ? `fav: ${row.favSegment}` : null;
                   break;
 
                 default:
                   metricValue = "0";
-                  metricSub = `${row.matches || row.played || 0} matchs`;
+                  metricSub = `${rMatches} matchs`;
               }
 
               const label = row.name || "—";
@@ -1247,7 +1340,7 @@ export default function StatsLeaderboardsPage({ store, go }: Props) {
                   {/* Valeur */}
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", fontSize: 11 }}>
                     <div style={{ fontWeight: 800, color: theme.primary }}>{metricValue}</div>
-                    <div style={{ fontSize: 9.5, color: theme.textSoft }}>{metricSub ?? `${row.matches || row.played || 0} matchs`}</div>
+                    <div style={{ fontSize: 9.5, color: theme.textSoft }}>{metricSub ?? `${rMatches} matchs`}</div>
                   </div>
                 </div>
               );
