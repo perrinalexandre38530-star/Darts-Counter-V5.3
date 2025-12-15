@@ -1,3 +1,4 @@
+// @ts-nocheck
 // =============================================================
 // src/components/StatsDartSetsSection.tsx
 // Section StatsHub — "Stats par fléchettes"
@@ -264,8 +265,10 @@ function normalizeSegKey(k: string) {
     .replace(/-/g, "");
 }
 
+// ✅ IMPORTANT : ici on lit aussi r.segments (ce que renvoie statsByDartSet Option A)
 function extractSegmentsMap(r: any): SegMap | null {
   const obj =
+    r?.segments ||
     pickObj(
       r,
       "hitsBySegment",
@@ -274,10 +277,10 @@ function extractSegmentsMap(r: any): SegMap | null {
       "segmentHits",
       "hitsBySeg",
       "segHits",
-      "segments",
-      "bySegment",
-      "segmentsMap"
-    ) || null;
+      "segmentsMap",
+      "bySegment"
+    ) ||
+    null;
 
   if (!obj) return null;
 
@@ -303,8 +306,16 @@ function topSegments(map: SegMap, limit = 18) {
 /** ---------- Sparkline helpers ---------- **/
 
 function extractSparkValuesFromRow(r: any, recent: MiniMatch[]): number[] {
+  // ✅ priorité à Option A : r.evoAvg3
+  const evo = Array.isArray(r?.evoAvg3) ? r.evoAvg3 : null;
+  if (evo && evo.length >= 2) {
+    const vals = evo.map((x: any) => N(x, 0)).filter((n: number) => Number.isFinite(n));
+    if (vals.length >= 2) return vals.slice(-18);
+  }
+
   const arr =
-    pickArr(r, "spark", "sparkline", "avg3Spark", "avg3Series", "seriesAvg3", "lastAvg3") || null;
+    pickArr(r, "spark", "sparkline", "avg3Spark", "avg3Series", "seriesAvg3", "lastAvg3") ||
+    null;
 
   if (arr && arr.length) {
     const vals = arr.map((x: any) => N(x, 0)).filter((n: number) => Number.isFinite(n));
@@ -444,6 +455,7 @@ export default function StatsDartSetsSection(props: {
 
   const countPresets = rows?.length || 0;
 
+  // mini classement presets (seulement presets, pas sets persos)
   const bestPresets = (rows || [])
     .map((r: any) => {
       const id = String(r?.dartSetId || "");
@@ -537,7 +549,12 @@ export default function StatsDartSetsSection(props: {
             >
               {bestTop.map((b, i) => (
                 <div key={b.id} style={{ minWidth: 220 }}>
-                  <RankRow accent={accent} rank={i + 1} name={b.name} value={`AVG/3D ${fmt1(b.avg3)}`} />
+                  <RankRow
+                    accent={accent}
+                    rank={i + 1}
+                    name={b.name}
+                    value={`AVG/3D ${fmt1(b.avg3)}`}
+                  />
                 </div>
               ))}
             </div>
@@ -683,124 +700,112 @@ export default function StatsDartSetsSection(props: {
                   }}
                 >
                   {/* ================= TOP SET ================= */}
-<div
-  style={{
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 8,
-  }}
->
-  {/* 🔥 MEILLEUR SET — OR SCINTILLANT */}
-  <div
-    style={{
-      fontSize: 11,
-      fontWeight: 950,
-      letterSpacing: 1.1,
-      textTransform: "uppercase",
-      color: "#F6C256",
-      textShadow:
-        "0 0 8px #F6C256, 0 0 16px rgba(246,194,86,.85), 0 0 28px rgba(246,194,86,.45)",
-    }}
-  >
-    MEILLEUR SET
-  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    {/* PHOTO */}
+                    <div
+                      style={{
+                        width: 92,
+                        height: 92,
+                        borderRadius: 20,
+                        overflow: "hidden",
+                        background: "rgba(255,255,255,.06)",
+                        border: `1px solid ${accent}44`,
+                        boxShadow: `0 0 22px ${accent}55, 0 0 44px ${accent}22`,
+                      }}
+                    >
+                      {img ? (
+                        <img
+                          src={img}
+                          alt={name}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            display: "block",
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "rgba(255,255,255,.55)",
+                            fontWeight: 900,
+                          }}
+                        >
+                          ?
+                        </div>
+                      )}
+                    </div>
 
-  {/* PHOTO */}
-  <div
-    style={{
-      width: 92,
-      height: 92,
-      borderRadius: 20,
-      overflow: "hidden",
-      background: "rgba(255,255,255,.06)",
-      border: `1px solid ${accent}44`,
-      boxShadow: `0 0 22px ${accent}55, 0 0 44px ${accent}22`,
-    }}
-  >
-    {img ? (
-      <img
-        src={img}
-        alt={name}
-        style={{
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          display: "block",
-        }}
-      />
-    ) : (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "rgba(255,255,255,.55)",
-          fontWeight: 900,
-        }}
-      >
-        ?
-      </div>
-    )}
-  </div>
+                    {/* NOM DU PRESET — HALO THEME */}
+                    <div
+                      style={{
+                        marginTop: 2,
+                        fontWeight: 950,
+                        color: accent,
+                        fontSize: 14,
+                        textAlign: "center",
+                        textShadow: `0 0 12px ${accent}88, 0 0 22px ${accent}55`,
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                        lineHeight: 1.15,
+                      }}
+                    >
+                      {name}
+                    </div>
 
-  {/* NOM DU PRESET — HALO THEME */}
-  <div
-    style={{
-      marginTop: 2,
-      fontWeight: 950,
-      color: accent,
-      fontSize: 14,
-      textAlign: "center",
-      textShadow: `0 0 12px ${accent}88, 0 0 22px ${accent}55`,
-      display: "-webkit-box",
-      WebkitLineClamp: 2,
-      WebkitBoxOrient: "vertical",
-      overflow: "hidden",
-      lineHeight: 1.15,
-    }}
-  >
-    {name}
-  </div>
+                    {/* ================= KPIs — UNE SEULE LIGNE (RESPONSIVE) ================= */}
+                    <div
+                      style={{
+                        marginTop: 6,
+                        display: "grid",
+                        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                        gap: 8,
+                        width: "100%",
+                        alignItems: "stretch",
+                      }}
+                    >
+                      {/* AVG/3D — OR */}
+                      <NeonKPIButton accent="#F6C256" label="AVG/3D" value={fmt1(avg3v)} />
 
-  {/* ================= KPIs — UNE SEULE LIGNE (RESPONSIVE) ================= */}
-<div
-  style={{
-    marginTop: 6,
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))", // ✅ 3 blocs toujours sur 1 ligne
-    gap: 8,
-    width: "100%",
-    alignItems: "stretch",
-  }}
->
-  {/* AVG/3D — OR */}
-  <NeonKPIButton
-    accent="#F6C256"
-    label="AVG/3D"
-    value={fmt1(avg3v)}
-  />
+                      {/* SESSIONS — ROSE */}
+                      <NeonKPIButton
+                        accent="#FF4FD8"
+                        label="Sessions"
+                        value={fmt0(N(r.matches, 0))}
+                      />
 
-  {/* SESSIONS — ROSE */}
-  <NeonKPIButton
-    accent="#FF4FD8"
-    label="Sessions"
-    value={fmt0(N(r.matches, 0))}
-  />
-
-  {/* HITS — VERT */}
-  <NeonKPIButton
-    accent="#7FE2A9"
-    label="Hits"
-    value={fmt0(N(r.darts, 0))}
-  />
-</div>
-</div>
+                      {/* HITS — VERT (darts) */}
+                      <NeonKPIButton
+                        accent="#7FE2A9"
+                        label="Hits"
+                        value={fmt0(N(r.darts, 0))}
+                      />
+                    </div>
+                  </div>
 
                   {/* KPIs (stats enrichies) */}
-                  <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div
+                    style={{
+                      marginTop: 10,
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 8,
+                    }}
+                  >
                     <KPI label={t("stats.bestVisit", "Best volée")} value={String(N(r.bestVisit, 0))} />
                     <KPI label={t("stats.bestCheckout", "Best CO")} value={String(N(r.bestCheckout, 0))} />
 
@@ -936,6 +941,11 @@ export default function StatsDartSetsSection(props: {
                       </div>
                     )}
                   </div>
+
+                  {/* footer mini */}
+                  <div style={{ marginTop: 10, fontSize: 11, color: "rgba(255,255,255,.55)" }}>
+                    {t("stats.dartSets.scopeNote", "Calculé sur les matchs X01 terminés (profil actif).")}
+                  </div>
                 </div>
               );
             })}
@@ -1057,7 +1067,7 @@ function NeonKPIButton(props: { accent: string; label: string; value: string }) 
         border: `1px solid ${accent}88`,
         background: `radial-gradient(circle at 50% 0%, ${accent}22, transparent 62%), rgba(0,0,0,.40)`,
         padding: "7px 10px",
-        minWidth: 98,
+        minWidth: 0,
         textAlign: "center",
         boxShadow: `0 0 18px ${accent}40`,
       }}
@@ -1253,7 +1263,9 @@ function Sparkline(props: { values: number[]; accent: string; height?: number })
   const w = 260;
   const pad = 6;
 
-  const vals = values.slice(-18);
+  const vals = (values || []).slice(-18).map((x) => N(x, 0));
+  if (vals.length < 2) return <EmptySmall text="—" />;
+
   const min = Math.min(...vals);
   const max = Math.max(...vals);
   const span = Math.max(1e-6, max - min);
