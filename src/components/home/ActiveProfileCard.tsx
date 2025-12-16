@@ -4,6 +4,7 @@
 // - Gauche : avatar médaillon + nom + statut (sur carte dorée)
 // - Droite : carrousel auto de stats (7 slides max)
 //   Vue globale / Records / Online / X01 / Cricket / Training X01 / Horloge
+//   + ✅ NEW: KILLER (dans le carrousel de droite)
 // - N'affiche que les slides qui ont des données (ex : sessions > 0)
 // - Stats affichées en blocs KPI centrés avec halo léger
 // =============================================================
@@ -197,6 +198,21 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
     const s = stats;
     const out: SlideDef[] = [];
 
+    // ✅ KILLER (stats attachées via Home.tsx, donc access en any ici)
+    const killerSessions = Number((s as any)?.killerSessions ?? 0) || 0;
+    const killerWinrate01 = Number((s as any)?.killerWinrate ?? 0) || 0; // attendu 0-1
+    const killerKills = Number((s as any)?.killerKills ?? 0) || 0;
+    const killerTotalHits = Number((s as any)?.killerTotalHits ?? 0) || 0;
+    const killerFavNumberHits = Number((s as any)?.killerFavNumberHits ?? 0) || 0;
+    const killerFavSegmentHits = Number((s as any)?.killerFavSegmentHits ?? 0) || 0;
+
+    const hasKillerData =
+      killerSessions > 0 ||
+      killerKills > 0 ||
+      killerTotalHits > 0 ||
+      killerFavNumberHits > 0 ||
+      killerFavSegmentHits > 0;
+
     // 1) Vue globale — TOUJOURS AFFICHÉE
     out.push({
       id: "global",
@@ -225,7 +241,41 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
       ],
     });
 
-    // 2) Records
+    // ✅ 2) Killer (dans le carrousel de droite)
+    if (hasKillerData) {
+      out.push({
+        id: "killer",
+        title: t("home.stats.killer", "killer"),
+        rows: [
+          {
+            label: t("home.stats.killerSessions", "sessions"),
+            value: fmtNum(killerSessions, 0),
+          },
+          {
+            label: t("home.stats.killerWinrate", "win%"),
+            value: fmtPct(killerWinrate01),
+          },
+          {
+            label: t("home.stats.killerKills", "kills"),
+            value: fmtNum(killerKills, 0),
+          },
+          {
+            label: t("home.stats.killerHits", "hits"),
+            value: fmtNum(killerTotalHits, 0),
+          },
+          {
+            label: t("home.stats.killerFavNumberHits", "hits n°"),
+            value: fmtNum(killerFavNumberHits, 0),
+          },
+          {
+            label: t("home.stats.killerFavSegmentHits", "hits seg"),
+            value: fmtNum(killerFavSegmentHits, 0),
+          },
+        ],
+      });
+    }
+
+    // 3) Records
     if (
       (s.sessionsGlobal ?? 0) > 0 ||
       (s.x01MultiSessions ?? 0) > 0 ||
@@ -265,7 +315,7 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
       });
     }
 
-    // 3) Online
+    // 4) Online
     if ((s.onlineMatches ?? 0) > 0) {
       out.push({
         id: "online",
@@ -307,7 +357,7 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
       });
     }
 
-    // 4) X01 Multi
+    // 5) X01 Multi
     if ((s.x01MultiSessions ?? 0) > 0) {
       out.push({
         id: "x01multi",
@@ -341,7 +391,7 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
       });
     }
 
-    // 5) Cricket
+    // 6) Cricket
     if ((s.cricketHitsTotal ?? 0) > 0) {
       out.push({
         id: "cricket",
@@ -375,7 +425,7 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
       });
     }
 
-    // 6) Training X01
+    // 7) Training X01
     if (
       (s.trainingHitsS ?? 0) +
         (s.trainingHitsD ?? 0) +
@@ -414,7 +464,7 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
       });
     }
 
-    // 7) Tour de l'Horloge
+    // 8) Tour de l'Horloge
     if ((s.clockTargetsHit ?? 0) > 0) {
       out.push({
         id: "clock",
@@ -443,7 +493,8 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
       });
     }
 
-    return out.length > 0 ? out : [];
+    // ✅ 7 slides max
+    return out.length > 0 ? out.slice(0, 7) : [];
   }, [stats, t]);
 
   // Reset index quand les slides changent
@@ -483,8 +534,7 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
   const accent = (theme as any).accent ?? primary;
   const accentSoft = (theme as any).accent20 ?? `${primary}33`;
 
-  const profileName =
-    profile.name?.trim() || t("home.noName", "Joueur");
+  const profileName = profile.name?.trim() || t("home.noName", "Joueur");
 
   // Handler tap pour passer manuellement au slide suivant
   const handleNextSlide = () => {
@@ -716,7 +766,6 @@ function ActiveProfileCard({ profile, stats, status: statusProp }: Props) {
                 >
                   {slide.title}
                 </div>
-                {/* volontairement pas de 1/2, 2/3 */}
               </div>
 
               <div

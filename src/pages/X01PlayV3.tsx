@@ -243,6 +243,48 @@ function renderLastVisitChips(
 
 type BotLevel = "easy" | "medium" | "hard" | "pro" | "legend" | undefined;
 
+// =============================================================
+// ✅ External scoring (Scolia-ready) — AJOUT UNIQUEMENT
+// - Source de comptage: "manual" (Keypad) | "external" (événements)
+// - IMPORTANT: on ne touche pas au moteur. On injecte juste des X01DartInputV3.
+// - Événement public (bridge):
+//   window.dispatchEvent(new CustomEvent("dc:x01v3:dart", { detail: { segment: 20, multiplier: 3 } }))
+//   window.dispatchEvent(new CustomEvent("dc:x01v3:visit", { detail: { darts: [{segment:20,multiplier:3},{segment:20,multiplier:3},{segment:20,multiplier:3}] } }))
+// =============================================================
+type ScoringSource = "manual" | "external";
+
+const EXTERNAL_DART_EVENT = "dc:x01v3:dart";
+const EXTERNAL_VISIT_EVENT = "dc:x01v3:visit";
+
+function normalizeExternalDart(input: any): X01DartInputV3 | null {
+  if (!input || typeof input !== "object") return null;
+  const seg = Number((input as any).segment);
+  const mult = Number((input as any).multiplier);
+  if (!Number.isFinite(seg) || !Number.isFinite(mult)) return null;
+
+  // segment: 0 (MISS), 25 (bull), ou 1..20
+  const sOK = seg === 0 || seg === 25 || (seg >= 1 && seg <= 20);
+  if (!sOK) return null;
+
+  // multiplier: 1..3
+  const mOK = mult === 1 || mult === 2 || mult === 3;
+  if (!mOK) return null;
+
+  return { segment: seg, multiplier: mult as 1 | 2 | 3 };
+}
+
+function normalizeExternalVisit(input: any): X01DartInputV3[] {
+  const darts = (input as any)?.darts;
+  if (!Array.isArray(darts)) return [];
+  const out: X01DartInputV3[] = [];
+  for (const d of darts) {
+    const nd = normalizeExternalDart(d);
+    if (nd) out.push(nd);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
 function randomInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -721,6 +763,22 @@ const summaryPlayersById = React.useMemo(() => {
 
   const players = config.players;
   const activePlayer = players.find((p) => p.id === activePlayerId) || null;
+
+// =====================================================
+// ✅ BOT TURN — DOIT ÊTRE DÉCLARÉ AVANT TOUT useEffect QUI L’UTILISE
+// =====================================================
+const isBotTurn = React.useMemo(() => {
+  return !!activePlayer && Boolean((activePlayer as any).isBot);
+}, [activePlayer]);
+
+  // =====================================================
+  // ✅ Source de comptage (manual / external) — AJOUT UNIQUEMENT
+  // - manual  : Keypad (comportement actuel)
+  // - external: un système externe (ex: Scolia / bridge PC) envoie des darts via CustomEvent
+  // =====================================================
+  const scoringSource: ScoringSource =
+    ((config as any)?.scoringSource as ScoringSource) ||
+    (((config as any)?.externalScoring ? "external" : "manual") as ScoringSource);
 
   // Y a-t-il AU MOINS un BOT dans la partie ?
   const hasBots = React.useMemo(
@@ -1281,6 +1339,115 @@ const validateThrow = () => {
   if (!inputs.length) isValidatingRef.current = false;
 };
 
+// =====================================================
+// 🎥 EXTERNAL SCORER (Scolia-ready) — AJOUT UNIQUEMENT
+// - En mode "external", on écoute des événements window et on pousse des darts dans le moteur.
+// - IMPORTANT: on ne modifie rien au moteur, on appelle throwDart(input).
+// - Events supportés:
+//   - dc:x01v3:dart  -> { segment, multiplier }
+//   - dc:x01v3:visit -> { darts: [{segment,multiplier}, ...] } (max 3)
+// =====================================================
+React.useEffect(() => {
+  if (typeof window === "undefined") return;
+  if (scoringSource !== "external") return;
+
+  // Si c'est un tour BOT, ou qu'on rejoue un autosave, on ignore les events externes
+  if (isBotTurn) return;
+
+  const onDart = (ev: any) => {
+    try {
+      const detail = ev?.detail;
+      const dart = normalizeExternalDart(detail);
+      if (!dart) return;
+
+      // ✅ alimente l’UI "dernière volée" (1→3 fléchettes) pour la PlayersListOnly
+      const pid = activePlayerId as string;
+      const uiDart: UIDart = {
+        v: dart.segment === 25 ? 25 : dart.segment,
+        mult: dart.multiplier as 1 | 2 | 3,
+      } as any;
+
+      setLastVisitsByPlayer((m) => {
+        const prev = m[pid] ?? [];
+        const next = [...prev, uiDart].slice(-3);
+        return { ...m, [pid]: next };
+      });
+
+      // 🔓 audio (si le bridge arrive via click/stream, on tente quand même)
+      ensureAudioUnlockedNow();
+
+      // On force un refresh UI via le moteur (moteur-driven)
+      currentThrowFromEngineRef.current = true;
+
+      // SFX minimal (optionnel)
+      try {
+        playHitSfx("dart_hit", { rateLimitMs: 40, volume: 0.55 });
+      } catch {}
+
+      // Pousse dans le moteur
+      throwDart(dart);
+
+      // Autosave + replay log
+      replayDartsRef.current = replayDartsRef.current.concat([dart]);
+      persistAutosave();
+    } catch (e) {
+      console.warn("[X01PlayV3] external dart failed", e);
+    }
+  };
+
+  const onVisit = (ev: any) => {
+    try {
+      const detail = ev?.detail;
+      const darts = normalizeExternalVisit(detail);
+      if (!darts.length) return;
+
+      // ✅ alimente l’UI "dernière volée" (3 fléchettes) pour la PlayersListOnly
+      const pid = activePlayerId as string;
+      const ui = darts.map(
+        (d) =>
+          ({
+            v: d.segment === 25 ? 25 : d.segment,
+            mult: d.multiplier as 1 | 2 | 3,
+          }) as any
+      ) as UIDart[];
+
+      setLastVisitsByPlayer((m) => ({ ...m, [pid]: ui.slice(-3) }));
+
+      ensureAudioUnlockedNow();
+      currentThrowFromEngineRef.current = true;
+
+      // Petits SFX (1 par dart, sans spam)
+      for (const d of darts) {
+        try {
+          playHitSfx("dart_hit", { rateLimitMs: 40, volume: 0.55 });
+        } catch {}
+        throwDart(d);
+      }
+
+      replayDartsRef.current = replayDartsRef.current.concat(darts);
+      persistAutosave();
+    } catch (e) {
+      console.warn("[X01PlayV3] external visit failed", e);
+    }
+  };
+
+  window.addEventListener(EXTERNAL_DART_EVENT, onDart as any);
+  window.addEventListener(EXTERNAL_VISIT_EVENT, onVisit as any);
+
+  return () => {
+    window.removeEventListener(EXTERNAL_DART_EVENT, onDart as any);
+    window.removeEventListener(EXTERNAL_VISIT_EVENT, onVisit as any);
+  };
+}, [
+  scoringSource,
+  isBotTurn,
+  activePlayerId, // ✅ important sinon pid stale
+  ensureAudioUnlockedNow,
+  throwDart,
+  persistAutosave,
+  playHitSfx,
+]);
+
   // =====================================================
   // STATS LIVE & MINI-RANKING
   // =====================================================
@@ -1559,9 +1726,6 @@ try {
   // =====================================================
   // BOT : tour auto si joueur courant est un BOT
   // =====================================================
-
-  const isBotTurn =
-    !!activePlayer && Boolean((activePlayer as any).isBot);
 
   React.useEffect(() => {
     console.log("[X01PlayV3][BOT] effect run", {
@@ -1870,6 +2034,28 @@ try {
           >
             🤖 {activePlayer?.name ?? t("x01v3.bot.name", "BOT")}{" "}
             {t("x01v3.bot.playing", "joue son tour...")}
+          </div>
+        ) : scoringSource === "external" ? (
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.08)",
+              background:
+                "linear-gradient(180deg, rgba(10,10,12,.9), rgba(6,6,8,.95))",
+              textAlign: "center",
+              fontSize: 13,
+              color: "#e3e6ff",
+              boxShadow: "0 10px 24px rgba(0,0,0,.5)",
+            }}
+          >
+            🎥 {t("x01v3.external.title", "Comptage externe en cours…")}
+            <div style={{ fontSize: 11.5, opacity: 0.75, marginTop: 6 }}>
+              {t(
+                "x01v3.external.hint",
+                "Les fléchettes sont injectées automatiquement (Scolia/bridge)."
+              )}
+            </div>
           </div>
         ) : (
           <Keypad

@@ -26,8 +26,12 @@ import StatsTrainingSummary from "../components/stats/StatsTrainingSummary";
 import { useCurrentProfile } from "../hooks/useCurrentProfile";
 import StatsLeaderboardsTab from "../components/stats/StatsLeaderboardsTab";
 import StatsKiller from "./StatsKiller";
+import { computeKillerAggForPlayer } from "../lib/statsKillerAgg";
 import StatsDartSetsSection from "../components/StatsDartSetsSection";
 
+
+import { loadNormalizedHistory, type NormalizedMatch } from "../lib/statsNormalized";
+import { buildDashboardFromNormalized } from "../lib/statsUnifiedAgg";
 // Effet "shimmer" à l'intérieur des lettres du nom du joueur
 const statsNameCss = `
 .dc-stats-name-wrapper {
@@ -3438,7 +3442,43 @@ export default function StatsHub({
   // CSS shimmer
   useInjectStatsNameCss();
 
-  // -- 0) BOT helper --
+  
+  // ==========================
+  // ✅ NEW — History normalisée (PHASE 2)
+  // ==========================
+  const [normalizedMatches, setNormalizedMatches] = React.useState<NormalizedMatch[]>([]);
+
+  // ✅ NEW : charge aussi l'historique normalisé (source unique pour stats)
+  React.useEffect(() => {
+    let mounted = true;
+
+    const load = async () => {
+      try {
+        const nm = await loadNormalizedHistory();
+        if (!mounted) return;
+        setNormalizedMatches(Array.isArray(nm) ? nm : []);
+      } catch {
+        if (!mounted) return;
+        setNormalizedMatches([]);
+      }
+    };
+
+    load();
+
+    const onUpd = () => load();
+    if (typeof window !== "undefined") {
+      window.addEventListener("dc-history-updated", onUpd as any);
+    }
+
+    return () => {
+      mounted = false;
+      if (typeof window !== "undefined") {
+        window.removeEventListener("dc-history-updated", onUpd as any);
+      }
+    };
+  }, []);
+
+// -- 0) BOT helper --
   function isBotPlayer(p: PlayerLite): boolean {
     const name = (p.name ?? "").toLowerCase();
     const id = (p.id ?? "").toLowerCase();
@@ -3690,6 +3730,109 @@ export default function StatsHub({
 
   // ---------- 5) Quick-stats & Cricket + X01 multi ----------
   const quick = useQuickStats(selectedPlayer?.id ?? null);
+
+// ============================================================
+// ✅ BLOC 3 — KILLER (agrégat "résumé" pour le Dashboard)
+// -> scan "records" + summaries robustes
+// ============================================================
+type KillerAgg = {
+  matches: number;
+  wins: number;
+  winRatePct: number;
+  kills: number;
+  totalHits: number;
+  favNumber: string | null;
+  favHits: number;
+};
+
+const killerAgg = React.useMemo<KillerAgg | null>(() => {
+  const pid = selectedPlayer?.id;
+  if (!pid) return null;
+
+  let matches = 0;
+  let wins = 0;
+  let kills = 0;
+  let totalHits = 0;
+
+  const hitsByNumber: Record<string, number> = {};
+
+  const Nn = (x: any, d = 0) => (Number.isFinite(Number(x)) ? Number(x) : d);
+  const toArrLoc = <T,>(v: any): T[] => (Array.isArray(v) ? v : []);
+
+  for (const r of records || []) {
+    // On ne garde que Killer
+    const modeKey = classifyRecordMode(r);
+    if (modeKey !== "killer") continue;
+
+    // Le joueur doit être dans le match
+    const inMatch = toArrLoc<PlayerLite>((r as any)?.players).some((p) => p?.id === pid);
+    if (!inMatch) continue;
+
+    matches++;
+    if ((r as any)?.winnerId === pid) wins++;
+
+    const ss: any = (r as any)?.summary ?? (r as any)?.payload?.summary ?? {};
+    const per: any[] =
+      ss?.perPlayer ??
+      ss?.players ??
+      (r as any)?.payload?.summary?.perPlayer ??
+      [];
+
+    const pstat =
+      per.find((x) => x?.playerId === pid || x?.id === pid) ??
+      ss?.[pid] ??
+      ss?.players?.[pid] ??
+      ss?.perPlayer?.[pid] ??
+      {};
+
+    // Champs possibles selon versions
+    kills += Nn(pstat.kills ?? pstat.kill ?? pstat.kOs ?? 0);
+
+    const th =
+      Nn(pstat.totalHits ?? 0) ||
+      Nn(pstat.hits ?? 0) ||
+      Nn(pstat.total ?? 0) ||
+      0;
+    totalHits += th;
+
+    // favNumberHits possible sous forme { "20": 12, "17": 9, ... }
+    const favMap =
+      pstat.favNumberHits ??
+      pstat.numberHits ??
+      pstat.hitsByNumber ??
+      null;
+
+    if (favMap && typeof favMap === "object") {
+      for (const [k, v] of Object.entries(favMap)) {
+        const kk = String(k);
+        hitsByNumber[kk] = (hitsByNumber[kk] || 0) + Nn(v, 0);
+      }
+    }
+  }
+
+  if (matches <= 0) return null;
+
+  let favNumber: string | null = null;
+  let favHits = 0;
+  for (const [k, v] of Object.entries(hitsByNumber)) {
+    if (v > favHits) {
+      favHits = v;
+      favNumber = k;
+    }
+  }
+
+  const winRatePct = matches > 0 ? Math.round((wins / matches) * 1000) / 10 : 0;
+
+  return {
+    matches,
+    wins,
+    winRatePct,
+    kills,
+    totalHits,
+    favNumber,
+    favHits,
+  };
+}, [selectedPlayer?.id, records]);
 
   const [cricketStats, setCricketStats] =
     React.useState<CricketProfileStats | null>(null);
@@ -4177,92 +4320,213 @@ return (
 </div>
 
       {/* ========= CONTENU PILOTÉ PAR LE CARROUSEL DE MODES ========= */}
-      {currentMode === "dashboard" && (
-        <>
-          <div style={row}>
-            {selectedPlayer ? (
-              <StatsPlayerDashboard
-                data={buildDashboardForPlayer(
-                  selectedPlayer,
-                  records,
-                  quick || null
-                )}
-                x01MultiLegsSets={x01MultiLegsSets}
-              />
-            ) : (
-              <div style={{ color: T.text70, fontSize: 13 }}>
-                Sélectionne un joueur pour afficher le dashboard.
-              </div>
-            )}
+{currentMode === "dashboard" && (
+  <>
+    <div style={row}>
+      {selectedPlayer ? (
+        <StatsPlayerDashboard
+          data={
+            selectedPlayer
+              ? buildDashboardFromNormalized(
+                  String(selectedPlayer.id),
+                  String(selectedPlayer.name || "Joueur"),
+                  normalizedMatches || []
+                )
+              : null
+          }
+          x01MultiLegsSets={x01MultiLegsSets}
+        />
+      ) : (
+        <div style={{ color: T.text70, fontSize: 13 }}>
+          Sélectionne un joueur pour afficher le dashboard.
+        </div>
+      )}
+    </div>
+
+    {/* RÉSUMÉ TRAINING (X01 + Horloge) */}
+    {selectedPlayer && (
+      <div style={{ ...card, marginTop: 8 }}>
+        <StatsTrainingSummary profileId={selectedPlayer.id} />
+      </div>
+    )}
+
+    {/* =======================
+        ✅ BLOC 3 — RÉSUMÉ KILLER (DASHBOARD)
+        ======================= */}
+    {selectedPlayer && killerAgg && killerAgg.matches > 0 && (
+      <div style={{ ...card, marginTop: 8 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            marginBottom: 8,
+          }}
+        >
+          <div
+            style={{
+              ...goldNeon,
+              fontSize: 13,
+              marginBottom: 0,
+            }}
+          >
+            KILLER — RÉSUMÉ
           </div>
 
-          {/* RÉSUMÉ TRAINING (X01 + Horloge) */}
-          {selectedPlayer && (
-            <div style={{ ...card, marginTop: 8 }}>
-              <StatsTrainingSummary profileId={selectedPlayer.id} />
-            </div>
-          )}
-
-          {/* RÉSUMÉ CRICKET */}
-          {selectedPlayer && cricketStats && (
-            <div style={{ ...card, marginTop: 8 }}>
-              <StatsCricketDashboard stats={cricketStats} />
-            </div>
-          )}
-        </>
-      )}
-
-      {currentMode === "dartsets" && (
-        <div style={card}>
-          <StatsDartSetsSection
-            activeProfileId={selectedPlayer?.id ?? null}
-            title="MES FLÉCHETTES"
-          />
+          <button
+            type="button"
+            onClick={() => {
+              const idx = modeDefs.findIndex((m) => m.key === "killer");
+              if (idx >= 0) setModeIndex(idx);
+            }}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 999,
+              border: `1px solid ${T.accent50}`,
+              background: `radial-gradient(circle at 30% 30%, ${T.accent30}, rgba(0,0,0,.55))`,
+              color: T.accent,
+              fontSize: 11,
+              fontWeight: 900,
+              letterSpacing: 0.5,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Voir détails ▶
+          </button>
         </div>
-      )}
 
-      {currentMode === "x01_multi" && (
-        <div style={card}>
-          {selectedPlayer ? (
-            <X01MultiStatsTabFull records={records} playerId={selectedPlayer.id} />
-          ) : (
-            <div style={{ color: T.text70, fontSize: 13 }}>
-              Sélectionne un joueur pour afficher les stats X01 multi.
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+            gap: 10,
+          }}
+        >
+          <div
+            style={{
+              borderRadius: 16,
+              padding: 10,
+              border: `1px solid rgba(255,255,255,.10)`,
+              background: "linear-gradient(180deg,#15171B,#0F1014)",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: 10, color: T.text70, textTransform: "uppercase" }}>
+              Matchs
             </div>
-          )}
-        </div>
-      )}
-
-      {/* ✅ NOUVEAU : onglet COMPARATEUR X01 */}
-      {currentMode === "x01_compare" && (
-        <div style={card}>
-          {selectedPlayer ? (
-            <StatsX01Compare
-              store={pseudoStoreForCompare as any}
-              profileId={selectedPlayer.id}
-              compact
-            />
-          ) : (
-            <div style={{ color: T.text70, fontSize: 13 }}>
-              Sélectionne un joueur pour afficher le comparateur X01.
+            <div style={{ fontSize: 18, fontWeight: 900, color: T.gold }}>
+              {killerAgg.matches}
             </div>
-          )}
-        </div>
-      )}
-
-      {currentMode === "cricket" && (
-        <div style={card}>
-          {cricketStats ? (
-            <StatsCricketDashboard stats={cricketStats} />
-          ) : (
-            <div style={{ color: T.text70, fontSize: 13 }}>
-              Aucune statistique Cricket disponible.
+            <div style={{ fontSize: 11, color: T.text70 }}>
+              Wins {killerAgg.wins} · {killerAgg.winRatePct}%
             </div>
-          )}
-        </div>
-      )}
+          </div>
 
-      {currentMode === "killer" && (
+          <div
+            style={{
+              borderRadius: 16,
+              padding: 10,
+              border: `1px solid rgba(255,255,255,.10)`,
+              background: "linear-gradient(180deg,#15171B,#0F1014)",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: 10, color: T.text70, textTransform: "uppercase" }}>
+              Kills
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: "#FF4B4B" }}>
+              {killerAgg.kills}
+            </div>
+            <div style={{ fontSize: 11, color: T.text70 }}>
+              Total hits {killerAgg.totalHits}
+            </div>
+          </div>
+
+          <div
+            style={{
+              gridColumn: "1 / -1",
+              borderRadius: 16,
+              padding: 10,
+              border: `1px solid rgba(255,255,255,.10)`,
+              background: "linear-gradient(180deg,#15171B,#0F1014)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+            }}
+          >
+            <div style={{ fontSize: 11, color: T.text70, textTransform: "uppercase" }}>
+              Numéro favori
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 900, color: T.accent }}>
+              {killerAgg.favNumber ? `${killerAgg.favNumber} (${killerAgg.favHits})` : "—"}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* RÉSUMÉ CRICKET */}
+    {selectedPlayer && cricketStats && (
+      <div style={{ ...card, marginTop: 8 }}>
+        <StatsCricketDashboard stats={cricketStats} />
+      </div>
+    )}
+  </>
+)}
+
+{currentMode === "dartsets" && (
+  <div style={card}>
+    <StatsDartSetsSection
+      activeProfileId={selectedPlayer?.id ?? null}
+      title="MES FLÉCHETTES"
+    />
+  </div>
+)}
+
+{currentMode === "x01_multi" && (
+  <div style={card}>
+    {selectedPlayer ? (
+      <X01MultiStatsTabFull records={records} playerId={selectedPlayer.id} />
+    ) : (
+      <div style={{ color: T.text70, fontSize: 13 }}>
+        Sélectionne un joueur pour afficher les stats X01 multi.
+      </div>
+    )}
+  </div>
+)}
+
+{currentMode === "x01_compare" && (
+  <div style={card}>
+    {selectedPlayer ? (
+      <StatsX01Compare
+        store={pseudoStoreForCompare as any}
+        profileId={selectedPlayer.id}
+        compact
+      />
+    ) : (
+      <div style={{ color: T.text70, fontSize: 13 }}>
+        Sélectionne un joueur pour afficher le comparateur X01.
+      </div>
+    )}
+  </div>
+)}
+
+{currentMode === "cricket" && (
+  <div style={card}>
+    {cricketStats ? (
+      <StatsCricketDashboard stats={cricketStats} />
+    ) : (
+      <div style={{ color: T.text70, fontSize: 13 }}>
+        Aucune statistique Cricket disponible.
+      </div>
+    )}
+  </div>
+)}
+
+{currentMode === "killer" && (
         <div style={card}>
           <StatsKiller
             profiles={storeProfiles as any}

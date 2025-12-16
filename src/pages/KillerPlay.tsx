@@ -1366,24 +1366,20 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   <div
     role="dialog"
     aria-modal="true"
-    onClick={() => {
-      // clic en dehors = rien (ou fermer si tu veux)
-    }}
+    onClick={() => setShowEnd(false)}
     style={{
       position: "fixed",
       inset: 0,
-      background: "rgba(0,0,0,.75)",
+      background: "rgba(0,0,0,.72)",
       zIndex: 10000,
+      padding: 14,
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      padding: 14,
-      pointerEvents: "auto", // 🔥 IMPORTANT
     }}
   >
-    {/* CONTENU */}
     <div
-      onClick={(e) => e.stopPropagation()} // 🔥 CRUCIAL
+      onClick={(e) => e.stopPropagation()}
       style={{
         width: "100%",
         maxWidth: 520,
@@ -1391,7 +1387,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         padding: 16,
         border: "1px solid rgba(255,198,58,.22)",
         boxShadow: "0 18px 65px rgba(0,0,0,.65)",
-        pointerEvents: "auto", // 🔥 IMPORTANT
       }}
     >
       {/* TITRE */}
@@ -1414,53 +1409,38 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       </div>
 
       {/* CLASSEMENT */}
-      <div style={{ marginTop: 14 }}>
-        <div
-          style={{
-            fontWeight: 1000,
-            fontSize: 12,
-            textTransform: "uppercase",
-            color: "#ffe7b0",
-          }}
-        >
-          Classement
-        </div>
-
-        <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-          {players
-            .slice()
-            .sort((a, b) => {
-              if (!a.eliminated && b.eliminated) return -1;
-              if (a.eliminated && !b.eliminated) return 1;
-              return 0;
-            })
-            .map((p, i) => (
-              <div
-                key={p.id}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "32px 1fr auto",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "8px 10px",
-                  borderRadius: 14,
-                  background:
-                    i === 0
-                      ? "rgba(255,198,58,.12)"
-                      : "rgba(0,0,0,.25)",
-                  border: "1px solid rgba(255,255,255,.08)",
-                }}
-              >
-                <div style={{ fontWeight: 1000, color: i === 0 ? gold : "#fff" }}>
-                  {i + 1}
-                </div>
-                <div style={{ fontWeight: 1000 }}>{p.name}</div>
-                <div style={{ fontSize: 12, opacity: 0.8 }}>
-                  kills {p.kills}
-                </div>
+      <div style={{ marginTop: 16, display: "grid", gap: 8 }}>
+        {players
+          .slice()
+          .sort((a, b) => (a.eliminated === b.eliminated ? 0 : a.eliminated ? 1 : -1))
+          .map((p, i) => (
+            <div
+              key={p.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "32px 1fr auto",
+                alignItems: "center",
+                gap: 10,
+                padding: "8px 10px",
+                borderRadius: 14,
+                background: i === 0 ? "rgba(255,198,58,.12)" : "rgba(0,0,0,.25)",
+                border: "1px solid rgba(255,255,255,.08)",
+              }}
+            >
+              <div style={{ fontWeight: 1000, color: i === 0 ? gold : "#fff" }}>
+                {i + 1}
               </div>
-            ))}
-        </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <AvatarMedallion size={28} src={p.avatarDataUrl} name={p.name} />
+                <span style={{ fontWeight: 1000 }}>{p.name}</span>
+              </div>
+
+              <div style={{ fontWeight: 1000, color: gold }}>
+                {i === 0 ? "WIN" : ""}
+              </div>
+            </div>
+          ))}
       </div>
 
       {/* ACTIONS */}
@@ -1476,8 +1456,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           type="button"
           onClick={() => {
             setShowEnd(false);
-            if (endRec) onFinish(endRec);
-            else go("history");
+            setTimeout(() => {
+              if (endRec) onFinish(endRec);
+              else go("history");
+            }, 0);
           }}
           style={{
             height: 44,
@@ -1497,20 +1479,22 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           type="button"
           onClick={() => {
             setShowEnd(false);
-            go("killer_summary", { record: endRec });
+            setTimeout(() => {
+              go("killer_summary", { record: endRec || null });
+            }, 0);
           }}
           style={{
             height: 44,
             padding: "0 16px",
             borderRadius: 14,
-            border: "1px solid rgba(255,255,255,.18)",
-            background: "rgba(255,255,255,.08)",
+            border: "1px solid rgba(255,255,255,.14)",
+            background: "rgba(255,255,255,.06)",
             color: "#fff",
             fontWeight: 1000,
             cursor: "pointer",
           }}
         >
-          Résumé
+          Voir résumé
         </button>
       </div>
     </div>

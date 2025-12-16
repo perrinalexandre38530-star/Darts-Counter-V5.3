@@ -4,6 +4,7 @@
 // + Sélection de BOTS IA créés dans Profils (LS "dc_bots_v1")
 // + Intégration de BOTS IA "pro" prédéfinis (Green Machine, Snake King…)
 // + NEW : audio config (Sons Arcade / Bruitages / Voix IA + voix sélection)
+// + NEW : Comptage externe (vidéo / bridge) + bouton "i" explicatif
 // =============================================================
 
 import React from "react";
@@ -123,9 +124,7 @@ const PlayerDartBadge: React.FC<PlayerDartBadgeProps> = ({
   if (!profileId || sets.length === 0) return null;
 
   // Set courant : soit celui explicitement choisi, soit le préféré
-  const explicit = dartSetId
-    ? sets.find((s) => s.id === dartSetId) || null
-    : null;
+  const explicit = dartSetId ? sets.find((s) => s.id === dartSetId) || null : null;
   const current = explicit || favorite || sets[0];
 
   const handleClick = () => {
@@ -170,9 +169,9 @@ const PlayerDartBadge: React.FC<PlayerDartBadgeProps> = ({
       title={labelBase}
     >
       {/* Mini visuel fléchettes */}
-      {current.thumbImageUrl ? (
+      {(current as any)?.thumbImageUrl ? (
         <img
-          src={current.thumbImageUrl}
+          src={(current as any).thumbImageUrl}
           style={{
             width: 20,
             height: 20,
@@ -187,7 +186,7 @@ const PlayerDartBadge: React.FC<PlayerDartBadgeProps> = ({
             width: 20,
             height: 20,
             borderRadius: "50%",
-            background: current.bgColor || "#050509",
+            background: (current as any)?.bgColor || "#050509",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -220,72 +219,17 @@ const PlayerDartBadge: React.FC<PlayerDartBadgeProps> = ({
 // BOTS IA "PRO" PRÉDÉFINIS (joueurs de référence, surnoms)
 // ------------------------------------------------------
 const PRO_BOTS: BotLite[] = [
-  {
-    id: "bot_pro_mvg",
-    name: "Green Machine",
-    botLevel: "Légende",
-    avatarDataUrl: avatarGreenMachine,
-  },
-  {
-    id: "bot_pro_wright",
-    name: "Snake King",
-    botLevel: "Pro",
-    avatarDataUrl: avatarSnakeKing,
-  },
-  {
-    id: "bot_pro_littler",
-    name: "Wonder Kid",
-    botLevel: "Prodige Pro",
-    avatarDataUrl: avatarWonderKid,
-  },
-  {
-    id: "bot_pro_price",
-    name: "Ice Man",
-    botLevel: "Pro",
-    avatarDataUrl: avatarIceMan,
-  },
-  {
-    id: "bot_pro_anderson",
-    name: "Flying Scotsman",
-    botLevel: "Pro",
-    avatarDataUrl: avatarFlyingScotsman,
-  },
-  {
-    id: "bot_pro_humphries",
-    name: "Cool Hand",
-    botLevel: "Pro",
-    avatarDataUrl: avatarCoolHand,
-  },
-  {
-    id: "bot_pro_taylor",
-    name: "The Power",
-    botLevel: "Légende",
-    avatarDataUrl: avatarThePower,
-  },
-  {
-    id: "bot_pro_smith",
-    name: "Bully Boy",
-    botLevel: "Pro",
-    avatarDataUrl: avatarBullyBoy,
-  },
-  {
-    id: "bot_pro_aspinall",
-    name: "The Asp",
-    botLevel: "Fort",
-    avatarDataUrl: avatarTheAsp,
-  },
-  {
-    id: "bot_pro_dobey",
-    name: "Hollywood",
-    botLevel: "Fort",
-    avatarDataUrl: avatarHollywood,
-  },
-  {
-    id: "bot_pro_clayton",
-    name: "The Ferret",
-    botLevel: "Fort",
-    avatarDataUrl: avatarTheFerret,
-  },
+  { id: "bot_pro_mvg", name: "Green Machine", botLevel: "Légende", avatarDataUrl: avatarGreenMachine },
+  { id: "bot_pro_wright", name: "Snake King", botLevel: "Pro", avatarDataUrl: avatarSnakeKing },
+  { id: "bot_pro_littler", name: "Wonder Kid", botLevel: "Prodige Pro", avatarDataUrl: avatarWonderKid },
+  { id: "bot_pro_price", name: "Ice Man", botLevel: "Pro", avatarDataUrl: avatarIceMan },
+  { id: "bot_pro_anderson", name: "Flying Scotsman", botLevel: "Pro", avatarDataUrl: avatarFlyingScotsman },
+  { id: "bot_pro_humphries", name: "Cool Hand", botLevel: "Pro", avatarDataUrl: avatarCoolHand },
+  { id: "bot_pro_taylor", name: "The Power", botLevel: "Légende", avatarDataUrl: avatarThePower },
+  { id: "bot_pro_smith", name: "Bully Boy", botLevel: "Pro", avatarDataUrl: avatarBullyBoy },
+  { id: "bot_pro_aspinall", name: "The Asp", botLevel: "Fort", avatarDataUrl: avatarTheAsp },
+  { id: "bot_pro_dobey", name: "Hollywood", botLevel: "Fort", avatarDataUrl: avatarHollywood },
+  { id: "bot_pro_clayton", name: "The Ferret", botLevel: "Fort", avatarDataUrl: avatarTheFerret },
 ];
 
 // -------------------------------------------------------------
@@ -304,9 +248,7 @@ const PlayerDartChip: React.FC<PlayerDartChipProps> = ({
   dartSetId,
   onChange,
 }) => {
-  const { palette } = useTheme();
   const { lang } = useLang();
-  const primary = palette?.primary || "#f5c35b";
 
   const [sets, setSets] = React.useState<DartSet[]>([]);
   const [favorite, setFavorite] = React.useState<DartSet | null>(null);
@@ -322,29 +264,19 @@ const PlayerDartChip: React.FC<PlayerDartChipProps> = ({
     setFavorite(getFavoriteDartSetForProfile(profileId) || null);
   }, [profileId]);
 
-  if (!profileId || sets.length === 0) {
-    // Aucun set pour ce profil → on n'affiche rien
-    return null;
-  }
+  if (!profileId || sets.length === 0) return null;
 
-  const currentIndex = dartSetId
-    ? sets.findIndex((s) => s.id === dartSetId)
-    : -1; // -1 = AUTO (préféré)
+  const currentIndex = dartSetId ? sets.findIndex((s) => s.id === dartSetId) : -1; // -1 = AUTO (préféré)
 
   const handleClick = () => {
     if (sets.length === 0) return;
 
-    // On a N sets + 1 état AUTO → (N + 1) états dans le cycle
+    // N sets + 1 état AUTO
     const total = sets.length + 1;
     const nextIndex = (currentIndex + 1 + total) % total;
 
-    if (nextIndex === 0) {
-      // Retour sur AUTO (préféré)
-      onChange(null);
-    } else {
-      const set = sets[nextIndex - 1];
-      onChange(set.id);
-    }
+    if (nextIndex === 0) onChange(null);
+    else onChange(sets[nextIndex - 1].id);
   };
 
   const isAuto = currentIndex === -1;
@@ -352,20 +284,10 @@ const PlayerDartChip: React.FC<PlayerDartChipProps> = ({
     isAuto && favorite ? favorite : sets.find((s) => s.id === dartSetId) || null;
 
   const autoText =
-    lang === "fr"
-      ? "AUTO · préf"
-      : lang === "es"
-      ? "AUTO · favorito"
-      : lang === "de"
-      ? "AUTO · Favorit"
-      : "AUTO · fav";
+    lang === "fr" ? "AUTO · préf" : lang === "es" ? "AUTO · favorito" : lang === "de" ? "AUTO · Favorit" : "AUTO · fav";
 
   const text =
-    isAuto && currentSet
-      ? `${autoText} · ${currentSet.name}`
-      : currentSet
-      ? currentSet.name
-      : autoText;
+    isAuto && currentSet ? `${autoText} · ${currentSet.name}` : currentSet ? currentSet.name : autoText;
 
   return (
     <button
@@ -399,12 +321,7 @@ const PlayerDartChip: React.FC<PlayerDartChipProps> = ({
   );
 };
 
-export default function X01ConfigV3({
-  profiles,
-  onBack,
-  onStart,
-  go,
-}: Props) {
+export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
 
@@ -478,14 +395,12 @@ export default function X01ConfigV3({
   }, [userBots]);
 
   // ---- état local des paramètres ----
-  const [startScore, setStartScore] =
-    React.useState<301 | 501 | 701 | 901>(501);
+  const [startScore, setStartScore] = React.useState<301 | 501 | 701 | 901>(501);
   const [inMode, setInMode] = React.useState<InModeV3>("simple");
   const [outMode, setOutMode] = React.useState<OutModeV3>("double");
   const [legsPerSet, setLegsPerSet] = React.useState<number>(3);
   const [setsToWin, setSetsToWin] = React.useState<number>(1);
-  const [serveMode, setServeMode] =
-    React.useState<ServiceModeV3>("alternate");
+  const [serveMode, setServeMode] = React.useState<ServiceModeV3>("alternate");
   const [matchMode, setMatchMode] = React.useState<MatchModeV3>("solo");
 
   // ---- NEW : AUDIO OPTIONS (pour X01PlayV3) ----
@@ -494,12 +409,15 @@ export default function X01ConfigV3({
   const [voiceEnabled, setVoiceEnabled] = React.useState<boolean>(true);
   const [voiceId, setVoiceId] = React.useState<string>("default");
 
+  // ---- NEW : COMPTAGE EXTERNE (vidéo / bridge) ----
+  const [externalScoringEnabled, setExternalScoringEnabled] = React.useState<boolean>(false);
+  const [externalInfoOpen, setExternalInfoOpen] = React.useState<boolean>(false);
+
   // évite d’écraser le choix manuel si on change de joueur sélectionné
   const voiceTouchedRef = React.useRef(false);
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>(() => {
-    if (humanProfiles.length >= 2)
-      return [humanProfiles[0].id, humanProfiles[1].id];
+    if (humanProfiles.length >= 2) return [humanProfiles[0].id, humanProfiles[1].id];
     if (humanProfiles.length === 1) return [humanProfiles[0].id];
     return [];
   });
@@ -518,32 +436,18 @@ export default function X01ConfigV3({
     const p: any = humanProfiles.find((x) => x.id === firstHumanSelectedId);
     if (!p) return;
 
-    const candidate: string | undefined =
-      p.ttsVoice ?? p.voiceId ?? p.voice ?? p.tts ?? undefined;
-
-    if (candidate && typeof candidate === "string") {
-      setVoiceId(candidate);
-    }
+    const candidate: string | undefined = p.ttsVoice ?? p.voiceId ?? p.voice ?? p.tts ?? undefined;
+    if (candidate && typeof candidate === "string") setVoiceId(candidate);
   }, [selectedIds, humanProfiles]);
 
   // playerId -> teamId
-  const [teamAssignments, setTeamAssignments] = React.useState<
-    Record<string, TeamId | null>
-  >({});
+  const [teamAssignments, setTeamAssignments] = React.useState<Record<string, TeamId | null>>({});
 
   // profileId -> dartSetId (ou null)
-  const [playerDartSets, setPlayerDartSets] = React.useState<
-    Record<string, string | null>
-  >({});
+  const [playerDartSets, setPlayerDartSets] = React.useState<Record<string, string | null>>({});
 
-  const handleChangePlayerDartSet = (
-    profileId: string,
-    dartSetId: string | null
-  ) => {
-    setPlayerDartSets((prev) => ({
-      ...prev,
-      [profileId]: dartSetId,
-    }));
+  const handleChangePlayerDartSet = (profileId: string, dartSetId: string | null) => {
+    setPlayerDartSets((prev) => ({ ...prev, [profileId]: dartSetId }));
   };
 
   // ---- helpers sélection joueurs (humains + bots) ----
@@ -591,21 +495,14 @@ export default function X01ConfigV3({
 
   // ---- validation mode équipes ----
   function validateTeams() {
-    const teamBuckets: Record<TeamId, string[]> = {
-      gold: [],
-      pink: [],
-      blue: [],
-      green: [],
-    };
+    const teamBuckets: Record<TeamId, string[]> = { gold: [], pink: [], blue: [], green: [] };
 
     selectedIds.forEach((pid) => {
       const tId = teamAssignments[pid];
       if (tId) teamBuckets[tId].push(pid);
     });
 
-    const usedTeams = (Object.keys(teamBuckets) as TeamId[]).filter(
-      (tid) => teamBuckets[tid].length > 0
-    );
+    const usedTeams = (Object.keys(teamBuckets) as TeamId[]).filter((tid) => teamBuckets[tid].length > 0);
 
     if (usedTeams.length < 2) {
       alert(
@@ -617,17 +514,10 @@ export default function X01ConfigV3({
       return null;
     }
 
-    const sizes = Array.from(
-      new Set(usedTeams.map((tid) => teamBuckets[tid].length))
-    ).filter((n) => n > 0);
+    const sizes = Array.from(new Set(usedTeams.map((tid) => teamBuckets[tid].length))).filter((n) => n > 0);
 
     if (sizes.length !== 1) {
-      alert(
-        t(
-          "x01v3.teams.sameSize",
-          "Toutes les équipes doivent avoir le même nombre de joueurs."
-        )
-      );
+      alert(t("x01v3.teams.sameSize", "Toutes les équipes doivent avoir le même nombre de joueurs."));
       return null;
     }
 
@@ -661,40 +551,20 @@ export default function X01ConfigV3({
   function handleStart() {
     if (!canStart) {
       if (totalPlayers === 0) {
-        alert(
-          t(
-            "x01v3.config.needPlayer",
-            "Sélectionne au moins un joueur local ou un BOT IA."
-          )
-        );
+        alert(t("x01v3.config.needPlayer", "Sélectionne au moins un joueur local ou un BOT IA."));
         return;
       }
       if (matchMode === "solo" && totalPlayers !== 2) {
-        alert(
-          t(
-            "x01v3.config.needTwoPlayersSolo",
-            "En mode Solo (1v1), sélectionne exactement 2 joueurs."
-          )
-        );
+        alert(t("x01v3.config.needTwoPlayersSolo", "En mode Solo (1v1), sélectionne exactement 2 joueurs."));
         return;
       }
       if (totalPlayers < 2) {
-        alert(
-          t(
-            "x01v3.config.needTwoPlayers",
-            "Sélectionne au moins 2 joueurs pour ce mode."
-          )
-        );
+        alert(t("x01v3.config.needTwoPlayers", "Sélectionne au moins 2 joueurs pour ce mode."));
         return;
       }
     }
 
-    let teams: null | Array<{
-      id: TeamId;
-      name: string;
-      color: string;
-      playerIds: string[];
-    }> = null;
+    let teams: null | Array<{ id: TeamId; name: string; color: string; playerIds: string[] }> = null;
 
     if (matchMode === "teams") {
       teams = validateTeams();
@@ -717,6 +587,7 @@ export default function X01ConfigV3({
             dartSetId,
           };
         }
+
         const bot = botProfiles.find((b) => b.id === id);
         if (bot) {
           return {
@@ -729,6 +600,7 @@ export default function X01ConfigV3({
             dartSetId: null,
           };
         }
+
         return null;
       })
       .filter(Boolean) as any[];
@@ -744,6 +616,9 @@ export default function X01ConfigV3({
       matchMode,
       players,
       createdAt: Date.now(),
+
+      // ✅ NEW : source de scoring (keypad vs externe)
+      scoringSource: externalScoringEnabled ? "external" : "manual",
 
       // ✅ NEW : audio config consommée par X01PlayV3
       audio: {
@@ -829,23 +704,13 @@ export default function X01ConfigV3({
               marginTop: 2,
             }}
           >
-            {t(
-              "x01v3.config.subtitle",
-              "Configure ton match X01 avant de commencer."
-            )}
+            {t("x01v3.config.subtitle", "Configure ton match X01 avant de commencer.")}
           </div>
         </div>
       </header>
 
       {/* CONTENU SCROLLABLE */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          paddingTop: 4,
-          paddingBottom: 12,
-        }}
-      >
+      <div style={{ flex: 1, overflowY: "auto", paddingTop: 4, paddingBottom: 12 }}>
         {/* --------- BLOC JOUEURS (HUMAINS) --------- */}
         <section
           style={{
@@ -943,12 +808,9 @@ export default function X01ConfigV3({
                             height: "100%",
                             borderRadius: "50%",
                             overflow: "hidden",
-                            filter: active
-                              ? "none"
-                              : "grayscale(100%) brightness(0.55)",
+                            filter: active ? "none" : "grayscale(100%) brightness(0.55)",
                             opacity: active ? 1 : 0.6,
-                            transition:
-                              "filter 0.2s ease, opacity 0.2s ease",
+                            transition: "filter 0.2s ease, opacity 0.2s ease",
                           }}
                         >
                           <ProfileAvatar profile={p} size={78} />
@@ -973,11 +835,7 @@ export default function X01ConfigV3({
                       {/* ⬇⬇⬇ BADGE "JEU DE FLÉCHETTES" ICI ⬇⬇⬇ */}
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        style={{
-                          width: "100%",
-                          display: "flex",
-                          justifyContent: "center",
-                        }}
+                        style={{ width: "100%", display: "flex", justifyContent: "center" }}
                       >
                         <PlayerDartBadge
                           profileId={p.id}
@@ -991,10 +849,7 @@ export default function X01ConfigV3({
               </div>
 
               <p style={{ fontSize: 11, color: "#7c80a0", marginBottom: 0 }}>
-                {t(
-                  "x01v3.playersHint",
-                  "2 joueurs pour un duel, 3+ pour Multi ou Équipes."
-                )}
+                {t("x01v3.playersHint", "2 joueurs pour un duel, 3+ pour Multi ou Équipes.")}
               </p>
             </>
           )}
@@ -1104,13 +959,7 @@ export default function X01ConfigV3({
           </div>
 
           {/* ✅ NEW : AUDIO / VOIX */}
-          <div
-            style={{
-              marginTop: 10,
-              paddingTop: 10,
-              borderTop: "1px solid rgba(255,255,255,0.06)",
-            }}
-          >
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
             <div
               style={{
                 fontSize: 12,
@@ -1148,10 +997,7 @@ export default function X01ConfigV3({
                 />
               </div>
               <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
-                {t(
-                  "x01v3.audio.arcadeHint",
-                  "DBULL / BULL / DOUBLE / TRIPLE / 180 / BUST / victoire"
-                )}
+                {t("x01v3.audio.arcadeHint", "DBULL / BULL / DOUBLE / TRIPLE / 180 / BUST / victoire")}
               </div>
             </div>
 
@@ -1208,13 +1054,7 @@ export default function X01ConfigV3({
               </div>
 
               <div style={{ marginTop: 10 }}>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "#c8cbe4",
-                    marginBottom: 6,
-                  }}
-                >
+                <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
                   {t("x01v3.audio.voiceSelect", "Voix")}
                 </div>
                 <select
@@ -1243,14 +1083,217 @@ export default function X01ConfigV3({
                 </select>
 
                 <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
-                  {t(
-                    "x01v3.audio.voiceHint",
-                    "Utilisée pour l'annonce des scores / fin de match."
-                  )}
+                  {t("x01v3.audio.voiceHint", "Utilisée pour l'annonce des scores / fin de match.")}
                 </div>
               </div>
             </div>
           </div>
+
+          {/* ✅ NEW : COMPTAGE EXTERNE (vidéo) + bouton info */}
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                marginBottom: 8,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: 1,
+                  fontWeight: 700,
+                  color: primary,
+                }}
+              >
+                {t("x01v3.external.title", "Comptage externe (vidéo)")}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setExternalInfoOpen(true)}
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: 999,
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  background: "rgba(255,255,255,0.06)",
+                  color: "#fff",
+                  fontWeight: 900,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: "0 0 12px rgba(0,0,0,0.55)",
+                  cursor: "pointer",
+                  flex: "0 0 auto",
+                }}
+                aria-label="Info comptage externe"
+                title="Info"
+              >
+                i
+              </button>
+            </div>
+
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
+              {t(
+                "x01v3.external.desc",
+                "Active si tu veux que le match soit piloté par une source externe (caméra / bridge / automatisation)."
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <PillButton
+                label={t("common.off", "OFF")}
+                active={externalScoringEnabled === false}
+                onClick={() => setExternalScoringEnabled(false)}
+                primary={primary}
+                primarySoft={primarySoft}
+                compact
+              />
+              <PillButton
+                label={t("common.on", "ON")}
+                active={externalScoringEnabled === true}
+                onClick={() => setExternalScoringEnabled(true)}
+                primary={primary}
+                primarySoft={primarySoft}
+                compact
+              />
+            </div>
+
+            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 8 }}>
+              {externalScoringEnabled
+                ? t(
+                    "x01v3.external.onHint",
+                    "ON : le keypad pourra être masqué côté X01PlayV3, et les tirs arriveront depuis l’extérieur."
+                  )
+                : t("x01v3.external.offHint", "OFF : mode normal au keypad.")}
+            </div>
+          </div>
+
+          {/* ✅ MODAL FLOTTANT : aide comptage externe */}
+          {externalInfoOpen && (
+            <div
+              onClick={() => setExternalInfoOpen(false)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.55)",
+                zIndex: 9999,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 12,
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: "min(520px, 100%)",
+                  borderRadius: 18,
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background:
+                    "linear-gradient(180deg, rgba(10,12,24,0.96), rgba(6,7,14,0.98))",
+                  boxShadow: "0 18px 60px rgba(0,0,0,0.65)",
+                  padding: 14,
+                  color: "#f2f2ff",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    marginBottom: 10,
+                  }}
+                >
+                  <div style={{ fontWeight: 900, color: primary, fontSize: 14 }}>
+                    {t("x01v3.external.howTitle", "Comment ça fonctionne ?")}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setExternalInfoOpen(false)}
+                    style={{
+                      borderRadius: 10,
+                      padding: "6px 10px",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "rgba(255,255,255,0.06)",
+                      color: "#fff",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {t("common.close", "Fermer")}
+                  </button>
+                </div>
+
+                <div style={{ fontSize: 12, color: "#d7d9f0", lineHeight: 1.4 }}>
+                  <p style={{ marginTop: 0 }}>
+                    Ce mode sert à préparer la compatibilité avec un système externe (caméra/bridge).
+                    <br />
+                    Tu peux déjà tester <b>sans Scolia</b> : un script peut envoyer des tirs à l’app.
+                  </p>
+
+                  <div
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      background: "rgba(255,255,255,0.04)",
+                      borderRadius: 14,
+                      padding: 10,
+                      marginTop: 10,
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, marginBottom: 6, color: primary }}>
+                      Exemple d’envoi d’un tir (depuis la console / bridge)
+                    </div>
+
+                    <pre
+                      style={{
+                        margin: 0,
+                        padding: 10,
+                        borderRadius: 12,
+                        background: "rgba(0,0,0,0.35)",
+                        overflowX: "auto",
+                        fontSize: 12,
+                        lineHeight: 1.35,
+                        border: "1px solid rgba(255,255,255,0.08)",
+                      }}
+                    >{`window.dispatchEvent(new CustomEvent("dc:x01:external_dart", {
+  detail: { segment: 20, multiplier: 3 } // T20
+}));
+
+// BULL
+window.dispatchEvent(new CustomEvent("dc:x01:external_dart", {
+  detail: { segment: 25, multiplier: 1 }
+}));
+
+// DBULL
+window.dispatchEvent(new CustomEvent("dc:x01:external_dart", {
+  detail: { segment: 25, multiplier: 2 }
+}));
+
+// MISS
+window.dispatchEvent(new CustomEvent("dc:x01:external_dart", {
+  detail: { segment: 0, multiplier: 1 }
+}));`}</pre>
+
+                    <div style={{ marginTop: 8, fontSize: 11, color: "#aeb2d3" }}>
+                      À brancher plus tard sur un vrai flux vidéo (Scolia-like) via un “bridge”, mais
+                      ça marche déjà pour des tests.
+                    </div>
+                  </div>
+
+                  <p style={{ marginBottom: 0, marginTop: 10, fontSize: 11, color: "#aeb2d3" }}>
+                    Note : en mode externe, X01PlayV3 doit écouter cet événement et appliquer les tirs
+                    reçus au moteur.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* --------- BLOC FORMAT DU MATCH --------- */}
@@ -1499,8 +1542,7 @@ export default function X01ConfigV3({
                         fontWeight: 800,
                         letterSpacing: 0.7,
                         textTransform: "uppercase",
-                        background:
-                          "radial-gradient(circle at 30% 0, #6af3ff, #008cff)",
+                        background: "radial-gradient(circle at 30% 0, #6af3ff, #008cff)",
                         color: "#020611",
                         boxShadow:
                           "0 0 10px rgba(0,172,255,0.55), 0 0 18px rgba(0,172,255,0.35)",
@@ -1560,13 +1602,9 @@ export default function X01ConfigV3({
               fontSize: 14,
               letterSpacing: 1,
               textTransform: "uppercase",
-              background: canStart
-                ? `linear-gradient(90deg, ${primary}, #ffe9a3)`
-                : "rgba(120,120,120,0.5)",
+              background: canStart ? `linear-gradient(90deg, ${primary}, #ffe9a3)` : "rgba(120,120,120,0.5)",
               color: canStart ? "#151515" : "#2b2bb2",
-              boxShadow: canStart
-                ? "0 0 18px rgba(255, 207, 120, 0.65)"
-                : "none",
+              boxShadow: canStart ? "0 0 18px rgba(255, 207, 120, 0.65)" : "none",
               opacity: canStart ? 1 : 0.6,
             }}
           >
@@ -1587,22 +1625,12 @@ type TeamsSectionProps = {
   setPlayerTeam: (playerId: string, tid: TeamId) => void;
 };
 
-function TeamsSection({
-  profiles,
-  selectedIds,
-  teamAssignments,
-  setPlayerTeam,
-}: TeamsSectionProps) {
+function TeamsSection({ profiles, selectedIds, teamAssignments, setPlayerTeam }: TeamsSectionProps) {
   const { t } = useLang();
   const cardBg = "rgba(10, 12, 24, 0.96)";
   const totalPlayers = selectedIds.length;
 
-  const counts: Record<TeamId, number> = {
-    gold: 0,
-    pink: 0,
-    blue: 0,
-    green: 0,
-  };
+  const counts: Record<TeamId, number> = { gold: 0, pink: 0, blue: 0, green: 0 };
 
   selectedIds.forEach((pid) => {
     const tId = teamAssignments[pid];
@@ -1612,11 +1640,8 @@ function TeamsSection({
   const orderedTeams: TeamId[] = ["gold", "pink", "blue", "green"];
 
   const maxTeams = totalPlayers <= 4 ? 2 : totalPlayers <= 6 ? 3 : 4;
-
   const maxPerTeamBase = totalPlayers >= 8 ? 4 : totalPlayers >= 6 ? 3 : 2;
-
   const usedTeamsCount = orderedTeams.filter((tid) => counts[tid] > 0).length;
-
   const maxPerTeam = usedTeamsCount >= 3 ? 2 : maxPerTeamBase;
 
   return (
@@ -1680,6 +1705,7 @@ function TeamsSection({
                   {p.name}
                 </span>
               </div>
+
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
                 {orderedTeams.map((tid, idx) => {
                   const allowedTeamSlot = idx < maxTeams;
@@ -1713,7 +1739,6 @@ function TeamsSection({
 
 function resolveBotLevel(botLevelRaw?: string | null): { level: number } {
   const v = (botLevelRaw || "").toLowerCase().trim();
-
   if (!v) return { level: 1 };
 
   const digits = v.replace(/[^0-9]/g, "");
@@ -1725,15 +1750,9 @@ function resolveBotLevel(botLevelRaw?: string | null): { level: number } {
   if (v.includes("legend") || v.includes("légende")) return { level: 5 };
   if (v.includes("pro")) return { level: 4 };
 
-  if (v.includes("fort") || v.includes("strong") || v.includes("hard") || v.includes("difficile")) {
-    return { level: 3 };
-  }
-  if (v.includes("standard") || v.includes("normal") || v.includes("medium") || v.includes("moyen")) {
-    return { level: 2 };
-  }
-  if (v.includes("easy") || v.includes("facile") || v.includes("beginner") || v.includes("débutant") || v.includes("rookie")) {
-    return { level: 1 };
-  }
+  if (v.includes("fort") || v.includes("strong") || v.includes("hard") || v.includes("difficile")) return { level: 3 };
+  if (v.includes("standard") || v.includes("normal") || v.includes("medium") || v.includes("moyen")) return { level: 2 };
+  if (v.includes("easy") || v.includes("facile") || v.includes("beginner") || v.includes("débutant") || v.includes("rookie")) return { level: 1 };
 
   return { level: 1 };
 }
@@ -1807,9 +1826,7 @@ function BotMedallion({
           justifyContent: "center",
           transform: active ? "scale(1.05)" : "scale(1)",
           transition: "transform .15s ease, box-shadow .15s ease",
-          border: active
-            ? `2px solid ${COLOR}`
-            : `2px solid ${isPro ? "rgba(247,200,92,0.5)" : "rgba(144,228,255,0.9)"}`,
+          border: active ? `2px solid ${COLOR}` : `2px solid ${isPro ? "rgba(247,200,92,0.5)" : "rgba(144,228,255,0.9)"}`,
         }}
       >
         <ProfileAvatar
@@ -1836,15 +1853,7 @@ type PillProps = {
   disabled?: boolean;
 };
 
-function PillButton({
-  label,
-  active,
-  onClick,
-  primary,
-  primarySoft,
-  compact,
-  disabled,
-}: PillProps) {
+function PillButton({ label, active, onClick, primary, primarySoft, compact, disabled }: PillProps) {
   const isDisabled = !!disabled;
 
   const bg = isDisabled
@@ -1893,13 +1902,7 @@ type TeamPillProps = {
   onClick: () => void;
 };
 
-function TeamPillButton({
-  label,
-  color,
-  active,
-  disabled,
-  onClick,
-}: TeamPillProps) {
+function TeamPillButton({ label, color, active, disabled, onClick }: TeamPillProps) {
   const baseBg = active ? color : "rgba(9,11,20,0.9)";
   const baseColor = active ? "#151515" : "#e5e7f8";
 

@@ -90,7 +90,15 @@ const MODE_DEFS: {
   {
     id: "killer",
     label: "KILLER",
-    metrics: ["kills", "wins", "winRate", "matches", "favSegmentHits", "favNumberHits", "totalHits"],
+    metrics: [
+      "kills",
+      "wins",
+      "winRate",
+      "matches",
+      "favSegmentHits",
+      "favNumberHits",
+      "totalHits",
+    ],
   },
   { id: "shanghai", label: "SHANGHAI", metrics: ["wins", "winRate", "matches"] },
   { id: "battle_royale", label: "BATTLE ROYALE", metrics: ["wins", "winRate", "matches"] },
@@ -135,7 +143,15 @@ function pickAvatar(obj: any): string | null {
 
 function pickName(obj: any): string {
   if (!obj) return "";
-  return obj.name || obj.playerName || obj.profileName || obj.label || obj.nickname || obj.displayName || "";
+  return (
+    obj.name ||
+    obj.playerName ||
+    obj.profileName ||
+    obj.label ||
+    obj.nickname ||
+    obj.displayName ||
+    ""
+  );
 }
 
 function pickId(obj: any): string {
@@ -146,7 +162,8 @@ function pickId(obj: any): string {
 function cleanName(v: any): string {
   const s = String(v ?? "").trim();
   if (!s) return "";
-  if (s === "—" || s === "-" || s.toLowerCase() === "undefined" || s.toLowerCase() === "null") return "";
+  if (s === "—" || s === "-" || s.toLowerCase() === "undefined" || s.toLowerCase() === "null")
+    return "";
   return s;
 }
 
@@ -223,18 +240,32 @@ function inPeriod(rec: any, period: PeriodKey): boolean {
 function isRecordMatchingMode(rec: any, mode: LeaderboardMode, scope: Scope): boolean {
   void scope;
 
-  const kind = rec?.kind || rec?.summary?.kind || rec?.payload?.kind;
+  // ✅ Robust: certains records ont game/mode/variant au top-level (StatsHub normalise aussi)
+  const kind = rec?.kind ?? rec?.summary?.kind ?? rec?.payload?.kind;
+  const topMode = rec?.mode;
+  const topVariant = rec?.variant;
   const payloadMode = rec?.payload?.mode;
   const payloadVariant = rec?.payload?.variant;
-  const game = rec?.payload?.game || rec?.summary?.game?.mode || rec?.summary?.game?.game;
+  const game =
+    rec?.game ??
+    rec?.payload?.game ??
+    rec?.summary?.game?.mode ??
+    rec?.summary?.game?.game;
 
   const isX01 =
     kind === "x01" ||
     game === "x01" ||
     rec?.summary?.game?.mode === "x01" ||
+    // compat variantes
     payloadVariant === "x01_v3" ||
+    topVariant === "x01v3" ||
+    topVariant === "x01_v3" ||
+    // compat modes
     payloadMode === "x01_multi" ||
-    payloadMode === "x01_teams";
+    payloadMode === "x01_teams" ||
+    topMode === "x01v3" ||
+    topMode === "x01_multi" ||
+    topMode === "x01_teams";
 
   if (mode === "x01_multi") return isX01;
   if (mode === "cricket") return kind === "cricket" || game === "cricket";
@@ -490,11 +521,15 @@ function computeRowsFromHistory(
         if (!infoByPlayer[pid]) infoByPlayer[pid] = {};
 
         if (!infoByPlayer[pid].name) {
-          infoByPlayer[pid].name = pickName(det) || botsMap0?.[pid]?.name || infoByPlayer[pid].name || "";
+          infoByPlayer[pid].name =
+            pickName(det) || (includeBots ? botsMap0?.[pid]?.name : "") || infoByPlayer[pid].name || "";
         }
         if (!infoByPlayer[pid].avatarDataUrl) {
           infoByPlayer[pid].avatarDataUrl =
-            pickAvatar(det) || botsMap0?.[pid]?.avatarDataUrl || infoByPlayer[pid].avatarDataUrl || null;
+            pickAvatar(det) ||
+            (includeBots ? botsMap0?.[pid]?.avatarDataUrl : null) ||
+            infoByPlayer[pid].avatarDataUrl ||
+            null;
         }
 
         const agg = aggByPlayer[pid];
@@ -579,11 +614,12 @@ function computeRowsFromHistory(
       if (!infoByPlayer[key]) infoByPlayer[key] = {};
 
       if (!infoByPlayer[key].name) {
-        infoByPlayer[key].name = name || (pid0 ? botsMap0?.[String(pid0)]?.name : "") || "—";
+        infoByPlayer[key].name = name || (includeBots && pid0 ? botsMap0?.[String(pid0)]?.name : "") || "—";
       }
 
       if (!infoByPlayer[key].avatarDataUrl) {
-        infoByPlayer[key].avatarDataUrl = avatar || (pid0 ? botsMap0?.[String(pid0)]?.avatarDataUrl : null) || null;
+        infoByPlayer[key].avatarDataUrl =
+          avatar || (includeBots && pid0 ? botsMap0?.[String(pid0)]?.avatarDataUrl : null) || null;
       }
 
       const agg = aggByPlayer[key];
@@ -622,8 +658,8 @@ function computeRowsFromHistory(
         ? computeFavsFromHitsMap(agg.hitsBySegmentAgg)
         : { favSegment: "", favSegmentHits: 0, favNumber: 0, favNumberHits: 0, totalHits: 0 };
 
-    const botFallbackAvatar = botsMap0?.[pid]?.avatarDataUrl || null;
-    const botFallbackName = botsMap0?.[pid]?.name || undefined;
+    const botFallbackAvatar = includeBots ? botsMap0?.[pid]?.avatarDataUrl || null : null;
+    const botFallbackName = includeBots ? botsMap0?.[pid]?.name || undefined : undefined;
 
     return {
       id: pid,
@@ -733,7 +769,10 @@ export default function StatsLeaderboardsPage({ store }: Props) {
   );
 
   const profiles: Profile[] = (store as any)?.profiles ?? [];
-  const profileIds = React.useMemo(() => new Set((profiles || []).map((p: any) => String(p?.id || "")).filter(Boolean)), [profiles]);
+  const profileIds = React.useMemo(
+    () => new Set((profiles || []).map((p: any) => String(p?.id || "")).filter(Boolean)),
+    [profiles]
+  );
 
   const [scope, setScope] = React.useState<Scope>("local");
   const [mode, setMode] = React.useState<LeaderboardMode>("x01_multi");
@@ -842,16 +881,12 @@ export default function StatsLeaderboardsPage({ store }: Props) {
           const id =
             safeStr(r?.id || r?.playerId || r?.profileId || r?.pid || "") ||
             (name ? `name:${name.toLowerCase()}` : `row:${i}`);
-
           return { ...r, id, name, avatarDataUrl };
         })
         .filter(isDisplayableRowStrict);
 
       // ✅ OFF => on vire vraiment les bots
-      const filtered = includeBots
-        ? out
-        : out.filter((r) => !isBotRow(r, botsMap, profileIds));
-
+      const filtered = includeBots ? out : out.filter((r) => !isBotRow(r, botsMap, profileIds));
       return filtered;
     };
 
@@ -859,23 +894,14 @@ export default function StatsLeaderboardsPage({ store }: Props) {
     if (mode === "killer") {
       try {
         const fn = computeKillerAgg as any;
-
         if (typeof fn === "function") {
           let agg: any = null;
-
-          // ⚠️ important: si includeBots=false -> on passe un botsMap vide (et on filtre ensuite)
           const botsArg = includeBots ? botsMap : {};
-
           try {
             agg = fn(historySource || [], profiles || [], botsArg);
           } catch {
             agg = fn(historySource || [], profiles || []);
           }
-
-          // ✅ filtre période même si l’agg ne le fait pas (safe)
-          const _filtered = (historySource || []).filter((r) => inPeriod(r, period));
-          void _filtered;
-
           const base = Array.isArray(agg) ? agg : Object.values(agg || {});
           return sortRows(sanitizeAndFilter(base));
         }

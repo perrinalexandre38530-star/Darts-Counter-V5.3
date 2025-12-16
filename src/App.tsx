@@ -44,6 +44,7 @@ import CricketPlay from "./pages/CricketPlay";
 // ✅ KILLER (CONFIG + PLAY)
 import KillerConfig from "./pages/KillerConfig";
 import KillerPlay from "./pages/KillerPlay";
+import KillerSummaryPage from "./pages/KillerSummaryPage";
 
 import ShanghaiPlay from "./pages/ShanghaiPlay";
 import LobbyPick from "./pages/LobbyPick";
@@ -129,6 +130,7 @@ type Tab =
   | "killer"
   | "killer_config" // ✅ NEW
   | "killer_play" // ✅ NEW
+  | "killer_summary"
   | "shanghai"
   | "battle_royale"
   | "training"
@@ -913,57 +915,63 @@ function App() {
       }
 
       /* ---------- AUTRES JEUX ---------- */
-      case "cricket": {
-        page = (
-          <CricketPlay
-            profiles={store.profiles ?? []}
-            onFinish={(m: any) => pushHistory(m)}
-          />
-        );
-        break;
-      }
+case "cricket": {
+  page = (
+    <CricketPlay
+      profiles={store.profiles ?? []}
+      onFinish={(m: any) => pushHistory(m)}
+    />
+  );
+  break;
+}
 
-      // ✅ Alias (anciens appels go("killer"))
-      case "killer": {
-        page = <KillerConfig store={store} go={go} />;
-        break;
-      }
+// ✅ Alias (anciens appels go("killer"))
+case "killer": {
+  page = <KillerConfig store={store} go={go} />;
+  break;
+}
 
-      // ✅ NEW: KILLER CONFIG
-      case "killer_config": {
-        page = <KillerConfig store={store} go={go} />;
-        break;
-      }
+// ✅ NEW: KILLER CONFIG
+case "killer_config": {
+  page = <KillerConfig store={store} go={go} />;
+  break;
+}
 
-      // ✅ NEW: KILLER PLAY (câblage final)
-      case "killer_play": {
-        const cfg = routeParams?.config;
-        if (!cfg) {
-          page = (
-            <div style={{ padding: 16 }}>
-              <button onClick={() => go("killer_config")}>← Retour</button>
-              <p>Configuration KILLER manquante.</p>
-            </div>
-          );
-          break;
-        }
+// ✅ NEW: KILLER PLAY (câblage final)
+case "killer_play": {
+  const cfg = routeParams?.config;
 
-        page = (
-          <KillerPlay
-            store={store}
-            go={go}
-            config={cfg}
-            onFinish={(m: any) => pushHistory(m)} // ✅ SAVE History + stats mirror
-          />
-        );
-        break;
-      }
+  if (!cfg) {
+    page = (
+      <div style={{ padding: 16 }}>
+        <button onClick={() => go("killer_config")}>← Retour</button>
+        <p>Configuration KILLER manquante.</p>
+      </div>
+    );
+    break;
+  }
 
-      case "shanghai": {
-        page = <ShanghaiPlay playerIds={[]} onFinish={pushHistory} />;
-        break;
-      }
+  page = (
+    <KillerPlay
+      store={store}
+      go={go}
+      config={cfg}
+      onFinish={(m: any) => pushHistory(m)} // ✅ SAVE History + stats mirror
+    />
+  );
+  break;
+}
 
+// ✅ NEW: KILLER SUMMARY
+case "killer_summary": {
+  page = <KillerSummaryPage store={store} go={go} params={routeParams} />;
+  break;
+}
+
+case "shanghai": {
+  page = <ShanghaiPlay playerIds={[]} onFinish={pushHistory} />;
+  break;
+}
       /* ---------- TRAINING ---------- */
       case "training": {
         page = <TrainingMenu go={go} />;

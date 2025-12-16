@@ -1,13 +1,12 @@
 // =============================================================
 // src/components/home/ArcadeTicker.tsx
-// Bandeau arcade — image très visible + texte léger
-// Version avec défilement automatique toutes les 7 sec
-// (garde exactement ton style existant)
+// Bandeau "arcade" (Home) — version robuste
+// ✅ Affiche STRICTEMENT props.items (ordre respecté)
+// ✅ Supporte activeIndex contrôlé depuis Home
+// ✅ Auto-rotation + swipe + dots
 // =============================================================
 
-import React, { useEffect, useState } from "react";
-import { useTheme } from "../../contexts/ThemeContext";
-import { useLang } from "../../contexts/LangContext";
+import * as React from "react";
 
 export type ArcadeTickerItem = {
   id: string;
@@ -20,172 +19,238 @@ export type ArcadeTickerItem = {
 
 type Props = {
   items: ArcadeTickerItem[];
-  activeIndex?: number; // optionnel, si Home contrôle manuellement
+  intervalMs?: number;
+
+  // contrôlé (optionnel)
+  activeIndex?: number;
+
+  // callbacks (optionnels)
+  onIndexChange?: (index: number) => void;
+  onActiveIndexChange?: (index: number) => void;
 };
 
-export default function ArcadeTicker({ items, activeIndex }: Props) {
-  const { theme } = useTheme();
-  const { t } = useLang();
+const SWIPE_THRESHOLD = 25;
 
-  if (!items || items.length === 0) return null;
+export default function ArcadeTicker({
+  items,
+  intervalMs = 7000,
+  activeIndex,
+  onIndexChange,
+  onActiveIndexChange,
+}: Props) {
+  const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
+  const len = safeItems.length;
 
-  // -------------------------------
-  // 💡 Index interne (auto-défilement)
-  // -------------------------------
-  const [autoIndex, setAutoIndex] = useState(0);
+  const isControlled = typeof activeIndex === "number";
 
-  // Si Home fournit un activeIndex → on l’utilise
-  const safeIndex =
-    activeIndex != null
-      ? Math.min(Math.max(activeIndex, 0), items.length - 1)
-      : autoIndex;
+  const [internalIndex, setInternalIndex] = React.useState(0);
+  const index = isControlled ? (activeIndex as number) : internalIndex;
 
-  // Auto-scroll toutes les 7s (si Home ne pilote pas l’index)
-  useEffect(() => {
-    if (activeIndex != null) return; // mode contrôlé → pas d’auto défilement
+  // clamp index si liste change
+  React.useEffect(() => {
+    if (!len) {
+      if (!isControlled) setInternalIndex(0);
+      return;
+    }
+    const clamped = Math.min(Math.max(index, 0), len - 1);
+    if (clamped !== index) {
+      if (!isControlled) setInternalIndex(clamped);
+      onIndexChange?.(clamped);
+      onActiveIndexChange?.(clamped);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [len]);
 
-    const timer = setInterval(() => {
-      setAutoIndex((prev) => (prev + 1) % items.length);
-    }, 7000); // ⏱️ 7 secondes
+  const setIndexSafe = React.useCallback(
+    (next: number) => {
+      if (!len) return;
+      const clamped = Math.min(Math.max(next, 0), len - 1);
 
-    return () => clearInterval(timer);
-  }, [activeIndex, items.length]);
+      if (!isControlled) setInternalIndex(clamped);
+      onIndexChange?.(clamped);
+      onActiveIndexChange?.(clamped);
+    },
+    [len, isControlled, onIndexChange, onActiveIndexChange]
+  );
 
-  const item = items[safeIndex];
-  const accent = item.accentColor ?? theme.primary ?? "#F6C256";
-  const bgImage = item.backgroundImage || "";
-  const hasBg = !!bgImage;
+  // auto-rotation
+  React.useEffect(() => {
+    if (!len) return;
+    if (!intervalMs || intervalMs <= 0) return;
+
+    const id = window.setInterval(() => {
+      setIndexSafe((index + 1) % len);
+    }, intervalMs);
+
+    return () => window.clearInterval(id);
+  }, [len, intervalMs, index, setIndexSafe]);
+
+  const current = len ? safeItems[Math.min(index, len - 1)] : null;
+
+  const accent = current?.accentColor ?? "#F6C256";
+  const bg = current?.backgroundImage ?? "";
+
+  // swipe
+  const [touchStartX, setTouchStartX] = React.useState<number | null>(null);
+
+  const onTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    const x = e.touches?.[0]?.clientX;
+    if (x != null) setTouchStartX(x);
+  };
+
+  const onTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (touchStartX == null || !len) return;
+    const x = e.changedTouches?.[0]?.clientX ?? touchStartX;
+    const dx = x - touchStartX;
+
+    if (Math.abs(dx) < SWIPE_THRESHOLD) {
+      setTouchStartX(null);
+      return;
+    }
+
+    if (dx < 0) setIndexSafe((index + 1) % len);
+    else setIndexSafe((index - 1 + len) % len);
+
+    setTouchStartX(null);
+  };
+
+  if (!current) return null;
 
   return (
-    <div style={{ marginTop: 10, marginBottom: 8 }}>
+    <div
+      style={{
+        marginTop: 12,
+        borderRadius: 22,
+        overflow: "hidden",
+        position: "relative",
+        border: "1px solid rgba(255,255,255,0.12)",
+        boxShadow: "0 18px 42px rgba(0,0,0,0.85)",
+        backgroundColor: "#05060C",
+        backgroundImage: bg ? `url("${bg}")` : undefined,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
+      {/* overlay */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "linear-gradient(135deg, rgba(0,0,0,0.92), rgba(0,0,0,0.55))",
+          pointerEvents: "none",
+        }}
+      />
+
       <div
         style={{
           position: "relative",
-          overflow: "hidden",
-          borderRadius: 18,
-          border: `1px solid ${theme.borderSoft ?? "rgba(255,255,255,0.12)"}`,
-          boxShadow: "0 16px 32px rgba(0,0,0,0.75)",
-          height: 92,
-          backgroundColor: "#05060C",
-          backgroundImage: hasBg
-            ? `url("${bgImage}")`
-            : "radial-gradient(circle at top, #333, #000)",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundRepeat: "no-repeat",
+          padding: "12px 12px 10px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
         }}
       >
-        {/* voile léger */}
-        {hasBg && (
-          <div
-            aria-hidden
-            style={{
-              position: "absolute",
-              inset: 0,
-              background:
-                "linear-gradient(90deg, rgba(0,0,0,0.25), rgba(0,0,0,0.55))",
-            }}
-          />
-        )}
-
-        {/* texte */}
+        {/* Header */}
         <div
           style={{
-            position: "relative",
-            height: "100%",
             display: "flex",
             alignItems: "center",
-            padding: "10px 14px",
+            gap: 10,
+            justifyContent: "space-between",
           }}
         >
-          <div
-            style={{
-              maxWidth: "100%",
-              padding: "6px 10px",
-              borderRadius: 14,
-              background: "rgba(0,0,0,0.25)",
-              backdropFilter: "blur(2px)",
-              WebkitBackdropFilter: "blur(2px)",
-              boxShadow: "0 6px 14px rgba(0,0,0,0.45)",
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div
               style={{
-                fontSize: 11,
-                fontWeight: 800,
-                letterSpacing: 0.9,
+                width: 10,
+                height: 10,
+                borderRadius: 999,
+                background: accent,
+                boxShadow: `0 0 10px ${accent}CC`,
+              }}
+            />
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 900,
+                letterSpacing: 1.0,
                 textTransform: "uppercase",
                 color: accent,
-                marginBottom: 2,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
+                textShadow: `0 0 10px ${accent}55`,
               }}
             >
-              {item.title}
+              {current.title}
             </div>
+          </div>
 
-            <div
-              style={{
-                fontSize: 11,
-                lineHeight: 1.3,
-                color: theme.textSoft ?? "rgba(255,255,255,0.85)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
-              }}
-            >
-              {item.text}
-            </div>
-
-            {item.detail && (
-              <div
-                style={{
-                  marginTop: 3,
-                  fontSize: 10,
-                  color: "rgba(255,255,255,0.75)",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {item.detail}
-              </div>
-            )}
+          {/* Dots */}
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            {safeItems.map((it, i) => {
+              const active = i === Math.min(index, len - 1);
+              return (
+                <button
+                  key={it.id || i}
+                  type="button"
+                  onClick={() => setIndexSafe(i)}
+                  aria-label={`ticker-${i}`}
+                  style={{
+                    width: active ? 18 : 8,
+                    height: 8,
+                    borderRadius: 999,
+                    border: "none",
+                    cursor: "pointer",
+                    background: active ? accent : "rgba(255,255,255,0.28)",
+                    boxShadow: active ? `0 0 10px ${accent}88` : "none",
+                    transition: "all 180ms ease",
+                    padding: 0,
+                    opacity: active ? 1 : 0.75,
+                  }}
+                />
+              );
+            })}
           </div>
         </div>
 
-        {/* pagination */}
-        {items.length > 1 && (
+        {/* Text */}
+        <div
+          style={{
+            fontSize: 12,
+            lineHeight: 1.35,
+            color: "rgba(255,255,255,0.9)",
+          }}
+        >
+          {current.text}
+        </div>
+
+        {/* Detail line (optional) */}
+        {current.detail ? (
           <div
             style={{
-              position: "absolute",
-              right: 10,
-              bottom: 8,
-              display: "flex",
-              gap: 4,
+              marginTop: 2,
+              fontSize: 11,
+              fontWeight: 800,
+              color: "rgba(255,255,255,0.82)",
+              opacity: 0.95,
             }}
           >
-            {items.map((it, i) => (
-              <span
-                key={it.id}
-                style={{
-                  width: i === safeIndex ? 10 : 6,
-                  height: 6,
-                  borderRadius: 999,
-                  backgroundColor:
-                    i === safeIndex
-                      ? accent
-                      : "rgba(255,255,255,0.35)",
-                  opacity: i === safeIndex ? 1 : 0.6,
-                  transition: "all 0.25s ease-out",
-                }}
-              />
-            ))}
+            {current.detail}
           </div>
-        )}
+        ) : null}
+
+        {/* little accent bar */}
+        <div
+          style={{
+            height: 2,
+            borderRadius: 999,
+            background: `linear-gradient(90deg, transparent, ${accent}, transparent)`,
+            boxShadow: `0 0 10px ${accent}55`,
+            marginTop: 4,
+          }}
+        />
       </div>
     </div>
   );

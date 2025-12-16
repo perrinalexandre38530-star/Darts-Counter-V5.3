@@ -273,11 +273,228 @@ function loadClockAggForProfile(profileId: string): ClockAgg {
 }
 
 /* ============================================================
+   ✅ KILLER — helpers d’agrégation depuis History.list()
+   -> On n’ajoute PAS de champs au type ActiveProfileStats (sinon TS crie),
+      mais on “attache” des champs via (stats as any).killer*
+============================================================ */
+
+type KillerAgg = {
+  sessions: number;
+  wins: number;
+  winRate01: number;
+  kills: number;
+  totalHits: number;
+  favNumberHits: number;
+  favSegmentHits: number;
+};
+
+function makeEmptyKillerAgg(): KillerAgg {
+  return {
+    sessions: 0,
+    wins: 0,
+    winRate01: 0,
+    kills: 0,
+    totalHits: 0,
+    favNumberHits: 0,
+    favSegmentHits: 0,
+  };
+}
+
+function isKillerMatch(match: any): boolean {
+  const summary: any = match?.summary ?? match ?? {};
+  const mode =
+    String(
+      summary?.mode ??
+        summary?.gameMode ??
+        summary?.game ??
+        summary?.kind ??
+        summary?.type ??
+        match?.mode ??
+        match?.game ??
+        match?.kind ??
+        match?.type ??
+        ""
+    ).toLowerCase();
+
+  if (mode.includes("killer")) return true;
+
+  const gameId = String(
+    summary?.gameId ?? match?.gameId ?? match?.id ?? ""
+  ).toLowerCase();
+  if (gameId.includes("killer")) return true;
+
+  return false;
+}
+
+function getMyPlayerKeyFromPlayers(
+  players: any[],
+  profileId: string
+): { me: any | null; key: string | null } {
+  if (!Array.isArray(players) || !players.length) return { me: null, key: null };
+
+  const me =
+    players.find(
+      (p: any) =>
+        p?.profileId === profileId ||
+        p?.playerId === profileId ||
+        p?.id === profileId
+    ) ?? null;
+
+  if (!me) return { me: null, key: null };
+
+  const key = String(me.profileId ?? me.playerId ?? me.id ?? profileId);
+  return { me, key };
+}
+
+function resolveWinnerForAnyGame(
+  summary: any,
+  me: any,
+  myKey: string,
+  detailedMe?: any
+): boolean {
+  let isWinner = false;
+
+  if (me?.isWinner === true || me?.winner === true) isWinner = true;
+  if ([me?.rank, me?.place, me?.position].some((v: any) => Number(v) === 1))
+    isWinner = true;
+  if (
+    typeof me?.result === "string" &&
+    me.result.toLowerCase().startsWith("win")
+  )
+    isWinner = true;
+  if (
+    typeof me?.outcome === "string" &&
+    me.outcome.toLowerCase().startsWith("win")
+  )
+    isWinner = true;
+
+  if (!isWinner && Array.isArray(summary?.rankings)) {
+    const r = summary.rankings.find((r: any) => {
+      const rk = String(r?.profileId ?? r?.playerId ?? r?.id ?? r?.key ?? "");
+      return rk === myKey;
+    });
+    if (r && [r.rank, r.place, r.position].some((v: any) => Number(v) === 1))
+      isWinner = true;
+  }
+
+  if (!isWinner && summary?.winnerId && String(summary.winnerId) === myKey) {
+    isWinner = true;
+  }
+
+  if (!isWinner && detailedMe) {
+    if (
+      [detailedMe.rank, detailedMe.place, detailedMe.position].some(
+        (v: any) => Number(v) === 1
+      )
+    )
+      isWinner = true;
+    if (detailedMe.isWinner === true) isWinner = true;
+    if (
+      typeof detailedMe.result === "string" &&
+      detailedMe.result.toLowerCase().startsWith("win")
+    )
+      isWinner = true;
+    if (
+      typeof detailedMe.outcome === "string" &&
+      detailedMe.outcome.toLowerCase().startsWith("win")
+    )
+      isWinner = true;
+  }
+
+  return isWinner;
+}
+
+function computeKillerAggFromMatches(
+  allMatches: any[],
+  profileId: string
+): KillerAgg {
+  const agg = makeEmptyKillerAgg();
+
+  const killerMatches = Array.isArray(allMatches)
+    ? allMatches.filter((m) => isKillerMatch(m))
+    : [];
+
+  if (!killerMatches.length) return agg;
+
+  const sorted = [...killerMatches].sort((a: any, b: any) => {
+    const ta = Number(a?.createdAt ?? a?.timestamp ?? a?.date ?? 0) || 0;
+    const tb = Number(b?.createdAt ?? b?.timestamp ?? b?.date ?? 0) || 0;
+    return ta - tb;
+  });
+
+  for (const match of sorted) {
+    const summary: any = match?.summary ?? match ?? {};
+    const players: any[] =
+      summary?.perPlayer ?? summary?.players ?? match?.players ?? [];
+
+    const { me, key: myKey } = getMyPlayerKeyFromPlayers(players, profileId);
+    if (!me || !myKey) continue;
+
+    const detailedAll: any = summary?.detailedByPlayer ?? null;
+    const detailedMe: any =
+      detailedAll &&
+      (detailedAll[myKey] ??
+        detailedAll[me.profileId as any] ??
+        detailedAll[me.playerId as any] ??
+        detailedAll[me.id as any] ??
+        detailedAll[String(me.profileId)] ??
+        detailedAll[String(me.playerId)] ??
+        detailedAll[String(me.id)]);
+
+    agg.sessions += 1;
+
+    const isWinner = resolveWinnerForAnyGame(summary, me, myKey, detailedMe);
+    if (isWinner) agg.wins += 1;
+
+    const killsRaw =
+      me?.kills ??
+      me?.stats?.kills ??
+      detailedMe?.kills ??
+      (summary?.killsByPlayer
+        ? (summary.killsByPlayer as any)[myKey]
+        : undefined) ??
+      (summary?.killerKillsByPlayer
+        ? (summary.killerKillsByPlayer as any)[myKey]
+        : undefined);
+
+    const kills = Number(killsRaw ?? 0) || 0;
+    agg.kills += kills;
+
+    const totalHitsRaw =
+      me?.totalHits ??
+      me?.stats?.totalHits ??
+      detailedMe?.totalHits ??
+      (summary?.totalHitsByPlayer
+        ? (summary.totalHitsByPlayer as any)[myKey]
+        : undefined);
+
+    const favNumberHitsRaw =
+      me?.favNumberHits ??
+      me?.stats?.favNumberHits ??
+      detailedMe?.favNumberHits ??
+      (summary?.favNumberHitsByPlayer
+        ? (summary.favNumberHitsByPlayer as any)[myKey]
+        : undefined);
+
+    const favSegmentHitsRaw =
+      me?.favSegmentHits ??
+      me?.stats?.favSegmentHits ??
+      detailedMe?.favSegmentHits ??
+      (summary?.favSegmentHitsByPlayer
+        ? (summary.favSegmentHitsByPlayer as any)[myKey]
+        : undefined);
+
+    agg.totalHits += Number(totalHitsRaw ?? 0) || 0;
+    agg.favNumberHits += Number(favNumberHitsRaw ?? 0) || 0;
+    agg.favSegmentHits += Number(favSegmentHitsRaw ?? 0) || 0;
+  }
+
+  agg.winRate01 = agg.sessions > 0 ? agg.wins / agg.sessions : 0;
+  return agg;
+}
+
+/* ============================================================
    buildStatsForProfile
-   - Rating DC (0.50–1.50) façon Elo simplifié
-   - Numéro favori (S20 / D19 / T5 / Bull / DBull)
-   - Vue globale alimentée par les vraies stats X01 multi + base
-   - Records X01 (best visit / best CO / min darts / best avg)
 ============================================================ */
 
 async function buildStatsForProfile(
@@ -290,8 +507,6 @@ async function buildStatsForProfile(
         try {
           const anyHistory: any = History as any;
           if (anyHistory.list) {
-            // 🔥 On prend TOUTES les parties, tous modes confondus
-            // (X01 duo, X01 multi, team, etc.) avec les joueurs.
             return await anyHistory.list({
               includePlayers: true,
             });
@@ -318,22 +533,23 @@ async function buildStatsForProfile(
     const gamesBase = Number((base as any)?.games ?? 0);
     const winsBase = Number((base as any)?.wins ?? 0);
 
-    const avg3Base = Number(
-      (base as any)?.avg3D ??
-        (base as any)?.avg3 ??
-        (base as any)?.avg_3d ??
-        0
-    ) || 0;
+    const avg3Base =
+      Number(
+        (base as any)?.avg3D ??
+          (base as any)?.avg3 ??
+          (base as any)?.avg_3d ??
+          0
+      ) || 0;
 
-    const bestVisitBase = Number(
-      (base as any)?.bestVisit ??
-        (base as any)?.best_visit ??
-        (base as any)?.recordBestVisit ??
-        (base as any)?.record_best_visit ??
-        0
-    ) || 0;
+    const bestVisitBase =
+      Number(
+        (base as any)?.bestVisit ??
+          (base as any)?.best_visit ??
+          (base as any)?.recordBestVisit ??
+          (base as any)?.record_best_visit ??
+          0
+      ) || 0;
 
-    // 🟡 BEST CO : on cherche un max de synonymes dans "base"
     const bestCheckoutBaseRaw =
       base && typeof base === "object"
         ? (base as any).bestCheckout ??
@@ -346,10 +562,8 @@ async function buildStatsForProfile(
           (base as any).record_best_checkout
         : 0;
 
-    const bestCheckoutBase =
-      Number(bestCheckoutBaseRaw ?? 0) || 0;
+    const bestCheckoutBase = Number(bestCheckoutBaseRaw ?? 0) || 0;
 
-    // 🟡 WINRATE : accepte winRate = 0–1 ou 0–100
     let winRateBase01 = 0;
     if (base && typeof base === "object" && (base as any).winRate != null) {
       const raw = Number((base as any).winRate);
@@ -358,13 +572,8 @@ async function buildStatsForProfile(
       }
     }
     const winRate01Base =
-      winRateBase01 > 0
-        ? winRateBase01
-        : gamesBase > 0
-        ? winsBase / gamesBase
-        : 0;
+      winRateBase01 > 0 ? winRateBase01 : gamesBase > 0 ? winsBase / gamesBase : 0;
 
-    // --------- Record global "min darts" (profil agrégé brut) ---------
     const minDartsCandidatesBase: number[] = [];
 
     const addMinCandidateBase = (v: any) => {
@@ -391,19 +600,13 @@ async function buildStatsForProfile(
 
       for (const key of Object.keys(b)) {
         const lk = key.toLowerCase();
-        if (lk.includes("min") && lk.includes("dart")) {
-          addMinCandidateBase(b[key]);
-        }
-        if (lk.includes("fastest") && lk.includes("leg")) {
-          addMinCandidateBase(b[key]);
-        }
+        if (lk.includes("min") && lk.includes("dart")) addMinCandidateBase(b[key]);
+        if (lk.includes("fastest") && lk.includes("leg")) addMinCandidateBase(b[key]);
       }
     }
 
     const minDartsRecordBase =
-      minDartsCandidatesBase.length > 0
-        ? Math.min(...minDartsCandidatesBase)
-        : 0;
+      minDartsCandidatesBase.length > 0 ? Math.min(...minDartsCandidatesBase) : 0;
 
     /* ============================================================
        X01 MULTI — AGRÉGATION + Rating DC + numéro favori
@@ -418,12 +621,10 @@ async function buildStatsForProfile(
     let multiBestCheckout = 0;
     let multiMinDarts = Infinity;
 
-    // Rating DC (0.50–1.50) basé sur perf vs attentes
     let ratingMatches = 0;
     let ratingSumResult = 0;
     let ratingSumExpected = 0;
 
-    // Numéro favori : cumul des hits par segment
     const favHitsGlobal: Record<string, number> = {};
 
     const addFavHits = (label: string, count: number) => {
@@ -439,21 +640,13 @@ async function buildStatsForProfile(
         if (!segVal || typeof segVal !== "object") continue;
 
         const segNum = Number(rawKey);
-        const baseLabel = Number.isNaN(segNum)
-          ? String(rawKey)
-          : String(segNum);
+        const baseLabel = Number.isNaN(segNum) ? String(rawKey) : String(segNum);
 
-        const sCount =
-          Number(segVal.s ?? segVal.single ?? segVal.S ?? 0) || 0;
-        const dCount =
-          Number(segVal.d ?? segVal.double ?? segVal.D ?? 0) || 0;
-        const tCount =
-          Number(segVal.t ?? segVal.triple ?? segVal.T ?? 0) || 0;
-        const bullCount =
-          Number(segVal.bull ?? segVal.Bull ?? segVal.b ?? 0) || 0;
-        const dBullCount =
-          Number(segVal.dbull ?? segVal.dBull ?? segVal.DBull ?? 0) ||
-          0;
+        const sCount = Number(segVal.s ?? segVal.single ?? segVal.S ?? 0) || 0;
+        const dCount = Number(segVal.d ?? segVal.double ?? segVal.D ?? 0) || 0;
+        const tCount = Number(segVal.t ?? segVal.triple ?? segVal.T ?? 0) || 0;
+        const bullCount = Number(segVal.bull ?? segVal.Bull ?? segVal.b ?? 0) || 0;
+        const dBullCount = Number(segVal.dbull ?? segVal.dBull ?? segVal.DBull ?? 0) || 0;
 
         if (bullCount) addFavHits("Bull", bullCount);
         if (dBullCount) addFavHits("DBull", dBullCount);
@@ -464,22 +657,18 @@ async function buildStatsForProfile(
       }
     };
 
-    // Meilleure série de victoires
     let bestWinStreak = 0;
     let currentStreak = 0;
 
     const multiSorted = [...multiMatches].sort((a: any, b: any) => {
-      const ta =
-        Number(a?.createdAt ?? a?.timestamp ?? a?.date ?? 0) || 0;
-      const tb =
-        Number(b?.createdAt ?? b?.timestamp ?? b?.date ?? 0) || 0;
+      const ta = Number(a?.createdAt ?? a?.timestamp ?? a?.date ?? 0) || 0;
+      const tb = Number(b?.createdAt ?? b?.timestamp ?? b?.date ?? 0) || 0;
       return ta - tb;
     });
 
     for (const match of multiSorted) {
       const summary: any = match.summary ?? match;
-      const players: any[] =
-        summary?.perPlayer ?? summary?.players ?? match.players ?? [];
+      const players: any[] = summary?.perPlayer ?? summary?.players ?? match.players ?? [];
 
       if (!players || !players.length) continue;
 
@@ -493,11 +682,8 @@ async function buildStatsForProfile(
 
       if (!me) continue;
 
-      const myKey = String(
-        me.profileId ?? me.playerId ?? me.id ?? profileId
-      );
+      const myKey = String(me.profileId ?? me.playerId ?? me.id ?? profileId);
 
-      // detailedByPlayer (utilisé à la fois pour la win et les hits)
       const detailedAll: any = summary?.detailedByPlayer ?? null;
       const detailedMe: any =
         detailedAll &&
@@ -511,96 +697,36 @@ async function buildStatsForProfile(
 
       multiSessions += 1;
 
-      // --- victoire ? (pile de fallbacks) ---
       let isWinner = false;
 
-      // 1) flags directs sur le joueur
       if (me.isWinner === true || me.winner === true) isWinner = true;
-      if (
-        [me.rank, me.place, me.position].some(
-          (v: any) => Number(v) === 1
-        )
-      ) {
-        isWinner = true;
-      }
-      if (
-        typeof me.result === "string" &&
-        me.result.toLowerCase().startsWith("win")
-      ) {
-        isWinner = true;
-      }
-      if (
-        typeof me.outcome === "string" &&
-        me.outcome.toLowerCase().startsWith("win")
-      ) {
-        isWinner = true;
-      }
+      if ([me.rank, me.place, me.position].some((v: any) => Number(v) === 1)) isWinner = true;
+      if (typeof me.result === "string" && me.result.toLowerCase().startsWith("win")) isWinner = true;
+      if (typeof me.outcome === "string" && me.outcome.toLowerCase().startsWith("win")) isWinner = true;
 
-      // 2) rankings dans summary
       if (!isWinner && Array.isArray(summary?.rankings)) {
         const r = summary.rankings.find((r: any) => {
-          const rk = String(
-            r.profileId ?? r.playerId ?? r.id ?? r.key ?? ""
-          );
+          const rk = String(r.profileId ?? r.playerId ?? r.id ?? r.key ?? "");
           return rk === myKey;
         });
-        if (
-          r &&
-          [r.rank, r.place, r.position].some(
-            (v: any) => Number(v) === 1
-          )
-        ) {
-          isWinner = true;
-        }
+        if (r && [r.rank, r.place, r.position].some((v: any) => Number(v) === 1)) isWinner = true;
       }
 
-      // 3) winnerId global
-      if (
-        !isWinner &&
-        summary &&
-        summary.winnerId &&
-        String(summary.winnerId) === myKey
-      ) {
+      if (!isWinner && summary && summary.winnerId && String(summary.winnerId) === myKey) {
         isWinner = true;
       }
 
-      // 4) 🔥 detailedByPlayer (comme dans tes autres dashboards)
       if (detailedMe && !isWinner) {
-        if (
-          [detailedMe.rank, detailedMe.place, detailedMe.position].some(
-            (v: any) => Number(v) === 1
-          )
-        ) {
-          isWinner = true;
-        }
-        if (detailedMe.isWinner === true) {
-          isWinner = true;
-        }
-        if (
-          typeof detailedMe.result === "string" &&
-          detailedMe.result.toLowerCase().startsWith("win")
-        ) {
-          isWinner = true;
-        }
-        if (
-          typeof detailedMe.outcome === "string" &&
-          detailedMe.outcome.toLowerCase().startsWith("win")
-        ) {
-          isWinner = true;
-        }
+        if ([detailedMe.rank, detailedMe.place, detailedMe.position].some((v: any) => Number(v) === 1)) isWinner = true;
+        if (detailedMe.isWinner === true) isWinner = true;
+        if (typeof detailedMe.result === "string" && detailedMe.result.toLowerCase().startsWith("win")) isWinner = true;
+        if (typeof detailedMe.outcome === "string" && detailedMe.outcome.toLowerCase().startsWith("win")) isWinner = true;
       }
 
       if (isWinner) multiWins += 1;
 
-      // --- avg3 joueur / adversaires ---
       let myAvg3 =
-        Number(
-          me.avg3D ??
-            me.avg3 ??
-            me.stats?.avg3D ??
-            me.stats?.avg3 ??
-            0
-        ) || 0;
+        Number(me.avg3D ?? me.avg3 ?? me.stats?.avg3D ?? me.stats?.avg3 ?? 0) || 0;
 
       if ((!myAvg3 || myAvg3 <= 0) && summary?.avg3ByPlayer) {
         const av = (summary.avg3ByPlayer as any)[myKey];
@@ -617,18 +743,10 @@ async function buildStatsForProfile(
       let oppAvgCount = 0;
       for (const opp of opponents) {
         let oa =
-          Number(
-            opp.avg3D ??
-              opp.avg3 ??
-              opp.stats?.avg3D ??
-              opp.stats?.avg3 ??
-              0
-          ) || 0;
+          Number(opp.avg3D ?? opp.avg3 ?? opp.stats?.avg3D ?? opp.stats?.avg3 ?? 0) || 0;
 
         if ((!oa || oa <= 0) && summary?.avg3ByPlayer) {
-          const ok = String(
-            opp.profileId ?? opp.playerId ?? opp.id ?? ""
-          );
+          const ok = String(opp.profileId ?? opp.playerId ?? opp.id ?? "");
           const av = (summary.avg3ByPlayer as any)[ok];
           if (av != null) oa = Number(av) || 0;
         }
@@ -638,10 +756,8 @@ async function buildStatsForProfile(
           oppAvgCount += 1;
         }
       }
-      const oppAvg =
-        oppAvgCount > 0 ? oppAvgSum / oppAvgCount : myAvg3 || avg3Base;
+      const oppAvg = oppAvgCount > 0 ? oppAvgSum / oppAvgCount : myAvg3 || avg3Base;
 
-      // --- Rating DC ---
       if (myAvg3 > 0 && oppAvg > 0) {
         const diff = myAvg3 - oppAvg;
         const expected = 1 / (1 + Math.pow(10, -diff / 15));
@@ -652,23 +768,13 @@ async function buildStatsForProfile(
         ratingSumExpected += expected;
       }
 
-      // --- best visit ---
-      let bv =
-        Number(
-          me.bestVisit ??
-            me.bestVisitScore ??
-            me.best_visit ??
-            0
-        ) || 0;
-
+      let bv = Number(me.bestVisit ?? me.bestVisitScore ?? me.best_visit ?? 0) || 0;
       if ((!bv || bv <= 0) && summary?.bestVisitByPlayer) {
         const v = (summary.bestVisitByPlayer as any)[myKey];
         if (v != null) bv = Number(v) || 0;
       }
-
       if (bv > multiBestVisit) multiBestVisit = bv;
 
-      // --- best checkout (best CO) ---
       let bco =
         Number(
           me.bestCheckout ??
@@ -685,10 +791,8 @@ async function buildStatsForProfile(
         const v = (summary.bestCheckoutByPlayer as any)[myKey];
         if (v != null) bco = Number(v) || 0;
       }
-
       if (bco > multiBestCheckout) multiBestCheckout = bco;
 
-      // --- min darts ---
       const dartsCandidates: number[] = [];
       const addD = (v: any) => {
         const n = Number(v);
@@ -710,38 +814,23 @@ async function buildStatsForProfile(
 
       if (dartsCandidates.length > 0) {
         const localMin = Math.min(...dartsCandidates);
-        if (localMin > 0 && localMin < multiMinDarts) {
-          multiMinDarts = localMin;
-        }
+        if (localMin > 0 && localMin < multiMinDarts) multiMinDarts = localMin;
       }
 
-      // --- Numéro favori / hits par segment ---
-      if ((me as any).hitsBySegment) {
-        accumulateHitsBySegment((me as any).hitsBySegment);
-      }
+      if ((me as any).hitsBySegment) accumulateHitsBySegment((me as any).hitsBySegment);
+      if (detailedMe && detailedMe.hitsBySegment) accumulateHitsBySegment(detailedMe.hitsBySegment);
+      if ((summary as any).hitsBySegment) accumulateHitsBySegment((summary as any).hitsBySegment);
 
-      if (detailedMe && detailedMe.hitsBySegment) {
-        accumulateHitsBySegment(detailedMe.hitsBySegment);
-      }
-
-      if ((summary as any).hitsBySegment) {
-        accumulateHitsBySegment((summary as any).hitsBySegment);
-      }
-
-      // --- meilleure série de victoires ---
       if (isWinner) {
         currentStreak += 1;
-        if (currentStreak > bestWinStreak) {
-          bestWinStreak = currentStreak;
-        }
+        if (currentStreak > bestWinStreak) bestWinStreak = currentStreak;
       } else {
         currentStreak = 0;
       }
     }
-    
+
     const hasMulti = multiSessions > 0;
 
-    // 🔁 Fallback : si aucun match multi détecté, on se rabat sur "base"
     if (!hasMulti && gamesBase > 0) {
       multiSessions = gamesBase;
       multiWins = winsBase;
@@ -749,27 +838,16 @@ async function buildStatsForProfile(
         multiTotalAvg3 = avg3Base * gamesBase;
         multiTotalAvg3Count = gamesBase;
       }
-      if (!multiBestVisit && bestVisitBase > 0) {
-        multiBestVisit = bestVisitBase;
-      }
-      if (!multiBestCheckout && bestCheckoutBase > 0) {
-        multiBestCheckout = bestCheckoutBase;
-      }
-      if (multiMinDarts === Infinity && minDartsRecordBase > 0) {
-        multiMinDarts = minDartsRecordBase;
-      }
+      if (!multiBestVisit && bestVisitBase > 0) multiBestVisit = bestVisitBase;
+      if (!multiBestCheckout && bestCheckoutBase > 0) multiBestCheckout = bestCheckoutBase;
+      if (multiMinDarts === Infinity && minDartsRecordBase > 0) multiMinDarts = minDartsRecordBase;
     }
 
-    // ======= VALLEURS DE RÉFÉRENCE POUR TOUTE L’APPLI =======
     const globalSessions = hasMulti ? multiSessions : gamesBase;
 
     const globalAvg3 =
-      multiTotalAvg3Count > 0
-        ? multiTotalAvg3 / multiTotalAvg3Count
-        : avg3Base;
+      multiTotalAvg3Count > 0 ? multiTotalAvg3 / multiTotalAvg3Count : avg3Base;
 
-    // %WIN GLOBAL : priorité au winRate du "base" (toutes les parties),
-    // sinon fallback sur les matchs X01 multi agrégés
     const globalWinRate =
       winRate01Base > 0
         ? winRate01Base
@@ -777,7 +855,6 @@ async function buildStatsForProfile(
         ? multiWins / multiSessions
         : 0;
 
-    // X01 MULTI : pour l’instant on se cale exactement sur la vue globale
     const x01MultiAvg3D = globalAvg3;
     const x01MultiWinrate = globalWinRate;
 
@@ -788,14 +865,12 @@ async function buildStatsForProfile(
         ? `${minDartsRecordBase}`
         : null;
 
-    // ---------- Rating DC final (0.50–1.50) ----------
     let ratingGlobal = 1.0;
 
     if (ratingMatches > 0) {
       const expectedPerMatch = ratingSumExpected / ratingMatches;
       const resultPerMatch = ratingSumResult / ratingMatches;
       const overPerf = resultPerMatch - expectedPerMatch;
-
       ratingGlobal = 1 + overPerf * 0.8;
     } else if (globalSessions > 0) {
       const overPerf = globalWinRate - 0.5;
@@ -805,91 +880,52 @@ async function buildStatsForProfile(
     if (ratingGlobal < 0.5) ratingGlobal = 0.5;
     if (ratingGlobal > 1.5) ratingGlobal = 1.5;
 
-    // ---------- Numéro favori ----------
     let favoriteNumberLabel: string | null = null;
     if (Object.keys(favHitsGlobal).length > 0) {
-      const sorted = Object.entries(favHitsGlobal).sort(
-        (a, b) => b[1] - a[1]
-      );
+      const sorted = Object.entries(favHitsGlobal).sort((a, b) => b[1] - a[1]);
       favoriteNumberLabel = sorted[0][0] || null;
     }
 
-    // ---------- Records X01 alimentés par X01 multi + base ----------
-    const recordBestVisitX01 = Math.max(
-      multiBestVisit,
-      bestVisitBase
-    );
+    const recordBestVisitX01 = Math.max(multiBestVisit, bestVisitBase);
+    const recordBestCOX01 = Math.max(multiBestCheckout, bestCheckoutBase);
 
-    // 🟡 ICI : best CO ne doit plus jamais rester à 0 si base en a un
-    const recordBestCOX01 = Math.max(
-      multiBestCheckout,
-      bestCheckoutBase
-    );
-
-    const recordMinDartsGlobal =
-      multiMinDarts !== Infinity ? multiMinDarts : 0;
-    const recordMinDarts501 =
-      recordMinDartsGlobal || minDartsRecordBase || 0;
+    const recordMinDartsGlobal = multiMinDarts !== Infinity ? multiMinDarts : 0;
+    const recordMinDarts501 = recordMinDartsGlobal || minDartsRecordBase || 0;
 
     const recordBestAvg3DX01 = Math.max(x01MultiAvg3D, avg3Base);
 
-    /* ============================================================
-       Training X01 agrégé
-    ============================================================= */
-
     const tAgg = loadTrainingAggForProfile(profileId);
-    const trainingAvg3D =
-      tAgg.sessions > 0 ? tAgg.sumAvg3D / tAgg.sessions : 0;
-
-    /* ============================================================
-       Cricket agrégé
-    ============================================================= */
+    const trainingAvg3D = tAgg.sessions > 0 ? tAgg.sumAvg3D / tAgg.sessions : 0;
 
     const cricketMatches = Number(cricket?.matchesTotal ?? 0);
-    const cricketBestPoints = Number(
-      cricket?.bestPointsInMatch ?? 0
-    );
+    const cricketBestPoints = Number(cricket?.bestPointsInMatch ?? 0);
     const cricketWinsTotal = Number(cricket?.winsTotal ?? 0);
     const cricketWinRate =
-      cricketMatches > 0
-        ? cricketWinsTotal / cricketMatches
-        : 0;
-
-    /* ============================================================
-       Tour de l’Horloge agrégé
-    ============================================================= */
+      cricketMatches > 0 ? cricketWinsTotal / cricketMatches : 0;
 
     const cAgg = loadClockAggForProfile(profileId);
     const clockTargetsHit = cAgg.targetsHitTotal;
     const clockSuccessRate =
-      cAgg.attemptsTotal > 0
-        ? cAgg.targetsHitTotal / cAgg.attemptsTotal
-        : 0;
+      cAgg.attemptsTotal > 0 ? cAgg.targetsHitTotal / cAgg.attemptsTotal : 0;
     const clockTotalTimeSec = cAgg.totalTimeSec;
     const clockBestStreak = cAgg.bestStreak;
 
-    /* ============================================================
-       Construction de l'objet final ActiveProfileStats
-    ============================================================= */
+    const killerAgg = computeKillerAggFromMatches(multiMatches, profileId);
 
     const s: ActiveProfileStats = {
-      // ----- VUE GLOBALE -----
       ratingGlobal,
-      winrateGlobal: globalWinRate,   // ✅ %WIN vue globale
+      winrateGlobal: globalWinRate,
       avg3DGlobal: globalAvg3,
       sessionsGlobal: globalSessions,
       favoriteNumberLabel,
 
-      // ----- RECORDS -----
       recordBestVisitX01,
-      recordBestCOX01,               // ✅ BEST CO Records
-      recordMinDarts501:
-        recordMinDarts501 > 0 ? recordMinDarts501 : null,
+      recordBestCOX01,
+      recordMinDarts501: recordMinDarts501 > 0 ? recordMinDarts501 : null,
       recordBestAvg3DX01,
       recordBestStreak: bestWinStreak > 0 ? bestWinStreak : null,
       recordBestCricketScore: cricketBestPoints || null,
 
-      // ----- ONLINE (placeholder) -----
       onlineMatches: 0,
       onlineWinrate: 0,
       onlineAvg3D: 0,
@@ -898,15 +934,13 @@ async function buildStatsForProfile(
       onlineRank: null,
       onlineBestRank: null,
 
-      // ----- X01 MULTI (card X01 multi) -----
       x01MultiAvg3D,
       x01MultiSessions: globalSessions,
-      x01MultiWinrate,               // ✅ %WIN X01 multi
+      x01MultiWinrate,
       x01MultiBestVisit: recordBestVisitX01,
-      x01MultiBestCO: recordBestCOX01, // ✅ BEST CO X01 multi
+      x01MultiBestCO: recordBestCOX01,
       x01MultiMinDartsLabel,
 
-      // ----- CRICKET -----
       cricketPointsPerRound: cricketBestPoints || 0,
       cricketHitsTotal: cricketMatches || 0,
       cricketCloseRate: cricketWinRate || 0,
@@ -914,7 +948,6 @@ async function buildStatsForProfile(
       cricketAvgClose201918: 0,
       cricketOpenings: cricketMatches || 0,
 
-      // ----- TRAINING X01 -----
       trainingAvg3D,
       trainingHitsS: tAgg.hitsS || 0,
       trainingHitsD: tAgg.hitsD || 0,
@@ -922,12 +955,20 @@ async function buildStatsForProfile(
       trainingGoalSuccessRate: 0,
       trainingBestCO: tAgg.bestCheckout ?? 0,
 
-      // ----- HORLOGE -----
       clockTargetsHit,
       clockSuccessRate,
       clockTotalTimeSec,
       clockBestStreak,
     };
+
+    // ✅ Attache les stats KILLER (sans toucher au type ActiveProfileStats)
+    ;(s as any).killerSessions = killerAgg.sessions;
+    ;(s as any).killerWins = killerAgg.wins;
+    ;(s as any).killerWinrate = killerAgg.winRate01;
+    ;(s as any).killerKills = killerAgg.kills;
+    ;(s as any).killerTotalHits = killerAgg.totalHits;
+    ;(s as any).killerFavNumberHits = killerAgg.favNumberHits;
+    ;(s as any).killerFavSegmentHits = killerAgg.favSegmentHits;
 
     return s;
   } catch (err) {
@@ -952,10 +993,6 @@ function fmtPctHome01(v?: number | null): string {
   return `${(v * 100).toFixed(0)}%`;
 }
 
-/**
- * Détails en dessous du ticker principal
- * -> on renforce "Derniers records" + "Dernier match local" + "Stats du mois"
- */
 function buildTickerDetailRows(
   tickerId: string,
   s: ActiveProfileStats,
@@ -964,9 +1001,14 @@ function buildTickerDetailRows(
   const rows: DetailRow[] = [];
 
   const trainingHitsTotal =
-    (s.trainingHitsS ?? 0) +
-    (s.trainingHitsD ?? 0) +
-    (s.trainingHitsT ?? 0);
+    (s.trainingHitsS ?? 0) + (s.trainingHitsD ?? 0) + (s.trainingHitsT ?? 0);
+
+  const killerSessions = Number((s as any)?.killerSessions ?? 0) || 0;
+  const killerWinrate01 = Number((s as any)?.killerWinrate ?? 0) || 0;
+  const killerKills = Number((s as any)?.killerKills ?? 0) || 0;
+  const killerTotalHits = Number((s as any)?.killerTotalHits ?? 0) || 0;
+  const killerFavNumberHits = Number((s as any)?.killerFavNumberHits ?? 0) || 0;
+  const killerFavSegmentHits = Number((s as any)?.killerFavSegmentHits ?? 0) || 0;
 
   switch (tickerId) {
     case "last-records": {
@@ -1027,8 +1069,7 @@ function buildTickerDetailRows(
 
         const snap = getRecordSnapshotFromStats(s);
         const minDarts =
-          s.x01MultiMinDartsLabel &&
-          Number(s.x01MultiMinDartsLabel) > 0
+          s.x01MultiMinDartsLabel && Number(s.x01MultiMinDartsLabel) > 0
             ? Number(s.x01MultiMinDartsLabel)
             : snap.minDarts;
 
@@ -1074,6 +1115,37 @@ function buildTickerDetailRows(
       break;
     }
 
+    case "killer-summary": {
+      // ✅ IMPORTANT: on l’affiche même si 0 (comme ça tu le vois toujours)
+      rows.push(
+        {
+          label: t("home.detail.killerSessions", "sessions killer"),
+          value: fmtNumHome(killerSessions, 0),
+        },
+        {
+          label: t("home.detail.killerWinrate", "win% killer"),
+          value: fmtPctHome01(killerWinrate01),
+        },
+        {
+          label: t("home.detail.killerKills", "kills"),
+          value: fmtNumHome(killerKills, 0),
+        },
+        {
+          label: t("home.detail.killerHits", "hits total"),
+          value: fmtNumHome(killerTotalHits, 0),
+        },
+        {
+          label: t("home.detail.killerFavNumberHits", "hits n° favori"),
+          value: fmtNumHome(killerFavNumberHits, 0),
+        },
+        {
+          label: t("home.detail.killerFavSegmentHits", "hits segment favori"),
+          value: fmtNumHome(killerFavSegmentHits, 0),
+        }
+      );
+      break;
+    }
+
     case "month-summary": {
       const sessions = s.sessionsGlobal ?? 0;
       if (sessions > 0) {
@@ -1113,28 +1185,27 @@ function buildTickerDetailRows(
    Blocs visuels pour les 2 mini-cards
 ============================================================ */
 
-// Image de fond pour la mini-card STATS (gauche) — différente du bandeau
 function pickStatsBackgroundForTicker(tickerId: string): string {
   switch (tickerId) {
     case "last-records":
-      return pickTickerImage("leaderboard"); // bandeau = records
+      return pickTickerImage("leaderboard");
     case "last-local-match":
-      return pickTickerImage("training"); // bandeau = local
+      return pickTickerImage("training");
     case "last-online-match":
-      return pickTickerImage("leaderboard"); // bandeau = onlineLast
+      return pickTickerImage("leaderboard");
     case "online-leader":
-      return pickTickerImage("onlineLast"); // bandeau = leaderboard
+      return pickTickerImage("onlineLast");
     case "training-summary":
-      return pickTickerImage("global"); // bandeau = training
+      return pickTickerImage("global");
+    case "killer-summary":
+      return pickTickerImage("local");
     case "month-summary":
-      return pickTickerImage("training"); // bandeau = global
+      return pickTickerImage("training");
     case "tip-of-day":
     default:
-      return pickTickerImage("global"); // bandeau = tip
+      return pickTickerImage("global");
   }
 }
-
-// -------- Mini-carousel pour ASTUCES / PUBS / NOUVEAUTÉS (droite) --------
 
 type TipSlide = {
   id: string;
@@ -1144,9 +1215,7 @@ type TipSlide = {
   backgroundImage: string;
 };
 
-function buildTipSlides(
-  t: (k: string, d?: string) => string
-): TipSlide[] {
+function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
   return [
     {
       id: "tip-training",
@@ -1204,6 +1273,7 @@ function buildTipSlides(
 /* ============================================================
    Petit bloc KPI pour le détail du ticker
 ============================================================ */
+
 type DetailKpiProps = {
   label: string;
   value: string;
@@ -1254,7 +1324,7 @@ function DetailKpi({ label, value, primary, theme }: DetailKpiProps) {
           fontWeight: 900,
           color: primary,
           lineHeight: 1.1,
-          whiteSpace: "pre-line", // 🔹 pour afficher les \n en vraie nouvelle ligne
+          whiteSpace: "pre-line",
         }}
       >
         {value}
@@ -1269,15 +1339,11 @@ function getRecordSnapshotFromStats(s: ActiveProfileStats) {
   const bestAvg = s.recordBestAvg3DX01 || s.x01MultiAvg3D || 0;
   const minDarts =
     s.recordMinDarts501 ??
-    (s.x01MultiMinDartsLabel
-      ? Number(s.x01MultiMinDartsLabel)
-      : 0);
+    (s.x01MultiMinDartsLabel ? Number(s.x01MultiMinDartsLabel) : 0);
 
   return { bestVisit, bestCo, bestAvg, minDarts };
 }
 
-
-// Bandeau arcade : messages + images différentes (textes traduits via t)
 function buildArcadeItems(
   _store: Store,
   profile: Profile | null,
@@ -1299,10 +1365,8 @@ function buildArcadeItems(
   const onlineBestRank = s.onlineBestRank ?? s.onlineRank ?? null;
 
   const trainingHitsTotal =
-    (s.trainingHitsS ?? 0) +
-    (s.trainingHitsD ?? 0) +
-    (s.trainingHitsT ?? 0);
-    const trainingGoalPct =
+    (s.trainingHitsS ?? 0) + (s.trainingHitsD ?? 0) + (s.trainingHitsT ?? 0);
+  const trainingGoalPct =
     s.trainingGoalSuccessRate != null
       ? Math.round(s.trainingGoalSuccessRate * 100)
       : null;
@@ -1317,7 +1381,13 @@ function buildArcadeItems(
     recordSnap.bestAvg > 0 ||
     recordSnap.minDarts > 0;
 
-  // ---------- 1) Derniers records ----------
+  const killerSessions = Number((s as any)?.killerSessions ?? 0) || 0;
+  const killerWinratePct =
+    (s as any)?.killerWinrate != null
+      ? Math.round(Number((s as any).killerWinrate || 0) * 100)
+      : null;
+  const killerKills = Number((s as any)?.killerKills ?? 0) || 0;
+
   items.push({
     id: "last-records",
     title: t("home.ticker.records", "Derniers records"),
@@ -1330,24 +1400,19 @@ function buildArcadeItems(
           "home.ticker.records.text.empty",
           "Aucun record pour l’instant, lance un premier match pour en créer."
         ),
-        detail: hasRecordX01
-        ? [
-            recordSnap.bestVisit
-              ? `Best visit : ${recordSnap.bestVisit}`
-              : null,
-            recordSnap.bestCo ? `Best CO : ${recordSnap.bestCo}` : null,
-            recordSnap.minDarts
-              ? `Min darts : ${recordSnap.minDarts}`
-              : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")
-        : "",
+    detail: hasRecordX01
+      ? [
+          recordSnap.bestVisit ? `Best visit : ${recordSnap.bestVisit}` : null,
+          recordSnap.bestCo ? `Best CO : ${recordSnap.bestCo}` : null,
+          recordSnap.minDarts ? `Min darts : ${recordSnap.minDarts}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : "",
     backgroundImage: pickTickerImage("records"),
     accentColor: "#F6C256",
   });
 
-  // ---------- 2) Dernier match / activité locale ----------
   items.push({
     id: "last-local-match",
     title: t("home.ticker.localLast", "Dernier match local"),
@@ -1361,13 +1426,11 @@ function buildArcadeItems(
             "home.ticker.localLast.text.empty",
             "Aucun match local pour l’instant, invite des amis et lance une partie."
           ),
-    detail:
-      x01MultiSessions > 0 ? `${x01MultiSessions} matchs X01 multi` : "",
+    detail: x01MultiSessions > 0 ? `${x01MultiSessions} matchs X01 multi` : "",
     backgroundImage: pickTickerImage("local"),
     accentColor: "#52FFC4",
   });
 
-  // ---------- 3) Dernier match / activité online ----------
   items.push({
     id: "last-online-match",
     title: t("home.ticker.onlineLast", "Dernier match online"),
@@ -1385,9 +1448,7 @@ function buildArcadeItems(
       onlineMatches > 0
         ? [
             `${onlineMatches} matchs`,
-            onlineWinratePct != null
-              ? `${onlineWinratePct}% de victoires`
-              : null,
+            onlineWinratePct != null ? `${onlineWinratePct}% de victoires` : null,
           ]
             .filter(Boolean)
             .join(" · ")
@@ -1396,7 +1457,6 @@ function buildArcadeItems(
     accentColor: "#5ED3FF",
   });
 
-  // ---------- 4) Leader / meilleur rang online ----------
   items.push({
     id: "online-leader",
     title: t("home.ticker.onlineLeader", "Leader du classement"),
@@ -1414,7 +1474,6 @@ function buildArcadeItems(
     accentColor: "#FF5E9E",
   });
 
-  // ---------- 5) Training X01 ----------
   items.push({
     id: "training-summary",
     title: t("home.ticker.training", "Training du moment"),
@@ -1436,7 +1495,34 @@ function buildArcadeItems(
     accentColor: "#9EFF5E",
   });
 
-  // ---------- 6) Stats globales / profil ----------
+  // ✅ NEW: KILLER dans le ticker (toujours présent)
+  items.push({
+    id: "killer-summary",
+    title: t("home.ticker.killer", "Killer du moment"),
+    text:
+      killerSessions > 0
+        ? t(
+            "home.ticker.killer.text.dynamic",
+            `Tu as joué ${killerSessions} parties Killer sur ce profil.`
+          )
+        : t(
+            "home.ticker.killer.text.empty",
+            "Aucune partie Killer enregistrée pour l’instant, lance un match pour remplir tes stats."
+          ),
+    detail:
+      killerSessions > 0
+        ? [
+            `${killerSessions} parties`,
+            killerWinratePct != null ? `${killerWinratePct}% win` : null,
+            killerKills > 0 ? `${killerKills} kills` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        : "",
+    backgroundImage: pickTickerImage("local"),
+    accentColor: "#FF7A18",
+  });
+
   items.push({
     id: "month-summary",
     title: t("home.ticker.month", "Stats du profil"),
@@ -1461,7 +1547,6 @@ function buildArcadeItems(
     accentColor: "#F6C256",
   });
 
-  // ---------- 7) Astuce du jour ----------
   if (profile) {
     items.push({
       id: "tip-of-day",
@@ -1476,6 +1561,32 @@ function buildArcadeItems(
   }
 
   return items;
+}
+
+function ensureKillerTickerItemFirst(
+  list: ArcadeTickerItem[],
+  t: (k: string, d?: string) => string,
+  _themePrimary?: string
+): ArcadeTickerItem[] {
+  const items = Array.isArray(list) ? [...list] : [];
+
+  const killerFallback: ArcadeTickerItem = {
+    id: "killer-summary",
+    title: t("home.ticker.killer", "Killer du moment"),
+    text: t(
+      "home.ticker.killer.text.empty",
+      "Aucune partie Killer enregistrée pour l’instant, lance un match pour remplir tes stats."
+    ),
+    detail: "",
+    backgroundImage: pickTickerImage("local"),
+    accentColor: "#FF7A18",
+  };
+
+  const existing = items.find((it) => it?.id === "killer-summary") ?? null;
+  const killerItem = existing ?? killerFallback;
+
+  const without = items.filter((it) => it?.id && it.id !== "killer-summary");
+  return [killerItem, ...without];
 }
 
 /* =============================================================
@@ -1508,14 +1619,12 @@ export default function Home({ store, go }: Props) {
 
   const activeProfile = useMemo(() => getActiveProfile(store), [store]);
 
-  const [stats, setStats] = useState<ActiveProfileStats>(
-    () => emptyActiveProfileStats()
+  const [stats, setStats] = useState<ActiveProfileStats>(() =>
+    emptyActiveProfileStats()
   );
 
-  // index du ticker pour le bloc détail (synchronisé sur ArcadeTicker)
   const [tickerIndex, setTickerIndex] = useState(0);
 
-  // mini-carousel Astuce/Pub/News
   const [tipIndex, setTipIndex] = useState(0);
   const [tipTouchStartX, setTipTouchStartX] = useState<number | null>(null);
 
@@ -1537,12 +1646,39 @@ export default function Home({ store, go }: Props) {
     };
   }, [activeProfile?.id]);
 
-  const tickerItems = useMemo(
+    // ------------------------------------------------------------
+  // Ticker items (✅ on force Killer en 1er + on utilise CETTE liste partout)
+  // ------------------------------------------------------------
+
+  const tickerItemsRaw = useMemo(
     () => buildArcadeItems(store, activeProfile, stats, t),
     [store, activeProfile, stats, t]
   );
 
-  // Auto-rotation du bloc détail pour rester synchro avec le bandeau
+  const tickerItems = useMemo(() => {
+    const safe = ensureKillerTickerItemFirst(tickerItemsRaw, t, theme.primary);
+
+    // DEBUG console (utile pour vérifier en prod mobile aussi)
+    try {
+      console.log(
+        "[Home][Ticker] items:",
+        safe.map((x) => x.id).join(" | ")
+      );
+    } catch {}
+
+    return safe;
+  }, [tickerItemsRaw, t, theme.primary]);
+
+  // ✅ Quand la liste change (ou profil change), on revient au 1er slide (Killer)
+  useEffect(() => {
+    if (!tickerItems.length) {
+      setTickerIndex(0);
+      return;
+    }
+    setTickerIndex(0);
+  }, [activeProfile?.id, tickerItems.length]);
+
+  // ✅ Auto-rotation basée sur la liste UTILISÉE
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!tickerItems.length) return;
@@ -1556,7 +1692,7 @@ export default function Home({ store, go }: Props) {
     return () => window.clearInterval(id);
   }, [tickerItems.length]);
 
-  // clamp / reset l'index quand la liste change
+  // ✅ Clamp index si la taille change
   useEffect(() => {
     if (!tickerItems.length) {
       setTickerIndex(0);
@@ -1565,6 +1701,7 @@ export default function Home({ store, go }: Props) {
     setTickerIndex((i) => (i >= tickerItems.length ? 0 : i));
   }, [tickerItems.length]);
 
+  // ✅ Slide courant basé sur la liste UTILISÉE
   const currentTicker: ArcadeTickerItem | null =
     tickerItems.length > 0
       ? tickerItems[Math.min(tickerIndex, tickerItems.length - 1)]
@@ -1576,10 +1713,8 @@ export default function Home({ store, go }: Props) {
   }, [currentTicker?.id, stats, t]);
 
   const hasDetailStats = detailRows.length > 0;
-  const detailAccent =
-    currentTicker?.accentColor ?? theme.primary ?? "#F6C256";
+  const detailAccent = currentTicker?.accentColor ?? theme.primary ?? "#F6C256";
 
-  // Si pas de stats => card gauche = message général
   const statsTitle = hasDetailStats
     ? currentTicker?.title ?? ""
     : t("home.detail.stats.title", "Stats du profil");
@@ -1594,10 +1729,8 @@ export default function Home({ store, go }: Props) {
     ? pickStatsBackgroundForTicker(currentTicker.id)
     : "";
 
-  // -------- Mini-carousel Astuces / Pubs / News (droite) --------
   const tipSlides = useMemo(() => buildTipSlides(t), [t]);
 
-  // clamp tipIndex si la taille change
   useEffect(() => {
     if (!tipSlides.length) {
       setTipIndex(0);
@@ -1606,13 +1739,10 @@ export default function Home({ store, go }: Props) {
     setTipIndex((i) => (i >= tipSlides.length ? 0 : i));
   }, [tipSlides.length]);
 
-  // Auto-slide du mini-carousel Astuce/Pub/News
   useEffect(() => {
     if (typeof window === "undefined" || !tipSlides.length) return;
     const id = window.setInterval(() => {
-      setTipIndex((i) =>
-        tipSlides.length ? (i + 1) % tipSlides.length : 0
-      );
+      setTipIndex((i) => (tipSlides.length ? (i + 1) % tipSlides.length : 0));
     }, DETAIL_INTERVAL_MS);
     return () => window.clearInterval(id);
   }, [tipSlides.length]);
@@ -1639,13 +1769,8 @@ export default function Home({ store, go }: Props) {
 
     setTipIndex((prev) => {
       if (!tipSlides.length) return 0;
-      if (dx < 0) {
-        // swipe gauche => slide suivant
-        return (prev + 1) % tipSlides.length;
-      } else {
-        // swipe droite => slide précédent
-        return (prev - 1 + tipSlides.length) % tipSlides.length;
-      }
+      if (dx < 0) return (prev + 1) % tipSlides.length;
+      return (prev - 1 + tipSlides.length) % tipSlides.length;
     });
 
     setTipTouchStartX(null);
@@ -1663,12 +1788,7 @@ export default function Home({ store, go }: Props) {
         boxSizing: "border-box",
       }}
     >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: PAGE_MAX_WIDTH,
-        }}
-      >
+      <div style={{ width: "100%", maxWidth: PAGE_MAX_WIDTH }}>
         <style dangerouslySetInnerHTML={{ __html: homeHeaderCss }} />
 
         {/* Haut de page */}
@@ -1679,9 +1799,7 @@ export default function Home({ store, go }: Props) {
             marginBottom: 16,
             background:
               "linear-gradient(135deg, rgba(8,10,20,0.98), rgba(14,18,34,0.98))",
-            border: `1px solid ${
-              theme.borderSoft ?? "rgba(255,255,255,0.10)"
-            }`,
+            border: `1px solid ${theme.borderSoft ?? "rgba(255,255,255,0.10)"}`,
             boxShadow: "0 20px 40px rgba(0,0,0,0.7)",
             display: "flex",
             flexDirection: "column",
@@ -1742,22 +1860,17 @@ export default function Home({ store, go }: Props) {
 
         {/* Petit bandeau arcade (auto-slide interne) */}
         <ArcadeTicker
-          items={tickerItems}
+          items={tickerItems}                 // ✅ IMPORTANT
+          activeIndex={tickerIndex}
           intervalMs={DETAIL_INTERVAL_MS}
           onIndexChange={(index: number) => {
             if (!tickerItems.length) return;
-            const safe = Math.min(
-              Math.max(index, 0),
-              tickerItems.length - 1
-            );
+            const safe = Math.min(Math.max(index, 0), tickerItems.length - 1);
             setTickerIndex(safe);
           }}
           onActiveIndexChange={(index: number) => {
             if (!tickerItems.length) return;
-            const safe = Math.min(
-              Math.max(index, 0),
-              tickerItems.length - 1
-            );
+            const safe = Math.min(Math.max(index, 0), tickerItems.length - 1);
             setTickerIndex(safe);
           }}
         />
@@ -1769,21 +1882,14 @@ export default function Home({ store, go }: Props) {
               marginTop: 10,
               marginBottom: 10,
               borderRadius: 22,
-              border: `1px solid ${
-                theme.borderSoft ?? "rgba(255,255,255,0.12)"
-              }`,
+              border: `1px solid ${theme.borderSoft ?? "rgba(255,255,255,0.12)"}`,
               boxShadow: "0 18px 40px rgba(0,0,0,0.85)",
               padding: 8,
               background:
                 "radial-gradient(circle at top, rgba(255,255,255,0.06), rgba(3,4,10,1))",
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-              }}
-            >
+            <div style={{ display: "flex", gap: 8 }}>
               {/* --------- Card gauche : STATS du slide --------- */}
               <div
                 style={{
@@ -1807,7 +1913,7 @@ export default function Home({ store, go }: Props) {
                     inset: 0,
                     background:
                       "linear-gradient(130deg, rgba(0,0,0,0.85), rgba(0,0,0,0.45))",
-                    pointerEvents: "none", // 🔑 ne bloque aucun clic
+                    pointerEvents: "none",
                   }}
                 />
                 <div
@@ -1888,7 +1994,7 @@ export default function Home({ store, go }: Props) {
                     inset: 0,
                     background:
                       "linear-gradient(230deg, rgba(0,0,0,0.9), rgba(0,0,0,0.4))",
-                    pointerEvents: "none", // 🔑 idem ici
+                    pointerEvents: "none",
                   }}
                 />
                 <div
@@ -1947,57 +2053,37 @@ export default function Home({ store, go }: Props) {
             gap: 14,
           }}
         >
-          {/* PROFILS → onglet "profiles" */}
           <HomeBigButton
             label={t("home.nav.profiles", "Profils")}
-            subtitle={t(
-              "home.nav.profiles.desc",
-              "Profils locaux, avatars & BOTS"
-            )}
+            subtitle={t("home.nav.profiles.desc", "Profils locaux, avatars & BOTS")}
             icon="user"
             onClick={() => go("profiles")}
           />
 
-          {/* LOCAL → onglet "games" (menu des jeux locaux) */}
           <HomeBigButton
             label={t("home.nav.local", "Local")}
-            subtitle={t(
-              "home.nav.local.desc",
-              "Joue en présentiel sur cette cible"
-            )}
+            subtitle={t("home.nav.local.desc", "Joue en présentiel sur cette cible")}
             icon="target"
             onClick={() => go("games")}
           />
 
-          {/* ONLINE → onglet "friends" (salons / duels online) */}
           <HomeBigButton
             label={t("home.nav.online", "Online")}
-            subtitle={t(
-              "home.nav.online.desc",
-              "Matchs à distance avec tes amis"
-            )}
+            subtitle={t("home.nav.online.desc", "Matchs à distance avec tes amis")}
             icon="globe"
             onClick={() => go("friends")}
           />
 
-          {/* STATS → onglet "stats" */}
           <HomeBigButton
             label={t("home.nav.stats", "Stats")}
-            subtitle={t(
-              "home.nav.stats.desc",
-              "Dashboards, courbes, historique"
-            )}
+            subtitle={t("home.nav.stats.desc", "Dashboards, courbes, historique")}
             icon="stats"
             onClick={() => go("stats")}
           />
 
-          {/* RÉGLAGES → onglet "settings" */}
           <HomeBigButton
             label={t("home.nav.settings", "Réglages")}
-            subtitle={t(
-              "home.nav.settings.desc",
-              "Thèmes, langue, reset complet"
-            )}
+            subtitle={t("home.nav.settings.desc", "Thèmes, langue, reset complet")}
             icon="settings"
             onClick={() => go("settings")}
           />
@@ -2080,7 +2166,7 @@ function HomeBigButton({ label, subtitle, icon, onClick }: HomeBtnProps) {
   return (
     <button
       type="button"
-      onClick={onClick} // 🔑 plus de preventDefault / stopPropagation
+      onClick={onClick}
       style={{
         position: "relative",
         zIndex: 20,
@@ -2143,9 +2229,7 @@ function HomeBigButton({ label, subtitle, icon, onClick }: HomeBtnProps) {
           width: 18,
           height: 18,
           borderRadius: "50%",
-          border: `1px solid ${
-            theme.borderSoft ?? "rgba(255,255,255,0.4)"
-          }`,
+          border: `1px solid ${theme.borderSoft ?? "rgba(255,255,255,0.4)"}`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -2158,4 +2242,3 @@ function HomeBigButton({ label, subtitle, icon, onClick }: HomeBtnProps) {
     </button>
   );
 }
-

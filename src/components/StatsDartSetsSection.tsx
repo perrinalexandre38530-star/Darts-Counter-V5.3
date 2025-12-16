@@ -18,6 +18,7 @@ import { getDartSetsForProfile, type DartSet } from "../lib/dartSetsStore";
 import { dartPresets } from "../lib/dartPresets";
 import { getX01StatsByDartSetForProfile } from "../lib/statsByDartSet";
 import { History } from "../lib/history";
+import { loadStore } from "../lib/storage";
 
 import {
   ResponsiveContainer,
@@ -432,7 +433,31 @@ export default function StatsDartSetsSection(props: {
       }
 
       try {
-        const all = await History.list?.();
+        // ✅ Robust: agrège History (IDB) + store.history (legacy)
+        const [apiList, storeAny] = await Promise.all([
+          History.list?.(),
+          loadStore<any>().catch(() => null),
+        ]);
+
+        const memList = Array.isArray(storeAny?.history) ? storeAny.history : [];
+        const merged = [...(apiList || []), ...memList];
+
+        // dédoublonne par id (garde le plus récent)
+        const byId = new Map<string, any>();
+        for (const r of merged) {
+          const id = String(r?.id ?? "");
+          if (!id) continue;
+          const old = byId.get(id);
+          if (!old) {
+            byId.set(id, r);
+            continue;
+          }
+          const tNew = Number(r?.updatedAt ?? r?.createdAt ?? 0);
+          const tOld = Number(old?.updatedAt ?? old?.createdAt ?? 0);
+          if (tNew >= tOld) byId.set(id, r);
+        }
+
+        const all = Array.from(byId.values());
         const map = buildRecentMatchesMap(all || [], activeProfileId);
         if (mounted) setRecentBySet(map);
       } catch {

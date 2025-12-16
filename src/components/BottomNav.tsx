@@ -1,8 +1,21 @@
 import React from "react";
 import { useTheme } from "../contexts/ThemeContext";
 
-type TabKey = "home" | "games" | "profiles" | "friends" | "stats" | "settings";
-type NavItem = { k: TabKey; label: string; icon: React.ReactNode };
+/**
+ * BottomNav
+ * - Le bouton "Stats" ouvre le menu StatsShell (puis accès au Hub).
+ * - Visuellement, l’onglet "Stats" reste actif quand on est dans statsHub.
+ */
+type TabKey =
+  | "home"
+  | "games"
+  | "profiles"
+  | "friends"
+  | "stats"
+  | "statsHub"
+  | "settings";
+
+type NavItem = { k: Exclude<TabKey, "statsHub">; label: string; icon: React.ReactNode };
 
 function Icon({ name, size = 22 }: { name: TabKey; size?: number }) {
   const p = {
@@ -63,6 +76,7 @@ function Icon({ name, size = 22 }: { name: TabKey; size?: number }) {
       );
 
     case "stats":
+    case "statsHub": // ✅ même icône
       return (
         <svg width={size} height={size} viewBox="0 0 24 24">
           <path {...p} d="M4 20V7" />
@@ -115,8 +129,15 @@ export default function BottomNav({
     { k: "settings", label: "Réglages", icon: <Icon name="settings" /> },
   ];
 
-  const tap = (k: TabKey) => {
+  const tap = (k: NavItem["k"]) => {
     (navigator as any)?.vibrate?.(8);
+
+    // Stats -> ouvre le menu (StatsShell)
+    if (k === "stats") {
+      onChange("stats");
+      return;
+    }
+
     onChange(k);
   };
 
@@ -131,7 +152,10 @@ export default function BottomNav({
       }}
     >
       {tabs.map((t) => {
-        const active = value === t.k;
+        // ✅ onglet Stats actif aussi quand on est dans statsHub
+        const active =
+          value === t.k || (t.k === "stats" && value === "statsHub");
+
         const halo = active ? accent : "transparent";
 
         return (

@@ -277,4 +277,48 @@ export type KillerAggRow = {
   
     return byId;
   }
+
+  // =============================================================
+// Helper "par joueur" (pour StatsHub / Dashboard)
+// - Ne casse pas l'API existante computeKillerAgg(history, profiles, botsMap)
+// =============================================================
+
+export type KillerAggPlayer = {
+  matches: number;
+  wins: number;
+  winRate: number;
+  kills: number;
+  totalHits: number;
+  favSegment: string;
+  favSegmentHits: number;
+  favNumber: number;
+  favNumberHits: number;
+};
+
+export function computeKillerAggForPlayer(
+  history: any[],
+  playerId: string,
+  profiles: any[] = [],
+  botsMap: Record<string, { name?: string; avatarDataUrl?: string | null }> = {}
+): KillerAggPlayer {
+  const byId = computeKillerAgg(history || [], profiles || [], botsMap || {});
+  const row = byId?.[String(playerId)];
+
+  const matches = numOr0(row?.played);
+  const wins = numOr0(row?.wins);
+  const winRate = matches > 0 ? Math.round((wins / matches) * 100) : 0;
+
+  return {
+    matches,
+    wins,
+    winRate,
+    kills: numOr0(row?.kills),
+    totalHits: numOr0(row?.totalHits),
+    favSegment: safeStr(row?.favSegment),
+    favSegmentHits: numOr0(row?.favSegmentHits),
+    favNumber: numOr0(row?.favNumber),
+    favNumberHits: numOr0(row?.favNumberHits),
+  };
+}
+
   
