@@ -1363,263 +1363,159 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
 
       {/* ✅ END OVERLAY (FIN DE PARTIE) */}
       {showEnd && (
+  <div
+    role="dialog"
+    aria-modal="true"
+    onClick={() => {
+      // clic en dehors = rien (ou fermer si tu veux)
+    }}
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,.75)",
+      zIndex: 10000,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 14,
+      pointerEvents: "auto", // 🔥 IMPORTANT
+    }}
+  >
+    {/* CONTENU */}
+    <div
+      onClick={(e) => e.stopPropagation()} // 🔥 CRUCIAL
+      style={{
+        width: "100%",
+        maxWidth: 520,
+        ...card,
+        padding: 16,
+        border: "1px solid rgba(255,198,58,.22)",
+        boxShadow: "0 18px 65px rgba(0,0,0,.65)",
+        pointerEvents: "auto", // 🔥 IMPORTANT
+      }}
+    >
+      {/* TITRE */}
+      <div style={{ textAlign: "center" }}>
         <div
-          role="dialog"
-          aria-modal="true"
           style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,.72)",
-            zIndex: 10000,
-            padding: 14,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            fontSize: 12,
+            fontWeight: 1000,
+            letterSpacing: 1.6,
+            textTransform: "uppercase",
+            color: gold,
           }}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: 520,
-              ...card,
-              padding: 14,
-              border: "1px solid rgba(255,198,58,.22)",
-              boxShadow: "0 18px 65px rgba(0,0,0,.65)",
-            }}
-          >
-            <div style={{ textAlign: "center" }}>
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: 1000,
-                  letterSpacing: 1.6,
-                  textTransform: "uppercase",
-                  color: gold,
-                  opacity: 0.95,
-                }}
-              >
-                FIN DE PARTIE
-              </div>
-
-              <div
-                style={{
-                  marginTop: 6,
-                  fontSize: 20,
-                  fontWeight: 1000,
-                  color: "#fff",
-                }}
-              >
-                🏆 {(winner(players)?.name || "—")} gagne !
-              </div>
-
-              <div
-                style={{
-                  marginTop: 10,
-                  height: 6,
-                  borderRadius: 999,
-                  background: "rgba(255,198,58,.14)",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    height: "100%",
-                    width: "100%",
-                    transformOrigin: "left center",
-                    animation: "killerEndBar 900ms ease-out forwards",
-                    background: `linear-gradient(90deg, ${gold2}, ${gold})`,
-                  }}
-                />
-              </div>
-
-              <style>{`
-                @keyframes killerEndBar {
-                  from { transform: scaleX(0); opacity: .2; }
-                  to   { transform: scaleX(1); opacity: 1; }
-                }
-              `}</style>
-            </div>
-
-            {/* CLASSEMENT */}
-            <div style={{ marginTop: 14 }}>
-              <div
-                style={{
-                  fontWeight: 1000,
-                  color: "#ffe7b0",
-                  fontSize: 12,
-                  textTransform: "uppercase",
-                  letterSpacing: 1.2,
-                }}
-              >
-                Classement
-              </div>
-
-              <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-                {(() => {
-                  const recPlayers = (endRec?.summary?.perPlayer ||
-                    endRec?.payload?.summary?.perPlayer ||
-                    null) as any[] | null;
-
-                  let rows: any[] = [];
-                  if (recPlayers && Array.isArray(recPlayers) && recPlayers.length) {
-                    rows = [...recPlayers]
-                      .map((p) => ({
-                        id: p.id || p.playerId,
-                        name: p.name || "Joueur",
-                        avatarDataUrl: p.avatarDataUrl,
-                        rank: Number(p.finalRank) || 999,
-                        kills: Number(p.kills) || 0,
-                        taken: Number(p.livesTaken) || 0,
-                      }))
-                      .sort((a, b) => a.rank - b.rank);
-                  } else {
-                    const ww = winner(players);
-                    const elim = (elimOrderRef.current || []).slice();
-                    const rankById: Record<string, number> = {};
-                    let r = players.length;
-                    for (const id of elim)
-                      if (rankById[id] == null) rankById[id] = r--;
-                    if (ww?.id) rankById[ww.id] = 1;
-
-                    rows = players
-                      .map((p) => ({
-                        id: p.id,
-                        name: p.name,
-                        avatarDataUrl: p.avatarDataUrl,
-                        rank: rankById[p.id] ?? 999,
-                        kills: p.kills || 0,
-                        taken: p.livesTaken || 0,
-                      }))
-                      .sort((a, b) => a.rank - b.rank);
-                  }
-
-                  return rows.map((p, i) => (
-                    <div
-                      key={p.id || i}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "34px 1fr auto",
-                        gap: 10,
-                        alignItems: "center",
-                        padding: "8px 10px",
-                        borderRadius: 14,
-                        border: "1px solid rgba(255,255,255,.08)",
-                        background:
-                          i === 0
-                            ? "rgba(255,198,58,.10)"
-                            : "rgba(0,0,0,.22)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontWeight: 1000,
-                          color: i === 0 ? gold : "#fff",
-                          textAlign: "center",
-                        }}
-                      >
-                        {i + 1}
-                      </div>
-
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          minWidth: 0,
-                        }}
-                      >
-                        <AvatarMedallion
-                          size={28}
-                          src={p.avatarDataUrl}
-                          name={p.name}
-                        />
-                        <div style={{ minWidth: 0 }}>
-                          <div
-                            style={{
-                              fontWeight: 1000,
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                            }}
-                          >
-                            {p.name}
-                          </div>
-                          <div style={{ fontSize: 11, opacity: 0.78 }}>
-                            kills {p.kills} · dmg {p.taken}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          fontWeight: 1000,
-                          color: i === 0 ? gold : "#ffe7b0",
-                        }}
-                      >
-                        {i === 0 ? "WIN" : ""}
-                      </div>
-                    </div>
-                  ));
-                })()}
-              </div>
-            </div>
-
-            {/* ACTIONS */}
-            <div
-              style={{
-                marginTop: 14,
-                display: "flex",
-                gap: 10,
-                justifyContent: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  setShowEnd(false);
-                  // ✅ SAVE + GO SUMMARY
-                  saveAndGoSummary(endRec);
-                }}
-                style={{
-                  height: 42,
-                  padding: "0 14px",
-                  borderRadius: 14,
-                  border: "1px solid rgba(255,180,0,.30)",
-                  background: `linear-gradient(180deg, ${gold}, ${gold2})`,
-                  color: "#1a1a1a",
-                  fontWeight: 1000,
-                  cursor: "pointer",
-                  boxShadow: "0 10px 22px rgba(255,170,0,.18)",
-                }}
-              >
-                Terminer
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  // ✅ SAVE + GO SUMMARY (même logique)
-                  saveAndGoSummary(endRec);
-                }}
-                style={{
-                  height: 42,
-                  padding: "0 14px",
-                  borderRadius: 14,
-                  border: "1px solid rgba(255,255,255,.12)",
-                  background: "rgba(255,255,255,.06)",
-                  color: "#fff",
-                  fontWeight: 1000,
-                  cursor: "pointer",
-                }}
-              >
-                Voir résumé
-              </button>
-            </div>
-          </div>
+          FIN DE PARTIE
         </div>
-      )}
+
+        <div style={{ marginTop: 6, fontSize: 20, fontWeight: 1000 }}>
+          🏆 {winner(players)?.name || "—"} gagne !
+        </div>
+      </div>
+
+      {/* CLASSEMENT */}
+      <div style={{ marginTop: 14 }}>
+        <div
+          style={{
+            fontWeight: 1000,
+            fontSize: 12,
+            textTransform: "uppercase",
+            color: "#ffe7b0",
+          }}
+        >
+          Classement
+        </div>
+
+        <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+          {players
+            .slice()
+            .sort((a, b) => {
+              if (!a.eliminated && b.eliminated) return -1;
+              if (a.eliminated && !b.eliminated) return 1;
+              return 0;
+            })
+            .map((p, i) => (
+              <div
+                key={p.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "32px 1fr auto",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "8px 10px",
+                  borderRadius: 14,
+                  background:
+                    i === 0
+                      ? "rgba(255,198,58,.12)"
+                      : "rgba(0,0,0,.25)",
+                  border: "1px solid rgba(255,255,255,.08)",
+                }}
+              >
+                <div style={{ fontWeight: 1000, color: i === 0 ? gold : "#fff" }}>
+                  {i + 1}
+                </div>
+                <div style={{ fontWeight: 1000 }}>{p.name}</div>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>
+                  kills {p.kills}
+                </div>
+              </div>
+            ))}
+        </div>
+      </div>
+
+      {/* ACTIONS */}
+      <div
+        style={{
+          marginTop: 16,
+          display: "flex",
+          gap: 12,
+          justifyContent: "center",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            setShowEnd(false);
+            if (endRec) onFinish(endRec);
+            else go("history");
+          }}
+          style={{
+            height: 44,
+            padding: "0 16px",
+            borderRadius: 14,
+            border: "1px solid rgba(255,180,0,.30)",
+            background: `linear-gradient(180deg, ${gold}, ${gold2})`,
+            color: "#1a1a1a",
+            fontWeight: 1000,
+            cursor: "pointer",
+          }}
+        >
+          Quitter
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setShowEnd(false);
+            go("killer_summary", { record: endRec });
+          }}
+          style={{
+            height: 44,
+            padding: "0 16px",
+            borderRadius: 14,
+            border: "1px solid rgba(255,255,255,.18)",
+            background: "rgba(255,255,255,.08)",
+            color: "#fff",
+            fontWeight: 1000,
+            cursor: "pointer",
+          }}
+        >
+          Résumé
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
       {/* ================= HEADER ================= */}
       <div
