@@ -38,7 +38,6 @@ type MatchModeV3 = "solo" | "multi" | "teams";
 type InModeV3 = "simple" | "double" | "master";
 type OutModeV3 = "simple" | "double" | "master";
 type ServiceModeV3 = "random" | "alternate";
-
 type TeamId = "gold" | "pink" | "blue" | "green";
 
 type Props = {
@@ -215,7 +214,7 @@ const PlayerDartBadge: React.FC<PlayerDartBadgeProps> = ({
 };
 
 // ------------------------------------------------------
-// BOTS IA "PRO" PRÉDÉFINIS (joueurs de référence, surnoms)
+// BOTS IA "PRO" PRÉDÉFINIS
 // ------------------------------------------------------
 const PRO_BOTS: BotLite[] = [
   {
@@ -343,15 +342,16 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
   const [serveMode, setServeMode] = React.useState<ServiceModeV3>("alternate");
   const [matchMode, setMatchMode] = React.useState<MatchModeV3>("solo");
 
-  // ---- NEW : AUDIO OPTIONS (pour X01PlayV3) ----
+  // ---- NEW : AUDIO OPTIONS ----
   const [arcadeEnabled, setArcadeEnabled] = React.useState<boolean>(true);
   const [hitEnabled, setHitEnabled] = React.useState<boolean>(true);
   const [voiceEnabled, setVoiceEnabled] = React.useState<boolean>(true);
   const [voiceId, setVoiceId] = React.useState<string>("default");
 
-  // ---- NEW : COMPTAGE EXTERNE (vidéo / bridge) ----
+  // ---- NEW : COMPTAGE EXTERNE ----
   const [externalScoringEnabled, setExternalScoringEnabled] = React.useState<boolean>(false);
   const [externalInfoOpen, setExternalInfoOpen] = React.useState<boolean>(false);
+  const [externalInfoStep, setExternalInfoStep] = React.useState<1 | 2 | 3>(1);
 
   // ✅ Helpers TEST : envoie des events vers X01PlayV3
   const dispatchExternalDart = React.useCallback((segment: number, multiplier: 1 | 2 | 3) => {
@@ -400,9 +400,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
     const p: any = humanProfiles.find((x) => x.id === firstHumanSelectedId);
     if (!p) return;
 
-    const candidate: string | undefined =
-      p.ttsVoice ?? p.voiceId ?? p.voice ?? p.tts ?? undefined;
-
+    const candidate: string | undefined = p.ttsVoice ?? p.voiceId ?? p.voice ?? p.tts ?? undefined;
     if (candidate && typeof candidate === "string") setVoiceId(candidate);
   }, [selectedIds, humanProfiles]);
 
@@ -467,23 +465,14 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
       if (tId) teamBuckets[tId].push(pid);
     });
 
-    const usedTeams = (Object.keys(teamBuckets) as TeamId[]).filter(
-      (tid) => teamBuckets[tid].length > 0
-    );
+    const usedTeams = (Object.keys(teamBuckets) as TeamId[]).filter((tid) => teamBuckets[tid].length > 0);
 
     if (usedTeams.length < 2) {
-      alert(
-        t(
-          "x01v3.teams.needTwoTeams",
-          "Sélectionne au moins 2 équipes (Gold / Pink / Blue / Green)."
-        )
-      );
+      alert(t("x01v3.teams.needTwoTeams", "Sélectionne au moins 2 équipes (Gold / Pink / Blue / Green)."));
       return null;
     }
 
-    const sizes = Array.from(
-      new Set(usedTeams.map((tid) => teamBuckets[tid].length))
-    ).filter((n) => n > 0);
+    const sizes = Array.from(new Set(usedTeams.map((tid) => teamBuckets[tid].length))).filter((n) => n > 0);
 
     if (sizes.length !== 1) {
       alert(t("x01v3.teams.sameSize", "Toutes les équipes doivent avoir le même nombre de joueurs."));
@@ -585,26 +574,17 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
       players,
       createdAt: Date.now(),
 
-      // ✅ NEW : source de scoring (keypad vs externe)
+      // ✅ source de scoring (keypad vs externe)
       scoringSource: externalScoringEnabled ? "external" : "manual",
 
-      // ✅ NEW : audio config consommée par X01PlayV3
-      audio: {
-        arcadeEnabled,
-        hitEnabled,
-        voiceEnabled,
-        voiceId,
-      },
+      // ✅ audio config consommée par X01PlayV3
+      audio: { arcadeEnabled, hitEnabled, voiceEnabled, voiceId },
     };
 
-    if (matchMode === "teams" && teams) {
-      baseCfg.teams = teams;
-    }
-
-    const cfg: X01ConfigV3 = baseCfg as X01ConfigV3;
+    if (matchMode === "teams" && teams) baseCfg.teams = teams;
 
     try {
-      onStart(cfg);
+      onStart(baseCfg as X01ConfigV3);
     } catch (e) {
       console.warn("[X01ConfigV3] onStart a échoué :", e);
     }
@@ -624,8 +604,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
         flexDirection: "column",
         minHeight: "100vh",
         padding: "12px 12px 76px",
-        background:
-          "radial-gradient(circle at top, #15192c 0, #05060c 50%, #020308 100%)",
+        background: "radial-gradient(circle at top, #15192c 0, #05060c 50%, #020308 100%)",
         color: textMain,
       }}
     >
@@ -664,14 +643,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
           >
             X01
           </div>
-          <div
-            style={{
-              fontSize: 12,
-              opacity: 0.7,
-              color: "#d9d9e4",
-              marginTop: 2,
-            }}
-          >
+          <div style={{ fontSize: 12, opacity: 0.7, color: "#d9d9e4", marginTop: 2 }}>
             {t("x01v3.config.subtitle", "Configure ton match X01 avant de commencer.")}
           </div>
         </div>
@@ -729,9 +701,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
                   const active = selectedIds.includes(p.id);
 
                   const teamId =
-                    matchMode === "teams"
-                      ? (teamAssignments[p.id] as TeamId | null) ?? null
-                      : null;
+                    matchMode === "teams" ? (teamAssignments[p.id] as TeamId | null) ?? null : null;
                   const haloColor = teamId ? TEAM_COLORS[teamId] : primary;
 
                   return (
@@ -759,9 +729,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
                           height: 78,
                           borderRadius: "50%",
                           overflow: "hidden",
-                          boxShadow: active
-                            ? `0 0 28px ${haloColor}aa`
-                            : "0 0 14px rgba(0,0,0,0.65)",
+                          boxShadow: active ? `0 0 28px ${haloColor}aa` : "0 0 14px rgba(0,0,0,0.65)",
                           background: active
                             ? `radial-gradient(circle at 30% 20%, #fff8d0, ${haloColor})`
                             : "#111320",
@@ -801,10 +769,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
                       </div>
 
                       {/* Badge set (ne doit pas toggle le joueur) */}
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        style={{ width: "100%", display: "flex", justifyContent: "center" }}
-                      >
+                      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", display: "flex", justifyContent: "center" }}>
                         <PlayerDartBadge
                           profileId={p.id}
                           dartSetId={playerDartSets[p.id] ?? null}
@@ -1059,30 +1024,17 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
 
           {/* ✅ COMPTAGE EXTERNE + bouton info */}
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 10,
-                marginBottom: 8,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 12,
-                  textTransform: "uppercase",
-                  letterSpacing: 1,
-                  fontWeight: 700,
-                  color: primary,
-                }}
-              >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
+              <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700, color: primary }}>
                 {t("x01v3.external.title", "Comptage externe (vidéo)")}
               </div>
 
               <button
                 type="button"
-                onClick={() => setExternalInfoOpen(true)}
+                onClick={() => {
+                  setExternalInfoStep(1);
+                  setExternalInfoOpen(true);
+                }}
                 style={{
                   width: 26,
                   height: 26,
@@ -1133,212 +1085,270 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
 
             <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 8 }}>
               {externalScoringEnabled
-                ? t(
-                    "x01v3.external.onHint",
-                    "ON : X01PlayV3 écoute des events externes et applique les tirs au moteur."
-                  )
+                ? t("x01v3.external.onHint", "ON : X01PlayV3 écoute des events externes et applique les tirs au moteur.")
                 : t("x01v3.external.offHint", "OFF : mode normal au keypad.")}
             </div>
           </div>
 
-          {/* ✅ MODAL FLOTTANT : aide connexion comptage externe */}
-{externalInfoOpen && (
-  <div
-    onClick={() => setExternalInfoOpen(false)}
-    style={{
-      position: "fixed",
-      inset: 0,
-      background: "rgba(0,0,0,0.55)",
-      zIndex: 9999,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: 12,
-    }}
-  >
-    <div
-      onClick={(e) => e.stopPropagation()}
-      style={{
-        width: "min(620px, 100%)",
-        borderRadius: 18,
-        border: "1px solid rgba(255,255,255,0.10)",
-        background:
-          "linear-gradient(180deg, rgba(10,12,24,0.96), rgba(6,7,14,0.98))",
-        boxShadow: "0 18px 60px rgba(0,0,0,0.65)",
-        padding: 14,
-        color: "#f2f2ff",
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-          marginBottom: 10,
-        }}
-      >
-        <div style={{ fontWeight: 900, color: primary, fontSize: 14 }}>
-          {t("x01v3.external.helpTitle", "Connecter un appareil de comptage à Darts Counter")}
-        </div>
+          {/* ✅ MODAL FLOTTANT : tuto + pages + scroll interne + tests */}
+          {externalInfoOpen && (
+            <div
+              onClick={() => setExternalInfoOpen(false)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.55)",
+                zIndex: 9999,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 12,
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: "min(560px, 100%)",
+                  maxHeight: "78vh",
+                  borderRadius: 18,
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "linear-gradient(180deg, rgba(10,12,24,0.96), rgba(6,7,14,0.98))",
+                  boxShadow: "0 18px 60px rgba(0,0,0,0.65)",
+                  padding: 14,
+                  color: "#f2f2ff",
+                  overflow: "hidden",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                {/* Header */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, flex: "0 0 auto" }}>
+                  <div style={{ fontWeight: 900, color: primary, fontSize: 14 }}>
+                    {t("x01v3.external.howTitle", "Connexion comptage externe")}
+                  </div>
 
-        <button
-          type="button"
-          onClick={() => setExternalInfoOpen(false)}
-          style={{
-            borderRadius: 10,
-            padding: "6px 10px",
-            border: "1px solid rgba(255,255,255,0.12)",
-            background: "rgba(255,255,255,0.06)",
-            color: "#fff",
-            fontWeight: 800,
-            cursor: "pointer",
-          }}
-        >
-          {t("common.close", "Fermer")}
-        </button>
-      </div>
+                  <button
+                    type="button"
+                    onClick={() => setExternalInfoOpen(false)}
+                    style={{
+                      borderRadius: 10,
+                      padding: "6px 10px",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "rgba(255,255,255,0.06)",
+                      color: "#fff",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {t("common.close", "Fermer")}
+                  </button>
+                </div>
 
-      {/* Contenu */}
-      <div style={{ fontSize: 12, color: "#d7d9f0", lineHeight: 1.45 }}>
-        <div>
-          <b>Objectif</b>
-          <div style={{ marginTop: 6 }}>
-            Ce mode sert à utiliser un système de comptage automatique (caméra / Scolia-like / bridge)
-            pour <b>envoyer les tirs</b> dans Darts Counter, sans saisir au keypad.
-          </div>
-        </div>
+                {/* Step tabs */}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10, flex: "0 0 auto" }}>
+                  <button type="button" onClick={() => setExternalInfoStep(1)} style={pillStep(externalInfoStep === 1, primary)}>
+                    1) Activer
+                  </button>
+                  <button type="button" onClick={() => setExternalInfoStep(2)} style={pillStep(externalInfoStep === 2, primary)}>
+                    2) Bridge (clé)
+                  </button>
+                  <button type="button" onClick={() => setExternalInfoStep(3)} style={pillStep(externalInfoStep === 3, primary)}>
+                    3) Tester
+                  </button>
+                </div>
 
-        <div style={{ marginTop: 12 }}>
-          <b>Pré-requis</b>
-          <div style={{ marginTop: 6 }}>
-            1) Ton appareil doit être capable d’exporter les tirs (par API, WebSocket, MQTT, HTTP, etc.).<br />
-            2) Un petit <b>bridge</b> (PC, Raspberry, serveur local…) doit convertir ce flux en “événements”
-            compatibles avec l’app.
-          </div>
-        </div>
+                {/* Scrollable body */}
+                <div
+                  style={{
+                    flex: "1 1 auto",
+                    overflowY: "auto",
+                    paddingRight: 6,
+                    fontSize: 12,
+                    color: "#d7d9f0",
+                    lineHeight: 1.42,
+                  }}
+                  className="dc-scroll-thin"
+                >
+                  {/* STEP 1 */}
+                  {externalInfoStep === 1 && (
+                    <div>
+                      <div style={{ fontWeight: 900, color: primary, marginBottom: 8 }}>Résumé (rapide)</div>
+                      <div style={{ marginBottom: 10 }}>
+                        <b>But :</b> recevoir automatiquement les tirs depuis un appareil externe (caméra / système Scolia-like / capteur).
+                      </div>
 
-        <div style={{ marginTop: 12 }}>
-          <b>Étape 1 — Activer le mode dans Darts Counter</b>
-          <div style={{ marginTop: 6 }}>
-            • Va dans <b>X01 &gt; Config</b><br />
-            • Active <b>Comptage externe = ON</b><br />
-            • Lance la partie : l’écran <b>X01PlayV3</b> se met en “écoute” des tirs externes.
-          </div>
-        </div>
+                      <div style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: 10 }}>
+                        <div style={{ fontWeight: 900, marginBottom: 6, color: primary }}>Étapes</div>
+                        <div style={{ color: "#e7e9ff" }}>
+                          <div>1) Dans X01 Config → <b>Comptage externe = ON</b></div>
+                          <div>2) Tu lances la partie</div>
+                          <div>3) Un <b>bridge</b> envoie les tirs vers l’app</div>
+                          <div>4) Le score bouge tout seul (pas besoin du keypad)</div>
+                        </div>
+                      </div>
 
-        <div style={{ marginTop: 12 }}>
-  <b>Étape 2 — Installer / lancer le “bridge” (le connecteur)</b>
-  <div style={{ marginTop: 6 }}>
-    <div>
-      <b>C’est quoi le bridge ?</b>
-      <div style={{ marginTop: 6 }}>
-        Le bridge est un petit programme qui tourne <b>entre</b> ton appareil de comptage (caméra / board)
-        et Darts Counter. Il reçoit les tirs depuis l’appareil, puis les renvoie à Darts Counter dans un format simple.
-      </div>
-    </div>
+                      <div style={{ marginTop: 10, fontSize: 11, color: "#aeb2d3" }}>
+                        👉 L’étape 2 est la plus importante : elle explique <b>où tourne le bridge</b> et <b>comment il envoie les tirs</b>.
+                      </div>
+                    </div>
+                  )}
 
-    <div style={{ marginTop: 10 }}>
-      <b>Où se trouve le bridge ?</b>
-      <div style={{ marginTop: 6 }}>
-        • Si tu utilises un système “Scolia-like” : le bridge tourne généralement sur <b>un PC / Raspberry</b>
-        qui est sur le même réseau que ton système de comptage.<br />
-        • Si tu n’as pas de système compatible : tu peux quand même utiliser un bridge “maison”
-        (PC/Raspberry) qui récupère une source (API / fichier / WebSocket / MQTT…) et renvoie des tirs.<br />
-        • Dans Darts Counter, le bridge n’est <b>pas</b> une option magique : il faut <b>le lancer quelque part</b>
-        (sur un appareil que tu contrôles).
-      </div>
-    </div>
+                  {/* STEP 2 */}
+                  {externalInfoStep === 2 && (
+                    <div>
+                      <div style={{ fontWeight: 900, color: primary, marginBottom: 8 }}>Étape 2 — Le bridge (le connecteur)</div>
 
-    <div style={{ marginTop: 10 }}>
-      <b>Ce que doit faire l’utilisateur (check-list simple)</b>
-      <div style={{ marginTop: 6 }}>
-        1) <b>Choisis où tourner le bridge</b> : PC (Windows/Mac/Linux) ou Raspberry Pi.<br />
-        2) <b>Mets tout sur le même réseau</b> (important) :<br />
-        &nbsp;&nbsp;• l’appareil de comptage (caméra/board)<br />
-        &nbsp;&nbsp;• l’appareil où tourne Darts Counter (téléphone/tablette/PC)<br />
-        &nbsp;&nbsp;• le PC/Raspberry qui fait tourner le bridge<br />
-        3) <b>Lance Darts Counter</b> et active <b>Comptage externe = ON</b> (Étape 1).<br />
-        4) <b>Lance le bridge</b> sur le PC/Raspberry (il doit rester allumé pendant la partie).<br />
-        5) <b>Démarre une partie</b> : à chaque fléchette détectée, le bridge envoie un tir et le score bouge tout seul.
-      </div>
-    </div>
+                      <div style={{ marginBottom: 10 }}>
+                        <b>Le bridge</b> est un petit programme externe qui fait le lien entre :
+                        <br />• ton <b>appareil de comptage</b> (caméra / board / système tiers)
+                        <br />• et <b>Darts Counter</b> (ton navigateur / ton téléphone)
+                      </div>
 
-    <div style={{ marginTop: 10 }}>
-      <b>Ce que fait exactement le bridge (en clair)</b>
-      <div style={{ marginTop: 6 }}>
-        Le bridge fait toujours ces 3 actions :
-        <div style={{ marginTop: 6 }}>
-          1) <b>Écouter</b> l’appareil de comptage (ex : “T20”, “D16”, “Bull”, “Miss”).<br />
-          2) <b>Convertir</b> en données simples : <b>segment</b> + <b>multiplier</b>.<br />
-          3) <b>Envoyer</b> à Darts Counter (au navigateur/appareil où le match est ouvert).
-        </div>
-      </div>
-    </div>
+                      <div style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: 10, marginBottom: 10 }}>
+                        <div style={{ fontWeight: 900, marginBottom: 6, color: primary }}>Où est-ce que ça tourne ?</div>
+                        <div style={{ color: "#e7e9ff" }}>
+                          • Sur un <b>PC / Mac / Raspberry Pi</b><br />
+                          • Idéalement <b>sur le même réseau (Wi-Fi)</b> que l’appareil qui affiche Darts Counter<br />
+                          • Le bridge reste <b>allumé pendant toute la partie</b>
+                        </div>
+                      </div>
 
-    <div style={{ marginTop: 10 }}>
-      <b>Deux façons courantes de “relier” le bridge à Darts Counter</b>
-      <div style={{ marginTop: 6 }}>
-        <div>
-          <b>A) Même appareil (le plus simple)</b>
-          <div style={{ marginTop: 6 }}>
-            Tu ouvres Darts Counter dans un navigateur sur le PC, et le bridge tourne sur le même PC.
-            Dans ce cas, le bridge peut envoyer les tirs directement au navigateur (sans config réseau complexe).
-          </div>
-        </div>
+                      <div style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: 10, marginBottom: 10 }}>
+                        <div style={{ fontWeight: 900, marginBottom: 6, color: primary }}>Ce que fait le bridge (simple)</div>
+                        <div style={{ color: "#e7e9ff" }}>
+                          1) Il <b>récupère</b> les tirs (ex : “T20”, “D16”, “Bull”, “Miss”)<br />
+                          2) Il <b>convertit</b> en format simple : <code>segment + multiplier</code><br />
+                          3) Il <b>envoie</b> à Darts Counter pendant la partie
+                        </div>
+                      </div>
 
-        <div style={{ marginTop: 10 }}>
-          <b>B) Appareil séparé (mobile/tablette)</b>
-          <div style={{ marginTop: 6 }}>
-            Tu joues sur téléphone/tablette, et le bridge tourne sur un PC/Raspberry.
-            Dans ce cas, le bridge doit <b>envoyer les tirs sur le réseau</b> vers l’appareil qui affiche Darts Counter
-            (ex : via une petite URL locale, WebSocket local, ou une page “relay” ouverte dans le navigateur).
-          </div>
-        </div>
-      </div>
-    </div>
+                      <div style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: 10 }}>
+                        <div style={{ fontWeight: 900, marginBottom: 6, color: primary }}>Option A & B (les 2 en même temps)</div>
+                        <div style={{ color: "#e7e9ff" }}>
+                          <b>A) Même appareil (le plus simple)</b><br />
+                          Tu ouvres Darts Counter sur le <b>PC</b> et le bridge tourne sur le <b>même PC</b>. Le bridge envoie directement au navigateur.
+                          <div style={{ height: 8 }} />
+                          <b>B) Appareil séparé (mobile/tablette)</b><br />
+                          Tu joues sur téléphone/tablette, et le bridge tourne sur un PC/Raspberry. Le bridge doit <b>envoyer sur le réseau</b> vers l’appareil (URL locale / WebSocket local / relay page).
+                        </div>
+                      </div>
 
-    <div style={{ marginTop: 10, fontSize: 11, color: "#aeb2d3" }}>
-      <b>Note :</b> le bridge dépend du modèle de ton appareil de comptage (API/protocole).
-      Si ton appareil ne fournit pas de flux exploitable, il faudra un système qui “sort” les impacts (logiciel/SDK/API),
-      sinon aucun bridge ne peut deviner les tirs.
-    </div>
-  </div>
-</div>
+                      <div style={{ marginTop: 10, fontSize: 11, color: "#aeb2d3" }}>
+                        <b>Important :</b> si ton appareil ne fournit aucun flux exploitable (API/SDK/WebSocket/MQTT/HTTP),
+                        alors aucun bridge ne peut “deviner” les tirs.
+                      </div>
+                    </div>
+                  )}
 
-        <div style={{ marginTop: 12 }}>
-          <b>Étape 3 — Format attendu (conversion)</b>
-          <div style={{ marginTop: 6 }}>
-            Le bridge doit convertir :
-            <div style={{ marginTop: 6 }}>
-              • <b>Simple</b> : S20 → segment=20, multiplier=1<br />
-              • <b>Double</b> : D16 → segment=16, multiplier=2<br />
-              • <b>Triple</b> : T20 → segment=20, multiplier=3<br />
-              • <b>Bull</b> : Bull → segment=25, multiplier=1<br />
-              • <b>Double Bull</b> : DBull → segment=25, multiplier=2<br />
-              • <b>Miss</b> : Miss → segment=0, multiplier=1
+                  {/* STEP 3 */}
+                  {externalInfoStep === 3 && (
+                    <div>
+                      <div style={{ fontWeight: 900, color: primary, marginBottom: 8 }}>Tests & format attendu</div>
+
+                      <div style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: 10, marginBottom: 10 }}>
+                        <div style={{ fontWeight: 900, marginBottom: 6, color: primary }}>Events supportés</div>
+
+                        <div style={{ fontSize: 12, color: "#e7e9ff" }}>
+                          • <b>dc:x01v3:dart</b> → <code>{`{ segment, multiplier }`}</code>
+                          <div style={{ fontSize: 11, opacity: 0.85, marginTop: 4 }}>
+                            segment: 0..20 ou 25 (bull). multiplier: 1/2/3 (2 = DBull si segment=25)
+                          </div>
+
+                          <div style={{ height: 8 }} />
+
+                          • <b>dc:x01v3:visit</b> → <code>{`{ darts: [{segment,multiplier}, ...] }`}</code> (max 3)
+                          <div style={{ fontSize: 11, opacity: 0.85, marginTop: 4 }}>
+                            Envoie une volée complète d’un coup (1 à 3 fléchettes).
+                          </div>
+                        </div>
+
+                        <pre
+                          style={{
+                            margin: "10px 0 0 0",
+                            padding: 10,
+                            borderRadius: 12,
+                            background: "rgba(0,0,0,0.35)",
+                            overflowX: "auto",
+                            fontSize: 12,
+                            lineHeight: 1.35,
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            color: "#e7e9ff",
+                          }}
+                        >{`// 1 fléchette (T20)
+window.dispatchEvent(new CustomEvent("dc:x01v3:dart", {
+  detail: { segment: 20, multiplier: 3 }
+}));
+
+// 1 volée (180)
+window.dispatchEvent(new CustomEvent("dc:x01v3:visit", {
+  detail: { darts: [
+    { segment: 20, multiplier: 3 },
+    { segment: 20, multiplier: 3 },
+    { segment: 20, multiplier: 3 }
+  ] }
+}));`}</pre>
+                      </div>
+
+                      <div style={{ fontWeight: 900, color: primary, marginBottom: 8 }}>Tests rapides</div>
+
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        <button type="button" onClick={() => dispatchExternalDart(20, 3)} style={extTestBtn(primary)}>
+                          TEST T20
+                        </button>
+                        <button type="button" onClick={() => dispatchExternalDart(25, 1)} style={extTestBtn("#4fc3ff")}>
+                          TEST BULL
+                        </button>
+                        <button type="button" onClick={() => dispatchExternalDart(25, 2)} style={extTestBtn("#ff4fa2")}>
+                          TEST DBULL
+                        </button>
+                        <button type="button" onClick={() => dispatchExternalDart(0, 1)} style={extTestBtn("rgba(255,255,255,0.6)")}>
+                          TEST MISS
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            dispatchExternalVisit([
+                              { segment: 20, multiplier: 3 },
+                              { segment: 20, multiplier: 3 },
+                              { segment: 20, multiplier: 3 },
+                            ])
+                          }
+                          style={extTestBtn("#6dff7c")}
+                        >
+                          TEST VISIT 180
+                        </button>
+                      </div>
+
+                      <div style={{ marginTop: 10, fontSize: 11, color: "#aeb2d3" }}>
+                        Lance une partie X01 avec <b>Comptage externe = ON</b> : si le score bouge avec les tests, ton listener est OK.
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer nav */}
+                <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 8, flex: "0 0 auto" }}>
+                  <button
+                    type="button"
+                    onClick={() => setExternalInfoStep((s) => (s === 1 ? 1 : ((s - 1) as any)))}
+                    style={navBtn(false)}
+                    disabled={externalInfoStep === 1}
+                  >
+                    ← Précédent
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setExternalInfoStep((s) => (s === 3 ? 3 : ((s + 1) as any)))}
+                    style={navBtn(true)}
+                    disabled={externalInfoStep === 3}
+                  >
+                    Suivant →
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 12 }}>
-          <b>Étape 4 — Vérifier que ça marche</b>
-          <div style={{ marginTop: 6 }}>
-            • Démarre un match avec <b>Comptage externe = ON</b><br />
-            • Lance ton appareil de comptage (caméra / board)<br />
-            • Quand une fléchette est détectée, le score doit changer <b>tout seul</b> dans Darts Counter.
-          </div>
-        </div>
-
-        <div style={{ marginTop: 12, fontSize: 11, color: "#aeb2d3" }}>
-          <b>Important :</b> si tu repasses sur <b>OFF</b>, la partie revient en mode normal (saisie au keypad).
-          Le bridge peut rester allumé, mais il ne pilotera plus la partie.
-        </div>
-      </div>
-    </div>
-  </div>
-)}
+          )}
         </section>
 
         {/* --------- BLOC FORMAT DU MATCH --------- */}
@@ -1352,24 +1362,12 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
             border: `1px solid rgba(255,255,255,0.04)`,
           }}
         >
-          <h3
-            style={{
-              fontSize: 13,
-              textTransform: "uppercase",
-              letterSpacing: 1,
-              fontWeight: 700,
-              color: primary,
-              marginBottom: 10,
-            }}
-          >
+          <h3 style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700, color: primary, marginBottom: 10 }}>
             {t("x01v3.format", "Format du match")}
           </h3>
 
-          {/* Legs par set */}
           <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
-              {t("x01v3.legsPerSet", "Manches par set")}
-            </div>
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>{t("x01v3.legsPerSet", "Manches par set")}</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {LEGS_OPTIONS.map((n) => (
                 <PillButton
@@ -1385,11 +1383,8 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
             </div>
           </div>
 
-          {/* Sets à gagner */}
           <div>
-            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
-              {t("x01v3.setsToWin", "Sets à gagner")}
-            </div>
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>{t("x01v3.setsToWin", "Sets à gagner")}</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {SETS_OPTIONS.map((n) => (
                 <PillButton
@@ -1417,11 +1412,8 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
             border: `1px solid rgba(255,255,255,0.04)`,
           }}
         >
-          {/* Service / ordre de départ */}
           <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
-              {t("x01v3.service", "Service / ordre de départ")}
-            </div>
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>{t("x01v3.service", "Service / ordre de départ")}</div>
             <div style={{ display: "flex", gap: 6 }}>
               <PillButton
                 label={t("x01v3.service.random", "Aléatoire")}
@@ -1440,11 +1432,8 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
             </div>
           </div>
 
-          {/* Mode de match */}
           <div>
-            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
-              {t("x01v3.matchMode", "Mode de match")}
-            </div>
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>{t("x01v3.matchMode", "Mode de match")}</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <PillButton
                 label={t("x01v3.mode.solo", "Solo (1v1)")}
@@ -1504,24 +1493,12 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
             border: `1px solid rgba(255,255,255,0.04)`,
           }}
         >
-          <h3
-            style={{
-              fontSize: 13,
-              textTransform: "uppercase",
-              letterSpacing: 1,
-              fontWeight: 700,
-              color: primary,
-              marginBottom: 10,
-            }}
-          >
+          <h3 style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700, color: primary, marginBottom: 10 }}>
             {t("x01v3.bots.title", "Bots IA")}
           </h3>
 
           <p style={{ fontSize: 11, color: "#7c80a0", marginBottom: 10 }}>
-            {t(
-              "x01v3.bots.subtitle",
-              'Ajoute des BOTS IA : bots "pro" prédéfinis ou BOTS que tu as créés dans le menu Profils.'
-            )}
+            {t("x01v3.bots.subtitle", 'Ajoute des BOTS IA : bots "pro" prédéfinis ou BOTS que tu as créés dans le menu Profils.')}
           </p>
 
           <div
@@ -1589,8 +1566,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
                         textTransform: "uppercase",
                         background: "radial-gradient(circle at 30% 0, #6af3ff, #008cff)",
                         color: "#020611",
-                        boxShadow:
-                          "0 0 10px rgba(0,172,255,0.55), 0 0 18px rgba(0,172,255,0.35)",
+                        boxShadow: "0 0 10px rgba(0,172,255,0.55), 0 0 18px rgba(0,172,255,0.35)",
                         border: "1px solid rgba(144,228,255,0.9)",
                         whiteSpace: "nowrap",
                       }}
@@ -1624,16 +1600,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
       </div>
 
       {/* CTA collée au-dessus de la barre de nav */}
-      <div
-        style={{
-          position: "fixed",
-          left: 0,
-          right: 0,
-          bottom: 88,
-          padding: "6px 12px 8px",
-          pointerEvents: "none",
-        }}
-      >
+      <div style={{ position: "fixed", left: 0, right: 0, bottom: 88, padding: "6px 12px 8px", pointerEvents: "none" }}>
         <div style={{ pointerEvents: "auto" }}>
           <button
             type="button"
@@ -1648,9 +1615,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
               fontSize: 14,
               letterSpacing: 1,
               textTransform: "uppercase",
-              background: canStart
-                ? `linear-gradient(90deg, ${primary}, #ffe9a3)`
-                : "rgba(120,120,120,0.5)",
+              background: canStart ? `linear-gradient(90deg, ${primary}, #ffe9a3)` : "rgba(120,120,120,0.5)",
               color: canStart ? "#151515" : "#2b2b52",
               boxShadow: canStart ? "0 0 18px rgba(255, 207, 120, 0.65)" : "none",
               opacity: canStart ? 1 : 0.6,
@@ -1704,16 +1669,7 @@ function TeamsSection({ profiles, selectedIds, teamAssignments, setPlayerTeam }:
         border: `1px solid rgba(255,255,255,0.04)`,
       }}
     >
-      <h3
-        style={{
-          fontSize: 13,
-          textTransform: "uppercase",
-          letterSpacing: 1,
-          fontWeight: 700,
-          color: "#9fa4c0",
-          marginBottom: 6,
-        }}
-      >
+      <h3 style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700, color: "#9fa4c0", marginBottom: 6 }}>
         {t("x01v3.teams.title", "Composition des équipes")}
       </h3>
 
@@ -1731,27 +1687,10 @@ function TeamsSection({ profiles, selectedIds, teamAssignments, setPlayerTeam }:
           const team = teamAssignments[pid] ?? null;
 
           return (
-            <div
-              key={pid}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
+            <div key={pid} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                 <ProfileAvatar profile={p} size={28} />
-                <span
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    whiteSpace: "nowrap",
-                    textOverflow: "ellipsis",
-                    overflow: "hidden",
-                    maxWidth: 120,
-                  }}
-                >
+                <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden", maxWidth: 120 }}>
                   {p.name}
                 </span>
               </div>
@@ -1786,6 +1725,35 @@ function TeamsSection({ profiles, selectedIds, teamAssignments, setPlayerTeam }:
 }
 
 /* ------------------ Helpers UI ------------------ */
+
+function pillStep(active: boolean, primary: string): React.CSSProperties {
+  return {
+    borderRadius: 999,
+    padding: "6px 10px",
+    border: active ? `1px solid ${primary}` : "1px solid rgba(255,255,255,0.10)",
+    background: active
+      ? "radial-gradient(circle at 20% 0%, rgba(245,195,91,.22), rgba(8,8,20,.96))"
+      : "rgba(255,255,255,0.06)",
+    color: "#fff",
+    fontWeight: 900,
+    fontSize: 11,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  };
+}
+
+function navBtn(primaryStyle: boolean): React.CSSProperties {
+  return {
+    borderRadius: 12,
+    padding: "8px 10px",
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: primaryStyle ? "rgba(245,195,91,0.14)" : "rgba(255,255,255,0.06)",
+    color: "#fff",
+    fontWeight: 900,
+    cursor: "pointer",
+    minWidth: 120,
+  };
+}
 
 function extTestBtn(accent: string): React.CSSProperties {
   return {
