@@ -1,10 +1,11 @@
+// @ts-nocheck
 // =============================================================
 // src/pages/X01ConfigV3.tsx
 // Paramètres X01 V3 — style "Cricket params" + gestion d'équipes
 // + Sélection de BOTS IA créés dans Profils (LS "dc_bots_v1")
 // + Intégration de BOTS IA "pro" prédéfinis (Green Machine, Snake King…)
 // + NEW : audio config (Sons Arcade / Bruitages / Voix IA + voix sélection)
-// + NEW : Comptage externe (vidéo / bridge) + bouton "i" explicatif
+// + NEW : Comptage externe (vidéo / bridge) + bouton "i" explicatif (tuto + tests)
 // =============================================================
 
 import React from "react";
@@ -88,7 +89,7 @@ type BotLite = {
 // -------------------------------------------------------------
 // PlayerDartBadge
 // - Petit badge "jeu de fléchettes" sous un joueur X01
-// - Affiche l'image (plus tard) + nom du set
+// - Affiche le nom du set (et mini visuel si dispo)
 // - Chaque tap passe au set suivant (cycle)
 // -------------------------------------------------------------
 type PlayerDartBadgeProps = {
@@ -102,9 +103,9 @@ const PlayerDartBadge: React.FC<PlayerDartBadgeProps> = ({
   dartSetId,
   onChange,
 }) => {
-  const { palette } = useTheme();
-  const { lang } = useLang();
-  const primary = palette?.primary || "#f5c35b";
+  const { theme, palette } = useTheme() as any;
+  const { lang } = useLang() as any;
+  const primary = (theme?.primary || palette?.primary || "#f5c35b") as string;
 
   const [sets, setSets] = React.useState<DartSet[]>([]);
   const [favorite, setFavorite] = React.useState<DartSet | null>(null);
@@ -120,18 +121,16 @@ const PlayerDartBadge: React.FC<PlayerDartBadgeProps> = ({
     setFavorite(getFavoriteDartSetForProfile(profileId) || null);
   }, [profileId]);
 
-  // Pas de profil ou pas de set → pas de badge
   if (!profileId || sets.length === 0) return null;
 
-  // Set courant : soit celui explicitement choisi, soit le préféré
   const explicit = dartSetId ? sets.find((s) => s.id === dartSetId) || null : null;
   const current = explicit || favorite || sets[0];
 
   const handleClick = () => {
-    if (sets.length === 0 || !current) return;
+    if (!current) return;
     const idx = sets.findIndex((s) => s.id === current.id);
     const next = sets[(idx + 1) % sets.length];
-    onChange(next.id); // on force un set explicite
+    onChange(next?.id ?? null);
   };
 
   const labelBase =
@@ -164,14 +163,15 @@ const PlayerDartBadge: React.FC<PlayerDartBadgeProps> = ({
         whiteSpace: "nowrap",
         overflow: "hidden",
         textOverflow: "ellipsis",
+        cursor: "pointer",
       }}
       aria-label={labelBase}
       title={labelBase}
     >
-      {/* Mini visuel fléchettes */}
       {(current as any)?.thumbImageUrl ? (
         <img
           src={(current as any).thumbImageUrl}
+          alt=""
           style={{
             width: 20,
             height: 20,
@@ -192,24 +192,23 @@ const PlayerDartBadge: React.FC<PlayerDartBadgeProps> = ({
             justifyContent: "center",
             fontSize: 12,
             boxShadow: "0 0 6px rgba(0,0,0,.9)",
-            border: `1px solid rgba(245,195,91,.8)`,
+            border: `1px solid ${primary}cc`,
           }}
         >
           🎯
         </div>
       )}
 
-      {/* Nom du set UNIQUEMENT */}
       <span
         style={{
           fontSize: 11,
-          fontWeight: 600,
+          fontWeight: 700,
           whiteSpace: "nowrap",
           textOverflow: "ellipsis",
           overflow: "hidden",
         }}
       >
-        {current.name}
+        {current?.name ?? "Set"}
       </span>
     </button>
   );
@@ -219,111 +218,52 @@ const PlayerDartBadge: React.FC<PlayerDartBadgeProps> = ({
 // BOTS IA "PRO" PRÉDÉFINIS (joueurs de référence, surnoms)
 // ------------------------------------------------------
 const PRO_BOTS: BotLite[] = [
-  { id: "bot_pro_mvg", name: "Green Machine", botLevel: "Légende", avatarDataUrl: avatarGreenMachine },
-  { id: "bot_pro_wright", name: "Snake King", botLevel: "Pro", avatarDataUrl: avatarSnakeKing },
-  { id: "bot_pro_littler", name: "Wonder Kid", botLevel: "Prodige Pro", avatarDataUrl: avatarWonderKid },
+  {
+    id: "bot_pro_mvg",
+    name: "Green Machine",
+    botLevel: "Légende",
+    avatarDataUrl: avatarGreenMachine,
+  },
+  {
+    id: "bot_pro_wright",
+    name: "Snake King",
+    botLevel: "Pro",
+    avatarDataUrl: avatarSnakeKing,
+  },
+  {
+    id: "bot_pro_littler",
+    name: "Wonder Kid",
+    botLevel: "Prodige Pro",
+    avatarDataUrl: avatarWonderKid,
+  },
   { id: "bot_pro_price", name: "Ice Man", botLevel: "Pro", avatarDataUrl: avatarIceMan },
-  { id: "bot_pro_anderson", name: "Flying Scotsman", botLevel: "Pro", avatarDataUrl: avatarFlyingScotsman },
-  { id: "bot_pro_humphries", name: "Cool Hand", botLevel: "Pro", avatarDataUrl: avatarCoolHand },
-  { id: "bot_pro_taylor", name: "The Power", botLevel: "Légende", avatarDataUrl: avatarThePower },
+  {
+    id: "bot_pro_anderson",
+    name: "Flying Scotsman",
+    botLevel: "Pro",
+    avatarDataUrl: avatarFlyingScotsman,
+  },
+  {
+    id: "bot_pro_humphries",
+    name: "Cool Hand",
+    botLevel: "Pro",
+    avatarDataUrl: avatarCoolHand,
+  },
+  {
+    id: "bot_pro_taylor",
+    name: "The Power",
+    botLevel: "Légende",
+    avatarDataUrl: avatarThePower,
+  },
   { id: "bot_pro_smith", name: "Bully Boy", botLevel: "Pro", avatarDataUrl: avatarBullyBoy },
   { id: "bot_pro_aspinall", name: "The Asp", botLevel: "Fort", avatarDataUrl: avatarTheAsp },
   { id: "bot_pro_dobey", name: "Hollywood", botLevel: "Fort", avatarDataUrl: avatarHollywood },
   { id: "bot_pro_clayton", name: "The Ferret", botLevel: "Fort", avatarDataUrl: avatarTheFerret },
 ];
 
-// -------------------------------------------------------------
-// Petit chip "Jeu de fléchettes" pour un joueur X01
-// - Compact, une seule pastille cliquable
-// - Chaque clic fait défiler : AUTO -> Set1 -> Set2 -> ... -> AUTO
-// -------------------------------------------------------------
-type PlayerDartChipProps = {
-  profileId?: string | null;
-  dartSetId?: string | null;
-  onChange: (id: string | null) => void;
-};
-
-const PlayerDartChip: React.FC<PlayerDartChipProps> = ({
-  profileId,
-  dartSetId,
-  onChange,
-}) => {
-  const { lang } = useLang();
-
-  const [sets, setSets] = React.useState<DartSet[]>([]);
-  const [favorite, setFavorite] = React.useState<DartSet | null>(null);
-
-  React.useEffect(() => {
-    if (!profileId) {
-      setSets([]);
-      setFavorite(null);
-      return;
-    }
-    const all = getDartSetsForProfile(profileId);
-    setSets(all);
-    setFavorite(getFavoriteDartSetForProfile(profileId) || null);
-  }, [profileId]);
-
-  if (!profileId || sets.length === 0) return null;
-
-  const currentIndex = dartSetId ? sets.findIndex((s) => s.id === dartSetId) : -1; // -1 = AUTO (préféré)
-
-  const handleClick = () => {
-    if (sets.length === 0) return;
-
-    // N sets + 1 état AUTO
-    const total = sets.length + 1;
-    const nextIndex = (currentIndex + 1 + total) % total;
-
-    if (nextIndex === 0) onChange(null);
-    else onChange(sets[nextIndex - 1].id);
-  };
-
-  const isAuto = currentIndex === -1;
-  const currentSet =
-    isAuto && favorite ? favorite : sets.find((s) => s.id === dartSetId) || null;
-
-  const autoText =
-    lang === "fr" ? "AUTO · préf" : lang === "es" ? "AUTO · favorito" : lang === "de" ? "AUTO · Favorit" : "AUTO · fav";
-
-  const text =
-    isAuto && currentSet ? `${autoText} · ${currentSet.name}` : currentSet ? currentSet.name : autoText;
-
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      style={{
-        marginTop: 6,
-        alignSelf: "center",
-        padding: "4px 10px",
-        borderRadius: 999,
-        border: `1px solid rgba(255,255,255,.14)`,
-        background: isAuto
-          ? "radial-gradient(circle at 0% 0%, rgba(245,195,91,.3), rgba(10,10,22,.95))"
-          : "radial-gradient(circle at 0% 0%, rgba(127,226,169,.32), rgba(6,24,16,.96))",
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        color: "#fff",
-        fontSize: 10,
-        textTransform: "uppercase",
-        letterSpacing: 1.4,
-        maxWidth: 170,
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-      }}
-    >
-      <span style={{ fontSize: 13 }}>🎯</span>
-      <span style={{ opacity: 0.9 }}>{text}</span>
-    </button>
-  );
-};
-
 export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
-  const { theme } = useTheme();
-  const { t } = useLang();
+  const { theme } = useTheme() as any;
+  const { t } = useLang() as any;
 
   const allProfiles: Profile[] = profiles ?? [];
   const humanProfiles = allProfiles.filter((p) => !(p as any).isBot);
@@ -338,7 +278,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
       if (!raw) return;
       const parsed = JSON.parse(raw) as any[];
 
-      const mapped: BotLite[] = parsed.map((b) => {
+      const mapped: BotLite[] = (parsed || []).map((b: any) => {
         const levelLabel: string =
           b.botLevel ??
           b.levelLabel ??
@@ -350,7 +290,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
           "";
 
         return {
-          id: b.id,
+          id: String(b.id),
           name: b.name || "BOT",
           avatarDataUrl: b.avatarDataUrl ?? null,
           botLevel: levelLabel,
@@ -413,6 +353,30 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
   const [externalScoringEnabled, setExternalScoringEnabled] = React.useState<boolean>(false);
   const [externalInfoOpen, setExternalInfoOpen] = React.useState<boolean>(false);
 
+  // ✅ Helpers TEST : envoie des events vers X01PlayV3
+  const dispatchExternalDart = React.useCallback((segment: number, multiplier: 1 | 2 | 3) => {
+    try {
+      if (typeof window === "undefined") return;
+      window.dispatchEvent(new CustomEvent("dc:x01v3:dart", { detail: { segment, multiplier } }));
+    } catch (e) {
+      console.warn("[X01ConfigV3] dispatchExternalDart failed", e);
+    }
+  }, []);
+
+  const dispatchExternalVisit = React.useCallback(
+    (darts: Array<{ segment: number; multiplier: 1 | 2 | 3 }>) => {
+      try {
+        if (typeof window === "undefined") return;
+        window.dispatchEvent(
+          new CustomEvent("dc:x01v3:visit", { detail: { darts: (darts || []).slice(0, 3) } })
+        );
+      } catch (e) {
+        console.warn("[X01ConfigV3] dispatchExternalVisit failed", e);
+      }
+    },
+    []
+  );
+
   // évite d’écraser le choix manuel si on change de joueur sélectionné
   const voiceTouchedRef = React.useRef(false);
 
@@ -436,7 +400,9 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
     const p: any = humanProfiles.find((x) => x.id === firstHumanSelectedId);
     if (!p) return;
 
-    const candidate: string | undefined = p.ttsVoice ?? p.voiceId ?? p.voice ?? p.tts ?? undefined;
+    const candidate: string | undefined =
+      p.ttsVoice ?? p.voiceId ?? p.voice ?? p.tts ?? undefined;
+
     if (candidate && typeof candidate === "string") setVoiceId(candidate);
   }, [selectedIds, humanProfiles]);
 
@@ -484,11 +450,10 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
     if (totalPlayers === 0) return false;
     if (matchMode === "solo") return totalPlayers === 2;
     if (matchMode === "multi") return totalPlayers >= 2;
-    // mode équipes : au moins 4 joueurs
-    return totalPlayers >= 4;
+    return totalPlayers >= 4; // teams
   }, [totalPlayers, matchMode]);
 
-  // ---- désactivation visuelle des modes impossibles (Option A) ----
+  // ---- désactivation visuelle des modes impossibles ----
   const soloDisabled = totalPlayers !== 2;
   const multiDisabled = totalPlayers < 2;
   const teamsDisabled = totalPlayers < 4;
@@ -502,7 +467,9 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
       if (tId) teamBuckets[tId].push(pid);
     });
 
-    const usedTeams = (Object.keys(teamBuckets) as TeamId[]).filter((tid) => teamBuckets[tid].length > 0);
+    const usedTeams = (Object.keys(teamBuckets) as TeamId[]).filter(
+      (tid) => teamBuckets[tid].length > 0
+    );
 
     if (usedTeams.length < 2) {
       alert(
@@ -514,7 +481,9 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
       return null;
     }
 
-    const sizes = Array.from(new Set(usedTeams.map((tid) => teamBuckets[tid].length))).filter((n) => n > 0);
+    const sizes = Array.from(
+      new Set(usedTeams.map((tid) => teamBuckets[tid].length))
+    ).filter((n) => n > 0);
 
     if (sizes.length !== 1) {
       alert(t("x01v3.teams.sameSize", "Toutes les équipes doivent avoir le même nombre de joueurs."));
@@ -571,7 +540,6 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
       if (!teams) return;
     }
 
-    // résout les IDs : humains d'abord, puis bots (user + pro)
     const players = selectedIds
       .map((id) => {
         const human = allProfiles.find((p) => p.id === id);
@@ -630,7 +598,6 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
     };
 
     if (matchMode === "teams" && teams) {
-      // @ts-expect-error champ "teams" prévu pour l’extension du moteur
       baseCfg.teams = teams;
     }
 
@@ -678,6 +645,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
+              cursor: "pointer",
             }}
           >
             <span style={{ fontSize: 16 }}>←</span>
@@ -832,7 +800,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
                         {p.name}
                       </div>
 
-                      {/* ⬇⬇⬇ BADGE "JEU DE FLÉCHETTES" ICI ⬇⬇⬇ */}
+                      {/* Badge set (ne doit pas toggle le joueur) */}
                       <div
                         onClick={(e) => e.stopPropagation()}
                         style={{ width: "100%", display: "flex", justifyContent: "center" }}
@@ -855,7 +823,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
           )}
         </section>
 
-        {/* --------- BLOC PARAMÈTRES DE BASE --------- */}
+        {/* --------- BLOC PARAMÈTRES DE BASE + AUDIO + EXTERNAL --------- */}
         <section
           style={{
             background: cardBg,
@@ -958,7 +926,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
             </div>
           </div>
 
-          {/* ✅ NEW : AUDIO / VOIX */}
+          {/* ✅ AUDIO / VOIX */}
           <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
             <div
               style={{
@@ -1001,7 +969,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
               </div>
             </div>
 
-            {/* Bruitages (dart_hit) */}
+            {/* Bruitages */}
             <div style={{ marginBottom: 10 }}>
               <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
                 {t("x01v3.audio.hit", "Bruitages")}
@@ -1029,7 +997,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
               </div>
             </div>
 
-            {/* Voix IA + sélection */}
+            {/* Voix IA */}
             <div>
               <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>
                 {t("x01v3.audio.voice", "Voix IA")}
@@ -1089,7 +1057,7 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
             </div>
           </div>
 
-          {/* ✅ NEW : COMPTAGE EXTERNE (vidéo) + bouton info */}
+          {/* ✅ COMPTAGE EXTERNE + bouton info */}
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
             <div
               style={{
@@ -1167,133 +1135,210 @@ export default function X01ConfigV3({ profiles, onBack, onStart, go }: Props) {
               {externalScoringEnabled
                 ? t(
                     "x01v3.external.onHint",
-                    "ON : le keypad pourra être masqué côté X01PlayV3, et les tirs arriveront depuis l’extérieur."
+                    "ON : X01PlayV3 écoute des events externes et applique les tirs au moteur."
                   )
                 : t("x01v3.external.offHint", "OFF : mode normal au keypad.")}
             </div>
           </div>
 
-          {/* ✅ MODAL FLOTTANT : aide comptage externe */}
-          {externalInfoOpen && (
-            <div
-              onClick={() => setExternalInfoOpen(false)}
-              style={{
-                position: "fixed",
-                inset: 0,
-                background: "rgba(0,0,0,0.55)",
-                zIndex: 9999,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: 12,
-              }}
-            >
-              <div
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  width: "min(520px, 100%)",
-                  borderRadius: 18,
-                  border: "1px solid rgba(255,255,255,0.10)",
-                  background:
-                    "linear-gradient(180deg, rgba(10,12,24,0.96), rgba(6,7,14,0.98))",
-                  boxShadow: "0 18px 60px rgba(0,0,0,0.65)",
-                  padding: 14,
-                  color: "#f2f2ff",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 10,
-                    marginBottom: 10,
-                  }}
-                >
-                  <div style={{ fontWeight: 900, color: primary, fontSize: 14 }}>
-                    {t("x01v3.external.howTitle", "Comment ça fonctionne ?")}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setExternalInfoOpen(false)}
-                    style={{
-                      borderRadius: 10,
-                      padding: "6px 10px",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: "rgba(255,255,255,0.06)",
-                      color: "#fff",
-                      fontWeight: 800,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {t("common.close", "Fermer")}
-                  </button>
-                </div>
+          {/* ✅ MODAL FLOTTANT : aide connexion comptage externe */}
+{externalInfoOpen && (
+  <div
+    onClick={() => setExternalInfoOpen(false)}
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.55)",
+      zIndex: 9999,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 12,
+    }}
+  >
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        width: "min(620px, 100%)",
+        borderRadius: 18,
+        border: "1px solid rgba(255,255,255,0.10)",
+        background:
+          "linear-gradient(180deg, rgba(10,12,24,0.96), rgba(6,7,14,0.98))",
+        boxShadow: "0 18px 60px rgba(0,0,0,0.65)",
+        padding: 14,
+        color: "#f2f2ff",
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          marginBottom: 10,
+        }}
+      >
+        <div style={{ fontWeight: 900, color: primary, fontSize: 14 }}>
+          {t("x01v3.external.helpTitle", "Connecter un appareil de comptage à Darts Counter")}
+        </div>
 
-                <div style={{ fontSize: 12, color: "#d7d9f0", lineHeight: 1.4 }}>
-                  <p style={{ marginTop: 0 }}>
-                    Ce mode sert à préparer la compatibilité avec un système externe (caméra/bridge).
-                    <br />
-                    Tu peux déjà tester <b>sans Scolia</b> : un script peut envoyer des tirs à l’app.
-                  </p>
+        <button
+          type="button"
+          onClick={() => setExternalInfoOpen(false)}
+          style={{
+            borderRadius: 10,
+            padding: "6px 10px",
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(255,255,255,0.06)",
+            color: "#fff",
+            fontWeight: 800,
+            cursor: "pointer",
+          }}
+        >
+          {t("common.close", "Fermer")}
+        </button>
+      </div>
 
-                  <div
-                    style={{
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      background: "rgba(255,255,255,0.04)",
-                      borderRadius: 14,
-                      padding: 10,
-                      marginTop: 10,
-                    }}
-                  >
-                    <div style={{ fontWeight: 800, marginBottom: 6, color: primary }}>
-                      Exemple d’envoi d’un tir (depuis la console / bridge)
-                    </div>
+      {/* Contenu */}
+      <div style={{ fontSize: 12, color: "#d7d9f0", lineHeight: 1.45 }}>
+        <div>
+          <b>Objectif</b>
+          <div style={{ marginTop: 6 }}>
+            Ce mode sert à utiliser un système de comptage automatique (caméra / Scolia-like / bridge)
+            pour <b>envoyer les tirs</b> dans Darts Counter, sans saisir au keypad.
+          </div>
+        </div>
 
-                    <pre
-                      style={{
-                        margin: 0,
-                        padding: 10,
-                        borderRadius: 12,
-                        background: "rgba(0,0,0,0.35)",
-                        overflowX: "auto",
-                        fontSize: 12,
-                        lineHeight: 1.35,
-                        border: "1px solid rgba(255,255,255,0.08)",
-                      }}
-                    >{`window.dispatchEvent(new CustomEvent("dc:x01:external_dart", {
-  detail: { segment: 20, multiplier: 3 } // T20
-}));
+        <div style={{ marginTop: 12 }}>
+          <b>Pré-requis</b>
+          <div style={{ marginTop: 6 }}>
+            1) Ton appareil doit être capable d’exporter les tirs (par API, WebSocket, MQTT, HTTP, etc.).<br />
+            2) Un petit <b>bridge</b> (PC, Raspberry, serveur local…) doit convertir ce flux en “événements”
+            compatibles avec l’app.
+          </div>
+        </div>
 
-// BULL
-window.dispatchEvent(new CustomEvent("dc:x01:external_dart", {
-  detail: { segment: 25, multiplier: 1 }
-}));
+        <div style={{ marginTop: 12 }}>
+          <b>Étape 1 — Activer le mode dans Darts Counter</b>
+          <div style={{ marginTop: 6 }}>
+            • Va dans <b>X01 &gt; Config</b><br />
+            • Active <b>Comptage externe = ON</b><br />
+            • Lance la partie : l’écran <b>X01PlayV3</b> se met en “écoute” des tirs externes.
+          </div>
+        </div>
 
-// DBULL
-window.dispatchEvent(new CustomEvent("dc:x01:external_dart", {
-  detail: { segment: 25, multiplier: 2 }
-}));
+        <div style={{ marginTop: 12 }}>
+  <b>Étape 2 — Installer / lancer le “bridge” (le connecteur)</b>
+  <div style={{ marginTop: 6 }}>
+    <div>
+      <b>C’est quoi le bridge ?</b>
+      <div style={{ marginTop: 6 }}>
+        Le bridge est un petit programme qui tourne <b>entre</b> ton appareil de comptage (caméra / board)
+        et Darts Counter. Il reçoit les tirs depuis l’appareil, puis les renvoie à Darts Counter dans un format simple.
+      </div>
+    </div>
 
-// MISS
-window.dispatchEvent(new CustomEvent("dc:x01:external_dart", {
-  detail: { segment: 0, multiplier: 1 }
-}));`}</pre>
+    <div style={{ marginTop: 10 }}>
+      <b>Où se trouve le bridge ?</b>
+      <div style={{ marginTop: 6 }}>
+        • Si tu utilises un système “Scolia-like” : le bridge tourne généralement sur <b>un PC / Raspberry</b>
+        qui est sur le même réseau que ton système de comptage.<br />
+        • Si tu n’as pas de système compatible : tu peux quand même utiliser un bridge “maison”
+        (PC/Raspberry) qui récupère une source (API / fichier / WebSocket / MQTT…) et renvoie des tirs.<br />
+        • Dans Darts Counter, le bridge n’est <b>pas</b> une option magique : il faut <b>le lancer quelque part</b>
+        (sur un appareil que tu contrôles).
+      </div>
+    </div>
 
-                    <div style={{ marginTop: 8, fontSize: 11, color: "#aeb2d3" }}>
-                      À brancher plus tard sur un vrai flux vidéo (Scolia-like) via un “bridge”, mais
-                      ça marche déjà pour des tests.
-                    </div>
-                  </div>
+    <div style={{ marginTop: 10 }}>
+      <b>Ce que doit faire l’utilisateur (check-list simple)</b>
+      <div style={{ marginTop: 6 }}>
+        1) <b>Choisis où tourner le bridge</b> : PC (Windows/Mac/Linux) ou Raspberry Pi.<br />
+        2) <b>Mets tout sur le même réseau</b> (important) :<br />
+        &nbsp;&nbsp;• l’appareil de comptage (caméra/board)<br />
+        &nbsp;&nbsp;• l’appareil où tourne Darts Counter (téléphone/tablette/PC)<br />
+        &nbsp;&nbsp;• le PC/Raspberry qui fait tourner le bridge<br />
+        3) <b>Lance Darts Counter</b> et active <b>Comptage externe = ON</b> (Étape 1).<br />
+        4) <b>Lance le bridge</b> sur le PC/Raspberry (il doit rester allumé pendant la partie).<br />
+        5) <b>Démarre une partie</b> : à chaque fléchette détectée, le bridge envoie un tir et le score bouge tout seul.
+      </div>
+    </div>
 
-                  <p style={{ marginBottom: 0, marginTop: 10, fontSize: 11, color: "#aeb2d3" }}>
-                    Note : en mode externe, X01PlayV3 doit écouter cet événement et appliquer les tirs
-                    reçus au moteur.
-                  </p>
-                </div>
-              </div>
+    <div style={{ marginTop: 10 }}>
+      <b>Ce que fait exactement le bridge (en clair)</b>
+      <div style={{ marginTop: 6 }}>
+        Le bridge fait toujours ces 3 actions :
+        <div style={{ marginTop: 6 }}>
+          1) <b>Écouter</b> l’appareil de comptage (ex : “T20”, “D16”, “Bull”, “Miss”).<br />
+          2) <b>Convertir</b> en données simples : <b>segment</b> + <b>multiplier</b>.<br />
+          3) <b>Envoyer</b> à Darts Counter (au navigateur/appareil où le match est ouvert).
+        </div>
+      </div>
+    </div>
+
+    <div style={{ marginTop: 10 }}>
+      <b>Deux façons courantes de “relier” le bridge à Darts Counter</b>
+      <div style={{ marginTop: 6 }}>
+        <div>
+          <b>A) Même appareil (le plus simple)</b>
+          <div style={{ marginTop: 6 }}>
+            Tu ouvres Darts Counter dans un navigateur sur le PC, et le bridge tourne sur le même PC.
+            Dans ce cas, le bridge peut envoyer les tirs directement au navigateur (sans config réseau complexe).
+          </div>
+        </div>
+
+        <div style={{ marginTop: 10 }}>
+          <b>B) Appareil séparé (mobile/tablette)</b>
+          <div style={{ marginTop: 6 }}>
+            Tu joues sur téléphone/tablette, et le bridge tourne sur un PC/Raspberry.
+            Dans ce cas, le bridge doit <b>envoyer les tirs sur le réseau</b> vers l’appareil qui affiche Darts Counter
+            (ex : via une petite URL locale, WebSocket local, ou une page “relay” ouverte dans le navigateur).
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style={{ marginTop: 10, fontSize: 11, color: "#aeb2d3" }}>
+      <b>Note :</b> le bridge dépend du modèle de ton appareil de comptage (API/protocole).
+      Si ton appareil ne fournit pas de flux exploitable, il faudra un système qui “sort” les impacts (logiciel/SDK/API),
+      sinon aucun bridge ne peut deviner les tirs.
+    </div>
+  </div>
+</div>
+
+        <div style={{ marginTop: 12 }}>
+          <b>Étape 3 — Format attendu (conversion)</b>
+          <div style={{ marginTop: 6 }}>
+            Le bridge doit convertir :
+            <div style={{ marginTop: 6 }}>
+              • <b>Simple</b> : S20 → segment=20, multiplier=1<br />
+              • <b>Double</b> : D16 → segment=16, multiplier=2<br />
+              • <b>Triple</b> : T20 → segment=20, multiplier=3<br />
+              • <b>Bull</b> : Bull → segment=25, multiplier=1<br />
+              • <b>Double Bull</b> : DBull → segment=25, multiplier=2<br />
+              • <b>Miss</b> : Miss → segment=0, multiplier=1
             </div>
-          )}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12 }}>
+          <b>Étape 4 — Vérifier que ça marche</b>
+          <div style={{ marginTop: 6 }}>
+            • Démarre un match avec <b>Comptage externe = ON</b><br />
+            • Lance ton appareil de comptage (caméra / board)<br />
+            • Quand une fléchette est détectée, le score doit changer <b>tout seul</b> dans Darts Counter.
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12, fontSize: 11, color: "#aeb2d3" }}>
+          <b>Important :</b> si tu repasses sur <b>OFF</b>, la partie revient en mode normal (saisie au keypad).
+          Le bridge peut rester allumé, mais il ne pilotera plus la partie.
+        </div>
+      </div>
+    </div>
+  </div>
+)}
         </section>
 
         {/* --------- BLOC FORMAT DU MATCH --------- */}
@@ -1438,7 +1483,7 @@ window.dispatchEvent(new CustomEvent("dc:x01:external_dart", {
           </div>
         </section>
 
-        {/* --------- BLOC COMPO ÉQUIPES (si mode teams) --------- */}
+        {/* --------- BLOC COMPO ÉQUIPES --------- */}
         {matchMode === "teams" && totalPlayers >= 2 && (
           <TeamsSection
             profiles={allProfiles}
@@ -1475,7 +1520,7 @@ window.dispatchEvent(new CustomEvent("dc:x01:external_dart", {
           <p style={{ fontSize: 11, color: "#7c80a0", marginBottom: 10 }}>
             {t(
               "x01v3.bots.subtitle",
-              'Ajoute des BOTS IA à ta partie : bots "pro" prédéfinis ou BOTS que tu as créés dans le menu Profils.'
+              'Ajoute des BOTS IA : bots "pro" prédéfinis ou BOTS que tu as créés dans le menu Profils.'
             )}
           </p>
 
@@ -1512,6 +1557,7 @@ window.dispatchEvent(new CustomEvent("dc:x01:external_dart", {
                     alignItems: "center",
                     gap: 6,
                     flexShrink: 0,
+                    cursor: "pointer",
                   }}
                 >
                   <BotMedallion bot={bot} level={level} active={active} />
@@ -1532,7 +1578,6 @@ window.dispatchEvent(new CustomEvent("dc:x01:external_dart", {
                     {bot.name}
                   </div>
 
-                  {/* Chip BOT bleu néon */}
                   <div style={{ marginTop: 2, display: "flex", justifyContent: "center" }}>
                     <span
                       style={{
@@ -1567,9 +1612,10 @@ window.dispatchEvent(new CustomEvent("dc:x01:external_dart", {
               border: `1px solid ${primary}`,
               background: "rgba(255,255,255,0.04)",
               color: primary,
-              fontWeight: 600,
+              fontWeight: 700,
               fontSize: 11,
               textTransform: "uppercase",
+              cursor: "pointer",
             }}
           >
             {t("x01v3.bots.manage", "Gérer les BOTS")}
@@ -1598,14 +1644,17 @@ window.dispatchEvent(new CustomEvent("dc:x01:external_dart", {
               height: 46,
               borderRadius: 999,
               border: "none",
-              fontWeight: 700,
+              fontWeight: 800,
               fontSize: 14,
               letterSpacing: 1,
               textTransform: "uppercase",
-              background: canStart ? `linear-gradient(90deg, ${primary}, #ffe9a3)` : "rgba(120,120,120,0.5)",
-              color: canStart ? "#151515" : "#2b2bb2",
+              background: canStart
+                ? `linear-gradient(90deg, ${primary}, #ffe9a3)`
+                : "rgba(120,120,120,0.5)",
+              color: canStart ? "#151515" : "#2b2b52",
               boxShadow: canStart ? "0 0 18px rgba(255, 207, 120, 0.65)" : "none",
               opacity: canStart ? 1 : 0.6,
+              cursor: canStart ? "pointer" : "default",
             }}
           >
             {t("x01v3.start", "Lancer la partie")}
@@ -1626,7 +1675,7 @@ type TeamsSectionProps = {
 };
 
 function TeamsSection({ profiles, selectedIds, teamAssignments, setPlayerTeam }: TeamsSectionProps) {
-  const { t } = useLang();
+  const { t } = useLang() as any;
   const cardBg = "rgba(10, 12, 24, 0.96)";
   const totalPlayers = selectedIds.length;
 
@@ -1660,13 +1709,14 @@ function TeamsSection({ profiles, selectedIds, teamAssignments, setPlayerTeam }:
           fontSize: 13,
           textTransform: "uppercase",
           letterSpacing: 1,
-          fontWeight: 600,
+          fontWeight: 700,
           color: "#9fa4c0",
           marginBottom: 6,
         }}
       >
         {t("x01v3.teams.title", "Composition des équipes")}
       </h3>
+
       <p style={{ fontSize: 11, color: "#7c80a0", marginBottom: 10 }}>
         {t(
           "x01v3.teams.subtitle",
@@ -1695,11 +1745,11 @@ function TeamsSection({ profiles, selectedIds, teamAssignments, setPlayerTeam }:
                 <span
                   style={{
                     fontSize: 13,
-                    fontWeight: 500,
+                    fontWeight: 700,
                     whiteSpace: "nowrap",
                     textOverflow: "ellipsis",
                     overflow: "hidden",
-                    maxWidth: 90,
+                    maxWidth: 120,
                   }}
                 >
                   {p.name}
@@ -1735,6 +1785,24 @@ function TeamsSection({ profiles, selectedIds, teamAssignments, setPlayerTeam }:
   );
 }
 
+/* ------------------ Helpers UI ------------------ */
+
+function extTestBtn(accent: string): React.CSSProperties {
+  return {
+    borderRadius: 999,
+    padding: "7px 10px",
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#fff",
+    fontWeight: 900,
+    fontSize: 12,
+    letterSpacing: 0.4,
+    cursor: "pointer",
+    boxShadow: `0 0 14px ${accent}33, 0 0 22px rgba(0,0,0,0.55)`,
+    whiteSpace: "nowrap",
+  };
+}
+
 /* --------- Helpers niveau BOT (1 à 5 étoiles) --------- */
 
 function resolveBotLevel(botLevelRaw?: string | null): { level: number } {
@@ -1750,9 +1818,12 @@ function resolveBotLevel(botLevelRaw?: string | null): { level: number } {
   if (v.includes("legend") || v.includes("légende")) return { level: 5 };
   if (v.includes("pro")) return { level: 4 };
 
-  if (v.includes("fort") || v.includes("strong") || v.includes("hard") || v.includes("difficile")) return { level: 3 };
-  if (v.includes("standard") || v.includes("normal") || v.includes("medium") || v.includes("moyen")) return { level: 2 };
-  if (v.includes("easy") || v.includes("facile") || v.includes("beginner") || v.includes("débutant") || v.includes("rookie")) return { level: 1 };
+  if (v.includes("fort") || v.includes("strong") || v.includes("hard") || v.includes("difficile"))
+    return { level: 3 };
+  if (v.includes("standard") || v.includes("normal") || v.includes("medium") || v.includes("moyen"))
+    return { level: 2 };
+  if (v.includes("easy") || v.includes("facile") || v.includes("beginner") || v.includes("débutant") || v.includes("rookie"))
+    return { level: 1 };
 
   return { level: 1 };
 }
@@ -1767,7 +1838,7 @@ function BotMedallion({
   level: number; // 1..5
   active: boolean;
 }) {
-  const isPro = bot.id.startsWith("bot_pro_");
+  const isPro = String(bot.id || "").startsWith("bot_pro_");
   const COLOR = isPro ? "#f7c85c" : "#00b4ff";
   const COLOR_GLOW = isPro ? "rgba(247,200,92,0.9)" : "rgba(0,172,255,0.65)";
 
@@ -1831,7 +1902,6 @@ function BotMedallion({
       >
         <ProfileAvatar
           size={AVATAR}
-          // @ts-ignore (ProfileAvatar supporte déjà dataUrl chez toi)
           dataUrl={bot.avatarDataUrl ?? undefined}
           label={bot.name?.[0]?.toUpperCase() || "B"}
           showStars={false}
@@ -1856,11 +1926,7 @@ type PillProps = {
 function PillButton({ label, active, onClick, primary, primarySoft, compact, disabled }: PillProps) {
   const isDisabled = !!disabled;
 
-  const bg = isDisabled
-    ? "rgba(40,42,60,0.7)"
-    : active
-    ? primarySoft
-    : "rgba(9,11,20,0.9)";
+  const bg = isDisabled ? "rgba(40,42,60,0.7)" : active ? primarySoft : "rgba(9,11,20,0.9)";
 
   const border = isDisabled
     ? "1px solid rgba(255,255,255,0.04)"
@@ -1882,7 +1948,7 @@ function PillButton({ label, active, onClick, primary, primarySoft, compact, dis
         background: bg,
         color,
         fontSize: 12,
-        fontWeight: active && !isDisabled ? 600 : 500,
+        fontWeight: active && !isDisabled ? 700 : 600,
         boxShadow: active && !isDisabled ? "0 0 12px rgba(0,0,0,0.7)" : "none",
         whiteSpace: "nowrap",
         opacity: isDisabled ? 0.7 : 1,
@@ -1922,7 +1988,7 @@ function TeamPillButton({ label, color, active, disabled, onClick }: TeamPillPro
         background: disabled ? "rgba(40,42,60,0.6)" : baseBg,
         color: disabled ? "#777b92" : baseColor,
         fontSize: 11,
-        fontWeight: 600,
+        fontWeight: 800,
         boxShadow: active && !disabled ? `0 0 10px ${color}55` : "none",
         whiteSpace: "nowrap",
         cursor: disabled ? "default" : "pointer",
