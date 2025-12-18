@@ -20,8 +20,8 @@ import { supabase } from "../lib/supabase";
 
 type Props = { go?: (tab: any, params?: any) => void };
 
-const DELETE_USER_FN_URL =
-  "https://nvqqghcnrjawhimtvlcg.supabase.co/functions/v1/delete-user";
+// ✅ Nom de la Edge Function (Supabase)
+const DELETE_USER_FN_NAME = "delete-user";
 
 // ---------------- Thèmes dispo + descriptions fallback ----------------
 
@@ -502,26 +502,18 @@ function AccountSecurityBlock() {
     setError(null);
 
     try {
-      // 1) 🔥 Appel direct de l’URL de la fonction Edge hébergée chez Supabase
-      const res = await fetch(DELETE_USER_FN_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          // Si un jour tu réactives la vérif JWT, tu pourras ajouter ici:
-          // Authorization: `Bearer ${auth.session?.access_token}`,
-        },
-        body: JSON.stringify({ userId: auth.user.id }),
-      });
+      // 1) ✅ Appel Edge Function via supabase-js (gère l'Authorization automatiquement si session active)
+const { data, error: fnError } = await supabase.functions.invoke(
+  DELETE_USER_FN_NAME,
+  {
+    body: { userId: auth.user.id },
+  }
+);
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        console.error(
-          "[settings] delete-user HTTP error",
-          res.status,
-          text
-        );
-        throw new Error(`delete-user failed (status ${res.status})`);
-      }
+if (fnError) {
+  console.error("[settings] delete-user invoke error", fnError);
+  throw new Error(fnError.message || "delete-user failed");
+}
 
       // 2) Logout propre côté client
       try {

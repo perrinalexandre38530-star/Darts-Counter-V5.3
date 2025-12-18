@@ -4,6 +4,7 @@
 // - Compatible ancien code (user/profile/status/loading/...)
 // - En mode réel : email + mot de passe requis
 // - En mode mock : pseudo uniquement
+// ✅ FIX: ajoute "ready" pour éviter que l'app conclue trop tôt "pas de compte"
 // ============================================
 
 import React from "react";
@@ -19,11 +20,20 @@ type Status = "checking" | "signed_out" | "signed_in";
 export type AuthOnlineContextValue = {
   status: Status;
   loading: boolean;
+  ready: boolean; // ✅ AJOUT: vrai quand restoreSession a fini (même si signed_out)
   user: UserAuth | null;
   profile: OnlineProfile | null;
   isMock: boolean;
-  signup: (p: { nickname: string; email?: string; password?: string }) => Promise<void>;
-  login: (p: { nickname?: string; email?: string; password?: string }) => Promise<void>;
+  signup: (p: {
+    nickname: string;
+    email?: string;
+    password?: string;
+  }) => Promise<void>;
+  login: (p: {
+    nickname?: string;
+    email?: string;
+    password?: string;
+  }) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (patch: UpdateProfilePayload) => Promise<void>;
   refresh: () => Promise<void>;
@@ -40,17 +50,25 @@ const AuthOnlineContext = React.createContext<AuthOnlineContextValue | null>(
 export function AuthOnlineProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = React.useState<Status>("checking");
   const [loading, setLoading] = React.useState(false);
+
+  // ✅ AJOUT
+  const [ready, setReady] = React.useState(false);
+
   const [user, setUser] = React.useState<UserAuth | null>(null);
   const [profile, setProfile] = React.useState<OnlineProfile | null>(null);
 
   // Applique une session (ou null) : user + profil complet
   const applySession = React.useCallback((session: AuthSession | null) => {
+    // ✅ IMPORTANT: dès qu'on a une réponse (session OU null), on est "ready"
+    setReady(true);
+
     if (!session) {
       setStatus("signed_out");
       setUser(null);
       setProfile(null);
       return;
     }
+
     setStatus("signed_in");
     setUser(session.user);
     setProfile(session.profile);
@@ -62,7 +80,10 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
 
     async function restore() {
       try {
+        // ✅ AJOUT: on repasse en "checking" + not ready le temps du restore
+        setReady(false);
         setStatus("checking");
+
         const session = await onlineApi.restoreSession();
         if (!cancelled) applySession(session);
       } catch (e) {
@@ -191,6 +212,7 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
       value={{
         status,
         loading,
+        ready, // ✅ AJOUT
         user,
         profile,
         isMock: onlineApi.USE_MOCK,

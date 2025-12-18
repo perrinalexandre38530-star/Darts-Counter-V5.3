@@ -358,14 +358,16 @@ async function login(payload: LoginPayload): Promise<AuthSession> {
 }
 
 async function restoreSession(): Promise<AuthSession | null> {
-  // Tentative rapide depuis localStorage (pour éviter les flashes)
-  const fromLS = loadAuthFromLS();
-  if (fromLS?.user && fromLS.token) {
-    return fromLS;
+  // Source de vérité : Supabase (toujours)
+  const live = await buildAuthSessionFromSupabase();
+
+  // Si Supabase dit "pas de session", on purge le cache local
+  if (!live?.user || !live.token) {
+    saveAuthToLS(null);
+    return null;
   }
 
-  // Source de vérité : Supabase
-  return await buildAuthSessionFromSupabase();
+  return live;
 }
 
 async function logout(): Promise<void> {

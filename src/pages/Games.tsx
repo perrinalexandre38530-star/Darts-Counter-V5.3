@@ -4,6 +4,7 @@
 // - Cartes sombres, titre néon
 // - Pastille "i" à droite => panneau d'aide (traductions via t())
 // - Modes grisés : non cliquables (enabled = false) + "Coming soon"
+// ✅ NEW: Carte "TOURNOIS" (LOCAL) dans le menu Games
 // ============================================
 
 import React from "react";
@@ -17,6 +18,7 @@ type Props = {
 
 type GameId =
   | "training"
+  | "tournaments" // ✅ NEW
   | "x01"
   | "x01v3"
   | "cricket"
@@ -53,6 +55,23 @@ const GAMES: GameDef[] = [
     tab: "training",
     enabled: true,
   },
+
+  // ✅ NEW: TOURNOIS (LOCAL)
+  {
+    id: "tournaments",
+    titleKey: "games.tournaments.title",
+    titleDefault: "TOURNOIS",
+    subtitleKey: "games.tournaments.subtitle",
+    subtitleDefault: "Crée des tournois en local (poules, élimination…).",
+    infoTitleKey: "games.tournaments.infoTitle",
+    infoTitleDefault: "Tournois (Local)",
+    infoBodyKey: "games.tournaments.infoBody",
+    infoBodyDefault:
+      "Crée un tournoi en local : round-robin, élimination directe, poules + phase finale, têtes de série, byes, et paramètres complets selon le mode de jeu. Plusieurs matchs peuvent être lancés et validés en parallèle.",
+    tab: "tournaments", // 👈 onglet à créer/câbler dans App.tsx
+    enabled: true,
+  },
+
   {
     id: "x01",
     titleKey: "games.x01.title",
@@ -106,8 +125,8 @@ const GAMES: GameDef[] = [
     infoBodyKey: "games.killer.infoBody",
     infoBodyDefault:
       "Chaque joueur possède un numéro. Deviens Killer en touchant le tien, puis élimine les autres joueurs.",
-    tab: "killer_config", // ✅ active la navigation vers ta page KillerConfig
-    enabled: true,        // ✅ enlève le grisage
+    tab: "killer_config",
+    enabled: true,
   },
   {
     id: "shanghai",
@@ -263,11 +282,11 @@ export default function Games({ setTab }: Props) {
                 }}
               >
                 <InfoDot
-  onClick={(ev) => {
-    ev.stopPropagation();
-    setInfoGame(g);
-  }}
-  glow={theme.primary + "88"}   // halo léger & thème-compatible
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    setInfoGame(g);
+                  }}
+                  glow={theme.primary + "88"}
                 />
               </div>
             </button>

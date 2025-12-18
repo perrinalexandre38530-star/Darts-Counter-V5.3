@@ -3442,6 +3442,15 @@ export default function StatsHub({
   // CSS shimmer
   useInjectStatsNameCss();
 
+  // ============================================================
+// 🔎 DEBUG TEMPORAIRE — vérifier IndexedDB (History)
+// ============================================================
+React.useEffect(() => {
+  History.list().then((rows: any[]) => {
+    console.log("[DEBUG] History.list count =", rows?.length || 0);
+    console.log("[DEBUG] History.sample =", rows?.[0]);
+  });
+}, []);
   
   // ==========================
   // ✅ NEW — History normalisée (PHASE 2)

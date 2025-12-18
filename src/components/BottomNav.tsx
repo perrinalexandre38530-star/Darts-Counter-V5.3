@@ -5,17 +5,32 @@ import { useTheme } from "../contexts/ThemeContext";
  * BottomNav
  * - Le bouton "Stats" ouvre le menu StatsShell (puis accès au Hub).
  * - Visuellement, l’onglet "Stats" reste actif quand on est dans statsHub.
+ * - ✅ NEW: onglet "Tournois" (local) + actif aussi dans tournament_* routes
  */
 type TabKey =
   | "home"
   | "games"
+  | "tournaments"
+  | "tournament_create"
+  | "tournament_view"
+  | "tournament_match_play"
   | "profiles"
   | "friends"
   | "stats"
   | "statsHub"
   | "settings";
 
-type NavItem = { k: Exclude<TabKey, "statsHub">; label: string; icon: React.ReactNode };
+type NavItem = {
+  k: Exclude<
+    TabKey,
+    | "statsHub"
+    | "tournament_create"
+    | "tournament_view"
+    | "tournament_match_play"
+  >;
+  label: string;
+  icon: React.ReactNode;
+};
 
 function Icon({ name, size = 22 }: { name: TabKey; size?: number }) {
   const p = {
@@ -45,6 +60,22 @@ function Icon({ name, size = 22 }: { name: TabKey; size?: number }) {
           <path {...p} d="M19 12h2" />
           <path {...p} d="M12 21v-2" />
           <path {...p} d="M3 12h2" />
+        </svg>
+      );
+
+    // TOURNOIS — trophée 🏆
+    case "tournaments":
+    case "tournament_create":
+    case "tournament_view":
+    case "tournament_match_play":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24">
+          <path {...p} d="M8 5h8v3a4 4 0 0 1-8 0V5Z" />
+          <path {...p} d="M6 5H4v2a4 4 0 0 0 4 4" />
+          <path {...p} d="M18 5h2v2a4 4 0 0 1-4 4" />
+          <path {...p} d="M12 12v3" />
+          <path {...p} d="M9 20h6" />
+          <path {...p} d="M10 15h4" />
         </svg>
       );
 
@@ -120,9 +151,14 @@ export default function BottomNav({
 
     // Profils avant Local
     { k: "profiles", label: "Profils", icon: <Icon name="profiles" /> },
-    // Games → Local
+
+    // Local (jeux)
     { k: "games", label: "Local", icon: <Icon name="games" /> },
-    // Friends → Online
+
+    // ✅ NEW: Tournois (local)
+    { k: "tournaments", label: "Tournois", icon: <Icon name="tournaments" /> },
+
+    // Online
     { k: "friends", label: "Online", icon: <Icon name="friends" /> },
 
     { k: "stats", label: "Stats", icon: <Icon name="stats" /> },
@@ -141,6 +177,12 @@ export default function BottomNav({
     onChange(k);
   };
 
+  const isTournamentRoute =
+    value === "tournaments" ||
+    value === "tournament_create" ||
+    value === "tournament_view" ||
+    value === "tournament_match_play";
+
   return (
     <nav
       className="bottom-nav"
@@ -153,8 +195,12 @@ export default function BottomNav({
     >
       {tabs.map((t) => {
         // ✅ onglet Stats actif aussi quand on est dans statsHub
-        const active =
-          value === t.k || (t.k === "stats" && value === "statsHub");
+        const activeStats = t.k === "stats" && value === "statsHub";
+
+        // ✅ onglet Tournois actif aussi quand on est dans tournament_*
+        const activeTournaments = t.k === "tournaments" && isTournamentRoute;
+
+        const active = value === t.k || activeStats || activeTournaments;
 
         const halo = active ? accent : "transparent";
 
@@ -172,7 +218,6 @@ export default function BottomNav({
             <span
               className="pill-inner"
               style={{
-                // 👉 halo NEON 100% lié au thème
                 borderColor: active ? accent : "transparent",
                 boxShadow: active
                   ? `0 0 0 1px ${accent}55, 0 0 12px ${accent}CC`

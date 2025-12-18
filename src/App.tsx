@@ -9,9 +9,17 @@
 // + SyncCenter : export/import des stats locales
 // + Account bridge : au premier lancement sans profil actif,
 //   on redirige vers Profils > Mon profil (connexion / création compte).
+//
+// ✅ NEW (PROD Auth): callback email Supabase + reset password
+// - Supporte liens : /#/auth/callback  et  /#/auth/reset
+// - Détecte le hash au boot + hashchange
+// - Évite le chaos "otp_expired/access_denied" côté app
 // ============================================
 import React from "react";
 import BottomNav from "./components/BottomNav";
+import { AuthSessionProvider, useAuthSession } from "./contexts/AuthSessionContext";
+import AuthStart from "./pages/AuthStart";
+import AccountStart from "./pages/AccountStart";
 
 // Persistance (IndexedDB via storage.ts)
 import { loadStore, saveStore } from "./lib/storage";
@@ -26,6 +34,9 @@ import { warmAggOnce } from "./boot/warmAgg";
 // Mode Online
 import { onlineApi } from "./lib/onlineApi";
 
+// ✅ Supabase client (à adapter si ton export est ailleurs)
+import { supabase } from "./lib/supabase";
+
 // Types
 import type { Store, Profile, MatchRecord } from "./lib/types";
 import type { X01ConfigV3 as X01ConfigV3Type } from "./types/x01v3";
@@ -33,6 +44,7 @@ import type { X01ConfigV3 as X01ConfigV3Type } from "./types/x01v3";
 // Pages
 import Home from "./pages/Home";
 import Games from "./pages/Games";
+import TournamentsHome from "./pages/TournamentsHome";
 import Profiles from "./pages/Profiles";
 import FriendsPage from "./pages/FriendsPage";
 import Settings from "./pages/Settings";
@@ -66,6 +78,12 @@ import StatsOnline from "./pages/StatsOnline";
 import StatsCricket from "./pages/StatsCricket";
 import StatsLeaderboardsPage from "./pages/StatsLeaderboardsPage"; // ⭐ CLASSEMENTS
 
+// TOURNOI
+import Tournaments from "./pages/Tournaments";
+import TournamentCreate from "./pages/TournamentCreate";
+import TournamentView from "./pages/TournamentView";
+import TournamentMatchPlay from "./pages/TournamentMatchPlay";
+
 // X01 V3
 import X01ConfigV3 from "./pages/X01ConfigV3";
 import X01PlayV3 from "./pages/X01PlayV3";
@@ -76,7 +94,7 @@ import SyncCenter from "./pages/SyncCenter";
 // Contexts
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { LangProvider } from "./contexts/LangContext";
-import { AuthOnlineProvider } from "./hooks/useAuthOnline";
+import { AuthOnlineProvider, useAuthOnline } from "./hooks/useAuthOnline";
 
 // Dev helper
 import { installHistoryProbe } from "./dev/devHistoryProbe";
@@ -110,8 +128,15 @@ function withAvatars(rec: any, profiles: any[]) {
    ROUTES
 -------------------------------------------- */
 type Tab =
+  | "account_start"
+  | "auth_start"
+  | "auth_forgot"
   | "home"
   | "games"
+  | "tournaments"
+  | "tournament_create"
+  | "tournament_view"
+  | "tournament_match_play" // ✅ NEW: jouer un match de tournoi
   | "profiles"
   | "profiles_bots"
   | "friends"
@@ -141,7 +166,10 @@ type Tab =
   | "x01_config_v3"
   | "x01_play_v3"
   // ⭐ nouveau onglet
-  | "sync_center";
+  | "sync_center"
+  // ✅ NEW: Auth callback / reset (Supabase email links)
+  | "auth_callback"
+  | "auth_reset";
 
 /* redirect TrainingStats → StatsHub */
 function RedirectToStatsTraining({
@@ -153,6 +181,248 @@ function RedirectToStatsTraining({
     go("statsHub", { tab: "training" });
   }, [go]);
   return null;
+}
+
+/* --------------------------------------------
+   ✅ NEW: AUTH CALLBACK (PROD)
+   - Ouvre via email Supabase : /#/auth/callback
+   - Récupère la session et renvoie vers Online
+-------------------------------------------- */
+function AuthCallbackRoute({ go }: { go: (t: Tab, p?: any) => void }) {
+  const [msg, setMsg] = React.useState("Connexion en cours…");
+
+  React.useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        // Tente de restaurer la session SDK (best effort)
+        try {
+          await onlineApi.restoreSession();
+        } catch {}
+
+        // Supabase doit "consommer" l'URL et produire une session
+        const { data, error } = await supabase.auth.getSession();
+        if (!alive) return;
+
+        if (error) {
+          console.error("[auth_callback] getSession error:", error);
+          setMsg("Erreur de connexion. Ouvre le DERNIER email reçu et réessaie.");
+          return;
+        }
+
+        if (data?.session) {
+          // ✅ Session OK : on va sur Online (ton onglet Online = FriendsPage)
+          // On garde un hash propre pour éviter de rester sur /auth/callback
+          try {
+            window.location.hash = "#/online";
+          } catch {}
+          go("friends");
+          return;
+        }
+
+        // Parfois la session arrive juste après via onAuthStateChange
+        const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
+          if (session) {
+            try {
+              window.location.hash = "#/online";
+            } catch {}
+            go("friends");
+          }
+        });
+
+        // UX si ça traîne
+        setTimeout(() => {
+          if (alive) {
+            setMsg(
+              "Presque fini… si ça bloque : ouvre le DERNIER email reçu (les anciens liens expirent)."
+            );
+          }
+        }, 900);
+
+        return () => sub.subscription.unsubscribe();
+      } catch (e) {
+        console.error("[auth_callback] fatal:", e);
+        if (alive) setMsg("Erreur de connexion. Réessaie avec le DERNIER email reçu.");
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [go]);
+
+  return (
+    <div style={{ padding: 16 }}>
+      <button onClick={() => go("profiles", { view: "me", autoCreate: true })}>
+        ← Retour
+      </button>
+      <h2 style={{ marginTop: 10 }}>Authentification</h2>
+      <p style={{ opacity: 0.9 }}>{msg}</p>
+    </div>
+  );
+}
+
+/* --------------------------------------------
+   ✅ NEW: FORGOT PASSWORD (REQUEST EMAIL)
+   - Envoie un email Supabase de reset
+   - Redirige vers /#/auth/reset
+-------------------------------------------- */
+function AuthForgotRoute({ go }: { go: (t: Tab, p?: any) => void }) {
+  const [email, setEmail] = React.useState("");
+  const [status, setStatus] = React.useState<string>("");
+
+  async function submit() {
+    setStatus("");
+    const e = email.trim();
+    if (!e || !e.includes("@")) return setStatus("Entre une adresse email valide.");
+
+    try {
+      // ⚠️ IMPORTANT: mets bien l’URL de ton app (celle qui ouvre /#/auth/reset)
+      const redirectTo = `${window.location.origin}/#/auth/reset`;
+
+      const { error } = await supabase.auth.resetPasswordForEmail(e, { redirectTo });
+      if (error) {
+        console.error("[auth_forgot] resetPasswordForEmail error:", error);
+        setStatus("Erreur : " + error.message);
+        return;
+      }
+
+      setStatus("Email envoyé ✅ Ouvre le DERNIER email reçu pour réinitialiser.");
+    } catch (err: any) {
+      console.error("[auth_forgot] fatal:", err);
+      setStatus("Erreur : " + (err?.message || "inconnue"));
+    }
+  }
+
+  return (
+    <div style={{ padding: 16 }}>
+      <button onClick={() => go("account_start")}>← Retour</button>
+      <h2 style={{ marginTop: 10 }}>Mot de passe oublié</h2>
+      <p style={{ opacity: 0.85 }}>
+        Entre ton email, on t’envoie un lien de réinitialisation.
+      </p>
+
+      <div style={{ display: "grid", gap: 10, maxWidth: 420, marginTop: 10 }}>
+        <input
+          type="email"
+          placeholder="Adresse email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          style={{
+            padding: 10,
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,.12)",
+            background: "rgba(20,20,20,.5)",
+            color: "#fff",
+          }}
+        />
+
+        <button
+          onClick={submit}
+          style={{
+            borderRadius: 999,
+            padding: "10px 12px",
+            border: "none",
+            fontWeight: 900,
+            background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
+            color: "#1b1508",
+            cursor: "pointer",
+          }}
+        >
+          Envoyer le lien
+        </button>
+
+        {status ? <div style={{ opacity: 0.9 }}>{status}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------------------
+   ✅ NEW: RESET PASSWORD (PROD)
+   - Ouvre via email Supabase : /#/auth/reset
+   - Permet updateUser({ password })
+-------------------------------------------- */
+function AuthResetRoute({ go }: { go: (t: Tab, p?: any) => void }) {
+  const [pw, setPw] = React.useState("");
+  const [pw2, setPw2] = React.useState("");
+  const [status, setStatus] = React.useState<string>("");
+
+  async function submit() {
+    setStatus("");
+    if (!pw || pw.length < 6) return setStatus("Mot de passe trop court (min 6).");
+    if (pw !== pw2) return setStatus("Les mots de passe ne correspondent pas.");
+
+    const { error } = await supabase.auth.updateUser({ password: pw });
+    if (error) {
+      console.error("[auth_reset] updateUser error:", error);
+      setStatus("Erreur : " + error.message);
+      return;
+    }
+
+    setStatus("Mot de passe mis à jour ✅");
+    try {
+      window.location.hash = "#/online";
+    } catch {}
+    go("friends");
+  }
+
+  return (
+    <div style={{ padding: 16 }}>
+      <button onClick={() => go("profiles", { view: "me", autoCreate: true })}>
+        ← Retour
+      </button>
+
+      <h2 style={{ marginTop: 10 }}>Réinitialiser le mot de passe</h2>
+
+      <div style={{ display: "grid", gap: 10, maxWidth: 420, marginTop: 10 }}>
+        <input
+          type="password"
+          placeholder="Nouveau mot de passe"
+          value={pw}
+          onChange={(e) => setPw(e.target.value)}
+          style={{
+            padding: 10,
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,.12)",
+            background: "rgba(20,20,20,.5)",
+            color: "#fff",
+          }}
+        />
+        <input
+          type="password"
+          placeholder="Confirmer le mot de passe"
+          value={pw2}
+          onChange={(e) => setPw2(e.target.value)}
+          style={{
+            padding: 10,
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,.12)",
+            background: "rgba(20,20,20,.5)",
+            color: "#fff",
+          }}
+        />
+
+        <button
+          onClick={submit}
+          style={{
+            borderRadius: 12,
+            padding: "10px 12px",
+            border: "none",
+            fontWeight: 900,
+            background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
+            color: "#1b1508",
+            cursor: "pointer",
+          }}
+        >
+          Valider
+        </button>
+
+        {status ? <div style={{ opacity: 0.9 }}>{status}</div> : null}
+      </div>
+    </div>
+  );
 }
 
 function StatsDetailRoute({ store, go, params }: any) {
@@ -417,10 +687,37 @@ function App() {
     onlineApi.restoreSession().catch(() => {});
   }, []);
 
+  // ✅ NEW: détecte les liens email Supabase via hash (/#/auth/callback, /#/auth/reset, /#/auth/forgot)
+  React.useEffect(() => {
+    const applyHashRoute = () => {
+      const h = String(window.location.hash || "");
+
+      if (h.startsWith("#/auth/callback")) {
+        setRouteParams(null);
+        setTab("auth_callback");
+        return;
+      }
+      if (h.startsWith("#/auth/reset")) {
+        setRouteParams(null);
+        setTab("auth_reset");
+        return;
+      }
+      if (h.startsWith("#/auth/forgot")) {
+        setRouteParams(null);
+        setTab("auth_forgot");
+        return;
+      }
+    };
+
+    applyHashRoute();
+    window.addEventListener("hashchange", applyHashRoute);
+    return () => window.removeEventListener("hashchange", applyHashRoute);
+  }, []);
+
   /* expose store globally for debug */
   React.useEffect(() => {
-    (window as any).__appStore = store;
-  }, [store]);
+    (window as any).__supabase = supabase;
+  }, []);
 
   /* X01 v1 config */
   const [x01Config, setX01Config] = React.useState<any>(null);
@@ -433,6 +730,17 @@ function App() {
   function go(next: Tab, params?: any) {
     setRouteParams(params ?? null);
     setTab(next);
+
+    // ✅ optionnel: maintient un hash "propre" pour les routes auth
+    try {
+      if (next === "auth_callback") window.location.hash = "#/auth/callback";
+      else if (next === "auth_reset") window.location.hash = "#/auth/reset";
+      else if (next === "auth_forgot") window.location.hash = "#/auth/forgot";
+      else {
+        const h = String(window.location.hash || "");
+        if (h.startsWith("#/auth/")) window.location.hash = "#/";
+      }
+    } catch {}
   }
 
   /* Load store from IDB at boot + gate "Se connecter / Créer un compte" */
@@ -461,18 +769,28 @@ function App() {
           const hasProfiles = (base.profiles ?? []).length > 0;
           const hasActive = !!base.activeProfileId;
 
-          if (!hasProfiles || !hasActive) {
-            setRouteParams({ view: "me", autoCreate: true });
-            setTab("profiles");
-          } else {
-            setTab("home");
+          // ⚠️ Ne casse pas un callback auth déjà en cours
+          const h = String(window.location.hash || "");
+          const isAuthFlow =
+            h.startsWith("#/auth/callback") ||
+            h.startsWith("#/auth/reset") ||
+            h.startsWith("#/auth/forgot");
+
+          if (!isAuthFlow) {
+            if (!hasProfiles || !hasActive) {
+              // ✅ PRO: on passe par la page PORTAIL (choix login / create / forgot)
+              setRouteParams(null);
+              setTab("account_start");
+            } else {
+              setTab("home");
+            }
           }
         }
       } catch {
         if (mounted) {
           setStore(initialStore);
-          setTab("profiles");
-          setRouteParams({ view: "me", autoCreate: true });
+          setRouteParams(null);
+          setTab("account_start");
         }
       } finally {
         if (mounted) setLoading(false);
@@ -617,6 +935,32 @@ function App() {
     );
   } else {
     switch (tab) {
+      case "auth_callback":
+        page = <AuthCallbackRoute go={go} />;
+        break;
+
+      case "auth_start":
+        page = <AuthStart go={go} />;
+        break;
+
+      case "auth_reset":
+        page = <AuthResetRoute go={go} />;
+        break;
+
+      case "account_start":
+        page = (
+          <AccountStart
+            onLogin={() => go("profiles", { view: "me", autoCreate: true, mode: "signin" })}
+            onCreate={() => go("profiles", { view: "me", autoCreate: true, mode: "signup" })}
+            onForgot={() => go("auth_forgot")}
+          />
+        );
+        break;
+
+      case "auth_forgot":
+        page = <AuthForgotRoute go={go} />;
+        break;
+
       case "home":
         page = (
           <Home
@@ -642,8 +986,38 @@ function App() {
             setProfiles={setProfiles}
             go={go}
             params={routeParams}
+            // ✅ important : ton Profiles.tsx attend autoCreate séparément de params
+            autoCreate={!!routeParams?.autoCreate}
           />
         );
+        break;
+
+      // ✅ TOURNOIS — FIX: on garde UN SEUL case "tournaments"
+      case "tournaments":
+        page = (
+          <TournamentsHome
+            store={store}
+            go={go}
+            update={update}
+            source="local"
+          />
+        );
+        break;
+
+      // (optionnel) Si tu veux garder l'ancienne page Tournaments.tsx,
+      // donne-lui une autre route plus tard (ex: "tournaments_legacy").
+      // Pour l'instant, on évite le doublon.
+
+      case "tournament_match_play":
+        page = <TournamentMatchPlay store={store} go={go} params={routeParams} />;
+        break;
+
+      case "tournament_create":
+        page = <TournamentCreate store={store} go={go} />;
+        break;
+
+      case "tournament_view":
+        page = <TournamentView store={store} go={go} params={routeParams} />;
         break;
 
       case "profiles_bots":
@@ -915,63 +1289,64 @@ function App() {
       }
 
       /* ---------- AUTRES JEUX ---------- */
-case "cricket": {
-  page = (
-    <CricketPlay
-      profiles={store.profiles ?? []}
-      onFinish={(m: any) => pushHistory(m)}
-    />
-  );
-  break;
-}
+      case "cricket": {
+        page = (
+          <CricketPlay
+            profiles={store.profiles ?? []}
+            onFinish={(m: any) => pushHistory(m)}
+          />
+        );
+        break;
+      }
 
-// ✅ Alias (anciens appels go("killer"))
-case "killer": {
-  page = <KillerConfig store={store} go={go} />;
-  break;
-}
+      // ✅ Alias (anciens appels go("killer"))
+      case "killer": {
+        page = <KillerConfig store={store} go={go} />;
+        break;
+      }
 
-// ✅ NEW: KILLER CONFIG
-case "killer_config": {
-  page = <KillerConfig store={store} go={go} />;
-  break;
-}
+      // ✅ NEW: KILLER CONFIG
+      case "killer_config": {
+        page = <KillerConfig store={store} go={go} />;
+        break;
+      }
 
-// ✅ NEW: KILLER PLAY (câblage final)
-case "killer_play": {
-  const cfg = routeParams?.config;
+      // ✅ NEW: KILLER PLAY (câblage final)
+      case "killer_play": {
+        const cfg = routeParams?.config;
 
-  if (!cfg) {
-    page = (
-      <div style={{ padding: 16 }}>
-        <button onClick={() => go("killer_config")}>← Retour</button>
-        <p>Configuration KILLER manquante.</p>
-      </div>
-    );
-    break;
-  }
+        if (!cfg) {
+          page = (
+            <div style={{ padding: 16 }}>
+              <button onClick={() => go("killer_config")}>← Retour</button>
+              <p>Configuration KILLER manquante.</p>
+            </div>
+          );
+          break;
+        }
 
-  page = (
-    <KillerPlay
-      store={store}
-      go={go}
-      config={cfg}
-      onFinish={(m: any) => pushHistory(m)} // ✅ SAVE History + stats mirror
-    />
-  );
-  break;
-}
+        page = (
+          <KillerPlay
+            store={store}
+            go={go}
+            config={cfg}
+            onFinish={(m: any) => pushHistory(m)} // ✅ SAVE History + stats mirror
+          />
+        );
+        break;
+      }
 
-// ✅ NEW: KILLER SUMMARY
-case "killer_summary": {
-  page = <KillerSummaryPage store={store} go={go} params={routeParams} />;
-  break;
-}
+      // ✅ NEW: KILLER SUMMARY
+      case "killer_summary": {
+        page = <KillerSummaryPage store={store} go={go} params={routeParams} />;
+        break;
+      }
 
-case "shanghai": {
-  page = <ShanghaiPlay playerIds={[]} onFinish={pushHistory} />;
-  break;
-}
+      case "shanghai": {
+        page = <ShanghaiPlay playerIds={[]} onFinish={pushHistory} />;
+        break;
+      }
+
       /* ---------- TRAINING ---------- */
       case "training": {
         page = <TrainingMenu go={go} />;
@@ -1114,13 +1489,236 @@ case "shanghai": {
   return (
     <>
       <div className="container" style={{ paddingBottom: 88 }}>
-        {page}
+        <AppGate go={go} tab={tab}>
+          {page}
+        </AppGate>
       </div>
 
       <BottomNav value={tab as any} onChange={(k: any) => go(k)} />
-
       <SWUpdateBanner />
     </>
+  );
+}
+
+/* --------------------------------------------
+   🔒 APP GATE — BLOQUE L’APP SANS SESSION ONLINE
+   ✅ FIX: utilise useAuthOnline.ready + status
+   -> évite le faux "signed_out" partout pendant le restore
+-------------------------------------------- */
+function AppGate({
+  go,
+  tab,
+  children,
+}: {
+  go: (t: any, p?: any) => void;
+  tab: any;
+  children: React.ReactNode;
+}) {
+  const auth = useAuthOnline();
+
+  // ✅ Autoriser certaines routes/pages même sans session
+  // ✅ + tournois local (sinon impossible d'y accéder signed_out)
+  const allowedWhenSignedOut =
+    tab === "profiles" ||
+    tab === "auth_reset" ||
+    tab === "auth_callback" ||
+    tab === "auth_forgot" ||
+    tab === "tournaments" ||
+    tab === "tournament_view" ||
+    tab === "tournament_create" ||
+    tab === "tournament_match_play" ||
+    tab === "account_start" ||
+    tab === "auth_start";
+
+  // ✅ Tant que la session n'est pas restaurée, on NE DOIT PAS afficher "Compte"
+  if (!auth.ready || auth.status === "checking") {
+    return (
+      <div className="container" style={{ padding: 40, textAlign: "center" }}>
+        Vérification de la session…
+      </div>
+    );
+  }
+
+  if (auth.status === "signed_out" && !allowedWhenSignedOut) {
+    return <AccountEntry go={go} />;
+  }
+
+  return <>{children}</>;
+}
+
+function AccountEntry({ go }: { go: (t: any, p?: any) => void }) {
+  const [email, setEmail] = React.useState("");
+  const [status, setStatus] = React.useState("");
+
+  async function sendReset() {
+    setStatus("");
+    const e = (email || "").trim();
+    if (!e || !e.includes("@")) {
+      setStatus("Entre une adresse email valide.");
+      return;
+    }
+    try {
+      // ton flow reset est déjà géré par /#/auth/reset
+      const { error } = await supabase.auth.resetPasswordForEmail(e, {
+        redirectTo: `${window.location.origin}/#/auth/reset`,
+      });
+      if (error) throw error;
+      setStatus("Email envoyé ✅ (vérifie tes spams si besoin).");
+    } catch (err: any) {
+      console.error("[reset] error:", err);
+      setStatus("Erreur lors de l’envoi du lien. Réessaie.");
+    }
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: "calc(100dvh - 88px)",
+        display: "grid",
+        placeItems: "center",
+        padding: "18px 12px",
+      }}
+    >
+      <div
+        style={{
+          width: "min(380px, 92vw)",
+          borderRadius: 22,
+          padding: 14,
+          background:
+            "linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03))",
+          border: "1px solid rgba(255,255,255,.10)",
+          boxShadow: "0 22px 70px rgba(0,0,0,.62)",
+          backdropFilter: "blur(10px)",
+          WebkitBackdropFilter: "blur(10px)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 3,
+            background: "linear-gradient(90deg,#ffc63a, #ff4fd8)",
+            opacity: 0.9,
+          }}
+        />
+
+        <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ textAlign: "center", display: "grid", gap: 6 }}>
+            <div
+              style={{
+                fontSize: 24,
+                fontWeight: 950,
+                color: "rgba(255,255,255,.96)",
+              }}
+            >
+              Compte
+            </div>
+            <div style={{ fontSize: 12.8, opacity: 0.82, lineHeight: 1.35 }}>
+              Connecte-toi pour synchroniser ton profil et tes stats sur tous tes
+              appareils.
+            </div>
+          </div>
+
+          {/* ✅ LOGIN -> ta page Profiles existante */}
+          <button
+            onClick={() => go("profiles", { view: "me", mode: "signin" })}
+            style={{
+              width: "100%",
+              borderRadius: 999,
+              padding: "11px 12px",
+              fontWeight: 950,
+              fontSize: 14,
+              border: "1px solid rgba(0,0,0,.25)",
+              color: "#1b1508",
+              background: "linear-gradient(180deg,#ffd25a,#ffaf00)",
+              cursor: "pointer",
+            }}
+          >
+            Se connecter
+          </button>
+
+          {/* ✅ SIGNUP -> ta page Profiles existante */}
+          <button
+            onClick={() =>
+              go("profiles", { view: "me", autoCreate: true, mode: "signup" })
+            }
+            style={{
+              width: "100%",
+              borderRadius: 999,
+              padding: "10px 12px",
+              fontWeight: 900,
+              fontSize: 13.5,
+              background: "rgba(255,255,255,.05)",
+              color: "rgba(255,255,255,.92)",
+              border: "1px solid rgba(255,255,255,.12)",
+              cursor: "pointer",
+            }}
+          >
+            Créer un compte
+          </button>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, opacity: 0.7 }}>
+            <div style={{ height: 1, flex: 1, background: "rgba(255,255,255,.10)" }} />
+            <div style={{ fontSize: 12 }}>Mot de passe</div>
+            <div style={{ height: 1, flex: 1, background: "rgba(255,255,255,.10)" }} />
+          </div>
+
+          <div
+            style={{
+              padding: 12,
+              borderRadius: 18,
+              background: "rgba(0,0,0,.20)",
+              border: "1px solid rgba(255,255,255,.10)",
+              display: "grid",
+              gap: 10,
+            }}
+          >
+            <div style={{ fontWeight: 950, fontSize: 13.5, opacity: 0.95 }}>
+              Mot de passe oublié
+            </div>
+
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Adresse email"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,.12)",
+                background: "rgba(10,10,14,.45)",
+                color: "#fff",
+                outline: "none",
+                fontSize: 13.5,
+              }}
+            />
+
+            <button
+              onClick={sendReset}
+              style={{
+                width: "100%",
+                borderRadius: 14,
+                padding: "10px 12px",
+                border: "1px solid rgba(0,0,0,.25)",
+                fontWeight: 950,
+                fontSize: 13.2,
+                background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
+                color: "#1b1508",
+                cursor: "pointer",
+              }}
+            >
+              Envoyer le lien de réinitialisation
+            </button>
+
+            {status ? <div style={{ fontSize: 12.8, opacity: 0.9 }}>{status}</div> : null}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1130,7 +1728,9 @@ export default function AppRoot() {
     <ThemeProvider>
       <LangProvider>
         <AuthOnlineProvider>
-          <App />
+          <AuthSessionProvider>
+            <App />
+          </AuthSessionProvider>
         </AuthOnlineProvider>
       </LangProvider>
     </ThemeProvider>
