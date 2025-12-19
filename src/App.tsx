@@ -1501,9 +1501,8 @@ function App() {
 }
 
 /* --------------------------------------------
-   🔒 APP GATE — BLOQUE L’APP SANS SESSION ONLINE
-   ✅ FIX: utilise useAuthOnline.ready + status
-   -> évite le faux "signed_out" partout pendant le restore
+   🔒 APP GATE — NE BLOQUE QUE L’ONLINE
+   (le mode local doit fonctionner sans session)
 -------------------------------------------- */
 function AppGate({
   go,
@@ -1514,24 +1513,23 @@ function AppGate({
   tab: any;
   children: React.ReactNode;
 }) {
-  const auth = useAuthOnline();
+  const { status } = useAuthSession();
 
-  // ✅ Autoriser certaines routes/pages même sans session
-  // ✅ + tournois local (sinon impossible d'y accéder signed_out)
-  const allowedWhenSignedOut =
-    tab === "profiles" ||
+  // Pages qui DOIVENT nécessiter une session (ONLINE)
+  // 👉 adapte la liste si tu veux inclure d’autres pages cloud
+  const needsSession =
+    tab === "friends" ||
+    tab === "stats_online";
+
+  // Pages autorisées pendant un flow auth
+  const isAuthFlow =
     tab === "auth_reset" ||
     tab === "auth_callback" ||
     tab === "auth_forgot" ||
-    tab === "tournaments" ||
-    tab === "tournament_view" ||
-    tab === "tournament_create" ||
-    tab === "tournament_match_play" ||
-    tab === "account_start" ||
-    tab === "auth_start";
+    tab === "auth_start" ||
+    tab === "account_start";
 
-  // ✅ Tant que la session n'est pas restaurée, on NE DOIT PAS afficher "Compte"
-  if (!auth.ready || auth.status === "checking") {
+  if (status === "checking") {
     return (
       <div className="container" style={{ padding: 40, textAlign: "center" }}>
         Vérification de la session…
@@ -1539,7 +1537,9 @@ function AppGate({
     );
   }
 
-  if (auth.status === "signed_out" && !allowedWhenSignedOut) {
+  // ✅ Si signed_out : on laisse TOUT le local fonctionner.
+  // On bloque uniquement les pages Online.
+  if (status === "signed_out" && needsSession && !isAuthFlow) {
     return <AccountEntry go={go} />;
   }
 
