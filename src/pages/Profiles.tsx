@@ -217,6 +217,13 @@ export default function Profiles({
       : "menu"
   );
 
+    // ✅ FORCE auth UI (quand on vient de ONLINE)
+    const forceAuth = !!params?.forceAuth;
+
+    // ✅ Retour automatique après login (ex: revenir à ONLINE)
+    const returnTo =
+      (params?.returnTo as { tab?: any; params?: any } | undefined) ?? undefined;
+
   React.useEffect(() => {
     if (params?.view === "create_bot" && go) {
       go("profiles_bots");
@@ -632,69 +639,62 @@ export default function Profiles({
             {view === "me" && (
               <>
                 <Card>
-                  {active ? (
-                    <ActiveProfileBlock
-                      selfStatus={onlineStatusForUi}
-                      active={active}
-                      activeAvg3D={activeAvg3D}
-                      onToggleAway={() => {
-                        if (auth.status !== "signed_in") return;
-                        update((s) => ({
-                          ...s,
-                          selfStatus:
-                            s.selfStatus === "away"
-                              ? ("online" as const)
-                              : ("away" as const),
-                        }));
-                      }}
-                      onQuit={handleQuit}
-                      onEdit={(n, f) => {
-                        if (n && n !== active.name) {
-                          renameProfile(active.id, n);
-                        }
-                        if (f) {
-                          // ⭐ 1) avatar local (immédiat)
-                          changeAvatar(active.id, f);
-
-                          // ⭐ 2) avatar ONLINE (Supabase Storage + avatar_url)
-                          if (auth.status === "signed_in") {
-                            (async () => {
-                              try {
-                                await (auth as any).updateAvatar?.(f);
-                              } catch (err) {
-                                console.warn(
-                                  "[profiles] updateAvatar online error:",
-                                  err
-                                );
-                              }
-                            })();
-                          }
-                        }
-                      }}
-                      onOpenStats={() => {
-                        if (!active?.id) return;
-                        go?.("statsHub", {
-                          tab: "stats",
-                          mode: "active",
-                          initialPlayerId: active.id,
-                          playerId: active.id,
-                          initialStatsSubTab: "dashboard",
-                        });
-                      }}
-                      onResetStats={resetActiveStats}
-                    />
-                  ) : (
-                    <UnifiedAuthBlock
-                      profiles={profiles}
-                      onConnect={(id) => setActiveProfile(id)}
-                      onCreate={addProfile}
-                      onHydrateProfile={(id, patch) =>
-                        patchProfilePrivateInfo(id, patch)
-                      }
-                      autoFocusCreate={autoCreate}
-                    />
-                  )}
-                </Card>
+  {active && !forceAuth ? (
+    <ActiveProfileBlock
+      selfStatus={onlineStatusForUi}
+      active={active}
+      activeAvg3D={activeAvg3D}
+      onToggleAway={() => {
+        if (auth.status !== "signed_in") return;
+        update((s) => ({
+          ...s,
+          selfStatus:
+            s.selfStatus === "away"
+              ? ("online" as const)
+              : ("away" as const),
+        }));
+      }}
+      onQuit={handleQuit}
+      onEdit={(n, f) => {
+        if (n && n !== active.name) renameProfile(active.id, n);
+        if (f) {
+          changeAvatar(active.id, f);
+          if (auth.status === "signed_in") {
+            (async () => {
+              try {
+                await (auth as any).updateAvatar?.(f);
+              } catch (err) {
+                console.warn("[profiles] updateAvatar online error:", err);
+              }
+            })();
+          }
+        }
+      }}
+      onOpenStats={() => {
+        if (!active?.id) return;
+        go?.("statsHub", {
+          tab: "stats",
+          mode: "active",
+          initialPlayerId: active.id,
+          playerId: active.id,
+          initialStatsSubTab: "dashboard",
+        });
+      }}
+      onResetStats={resetActiveStats}
+    />
+  ) : (
+    <UnifiedAuthBlock
+      profiles={profiles}
+      onConnect={(id) => {
+        setActiveProfile(id);
+        if (returnTo?.tab && go) go(returnTo.tab, returnTo.params);
+      }}
+      onCreate={addProfile}
+      onHydrateProfile={(id, patch) => patchProfilePrivateInfo(id, patch)}
+      autoFocusCreate={autoCreate}
+    />
+  )}
+</Card>
 
                 {/* 🔥 Panneau sets de fléchettes du profil actif */}
                 {active && (

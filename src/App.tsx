@@ -1501,8 +1501,8 @@ function App() {
 }
 
 /* --------------------------------------------
-   🔒 APP GATE — NE BLOQUE QUE L’ONLINE
-   (le mode local doit fonctionner sans session)
+   🔒 APP GATE — NE BLOQUE QUE LES PAGES ONLINE "post-login"
+   ✅ IMPORTANT : FriendsPage = portail login/signup => DOIT rester accessible
 -------------------------------------------- */
 function AppGate({
   go,
@@ -1515,11 +1515,11 @@ function AppGate({
 }) {
   const { status } = useAuthSession();
 
-  // Pages qui DOIVENT nécessiter une session (ONLINE)
-  // 👉 adapte la liste si tu veux inclure d’autres pages cloud
+  // ✅ Pages qui doivent nécessiter une session (ONLINE "après connexion")
+  // FriendsPage sert de portail pour se connecter => NE PAS la bloquer.
   const needsSession =
-    tab === "friends" ||
-    tab === "stats_online";
+    tab === "stats_online" ||
+    tab === "x01_online_setup"; // (optionnel mais logique: setup online = auth requise)
 
   // Pages autorisées pendant un flow auth
   const isAuthFlow =
@@ -1538,7 +1538,7 @@ function AppGate({
   }
 
   // ✅ Si signed_out : on laisse TOUT le local fonctionner.
-  // On bloque uniquement les pages Online.
+  // On bloque uniquement les pages Online "post-login".
   if (status === "signed_out" && needsSession && !isAuthFlow) {
     return <AccountEntry go={go} />;
   }
@@ -1558,7 +1558,6 @@ function AccountEntry({ go }: { go: (t: any, p?: any) => void }) {
       return;
     }
     try {
-      // ton flow reset est déjà géré par /#/auth/reset
       const { error } = await supabase.auth.resetPasswordForEmail(e, {
         redirectTo: `${window.location.origin}/#/auth/reset`,
       });
@@ -1623,9 +1622,9 @@ function AccountEntry({ go }: { go: (t: any, p?: any) => void }) {
             </div>
           </div>
 
-          {/* ✅ LOGIN -> ta page Profiles existante */}
+          {/* ✅ IMPORTANT : on va vers la page Online (FriendsPage) qui contient le login/signup Supabase */}
           <button
-            onClick={() => go("profiles", { view: "me", mode: "signin" })}
+            onClick={() => go("friends")}
             style={{
               width: "100%",
               borderRadius: 999,
@@ -1641,11 +1640,8 @@ function AccountEntry({ go }: { go: (t: any, p?: any) => void }) {
             Se connecter
           </button>
 
-          {/* ✅ SIGNUP -> ta page Profiles existante */}
           <button
-            onClick={() =>
-              go("profiles", { view: "me", autoCreate: true, mode: "signup" })
-            }
+            onClick={() => go("friends")}
             style={{
               width: "100%",
               borderRadius: 999,
@@ -1661,7 +1657,14 @@ function AccountEntry({ go }: { go: (t: any, p?: any) => void }) {
             Créer un compte
           </button>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10, opacity: 0.7 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              opacity: 0.7,
+            }}
+          >
             <div style={{ height: 1, flex: 1, background: "rgba(255,255,255,.10)" }} />
             <div style={{ fontSize: 12 }}>Mot de passe</div>
             <div style={{ height: 1, flex: 1, background: "rgba(255,255,255,.10)" }} />
@@ -1714,7 +1717,9 @@ function AccountEntry({ go }: { go: (t: any, p?: any) => void }) {
               Envoyer le lien de réinitialisation
             </button>
 
-            {status ? <div style={{ fontSize: 12.8, opacity: 0.9 }}>{status}</div> : null}
+            {status ? (
+              <div style={{ fontSize: 12.8, opacity: 0.9 }}>{status}</div>
+            ) : null}
           </div>
         </div>
       </div>
