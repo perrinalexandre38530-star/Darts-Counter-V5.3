@@ -4,35 +4,47 @@
 // - API sync côté UI via cache mémoire (chargement async au boot)
 // - Migration automatique depuis localStorage:
 //   - dc_tournaments_v1
-//   - dc_tournament_matches_v1:<id>  / dc_tournament_matches_<id> (best effort)
+//   - dc_tournament_matches_v1:<id> / dc_tournament_matches_<id> / dc_tournament_<id>_matches
+//   - dc_tournament_matches_v1  (map: Record<id, matches[]>)
 // =============================================================
 
 type AnyObj = any;
 
+/** --- LocalStorage legacy keys --- */
 const LS_TOURNAMENTS = "dc_tournaments_v1";
 
-// Matches (legacy keys possibles)
+// format "map": { [tournamentId]: matches[] }
+const LS_TOURNAMENT_MATCHES_MAP = "dc_tournament_matches_v1";
+
+// formats legacy "par tournoi"
 const lsMatchesKeyCandidates = (id: string) => [
   `dc_tournament_matches_v1:${id}`,
   `dc_tournament_matches_${id}`,
   `dc_tournament_${id}_matches`,
 ];
 
+/** --- IndexedDB --- */
 const DB_NAME = "dc_tournaments_db_v1";
 const DB_VER = 1;
 const STORE_T = "tournaments";
 const STORE_M = "matchesByTournament";
 
-// ---------------------- IDB tiny wrapper ----------------------
+/* ---------------------- IDB tiny wrapper ---------------------- */
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VER);
+
     req.onupgradeneeded = () => {
       const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_T)) db.createObjectStore(STORE_T, { keyPath: "id" });
-      if (!db.objectStoreNames.contains(STORE_M)) db.createObjectStore(STORE_M, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(STORE_T)) {
+        db.createObjectStore(STORE_T, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(STORE_M)) {
+        db.createObjectStore(STORE_M, { keyPath: "id" }); // { id: tid, matches: [] }
+      }
     };
+
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -47,6 +59,7 @@ async function idbGetAll(storeName: string): Promise<any[]> {
     req.onsuccess = () => resolve(req.result || []);
     req.onerror = () => reject(req.error);
     tx.oncomplete = () => db.close();
+    tx.onerror = () => db.close();
   });
 }
 
@@ -59,6 +72,7 @@ async function idbGet(storeName: string, key: string): Promise<any | null> {
     req.onsuccess = () => resolve(req.result ?? null);
     req.onerror = () => reject(req.error);
     tx.oncomplete = () => db.close();
+    tx.onerror = () => db.close();
   });
 }
 
@@ -71,6 +85,7 @@ async function idbPut(storeName: string, value: any): Promise<void> {
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
     tx.oncomplete = () => db.close();
+    tx.onerror = () => db.close();
   });
 }
 
@@ -83,16 +98,17 @@ async function idbDelete(storeName: string, key: string): Promise<void> {
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
     tx.oncomplete = () => db.close();
+    tx.onerror = () => db.close();
   });
 }
 
-// ---------------------- Cache mémoire (API sync) ----------------------
+/* ---------------------- Cache mémoire (API sync) ---------------------- */
 
 let loaded = false;
 let loadingPromise: Promise<void> | null = null;
 
 let cacheTournaments: AnyObj[] = [];
-let cacheMatchesByTid: Record<string, AnyObj[]> = {};
+let cacheMatchesByTid: Record<string, AnyObj[] | undefined> = {};
 
 function safeParseJSON(raw: string | null): any {
   try {
@@ -102,18 +118,48 @@ function safeParseJSON(raw: string | null): any {
   }
 }
 
+/**
+ * Migration best-effort depuis localStorage
+ * - tournois : dc_tournaments_v1 (array)
+ * - matches :
+ *   A) map: dc_tournament_matches_v1 => Record<id, matches[]>
+ *   B) keys legacy par tournoi
+ */
 async function migrateFromLocalStorageIfNeeded() {
-  // Tournois
   const rawTours = localStorage.getItem(LS_TOURNAMENTS);
   const tours = safeParseJSON(rawTours);
-  if (Array.isArray(tours) && tours.length) {
-    // push en IDB
-    await Promise.all(tours.map((t: any) => idbPut(STORE_T, t)));
 
-    // matches best effort
-    for (const t of tours) {
+  const hasTours = Array.isArray(tours) && tours.length > 0;
+  const matchesMap = safeParseJSON(localStorage.getItem(LS_TOURNAMENT_MATCHES_MAP));
+  const hasMap = matchesMap && typeof matchesMap === "object";
+
+  if (!hasTours && !hasMap) return;
+
+  // 1) Tournois
+  if (hasTours) {
+    await Promise.all((tours as any[]).map((t) => idbPut(STORE_T, t)));
+  }
+
+  // 2) Matches via map (si présent)
+  if (hasMap) {
+    const mapObj = matchesMap as Record<string, any[]>;
+    for (const [tid, matches] of Object.entries(mapObj)) {
+      if (!tid) continue;
+      if (Array.isArray(matches)) {
+        await idbPut(STORE_M, { id: String(tid), matches });
+      }
+    }
+  }
+
+  // 3) Matches legacy par tournoi (si tours dispo)
+  if (hasTours) {
+    for (const t of tours as any[]) {
       const tid = String(t?.id || "");
       if (!tid) continue;
+
+      // si déjà migré via map, on skip
+      const existing = await idbGet(STORE_M, tid);
+      if (existing?.matches && Array.isArray(existing.matches) && existing.matches.length) continue;
 
       let matches: any[] | null = null;
       for (const k of lsMatchesKeyCandidates(tid)) {
@@ -127,16 +173,20 @@ async function migrateFromLocalStorageIfNeeded() {
         await idbPut(STORE_M, { id: tid, matches });
       }
     }
+  }
 
-    // cleanup localStorage (libère quota)
-    try {
-      localStorage.removeItem(LS_TOURNAMENTS);
-      for (const t of tours) {
+  // 4) Cleanup localStorage (libère le quota)
+  try {
+    localStorage.removeItem(LS_TOURNAMENTS);
+    localStorage.removeItem(LS_TOURNAMENT_MATCHES_MAP);
+
+    if (hasTours) {
+      for (const t of tours as any[]) {
         const tid = String(t?.id || "");
         for (const k of lsMatchesKeyCandidates(tid)) localStorage.removeItem(k);
       }
-    } catch {}
-  }
+    }
+  } catch {}
 }
 
 async function ensureLoaded() {
@@ -150,7 +200,7 @@ async function ensureLoaded() {
       const tours = await idbGetAll(STORE_T);
       cacheTournaments = Array.isArray(tours) ? tours : [];
 
-      // matches: on ne charge pas tout d’un coup, lazy par tournoi
+      // matches: lazy par tournoi
       cacheMatchesByTid = {};
     } catch (e) {
       console.error("[tournaments/storeLocal] load failed:", e);
@@ -167,12 +217,29 @@ async function ensureLoaded() {
 // Lance le chargement ASAP (sans bloquer)
 void ensureLoaded();
 
-// ---------------------- Public API (sync-friendly) ----------------------
+/* ---------------------- Public API (sync-friendly) ---------------------- */
 
 export function listTournamentsLocal(): AnyObj[] {
-  // déclenche le load si pas prêt
   void ensureLoaded();
-  return cacheTournaments.slice().sort((a, b) => Number(b?.updatedAt || b?.createdAt || 0) - Number(a?.updatedAt || a?.createdAt || 0));
+  return cacheTournaments
+    .slice()
+    .sort(
+      (a, b) =>
+        Number(b?.updatedAt || b?.createdAt || 0) -
+        Number(a?.updatedAt || a?.createdAt || 0)
+    );
+}
+
+/**
+ * ✅ IMPORTANT: utilisé par TournamentView.tsx
+ * Sync-friendly : renvoie depuis le cache si dispo.
+ * Si pas encore chargé : renvoie null et déclenche le load en fond.
+ */
+export function getTournamentLocal(tournamentId: string): AnyObj | null {
+  void ensureLoaded();
+  const tid = String(tournamentId || "");
+  if (!tid) return null;
+  return cacheTournaments.find((t) => String(t?.id) === tid) ?? null;
 }
 
 export function upsertTournamentLocal(tour: AnyObj) {
@@ -180,16 +247,19 @@ export function upsertTournamentLocal(tour: AnyObj) {
 
   const t = { ...(tour || {}) };
   const now = Date.now();
+
   if (!t.id) t.id = `tour-${now}-${Math.random().toString(36).slice(2, 8)}`;
   if (!t.createdAt) t.createdAt = now;
   t.updatedAt = now;
 
-  const idx = cacheTournaments.findIndex((x) => String(x?.id) === String(t.id));
+  const tid = String(t.id);
+  const idx = cacheTournaments.findIndex((x) => String(x?.id) === tid);
   if (idx >= 0) cacheTournaments[idx] = t;
   else cacheTournaments.unshift(t);
 
-  // persist async
-  void idbPut(STORE_T, t).catch((e) => console.error("[tournaments] idbPut tournament failed:", e));
+  void idbPut(STORE_T, t).catch((e) =>
+    console.error("[tournaments] idbPut tournament failed:", e)
+  );
 
   return t;
 }
@@ -198,23 +268,33 @@ export function deleteTournamentLocal(tournamentId: string) {
   void ensureLoaded();
 
   const tid = String(tournamentId || "");
+  if (!tid) return;
+
   cacheTournaments = cacheTournaments.filter((t) => String(t?.id) !== tid);
   delete cacheMatchesByTid[tid];
 
-  void idbDelete(STORE_T, tid).catch((e) => console.error("[tournaments] idbDelete tournament failed:", e));
-  void idbDelete(STORE_M, tid).catch((e) => console.error("[tournaments] idbDelete matches failed:", e));
+  void idbDelete(STORE_T, tid).catch((e) =>
+    console.error("[tournaments] idbDelete tournament failed:", e)
+  );
+  void idbDelete(STORE_M, tid).catch((e) =>
+    console.error("[tournaments] idbDelete matches failed:", e)
+  );
 }
 
+/**
+ * LIST (sync) : renvoie le cache si chargé.
+ * Si pas chargé : renvoie [] et lance un lazy load en tâche de fond.
+ */
 export function listMatchesForTournamentLocal(tournamentId: string): AnyObj[] {
   void ensureLoaded();
 
   const tid = String(tournamentId || "");
   if (!tid) return [];
 
-  // cache déjà chargé
-  if (Array.isArray(cacheMatchesByTid[tid])) return cacheMatchesByTid[tid].slice();
+  const cached = cacheMatchesByTid[tid];
+  if (Array.isArray(cached)) return cached.slice();
 
-  // lazy load async (UI verra la liste vide au premier rendu, puis refresh() la fera ré-apparaitre)
+  // lazy load async
   void (async () => {
     try {
       const rec = await idbGet(STORE_M, tid);
@@ -229,6 +309,9 @@ export function listMatchesForTournamentLocal(tournamentId: string): AnyObj[] {
   return [];
 }
 
+/**
+ * SAVE (alias) : persiste + met à jour cache
+ */
 export function saveMatchesForTournamentLocal(tournamentId: string, matches: AnyObj[]) {
   void ensureLoaded();
 
@@ -241,4 +324,19 @@ export function saveMatchesForTournamentLocal(tournamentId: string, matches: Any
   void idbPut(STORE_M, { id: tid, matches: list }).catch((e) =>
     console.error("[tournaments] idbPut matches failed:", e)
   );
+}
+
+/**
+ * UPSERT : même comportement que saveMatches... (compat avec tes imports)
+ * Utilisé à la création du tournoi.
+ */
+export function upsertMatchesForTournamentLocal(tournamentId: string, matches: AnyObj[]) {
+  saveMatchesForTournamentLocal(tournamentId, matches);
+}
+
+/**
+ * ✅ Alias optionnel (au cas où un fichier importe "getMatchesForTournamentLocal")
+ */
+export function getMatchesForTournamentLocal(tournamentId: string): AnyObj[] {
+  return listMatchesForTournamentLocal(tournamentId);
 }

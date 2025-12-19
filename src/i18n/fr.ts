@@ -457,7 +457,6 @@ export const fr: Dict = {
   // -----------------------------
   // SETTINGS / RÉGLAGES
   // -----------------------------
-  "settings.title": "Réglages",
   "settings.theme.title": "Thèmes néon",
   "settings.theme.subtitle": "Choisissez votre ambiance",
   "settings.theme.current": "Thème actuel",

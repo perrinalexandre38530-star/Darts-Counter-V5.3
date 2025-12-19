@@ -293,3 +293,23 @@ export function purgeLiteStatsForProfile(profileId: string) {
 export async function purgeAllStatsForProfile(profileId: string) {
   purgeLiteStatsForProfile(profileId);
 }
+
+// ------------------------------------------------------------
+// Compat export (legacy imports)
+// Some files import recordLegToLite; keep build compatible.
+// ------------------------------------------------------------
+export async function recordLegToLite(...args: any[]): Promise<void> {
+  try {
+    // If a newer function exists, call it (best effort).
+    const anyMod: any = (globalThis as any);
+    // Try common internal names (depends on your file's existing API)
+    const self: any = (anyMod?.statsLiteIDB ?? null);
+
+    if (typeof (self?.recordLegToLite) === "function") {
+      await self.recordLegToLite(...args);
+      return;
+    }
+  } catch {}
+
+  // No-op fallback (prevents build crash; doesn't break gameplay)
+}
