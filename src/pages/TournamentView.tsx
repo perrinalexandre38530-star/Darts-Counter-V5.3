@@ -26,6 +26,8 @@ import {
   listMatchesForTournamentLocal,
   upsertTournamentLocal,
   upsertMatchesForTournamentLocal,
+  deleteTournamentLocal,
+  deleteMatchesForTournamentLocal,
 } from "../lib/tournaments/storeLocal";
 
 type Props = {
@@ -1329,33 +1331,65 @@ export default function TournamentView({ store, go, id }: Props) {
   return (
     <div className="container" style={{ padding: 16, paddingBottom: 96, color: "#f5f5f7" }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <button
-          type="button"
-          onClick={() => go("tournaments")}
-          style={{
-            borderRadius: 999,
-            padding: "7px 12px",
-            border: "1px solid rgba(255,255,255,0.14)",
-            background: "rgba(255,255,255,0.05)",
-            color: "rgba(255,255,255,0.92)",
-            fontWeight: 850,
-            cursor: "pointer",
-          }}
-        >
-          ←
-        </button>
+<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+  <button
+    type="button"
+    onClick={() => go("tournaments")}
+    style={{
+      borderRadius: 999,
+      padding: "7px 12px",
+      border: "1px solid rgba(255,255,255,0.14)",
+      background: "rgba(255,255,255,0.05)",
+      color: "rgba(255,255,255,0.92)",
+      fontWeight: 850,
+      cursor: "pointer",
+    }}
+  >
+    ←
+  </button>
 
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 16, fontWeight: 950, letterSpacing: 0.2 }}>
-            {(tour as any)?.name || "Tournoi"}
-          </div>
-          <div style={{ fontSize: 11.5, opacity: 0.75 }}>
-            {(tour as any)?.status ? String((tour as any).status).toUpperCase() : "—"} •{" "}
-            {statusCounts.pending}/{displayMatches.length}
-          </div>
-        </div>
+  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <button
+      type="button"
+      onClick={async () => {
+        if (!id) return;
+        const ok = window.confirm("Supprimer ce tournoi et tous ses matchs ?");
+        if (!ok) return;
+        try {
+          await deleteMatchesForTournamentLocal(id);
+          await deleteTournamentLocal(id);
+        } catch (e) {
+          console.error("[TournamentView] delete error:", e);
+        } finally {
+          go("tournaments");
+        }
+      }}
+      style={{
+        borderRadius: 999,
+        padding: "7px 12px",
+        border: "1px solid rgba(255,80,120,0.45)",
+        background: "linear-gradient(180deg, rgba(255,80,120,0.18), rgba(255,80,120,0.06))",
+        color: "rgba(255,255,255,0.92)",
+        fontWeight: 950,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+      }}
+      title="Supprimer le tournoi"
+    >
+      🗑 Supprimer
+    </button>
+
+    <div style={{ textAlign: "right" }}>
+      <div style={{ fontSize: 16, fontWeight: 950, letterSpacing: 0.2 }}>
+        {(tour as any)?.name || "Tournoi"}
       </div>
+      <div style={{ fontSize: 11.5, opacity: 0.75 }}>
+        {(tour as any)?.status ? String((tour as any).status).toUpperCase() : "—"} •{" "}
+        {statusCounts.pending}/{displayMatches.length}
+      </div>
+    </div>
+  </div>
+</div>
 
       {/* View switch */}
       <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>

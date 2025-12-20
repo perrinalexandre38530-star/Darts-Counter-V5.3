@@ -1009,66 +1009,76 @@ function App() {
         break;
 
       // ✅ TOURNOIS — FIX: on garde UN SEUL case "tournaments"
-      case "tournaments":
-        page = (
-          <TournamentsHome
-            store={store}
-            go={go}
-            update={update}
-            source="local"
-          />
-        );
-        break;
+case "tournaments": {
+  page = (
+    <TournamentsHome
+      store={store}
+      go={go}
+      update={update}
+      source="local"
+    />
+  );
+  break;
+}
 
-      // ============================================
-// src/App.tsx (extrait) — routes Tournois LOCAL
+// ============================================
+// src/App.tsx — routes Tournois LOCAL (v2 robuste)
 // ✅ Fix: passe un id fiable à TournamentView
+// ✅ Fix: TournamentMatchPlay reçoit params (comme ton composant l’attend)
+// ✅ Guard: si tournamentId/matchId manquants => fallback UI (pas écran noir)
 // ============================================
 
 case "tournament_view": {
-  const id =
-    String(
-      routeParams?.id ??
-        routeParams?.tournamentId ??
-        routeParams?.tid ??
-        ""
-    );
-
-  page = (
-    <TournamentView
-      store={store}
-      go={go}
-      id={id}
-    />
+  const id = String(
+    routeParams?.id ??
+      routeParams?.tournamentId ??
+      routeParams?.tid ??
+      ""
   );
+
+  page = <TournamentView store={store} go={go} id={id} />;
   break;
 }
 
 case "tournament_match_play": {
   const tournamentId = String(
-    routeParams?.tournamentId ?? routeParams?.id ?? ""
+    routeParams?.tournamentId ??
+      routeParams?.id ??
+      routeParams?.tid ??
+      ""
   );
   const matchId = String(routeParams?.matchId ?? "");
 
+  if (!tournamentId || !matchId) {
+    page = (
+      <div style={{ padding: 16 }}>
+        <button onClick={() => go("tournaments")}>← Retour</button>
+        <p>Paramètres manquants (tournamentId/matchId).</p>
+      </div>
+    );
+    break;
+  }
+
+  // ✅ IMPORTANT : ton TournamentMatchPlay utilise (store, go, params)
   page = (
     <TournamentMatchPlay
       store={store}
       go={go}
-      tournamentId={tournamentId}
-      matchId={matchId}
+      params={{ tournamentId, matchId }}
     />
   );
   break;
 }
 
-      case "tournament_create":
-        page = <TournamentCreate store={store} go={go} />;
-        break;
+case "tournament_create": {
+  page = <TournamentCreate store={store} go={go} />;
+  break;
+}
 
-      case "tournament_roadmap": {
-        page = <TournamentRoadmap go={go} />;
-        break;
-        }  
+case "tournament_roadmap": {
+  page = <TournamentRoadmap go={go} />;
+  break;
+}  
 
       case "profiles_bots":
         page = <ProfilesBots store={store} go={go} />;

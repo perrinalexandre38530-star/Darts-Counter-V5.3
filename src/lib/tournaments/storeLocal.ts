@@ -278,6 +278,27 @@ export function upsertTournamentLocal(tour: AnyObj) {
   return t;
 }
 
+/**
+ * ✅ NEW: suppression matches uniquement (utile si tu veux purger sans supprimer le tournoi)
+ */
+export function deleteMatchesForTournamentLocal(tournamentId: string) {
+  void ensureLoaded();
+
+  const tid = String(tournamentId || "");
+  if (!tid) return;
+
+  cacheMatchesByTid[tid] = [];
+  void idbDelete(STORE_M, tid).catch((e) =>
+    console.error("[tournaments] idbDelete matches failed:", e)
+  );
+
+  // ✅ refresh UI
+  notifyTournamentsUpdated();
+}
+
+/**
+ * ✅ Delete tournoi + purge matches (IDB + cache)
+ */
 export function deleteTournamentLocal(tournamentId: string) {
   void ensureLoaded();
 

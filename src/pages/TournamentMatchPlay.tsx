@@ -1,11 +1,13 @@
 // @ts-nocheck
 // ============================================
 // src/pages/TournamentMatchPlay.tsx
-// TOURNOIS — MATCH PLAY
-// ✅ Lance une vraie partie pour un match de tournoi
+// TOURNOIS — MATCH PLAY (ROUTEUR ROBUSTE)
+// ✅ Recharge tournoi + matchs depuis storeLocal (cache async)
+// ✅ Évite écran noir (loading/fallbacks + refresh event)
+// ✅ Lance une vraie partie pour un match de tournoi (X01 V3 / CRICKET / KILLER)
 // ✅ Auto-submit résultat => tournament engine + persistence locale
-// ✅ X01 V3 / CRICKET / KILLER branchés
-// - Horloge : fallback (à brancher quand tu as un vrai ClockPlay)
+// ✅ Bloque BYE/TBD (ne lance pas un "match fantôme")
+// - Horloge / autres modes : fallback propre (pas d'écran noir)
 // ============================================
 
 import React from "react";
@@ -19,6 +21,7 @@ import {
   listMatchesForTournamentLocal,
   upsertTournamentLocal,
   upsertMatchesForTournamentLocal,
+  TOURNAMENTS_UPDATED_EVENT,
 } from "../lib/tournaments/storeLocal";
 
 import { History } from "../lib/history";
@@ -30,14 +33,25 @@ import KillerPlay from "./KillerPlay";
 
 const LS_ONLINE_MATCHES_KEY = "dc_online_matches_v1";
 
+// ⚠️ mêmes valeurs que TournamentView.tsx (si tu les utilises côté engine)
+const BYE = "__BYE__";
+const TBD = "__TBD__";
+
+function isByeId(x: any) {
+  return String(x || "") === BYE;
+}
+function isTbdId(x: any) {
+  return String(x || "") === TBD;
+}
+
 function nameOf(t: Tournament, pid: string) {
-  const p = (t.players || []).find((x) => x.id === pid);
+  const p = (t?.players || []).find((x: any) => String(x?.id) === String(pid));
   return p?.name || "Joueur";
 }
 
 function avatarOf(t: Tournament, pid: string) {
-  const p = (t.players || []).find((x) => x.id === pid);
-  return p?.avatarDataUrl ?? null;
+  const p = (t?.players || []).find((x: any) => String(x?.id) === String(pid));
+  return p?.avatarDataUrl ?? p?.avatar ?? p?.avatarUrl ?? null;
 }
 
 function extractWinnerId(m: any) {
@@ -52,11 +66,7 @@ function extractWinnerId(m: any) {
 
 function ensureTournamentLikeMatchId(m: any) {
   const now = Date.now();
-  return (
-    m?.id ||
-    m?.matchId ||
-    `tmatch-${now}-${Math.random().toString(36).slice(2, 8)}`
-  );
+  return m?.id || m?.matchId || `tmatch-${now}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 /**
@@ -73,8 +83,7 @@ function saveMatchToHistoryIDB(args: {
   const now = Date.now();
   const id = ensureTournamentLikeMatchId(matchPayload);
 
-  const rawPlayers =
-    matchPayload?.players ?? matchPayload?.payload?.players ?? [];
+  const rawPlayers = matchPayload?.players ?? matchPayload?.payload?.players ?? [];
 
   const players = (rawPlayers || []).map((p: any) => {
     const prof = (profiles || []).find((pr: any) => pr.id === p?.id);
@@ -85,8 +94,7 @@ function saveMatchToHistoryIDB(args: {
     };
   });
 
-  const summary =
-    matchPayload?.summary ?? matchPayload?.payload?.summary ?? null;
+  const summary = matchPayload?.summary ?? matchPayload?.payload?.summary ?? null;
 
   const saved: any = {
     id,
@@ -124,6 +132,18 @@ function saveMatchToHistoryIDB(args: {
   return saved;
 }
 
+function detectMode(tour: any) {
+  const raw =
+    tour?.game?.mode ||
+    tour?.mode ||
+    tour?.gameKey ||
+    tour?.type ||
+    tour?.format?.game ||
+    tour?.config?.mode ||
+    "";
+  return String(raw || "").toLowerCase();
+}
+
 export default function TournamentMatchPlay({ store, go, params }: any) {
   const { theme } = useTheme();
   const { t } = useLang();
@@ -131,33 +151,53 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
   const tournamentId = String(params?.tournamentId || params?.id || "");
   const matchId = String(params?.matchId || "");
 
-  const [tour, setTour] = React.useState<Tournament | null>(() =>
-    tournamentId ? (getTournamentLocal(tournamentId) as any) : null
-  );
-  const [matches, setMatches] = React.useState<TournamentMatch[]>(() =>
-    tournamentId ? (listMatchesForTournamentLocal(tournamentId) as any) : []
-  );
-  const [tm, setTm] = React.useState<TournamentMatch | null>(() =>
-    (matches || []).find((m) => m.id === matchId) ?? null
-  );
+  const [loading, setLoading] = React.useState(true);
+  const [tour, setTour] = React.useState<Tournament | null>(null);
+  const [matches, setMatches] = React.useState<TournamentMatch[]>([]);
+  const [tm, setTm] = React.useState<TournamentMatch | null>(null);
 
-  const mode = String(tour?.game?.mode || "");
+  const safeMatches = React.useMemo(() => (Array.isArray(matches) ? matches : []), [matches]);
 
-  React.useEffect(() => {
+  const refreshFromStore = React.useCallback(() => {
     if (!tournamentId) return;
-    const T = getTournamentLocal(tournamentId) as any;
-    const M = listMatchesForTournamentLocal(tournamentId) as any;
+    const T = (getTournamentLocal(tournamentId) as any) ?? null;
+    const M = (listMatchesForTournamentLocal(tournamentId) as any) ?? [];
+    const arr = Array.isArray(M) ? M : [];
     setTour(T);
-    setMatches(M);
-    setTm((M || []).find((x: any) => x.id === matchId) ?? null);
+    setMatches(arr);
+    setTm(arr.find((x: any) => String(x?.id) === String(matchId)) ?? null);
   }, [tournamentId, matchId]);
 
+  // 1) Load initial (sync cache)
+  React.useEffect(() => {
+    setLoading(true);
+    refreshFromStore();
+    // si cache pas encore prêt, on laisse une petite fenêtre puis on relit
+    const t1 = window.setTimeout(() => {
+      refreshFromStore();
+      setLoading(false);
+    }, 120);
+    return () => window.clearTimeout(t1);
+  }, [refreshFromStore]);
+
+  // 2) Très important: storeLocal charge en async -> on écoute l'event pour recharger
+  React.useEffect(() => {
+    function onUpdate() {
+      refreshFromStore();
+      setLoading(false);
+    }
+    window.addEventListener(TOURNAMENTS_UPDATED_EVENT, onUpdate as any);
+    return () => window.removeEventListener(TOURNAMENTS_UPDATED_EVENT, onUpdate as any);
+  }, [refreshFromStore]);
+
   function persist(nextTour: Tournament, nextMatches: TournamentMatch[]) {
-    upsertTournamentLocal(nextTour);
-    upsertMatchesForTournamentLocal(nextTour.id, nextMatches);
+    try {
+      upsertTournamentLocal(nextTour as any);
+      upsertMatchesForTournamentLocal((nextTour as any).id, nextMatches as any);
+    } catch {}
     setTour(nextTour);
-    setMatches(nextMatches);
-    setTm((nextMatches || []).find((x: any) => x.id === matchId) ?? null);
+    setMatches(Array.isArray(nextMatches) ? nextMatches : []);
+    setTm((Array.isArray(nextMatches) ? nextMatches : []).find((x: any) => String(x?.id) === String(matchId)) ?? null);
   }
 
   async function finishAndSubmit(matchPayload: any, historyMatchIdMaybe?: string | null) {
@@ -178,8 +218,8 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
       try {
         const r = submitResult({
           tournament: tour as any,
-          matches: matches as any,
-          matchId: tm.id,
+          matches: safeMatches as any,
+          matchId: (tm as any).id,
           winnerId,
           historyMatchId,
         });
@@ -188,31 +228,122 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
         console.error("[tournament_match_play] submitResult error:", e);
       }
     } else {
-      console.warn("[tournament_match_play] winnerId introuvable, retour tournoi (saisie manuelle possible).");
+      console.warn("[tournament_match_play] winnerId introuvable, retour tournoi.");
     }
 
-    // 3) retour tournoi (enchaînement multi-match)
-    go("tournament_view", { id: tour.id });
+    // 3) retour tournoi
+    go("tournament_view", { id: (tour as any).id });
   }
 
-  if (!tour || !tm) {
+  // ---------- UI fallback / anti écran noir ----------
+  if (!tournamentId || !matchId) {
     return (
       <div style={{ minHeight: "100vh", padding: 16, background: theme.bg, color: theme.text }}>
-        <button onClick={() => go("tournament_view", { id: tournamentId })}>← Retour tournoi</button>
-        <div style={{ marginTop: 10, opacity: 0.9 }}>
-          Match de tournoi introuvable (tournamentId/matchId manquant).
+        <button onClick={() => go("tournaments")}>← Tournois</button>
+        <div style={{ marginTop: 10, fontWeight: 950 }}>Paramètres manquants</div>
+        <div style={{ marginTop: 6, opacity: 0.8 }}>
+          tournamentId/matchId manquants pour lancer un match.
         </div>
       </div>
     );
   }
 
-  const aId = tm.aPlayerId;
-  const bId = tm.bPlayerId;
+  if (loading && (!tour || !tm)) {
+    return (
+      <div style={{ minHeight: "100vh", padding: 16, background: theme.bg, color: theme.text }}>
+        <button onClick={() => go("tournament_view", { id: tournamentId })}>← Retour tournoi</button>
+        <div style={{ marginTop: 12, fontWeight: 950, color: theme.primary }}>Chargement…</div>
+        <div style={{ marginTop: 6, opacity: 0.8 }}>Récupération du match du tournoi.</div>
+      </div>
+    );
+  }
+
+  if (!tour) {
+    return (
+      <div style={{ minHeight: "100vh", padding: 16, background: theme.bg, color: theme.text }}>
+        <button onClick={() => go("tournament_view", { id: tournamentId })}>← Retour tournoi</button>
+        <div style={{ marginTop: 12, fontWeight: 950 }}>Tournoi introuvable</div>
+        <div style={{ marginTop: 6, opacity: 0.8 }}>
+          Le tournoi n’est pas chargé (ou a été supprimé).
+        </div>
+      </div>
+    );
+  }
+
+  if (!tm) {
+    return (
+      <div style={{ minHeight: "100vh", padding: 16, background: theme.bg, color: theme.text }}>
+        <button onClick={() => go("tournament_view", { id: tournamentId })}>← Retour tournoi</button>
+        <div style={{ marginTop: 12, fontWeight: 950 }}>Match introuvable</div>
+        <div style={{ marginTop: 6, opacity: 0.8 }}>
+          matchId={String(matchId)}
+        </div>
+      </div>
+    );
+  }
+
+  const mode = detectMode(tour);
+
+  const aId = String((tm as any).aPlayerId || "");
+  const bId = String((tm as any).bPlayerId || "");
+
+  // ✅ Bloque BYE/TBD => pas de "match" à jouer
+  const hasBye = isByeId(aId) || isByeId(bId);
+  const hasTbd = isTbdId(aId) || isTbdId(bId);
+
+  if (hasBye || hasTbd || !aId || !bId) {
+    return (
+      <div style={{ minHeight: "100vh", padding: 16, background: theme.bg, color: theme.text }}>
+        <button onClick={() => go("tournament_view", { id: tournamentId })}>← Retour tournoi</button>
+
+        <div
+          style={{
+            marginTop: 12,
+            borderRadius: 18,
+            border: `1px solid ${theme.borderSoft}`,
+            background: theme.card,
+            padding: 14,
+          }}
+        >
+          <div style={{ fontWeight: 950, color: theme.primary, textShadow: `0 0 10px ${theme.primary}55` }}>
+            Ce match n’est pas jouable
+          </div>
+          <div style={{ marginTop: 8, opacity: 0.85, lineHeight: 1.35 }}>
+            {hasBye ? (
+              <>Exempt (BYE) — pas de partie à lancer.</>
+            ) : hasTbd ? (
+              <>En attente (TBD) — l’adversaire n’est pas encore connu.</>
+            ) : (
+              <>Joueurs incomplets.</>
+            )}
+            <br />
+            <b>{nameOf(tour, aId)}</b> vs <b>{nameOf(tour, bId)}</b>
+          </div>
+
+          <button
+            onClick={() => go("tournament_view", { id: tournamentId })}
+            style={{
+              marginTop: 12,
+              borderRadius: 999,
+              padding: "10px 12px",
+              border: "none",
+              fontWeight: 950,
+              background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
+              color: "#1b1508",
+              cursor: "pointer",
+            }}
+          >
+            Retour au tournoi
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // ------------------------------------------------------------
   // ✅ X01 V3
   // ------------------------------------------------------------
-  if (mode === "x01") {
+  if (mode === "x01" || mode.includes("x01") || mode.includes("501") || mode.includes("301") || mode === "") {
     const cfgFromTour = tour?.game?.rules?.x01v3 ?? null;
 
     const config: any =
@@ -230,6 +361,7 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
 
     return (
       <div style={{ minHeight: "100vh", background: theme.bg, color: theme.text }}>
+        {/* mini header */}
         <div style={{ padding: 12, paddingBottom: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
@@ -247,10 +379,10 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
             </button>
             <div style={{ flex: 1, textAlign: "center" }}>
               <div style={{ fontWeight: 950, color: theme.primary, textShadow: `0 0 10px ${theme.primary}55` }}>
-                {tour.name}
+                {tour?.name || "Tournoi"}
               </div>
               <div style={{ fontSize: 12.5, opacity: 0.8 }}>
-                Match • {nameOf(tour, aId)} vs {nameOf(tour, bId)}
+                X01 • {nameOf(tour, aId)} vs {nameOf(tour, bId)}
               </div>
             </div>
             <div style={{ width: 90 }} />
@@ -263,7 +395,7 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
           onReplayNewConfig={() => go("tournament_view", { id: tournamentId })}
           onShowSummary={async (historyMatchId: string) => {
             try {
-              // Récup winnerId depuis History
+              // winner depuis History si dispo
               let rec: any = null;
               try {
                 rec = await (History as any)?.get?.(historyMatchId);
@@ -278,14 +410,14 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
               if (winnerId) {
                 const r = submitResult({
                   tournament: tour as any,
-                  matches: matches as any,
-                  matchId: tm.id,
+                  matches: safeMatches as any,
+                  matchId: (tm as any).id,
                   winnerId,
                   historyMatchId,
                 });
                 persist(r.tournament as any, r.matches as any);
               } else {
-                console.warn("[tournament_match_play] X01V3: winnerId not found in history record");
+                console.warn("[tournament_match_play] X01V3: winnerId introuvable dans History");
               }
             } catch (e) {
               console.error("[tournament_match_play] X01V3 submitResult error:", e);
@@ -301,8 +433,7 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
   // ------------------------------------------------------------
   // ✅ CRICKET
   // ------------------------------------------------------------
-  if (mode === "cricket") {
-    // CricketPlay existant: on lui donne les profils, et on capte onFinish
+  if (mode === "cricket" || mode.includes("cricket")) {
     return (
       <div style={{ minHeight: "100vh", background: theme.bg, color: theme.text }}>
         <div style={{ padding: 12, paddingBottom: 8 }}>
@@ -322,7 +453,7 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
             </button>
             <div style={{ flex: 1, textAlign: "center" }}>
               <div style={{ fontWeight: 950, color: theme.primary, textShadow: `0 0 10px ${theme.primary}55` }}>
-                {tour.name}
+                {tour?.name || "Tournoi"}
               </div>
               <div style={{ fontSize: 12.5, opacity: 0.8 }}>
                 Cricket • {nameOf(tour, aId)} vs {nameOf(tour, bId)}
@@ -335,7 +466,6 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
         <CricketPlay
           profiles={store?.profiles ?? []}
           onFinish={async (m: any) => {
-            // On force une kind si jamais
             const payload = { ...(m || {}), kind: m?.kind || "cricket" };
             await finishAndSubmit(payload, null);
           }}
@@ -347,22 +477,11 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
   // ------------------------------------------------------------
   // ✅ KILLER (best effort config 1v1)
   // ------------------------------------------------------------
-  if (mode === "killer") {
+  if (mode === "killer" || mode.includes("killer")) {
     const cfg: any = tour?.game?.rules?.killerConfig || {
       players: [
-        {
-          id: aId,
-          name: nameOf(tour, aId),
-          avatarDataUrl: avatarOf(tour, aId),
-          // numéro par défaut : on met 20/19 (tu ajusteras via rules)
-          number: 20,
-        },
-        {
-          id: bId,
-          name: nameOf(tour, bId),
-          avatarDataUrl: avatarOf(tour, bId),
-          number: 19,
-        },
+        { id: aId, name: nameOf(tour, aId), avatarDataUrl: avatarOf(tour, aId), number: 20 },
+        { id: bId, name: nameOf(tour, bId), avatarDataUrl: avatarOf(tour, bId), number: 19 },
       ],
       damageRule: "classic",
       becomeRule: "oneHit",
@@ -388,7 +507,7 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
             </button>
             <div style={{ flex: 1, textAlign: "center" }}>
               <div style={{ fontWeight: 950, color: theme.primary, textShadow: `0 0 10px ${theme.primary}55` }}>
-                {tour.name}
+                {tour?.name || "Tournoi"}
               </div>
               <div style={{ fontSize: 12.5, opacity: 0.8 }}>
                 Killer • {nameOf(tour, aId)} vs {nameOf(tour, bId)}
@@ -412,7 +531,7 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
   }
 
   // ------------------------------------------------------------
-  // ⏱️ HORLOGE / autres modes : fallback
+  // ⏱️ HORLOGE / autres modes : fallback propre
   // ------------------------------------------------------------
   return (
     <div style={{ minHeight: "100vh", padding: 16, paddingBottom: 90, background: theme.bg, color: theme.text }}>
@@ -431,14 +550,14 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
           Mode pas encore branché automatiquement
         </div>
         <div style={{ marginTop: 8, opacity: 0.85, lineHeight: 1.35 }}>
-          Mode du tournoi : <b>{String(mode).toUpperCase()}</b>
+          Mode du tournoi : <b>{String(mode).toUpperCase() || "?"}</b>
           <br />
           Match : <b>{nameOf(tour, aId)}</b> vs <b>{nameOf(tour, bId)}</b>
         </div>
 
         <div style={{ marginTop: 10, fontSize: 12.5, opacity: 0.8 }}>
-          Dès que tu as un vrai écran “ClockPlay” (non training), je le branche comme les autres
-          (onFinish → History → submitResult → retour tournoi).
+          (Pas d’écran noir) — quand tu me dis quel composant “Play” utiliser pour ce mode,
+          je branche exactement comme X01/Cricket/Killer : onFinish → History → submitResult → retour tournoi.
         </div>
 
         <button
