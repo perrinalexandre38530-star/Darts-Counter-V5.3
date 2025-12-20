@@ -9,9 +9,9 @@
 // ✅ FIX CRASH: matches peut être undefined -> safeMatches partout
 // ✅ FIX UI: BYE/TBD ne doivent JAMAIS apparaître comme "jouables"
 // ✅ FIX UI: BYE vs BYE ne doit jamais être affiché (purge visuelle)
-// ✅ FIX UI: TBD vs TBD (placeholders) ne doit jamais être affiché (purge visuelle)
+// ✅ NEW UI: on N'AFFICHE PLUS les matchs "vs BYE" -> on affiche un bloc "Qualifiés d’office"
+// ✅ NEW UI: TBD -> affiche "Vainqueur du match X" + avatars des 2 joueurs du match source
 // ✅ FIX STORELOCAL: bons noms list/upsert
-// ✅ BONUS: bouton "LANCER LE PROCHAIN MATCH" (auto)
 // ============================================
 
 import React from "react";
@@ -48,23 +48,18 @@ function isTbdId(x: any) {
 function isVoidByeMatch(m: any) {
   return isByeId(m?.aPlayerId) && isByeId(m?.bPlayerId);
 }
-function isVoidTbdMatch(m: any) {
-  return isTbdId(m?.aPlayerId) && isTbdId(m?.bPlayerId);
-}
-
-/** ✅ match "fantôme" qu'on ne veut JAMAIS afficher */
-function isGhostMatch(m: any) {
-  if (!m) return true;
+function isByeMatch(m: any) {
+  if (!m) return false;
   if (isVoidByeMatch(m)) return true;
-  if (isVoidTbdMatch(m)) return true;
-  // safety: si pas de joueurs
+  return isByeId(m?.aPlayerId) || isByeId(m?.bPlayerId);
+}
+function otherIdIfBye(m: any) {
   const a = String(m?.aPlayerId || "");
   const b = String(m?.bPlayerId || "");
-  if (!a && !b) return true;
-  return false;
+  if (isByeId(a) && !isByeId(b) && b && !isTbdId(b)) return b;
+  if (isByeId(b) && !isByeId(a) && a && !isTbdId(a)) return a;
+  return "";
 }
-
-/** ✅ jouable UI (mais on utilise surtout getPlayableMatches) */
 function isRealPlayable(m: any) {
   if (!m) return false;
   if (String(m.status || "") !== "pending") return false;
@@ -72,7 +67,6 @@ function isRealPlayable(m: any) {
   if (isTbdId(m.aPlayerId) || isTbdId(m.bPlayerId)) return false;
   if (isByeId(m.aPlayerId) || isByeId(m.bPlayerId)) return false;
   if (isVoidByeMatch(m)) return false;
-  if (isVoidTbdMatch(m)) return false;
   return true;
 }
 
@@ -240,14 +234,53 @@ function MiniBadge({
   );
 }
 
-function PlayerPill({
+function AvatarCircle({
   name,
   avatarUrl,
+  size = 30,
   dim,
 }: {
   name: string;
   avatarUrl?: string | null;
+  size?: number;
   dim?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 999,
+        overflow: "hidden",
+        background: "rgba(0,0,0,0.35)",
+        border: "1px solid rgba(255,255,255,0.12)",
+        display: "grid",
+        placeItems: "center",
+        flex: "0 0 auto",
+        opacity: dim ? 0.65 : 1,
+      }}
+    >
+      {avatarUrl ? (
+        <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      ) : (
+        <div style={{ fontWeight: 950, fontSize: Math.max(11, Math.floor(size * 0.4)) }}>
+          {getInitials(name)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlayerPill({
+  name,
+  avatarUrl,
+  dim,
+  extra,
+}: {
+  name: string;
+  avatarUrl?: string | null;
+  dim?: boolean;
+  extra?: React.ReactNode;
 }) {
   return (
     <div
@@ -259,40 +292,20 @@ function PlayerPill({
         opacity: dim ? 0.6 : 1,
       }}
     >
-      <div
-        style={{
-          width: 30,
-          height: 30,
-          borderRadius: 999,
-          overflow: "hidden",
-          background: "rgba(0,0,0,0.35)",
-          border: "1px solid rgba(255,255,255,0.12)",
-          display: "grid",
-          placeItems: "center",
-          flex: "0 0 auto",
-        }}
-      >
-        {avatarUrl ? (
-          <img
-            src={avatarUrl}
-            alt=""
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-        ) : (
-          <div style={{ fontWeight: 950, fontSize: 12 }}>{getInitials(name)}</div>
-        )}
-      </div>
-
-      <div
-        style={{
-          fontWeight: 900,
-          fontSize: 12.5,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {name || "Joueur"}
+      <AvatarCircle name={name} avatarUrl={avatarUrl} size={30} dim={dim} />
+      <div style={{ minWidth: 0, display: "grid", gap: 2 }}>
+        <div
+          style={{
+            fontWeight: 900,
+            fontSize: 12.5,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {name || "Joueur"}
+        </div>
+        {extra ? <div style={{ fontSize: 11, opacity: 0.75 }}>{extra}</div> : null}
       </div>
     </div>
   );
@@ -308,50 +321,197 @@ function scoreText(m: any) {
 function matchLabel(m: any) {
   if (m?.groupId) return `Poule`;
   if (typeof m?.round === "number") return `Round ${m.round}`;
-  if (typeof m?.roundIndex === "number") return `Round ${m.roundIndex + 1}`;
   return "Match";
+}
+
+function matchKeyHuman(m: any) {
+  const r = typeof m?.round === "number" ? m.round : null;
+  const o = typeof m?.order === "number" ? m.order : null;
+  if (r != null && o != null) return `R${r} • M${o + 1}`;
+  if (r != null) return `R${r}`;
+  return "Match";
+}
+
+/* -------------------------------------------
+   TBD resolver: "Vainqueur du match X" + avatars
+   (supporte plein de schémas possibles via keys)
+-------------------------------------------- */
+
+function pickFirstDefined(obj: any, keys: string[]) {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (v != null && v !== "") return v;
+  }
+  return null;
+}
+
+function resolveSourceMatchForTbdSide(
+  allMatches: any[],
+  current: any,
+  side: "a" | "b"
+): any | null {
+  // 1) champs directs sur le match (si présents)
+  const directKeysA = ["aFromMatchId", "fromMatchIdA", "prevMatchIdA", "sourceMatchIdA", "feederMatchIdA"];
+  const directKeysB = ["bFromMatchId", "fromMatchIdB", "prevMatchIdB", "sourceMatchIdB", "feederMatchIdB"];
+
+  const direct = pickFirstDefined(current, side === "a" ? directKeysA : directKeysB);
+  if (direct) {
+    const f = allMatches.find((m) => String(m?.id) === String(direct));
+    if (f) return f;
+  }
+
+  // 2) reverse lookup: des matches qui pointent vers current via nextMatchId / nextId / winnerToMatchId...
+  const currentId = String(current?.id || "");
+  if (!currentId) return null;
+
+  const candidates = allMatches.filter((m) => {
+    const next = pickFirstDefined(m, ["nextMatchId", "nextId", "winnerToMatchId", "toMatchId"]);
+    if (!next) return false;
+    return String(next) === currentId;
+  });
+
+  if (!candidates.length) return null;
+
+  // si on a un slot / position, on essaye de respecter side
+  const bySide = candidates.find((m) => {
+    const slot = pickFirstDefined(m, ["nextSlot", "toSlot", "winnerToSlot", "slot"]);
+    if (!slot) return false;
+    const s = String(slot).toLowerCase();
+    return side === "a" ? s.includes("a") || s.includes("left") : s.includes("b") || s.includes("right");
+  });
+
+  return bySide || candidates[0] || null;
+}
+
+function WinnerPlaceholder({
+  label,
+  leftAvatarUrl,
+  leftName,
+  rightAvatarUrl,
+  rightName,
+}: {
+  label: string;
+  leftAvatarUrl?: string | null;
+  leftName: string;
+  rightAvatarUrl?: string | null;
+  rightName: string;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: -8 }}>
+        <div style={{ marginRight: -8, zIndex: 2 }}>
+          <AvatarCircle name={leftName} avatarUrl={leftAvatarUrl} size={26} />
+        </div>
+        <AvatarCircle name={rightName} avatarUrl={rightAvatarUrl} size={26} />
+      </div>
+
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontWeight: 950,
+            fontSize: 12.5,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {label}
+        </div>
+        <div style={{ fontSize: 11, opacity: 0.72, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {leftName} vs {rightName}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function renderPlayerOrTbd(
+  allMatches: any[],
+  current: any,
+  side: "a" | "b",
+  playersById: Record<string, any>
+) {
+  const pid = String(side === "a" ? current?.aPlayerId : current?.bPlayerId || "");
+  if (!pid) return <PlayerPill name="TBD" dim />;
+
+  if (isByeId(pid)) {
+    // on ne devrait pas afficher les matchs BYE, mais par sécurité
+    return <PlayerPill name="BYE" dim />;
+  }
+
+  if (!isTbdId(pid)) {
+    const pl = playersById[pid];
+    return <PlayerPill name={pl?.name || "Joueur"} avatarUrl={pl?.avatar} />;
+  }
+
+  const feeder = resolveSourceMatchForTbdSide(allMatches, current, side);
+  if (!feeder) {
+    return <PlayerPill name="Vainqueur du match précédent" dim extra={matchKeyHuman(current)} />;
+  }
+
+  const fa = String(feeder?.aPlayerId || "");
+  const fb = String(feeder?.bPlayerId || "");
+
+  const pa = fa && playersById[fa] ? playersById[fa] : null;
+  const pb = fb && playersById[fb] ? playersById[fb] : null;
+
+  const leftName = pa?.name || (isByeId(fa) ? "BYE" : isTbdId(fa) ? "TBD" : "Joueur");
+  const rightName = pb?.name || (isByeId(fb) ? "BYE" : isTbdId(fb) ? "TBD" : "Joueur");
+
+  const label = `Vainqueur ${matchKeyHuman(feeder)}`;
+
+  return (
+    <WinnerPlaceholder
+      label={label}
+      leftName={leftName}
+      leftAvatarUrl={pa?.avatar || null}
+      rightName={rightName}
+      rightAvatarUrl={pb?.avatar || null}
+    />
+  );
 }
 
 /* -----------------------------
    Bracket overview (KO)
+   -> n'affiche PLUS les matchs "vs BYE"
 ------------------------------ */
 
 function BracketOverview({
   tournament,
   matches,
+  allMatches,
   playersById,
   onStart,
   onOpenResult,
 }: {
   tournament: any;
   matches: any[];
+  allMatches: any[];
   playersById: Record<string, any>;
   onStart: (id: string) => void;
   onOpenResult: (m: any) => void;
 }) {
+  // only KO-like (no group matches)
   const koMatches = (Array.isArray(matches) ? matches : [])
-    .filter((m) => !m?.groupId && !m?.groupIndex)
-    .filter((m) => !isGhostMatch(m)); // ✅ purge visuelle
+    .filter((m) => !m?.groupId)
+    // ✅ purge visuelle : jamais BYE vs BYE
+    .filter((m) => !isVoidByeMatch(m))
+    // ✅ NEW : pas de match vs BYE (on gère via "Qualifiés d'office")
+    .filter((m) => !isByeMatch(m));
 
   const rounds = Array.from(
-    new Set(
-      koMatches.map((m) => {
-        if (typeof m?.round === "number") return m.round;
-        if (typeof m?.roundIndex === "number") return m.roundIndex + 1;
-        return 1;
-      })
-    )
+    new Set(koMatches.map((m) => (typeof m?.round === "number" ? m.round : 1)))
   ).sort((a: number, b: number) => a - b);
 
   const byRound: Record<number, any[]> = {};
   for (const r of rounds) byRound[r] = [];
   for (const m of koMatches) {
-    const r = typeof m?.round === "number" ? m.round : typeof m?.roundIndex === "number" ? m.roundIndex + 1 : 1;
+    const r = typeof m?.round === "number" ? m.round : 1;
     if (!byRound[r]) byRound[r] = [];
     byRound[r].push(m);
   }
   for (const r of Object.keys(byRound)) {
-    byRound[Number(r)].sort((a, b) => (a?.orderIndex ?? a?.order ?? 0) - (b?.orderIndex ?? b?.order ?? 0));
+    byRound[Number(r)].sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
   }
 
   const formatType = tournament?.format?.type || "";
@@ -369,7 +529,7 @@ function BracketOverview({
       badge={<MiniBadge label="Matchs" value={koMatches.length} accent="#4fb4ff" />}
     >
       {koMatches.length === 0 ? (
-        <div style={{ fontSize: 12, opacity: 0.78 }}>Aucun match KO.</div>
+        <div style={{ fontSize: 12, opacity: 0.78 }}>Aucun match KO à afficher.</div>
       ) : (
         <div
           style={{
@@ -406,9 +566,6 @@ function BracketOverview({
 
               <div style={{ display: "grid", gap: 10 }}>
                 {byRound[r]?.map((m: any) => {
-                  const a = m?.aPlayerId ? playersById[String(m.aPlayerId)] : null;
-                  const b = m?.bPlayerId ? playersById[String(m.bPlayerId)] : null;
-
                   const status = String(m?.status || "pending");
                   const playable = isRealPlayable(m);
                   const running = status === "running" || status === "playing";
@@ -430,17 +587,9 @@ function BracketOverview({
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                         <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
-                          <PlayerPill
-                            name={a?.name || (isByeId(m?.aPlayerId) ? "BYE" : isTbdId(m?.aPlayerId) ? "TBD" : "Joueur")}
-                            avatarUrl={a?.avatar}
-                            dim={!m?.aPlayerId || isTbdId(m?.aPlayerId) || isByeId(m?.aPlayerId)}
-                          />
+                          <div style={{ minWidth: 0 }}>{renderPlayerOrTbd(allMatches, m, "a", playersById)}</div>
                           <div style={{ height: 1, background: "rgba(255,255,255,0.06)" }} />
-                          <PlayerPill
-                            name={b?.name || (isByeId(m?.bPlayerId) ? "BYE" : isTbdId(m?.bPlayerId) ? "TBD" : "Joueur")}
-                            avatarUrl={b?.avatar}
-                            dim={!m?.bPlayerId || isTbdId(m?.bPlayerId) || isByeId(m?.bPlayerId)}
-                          />
+                          <div style={{ minWidth: 0 }}>{renderPlayerOrTbd(allMatches, m, "b", playersById)}</div>
                         </div>
 
                         <div style={{ display: "grid", justifyItems: "end", gap: 8 }}>
@@ -506,12 +655,14 @@ function BracketOverview({
 
 /* -----------------------------
    Detailed matches view (TV-like)
+   -> n'affiche PLUS les matchs "vs BYE"
 ------------------------------ */
 
 function MatchDetailsList({
   title,
   subtitle,
   matches,
+  allMatches,
   playersById,
   onStart,
   onOpenResult,
@@ -521,13 +672,17 @@ function MatchDetailsList({
   title: string;
   subtitle?: string;
   matches: any[];
+  allMatches: any[];
   playersById: Record<string, any>;
   onStart: (id: string) => void;
   onOpenResult: (m: any) => void;
   accent: string;
   icon?: React.ReactNode;
 }) {
-  const safe = (Array.isArray(matches) ? matches : []).filter((m) => !isGhostMatch(m));
+  const safe = (Array.isArray(matches) ? matches : [])
+    .filter((m) => !isVoidByeMatch(m))
+    // ✅ NEW : pas de match vs BYE
+    .filter((m) => !isByeMatch(m));
 
   return (
     <Card
@@ -538,13 +693,10 @@ function MatchDetailsList({
       badge={<MiniBadge label="Matchs" value={safe.length} accent={accent} />}
     >
       {safe.length === 0 ? (
-        <div style={{ fontSize: 12, opacity: 0.78 }}>Aucun match.</div>
+        <div style={{ fontSize: 12, opacity: 0.78 }}>Aucun match à afficher.</div>
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
           {safe.map((m: any) => {
-            const a = m?.aPlayerId ? playersById[String(m.aPlayerId)] : null;
-            const b = m?.bPlayerId ? playersById[String(m.bPlayerId)] : null;
-
             const status = String(m?.status || "pending");
             const playable = isRealPlayable(m);
             const running = status === "running" || status === "playing";
@@ -630,7 +782,7 @@ function MatchDetailsList({
                   </button>
                 </div>
 
-                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
                   <div
                     style={{
                       display: "flex",
@@ -639,20 +791,12 @@ function MatchDetailsList({
                       alignItems: "center",
                     }}
                   >
-                    <PlayerPill
-                      name={a?.name || (isByeId(m?.aPlayerId) ? "BYE" : isTbdId(m?.aPlayerId) ? "TBD" : "Joueur")}
-                      avatarUrl={a?.avatar}
-                      dim={!m?.aPlayerId || isByeId(m?.aPlayerId) || isTbdId(m?.aPlayerId)}
-                    />
+                    <div style={{ minWidth: 0 }}>{renderPlayerOrTbd(allMatches, m, "a", playersById)}</div>
                     <div style={{ fontWeight: 950, fontSize: 13, opacity: 0.9 }}>
                       {done ? scoreText(m) : "VS"}
                     </div>
-                    <div style={{ display: "flex", justifyContent: "flex-end", minWidth: 0 }}>
-                      <PlayerPill
-                        name={b?.name || (isByeId(m?.bPlayerId) ? "BYE" : isTbdId(m?.bPlayerId) ? "TBD" : "Joueur")}
-                        avatarUrl={b?.avatar}
-                        dim={!m?.bPlayerId || isByeId(m?.bPlayerId) || isTbdId(m?.bPlayerId)}
-                      />
+                    <div style={{ minWidth: 0, display: "flex", justifyContent: "flex-end" }}>
+                      {renderPlayerOrTbd(allMatches, m, "b", playersById)}
                     </div>
                   </div>
 
@@ -674,6 +818,7 @@ function MatchDetailsList({
 
 /* -----------------------------
    Groups carousel + standings
+   (on garde la logique, mais on masque les matchs vs BYE)
 ------------------------------ */
 
 function computeStandings(groupPlayerIds: string[], groupMatches: any[]) {
@@ -733,17 +878,20 @@ function computeStandings(groupPlayerIds: string[], groupMatches: any[]) {
 function GroupsCarousel({
   tournament,
   matches,
+  allMatches,
   playersById,
   onStart,
   onOpenResult,
 }: {
   tournament: any;
   matches: any[];
+  allMatches: any[];
   playersById: Record<string, any>;
   onStart: (id: string) => void;
   onOpenResult: (m: any) => void;
 }) {
-  const safeMatches = (Array.isArray(matches) ? matches : []).filter((m) => !isGhostMatch(m));
+  const safeMatches = (Array.isArray(matches) ? matches : [])
+    .filter((m) => !isVoidByeMatch(m)); // ✅
 
   const groups = Array.isArray(tournament?.groups) ? tournament.groups : [];
 
@@ -796,6 +944,12 @@ function GroupsCarousel({
             const pids = Array.isArray(g?.playerIds) ? g.playerIds.map((x: any) => String(x)) : [];
             const standings = computeStandings(pids, groupMatches);
 
+            const groupMatchesVisible = groupMatches
+              .slice()
+              .sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0))
+              .filter((m) => !isVoidByeMatch(m))
+              .filter((m) => !isByeMatch(m));
+
             return (
               <div
                 key={gid}
@@ -820,7 +974,7 @@ function GroupsCarousel({
                   <div style={{ fontWeight: 950, fontSize: 13, color: "#7fe2a9" }}>
                     {g?.name || `Groupe`}
                   </div>
-                  <div style={{ fontSize: 11.5, opacity: 0.75 }}>{groupMatches.length} matchs</div>
+                  <div style={{ fontSize: 11.5, opacity: 0.75 }}>{groupMatchesVisible.length} matchs</div>
                 </div>
 
                 <div style={{ marginTop: 10 }}>
@@ -867,14 +1021,12 @@ function GroupsCarousel({
 
                 <div style={{ marginTop: 12 }}>
                   <div style={{ fontSize: 11.5, opacity: 0.82, marginBottom: 6 }}>Matchs</div>
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {groupMatches
-                      .slice()
-                      .sort((a, b) => (a?.orderIndex ?? a?.order ?? 0) - (b?.orderIndex ?? b?.order ?? 0))
-                      .map((m: any) => {
-                        const a = m?.aPlayerId ? playersById[String(m.aPlayerId)] : null;
-                        const b = m?.bPlayerId ? playersById[String(m.bPlayerId)] : null;
 
+                  {groupMatchesVisible.length === 0 ? (
+                    <div style={{ fontSize: 12, opacity: 0.72 }}>Aucun match à afficher (BYE masqués).</div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {groupMatchesVisible.map((m: any) => {
                         const status = String(m?.status || "pending");
                         const playable = isRealPlayable(m);
                         const running = status === "running" || status === "playing";
@@ -899,28 +1051,17 @@ function GroupsCarousel({
                                 alignItems: "center",
                               }}
                             >
-                              <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                              <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                                  <div style={{ minWidth: 0 }}>
-                                    <PlayerPill
-                                      name={a?.name || (isByeId(m?.aPlayerId) ? "BYE" : isTbdId(m?.aPlayerId) ? "TBD" : "Joueur")}
-                                      avatarUrl={a?.avatar}
-                                      dim={!m?.aPlayerId || isByeId(m?.aPlayerId) || isTbdId(m?.aPlayerId)}
-                                    />
-                                  </div>
+                                  <div style={{ minWidth: 0 }}>{renderPlayerOrTbd(allMatches, m, "a", playersById)}</div>
                                   <div style={{ fontWeight: 950, opacity: 0.85 }}>{done ? scoreText(m) : "VS"}</div>
                                   <div style={{ minWidth: 0, display: "flex", justifyContent: "flex-end" }}>
-                                    <PlayerPill
-                                      name={b?.name || (isByeId(m?.bPlayerId) ? "BYE" : isTbdId(m?.bPlayerId) ? "TBD" : "Joueur")}
-                                      avatarUrl={b?.avatar}
-                                      dim={!m?.bPlayerId || isByeId(m?.bPlayerId) || isTbdId(m?.bPlayerId)}
-                                    />
+                                    {renderPlayerOrTbd(allMatches, m, "b", playersById)}
                                   </div>
                                 </div>
 
                                 <div style={{ fontSize: 11.2, opacity: 0.75 }}>
-                                  BO{m?.bestOf ?? "?"} •{" "}
-                                  {done ? "Terminé" : running ? "En cours" : playable ? "À jouer" : "Attente"}
+                                  BO{m?.bestOf ?? "?"} • {done ? "Terminé" : running ? "En cours" : playable ? "À jouer" : "Attente"}
                                 </div>
                               </div>
 
@@ -954,7 +1095,8 @@ function GroupsCarousel({
                           </div>
                         );
                       })}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -971,18 +1113,25 @@ function GroupsCarousel({
 
 export default function TournamentView({ store, go, id }: Props) {
   const [tour, setTour] = React.useState<Tournament | null>(null);
-  const [matches, setMatches] = React.useState<TournamentMatch[] | any>([]);
+  const [matches, setMatches] = React.useState<TournamentMatch[]>([]);
   const [loading, setLoading] = React.useState(true);
 
+  // ✅ FIX: matches peut être undefined -> on normalise
   const safeMatches: TournamentMatch[] = React.useMemo(
     () => (Array.isArray(matches) ? matches : []),
     [matches]
   );
 
-  // ✅ Visible (purge UI) : pas de BYE/BYE, pas de TBD/TBD
+  // ✅ purge minimale : jamais BYE vs BYE
   const visibleMatches: TournamentMatch[] = React.useMemo(
-    () => safeMatches.filter((m: any) => !isGhostMatch(m)),
+    () => safeMatches.filter((m: any) => !isVoidByeMatch(m)),
     [safeMatches]
+  );
+
+  // ✅ NEW : matches affichables (on masque TOUS les matchs avec BYE)
+  const displayMatches: TournamentMatch[] = React.useMemo(
+    () => visibleMatches.filter((m: any) => !isByeMatch(m)),
+    [visibleMatches]
   );
 
   const [view, setView] = React.useState<ViewMode>("summary");
@@ -1030,46 +1179,61 @@ export default function TournamentView({ store, go, id }: Props) {
     return out;
   }, [tour]);
 
-  // ✅ PLAYABLE = source de vérité moteur (filtre BYE/TBD et status)
-  const playableMatches = React.useMemo(() => {
-    if (!tour) return [] as any[];
-    const p = getPlayableMatches(tour as any, safeMatches as any) as any[];
-    // tri stable: orderIndex puis createdAt
-    return p
-      .slice()
-      .sort(
-        (a, b) =>
-          (a?.orderIndex ?? a?.order ?? 0) - (b?.orderIndex ?? b?.order ?? 0) ||
-          (a?.createdAt ?? 0) - (b?.createdAt ?? 0)
-      );
-  }, [tour, safeMatches]);
+  // ✅ NEW : qualifiés d'office (BYE) -> bloc au lieu de matchs vs BYE
+  const autoQualified = React.useMemo(() => {
+    // on veut lister les joueurs qui passent via BYE (un match avec un seul joueur réel)
+    const ids: string[] = [];
 
-  const runningMatches = React.useMemo(() => {
-    return visibleMatches.filter((m: any) => {
+    for (const m of visibleMatches as any[]) {
+      if (!m) continue;
+      if (!isByeMatch(m)) continue;
+      if (isVoidByeMatch(m)) continue;
+
+      const pid = otherIdIfBye(m);
+      if (!pid) continue;
+
+      // si le moteur marque done + winnerId, OK
+      // si pending mais BYE (selon moteur), on considère aussi "qualifié"
+      ids.push(pid);
+    }
+
+    // unique + only real
+    const uniq = Array.from(new Set(ids)).filter((x) => x && !isByeId(x) && !isTbdId(x));
+    return uniq.map((pid) => playersById[pid]).filter(Boolean);
+  }, [visibleMatches, playersById]);
+
+  const { playableMatches, runningMatches, doneMatches } = React.useMemo(() => {
+    // IMPORTANT: jouables = UNIQUEMENT sur displayMatches (pas de BYE, pas de TBD)
+    const playable = displayMatches.filter((m: any) => isRealPlayable(m));
+    const running = displayMatches.filter((m: any) => {
       const st = String(m?.status || "");
       return st === "running" || st === "playing";
-    }) as any[];
-  }, [visibleMatches]);
+    });
+    const done = displayMatches.filter((m: any) => String(m?.status || "") === "done");
 
-  const doneMatches = React.useMemo(() => {
-    return visibleMatches.filter((m: any) => String(m?.status || "") === "done") as any[];
-  }, [visibleMatches]);
+    return {
+      playableMatches: playable as any[],
+      runningMatches: running as any[],
+      doneMatches: done as any[],
+    };
+  }, [displayMatches]);
 
   const hasGroups = React.useMemo(() => {
     if ((tour as any)?.format?.type === "groups_ko") return true;
     if (Array.isArray((tour as any)?.groups) && (tour as any).groups.length) return true;
-    return visibleMatches.some((m: any) => !!m?.groupId || !!m?.groupIndex);
+    return visibleMatches.some((m: any) => !!m?.groupId);
   }, [tour, visibleMatches]);
 
   const statusCounts = React.useMemo(() => {
-    const pending = visibleMatches.filter((m: any) => String(m?.status || "") === "pending").length;
-    const running = visibleMatches.filter((m: any) => {
+    // counts sur displayMatches (ce que tu vois à l’écran)
+    const pending = displayMatches.filter((m: any) => String(m?.status || "") === "pending").length;
+    const running = displayMatches.filter((m: any) => {
       const st = String(m?.status || "");
       return st === "running" || st === "playing";
     }).length;
-    const done = visibleMatches.filter((m: any) => String(m?.status || "") === "done").length;
+    const done = displayMatches.filter((m: any) => String(m?.status || "") === "done").length;
     return { pending, running, done };
-  }, [visibleMatches]);
+  }, [displayMatches]);
 
   const persist = React.useCallback(
     async (nextTour: Tournament, nextMatches: TournamentMatch[]) => {
@@ -1108,24 +1272,17 @@ export default function TournamentView({ store, go, id }: Props) {
     [tour, safeMatches, persist, go]
   );
 
-  // ✅ AUTO: lance automatiquement le prochain match jouable (si existe)
+  // ✅ AUTO: lance automatiquement le prochain match jouable
   const onAutoNextMatch = React.useCallback(async () => {
     if (!tour) return;
 
     try {
-      const playable = getPlayableMatches(tour as any, safeMatches as any) as any[];
-      if (!playable.length) return;
+      // on laisse le moteur décider, MAIS on filtre côté UI pour ne pas démarrer BYE/TBD par accident
+      const playable = getPlayableMatches(tour as any, safeMatches as any) || [];
+      const realPlayable = playable.filter((m: any) => isRealPlayable(m) && !isByeMatch(m));
+      if (!realPlayable.length) return;
 
-      const sorted = playable
-        .slice()
-        .sort(
-          (a, b) =>
-            (a?.orderIndex ?? a?.order ?? 0) - (b?.orderIndex ?? b?.order ?? 0) ||
-            (a?.createdAt ?? 0) - (b?.createdAt ?? 0)
-        );
-
-      const next = sorted[0];
-      if (!next?.id) return;
+      const next = realPlayable[0];
 
       const r = startMatch({
         tournament: tour as any,
@@ -1147,7 +1304,7 @@ export default function TournamentView({ store, go, id }: Props) {
   const onOpenResult = React.useCallback((m: any) => setResultMatch(m), []);
 
   const allMatchesSorted = React.useMemo(() => {
-    const arr = [...(visibleMatches as any[])];
+    const arr = [...(displayMatches as any[])];
     const statusRank: Record<string, number> = { running: 0, playing: 0, pending: 1, done: 2 };
 
     arr.sort((a, b) => {
@@ -1155,19 +1312,19 @@ export default function TournamentView({ store, go, id }: Props) {
       const rb = statusRank[String(b?.status || "")] ?? 9;
       if (ra !== rb) return ra - rb;
 
-      const ga = a?.groupId || a?.groupIndex != null ? 1 : 0;
-      const gb = b?.groupId || b?.groupIndex != null ? 1 : 0;
+      const ga = a?.groupId ? 1 : 0;
+      const gb = b?.groupId ? 1 : 0;
       if (ga !== gb) return ga - gb;
 
-      const r1 = a?.round ?? (typeof a?.roundIndex === "number" ? a.roundIndex + 1 : 999);
-      const r2 = b?.round ?? (typeof b?.roundIndex === "number" ? b.roundIndex + 1 : 999);
+      const r1 = a?.round ?? 999;
+      const r2 = b?.round ?? 999;
       if (r1 !== r2) return r1 - r2;
 
-      return (a?.orderIndex ?? a?.order ?? 0) - (b?.orderIndex ?? b?.order ?? 0);
+      return (a?.order ?? 0) - (b?.order ?? 0);
     });
 
     return arr;
-  }, [visibleMatches]);
+  }, [displayMatches]);
 
   return (
     <div className="container" style={{ padding: 16, paddingBottom: 96, color: "#f5f5f7" }}>
@@ -1195,7 +1352,7 @@ export default function TournamentView({ store, go, id }: Props) {
           </div>
           <div style={{ fontSize: 11.5, opacity: 0.75 }}>
             {(tour as any)?.status ? String((tour as any).status).toUpperCase() : "—"} •{" "}
-            {statusCounts.pending}/{visibleMatches.length}
+            {statusCounts.pending}/{displayMatches.length}
           </div>
         </div>
       </div>
@@ -1219,6 +1376,38 @@ export default function TournamentView({ store, go, id }: Props) {
           {/* ✅ VUE : RÉSUMÉ */}
           {view === "summary" ? (
             <>
+              {/* ✅ NEW : Qualifiés d'office */}
+              {autoQualified.length ? (
+                <Card
+                  title="Qualifiés d’office"
+                  subtitle="Exempt (BYE) — ces joueurs passent automatiquement le tour."
+                  accent="#7fe2a9"
+                  icon="★"
+                  badge={<MiniBadge label="Qualifiés" value={autoQualified.length} accent="#7fe2a9" />}
+                >
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {autoQualified.map((p: any) => (
+                      <div
+                        key={String(p.id)}
+                        style={{
+                          borderRadius: 16,
+                          border: "1px solid rgba(255,255,255,0.10)",
+                          background: "linear-gradient(180deg, rgba(0,0,0,0.28), rgba(255,255,255,0.03))",
+                          padding: 12,
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 10,
+                        }}
+                      >
+                        <PlayerPill name={p?.name || "Joueur"} avatarUrl={p?.avatar || null} />
+                        <div style={{ fontWeight: 950, color: "#7fe2a9", opacity: 0.95 }}>✅ Qualifié</div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              ) : null}
+
               <Card
                 title="À jouer"
                 subtitle={playableMatches.length ? "Choisis un match à lancer." : "Aucun match jouable pour le moment."}
@@ -1228,18 +1417,23 @@ export default function TournamentView({ store, go, id }: Props) {
               >
                 {playableMatches.length ? (
                   <>
+                    {/* ✅ Bouton global */}
                     <button
                       type="button"
                       onClick={onAutoNextMatch}
+                      disabled={!playableMatches.length}
                       style={{
                         width: "100%",
                         borderRadius: 14,
                         padding: "10px 12px",
-                        border: "1px solid rgba(255,255,255,0.10)",
-                        background: "linear-gradient(180deg,#4fb4ff,#1c78d5)",
-                        color: "#0b1220",
+                        border: "none",
                         fontWeight: 950,
-                        cursor: "pointer",
+                        cursor: playableMatches.length ? "pointer" : "default",
+                        background: playableMatches.length
+                          ? "linear-gradient(180deg,#4fb4ff,#1c78d5)"
+                          : "linear-gradient(180deg,#3a3a3a,#232323)",
+                        color: playableMatches.length ? "#0b0f14" : "rgba(255,255,255,0.55)",
+                        boxShadow: playableMatches.length ? "0 16px 34px rgba(79,180,255,0.18)" : "none",
                         marginBottom: 10,
                       }}
                     >
@@ -1263,15 +1457,11 @@ export default function TournamentView({ store, go, id }: Props) {
                         >
                           <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                              <PlayerPill
-                                name={playersById[String(m.aPlayerId)]?.name || "Joueur"}
-                                avatarUrl={playersById[String(m.aPlayerId)]?.avatar}
-                              />
+                              <div style={{ minWidth: 0 }}>{renderPlayerOrTbd(safeMatches as any, m, "a", playersById)}</div>
                               <div style={{ fontWeight: 950, opacity: 0.8 }}>VS</div>
-                              <PlayerPill
-                                name={playersById[String(m.bPlayerId)]?.name || "Joueur"}
-                                avatarUrl={playersById[String(m.bPlayerId)]?.avatar}
-                              />
+                              <div style={{ minWidth: 0, display: "flex", justifyContent: "flex-end" }}>
+                                {renderPlayerOrTbd(safeMatches as any, m, "b", playersById)}
+                              </div>
                             </div>
                             <div style={{ fontSize: 11.5, opacity: 0.75 }}>
                               {matchLabel(m)} • BO{m?.bestOf ?? "?"}
@@ -1323,7 +1513,8 @@ export default function TournamentView({ store, go, id }: Props) {
           {view === "bracket" ? (
             <BracketOverview
               tournament={tour as any}
-              matches={visibleMatches as any}
+              matches={displayMatches as any}
+              allMatches={safeMatches as any}
               playersById={playersById}
               onStart={onStartMatch}
               onOpenResult={onOpenResult}
@@ -1336,6 +1527,7 @@ export default function TournamentView({ store, go, id }: Props) {
               title="Matchs"
               subtitle="Vue détaillée (style TV)."
               matches={allMatchesSorted}
+              allMatches={safeMatches as any}
               playersById={playersById}
               onStart={onStartMatch}
               onOpenResult={onOpenResult}
@@ -1349,6 +1541,7 @@ export default function TournamentView({ store, go, id }: Props) {
             <GroupsCarousel
               tournament={tour as any}
               matches={visibleMatches as any}
+              allMatches={safeMatches as any}
               playersById={playersById}
               onStart={onStartMatch}
               onOpenResult={onOpenResult}
