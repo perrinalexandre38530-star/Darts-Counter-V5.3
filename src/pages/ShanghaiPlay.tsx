@@ -1,14 +1,11 @@
 // ============================================
 // src/pages/ShanghaiPlay.tsx
 // FIN DE PARTIE + RESUME + SAVE HISTORY
-// ✅ Fin de match = écran résumé (winner + classement + raison)
-// ✅ Bouton "Sauvegarder & quitter" -> props.onFinish(match)
-// ✅ Stats center: match standard "history" (kind: shanghai, status: finished)
-// ✅ SFX: intro shanghai + miss dédié + impacts standards
-// ✅ VOIX IA: annonce joueur + annonce score fin de volée
-// ✅ FIX: intro music BEFORE voice (delay voice)
-// ✅ FIX: voice "jump" (avoid double announce on boot / StrictMode)
-// ✅ FIX: END MODAL clicks (zIndex + pointerEvents + stopPropagation)
+// ✅ Header FIXE (toujours visible) + réduit en hauteur
+// ✅ Seule la liste joueurs scrolle (entre header et keypad)
+// ✅ Keypad fixe en bas
+// ✅ End modal cliquable (zIndex/pointerEvents)
+// ✅ FIX MOBILE: avatar header = médaillon CERCLE (pas image plein bloc) + pas de fond blanc
 // ============================================
 
 import React from "react";
@@ -45,18 +42,15 @@ export type ShanghaiConfig = {
   maxRounds: number;
   winRule: "shanghai_or_points" | "points_only";
 
-  // ✅ optionnels
   sfxEnabled?: boolean;
   voiceEnabled?: boolean;
-
-  // ✅ optionnel : si ShanghaiConfig a déjà joué la musique via clic (autoplay OK)
   introPlayed?: boolean;
 };
 
 type Props = {
   config?: ShanghaiConfig;
   params?: any;
-  onFinish?: (m: any) => void; // -> pushHistory côté App.tsx
+  onFinish?: (m: any) => void;
   onExit?: () => void;
 };
 
@@ -152,7 +146,6 @@ export default function ShanghaiPlay(props: Props) {
   const target = round;
   const active = safePlayers[turn] || safePlayers[0];
 
-  // ✅ Resolve toggles (config > params.store.settings > default ON)
   const sfxEnabled =
     (cfg as any)?.sfxEnabled ??
     ((props as any)?.params?.store?.settings?.sfxEnabled ?? true);
@@ -161,24 +154,41 @@ export default function ShanghaiPlay(props: Props) {
     (cfg as any)?.voiceEnabled ??
     ((props as any)?.params?.store?.settings?.voiceEnabled ?? true);
 
-  // ✅ prevent double-intro spam
   const introPlayedRef = React.useRef<boolean>(!!(cfg as any)?.introPlayed);
-
-  // ✅ prevent "double announce" at boot (voice jump)
   const prevTurnRef = React.useRef<string>("");
 
-  // ✅ delay voice for full intro duration (10s)
   const INTRO_DELAY_MS = 10000;
   const NEXT_TURN_DELAY_MS = 220;
 
-  // ✅ keep one pending voice timer (avoid overlaps)
   const voiceTimerRef = React.useRef<number | null>(null);
-
-  // ✅ block any announce until end of intro
   const voiceBlockUntilRef = React.useRef<number>(0);
 
-  // ✅ prevent double-save clicks
   const didSaveRef = React.useRef(false);
+
+  // ✅ HEADER FIXE: on mesure sa hauteur pour caler la zone scroll dessous
+  const headerRef = React.useRef<HTMLDivElement | null>(null);
+  const [headerH, setHeaderH] = React.useState<number>(220); // fallback
+  React.useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      const h = el.getBoundingClientRect().height || 0;
+      if (h > 0) setHeaderH(Math.round(h));
+    };
+
+    measure();
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => measure());
+      ro.observe(el);
+    } else {
+      const id = window.setInterval(measure, 500);
+      return () => window.clearInterval(id);
+    }
+    return () => ro?.disconnect();
+  }, []);
 
   function scheduleAnnounce(name: string, delayMs: number) {
     if (!name) return;
@@ -191,7 +201,6 @@ export default function ShanghaiPlay(props: Props) {
     }, Math.max(0, delayMs)) as any;
   }
 
-  // ✅ INIT — StrictMode-safe (no didInitRef)
   React.useEffect(() => {
     setSfxEnabled(sfxEnabled !== false);
     setVoiceEnabled(voiceEnabled !== false);
@@ -202,9 +211,7 @@ export default function ShanghaiPlay(props: Props) {
       try {
         playShanghaiIntro();
         introPlayedRef.current = true;
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
 
     voiceBlockUntilRef.current = Date.now() + INTRO_DELAY_MS;
@@ -222,7 +229,6 @@ export default function ShanghaiPlay(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 🗣️ announce on turn changes
   React.useEffect(() => {
     if (endData) return;
 
@@ -262,7 +268,10 @@ export default function ShanghaiPlay(props: Props) {
       if (sfxEnabled !== false) {
         if ((d?.v ?? 0) === 0) playShanghaiMiss();
         else
-          playImpactFromDart({ value: d.v as any, mult: d.mult as any } as any);
+          playImpactFromDart({
+            value: d.v as any,
+            mult: d.mult as any,
+          } as any);
       }
 
       return [...prev, d];
@@ -308,7 +317,7 @@ export default function ShanghaiPlay(props: Props) {
       })),
     };
 
-    const match = {
+    return {
       id: `shanghai-${createdAt}-${Math.random().toString(36).slice(2, 8)}`,
       kind: "shanghai",
       status: "finished",
@@ -328,8 +337,6 @@ export default function ShanghaiPlay(props: Props) {
         lastThrowsById,
       },
     };
-
-    return match;
   }
 
   function openEndScreen(
@@ -339,7 +346,7 @@ export default function ShanghaiPlay(props: Props) {
   ) {
     const createdAt = Date.now();
     const ranked = computeRanking(extra);
-    didSaveRef.current = false; // ✅ reset anti-double save
+    didSaveRef.current = false;
     setEndData({ winnerId, reason, ranked, createdAt });
   }
 
@@ -411,10 +418,6 @@ export default function ShanghaiPlay(props: Props) {
 
   const renderThrowChips = (arr?: UIDart[]) => {
     const a = arr || [];
-    const d0 = a[0];
-    const d1 = a[1];
-    const d2 = a[2];
-
     const chip = (d?: UIDart, idx?: number) => {
       const empty = !d;
       const v = d?.v ?? 0;
@@ -454,9 +457,9 @@ export default function ShanghaiPlay(props: Props) {
 
     return (
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        {chip(d0, 0)}
-        {chip(d1, 1)}
-        {chip(d2, 2)}
+        {chip(a[0], 0)}
+        {chip(a[1], 1)}
+        {chip(a[2], 2)}
       </div>
     );
   };
@@ -469,256 +472,307 @@ export default function ShanghaiPlay(props: Props) {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        height: "100vh",
         background: theme.bg,
         color: theme.text,
         position: "relative",
-        overflow: "hidden",
+        overflow: "hidden", // ✅ pas de scroll global
       }}
     >
-      {/* ==== TOP : retour + logo + info ==== */}
+      {/* ===================== */}
+      {/* HEADER FIXE (réduit) */}
+      {/* ===================== */}
       <div
+        ref={headerRef}
         style={{
-          padding: 16,
-          paddingBottom: 10,
-          position: "sticky",
+          position: "fixed",
+          left: 0,
+          right: 0,
           top: 0,
-          zIndex: 5,
-          background: theme.bg,
+          zIndex: 40,
+          padding: 12,
+          paddingBottom: 10,
+          background:
+            "linear-gradient(180deg, rgba(0,0,0,.65), rgba(0,0,0,.10))",
+          backdropFilter: "blur(6px)",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            marginBottom: 10,
-          }}
-        >
-          <button
-            onClick={props.onExit}
+        {/* Top bar */}
+        <div style={{ width: "100%", maxWidth: 520, margin: "0 auto" }}>
+          <div
             style={{
-              width: 40,
-              height: 40,
-              borderRadius: 14,
-              border: `1px solid ${theme.borderSoft}`,
-              background: "rgba(0,0,0,0.22)",
-              color: theme.text,
-              fontWeight: 950,
-              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 8,
             }}
-            title="Retour"
           >
-            ←
-          </button>
-
-          <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
-            <img
-              src={ShanghaiLogo}
-              alt="Shanghai"
+            <button
+              onClick={props.onExit}
               style={{
-                height: 44,
-                width: "auto",
-                maxWidth: "100%",
-                display: "block",
-                filter: "drop-shadow(0 0 10px rgba(255,180,0,.25))",
+                width: 38,
+                height: 38,
+                borderRadius: 14,
+                border: `1px solid ${theme.borderSoft}`,
+                background: "rgba(0,0,0,0.22)",
+                color: theme.text,
+                fontWeight: 950,
+                cursor: "pointer",
               }}
+              title="Retour"
+            >
+              ←
+            </button>
+
+            <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+              <img
+                src={ShanghaiLogo}
+                alt="Shanghai"
+                style={{
+                  height: 38,
+                  width: "auto",
+                  maxWidth: "100%",
+                  display: "block",
+                  filter: "drop-shadow(0 0 10px rgba(255,180,0,.25))",
+                }}
+              />
+            </div>
+
+            <InfoDot
+              onClick={(ev) => {
+                ev.stopPropagation();
+                setShowInfo(true);
+              }}
+              glow={theme.primary + "88"}
             />
           </div>
 
-          <InfoDot
-            onClick={(ev) => {
-              ev.stopPropagation();
-              setShowInfo(true);
-            }}
-            glow={theme.primary + "88"}
-          />
-        </div>
-
-        {/* ==== HEADER ==== */}
-        <div style={{ ...cardShell, width: "100%", maxWidth: 520, margin: "0 auto" }}>
-          <div
-            style={{
-              padding: 12,
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 12,
-              alignItems: "stretch",
-            }}
-          >
-            {/* gauche */}
+          {/* Header card */}
+          <div style={{ ...cardShell, width: "100%" }}>
             <div
               style={{
-                borderRadius: 16,
-                border: `1px solid ${theme.borderSoft}`,
-                background: "rgba(0,0,0,0.18)",
-                padding: 12,
+                padding: 10,
                 display: "grid",
+                gridTemplateColumns: "1fr 1fr",
                 gap: 10,
+                alignItems: "stretch",
               }}
             >
-              <div
-                style={{
-                  borderRadius: 14,
-                  border: `1px solid ${theme.primary}44`,
-                  background:
-                    "linear-gradient(180deg, rgba(0,0,0,.22), rgba(0,0,0,.34))",
-                  boxShadow: `0 0 18px ${theme.primary}22`,
-                  padding: "8px 10px",
-                  display: "grid",
-                  placeItems: "center",
-                  minHeight: 44,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 10.5,
-                    letterSpacing: 0.9,
-                    opacity: 0.85,
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {t("shanghai.round", "Tour")}
-                </div>
-                <div
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 1000,
-                    color: theme.primary,
-                    textShadow: `0 0 10px ${theme.primary}55`,
-                    lineHeight: 1,
-                    marginTop: 2,
-                  }}
-                >
-                  {round}/{maxRounds}
-                </div>
-              </div>
-
+              {/* gauche */}
               <div
                 style={{
                   borderRadius: 16,
                   border: `1px solid ${theme.borderSoft}`,
-                  background: "rgba(0,0,0,0.14)",
-                  overflow: "hidden",
-                  width: "100%",
-                  aspectRatio: "1 / 1",
+                  background: "rgba(0,0,0,0.18)",
+                  padding: 10,
                   display: "grid",
-                  placeItems: "center",
-                }}
-              >
-                {active.avatarDataUrl ? (
-                  <img
-                    src={active.avatarDataUrl}
-                    alt=""
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "cover",
-                    }}
-                  />
-                ) : (
-                  <span style={{ opacity: 0.75, fontWeight: 950, fontSize: 22 }}>
-                    ?
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* droite */}
-            <div
-              style={{
-                borderRadius: 16,
-                border: `1px solid ${theme.borderSoft}`,
-                background: "rgba(0,0,0,0.18)",
-                padding: 12,
-                display: "grid",
-                gap: 10,
-              }}
-            >
-              <div
-                style={{
-                  borderRadius: 16,
-                  border: `1px solid ${theme.borderSoft}`,
-                  background:
-                    "radial-gradient(circle at 50% 45%, rgba(255,198,58,.16), rgba(0,0,0,.60) 64%), rgba(0,0,0,.22)",
-                  position: "relative",
-                  overflow: "hidden",
-                  minHeight: 120,
-                  display: "grid",
-                  placeItems: "center",
+                  gap: 8,
                 }}
               >
                 <div
-                  aria-hidden
                   style={{
-                    position: "absolute",
-                    inset: 0,
-                    backgroundImage: `url(${TargetBg})`,
-                    backgroundRepeat: "no-repeat",
-                    backgroundPosition: "center",
-                    backgroundSize: "cover",
-                    opacity: 0.42,
-                    filter: "saturate(1.12) contrast(1.05)",
-                    pointerEvents: "none",
-                  }}
-                />
-                <div
-                  aria-hidden
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    background: "rgba(0,0,0,0.10)",
-                    pointerEvents: "none",
-                  }}
-                />
-
-                <div
-                  style={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: 999,
+                    borderRadius: 14,
+                    border: `1px solid ${theme.primary}44`,
+                    background:
+                      "linear-gradient(180deg, rgba(0,0,0,.22), rgba(0,0,0,.34))",
+                    boxShadow: `0 0 18px ${theme.primary}22`,
+                    padding: "6px 10px",
                     display: "grid",
                     placeItems: "center",
-                    background:
-                      "linear-gradient(180deg, rgba(255,210,90,.22), rgba(0,0,0,.35))",
-                    border: `1px solid ${theme.primary}66`,
-                    boxShadow: `0 0 24px ${theme.primary}33`,
-                    position: "relative",
-                    zIndex: 1,
+                    minHeight: 40,
                   }}
-                  aria-label={`Cible ${target}`}
-                  title={`Cible ${target}`}
                 >
                   <div
                     style={{
-                      fontSize: 24,
-                      fontWeight: 1000,
-                      color: theme.primary,
-                      textShadow: `0 0 16px ${theme.primary}66`,
+                      fontSize: 10.5,
+                      letterSpacing: 0.9,
+                      opacity: 0.85,
+                      textTransform: "uppercase",
                     }}
                   >
-                    {target}
+                    {t("shanghai.round", "Tour")}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 17,
+                      fontWeight: 1000,
+                      color: theme.primary,
+                      textShadow: `0 0 10px ${theme.primary}55`,
+                      lineHeight: 1,
+                      marginTop: 1,
+                    }}
+                  >
+                    {round}/{maxRounds}
+                  </div>
+                </div>
+
+                {/* ✅ FIX MOBILE: avatar = médaillon cercle, pas image plein bloc */}
+                <div
+                  style={{
+                    borderRadius: 16,
+                    border: `1px solid ${theme.borderSoft}`,
+                    background: "rgba(0,0,0,0.14)",
+                    padding: 10,
+                    display: "grid",
+                    placeItems: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 92,
+                      height: 92,
+                      borderRadius: 999,
+                      overflow: "hidden",
+                      background: "rgba(0,0,0,0.22)", // ✅ empêche le “blanc” derrière un PNG transparent
+                      border: `1px solid ${theme.borderSoft}`,
+                      boxShadow: `0 0 18px rgba(0,0,0,.35)`,
+                      display: "grid",
+                      placeItems: "center",
+                    }}
+                  >
+                    {active.avatarDataUrl ? (
+                      <img
+                        src={active.avatarDataUrl}
+                        alt=""
+                        draggable={false}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          background: "transparent",
+                          display: "block",
+                        }}
+                      />
+                    ) : (
+                      <span
+                        style={{
+                          opacity: 0.75,
+                          fontWeight: 950,
+                          fontSize: 22,
+                        }}
+                      >
+                        ?
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
-                {renderThrowChips(currentThrow)}
+              {/* droite */}
+              <div
+                style={{
+                  borderRadius: 16,
+                  border: `1px solid ${theme.borderSoft}`,
+                  background: "rgba(0,0,0,0.18)",
+                  padding: 10,
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div
+                  style={{
+                    borderRadius: 16,
+                    border: `1px solid ${theme.borderSoft}`,
+                    background:
+                      "radial-gradient(circle at 50% 45%, rgba(255,198,58,.16), rgba(0,0,0,.60) 64%), rgba(0,0,0,.22)",
+                    position: "relative",
+                    overflow: "hidden",
+                    minHeight: 106,
+                    display: "grid",
+                    placeItems: "center",
+                  }}
+                >
+                  <div
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      backgroundImage: `url(${TargetBg})`,
+                      backgroundRepeat: "no-repeat",
+                      backgroundPosition: "center",
+                      backgroundSize: "cover",
+                      opacity: 0.42,
+                      filter: "saturate(1.12) contrast(1.05)",
+                      pointerEvents: "none",
+                    }}
+                  />
+                  <div
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      background: "rgba(0,0,0,0.10)",
+                    }}
+                  />
+
+                  <div
+                    style={{
+                      width: 62,
+                      height: 62,
+                      borderRadius: 999,
+                      display: "grid",
+                      placeItems: "center",
+                      background:
+                        "linear-gradient(180deg, rgba(255,210,90,.22), rgba(0,0,0,.35))",
+                      border: `1px solid ${theme.primary}66`,
+                      boxShadow: `0 0 24px ${theme.primary}33`,
+                      position: "relative",
+                      zIndex: 1,
+                    }}
+                    aria-label={`Cible ${target}`}
+                    title={`Cible ${target}`}
+                  >
+                    <div
+                      style={{
+                        fontSize: 23,
+                        fontWeight: 1000,
+                        color: theme.primary,
+                        textShadow: `0 0 16px ${theme.primary}66`,
+                      }}
+                    >
+                      {target}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{ display: "flex", justifyContent: "center", gap: 10 }}
+                >
+                  {renderThrowChips(currentThrow)}
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ==== ZONE SCROLL (liste joueurs uniquement) ==== */}
-      <div style={{ position: "relative", padding: "0 16px", paddingBottom: KEYPAD_H + 20 }}>
-        <div style={{ width: "100%", maxWidth: 520, margin: "0 auto" }}>
+      {/* ===================== */}
+      {/* LISTE JOUEURS SCROLL */}
+      {/* ===================== */}
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: headerH,
+          bottom: KEYPAD_H + 16,
+          overflow: "hidden",
+          padding: "0 16px",
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 520,
+            margin: "0 auto",
+            height: "100%",
+          }}
+        >
           <div
             style={{
               ...cardShell,
               padding: 12,
-              marginBottom: 12,
-              maxHeight: `calc(100vh - ${KEYPAD_H + 220}px)`,
+              height: "100%",
               overflowY: "auto",
               overscrollBehavior: "contain",
             }}
@@ -735,8 +789,12 @@ export default function ShanghaiPlay(props: Props) {
                     style={{
                       padding: 10,
                       borderRadius: 16,
-                      border: `1px solid ${isActive ? theme.primary + "66" : theme.borderSoft}`,
-                      background: isActive ? `${theme.primary}12` : "rgba(0,0,0,0.18)",
+                      border: `1px solid ${
+                        isActive ? theme.primary + "66" : theme.borderSoft
+                      }`,
+                      background: isActive
+                        ? `${theme.primary}12`
+                        : "rgba(0,0,0,0.18)",
                       display: "flex",
                       alignItems: "center",
                       gap: 10,
@@ -774,7 +832,7 @@ export default function ShanghaiPlay(props: Props) {
                       <div
                         style={{
                           fontWeight: 900,
-                          fontSize: 13.5,
+                          fontSize: 13.0,
                           whiteSpace: "nowrap",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
@@ -785,7 +843,14 @@ export default function ShanghaiPlay(props: Props) {
                       </div>
 
                       {isActive ? (
-                        <div style={{ fontSize: 11.5, color: theme.primary, fontWeight: 900, marginTop: 2 }}>
+                        <div
+                          style={{
+                            fontSize: 11.5,
+                            color: theme.primary,
+                            fontWeight: 900,
+                            marginTop: 2,
+                          }}
+                        >
                           {t("common.active", "Actif")}
                         </div>
                       ) : (
@@ -793,7 +858,9 @@ export default function ShanghaiPlay(props: Props) {
                       )}
                     </div>
 
-                    <div style={{ flex: "0 0 auto" }}>{renderThrowChips(last)}</div>
+                    <div style={{ flex: "0 0 auto" }}>
+                      {renderThrowChips(last)}
+                    </div>
 
                     <div
                       style={{
@@ -813,7 +880,9 @@ export default function ShanghaiPlay(props: Props) {
         </div>
       </div>
 
-      {/* ==== KEYPAD FIXE BOTTOM ==== */}
+      {/* ===================== */}
+      {/* KEYPAD FIXE BOTTOM */}
+      {/* ===================== */}
       <div
         style={{
           position: "fixed",
@@ -826,7 +895,7 @@ export default function ShanghaiPlay(props: Props) {
           background:
             "linear-gradient(180deg, rgba(0,0,0,0.00), rgba(0,0,0,0.55) 18%, rgba(0,0,0,0.82))",
           backdropFilter: "blur(6px)",
-          pointerEvents: endData ? "none" : "auto", // ✅ désactive le keypad quand la modal est ouverte
+          pointerEvents: endData ? "none" : "auto",
         }}
       >
         <div style={{ width: "100%", maxWidth: 520, margin: "0 auto" }}>
@@ -853,7 +922,14 @@ export default function ShanghaiPlay(props: Props) {
             hidePreview={true}
           />
 
-          <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 10 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: 10,
+              marginTop: 10,
+            }}
+          >
             <div
               style={{
                 borderRadius: 999,
@@ -868,7 +944,9 @@ export default function ShanghaiPlay(props: Props) {
               +{thisTurnTotal} pts
             </div>
 
-            {winRule === "shanghai_or_points" && shanghaiNow && currentThrow.length > 0 ? (
+            {winRule === "shanghai_or_points" &&
+            shanghaiNow &&
+            currentThrow.length > 0 ? (
               <div
                 style={{
                   borderRadius: 999,
@@ -893,21 +971,21 @@ export default function ShanghaiPlay(props: Props) {
       {/* ============================= */}
       {endData && (
         <div
-          onClick={() => setEndData(null)} // ✅ clic backdrop = fermer
+          onClick={() => setEndData(null)}
           style={{
             position: "fixed",
             inset: 0,
-            zIndex: 9999, // ✅ au-dessus de tout
+            zIndex: 9999,
             background: "rgba(0,0,0,0.72)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             padding: 16,
-            pointerEvents: "auto", // ✅ capture les clics
+            pointerEvents: "auto",
           }}
         >
           <div
-            onClick={(e) => e.stopPropagation()} // ✅ ne ferme pas quand on clique dedans
+            onClick={(e) => e.stopPropagation()}
             style={{
               width: "100%",
               maxWidth: 520,
@@ -916,7 +994,7 @@ export default function ShanghaiPlay(props: Props) {
               background: theme.card,
               boxShadow: `0 18px 44px rgba(0,0,0,.75)`,
               overflow: "hidden",
-              pointerEvents: "auto", // ✅ boutons cliquables
+              pointerEvents: "auto",
             }}
           >
             <div style={{ padding: 16 }}>
@@ -932,7 +1010,15 @@ export default function ShanghaiPlay(props: Props) {
                 {t("common.match_end", "Fin de partie")}
               </div>
 
-              <div style={{ marginTop: 8, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <div
+                style={{
+                  marginTop: 8,
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
                 <div
                   style={{
                     borderRadius: 999,
@@ -958,13 +1044,20 @@ export default function ShanghaiPlay(props: Props) {
                     textShadow: `0 0 10px ${theme.primary}33`,
                   }}
                 >
-                  {endData.reason === "shanghai" ? "💥 Victoire SHANGHAI" : "🏁 Victoire aux points"}
+                  {endData.reason === "shanghai"
+                    ? "💥 Victoire SHANGHAI"
+                    : "🏁 Victoire aux points"}
                 </div>
               </div>
 
               <div style={{ marginTop: 10, fontWeight: 950, fontSize: 14 }}>
                 🏆 {t("common.winner", "Gagnant")} :{" "}
-                <span style={{ color: theme.primary, textShadow: `0 0 10px ${theme.primary}33` }}>
+                <span
+                  style={{
+                    color: theme.primary,
+                    textShadow: `0 0 10px ${theme.primary}33`,
+                  }}
+                >
                   {winnerName}
                 </span>
               </div>
@@ -976,8 +1069,11 @@ export default function ShanghaiPlay(props: Props) {
                     style={{
                       padding: 10,
                       borderRadius: 16,
-                      border: `1px solid ${idx === 0 ? theme.primary + "66" : theme.borderSoft}`,
-                      background: idx === 0 ? `${theme.primary}12` : "rgba(0,0,0,0.18)",
+                      border: `1px solid ${
+                        idx === 0 ? theme.primary + "66" : theme.borderSoft
+                      }`,
+                      background:
+                        idx === 0 ? `${theme.primary}12` : "rgba(0,0,0,0.18)",
                       display: "flex",
                       alignItems: "center",
                       gap: 10,
@@ -1035,7 +1131,9 @@ export default function ShanghaiPlay(props: Props) {
                       {r.name}
                     </div>
 
-                    <div style={{ fontWeight: 1000, fontSize: 16 }}>{r.score}</div>
+                    <div style={{ fontWeight: 1000, fontSize: 16 }}>
+                      {r.score}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1049,10 +1147,8 @@ export default function ShanghaiPlay(props: Props) {
                 gap: 10,
                 justifyContent: "flex-end",
                 background: "rgba(0,0,0,0.18)",
-                pointerEvents: "auto",
               }}
             >
-              {/* ✅ Fermer juste la fenêtre */}
               <button
                 type="button"
                 onClick={() => setEndData(null)}
@@ -1069,7 +1165,6 @@ export default function ShanghaiPlay(props: Props) {
                 {t("common.close", "Fermer")}
               </button>
 
-              {/* ✅ Quitter sans sauvegarder */}
               <button
                 type="button"
                 onClick={() => {
@@ -1089,7 +1184,6 @@ export default function ShanghaiPlay(props: Props) {
                 {t("common.quit", "Quitter")}
               </button>
 
-              {/* ✅ Sauvegarder & quitter */}
               <button
                 type="button"
                 onClick={() => {
@@ -1102,9 +1196,7 @@ export default function ShanghaiPlay(props: Props) {
                     endData.createdAt
                   );
 
-                  // ✅ ferme la modal tout de suite (sinon ça donne l'impression "mort")
                   setEndData(null);
-
                   props.onFinish?.(match);
                 }}
                 style={{
@@ -1125,7 +1217,7 @@ export default function ShanghaiPlay(props: Props) {
         </div>
       )}
 
-      {/* ==== MODAL INFO (règles) ==== */}
+      {/* ==== MODAL INFO ==== */}
       {showInfo && (
         <div
           onClick={() => setShowInfo(false)}
@@ -1136,7 +1228,7 @@ export default function ShanghaiPlay(props: Props) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: 50,
+            zIndex: 9998,
           }}
         >
           <div
@@ -1165,7 +1257,9 @@ export default function ShanghaiPlay(props: Props) {
               {t("shanghai.rules.title", "Règles Shanghai")}
             </div>
 
-            <div style={{ fontSize: 13, lineHeight: 1.45, color: theme.textSoft }}>
+            <div
+              style={{ fontSize: 13, lineHeight: 1.45, color: theme.textSoft }}
+            >
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 <li>
                   {t(
