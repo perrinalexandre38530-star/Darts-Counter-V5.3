@@ -12,7 +12,7 @@
 //   via getCountryFlag() (src/lib/countryNames.ts)
 // - Bouton TEST SUPABASE (juste pour vérifier la connexion)
 // - Bloc "Salons online" AU-DESSUS de l’historique
-// - Historique online compact (plus de gros JSON moches 🤮)
+// - ✅ Historique online DESIGN : cards + tri + regroupement (Aujourd’hui / 7 derniers jours / Avant)
 // - Bouton "Lancer maintenant" qui ouvre x01_online_setup
 //   avec le lobbyCode (salle d’attente temps réel via Worker DO).
 // ============================================
@@ -86,6 +86,234 @@ function formatLastSeenAgo(lastSeen: number | null): string | null {
   const diffH = Math.floor(diffMin / 60);
   if (diffH === 1) return "Il y a 1 h";
   return `Il y a ${diffH} h`;
+}
+
+/* ------------------------------
+   UI helpers (cards / sections)
+------------------------------ */
+
+function SectionTitle({
+  title,
+  subtitle,
+  right,
+}: {
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-end",
+        gap: 10,
+        marginTop: 16,
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 900,
+            letterSpacing: 0.2,
+            color: "#ffd56a",
+            textShadow: "0 0 12px rgba(255,215,80,.25)",
+          }}
+        >
+          {title}
+        </div>
+        {subtitle ? (
+          <div style={{ fontSize: 12, opacity: 0.78, marginTop: 2 }}>
+            {subtitle}
+          </div>
+        ) : null}
+      </div>
+      {right ? <div style={{ flexShrink: 0 }}>{right}</div> : null}
+    </div>
+  );
+}
+
+function NeonCard({
+  children,
+  accent = "rgba(255,213,106,.55)",
+  style,
+}: {
+  children: React.ReactNode;
+  accent?: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div
+      style={{
+        borderRadius: 16,
+        padding: 12,
+        border: "1px solid rgba(255,255,255,.10)",
+        background:
+          "radial-gradient(120% 160% at 0% 0%, rgba(255,195,26,.06), transparent 55%), linear-gradient(180deg, rgba(22,22,28,.96), rgba(10,10,14,.98))",
+        boxShadow: "0 12px 26px rgba(0,0,0,.55)",
+        position: "relative",
+        overflow: "hidden",
+        ...style,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 3,
+          background: `linear-gradient(180deg, ${accent}, rgba(255,255,255,0))`,
+          opacity: 0.9,
+        }}
+      />
+      {children}
+    </div>
+  );
+}
+
+function Pill({
+  label,
+  tone = "gold",
+}: {
+  label: string;
+  tone?: "gold" | "blue" | "green" | "red" | "gray";
+}) {
+  const map: any = {
+    gold: ["rgba(255,213,106,.18)", "#ffd56a", "rgba(255,213,106,.35)"],
+    blue: ["rgba(79,180,255,.14)", "#4fb4ff", "rgba(79,180,255,.35)"],
+    green: ["rgba(127,226,169,.14)", "#7fe2a9", "rgba(127,226,169,.35)"],
+    red: ["rgba(255,90,90,.14)", "#ff5a5a", "rgba(255,90,90,.35)"],
+    gray: [
+      "rgba(255,255,255,.08)",
+      "rgba(255,255,255,.9)",
+      "rgba(255,255,255,.12)",
+    ],
+  };
+  const [bg, fg, bd] = map[tone] || map.gray;
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "2px 9px",
+        borderRadius: 999,
+        fontSize: 10.8,
+        fontWeight: 900,
+        letterSpacing: 0.2,
+        background: bg,
+        color: fg,
+        border: `1px solid ${bd}`,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function toTs(m: any) {
+  const ts = m?.finishedAt || m?.startedAt || m?.createdAt || 0;
+  const n = typeof ts === "number" ? ts : Date.parse(ts);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function groupMatchesPretty(list: any[]) {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+
+  const today: any[] = [];
+  const week: any[] = [];
+  const older: any[] = [];
+
+  for (const m of list) {
+    const t = toTs(m);
+    if (!t) {
+      older.push(m);
+      continue;
+    }
+    if (now - t < day) today.push(m);
+    else if (now - t < 7 * day) week.push(m);
+    else older.push(m);
+  }
+
+  return { today, week, older };
+}
+
+function MatchMiniCard({
+  m,
+  title,
+  dateLabel,
+  playersLabel,
+  winner,
+  kindTone,
+}: any) {
+  return (
+    <div
+      style={{
+        borderRadius: 14,
+        padding: 10,
+        background:
+          "linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.25))",
+        border: "1px solid rgba(255,255,255,.10)",
+        boxShadow: "0 10px 20px rgba(0,0,0,.45)",
+        display: "grid",
+        gap: 6,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
+        <div
+          style={{
+            fontWeight: 900,
+            fontSize: 12.5,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {title}
+        </div>
+        <Pill
+          label={
+            m?.isTraining || (m?.payload as any)?.kind === "training_x01"
+              ? "Training"
+              : "Match"
+          }
+          tone={kindTone}
+        />
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+        }}
+      >
+        <div style={{ fontSize: 11, opacity: 0.82 }}>{dateLabel}</div>
+        {winner ? (
+          <div style={{ fontSize: 11, color: "#ffd56a", fontWeight: 900 }}>
+            🏆 {winner}
+          </div>
+        ) : null}
+      </div>
+
+      <div style={{ fontSize: 11, opacity: 0.88, lineHeight: 1.2 }}>
+        {playersLabel}
+      </div>
+    </div>
+  );
 }
 
 /* -------------------------------------------------
@@ -172,7 +400,7 @@ export default function FriendsPage({ store, update, go }: Props) {
   const displayName =
     activeProfile?.name ||
     profile?.displayName ||
-    user?.nickname ||
+    (user as any)?.nickname ||
     "Profil online";
 
   const lastSeenLabel = formatLastSeenAgo(lastSeen);
@@ -233,9 +461,12 @@ export default function FriendsPage({ store, update, go }: Props) {
   React.useEffect(() => {
     if (authStatus === "signed_in" && user) {
       setPresence("online");
-      setEmail(user.email || "");
+      setEmail((user as any)?.email || "");
       setNickname(
-        profile?.displayName || user.nickname || activeProfile?.name || ""
+        profile?.displayName ||
+          (user as any)?.nickname ||
+          activeProfile?.name ||
+          ""
       );
     } else if (authStatus === "signed_out") {
       setPresence("offline");
@@ -316,12 +547,11 @@ export default function FriendsPage({ store, update, go }: Props) {
     if (m.mode === "x01") {
       return isTraining ? "X01 Training" : "X01 (match)";
     }
-
     return m.mode || "Match";
   }
 
   function formatMatchDate(m: OnlineMatch): string {
-    const ts = m.finishedAt || m.startedAt;
+    const ts = (m as any).finishedAt || (m as any).startedAt || (m as any).createdAt;
     const d = new Date(ts);
     return d.toLocaleString(undefined, {
       day: "2-digit",
@@ -363,7 +593,9 @@ export default function FriendsPage({ store, update, go }: Props) {
       return;
     }
     if (!mail || !pass) {
-      setError("Pour créer un compte online, email et mot de passe sont requis.");
+      setError(
+        "Pour créer un compte online, email et mot de passe sont requis."
+      );
       return;
     }
 
@@ -373,7 +605,7 @@ export default function FriendsPage({ store, update, go }: Props) {
         email: mail,
         password: pass,
         nickname: nick,
-      });
+      } as any);
       await refreshOnline();
 
       setPresence("online");
@@ -406,7 +638,7 @@ export default function FriendsPage({ store, update, go }: Props) {
       await loginOnline({
         email: mail,
         password: pass,
-      });
+      } as any);
       await refreshOnline();
 
       setPresence("online");
@@ -456,10 +688,10 @@ export default function FriendsPage({ store, update, go }: Props) {
         mode: "x01",
         maxPlayers: 2,
         settings: {
-          start: store.settings.defaultX01,
-          doubleOut: store.settings.doubleOut,
+          start: (store.settings as any).defaultX01,
+          doubleOut: (store.settings as any).doubleOut,
         },
-      });
+      } as any);
 
       setLastCreatedLobby(lobby);
       setJoinedLobby(null);
@@ -489,7 +721,9 @@ export default function FriendsPage({ store, update, go }: Props) {
       return;
     }
     if (!isSignedIn || !user) {
-      setJoinError("Tu dois être connecté en mode online pour rejoindre un salon.");
+      setJoinError(
+        "Tu dois être connecté en mode online pour rejoindre un salon."
+      );
       return;
     }
 
@@ -498,13 +732,13 @@ export default function FriendsPage({ store, update, go }: Props) {
     try {
       const lobby = await onlineApi.joinLobby({
         code,
-        userId: user.id,
+        userId: (user as any).id,
         nickname:
           profile?.displayName ||
-          user.nickname ||
+          (user as any).nickname ||
           activeProfile?.name ||
           "Joueur",
-      });
+      } as any);
 
       setJoinedLobby(lobby);
       setJoinInfo("Salon trouvé sur le serveur online.");
@@ -522,6 +756,15 @@ export default function FriendsPage({ store, update, go }: Props) {
   /* -------------------------------------------------
       RENDER
   --------------------------------------------------*/
+
+  // ✅ TRI global + groupement joli
+  const sortedMatches = React.useMemo(() => {
+    return (matches || [])
+      .slice()
+      .sort((a: any, b: any) => toTs(b) - toTs(a));
+  }, [matches]);
+
+  const grouped = React.useMemo(() => groupMatchesPretty(sortedMatches as any), [sortedMatches]);
 
   return (
     <div
@@ -636,13 +879,7 @@ export default function FriendsPage({ store, update, go }: Props) {
           </div>
 
           {activeProfile && (
-            <div
-              style={{
-                fontSize: 11.5,
-                opacity: 0.85,
-                marginBottom: 6,
-              }}
-            >
+            <div style={{ fontSize: 11.5, opacity: 0.85, marginBottom: 6 }}>
               Profil local actif : <b>{activeProfile.name}</b> — utilisé comme
               pseudo par défaut.
             </div>
@@ -718,37 +955,19 @@ export default function FriendsPage({ store, update, go }: Props) {
 
           {/* Messages d'erreur / info */}
           {error && (
-            <div
-              style={{
-                marginBottom: 8,
-                fontSize: 11.5,
-                color: "#ff8a8a",
-              }}
-            >
+            <div style={{ marginBottom: 8, fontSize: 11.5, color: "#ff8a8a" }}>
               {error}
             </div>
           )}
 
           {info && !error && (
-            <div
-              style={{
-                marginBottom: 8,
-                fontSize: 11.5,
-                color: "#8fe6aa",
-              }}
-            >
+            <div style={{ marginBottom: 8, fontSize: 11.5, color: "#8fe6aa" }}>
               {info}
             </div>
           )}
 
           {/* BOUTONS */}
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              marginBottom: 4,
-            }}
-          >
+          <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
             <button
               type="button"
               onClick={handleSignup}
@@ -805,13 +1024,7 @@ export default function FriendsPage({ store, update, go }: Props) {
             boxShadow: "0 14px 30px rgba(0,0,0,.55)",
           }}
         >
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 700,
-              marginBottom: 8,
-            }}
-          >
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
             Profil online connecté
           </div>
 
@@ -825,14 +1038,7 @@ export default function FriendsPage({ store, update, go }: Props) {
             }}
           >
             {/* Wrapper externe pour pouvoir faire déborder le drapeau */}
-            <div
-              style={{
-                position: "relative",
-                width: 52,
-                height: 52,
-                flexShrink: 0,
-              }}
-            >
+            <div style={{ position: "relative", width: 52, height: 52, flexShrink: 0 }}>
               {/* Cercle avatar avec overflow hidden */}
               <div
                 style={{
@@ -848,11 +1054,7 @@ export default function FriendsPage({ store, update, go }: Props) {
                   <img
                     src={activeProfile.avatarDataUrl}
                     alt=""
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "cover",
-                    }}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
                   />
                 ) : (
                   <div
@@ -893,43 +1095,22 @@ export default function FriendsPage({ store, update, go }: Props) {
                   }}
                   title={countryRaw}
                 >
-                  <span
-                    style={{
-                      fontSize: 14,
-                      lineHeight: 1,
-                    }}
-                  >
-                    {countryFlag}
-                  </span>
+                  <span style={{ fontSize: 14, lineHeight: 1 }}>{countryFlag}</span>
                 </div>
               )}
             </div>
 
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: 15,
-                  fontWeight: 800,
-                  color: "#ffcf57",
-                }}
-              >
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#ffcf57" }}>
                 {displayName}
               </div>
 
-              {/* éventuel texte de pays sous le pseudo */}
               {countryRaw && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    opacity: 0.8,
-                    marginTop: 1,
-                  }}
-                >
+                <div style={{ fontSize: 11, opacity: 0.8, marginTop: 1 }}>
                   {countryRaw}
                 </div>
               )}
 
-              {/* Status + point lumineux */}
               <div
                 style={{
                   fontSize: 12,
@@ -964,32 +1145,17 @@ export default function FriendsPage({ store, update, go }: Props) {
               </div>
 
               {lastSeenLabel && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    opacity: 0.8,
-                    marginTop: 3,
-                  }}
-                >
+                <div style={{ fontSize: 11, opacity: 0.8, marginTop: 3 }}>
                   Dernière activité : {lastSeenLabel}
                 </div>
               )}
             </div>
           </div>
 
-          {/* Boutons état + logout */}
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              marginTop: 4,
-            }}
-          >
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
             <button
               type="button"
-              onClick={() =>
-                setPresence(selfStatus === "away" ? "online" : "away")
-              }
+              onClick={() => setPresence(selfStatus === "away" ? "online" : "away")}
               disabled={busy}
               style={{
                 flex: 1,
@@ -1037,14 +1203,7 @@ export default function FriendsPage({ store, update, go }: Props) {
             "linear-gradient(180deg, rgba(24,24,30,.96), rgba(10,10,12,.98))",
         }}
       >
-        <div
-          style={{
-            fontWeight: 700,
-            marginBottom: 4,
-          }}
-        >
-          À venir
-        </div>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>À venir</div>
         <div style={{ opacity: 0.85 }}>
           Liste d’amis, invitations, présence en ligne détaillée seront ajoutés
           ici (basés sur les profils online).
@@ -1076,17 +1235,11 @@ export default function FriendsPage({ store, update, go }: Props) {
           Salons online (serveur)
         </div>
 
-        <div
-          style={{
-            opacity: 0.85,
-            marginBottom: 10,
-          }}
-        >
+        <div style={{ opacity: 0.85, marginBottom: 10 }}>
           Crée un salon X01 ou rejoins celui d’un ami avec un code (stocké sur le
           serveur).
         </div>
 
-        {/* Bouton CREATE */}
         <button
           type="button"
           onClick={handleCreateLobby}
@@ -1116,21 +1269,8 @@ export default function FriendsPage({ store, update, go }: Props) {
             : "Créer un salon X01"}
         </button>
 
-        {/* Champ CODE + bouton JOIN */}
-        <div
-          style={{
-            marginTop: 2,
-            marginBottom: 8,
-          }}
-        >
-          <label
-            style={{
-              fontSize: 11,
-              opacity: 0.9,
-              display: "block",
-              marginBottom: 4,
-            }}
-          >
+        <div style={{ marginTop: 2, marginBottom: 8 }}>
+          <label style={{ fontSize: 11, opacity: 0.9, display: "block", marginBottom: 4 }}>
             Code de salon
           </label>
           <input
@@ -1180,14 +1320,8 @@ export default function FriendsPage({ store, update, go }: Props) {
               : "Rejoindre avec ce code"}
           </button>
 
-          {/* Messages spécifiques JOIN (erreur / info) */}
           {(joinError || joinInfo) && (
-            <div
-              style={{
-                marginTop: 6,
-                fontSize: 11.5,
-              }}
-            >
+            <div style={{ marginTop: 6, fontSize: 11.5 }}>
               {joinError && <div style={{ color: "#ff8a8a" }}>{joinError}</div>}
               {joinInfo && !joinError && (
                 <div style={{ color: "#8fe6aa" }}>{joinInfo}</div>
@@ -1211,7 +1345,6 @@ export default function FriendsPage({ store, update, go }: Props) {
             fontSize: 12,
           }}
         >
-          {/* HEADER */}
           <div
             style={{
               fontWeight: 800,
@@ -1224,7 +1357,6 @@ export default function FriendsPage({ store, update, go }: Props) {
             Salle d’attente Online
           </div>
 
-          {/* Code du salon */}
           <div
             style={{
               marginBottom: 12,
@@ -1244,7 +1376,6 @@ export default function FriendsPage({ store, update, go }: Props) {
             {(joinedLobby || lastCreatedLobby)?.code}
           </div>
 
-          {/* SECTION HÔTE */}
           <div
             style={{
               marginBottom: 12,
@@ -1258,7 +1389,6 @@ export default function FriendsPage({ store, update, go }: Props) {
               alignItems: "center",
             }}
           >
-            {/* Avatar host = profil local actif (pour l’instant) */}
             <div
               style={{
                 position: "relative",
@@ -1275,11 +1405,7 @@ export default function FriendsPage({ store, update, go }: Props) {
                 <img
                   src={activeProfile.avatarDataUrl}
                   alt=""
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                  }}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
                 />
               ) : (
                 <div
@@ -1299,11 +1425,8 @@ export default function FriendsPage({ store, update, go }: Props) {
               )}
             </div>
 
-            {/* Infos host */}
             <div style={{ flex: 1 }}>
-              <div
-                style={{ fontWeight: 800, fontSize: 14, color: "#ffd56a" }}
-              >
+              <div style={{ fontWeight: 800, fontSize: 14, color: "#ffd56a" }}>
                 {activeProfile?.name || "Hôte"}
               </div>
               <div style={{ fontSize: 12, opacity: 0.85 }}>
@@ -1311,7 +1434,6 @@ export default function FriendsPage({ store, update, go }: Props) {
               </div>
             </div>
 
-            {/* Drapeau */}
             {countryFlag && (
               <div
                 style={{
@@ -1331,7 +1453,6 @@ export default function FriendsPage({ store, update, go }: Props) {
             )}
           </div>
 
-          {/* JOUEUR LOCAL / INVITÉ */}
           {isSignedIn && user && (
             <div
               style={{
@@ -1343,14 +1464,7 @@ export default function FriendsPage({ store, update, go }: Props) {
                   "linear-gradient(180deg, rgba(30,30,38,.96), rgba(10,10,14,.98))",
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                }}
-              >
-                {/* Avatar invité */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div
                   style={{
                     width: 50,
@@ -1373,33 +1487,21 @@ export default function FriendsPage({ store, update, go }: Props) {
                       fontSize: 18,
                     }}
                   >
-                    {(profile?.displayName || user.nickname || "J")[0]
+                    {(profile?.displayName || (user as any)?.nickname || "J")[0]
                       ?.toUpperCase() || "J"}
                   </div>
                 </div>
 
-                {/* Infos invité */}
                 <div style={{ flex: 1 }}>
-                  <div
-                    style={{
-                      fontWeight: 800,
-                      fontSize: 14,
-                      color: "#7fe2a9",
-                    }}
-                  >
-                    {profile?.displayName ||
-                      user.nickname ||
-                      "Joueur Online"}
+                  <div style={{ fontWeight: 800, fontSize: 14, color: "#7fe2a9" }}>
+                    {profile?.displayName || (user as any)?.nickname || "Joueur Online"}
                   </div>
-                  <div style={{ fontSize: 12, opacity: 0.85 }}>
-                    A rejoint le salon
-                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.85 }}>A rejoint le salon</div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* BOUTON LANCER */}
           {isSignedIn && (
             <button
               onClick={() =>
@@ -1427,148 +1529,138 @@ export default function FriendsPage({ store, update, go }: Props) {
         </div>
       )}
 
-      {/* --------- HISTORIQUE ONLINE (serveur) — SANS GROS JSON --------- */}
-      <div
-        style={{
-          marginTop: 16,
-          fontSize: 11.5,
-          padding: 10,
-          borderRadius: 12,
-          border: "1px solid rgba(255,255,255,.10)",
-          background:
-            "linear-gradient(180deg, rgba(26,26,34,.96), rgba(8,8,12,.98))",
-        }}
-      >
-        <div
-          style={{
-            fontWeight: 700,
-            marginBottom: 4,
-          }}
-        >
-          Historique Online
-        </div>
-
-        {loadingMatches ? (
-          <div style={{ opacity: 0.85 }}>Chargement…</div>
-        ) : !isSignedIn ? (
-          <div style={{ opacity: 0.85 }}>
-            Connecte-toi pour voir ton historique online.
-          </div>
-        ) : matches.length === 0 ? (
-          <div style={{ opacity: 0.85 }}>
-            Aucun match online enregistré pour le moment.
-          </div>
-        ) : (
-          <>
-            {matches.map((m) => {
-              const title = getMatchTitle(m);
-              const isTraining =
-                (m as any).isTraining === true ||
-                (m.payload as any)?.kind === "training_x01";
-              const playersLabel = getMatchPlayersLabel(m);
-              const winner = getMatchWinnerLabel(m);
-
-              return (
-                <div
-                  key={m.id}
-                  style={{
-                    marginTop: 8,
-                    padding: 8,
-                    borderRadius: 10,
-                    background: "linear-gradient(180deg,#181820,#0c0c12)",
-                    border: "1px solid rgba(255,255,255,.12)",
-                    boxShadow: "0 8px 18px rgba(0,0,0,.55)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: 4,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontWeight: 700,
-                        fontSize: 12,
-                      }}
-                    >
-                      {title}
-                    </div>
-
-                    <span
-                      style={{
-                        padding: "2px 8px",
-                        borderRadius: 999,
-                        fontSize: 10,
-                        fontWeight: 700,
-                        background: isTraining
-                          ? "linear-gradient(180deg,#35c86d,#23a958)"
-                          : "linear-gradient(180deg,#ffc63a,#ffaf00)",
-                        color: isTraining ? "#031509" : "#221600",
-                      }}
-                    >
-                      {isTraining ? "Training" : "Match"}
-                    </span>
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 10.5,
-                      opacity: 0.8,
-                      marginBottom: 2,
-                    }}
-                  >
-                    {formatMatchDate(m)}
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 10.5,
-                      opacity: 0.85,
-                      marginBottom: 2,
-                    }}
-                  >
-                    {playersLabel}
-                  </div>
-
-                  {winner && (
-                    <div
-                      style={{
-                        fontSize: 10.5,
-                        opacity: 0.9,
-                        color: "#ffcf57",
-                      }}
-                    >
-                      Vainqueur : <b>{winner}</b>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
+      {/* ================= HISTORIQUE ONLINE — DESIGN (CARDS + TRI + GROUPES) ================= */}
+      <SectionTitle
+        title="Historique Online"
+        subtitle="Trié du plus récent au plus ancien • regroupé automatiquement"
+        right={
+          isSignedIn ? (
             <button
               type="button"
               onClick={handleClearOnlineHistory}
               style={{
-                marginTop: 8,
-                width: "100%",
                 borderRadius: 999,
-                padding: "6px 10px",
-                border: "none",
-                fontWeight: 800,
-                fontSize: 12,
-                background: "linear-gradient(180deg,#ff5a5a,#e01f1f)",
-                color: "#fff",
+                padding: "7px 10px",
+                border: "1px solid rgba(255,255,255,.12)",
+                background: "rgba(255,90,90,.12)",
+                color: "#ff8a8a",
+                fontWeight: 900,
+                fontSize: 11.5,
                 cursor: "pointer",
               }}
+              title="Supprime le cache local (utile si StatsOnline lit encore ce cache)"
             >
-              Effacer le cache local
+              Effacer cache local
             </button>
-          </>
+          ) : null
+        }
+      />
+
+      <NeonCard accent="rgba(79,180,255,.55)" style={{ marginTop: 10 }}>
+        {loadingMatches ? (
+          <div style={{ opacity: 0.85, paddingLeft: 6 }}>Chargement…</div>
+        ) : !isSignedIn ? (
+          <div style={{ opacity: 0.85, paddingLeft: 6 }}>
+            Connecte-toi pour voir ton historique online.
+          </div>
+        ) : sortedMatches.length === 0 ? (
+          <div style={{ opacity: 0.85, paddingLeft: 6 }}>
+            Aucun match online enregistré pour le moment.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12, paddingLeft: 6 }}>
+            {/* Aujourd’hui */}
+            {grouped.today?.length ? (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 900, opacity: 0.82, marginBottom: 6 }}>
+                  Aujourd’hui
+                </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {grouped.today.map((m: any) => {
+                    const title = getMatchTitle(m);
+                    const playersLabel = getMatchPlayersLabel(m);
+                    const winner = getMatchWinnerLabel(m);
+                    const isTraining =
+                      (m as any).isTraining === true ||
+                      (m.payload as any)?.kind === "training_x01";
+                    return (
+                      <MatchMiniCard
+                        key={m.id}
+                        m={m}
+                        title={title}
+                        dateLabel={formatMatchDate(m)}
+                        playersLabel={playersLabel}
+                        winner={winner}
+                        kindTone={isTraining ? "green" : "gold"}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {/* 7 derniers jours */}
+            {grouped.week?.length ? (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 900, opacity: 0.82, marginBottom: 6 }}>
+                  7 derniers jours
+                </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {grouped.week.map((m: any) => {
+                    const title = getMatchTitle(m);
+                    const playersLabel = getMatchPlayersLabel(m);
+                    const winner = getMatchWinnerLabel(m);
+                    const isTraining =
+                      (m as any).isTraining === true ||
+                      (m.payload as any)?.kind === "training_x01";
+                    return (
+                      <MatchMiniCard
+                        key={m.id}
+                        m={m}
+                        title={title}
+                        dateLabel={formatMatchDate(m)}
+                        playersLabel={playersLabel}
+                        winner={winner}
+                        kindTone={isTraining ? "green" : "gold"}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Avant */}
+            {grouped.older?.length ? (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 900, opacity: 0.82, marginBottom: 6 }}>
+                  Avant
+                </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {grouped.older.map((m: any) => {
+                    const title = getMatchTitle(m);
+                    const playersLabel = getMatchPlayersLabel(m);
+                    const winner = getMatchWinnerLabel(m);
+                    const isTraining =
+                      (m as any).isTraining === true ||
+                      (m.payload as any)?.kind === "training_x01";
+                    return (
+                      <MatchMiniCard
+                        key={m.id}
+                        m={m}
+                        title={title}
+                        dateLabel={formatMatchDate(m)}
+                        playersLabel={playersLabel}
+                        winner={winner}
+                        kindTone={isTraining ? "green" : "gold"}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </div>
         )}
-      </div>
+      </NeonCard>
     </div>
   );
 }

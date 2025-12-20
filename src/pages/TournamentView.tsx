@@ -1,22 +1,22 @@
 // ============================================
 // src/pages/TournamentView.tsx
-// TOURNOIS — VIEW (Local)
-// ✅ Sections: Jouables / En cours / Terminés
-// ✅ startMatch => playing (plusieurs en parallèle)
-// ✅ submitResult => done (dans n'importe quel ordre)
-// ✅ NEW: bouton "Lancer" => ouvre la page TournamentMatchPlay
+// Tournois (LOCAL) — View (multi-visuals)
+// ✅ Ajout : plusieurs vues d'affichage
+// - "Résumé" (cards À jouer / En cours / Terminés)
+// - "Tableau" (bracket global en colonnes par rounds, scroll horizontal)
+// - "Matchs" (liste détaillée style TV)
+// - "Poules" (groups_ko) : carrousel de poules + classement + matchs
+// ✅ FIX CRASH: matches peut être undefined -> safeMatches partout
+// ✅ FIX STORELOCAL: bons noms list/upsert
 // ============================================
 
 import React from "react";
-import { useTheme } from "../contexts/ThemeContext";
-import { useLang } from "../contexts/LangContext";
+import type { Store } from "../lib/types";
+
 import type { Tournament, TournamentMatch } from "../lib/tournaments/types";
-import {
-  getPlayableMatches,
-  startMatch,
-  submitResult,
-  getTournamentProgress,
-} from "../lib/tournaments/engine";
+
+import { getPlayableMatches, startMatch, submitResult } from "../lib/tournaments/engine";
+
 import {
   getTournamentLocal,
   listMatchesForTournamentLocal,
@@ -25,458 +25,1344 @@ import {
 } from "../lib/tournaments/storeLocal";
 
 type Props = {
-  store: any;
+  store: Store;
   go: (tab: any, params?: any) => void;
-  params: any;
+  id: string;
 };
 
-function nameOf(t: Tournament, pid: string) {
-  const p = (t.players || []).find((x) => x.id === pid);
-  if (!p)
-    return pid === "__TBD__" ? "TBD" : pid === "__BYE__" ? "BYE" : "Joueur";
-  return p.name || "Joueur";
+type ViewMode = "summary" | "bracket" | "matches" | "groups";
+
+function cx(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
 }
 
-export default function TournamentView({ store, go, params }: Props) {
-  const { theme } = useTheme();
-  const { t: tt } = useLang();
-
-  const tid = String(params?.id || "");
-  const [tour, setTour] = React.useState<Tournament | null>(() =>
-    tid ? (getTournamentLocal(tid) as any) : null
-  );
-  const [matches, setMatches] = React.useState<TournamentMatch[]>(() =>
-    tid ? (listMatchesForTournamentLocal(tid) as any) : []
-  );
-
-  const [resultMatch, setResultMatch] = React.useState<TournamentMatch | null>(
-    null
-  );
-
-  React.useEffect(() => {
-    if (!tid) return;
-    setTour(getTournamentLocal(tid) as any);
-    setMatches(listMatchesForTournamentLocal(tid) as any);
-  }, [tid]);
-
-  function persist(nextTour: Tournament, nextMatches: TournamentMatch[]) {
-    upsertTournamentLocal(nextTour);
-    upsertMatchesForTournamentLocal(nextTour.id, nextMatches);
-    setTour(nextTour);
-    setMatches(nextMatches);
+function formatDate(ts?: number) {
+  if (!ts) return "";
+  try {
+    const d = new Date(ts);
+    return d.toLocaleDateString() + " " + d.toLocaleTimeString().slice(0, 5);
+  } catch {
+    return "";
   }
+}
 
-  if (!tour) {
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          padding: 16,
-          background: theme.bg,
-          color: theme.text,
-        }}
-      >
-        <button onClick={() => go("tournaments")}>← Retour</button>
-        <p>Tournoi introuvable.</p>
-      </div>
-    );
+function getInitials(name?: string) {
+  const s = String(name || "").trim();
+  if (!s) return "?";
+  const parts = s.split(/\s+/).filter(Boolean);
+  const a = (parts[0]?.[0] || "").toUpperCase();
+  const b = (parts[1]?.[0] || parts[0]?.[1] || "").toUpperCase();
+  return (a + b) || "?";
+}
+
+/** ✅ local helper (évite l'export manquant / crash) */
+function getMatchCountByStatus(matches: Array<any> | undefined | null) {
+  const safe = Array.isArray(matches) ? matches : [];
+  const out = { pending: 0, running: 0, done: 0 };
+  for (const m of safe) {
+    const s = String(m?.status || "pending");
+    if (s === "running") out.running += 1;
+    else if (s === "done") out.done += 1;
+    else out.pending += 1;
   }
+  return out;
+}
 
-  const playable = getPlayableMatches(tour, matches);
-  const playing = matches.filter((m) => m.status === "playing");
-  const done = matches.filter((m) => m.status === "done");
-  const prog = getTournamentProgress(tour, matches);
+function Pill({
+  active,
+  label,
+  onClick,
+  accent = "#ffcf57",
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+  accent?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        borderRadius: 999,
+        padding: "7px 12px",
+        border: active ? `1px solid ${accent}AA` : "1px solid rgba(255,255,255,0.12)",
+        background: active
+          ? `linear-gradient(180deg, ${accent}, ${accent}CC)`
+          : "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
+        color: active ? "#1b1508" : "rgba(255,255,255,0.92)",
+        fontWeight: active ? 950 : 850,
+        fontSize: 12.2,
+        cursor: "pointer",
+        boxShadow: active ? `0 10px 22px ${accent}25` : "none",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
 
+function Card({
+  title,
+  subtitle,
+  badge,
+  children,
+  accent = "#ffcf57",
+  icon,
+}: {
+  title: string;
+  subtitle?: string;
+  badge?: React.ReactNode;
+  children?: React.ReactNode;
+  accent?: string;
+  icon?: React.ReactNode;
+}) {
   return (
     <div
       style={{
-        minHeight: "100vh",
-        padding: 16,
-        paddingBottom: 90,
-        background: theme.bg,
-        color: theme.text,
+        borderRadius: 18,
+        padding: 14,
+        marginTop: 12,
+        background:
+          "radial-gradient(120% 160% at 0% 0%, rgba(255,195,26,0.08), transparent 55%), linear-gradient(180deg, rgba(20,20,26,0.96), rgba(10,10,14,0.98))",
+        border: "1px solid rgba(255,255,255,0.10)",
+        boxShadow: "0 14px 30px rgba(0,0,0,0.55)",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          {icon ? (
+            <div
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: 10,
+                display: "grid",
+                placeItems: "center",
+                background: `radial-gradient(circle at 30% 0%, ${accent}, ${accent}55)`,
+                color: "#150d06",
+                fontWeight: 950,
+              }}
+            >
+              {icon}
+            </div>
+          ) : null}
+          <div style={{ display: "grid", gap: 3 }}>
+            <div
+              style={{
+                fontSize: 12.5,
+                fontWeight: 950,
+                letterSpacing: 0.3,
+                color: accent,
+                textShadow: `0 0 10px ${accent}40`,
+              }}
+            >
+              {title}
+            </div>
+            {subtitle ? <div style={{ fontSize: 11.5, opacity: 0.78, lineHeight: 1.35 }}>{subtitle}</div> : null}
+          </div>
+        </div>
+        {badge}
+      </div>
+
+      {children ? <div style={{ marginTop: 12 }}>{children}</div> : null}
+    </div>
+  );
+}
+
+function MiniBadge({
+  label,
+  value,
+  accent = "#ffcf57",
+}: {
+  label: string;
+  value: string | number;
+  accent?: string;
+}) {
+  return (
+    <div
+      style={{
+        borderRadius: 999,
+        padding: "6px 10px",
+        border: `1px solid ${accent}55`,
+        background: `linear-gradient(180deg, ${accent}22, rgba(255,255,255,0.04))`,
+        color: "rgba(255,255,255,0.92)",
+        fontWeight: 900,
+        fontSize: 12,
+        display: "flex",
+        alignItems: "baseline",
+        gap: 8,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={{ opacity: 0.75, fontWeight: 850, fontSize: 11.5 }}>{label}</span>
+      <span style={{ color: accent, textShadow: `0 0 10px ${accent}30` }}>{value}</span>
+    </div>
+  );
+}
+
+function PlayerPill({
+  name,
+  avatarUrl,
+  dim,
+}: {
+  name: string;
+  avatarUrl?: string | null;
+  dim?: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 0, opacity: dim ? 0.6 : 1 }}>
+      <div
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 999,
+          overflow: "hidden",
+          background: "rgba(0,0,0,0.35)",
+          border: "1px solid rgba(255,255,255,0.12)",
+          display: "grid",
+          placeItems: "center",
+          flex: "0 0 auto",
+        }}
+      >
+        {avatarUrl ? (
+          <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        ) : (
+          <div style={{ fontWeight: 950, fontSize: 12 }}>{getInitials(name)}</div>
+        )}
+      </div>
+
+      <div
+        style={{
+          fontWeight: 900,
+          fontSize: 12.5,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {name || "Joueur"}
+      </div>
+    </div>
+  );
+}
+
+function scoreText(m: any) {
+  const a = typeof m?.scoreA === "number" ? m.scoreA : null;
+  const b = typeof m?.scoreB === "number" ? m.scoreB : null;
+  if (a == null && b == null) return "";
+  return `${a ?? 0} - ${b ?? 0}`;
+}
+
+function matchLabel(m: any) {
+  if (m?.groupId) return `Poule`;
+  if (typeof m?.round === "number") return `Round ${m.round}`;
+  return "Match";
+}
+
+/* -----------------------------
+   Bracket overview (KO)
+------------------------------ */
+
+function BracketOverview({
+  tournament,
+  matches,
+  playersById,
+  onStart,
+  onOpenResult,
+}: {
+  tournament: any;
+  matches: any[];
+  playersById: Record<string, any>;
+  onStart: (id: string) => void;
+  onOpenResult: (m: any) => void;
+}) {
+  const koMatches = (Array.isArray(matches) ? matches : []).filter((m) => !m?.groupId);
+
+  const rounds = Array.from(
+    new Set(koMatches.map((m) => (typeof m?.round === "number" ? m.round : 1)))
+  ).sort((a: number, b: number) => a - b);
+
+  const byRound: Record<number, any[]> = {};
+  for (const r of rounds) byRound[r] = [];
+  for (const m of koMatches) {
+    const r = typeof m?.round === "number" ? m.round : 1;
+    if (!byRound[r]) byRound[r] = [];
+    byRound[r].push(m);
+  }
+  for (const r of Object.keys(byRound)) {
+    byRound[Number(r)].sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
+  }
+
+  const formatType = tournament?.format?.type || "";
+  const subtitle =
+    formatType === "double_ko"
+      ? "Double élimination — bracket (1er tour + progression)."
+      : "Élimination directe — bracket global.";
+
+  return (
+    <Card
+      title="Tableau"
+      subtitle={subtitle}
+      accent="#4fb4ff"
+      icon="⟂"
+      badge={<MiniBadge label="Matchs" value={koMatches.length} accent="#4fb4ff" />}
+    >
+      {koMatches.length === 0 ? (
+        <div style={{ fontSize: 12, opacity: 0.78 }}>Aucun match KO.</div>
+      ) : (
+        <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 6, WebkitOverflowScrolling: "touch" }}>
+          {rounds.map((r) => (
+            <div
+              key={r}
+              style={{
+                width: 260,
+                flex: "0 0 auto",
+                borderRadius: 16,
+                border: "1px solid rgba(255,255,255,0.10)",
+                background: "rgba(255,255,255,0.03)",
+                padding: 10,
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 950,
+                  fontSize: 12,
+                  color: "#4fb4ff",
+                  textShadow: "0 0 10px rgba(79,180,255,0.35)",
+                  marginBottom: 8,
+                }}
+              >
+                ROUND {r}
+              </div>
+
+              <div style={{ display: "grid", gap: 10 }}>
+                {byRound[r]?.map((m: any) => {
+                  const a = m?.aPlayerId ? playersById[String(m.aPlayerId)] : null;
+                  const b = m?.bPlayerId ? playersById[String(m.bPlayerId)] : null;
+
+                  const status = m?.status || "pending";
+                  const playable = status === "pending" && m?.aPlayerId && m?.bPlayerId;
+                  const running = status === "running";
+                  const done = status === "done";
+
+                  const actionLabel = running ? "Reprendre" : playable ? "Jouer" : done ? "Résultat" : "—";
+
+                  return (
+                    <div
+                      key={m.id}
+                      style={{
+                        borderRadius: 14,
+                        border: "1px solid rgba(255,255,255,0.10)",
+                        background: "linear-gradient(180deg, rgba(0,0,0,0.35), rgba(255,255,255,0.03))",
+                        padding: 10,
+                        boxShadow: done ? "0 10px 22px rgba(0,0,0,0.35)" : "none",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                        <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
+                          <PlayerPill name={a?.name || "BYE"} avatarUrl={a?.avatar} dim={!m?.aPlayerId} />
+                          <div style={{ height: 1, background: "rgba(255,255,255,0.06)" }} />
+                          <PlayerPill name={b?.name || "BYE"} avatarUrl={b?.avatar} dim={!m?.bPlayerId} />
+                        </div>
+
+                        <div style={{ display: "grid", justifyItems: "end", gap: 8 }}>
+                          <div style={{ fontSize: 11.5, opacity: 0.75 }}>{matchLabel(m)}</div>
+                          <div style={{ fontWeight: 950, fontSize: 13, color: done ? "#7fe2a9" : "#ffcf57" }}>
+                            {done ? scoreText(m) : running ? "EN COURS" : playable ? "À JOUER" : "ATTENTE"}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (done) onOpenResult(m);
+                              else if (running || playable) onStart(m.id);
+                            }}
+                            disabled={!done && !running && !playable}
+                            style={{
+                              borderRadius: 999,
+                              padding: "7px 10px",
+                              border: "none",
+                              fontWeight: 950,
+                              cursor: !done && !running && !playable ? "default" : "pointer",
+                              background: !done && !running && !playable
+                                ? "linear-gradient(180deg,#3a3a3a,#232323)"
+                                : running
+                                ? "linear-gradient(180deg,#4fb4ff,#1c78d5)"
+                                : done
+                                ? "linear-gradient(180deg,#7fe2a9,#2da36a)"
+                                : "linear-gradient(180deg,#ffc63a,#ffaf00)",
+                              color: !done && !running && !playable ? "rgba(255,255,255,0.55)" : "#120c06",
+                              opacity: !done && !running && !playable ? 0.6 : 1,
+                            }}
+                          >
+                            {actionLabel}
+                          </button>
+                        </div>
+                      </div>
+
+                      {done && m?.winnerId ? (
+                        <div style={{ marginTop: 8, fontSize: 11.5, opacity: 0.78 }}>
+                          ✅ Vainqueur :{" "}
+                          <b style={{ color: "#7fe2a9" }}>{playersById[String(m.winnerId)]?.name || "—"}</b>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* -----------------------------
+   Detailed matches view (TV-like)
+------------------------------ */
+
+function MatchDetailsList({
+  title,
+  subtitle,
+  matches,
+  playersById,
+  onStart,
+  onOpenResult,
+  accent,
+  icon,
+}: {
+  title: string;
+  subtitle?: string;
+  matches: any[];
+  playersById: Record<string, any>;
+  onStart: (id: string) => void;
+  onOpenResult: (m: any) => void;
+  accent: string;
+  icon?: React.ReactNode;
+}) {
+  const safe = Array.isArray(matches) ? matches : [];
+
+  return (
+    <Card
+      title={title}
+      subtitle={subtitle}
+      accent={accent}
+      icon={icon}
+      badge={<MiniBadge label="Matchs" value={safe.length} accent={accent} />}
+    >
+      {safe.length === 0 ? (
+        <div style={{ fontSize: 12, opacity: 0.78 }}>Aucun match.</div>
+      ) : (
+        <div style={{ display: "grid", gap: 10 }}>
+          {safe.map((m: any) => {
+            const a = m?.aPlayerId ? playersById[String(m.aPlayerId)] : null;
+            const b = m?.bPlayerId ? playersById[String(m.bPlayerId)] : null;
+
+            const status = m?.status || "pending";
+            const playable = status === "pending" && m?.aPlayerId && m?.bPlayerId;
+            const running = status === "running";
+            const done = status === "done";
+
+            const topTag = done ? "TERMINÉ" : running ? "EN COURS" : playable ? "À JOUER" : "ATTENTE";
+            const topColor = done
+              ? "#7fe2a9"
+              : running
+              ? "#4fb4ff"
+              : playable
+              ? "#ffcf57"
+              : "rgba(255,255,255,0.55)";
+
+            return (
+              <div
+                key={m.id}
+                style={{
+                  borderRadius: 16,
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background:
+                    "radial-gradient(120% 160% at 0% 0%, rgba(79,180,255,0.08), transparent 55%), linear-gradient(180deg, rgba(0,0,0,0.35), rgba(255,255,255,0.03))",
+                  padding: 12,
+                  boxShadow: "0 14px 30px rgba(0,0,0,0.35)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 0 }}>
+                    <div
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 99,
+                        background: topColor,
+                        boxShadow: `0 0 14px ${topColor}55`,
+                        flex: "0 0 auto",
+                      }}
+                    />
+                    <div style={{ display: "grid", gap: 3, minWidth: 0 }}>
+                      <div style={{ fontWeight: 950, fontSize: 12.5, color: topColor }}>
+                        {topTag} • {matchLabel(m)}
+                      </div>
+                      <div style={{ fontSize: 11.5, opacity: 0.75 }}>
+                        BO{m?.bestOf ?? "?"} •{" "}
+                        {m?.groupId ? `Groupe ${String(m.groupId).slice(-4)}` : m?.round ? `Round ${m.round}` : ""}{" "}
+                        {m?.updatedAt ? `• ${formatDate(m.updatedAt)}` : ""}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (done) onOpenResult(m);
+                      else if (running || playable) onStart(m.id);
+                    }}
+                    disabled={!done && !running && !playable}
+                    style={{
+                      borderRadius: 999,
+                      padding: "8px 12px",
+                      border: "none",
+                      fontWeight: 950,
+                      cursor: !done && !running && !playable ? "default" : "pointer",
+                      background: !done && !running && !playable
+                        ? "linear-gradient(180deg,#3a3a3a,#232323)"
+                        : running
+                        ? "linear-gradient(180deg,#4fb4ff,#1c78d5)"
+                        : done
+                        ? "linear-gradient(180deg,#7fe2a9,#2da36a)"
+                        : "linear-gradient(180deg,#ffc63a,#ffaf00)",
+                      color: !done && !running && !playable ? "rgba(255,255,255,0.55)" : "#120c06",
+                      opacity: !done && !running && !playable ? 0.6 : 1,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {done ? "Voir" : running ? "Reprendre" : playable ? "Jouer" : "—"}
+                  </button>
+                </div>
+
+                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                    <PlayerPill name={a?.name || "TBD"} avatarUrl={a?.avatar} dim={!m?.aPlayerId} />
+                    <div style={{ fontWeight: 950, fontSize: 13, opacity: 0.9 }}>{done ? scoreText(m) : "VS"}</div>
+                    <div style={{ display: "flex", justifyContent: "flex-end", minWidth: 0 }}>
+                      <PlayerPill name={b?.name || "TBD"} avatarUrl={b?.avatar} dim={!m?.bPlayerId} />
+                    </div>
+                  </div>
+
+                  {done && m?.winnerId ? (
+                    <div style={{ fontSize: 11.5, opacity: 0.78 }}>
+                      ✅ Vainqueur :{" "}
+                      <b style={{ color: "#7fe2a9" }}>{playersById[String(m.winnerId)]?.name || "—"}</b>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* -----------------------------
+   Groups carousel + standings
+------------------------------ */
+
+function computeStandings(groupPlayerIds: string[], groupMatches: any[]) {
+  const rows: Record<
+    string,
+    { id: string; played: number; wins: number; losses: number; points: number; scored: number; conceded: number }
+  > = {};
+
+  for (const pid of groupPlayerIds) {
+    rows[pid] = { id: pid, played: 0, wins: 0, losses: 0, points: 0, scored: 0, conceded: 0 };
+  }
+
+  for (const m of groupMatches) {
+    if (m?.status !== "done") continue;
+    const a = String(m?.aPlayerId || "");
+    const b = String(m?.bPlayerId || "");
+    if (!a || !b) continue;
+    if (!rows[a]) rows[a] = { id: a, played: 0, wins: 0, losses: 0, points: 0, scored: 0, conceded: 0 };
+    if (!rows[b]) rows[b] = { id: b, played: 0, wins: 0, losses: 0, points: 0, scored: 0, conceded: 0 };
+
+    const sa = typeof m?.scoreA === "number" ? m.scoreA : 0;
+    const sb = typeof m?.scoreB === "number" ? m.scoreB : 0;
+
+    rows[a].played += 1;
+    rows[b].played += 1;
+    rows[a].scored += sa;
+    rows[a].conceded += sb;
+    rows[b].scored += sb;
+    rows[b].conceded += sa;
+
+    const w = String(m?.winnerId || "");
+    if (w && w === a) {
+      rows[a].wins += 1;
+      rows[b].losses += 1;
+      rows[a].points += 2;
+    } else if (w && w === b) {
+      rows[b].wins += 1;
+      rows[a].losses += 1;
+      rows[b].points += 2;
+    }
+  }
+
+  const arr = Object.values(rows);
+  arr.sort((r1, r2) => {
+    if (r2.points !== r1.points) return r2.points - r1.points;
+    const diff1 = r1.scored - r1.conceded;
+    const diff2 = r2.scored - r2.conceded;
+    if (diff2 !== diff1) return diff2 - diff1;
+    return r2.wins - r1.wins;
+  });
+  return arr;
+}
+
+function GroupsCarousel({
+  tournament,
+  matches,
+  playersById,
+  onStart,
+  onOpenResult,
+}: {
+  tournament: any;
+  matches: any[];
+  playersById: Record<string, any>;
+  onStart: (id: string) => void;
+  onOpenResult: (m: any) => void;
+}) {
+  const safeMatches = Array.isArray(matches) ? matches : [];
+  const groups = Array.isArray(tournament?.groups) ? tournament.groups : [];
+
+  const derivedGroupIds = Array.from(new Set(safeMatches.filter((m) => m?.groupId).map((m) => String(m.groupId))));
+
+  const groupList =
+    groups.length > 0
+      ? groups
+      : derivedGroupIds.map((gid, idx) => ({
+          id: gid,
+          name: `Groupe ${idx + 1}`,
+          playerIds: Array.from(
+            new Set(
+              safeMatches
+                .filter((m) => String(m.groupId) === gid)
+                .flatMap((m) => [m?.aPlayerId, m?.bPlayerId])
+                .filter(Boolean)
+                .map((x) => String(x))
+            )
+          ),
+        }));
+
+  return (
+    <Card
+      title="Poules"
+      subtitle="Swipe entre les groupes : classement + matchs."
+      accent="#7fe2a9"
+      icon="▦"
+      badge={<MiniBadge label="Groupes" value={groupList.length} accent="#7fe2a9" />}
+    >
+      {groupList.length === 0 ? (
+        <div style={{ fontSize: 12, opacity: 0.78 }}>Aucune poule.</div>
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            overflowX: "auto",
+            paddingBottom: 6,
+            WebkitOverflowScrolling: "touch",
+            scrollSnapType: "x mandatory",
+          }}
+        >
+          {groupList.map((g: any) => {
+            const gid = String(g.id);
+            const groupMatches = safeMatches.filter((m) => String(m?.groupId) === gid);
+            const pids = Array.isArray(g?.playerIds) ? g.playerIds.map((x: any) => String(x)) : [];
+            const standings = computeStandings(pids, groupMatches);
+
+            return (
+              <div
+                key={gid}
+                style={{
+                  width: 320,
+                  flex: "0 0 auto",
+                  scrollSnapAlign: "start",
+                  borderRadius: 16,
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "rgba(255,255,255,0.03)",
+                  padding: 12,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                  <div style={{ fontWeight: 950, fontSize: 13, color: "#7fe2a9" }}>{g?.name || `Groupe`}</div>
+                  <div style={{ fontSize: 11.5, opacity: 0.75 }}>{groupMatches.length} matchs</div>
+                </div>
+
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 11.5, opacity: 0.82, marginBottom: 6 }}>Classement</div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {standings.map((r, idx) => {
+                      const pl = playersById[String(r.id)];
+                      const diff = r.scored - r.conceded;
+                      return (
+                        <div
+                          key={r.id}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "20px 1fr auto",
+                            gap: 10,
+                            alignItems: "center",
+                            padding: "8px 10px",
+                            borderRadius: 12,
+                            border: "1px solid rgba(255,255,255,0.10)",
+                            background: "rgba(0,0,0,0.25)",
+                          }}
+                        >
+                          <div style={{ fontWeight: 950, color: idx === 0 ? "#ffcf57" : "rgba(255,255,255,0.75)" }}>
+                            {idx + 1}
+                          </div>
+
+                          <div style={{ minWidth: 0 }}>
+                            <PlayerPill name={pl?.name || "Joueur"} avatarUrl={pl?.avatar} />
+                          </div>
+
+                          <div style={{ textAlign: "right", fontSize: 11.5, opacity: 0.9 }}>
+                            <b style={{ color: "#7fe2a9" }}>{r.points}</b> pts • {r.wins}-{r.losses} • Δ {diff}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 11.5, opacity: 0.82, marginBottom: 6 }}>Matchs</div>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {groupMatches
+                      .slice()
+                      .sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0))
+                      .map((m: any) => {
+                        const a = m?.aPlayerId ? playersById[String(m.aPlayerId)] : null;
+                        const b = m?.bPlayerId ? playersById[String(m.bPlayerId)] : null;
+
+                        const status = m?.status || "pending";
+                        const playable = status === "pending" && m?.aPlayerId && m?.bPlayerId;
+                        const running = status === "running";
+                        const done = status === "done";
+
+                        return (
+                          <div
+                            key={m.id}
+                            style={{
+                              borderRadius: 14,
+                              border: "1px solid rgba(255,255,255,0.10)",
+                              background: "linear-gradient(180deg, rgba(0,0,0,0.30), rgba(255,255,255,0.03))",
+                              padding: 10,
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                              <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                                  <div style={{ minWidth: 0 }}>
+                                    <PlayerPill name={a?.name || "TBD"} avatarUrl={a?.avatar} dim={!m?.aPlayerId} />
+                                  </div>
+                                  <div style={{ fontWeight: 950, opacity: 0.85 }}>{done ? scoreText(m) : "VS"}</div>
+                                  <div style={{ minWidth: 0, display: "flex", justifyContent: "flex-end" }}>
+                                    <PlayerPill name={b?.name || "TBD"} avatarUrl={b?.avatar} dim={!m?.bPlayerId} />
+                                  </div>
+                                </div>
+
+                                <div style={{ fontSize: 11.2, opacity: 0.75 }}>
+                                  BO{m?.bestOf ?? "?"} • {done ? "Terminé" : running ? "En cours" : playable ? "À jouer" : "Attente"}
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (done) onOpenResult(m);
+                                  else if (running || playable) onStart(m.id);
+                                }}
+                                disabled={!done && !running && !playable}
+                                style={{
+                                  borderRadius: 999,
+                                  padding: "7px 10px",
+                                  border: "none",
+                                  fontWeight: 950,
+                                  cursor: !done && !running && !playable ? "default" : "pointer",
+                                  background: !done && !running && !playable
+                                    ? "linear-gradient(180deg,#3a3a3a,#232323)"
+                                    : running
+                                    ? "linear-gradient(180deg,#4fb4ff,#1c78d5)"
+                                    : done
+                                    ? "linear-gradient(180deg,#7fe2a9,#2da36a)"
+                                    : "linear-gradient(180deg,#ffc63a,#ffaf00)",
+                                  color: !done && !running && !playable ? "rgba(255,255,255,0.55)" : "#120c06",
+                                  opacity: !done && !running && !playable ? 0.6 : 1,
+                                }}
+                              >
+                                {done ? "Voir" : running ? "↺" : playable ? "▶" : "—"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* -----------------------------
+   Page
+------------------------------ */
+
+export default function TournamentView({ store, go, id }: Props) {
+  const [tour, setTour] = React.useState<Tournament | null>(null);
+  const [matches, setMatches] = React.useState<TournamentMatch[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  // ✅ FIX CRASH: on normalise partout
+  const safeMatches: TournamentMatch[] = React.useMemo(() => (Array.isArray(matches) ? matches : []), [matches]);
+
+  const [view, setView] = React.useState<ViewMode>("summary");
+  const [resultMatch, setResultMatch] = React.useState<TournamentMatch | null>(null);
+
+  React.useEffect(() => {
+    let alive = true;
+
+    async function load() {
+      setLoading(true);
+      try {
+        const t = await (getTournamentLocal as any)(id);
+        const ms = await (listMatchesForTournamentLocal as any)(id);
+        if (!alive) return;
+        setTour((t as any) ?? null);
+        setMatches(Array.isArray(ms) ? (ms as any) : []);
+      } catch (e) {
+        console.error("[TournamentView] load error:", e);
+        if (alive) {
+          setTour(null);
+          setMatches([]);
+        }
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+
+  const playersById = React.useMemo(() => {
+    const out: Record<string, any> = {};
+    const pls = (tour as any)?.players || [];
+    for (const p of pls) {
+      if (!p?.id) continue;
+      out[String(p.id)] = {
+        id: String(p.id),
+        name: p?.name || "Joueur",
+        avatar: p?.avatar || p?.avatarDataUrl || p?.avatarUrl || null,
+      };
+    }
+    return out;
+  }, [tour]);
+
+  const { playableMatches, runningMatches, doneMatches } = React.useMemo(() => {
+    // ✅ getPlayableMatches peut être une API "engine" (tournament+matches)
+    // On passe safeMatches pour éviter tout crash
+    let playable: any[] = [];
+    try {
+      playable = (getPlayableMatches as any)({
+        tournament: tour as any,
+        matches: safeMatches as any,
+      }) as any[];
+    } catch {
+      playable = [];
+    }
+
+    const running = (safeMatches as any[]).filter((m: any) => m?.status === "running");
+    const done = (safeMatches as any[]).filter((m: any) => m?.status === "done");
+
+    return {
+      playableMatches: Array.isArray(playable) ? playable : [],
+      runningMatches: running,
+      doneMatches: done,
+    };
+  }, [tour, safeMatches]);
+
+  const hasGroups = React.useMemo(() => {
+    if ((tour as any)?.format?.type === "groups_ko") return true;
+    if (Array.isArray((tour as any)?.groups) && (tour as any).groups.length) return true;
+    return (safeMatches as any[]).some((m: any) => !!m?.groupId);
+  }, [tour, safeMatches]);
+
+  const statusCounts = React.useMemo(() => getMatchCountByStatus(safeMatches as any), [safeMatches]);
+
+  const persist = React.useCallback(async (nextTour: Tournament, nextMatches: TournamentMatch[]) => {
+    const fixedMatches = Array.isArray(nextMatches) ? nextMatches : [];
+    setTour(nextTour);
+    setMatches(fixedMatches);
+
+    try {
+      await (upsertTournamentLocal as any)(nextTour as any);
+      await (upsertMatchesForTournamentLocal as any)((nextTour as any).id, fixedMatches as any);
+    } catch (e) {
+      console.error("[TournamentView] persist error:", e);
+    }
+  }, []);
+
+  const onStartMatch = React.useCallback(
+    async (matchId: string) => {
+      if (!tour) return;
+
+      try {
+        const r = (startMatch as any)({
+          tournament: tour as any,
+          matches: safeMatches as any,
+          matchId,
+        });
+
+        await persist(r.tournament as any, r.matches as any);
+
+        go("tournament_match_play", { tournamentId: (tour as any).id, matchId });
+      } catch (e) {
+        console.error("[TournamentView] startMatch error:", e);
+      }
+    },
+    [tour, safeMatches, persist, go]
+  );
+
+  const onOpenResult = React.useCallback((m: any) => setResultMatch(m), []);
+
+  const allMatchesSorted = React.useMemo(() => {
+    const arr = [...(safeMatches as any[])];
+    const statusRank: Record<string, number> = { running: 0, pending: 1, done: 2 };
+
+    arr.sort((a, b) => {
+      const ra = statusRank[String(a?.status)] ?? 9;
+      const rb = statusRank[String(b?.status)] ?? 9;
+      if (ra !== rb) return ra - rb;
+      const ga = a?.groupId ? 1 : 0;
+      const gb = b?.groupId ? 1 : 0;
+      if (ga !== gb) return ga - gb;
+      const r1 = a?.round ?? 999;
+      const r2 = b?.round ?? 999;
+      if (r1 !== r2) return r1 - r2;
+      return (a?.order ?? 0) - (b?.order ?? 0);
+    });
+
+    return arr;
+  }, [safeMatches]);
+
+  return (
+    <div className="container" style={{ padding: 16, paddingBottom: 96, color: "#f5f5f7" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <button
+          type="button"
           onClick={() => go("tournaments")}
           style={{
-            borderRadius: 12,
-            padding: "8px 10px",
-            border: `1px solid ${theme.borderSoft}`,
-            background: theme.card,
-            color: theme.text,
+            borderRadius: 999,
+            padding: "7px 12px",
+            border: "1px solid rgba(255,255,255,0.14)",
+            background: "rgba(255,255,255,0.05)",
+            color: "rgba(255,255,255,0.92)",
+            fontWeight: 850,
+            cursor: "pointer",
           }}
         >
           ←
         </button>
-        <div style={{ flex: 1, textAlign: "center" }}>
-          <div
-            style={{
-              fontSize: 20,
-              fontWeight: 950,
-              color: theme.primary,
-              textShadow: `0 0 12px ${theme.primary}66`,
-            }}
-          >
-            {tour.name}
-          </div>
-          <div style={{ fontSize: 12.5, opacity: 0.85, marginTop: 4 }}>
-            {String(tour.game?.mode || "").toUpperCase()} •{" "}
-            {tour.status.toUpperCase()} • {prog.done}/{prog.total}
+
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 16, fontWeight: 950, letterSpacing: 0.2 }}>{(tour as any)?.name || "Tournoi"}</div>
+          <div style={{ fontSize: 11.5, opacity: 0.75 }}>
+            {(tour as any)?.status ? String((tour as any).status).toUpperCase() : "—"} •{" "}
+            {statusCounts?.pending ?? 0}/{safeMatches.length ?? 0}
           </div>
         </div>
-        <div style={{ width: 44 }} />
       </div>
 
-      {/* Quick KPIs */}
-      <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-        {[
-          ["À jouer", playable.length],
-          ["En cours", playing.length],
-          ["Terminés", done.length],
-        ].map(([label, value]) => (
+      {/* View switch */}
+      <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <Pill active={view === "summary"} label="Résumé" onClick={() => setView("summary")} accent="#ffcf57" />
+        <Pill active={view === "bracket"} label="Tableau" onClick={() => setView("bracket")} accent="#4fb4ff" />
+        <Pill active={view === "matches"} label="Matchs" onClick={() => setView("matches")} accent="#ff4fd8" />
+        {hasGroups ? <Pill active={view === "groups"} label="Poules" onClick={() => setView("groups")} accent="#7fe2a9" /> : null}
+      </div>
+
+      {loading ? (
+        <Card title="Chargement…" subtitle="Récupération du tournoi et des matchs." accent="#ffcf57" />
+      ) : !tour ? (
+        <Card title="Introuvable" subtitle="Ce tournoi n'existe pas (ou a été supprimé)." accent="#ff4fd8" />
+      ) : (
+        <>
+          {/* ✅ VUE : RÉSUMÉ */}
+          {view === "summary" ? (
+            <>
+              <Card
+                title="À jouer"
+                subtitle={playableMatches.length ? "Choisis un match à lancer." : "Aucun match jouable pour le moment."}
+                accent="#ffcf57"
+                icon="⚡"
+                badge={<MiniBadge label="À jouer" value={playableMatches.length} accent="#ffcf57" />}
+              >
+                {playableMatches.length ? (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {playableMatches.slice(0, 6).map((m: any) => (
+                      <div
+                        key={m.id}
+                        style={{
+                          borderRadius: 16,
+                          border: "1px solid rgba(255,255,255,0.10)",
+                          background: "linear-gradient(180deg, rgba(0,0,0,0.35), rgba(255,255,255,0.03))",
+                          padding: 12,
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          alignItems: "center",
+                        }}
+                      >
+                        <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                            <PlayerPill
+                              name={playersById[String(m.aPlayerId)]?.name || "TBD"}
+                              avatarUrl={playersById[String(m.aPlayerId)]?.avatar}
+                              dim={!m?.aPlayerId}
+                            />
+                            <div style={{ fontWeight: 950, opacity: 0.8 }}>VS</div>
+                            <PlayerPill
+                              name={playersById[String(m.bPlayerId)]?.name || "TBD"}
+                              avatarUrl={playersById[String(m.bPlayerId)]?.avatar}
+                              dim={!m?.bPlayerId}
+                            />
+                          </div>
+                          <div style={{ fontSize: 11.5, opacity: 0.75 }}>
+                            {matchLabel(m)} • BO{m?.bestOf ?? "?"}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => onStartMatch(m.id)}
+                          style={{
+                            borderRadius: 999,
+                            padding: "8px 12px",
+                            border: "none",
+                            fontWeight: 950,
+                            cursor: "pointer",
+                            background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
+                            color: "#120c06",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Jouer
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </Card>
+
+              <Card
+                title="Matchs en cours"
+                subtitle={runningMatches.length ? "Reprendre un match en cours." : "Aucun match en cours."}
+                accent="#4fb4ff"
+                icon="●"
+                badge={<MiniBadge label="En cours" value={runningMatches.length} accent="#4fb4ff" />}
+              >
+                {runningMatches.length ? (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {runningMatches.slice(0, 6).map((m: any) => (
+                      <div
+                        key={m.id}
+                        style={{
+                          borderRadius: 16,
+                          border: "1px solid rgba(255,255,255,0.10)",
+                          background: "linear-gradient(180deg, rgba(0,0,0,0.35), rgba(255,255,255,0.03))",
+                          padding: 12,
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          alignItems: "center",
+                        }}
+                      >
+                        <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                            <PlayerPill
+                              name={playersById[String(m.aPlayerId)]?.name || "TBD"}
+                              avatarUrl={playersById[String(m.aPlayerId)]?.avatar}
+                              dim={!m?.aPlayerId}
+                            />
+                            <div style={{ fontWeight: 950, opacity: 0.8 }}>VS</div>
+                            <PlayerPill
+                              name={playersById[String(m.bPlayerId)]?.name || "TBD"}
+                              avatarUrl={playersById[String(m.bPlayerId)]?.avatar}
+                              dim={!m?.bPlayerId}
+                            />
+                          </div>
+                          <div style={{ fontSize: 11.5, opacity: 0.75 }}>
+                            {matchLabel(m)} • BO{m?.bestOf ?? "?"}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => onStartMatch(m.id)}
+                          style={{
+                            borderRadius: 999,
+                            padding: "8px 12px",
+                            border: "none",
+                            fontWeight: 950,
+                            cursor: "pointer",
+                            background: "linear-gradient(180deg,#4fb4ff,#1c78d5)",
+                            color: "#04101f",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Reprendre
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </Card>
+
+              <Card
+                title="Terminés"
+                subtitle={doneMatches.length ? "Consulter les résultats." : "Aucun match terminé."}
+                accent="#7fe2a9"
+                icon="✓"
+                badge={<MiniBadge label="Terminés" value={doneMatches.length} accent="#7fe2a9" />}
+              >
+                {doneMatches.length ? (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {doneMatches.slice(0, 6).map((m: any) => (
+                      <div
+                        key={m.id}
+                        style={{
+                          borderRadius: 16,
+                          border: "1px solid rgba(255,255,255,0.10)",
+                          background: "linear-gradient(180deg, rgba(0,0,0,0.35), rgba(255,255,255,0.03))",
+                          padding: 12,
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          alignItems: "center",
+                        }}
+                      >
+                        <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                            <PlayerPill
+                              name={playersById[String(m.aPlayerId)]?.name || "TBD"}
+                              avatarUrl={playersById[String(m.aPlayerId)]?.avatar}
+                              dim={!m?.aPlayerId}
+                            />
+                            <div style={{ fontWeight: 950, opacity: 0.9 }}>{scoreText(m)}</div>
+                            <PlayerPill
+                              name={playersById[String(m.bPlayerId)]?.name || "TBD"}
+                              avatarUrl={playersById[String(m.bPlayerId)]?.avatar}
+                              dim={!m?.bPlayerId}
+                            />
+                          </div>
+
+                          <div style={{ fontSize: 11.5, opacity: 0.75 }}>
+                            {matchLabel(m)} • Vainqueur :{" "}
+                            <b style={{ color: "#7fe2a9" }}>{playersById[String(m.winnerId)]?.name || "—"}</b>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => onOpenResult(m)}
+                          style={{
+                            borderRadius: 999,
+                            padding: "8px 12px",
+                            border: "none",
+                            fontWeight: 950,
+                            cursor: "pointer",
+                            background: "linear-gradient(180deg,#7fe2a9,#2da36a)",
+                            color: "#04101f",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Voir
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </Card>
+            </>
+          ) : null}
+
+          {/* ✅ VUE : TABLEAU */}
+          {view === "bracket" ? (
+            <BracketOverview
+              tournament={tour as any}
+              matches={safeMatches as any}
+              playersById={playersById}
+              onStart={onStartMatch}
+              onOpenResult={onOpenResult}
+            />
+          ) : null}
+
+          {/* ✅ VUE : MATCHS */}
+          {view === "matches" ? (
+            <MatchDetailsList
+              title="Matchs"
+              subtitle="Vue détaillée (style TV)."
+              matches={allMatchesSorted}
+              playersById={playersById}
+              onStart={onStartMatch}
+              onOpenResult={onOpenResult}
+              accent="#ff4fd8"
+              icon="≡"
+            />
+          ) : null}
+
+          {/* ✅ VUE : POULES */}
+          {view === "groups" ? (
+            <GroupsCarousel
+              tournament={tour as any}
+              matches={safeMatches as any}
+              playersById={playersById}
+              onStart={onStartMatch}
+              onOpenResult={onOpenResult}
+            />
+          ) : null}
+        </>
+      )}
+
+      {/* Modal résultat */}
+      {resultMatch ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            background: "rgba(0,0,0,0.62)",
+            display: "grid",
+            placeItems: "end center",
+            padding: 12,
+          }}
+          onMouseDown={() => setResultMatch(null)}
+        >
           <div
-            key={String(label)}
             style={{
-              flex: 1,
-              borderRadius: 16,
-              border: `1px solid ${theme.borderSoft}`,
-              background: theme.card,
-              padding: 12,
-              textAlign: "center",
+              width: "min(520px, 96vw)",
+              borderRadius: 22,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "linear-gradient(180deg, rgba(24,24,30,0.98), rgba(10,10,14,0.995))",
+              boxShadow: "0 22px 80px rgba(0,0,0,0.7)",
+              overflow: "hidden",
             }}
+            onMouseDown={(e) => e.stopPropagation()}
           >
-            <div style={{ fontSize: 12, opacity: 0.8 }}>{label}</div>
             <div
               style={{
-                fontSize: 18,
-                fontWeight: 950,
-                color: theme.primary,
-                textShadow: `0 0 10px ${theme.primary}44`,
+                padding: "12px 14px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                borderBottom: "1px solid rgba(255,255,255,0.08)",
               }}
             >
-              {value}
+              <div style={{ fontWeight: 950, fontSize: 14, color: "#ffcf57" }}>Résultat</div>
+              <button
+                type="button"
+                onClick={() => setResultMatch(null)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: "rgba(255,255,255,0.75)",
+                  fontSize: 20,
+                  cursor: "pointer",
+                  lineHeight: 1,
+                }}
+                aria-label="Fermer"
+                title="Fermer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: 14 }}>
+              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 10 }}>
+                Choisis le vainqueur pour enregistrer le résultat.
+              </div>
+
+              <div style={{ display: "grid", gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!tour) return;
+                    const r = (submitResult as any)({
+                      tournament: tour as any,
+                      matches: safeMatches as any,
+                      matchId: (resultMatch as any).id,
+                      winnerId: String((resultMatch as any).aPlayerId),
+                      historyMatchId: null,
+                    });
+                    persist(r.tournament as any, r.matches as any);
+                    setResultMatch(null);
+                  }}
+                  style={{
+                    borderRadius: 16,
+                    padding: "12px 12px",
+                    border: "1px solid rgba(255,255,255,0.10)",
+                    background: "linear-gradient(180deg, rgba(255,207,87,0.18), rgba(255,207,87,0.08))",
+                    color: "rgba(255,255,255,0.92)",
+                    fontWeight: 950,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  ✅ {playersById[String((resultMatch as any).aPlayerId)]?.name || "Joueur A"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!tour) return;
+                    const r = (submitResult as any)({
+                      tournament: tour as any,
+                      matches: safeMatches as any,
+                      matchId: (resultMatch as any).id,
+                      winnerId: String((resultMatch as any).bPlayerId),
+                      historyMatchId: null,
+                    });
+                    persist(r.tournament as any, r.matches as any);
+                    setResultMatch(null);
+                  }}
+                  style={{
+                    borderRadius: 16,
+                    padding: "12px 12px",
+                    border: "1px solid rgba(255,255,255,0.10)",
+                    background: "linear-gradient(180deg, rgba(79,180,255,0.18), rgba(79,180,255,0.08))",
+                    color: "rgba(255,255,255,0.92)",
+                    fontWeight: 950,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  ✅ {playersById[String((resultMatch as any).bPlayerId)]?.name || "Joueur B"}
+                </button>
+              </div>
             </div>
           </div>
-        ))}
-      </div>
-
-      {/* PLAYABLE */}
-      <Section title="⚡ À jouer maintenant" theme={theme}>
-        {playable.length === 0 ? (
-          <Empty text="Aucun match jouable pour le moment." />
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            {playable.slice(0, 50).map((m) => (
-              <MatchRow
-                key={m.id}
-                theme={theme}
-                label={`Stage ${m.stageIndex + 1} • ${
-                  tour.stages[m.stageIndex]?.name || ""
-                } • G${m.groupIndex + 1} • R${m.roundIndex + 1}`}
-                a={nameOf(tour, m.aPlayerId)}
-                b={nameOf(tour, m.bPlayerId)}
-                actions={[
-                  {
-                    text: "Lancer",
-                    onClick: () => {
-                      // 1) passe en "playing"
-                      const r = startMatch({
-                        tournament: tour,
-                        matches,
-                        matchId: m.id,
-                        startedBy: store?.activeProfileId ?? null,
-                      });
-                      persist(r.tournament, r.matches);
-
-                      // 2) ouvre la page qui lance la vraie partie
-                      go("tournament_match_play", {
-                        tournamentId: tour.id,
-                        matchId: m.id,
-                      });
-                    },
-                    primary: true,
-                  },
-                  {
-                    text: "Saisir résultat",
-                    onClick: () => setResultMatch(m),
-                  },
-                ]}
-              />
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {/* PLAYING */}
-      <Section title="🟠 Matchs en cours" theme={theme}>
-        {playing.length === 0 ? (
-          <Empty text="Aucun match en cours." />
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            {playing.map((m) => (
-              <MatchRow
-                key={m.id}
-                theme={theme}
-                label={`Stage ${m.stageIndex + 1} • ${
-                  tour.stages[m.stageIndex]?.name || ""
-                }`}
-                a={nameOf(tour, m.aPlayerId)}
-                b={nameOf(tour, m.bPlayerId)}
-                actions={[
-                  {
-                    text: "Saisir résultat",
-                    onClick: () => setResultMatch(m),
-                    primary: true,
-                  },
-                ]}
-              />
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {/* DONE */}
-      <Section title="✅ Terminés" theme={theme}>
-        {done.length === 0 ? (
-          <Empty text="Aucun match terminé." />
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            {done.slice(0, 80).map((m) => (
-              <MatchRow
-                key={m.id}
-                theme={theme}
-                label={`Stage ${m.stageIndex + 1} • ${
-                  tour.stages[m.stageIndex]?.name || ""
-                }`}
-                a={nameOf(tour, m.aPlayerId)}
-                b={nameOf(tour, m.bPlayerId)}
-                winner={m.winnerId ? nameOf(tour, m.winnerId) : null}
-                actions={[
-                  m.historyMatchId
-                    ? {
-                        text: "Voir match",
-                        onClick: () =>
-                          go("statsDetail", { matchId: m.historyMatchId }),
-                      }
-                    : null,
-                ].filter(Boolean) as any}
-              />
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {/* Modal saisie résultat */}
-      {resultMatch && (
-        <ResultModal
-          theme={theme}
-          title="Saisir résultat"
-          aName={nameOf(tour, resultMatch.aPlayerId)}
-          bName={nameOf(tour, resultMatch.bPlayerId)}
-          onClose={() => setResultMatch(null)}
-          onPickWinner={(winnerId) => {
-            const r = submitResult({
-              tournament: tour,
-              matches,
-              matchId: resultMatch.id,
-              winnerId,
-              historyMatchId: null,
-            });
-            persist(r.tournament, r.matches);
-            setResultMatch(null);
-          }}
-          aId={resultMatch.aPlayerId}
-          bId={resultMatch.bPlayerId}
-        />
-      )}
-    </div>
-  );
-}
-
-function Section({ title, theme, children }: any) {
-  return (
-    <div
-      style={{
-        marginTop: 14,
-        borderRadius: 18,
-        border: `1px solid ${theme.borderSoft}`,
-        background: theme.card,
-        padding: 14,
-        boxShadow: "0 10px 24px rgba(0,0,0,0.45)",
-      }}
-    >
-      <div
-        style={{
-          fontWeight: 950,
-          color: theme.primary,
-          textShadow: `0 0 10px ${theme.primary}44`,
-          marginBottom: 10,
-        }}
-      >
-        {title}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function Empty({ text }: any) {
-  return <div style={{ fontSize: 13, opacity: 0.8 }}>{text}</div>;
-}
-
-function MatchRow({ theme, label, a, b, winner, actions }: any) {
-  return (
-    <div
-      style={{
-        borderRadius: 14,
-        border: `1px solid ${theme.borderSoft}`,
-        background: "rgba(0,0,0,.14)",
-        padding: 10,
-        display: "grid",
-        gap: 8,
-      }}
-    >
-      <div style={{ fontSize: 12, opacity: 0.75 }}>{label}</div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ flex: 1, fontWeight: 950 }}>{a}</div>
-        <div style={{ opacity: 0.6 }}>vs</div>
-        <div style={{ flex: 1, fontWeight: 950, textAlign: "right" }}>{b}</div>
-      </div>
-
-      {winner ? (
-        <div style={{ fontSize: 12.5, opacity: 0.9 }}>
-          🏆 Vainqueur : <b>{winner}</b>
         </div>
       ) : null}
-
-      {actions?.length ? (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-            justifyContent: "flex-end",
-          }}
-        >
-          {actions.map((a: any, i: number) => (
-            <button
-              key={i}
-              onClick={a.onClick}
-              style={{
-                borderRadius: 999,
-                padding: "8px 12px",
-                border: a.primary ? "none" : `1px solid ${theme.borderSoft}`,
-                background: a.primary
-                  ? "linear-gradient(180deg,#ffc63a,#ffaf00)"
-                  : "rgba(0,0,0,.10)",
-                color: a.primary ? "#1b1508" : theme.text,
-                fontWeight: 900,
-                cursor: "pointer",
-              }}
-            >
-              {a.text}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ResultModal({
-  theme,
-  title,
-  aName,
-  bName,
-  aId,
-  bId,
-  onPickWinner,
-  onClose,
-}: any) {
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,.72)",
-        display: "grid",
-        placeItems: "center",
-        zIndex: 60,
-        padding: 16,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: "min(420px, 92vw)",
-          borderRadius: 18,
-          border: `1px solid ${theme.primary}55`,
-          background: theme.card,
-          padding: 14,
-          boxShadow: "0 22px 60px rgba(0,0,0,.65)",
-        }}
-      >
-        <div
-          style={{
-            fontWeight: 950,
-            color: theme.primary,
-            textShadow: `0 0 10px ${theme.primary}44`,
-          }}
-        >
-          {title}
-        </div>
-
-        <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-          <button
-            onClick={() => onPickWinner(aId)}
-            style={{
-              borderRadius: 14,
-              padding: 12,
-              border: `1px solid ${theme.borderSoft}`,
-              background: "rgba(0,0,0,.12)",
-              color: theme.text,
-              fontWeight: 950,
-              cursor: "pointer",
-            }}
-          >
-            🏆 {aName}
-          </button>
-
-          <button
-            onClick={() => onPickWinner(bId)}
-            style={{
-              borderRadius: 14,
-              padding: 12,
-              border: `1px solid ${theme.borderSoft}`,
-              background: "rgba(0,0,0,.12)",
-              color: theme.text,
-              fontWeight: 950,
-              cursor: "pointer",
-            }}
-          >
-            🏆 {bName}
-          </button>
-
-          <button
-            onClick={onClose}
-            style={{
-              borderRadius: 999,
-              padding: "10px 12px",
-              border: `1px solid ${theme.borderSoft}`,
-              background: "rgba(0,0,0,.10)",
-              color: theme.text,
-              fontWeight: 900,
-              cursor: "pointer",
-            }}
-          >
-            Fermer
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

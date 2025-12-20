@@ -68,6 +68,8 @@ import TrainingMenu from "./pages/TrainingMenu";
 import TrainingX01Play from "./pages/TrainingX01Play";
 import TrainingClock from "./pages/TrainingClock";
 
+import ShanghaiConfigPage from "./pages/ShanghaiConfig";
+
 // Historique
 import { History } from "./lib/history";
 
@@ -157,6 +159,7 @@ type Tab =
   | "killer_play" // ✅ NEW
   | "killer_summary"
   | "shanghai"
+  | "shanghai_play"
   | "battle_royale"
   | "training"
   | "training_x01"
@@ -743,6 +746,17 @@ function App() {
     } catch {}
   }
 
+  // ✅ IMPORTANT: expose go globalement (fix retour TrainingClock si props perdues)
+  React.useEffect(() => {
+    try {
+      (window as any).__appGo = go;
+      (window as any).__appStore = (window as any).__appStore || {};
+      (window as any).__appStore.go = go;
+      (window as any).__appStore.store = store;
+      (window as any).__appStore.tab = tab;
+    } catch {}
+  }, [store, tab]); // go est stable via fermeture, on actualise store/tab
+
   /* Load store from IDB at boot + gate "Se connecter / Créer un compte" */
   React.useEffect(() => {
     let mounted = true;
@@ -1004,20 +1018,49 @@ function App() {
         );
         break;
 
-      // (optionnel) Si tu veux garder l'ancienne page Tournaments.tsx,
-      // donne-lui une autre route plus tard (ex: "tournaments_legacy").
-      // Pour l'instant, on évite le doublon.
+      // ============================================
+// src/App.tsx (extrait) — routes Tournois LOCAL
+// ✅ Fix: passe un id fiable à TournamentView
+// ============================================
 
-      case "tournament_match_play":
-        page = <TournamentMatchPlay store={store} go={go} params={routeParams} />;
-        break;
+case "tournament_view": {
+  const id =
+    String(
+      routeParams?.id ??
+        routeParams?.tournamentId ??
+        routeParams?.tid ??
+        ""
+    );
+
+  page = (
+    <TournamentView
+      store={store}
+      go={go}
+      id={id}
+    />
+  );
+  break;
+}
+
+case "tournament_match_play": {
+  const tournamentId = String(
+    routeParams?.tournamentId ?? routeParams?.id ?? ""
+  );
+  const matchId = String(routeParams?.matchId ?? "");
+
+  page = (
+    <TournamentMatchPlay
+      store={store}
+      go={go}
+      tournamentId={tournamentId}
+      matchId={matchId}
+    />
+  );
+  break;
+}
 
       case "tournament_create":
         page = <TournamentCreate store={store} go={go} />;
-        break;
-
-      case "tournament_view":
-        page = <TournamentView store={store} go={go} params={routeParams} />;
         break;
 
       case "profiles_bots":
@@ -1343,7 +1386,30 @@ function App() {
       }
 
       case "shanghai": {
-        page = <ShanghaiPlay playerIds={[]} onFinish={pushHistory} />;
+        page = <ShanghaiConfigPage store={store} go={go} />;
+        break;
+      }
+
+      case "shanghai_play": {
+        const cfg = routeParams?.config;
+        if (!cfg) {
+          page = (
+            <div style={{ padding: 16 }}>
+              <button onClick={() => go("shanghai")}>← Retour</button>
+              <p>Configuration SHANGHAI manquante.</p>
+            </div>
+          );
+          break;
+        }
+
+        page = (
+          <ShanghaiPlay
+            store={store}
+            go={go}
+            config={cfg}
+            onFinish={(m: any) => pushHistory(m)}
+          />
+        );
         break;
       }
 
@@ -1363,11 +1429,13 @@ function App() {
         break;
       }
 
+      // ✅ FIX: TrainingClock reçoit go (sinon retour cassé)
       case "training_clock": {
         page = (
           <TrainingClock
             profiles={store.profiles ?? []}
-            activeProfileId={store.activeProfileId}
+            activeProfileId={store.activeProfileId ?? null}
+            go={go}
           />
         );
         break;

@@ -9,6 +9,7 @@
 import React from "react";
 import { playSound } from "../lib/sound";
 import type { Profile } from "../lib/types";
+import InfoDot from "../components/InfoDot";
 
 type ClockMode = "classic" | "doubles" | "triples" | "sdt";
 
@@ -49,6 +50,7 @@ type PlayerLite = { id: string | null; name: string };
 type Props = {
   profiles?: Profile[];
   activeProfileId?: string | null;
+  go?: (tab: any, params?: any) => void; // ✅ NEW
 };
 
 // --------- helpers temps / format ---------
@@ -147,6 +149,30 @@ const TrainingClock: React.FC<Props> = (props) => {
   const profiles: Profile[] = props.profiles ?? globalStore.profiles ?? [];
   const activeProfileId: string | null =
     props.activeProfileId ?? globalStore.activeProfileId ?? null;
+
+  // ✅ Navigation robuste (go() app > fallback history)
+  const appGo =
+    props.go ??
+    (globalStore && typeof globalStore.go === "function" ? globalStore.go : null) ??
+    ((window as any).__appGo && typeof (window as any).__appGo === "function"
+      ? (window as any).__appGo
+      : null);
+
+  const handleBack = React.useCallback(() => {
+    try {
+      if (typeof appGo === "function") {
+        // on revient au menu "Games/Training" (le plus logique)
+        appGo("games");
+        return;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // fallback
+    if (window.history.length > 1) window.history.back();
+    else window.location.hash = "#/"; // dernier filet de sécurité
+  }, [appGo]);  
 
   // --- sélection de joueurs (solo + multi) ---
   const [selectedPlayerIds, setSelectedPlayerIds] = React.useState<string[]>(
@@ -538,6 +564,23 @@ const TrainingClock: React.FC<Props> = (props) => {
   // ============================================
   return (
     <>
+      {/* ================= HALO ANIMÉ TOUR DE L'HORLOGE ================= */}
+      <style>{`
+        @keyframes dcClockGlow {
+          0% {
+            transform: rotate(0deg);
+            opacity: .75;
+          }
+          50% {
+            opacity: 1;
+          }
+          100% {
+            transform: rotate(360deg);
+            opacity: .75;
+          }
+        }
+      `}</style>
+
       <div
         className="page training-clock-page"
         style={{
@@ -556,87 +599,78 @@ const TrainingClock: React.FC<Props> = (props) => {
             gap: 12,
           }}
         >
-                    {/* Header global : Training + Tour de l'horloge (avec "i" intégré) */}
-                    <div
+                              {/* Header style Cricket : Retour + Titre + InfoDot */}
+          <div
             style={{
               width: "100%",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-              marginBottom: 4,
+              gap: 10,
+              marginBottom: 6,
             }}
           >
-            {/* Petit pill "Training" */}
+            {/* Retour */}
             <button
-              type="button"
-              onClick={() => window.history.back()}
-              style={{
-                borderRadius: 999,
-                padding: "6px 16px",
-                border: "none",
-                background:
-                  "linear-gradient(180deg,#ffc63a,#ffaf00)",
-                color: "#2b1900",
-                fontWeight: 700,
-                fontSize: 12,
-                textTransform: "uppercase",
-                boxShadow: "0 0 12px rgba(247,201,72,0.6)",
-                flexShrink: 0,
-              }}
-            >
-              Training
-            </button>
+  type="button"
+  onClick={handleBack}
+  title="Retour"
+  aria-label="Retour"
+  style={{
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    border: "1px solid rgba(255,198,58,.55)",
+    background: "linear-gradient(180deg, rgba(25,25,30,.98), rgba(5,5,8,.98))",
+    boxShadow: "0 0 14px rgba(255,198,58,.55)",
+    color: "#ffc63a",
+    fontWeight: 900,
+    fontSize: 18,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  }}
+>
+  ←
+</button>
 
-            {/* Gros bouton doré "Tour de l'horloge" avec le "i" intégré */}
+            {/* Titre */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 26,
+                  fontWeight: 900,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  color: "#f5c14a",
+                  textShadow: "0 0 18px rgba(245,193,74,.45)",
+                  lineHeight: 1.05,
+                }}
+              >
+                TOUR DE L&apos;HORLOGE
+              </div>
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
+                Sélectionne les joueurs et les options pour cette session.
+              </div>
+            </div>
+
+            {/* InfoDot */}
             <button
               type="button"
               onClick={() => setShowInfo(true)}
               style={{
-                flex: 1,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 10,
-                borderRadius: 999,
-                padding: "8px 22px",
+                background: "transparent",
                 border: "none",
-                background:
-                  "linear-gradient(180deg,#ffd85c,#b77b06)",
-                color: "#2b1900",
-                fontWeight: 800,
-                fontSize: 14,
-                textTransform: "uppercase",
-                boxShadow: "0 0 16px rgba(255,216,92,0.9)",
+                padding: 0,
+                cursor: "pointer",
+                flexShrink: 0,
               }}
+              aria-label="Infos"
+              title="Infos"
             >
-              <span
-                style={{
-                  letterSpacing: "0.05em",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Tour de l&apos;horloge
-              </span>
-              <span
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: "50%",
-                  background: "#2b1900",
-                  color: "#ffd85c",
-                  fontWeight: 800,
-                  fontSize: 13,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                i
-              </span>
+              <InfoDot />
             </button>
           </div>
-
 
           {/* ================== STEP SETUP ================== */}
           {step === "setup" && (
@@ -846,6 +880,26 @@ function SetupSection(props: SetupSectionProps) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* ✅ Styles locaux (1 seule fois) : halo + scrollbar hidden */}
+      <style>{`
+        @keyframes dcClockGlow {
+          0% { transform: rotate(0deg); opacity: .65; }
+          50% { opacity: .95; }
+          100% { transform: rotate(360deg); opacity: .65; }
+        }
+
+        /* ✅ Cache scrollbar du carrousel joueurs (supprime la barre jaune qui clignote) */
+        .dcPlayerCarousel {
+          scrollbar-width: none;         /* Firefox */
+          -ms-overflow-style: none;      /* IE/Edge legacy */
+        }
+        .dcPlayerCarousel::-webkit-scrollbar {
+          width: 0;
+          height: 0;
+          display: none;                 /* Chrome/Safari */
+        }
+      `}</style>
+
       {/* JOUEURS */}
       <section
         className="card"
@@ -859,47 +913,38 @@ function SetupSection(props: SetupSectionProps) {
           boxShadow: "0 0 16px rgba(0,0,0,.7)",
         }}
       >
-        <h2
-          style={{
-            fontSize: 14,
-            fontWeight: 700,
-            marginBottom: 4,
-          }}
-        >
+        <h2 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>
           Joueurs
         </h2>
-        <div
-          style={{
-            fontSize: 11,
-            opacity: 0.75,
-            marginBottom: 10,
-          }}
-        >
-          Sélectionne 1 à 4 joueurs. Chaque joueur jouera une session à
-          la suite.
+
+        <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 10 }}>
+          Sélectionne 1 à 4 joueurs. Chaque joueur jouera une session à la suite.
         </div>
 
         {profiles.length === 0 ? (
           <div style={{ fontSize: 12, opacity: 0.7 }}>
-            Aucun profil pour l&apos;instant. Crée un profil dans
-            l&apos;onglet &quot;Profils&quot; pour enregistrer tes stats.
+            Aucun profil pour l&apos;instant. Crée un profil dans l&apos;onglet
+            &quot;Profils&quot; pour enregistrer tes stats.
           </div>
         ) : (
           <div
+            className="dcPlayerCarousel"
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              display: "flex",
               gap: 12,
-              paddingBottom: 4,
-              maxHeight: 220,
-              overflowY: profiles.length > 4 ? "auto" : "visible",
-              paddingRight: profiles.length > 4 ? 4 : 0,
+              overflowX: "auto",
+              overflowY: "hidden", // ✅ IMPORTANT : supprime la barre verticale
+              paddingBottom: 6,
+              paddingRight: 6,
+              WebkitOverflowScrolling: "touch",
+              alignItems: "flex-start",
             }}
           >
             {profiles.map((p) => {
               const selected = selectedPlayerIds.includes(p.id);
               const name = p.nickname ?? p.name ?? "Joueur";
               const initials = initialsFromName(name);
+
               return (
                 <button
                   key={p.id}
@@ -909,8 +954,7 @@ function SetupSection(props: SetupSectionProps) {
                     setSelectedPlayerIds((prev) => {
                       const exists = prev.includes(p.id);
                       if (exists) {
-                        // ne jamais vider complètement
-                        if (prev.length === 1) return prev;
+                        if (prev.length === 1) return prev; // jamais 0
                         return prev.filter((id) => id !== p.id);
                       }
                       if (prev.length >= 4) return prev;
@@ -922,35 +966,48 @@ function SetupSection(props: SetupSectionProps) {
                     border: "none",
                     padding: 0,
                     cursor: "pointer",
-                    position: "relative",
-                    width: "100%",
+                    flex: "0 0 auto",
+                    width: 72, // ✅ tuile fixe -> carrousel 1 ligne
                   }}
                 >
                   <div
                     style={{
+                      width: 60,
+                      height: 60,
                       borderRadius: "50%",
-                      padding: 3,
-                      background: "transparent",
-                      boxShadow: selected
-                        ? "0 0 20px rgba(255,198,58,.85)"
-                        : "0 0 0 rgba(0,0,0,0)",
-                      transition:
-                        "box-shadow .12s ease, transform .12s ease, filter .12s ease",
+                      position: "relative",
+                      margin: "0 auto",
                     }}
                   >
+                    {/* ✅ AURA UNIQUEMENT (pas d’anneau jaune/noir) */}
+                    {selected && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: -10,
+                          borderRadius: "50%",
+                          background:
+                            "conic-gradient(from 180deg, rgba(255,198,58,0), rgba(255,198,58,.40), rgba(255,79,216,.22), rgba(255,198,58,0))",
+                          filter: "blur(12px)",
+                          animation: "dcClockGlow 1.6s linear infinite",
+                          pointerEvents: "none",
+                        }}
+                      />
+                    )}
+
+                    {/* ✅ Médaillon SANS anneaux (bord constant) */}
                     <div
                       style={{
-                        width: 56,
-                        height: 56,
+                        position: "absolute",
+                        inset: 0,
                         borderRadius: "50%",
                         overflow: "hidden",
                         background: "#111",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        border: selected
-                          ? "2px solid rgba(255,198,58,.95)"
-                          : "1px solid rgba(255,255,255,.10)",
+                        border: "1px solid rgba(255,255,255,.14)", // constant
+                        boxShadow: "inset 0 1px 0 rgba(255,255,255,.06)",
                         filter: selected ? "none" : "grayscale(1)",
                         opacity: selected ? 1 : 0.35,
                       }}
@@ -969,7 +1026,7 @@ function SetupSection(props: SetupSectionProps) {
                         <span
                           style={{
                             fontSize: 16,
-                            fontWeight: 700,
+                            fontWeight: 800,
                             color: "#f5f5f5",
                           }}
                         >
@@ -978,12 +1035,13 @@ function SetupSection(props: SetupSectionProps) {
                       )}
                     </div>
                   </div>
+
                   <div
                     style={{
-                      marginTop: 4,
+                      marginTop: 6,
                       fontSize: 10,
                       textAlign: "center",
-                      opacity: 0.9,
+                      opacity: selected ? 0.95 : 0.55,
                       whiteSpace: "nowrap",
                       textOverflow: "ellipsis",
                       overflow: "hidden",
@@ -1013,9 +1071,7 @@ function SetupSection(props: SetupSectionProps) {
       >
         {isMulti
           ? `${players.length} joueurs sélectionnés`
-          : `Mode solo • ${
-              players[0]?.name ?? "Joueur solo"
-            }`}
+          : `Mode solo • ${players[0]?.name ?? "Joueur solo"}`}
       </div>
 
       {/* Choix du mode */}
@@ -1030,15 +1086,10 @@ function SetupSection(props: SetupSectionProps) {
           boxShadow: "0 0 16px rgba(0,0,0,.7)",
         }}
       >
-        <h2
-          style={{
-            fontSize: 14,
-            fontWeight: 700,
-            marginBottom: 8,
-          }}
-        >
+        <h2 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>
           Mode de jeu
         </h2>
+
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {(["classic", "doubles", "triples", "sdt"] as ClockMode[]).map(
             (mode) => {
@@ -1059,12 +1110,8 @@ function SetupSection(props: SetupSectionProps) {
                     fontSize: 13,
                     background: active ? activeBg : baseBg,
                     color: "#f5f5f5",
-                    borderColor: active
-                      ? "#ffc63a"
-                      : "rgba(255,255,255,.18)",
-                    boxShadow: active
-                      ? "0 0 14px rgba(255,198,58,.45)"
-                      : "none",
+                    borderColor: active ? "#ffc63a" : "rgba(255,255,255,.18)",
+                    boxShadow: active ? "0 0 14px rgba(255,198,58,.45)" : "none",
                   }}
                   onClick={() => setConfig((c) => ({ ...c, mode }))}
                 >
@@ -1088,13 +1135,7 @@ function SetupSection(props: SetupSectionProps) {
           boxShadow: "0 0 16px rgba(0,0,0,.7)",
         }}
       >
-        <h2
-          style={{
-            fontSize: 14,
-            fontWeight: 700,
-            marginBottom: 8,
-          }}
-        >
+        <h2 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>
           Options
         </h2>
 
@@ -1110,15 +1151,11 @@ function SetupSection(props: SetupSectionProps) {
         >
           <div>
             <div style={{ fontSize: 13 }}>Afficher le timer</div>
-            <div
-              style={{
-                fontSize: 11,
-                opacity: 0.7,
-              }}
-            >
+            <div style={{ fontSize: 11, opacity: 0.7 }}>
               Chrono visible pendant la session
             </div>
           </div>
+
           <button
             type="button"
             className={"chip " + (config.showTimer ? "chip-active" : "")}
@@ -1136,12 +1173,7 @@ function SetupSection(props: SetupSectionProps) {
                 ? "0 0 10px rgba(255,198,58,.55)"
                 : "none",
             }}
-            onClick={() =>
-              setConfig((c) => ({
-                ...c,
-                showTimer: !c.showTimer,
-              }))
-            }
+            onClick={() => setConfig((c) => ({ ...c, showTimer: !c.showTimer }))}
           >
             {config.showTimer ? "Oui" : "Non"}
           </button>
@@ -1157,19 +1189,12 @@ function SetupSection(props: SetupSectionProps) {
           }}
         >
           <div>
-            <div style={{ fontSize: 13 }}>
-              Limite de fléchettes
-            </div>
-            <div
-              style={{
-                fontSize: 11,
-                opacity: 0.7,
-              }}
-            >
-              Par joueur : 0 = illimité, sinon fin auto quand la limite
-              est atteinte
+            <div style={{ fontSize: 13 }}>Limite de fléchettes</div>
+            <div style={{ fontSize: 11, opacity: 0.7 }}>
+              Par joueur : 0 = illimité, sinon fin auto quand la limite est atteinte
             </div>
           </div>
+
           <select
             className="chip"
             style={{
@@ -1182,10 +1207,7 @@ function SetupSection(props: SetupSectionProps) {
             value={config.dartLimit ?? 0}
             onChange={(e) => {
               const v = Number(e.target.value);
-              setConfig((c) => ({
-                ...c,
-                dartLimit: v > 0 ? v : null,
-              }));
+              setConfig((c) => ({ ...c, dartLimit: v > 0 ? v : null }));
             }}
           >
             <option value={0}>Illimité</option>
@@ -1212,9 +1234,7 @@ function SetupSection(props: SetupSectionProps) {
             : "linear-gradient(180deg,#555,#333)",
           color: players.length ? "#111" : "#888",
           border: "1px solid rgba(0,0,0,.9)",
-          boxShadow: players.length
-            ? "0 0 16px rgba(255,198,58,.6)"
-            : "none",
+          boxShadow: players.length ? "0 0 16px rgba(255,198,58,.6)" : "none",
         }}
         onClick={onStart}
         disabled={!players.length}
@@ -1225,13 +1245,7 @@ function SetupSection(props: SetupSectionProps) {
       {/* Historique en bas */}
       {history.length > 0 && (
         <section style={{ marginTop: 6 }}>
-          <h2
-            style={{
-              fontSize: 13,
-              fontWeight: 700,
-              marginBottom: 6,
-            }}
-          >
+          <h2 style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
             Dernières sessions
           </h2>
           <HistoryList history={history.slice(0, 5)} />

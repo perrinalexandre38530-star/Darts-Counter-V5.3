@@ -177,8 +177,6 @@ export function buildInitialMatches(t: Tournament): TournamentMatch[] {
     } else if (st.type === "single_elim") {
       if (!ids.length) {
         // placeholders : on ne sait pas encore combien ? -> on génère au minimum un bracket "vide"
-        // On régénérera proprement dès qu’on aura la liste des qualifiés.
-        // Ici, on fait un placeholder minimal (1 match TBD) pour éviter une vue vide.
         matches.push({
           id: uid("m"),
           tournamentId: t.id,
@@ -230,9 +228,18 @@ export function getTournamentProgress(t: Tournament, matches: TournamentMatch[])
   return { total, done, playing, pending };
 }
 
-export function getPlayableMatches(t: Tournament, matches: TournamentMatch[]): TournamentMatch[] {
+/**
+ * ✅ FIX NULL-SAFE:
+ * - Certains appels UI peuvent passer matches undefined (boot async / storeLocal)
+ * - On garde le comportement historique: "jouables" = pending + joueurs connus (pas TBD/BYE)
+ */
+export function getPlayableMatches(
+  t: Tournament,
+  matches?: TournamentMatch[] | null
+): TournamentMatch[] {
+  const safe = Array.isArray(matches) ? matches : [];
   const tid = t.id;
-  const list = matches.filter((m) => m.tournamentId === tid);
+  const list = safe.filter((m) => m.tournamentId === tid);
 
   return list.filter((m) => {
     if (m.status !== "pending") return false;
@@ -310,9 +317,11 @@ export function submitResult(args: {
   // 3) statut finished si tout est done
   const prog = getTournamentProgress(nextTournament, nextMatches);
   const status =
-    prog.done === prog.total && prog.total > 0 ? "finished"
-    : nextTournament.status === "draft" ? "running"
-    : nextTournament.status;
+    prog.done === prog.total && prog.total > 0
+      ? "finished"
+      : nextTournament.status === "draft"
+      ? "running"
+      : nextTournament.status;
 
   return {
     tournament: { ...nextTournament, status, updatedAt: now() },
@@ -339,13 +348,9 @@ export function computeRRStandings(
   groupIndex: number
 ): RRStandingRow[] {
   const stageMatches = matches.filter(
-    (m) =>
-      m.tournamentId === t.id &&
-      m.stageIndex === stageIndex &&
-      m.groupIndex === groupIndex
+    (m) => m.tournamentId === t.id && m.stageIndex === stageIndex && m.groupIndex === groupIndex
   );
 
-  // players in this group = those appearing in matches (or can be inferred)
   const ids = new Set<string>();
   stageMatches.forEach((m) => {
     if (m.aPlayerId && !m.aPlayerId.startsWith("__")) ids.add(m.aPlayerId);
@@ -354,18 +359,9 @@ export function computeRRStandings(
 
   const rows: Record<string, RRStandingRow> = {};
   ids.forEach((pid) => {
-    rows[pid] = {
-      playerId: pid,
-      played: 0,
-      wins: 0,
-      losses: 0,
-      pointsFor: 0,
-      pointsAgainst: 0,
-    };
+    rows[pid] = { playerId: pid, played: 0, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 };
   });
 
-  // Pour l’instant : pointsFor/Against = nombre de victoires (proxy),
-  // on remplacera par un vrai score dès qu’on branche les résultats détaillés depuis History.
   stageMatches.forEach((m) => {
     if (m.status !== "done") return;
     const a = m.aPlayerId;
@@ -390,7 +386,6 @@ export function computeRRStandings(
 
   const list = Object.values(rows);
 
-  // tri : wins desc, pointsFor desc, name asc
   list.sort((ra, rb) => {
     if (rb.wins !== ra.wins) return rb.wins - ra.wins;
     if (rb.pointsFor !== ra.pointsFor) return rb.pointsFor - ra.pointsFor;
@@ -431,17 +426,14 @@ function applyPipelineAdvancement(
   let t = tournament;
   let ms = matches.slice();
 
-  // On avance stage par stage si terminé
   for (let s = 0; s < t.stages.length - 1; s++) {
     const st = t.stages[s];
     const nextSt = t.stages[s + 1];
 
-    // stage terminé ?
     const stageMatches = ms.filter((m) => m.tournamentId === t.id && m.stageIndex === s);
     const stageDone = stageMatches.length > 0 && stageMatches.every((m) => m.status === "done");
     if (!stageDone) continue;
 
-    // Si c’est un RR et le next est SE : générer bracket avec qualifiés
     if (st.type === "round_robin" && nextSt?.type === "single_elim") {
       const qualified = getQualifiedPlayersFromRRStage(t, ms, s);
       if (qualified.length >= 2) {
@@ -449,8 +441,6 @@ function applyPipelineAdvancement(
         t = { ...t, currentStageIndex: Math.max(t.currentStageIndex, s + 1), updatedAt: now() };
       }
     }
-
-    // Si on veut d’autres pipelines plus tard (qualifs -> poules -> etc), c’est ici.
   }
 
   return { tournament: t, matches: ms };
@@ -463,9 +453,7 @@ function regenerateSingleElimStage(
   playerIds: string[],
   randomSeeding: boolean
 ): TournamentMatch[] {
-  const startOrderIndex =
-    matches.reduce((mx, m) => Math.max(mx, m.orderIndex ?? 0), 0) + 1;
-
+  const startOrderIndex = matches.reduce((mx, m) => Math.max(mx, m.orderIndex ?? 0), 0) + 1;
   const ordered = randomSeeding ? shuffle(playerIds) : playerIds.slice();
 
   const newStageMatches = buildSingleElimMatches({
@@ -475,11 +463,9 @@ function regenerateSingleElimStage(
     startOrderIndex,
   });
 
-  // supprimer anciens matchs de ce stage
   const keep = matches.filter((m) => !(m.tournamentId === t.id && m.stageIndex === stageIndex));
   const merged = [...keep, ...newStageMatches].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
 
-  // résout auto BYE
   return resolveBracketPlaceholders(t, merged);
 }
 
@@ -498,7 +484,6 @@ function buildSingleElimMatches(args: {
   const out: TournamentMatch[] = [];
   let order = args.startOrderIndex;
 
-  // round 0
   firstPairs.forEach(([a, b]) => {
     const isBye = a === "__BYE__" || b === "__BYE__";
     const winner = a === "__BYE__" ? b : b === "__BYE__" ? a : null;
@@ -523,7 +508,6 @@ function buildSingleElimMatches(args: {
     });
   });
 
-  // rounds 1..k placeholders
   for (let r = 1; r < roundsCount; r++) {
     const count = n / Math.pow(2, r + 1);
     for (let i = 0; i < count; i++) {
@@ -562,7 +546,7 @@ function resolveBracketPlaceholders(t: Tournament, matches: TournamentMatch[]): 
 
     const stageMatches = list
       .filter((m) => m.tournamentId === t.id && m.stageIndex === sIdx)
-      .sort((a, b) => (a.roundIndex - b.roundIndex) || (a.orderIndex - b.orderIndex));
+      .sort((a, b) => a.roundIndex - b.roundIndex || a.orderIndex - b.orderIndex);
 
     if (stageMatches.length === 0) return;
 
@@ -579,7 +563,7 @@ function resolveBracketPlaceholders(t: Tournament, matches: TournamentMatch[]): 
       const next = rounds[roundIndices[r + 1]] || [];
       if (!curr.length || !next.length) continue;
 
-      const winners = curr.map((m) => (m.status === "done" ? (m.winnerId || null) : null));
+      const winners = curr.map((m) => (m.status === "done" ? m.winnerId || null : null));
 
       for (let i = 0; i < next.length; i++) {
         const wA = winners[i * 2] || "__TBD__";
@@ -614,7 +598,6 @@ function resolveBracketPlaceholders(t: Tournament, matches: TournamentMatch[]): 
     }
   });
 
-  // safety auto-finish BYE
   for (let i = 0; i < list.length; i++) {
     const m = list[i];
     if (m.status !== "pending") continue;

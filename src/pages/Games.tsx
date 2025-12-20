@@ -139,8 +139,8 @@ const GAMES: GameDef[] = [
     infoBodyKey: "games.shanghai.infoBody",
     infoBodyDefault:
       "Chaque round possède une cible. Touche simple, double et triple sur la même visite pour un Shanghai.",
-    tab: null,
-    enabled: false,
+    tab: "shanghai",     // ✅ IMPORTANT : active la navigation
+    enabled: true,       // ✅ IMPORTANT : plus grisé
   },
   {
     id: "battle",
