@@ -85,6 +85,7 @@ import Tournaments from "./pages/Tournaments";
 import TournamentCreate from "./pages/TournamentCreate";
 import TournamentView from "./pages/TournamentView";
 import TournamentMatchPlay from "./pages/TournamentMatchPlay";
+import TournamentRoadmap from "./pages/TournamentRoadmap";
 
 // X01 V3
 import X01ConfigV3 from "./pages/X01ConfigV3";
@@ -139,6 +140,7 @@ type Tab =
   | "tournament_create"
   | "tournament_view"
   | "tournament_match_play" // ✅ NEW: jouer un match de tournoi
+  | "tournament_roadmap" // ✅ NEW: page roadmap tournois
   | "profiles"
   | "profiles_bots"
   | "friends"
@@ -1063,6 +1065,11 @@ case "tournament_match_play": {
         page = <TournamentCreate store={store} go={go} />;
         break;
 
+      case "tournament_roadmap": {
+        page = <TournamentRoadmap go={go} />;
+        break;
+        }  
+
       case "profiles_bots":
         page = <ProfilesBots store={store} go={go} />;
         break;
@@ -1385,6 +1392,9 @@ case "tournament_match_play": {
         break;
       }
 
+      // ==========================
+      // SHANGHAI (Config -> Play)
+      // ==========================
       case "shanghai": {
         page = <ShanghaiConfigPage store={store} go={go} />;
         break;
@@ -1392,6 +1402,7 @@ case "tournament_match_play": {
 
       case "shanghai_play": {
         const cfg = routeParams?.config;
+
         if (!cfg) {
           page = (
             <div style={{ padding: 16 }}>
@@ -1407,7 +1418,7 @@ case "tournament_match_play": {
             store={store}
             go={go}
             config={cfg}
-            onFinish={(m: any) => pushHistory(m)}
+            onFinish={(m: any) => pushHistory(m)} // ✅ remonte dans History + stats
           />
         );
         break;

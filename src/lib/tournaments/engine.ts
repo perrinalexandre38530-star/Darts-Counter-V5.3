@@ -6,6 +6,8 @@
 // ✅ Dépendances : SE round N jouable si joueurs connus
 // ✅ Pipeline: Poules/Qualifs -> Finale auto (génère stage suivant)
 // ✅ FIX: ne JAMAIS créer de match "__BYE__ vs __BYE__" + purge safety
+// ✅ FIX: auto-finish "joueur vs BYE" (ne doit JAMAIS être pending)
+// ✅ FIX: progress/playable basés sur matches "sanitized"
 // ============================================
 
 import type {
@@ -51,6 +53,46 @@ function isTbdId(x: any) {
 }
 function isVoidByeMatch(m: any) {
   return isByeId(m?.aPlayerId) && isByeId(m?.bPlayerId);
+}
+
+/**
+ * ✅ SANITIZE (core fix)
+ * - supprime définitivement "__BYE__ vs __BYE__"
+ * - auto-finish tout match "joueur vs BYE" (winner = joueur réel)
+ * - auto-finish aussi si un placeholder se résout vers BYE plus tard
+ */
+function sanitizeMatches(t: Tournament, matches: TournamentMatch[]): TournamentMatch[] {
+  const tid = t.id;
+  const out: TournamentMatch[] = [];
+
+  for (const m of matches) {
+    if (m.tournamentId !== tid) {
+      out.push(m);
+      continue;
+    }
+
+    // 1) purge BYE/BYE
+    if (isVoidByeMatch(m)) continue;
+
+    // 2) si match pending mais contient BYE => auto-finish
+    if (m.status === "pending" && (isByeId(m.aPlayerId) || isByeId(m.bPlayerId))) {
+      const winner = isByeId(m.aPlayerId) ? m.bPlayerId : m.aPlayerId;
+      out.push({
+        ...m,
+        status: "done",
+        winnerId: winner || BYE,
+        sessionId: null,
+        startedAt: null,
+        startedBy: null,
+        updatedAt: now(),
+      });
+      continue;
+    }
+
+    out.push(m);
+  }
+
+  return out;
 }
 
 // ------------------------------
@@ -233,13 +275,17 @@ export function buildInitialMatches(t: Tournament): TournamentMatch[] {
     }
   }
 
-  // ✅ resolve + purge bye/bye
-  return resolveBracketPlaceholders(t, matches);
+  // ✅ resolve + sanitize (bye auto-finish + purge bye/bye)
+  const resolved = resolveBracketPlaceholders(t, matches);
+  return sanitizeMatches(t, resolved);
 }
 
 export function getTournamentProgress(t: Tournament, matches: TournamentMatch[]) {
   const tid = t.id;
-  const list = matches.filter((m) => m.tournamentId === tid);
+
+  // ✅ IMPORTANT: counts on sanitized list
+  const list = sanitizeMatches(t, matches).filter((m) => m.tournamentId === tid);
+
   const total = list.length;
   const done = list.filter((m) => m.status === "done").length;
   const playing = list.filter((m) => m.status === "playing").length;
@@ -249,7 +295,9 @@ export function getTournamentProgress(t: Tournament, matches: TournamentMatch[])
 
 export function getPlayableMatches(t: Tournament, matches: TournamentMatch[]): TournamentMatch[] {
   const tid = t.id;
-  const list = matches.filter((m) => m.tournamentId === tid);
+
+  // ✅ IMPORTANT: only sanitized list (bye auto-finished and bye/bye purged)
+  const list = sanitizeMatches(t, matches).filter((m) => m.tournamentId === tid);
 
   return list.filter((m) => {
     if (m.status !== "pending") return false;
@@ -269,13 +317,17 @@ export function startMatch(args: {
   const m = args.matches.find((x) => x.id === args.matchId);
   if (!m) return { tournament: args.tournament, matches: args.matches };
 
-  if (m.status !== "pending") return { tournament: args.tournament, matches: args.matches };
-  if (isTbdId(m.aPlayerId) || isTbdId(m.bPlayerId)) return { tournament: args.tournament, matches: args.matches };
-  if (isByeId(m.aPlayerId) || isByeId(m.bPlayerId)) return { tournament: args.tournament, matches: args.matches };
-  if (isVoidByeMatch(m)) return { tournament: args.tournament, matches: args.matches };
+  // ✅ Start basé sur sanitized state (sécurité)
+  const safeAll = sanitizeMatches(args.tournament, args.matches);
+  const safe = safeAll.find((x) => x.id === args.matchId) || m;
 
-  const next = args.matches.map((x) => {
-    if (x.id !== m.id) return x;
+  if (safe.status !== "pending") return { tournament: args.tournament, matches: safeAll };
+  if (isTbdId(safe.aPlayerId) || isTbdId(safe.bPlayerId)) return { tournament: args.tournament, matches: safeAll };
+  if (isByeId(safe.aPlayerId) || isByeId(safe.bPlayerId)) return { tournament: args.tournament, matches: safeAll };
+  if (isVoidByeMatch(safe)) return { tournament: args.tournament, matches: safeAll };
+
+  const next = safeAll.map((x) => {
+    if (x.id !== safe.id) return x;
     return {
       ...x,
       status: "playing" as MatchStatus,
@@ -327,7 +379,10 @@ export function submitResult(args: {
   const nextTournament = adv.tournament;
   nextMatches = adv.matches;
 
-  // 3) finished ?
+  // ✅ 3) sanitize final (bye auto-finish + purge bye/bye)
+  nextMatches = sanitizeMatches(nextTournament, nextMatches);
+
+  // 4) finished ?
   const prog = getTournamentProgress(nextTournament, nextMatches);
   const status =
     prog.done === prog.total && prog.total > 0 ? "finished"
@@ -358,7 +413,7 @@ export function computeRRStandings(
   stageIndex: number,
   groupIndex: number
 ): RRStandingRow[] {
-  const stageMatches = matches.filter(
+  const stageMatches = sanitizeMatches(t, matches).filter(
     (m) =>
       m.tournamentId === t.id &&
       m.stageIndex === stageIndex &&
@@ -451,7 +506,7 @@ function applyPipelineAdvancement(
     const st = t.stages[s];
     const nextSt = t.stages[s + 1];
 
-    const stageMatches = ms.filter((m) => m.tournamentId === t.id && m.stageIndex === s);
+    const stageMatches = sanitizeMatches(t, ms).filter((m) => m.tournamentId === t.id && m.stageIndex === s);
     const stageDone = stageMatches.length > 0 && stageMatches.every((m) => m.status === "done");
     if (!stageDone) continue;
 
@@ -489,7 +544,7 @@ function regenerateSingleElimStage(
   const keep = matches.filter((m) => !(m.tournamentId === t.id && m.stageIndex === stageIndex));
   const merged = [...keep, ...newStageMatches].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
 
-  return resolveBracketPlaceholders(t, merged);
+  return sanitizeMatches(t, resolveBracketPlaceholders(t, merged));
 }
 
 function buildSingleElimMatches(args: {
@@ -598,18 +653,9 @@ function resolveBracketPlaceholders(t: Tournament, matches: TournamentMatch[]): 
         const wB = winners[i * 2 + 1] || TBD;
 
         const target = next[i];
-        const needUpdate =
-          target.aPlayerId !== wA ||
-          target.bPlayerId !== wB ||
-          (target.status === "done" && (wA === TBD || wB === TBD));
+        const needUpdate = target.aPlayerId !== wA || target.bPlayerId !== wB;
 
         if (!needUpdate) continue;
-
-        // ✅ si BYE/BYE remonte, on le marque done + winner=BYE, puis purge à la fin
-        const isVoid = wA === BYE && wB === BYE;
-
-        const isBye = wA === BYE || wB === BYE;
-        const winner = isVoid ? BYE : wA === BYE ? wB : wB === BYE ? wA : null;
 
         const idx = list.findIndex((m) => m.id === target.id);
         if (idx >= 0) {
@@ -617,8 +663,9 @@ function resolveBracketPlaceholders(t: Tournament, matches: TournamentMatch[]): 
             ...list[idx],
             aPlayerId: wA,
             bPlayerId: wB,
-            status: isVoid ? "done" : isBye ? "done" : "pending",
-            winnerId: isVoid ? BYE : isBye ? winner : null,
+            // on laisse pending, sanitize() s’occupera des BYE
+            status: "pending",
+            winnerId: null,
             sessionId: null,
             startedAt: null,
             startedBy: null,
@@ -629,18 +676,7 @@ function resolveBracketPlaceholders(t: Tournament, matches: TournamentMatch[]): 
     }
   });
 
-  // safety auto-finish BYE
-  for (let i = 0; i < list.length; i++) {
-    const m = list[i];
-    if (m.status !== "pending") continue;
-
-    if (isByeId(m.aPlayerId) || isByeId(m.bPlayerId)) {
-      const winner = isByeId(m.aPlayerId) ? m.bPlayerId : m.aPlayerId;
-      list[i] = { ...m, status: "done", winnerId: winner || BYE, updatedAt: now() };
-    }
-  }
-
-  // ✅ PURGE: supprime définitivement les matchs BYE vs BYE
+  // ✅ purge safety (au cas où)
   return list.filter((m) => !isVoidByeMatch(m));
 }
 

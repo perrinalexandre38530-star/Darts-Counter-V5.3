@@ -29,6 +29,17 @@ const DB_VER = 1;
 const STORE_T = "tournaments";
 const STORE_M = "matchesByTournament";
 
+/* =============================================================
+ * ✅ Event: refresh UI quand tournois/matchs changent
+ * ============================================================= */
+export const TOURNAMENTS_UPDATED_EVENT = "dc_tournaments_updated";
+
+function notifyTournamentsUpdated() {
+  try {
+    window.dispatchEvent(new CustomEvent(TOURNAMENTS_UPDATED_EVENT));
+  } catch {}
+}
+
 /* ---------------------- IDB tiny wrapper ---------------------- */
 
 function openDB(): Promise<IDBDatabase> {
@@ -257,9 +268,12 @@ export function upsertTournamentLocal(tour: AnyObj) {
   if (idx >= 0) cacheTournaments[idx] = t;
   else cacheTournaments.unshift(t);
 
-  void idbPut(STORE_T, t).catch((e) =>
-    console.error("[tournaments] idbPut tournament failed:", e)
-  );
+  void idbPut(STORE_T, t)
+    .then(() => notifyTournamentsUpdated())
+    .catch((e) => console.error("[tournaments] idbPut tournament failed:", e));
+
+  // ✅ refresh immédiat (même si IDB est en async)
+  notifyTournamentsUpdated();
 
   return t;
 }
@@ -279,6 +293,9 @@ export function deleteTournamentLocal(tournamentId: string) {
   void idbDelete(STORE_M, tid).catch((e) =>
     console.error("[tournaments] idbDelete matches failed:", e)
   );
+
+  // ✅ refresh UI
+  notifyTournamentsUpdated();
 }
 
 /**
@@ -300,6 +317,9 @@ export function listMatchesForTournamentLocal(tournamentId: string): AnyObj[] {
       const rec = await idbGet(STORE_M, tid);
       const matches = Array.isArray(rec?.matches) ? rec.matches : [];
       cacheMatchesByTid[tid] = matches;
+
+      // ✅ si on vient de loader des matches, on peut refresh les vues dépendantes
+      notifyTournamentsUpdated();
     } catch (e) {
       console.error("[tournaments] load matches failed:", e);
       cacheMatchesByTid[tid] = [];
@@ -321,9 +341,12 @@ export function saveMatchesForTournamentLocal(tournamentId: string, matches: Any
   const list = Array.isArray(matches) ? matches : [];
   cacheMatchesByTid[tid] = list;
 
-  void idbPut(STORE_M, { id: tid, matches: list }).catch((e) =>
-    console.error("[tournaments] idbPut matches failed:", e)
-  );
+  void idbPut(STORE_M, { id: tid, matches: list })
+    .then(() => notifyTournamentsUpdated())
+    .catch((e) => console.error("[tournaments] idbPut matches failed:", e));
+
+  // ✅ refresh immédiat
+  notifyTournamentsUpdated();
 }
 
 /**

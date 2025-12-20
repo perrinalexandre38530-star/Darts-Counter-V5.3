@@ -9,7 +9,9 @@
 // ✅ FIX CRASH: matches peut être undefined -> safeMatches partout
 // ✅ FIX UI: BYE/TBD ne doivent JAMAIS apparaître comme "jouables"
 // ✅ FIX UI: BYE vs BYE ne doit jamais être affiché (purge visuelle)
+// ✅ FIX UI: TBD vs TBD (placeholders) ne doit jamais être affiché (purge visuelle)
 // ✅ FIX STORELOCAL: bons noms list/upsert
+// ✅ BONUS: bouton "LANCER LE PROCHAIN MATCH" (auto)
 // ============================================
 
 import React from "react";
@@ -17,7 +19,7 @@ import type { Store } from "../lib/types";
 
 import type { Tournament, TournamentMatch } from "../lib/tournaments/types";
 
-import { startMatch, submitResult } from "../lib/tournaments/engine";
+import { startMatch, submitResult, getPlayableMatches } from "../lib/tournaments/engine";
 
 import {
   getTournamentLocal,
@@ -46,6 +48,23 @@ function isTbdId(x: any) {
 function isVoidByeMatch(m: any) {
   return isByeId(m?.aPlayerId) && isByeId(m?.bPlayerId);
 }
+function isVoidTbdMatch(m: any) {
+  return isTbdId(m?.aPlayerId) && isTbdId(m?.bPlayerId);
+}
+
+/** ✅ match "fantôme" qu'on ne veut JAMAIS afficher */
+function isGhostMatch(m: any) {
+  if (!m) return true;
+  if (isVoidByeMatch(m)) return true;
+  if (isVoidTbdMatch(m)) return true;
+  // safety: si pas de joueurs
+  const a = String(m?.aPlayerId || "");
+  const b = String(m?.bPlayerId || "");
+  if (!a && !b) return true;
+  return false;
+}
+
+/** ✅ jouable UI (mais on utilise surtout getPlayableMatches) */
 function isRealPlayable(m: any) {
   if (!m) return false;
   if (String(m.status || "") !== "pending") return false;
@@ -53,15 +72,10 @@ function isRealPlayable(m: any) {
   if (isTbdId(m.aPlayerId) || isTbdId(m.bPlayerId)) return false;
   if (isByeId(m.aPlayerId) || isByeId(m.bPlayerId)) return false;
   if (isVoidByeMatch(m)) return false;
+  if (isVoidTbdMatch(m)) return false;
   return true;
 }
 
-function cx(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
-
-_toggle: {
-}
 function formatDate(ts?: number) {
   if (!ts) return "";
   try {
@@ -294,6 +308,7 @@ function scoreText(m: any) {
 function matchLabel(m: any) {
   if (m?.groupId) return `Poule`;
   if (typeof m?.round === "number") return `Round ${m.round}`;
+  if (typeof m?.roundIndex === "number") return `Round ${m.roundIndex + 1}`;
   return "Match";
 }
 
@@ -314,25 +329,29 @@ function BracketOverview({
   onStart: (id: string) => void;
   onOpenResult: (m: any) => void;
 }) {
-  // only KO-like (no group matches)
   const koMatches = (Array.isArray(matches) ? matches : [])
-    .filter((m) => !m?.groupId)
-    // ✅ purge visuelle : jamais BYE vs BYE
-    .filter((m) => !isVoidByeMatch(m));
+    .filter((m) => !m?.groupId && !m?.groupIndex)
+    .filter((m) => !isGhostMatch(m)); // ✅ purge visuelle
 
   const rounds = Array.from(
-    new Set(koMatches.map((m) => (typeof m?.round === "number" ? m.round : 1)))
+    new Set(
+      koMatches.map((m) => {
+        if (typeof m?.round === "number") return m.round;
+        if (typeof m?.roundIndex === "number") return m.roundIndex + 1;
+        return 1;
+      })
+    )
   ).sort((a: number, b: number) => a - b);
 
   const byRound: Record<number, any[]> = {};
   for (const r of rounds) byRound[r] = [];
   for (const m of koMatches) {
-    const r = typeof m?.round === "number" ? m.round : 1;
+    const r = typeof m?.round === "number" ? m.round : typeof m?.roundIndex === "number" ? m.roundIndex + 1 : 1;
     if (!byRound[r]) byRound[r] = [];
     byRound[r].push(m);
   }
   for (const r of Object.keys(byRound)) {
-    byRound[Number(r)].sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
+    byRound[Number(r)].sort((a, b) => (a?.orderIndex ?? a?.order ?? 0) - (b?.orderIndex ?? b?.order ?? 0));
   }
 
   const formatType = tournament?.format?.type || "";
@@ -411,9 +430,17 @@ function BracketOverview({
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                         <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
-                          <PlayerPill name={a?.name || (isByeId(m?.aPlayerId) ? "BYE" : "TBD")} avatarUrl={a?.avatar} dim={!m?.aPlayerId} />
+                          <PlayerPill
+                            name={a?.name || (isByeId(m?.aPlayerId) ? "BYE" : isTbdId(m?.aPlayerId) ? "TBD" : "Joueur")}
+                            avatarUrl={a?.avatar}
+                            dim={!m?.aPlayerId || isTbdId(m?.aPlayerId) || isByeId(m?.aPlayerId)}
+                          />
                           <div style={{ height: 1, background: "rgba(255,255,255,0.06)" }} />
-                          <PlayerPill name={b?.name || (isByeId(m?.bPlayerId) ? "BYE" : "TBD")} avatarUrl={b?.avatar} dim={!m?.bPlayerId} />
+                          <PlayerPill
+                            name={b?.name || (isByeId(m?.bPlayerId) ? "BYE" : isTbdId(m?.bPlayerId) ? "TBD" : "Joueur")}
+                            avatarUrl={b?.avatar}
+                            dim={!m?.bPlayerId || isTbdId(m?.bPlayerId) || isByeId(m?.bPlayerId)}
+                          />
                         </div>
 
                         <div style={{ display: "grid", justifyItems: "end", gap: 8 }}>
@@ -500,9 +527,7 @@ function MatchDetailsList({
   accent: string;
   icon?: React.ReactNode;
 }) {
-  const safe = (Array.isArray(matches) ? matches : [])
-    // ✅ purge visuelle : jamais BYE vs BYE
-    .filter((m) => !isVoidByeMatch(m));
+  const safe = (Array.isArray(matches) ? matches : []).filter((m) => !isGhostMatch(m));
 
   return (
     <Card
@@ -615,18 +640,18 @@ function MatchDetailsList({
                     }}
                   >
                     <PlayerPill
-                      name={a?.name || (isByeId(m?.aPlayerId) ? "BYE" : "TBD")}
+                      name={a?.name || (isByeId(m?.aPlayerId) ? "BYE" : isTbdId(m?.aPlayerId) ? "TBD" : "Joueur")}
                       avatarUrl={a?.avatar}
-                      dim={!m?.aPlayerId}
+                      dim={!m?.aPlayerId || isByeId(m?.aPlayerId) || isTbdId(m?.aPlayerId)}
                     />
                     <div style={{ fontWeight: 950, fontSize: 13, opacity: 0.9 }}>
                       {done ? scoreText(m) : "VS"}
                     </div>
                     <div style={{ display: "flex", justifyContent: "flex-end", minWidth: 0 }}>
                       <PlayerPill
-                        name={b?.name || (isByeId(m?.bPlayerId) ? "BYE" : "TBD")}
+                        name={b?.name || (isByeId(m?.bPlayerId) ? "BYE" : isTbdId(m?.bPlayerId) ? "TBD" : "Joueur")}
                         avatarUrl={b?.avatar}
-                        dim={!m?.bPlayerId}
+                        dim={!m?.bPlayerId || isByeId(m?.bPlayerId) || isTbdId(m?.bPlayerId)}
                       />
                     </div>
                   </div>
@@ -718,8 +743,7 @@ function GroupsCarousel({
   onStart: (id: string) => void;
   onOpenResult: (m: any) => void;
 }) {
-  const safeMatches = (Array.isArray(matches) ? matches : [])
-    .filter((m) => !isVoidByeMatch(m)); // ✅
+  const safeMatches = (Array.isArray(matches) ? matches : []).filter((m) => !isGhostMatch(m));
 
   const groups = Array.isArray(tournament?.groups) ? tournament.groups : [];
 
@@ -833,8 +857,7 @@ function GroupsCarousel({
                           </div>
 
                           <div style={{ textAlign: "right", fontSize: 11.5, opacity: 0.9 }}>
-                            <b style={{ color: "#7fe2a9" }}>{r.points}</b> pts • {r.wins}-{r.losses} • Δ{" "}
-                            {diff}
+                            <b style={{ color: "#7fe2a9" }}>{r.points}</b> pts • {r.wins}-{r.losses} • Δ {diff}
                           </div>
                         </div>
                       );
@@ -847,8 +870,7 @@ function GroupsCarousel({
                   <div style={{ display: "grid", gap: 8 }}>
                     {groupMatches
                       .slice()
-                      .sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0))
-                      .filter((m) => !isVoidByeMatch(m))
+                      .sort((a, b) => (a?.orderIndex ?? a?.order ?? 0) - (b?.orderIndex ?? b?.order ?? 0))
                       .map((m: any) => {
                         const a = m?.aPlayerId ? playersById[String(m.aPlayerId)] : null;
                         const b = m?.bPlayerId ? playersById[String(m.bPlayerId)] : null;
@@ -881,17 +903,17 @@ function GroupsCarousel({
                                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                                   <div style={{ minWidth: 0 }}>
                                     <PlayerPill
-                                      name={a?.name || (isByeId(m?.aPlayerId) ? "BYE" : "TBD")}
+                                      name={a?.name || (isByeId(m?.aPlayerId) ? "BYE" : isTbdId(m?.aPlayerId) ? "TBD" : "Joueur")}
                                       avatarUrl={a?.avatar}
-                                      dim={!m?.aPlayerId}
+                                      dim={!m?.aPlayerId || isByeId(m?.aPlayerId) || isTbdId(m?.aPlayerId)}
                                     />
                                   </div>
                                   <div style={{ fontWeight: 950, opacity: 0.85 }}>{done ? scoreText(m) : "VS"}</div>
                                   <div style={{ minWidth: 0, display: "flex", justifyContent: "flex-end" }}>
                                     <PlayerPill
-                                      name={b?.name || (isByeId(m?.bPlayerId) ? "BYE" : "TBD")}
+                                      name={b?.name || (isByeId(m?.bPlayerId) ? "BYE" : isTbdId(m?.bPlayerId) ? "TBD" : "Joueur")}
                                       avatarUrl={b?.avatar}
-                                      dim={!m?.bPlayerId}
+                                      dim={!m?.bPlayerId || isByeId(m?.bPlayerId) || isTbdId(m?.bPlayerId)}
                                     />
                                   </div>
                                 </div>
@@ -949,18 +971,17 @@ function GroupsCarousel({
 
 export default function TournamentView({ store, go, id }: Props) {
   const [tour, setTour] = React.useState<Tournament | null>(null);
-  const [matches, setMatches] = React.useState<TournamentMatch[]>([]);
+  const [matches, setMatches] = React.useState<TournamentMatch[] | any>([]);
   const [loading, setLoading] = React.useState(true);
 
-  // ✅ FIX: matches peut être undefined -> on normalise
   const safeMatches: TournamentMatch[] = React.useMemo(
     () => (Array.isArray(matches) ? matches : []),
     [matches]
   );
 
-  // ✅ purge UI globale : jamais BYE vs BYE
+  // ✅ Visible (purge UI) : pas de BYE/BYE, pas de TBD/TBD
   const visibleMatches: TournamentMatch[] = React.useMemo(
-    () => safeMatches.filter((m: any) => !isVoidByeMatch(m)),
+    () => safeMatches.filter((m: any) => !isGhostMatch(m)),
     [safeMatches]
   );
 
@@ -1009,25 +1030,35 @@ export default function TournamentView({ store, go, id }: Props) {
     return out;
   }, [tour]);
 
-  const { playableMatches, runningMatches, doneMatches } = React.useMemo(() => {
-    const playable = visibleMatches.filter((m: any) => isRealPlayable(m));
-    const running = visibleMatches.filter((m: any) => {
+  // ✅ PLAYABLE = source de vérité moteur (filtre BYE/TBD et status)
+  const playableMatches = React.useMemo(() => {
+    if (!tour) return [] as any[];
+    const p = getPlayableMatches(tour as any, safeMatches as any) as any[];
+    // tri stable: orderIndex puis createdAt
+    return p
+      .slice()
+      .sort(
+        (a, b) =>
+          (a?.orderIndex ?? a?.order ?? 0) - (b?.orderIndex ?? b?.order ?? 0) ||
+          (a?.createdAt ?? 0) - (b?.createdAt ?? 0)
+      );
+  }, [tour, safeMatches]);
+
+  const runningMatches = React.useMemo(() => {
+    return visibleMatches.filter((m: any) => {
       const st = String(m?.status || "");
       return st === "running" || st === "playing";
-    });
-    const done = visibleMatches.filter((m: any) => String(m?.status || "") === "done");
+    }) as any[];
+  }, [visibleMatches]);
 
-    return {
-      playableMatches: playable as any[],
-      runningMatches: running as any[],
-      doneMatches: done as any[],
-    };
+  const doneMatches = React.useMemo(() => {
+    return visibleMatches.filter((m: any) => String(m?.status || "") === "done") as any[];
   }, [visibleMatches]);
 
   const hasGroups = React.useMemo(() => {
     if ((tour as any)?.format?.type === "groups_ko") return true;
     if (Array.isArray((tour as any)?.groups) && (tour as any).groups.length) return true;
-    return visibleMatches.some((m: any) => !!m?.groupId);
+    return visibleMatches.some((m: any) => !!m?.groupId || !!m?.groupIndex);
   }, [tour, visibleMatches]);
 
   const statusCounts = React.useMemo(() => {
@@ -1077,6 +1108,42 @@ export default function TournamentView({ store, go, id }: Props) {
     [tour, safeMatches, persist, go]
   );
 
+  // ✅ AUTO: lance automatiquement le prochain match jouable (si existe)
+  const onAutoNextMatch = React.useCallback(async () => {
+    if (!tour) return;
+
+    try {
+      const playable = getPlayableMatches(tour as any, safeMatches as any) as any[];
+      if (!playable.length) return;
+
+      const sorted = playable
+        .slice()
+        .sort(
+          (a, b) =>
+            (a?.orderIndex ?? a?.order ?? 0) - (b?.orderIndex ?? b?.order ?? 0) ||
+            (a?.createdAt ?? 0) - (b?.createdAt ?? 0)
+        );
+
+      const next = sorted[0];
+      if (!next?.id) return;
+
+      const r = startMatch({
+        tournament: tour as any,
+        matches: safeMatches as any,
+        matchId: next.id,
+      });
+
+      await persist(r.tournament as any, r.matches as any);
+
+      go("tournament_match_play", {
+        tournamentId: (tour as any).id,
+        matchId: next.id,
+      });
+    } catch (e) {
+      console.error("[TournamentView] AUTO start error:", e);
+    }
+  }, [tour, safeMatches, persist, go]);
+
   const onOpenResult = React.useCallback((m: any) => setResultMatch(m), []);
 
   const allMatchesSorted = React.useMemo(() => {
@@ -1088,15 +1155,15 @@ export default function TournamentView({ store, go, id }: Props) {
       const rb = statusRank[String(b?.status || "")] ?? 9;
       if (ra !== rb) return ra - rb;
 
-      const ga = a?.groupId ? 1 : 0;
-      const gb = b?.groupId ? 1 : 0;
+      const ga = a?.groupId || a?.groupIndex != null ? 1 : 0;
+      const gb = b?.groupId || b?.groupIndex != null ? 1 : 0;
       if (ga !== gb) return ga - gb;
 
-      const r1 = a?.round ?? 999;
-      const r2 = b?.round ?? 999;
+      const r1 = a?.round ?? (typeof a?.roundIndex === "number" ? a.roundIndex + 1 : 999);
+      const r2 = b?.round ?? (typeof b?.roundIndex === "number" ? b.roundIndex + 1 : 999);
       if (r1 !== r2) return r1 - r2;
 
-      return (a?.order ?? 0) - (b?.order ?? 0);
+      return (a?.orderIndex ?? a?.order ?? 0) - (b?.orderIndex ?? b?.order ?? 0);
     });
 
     return arr;
@@ -1160,59 +1227,77 @@ export default function TournamentView({ store, go, id }: Props) {
                 badge={<MiniBadge label="À jouer" value={playableMatches.length} accent="#ffcf57" />}
               >
                 {playableMatches.length ? (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {playableMatches.slice(0, 6).map((m: any) => (
-                      <div
-                        key={m.id}
-                        style={{
-                          borderRadius: 16,
-                          border: "1px solid rgba(255,255,255,0.10)",
-                          background: "linear-gradient(180deg, rgba(0,0,0,0.35), rgba(255,255,255,0.03))",
-                          padding: 12,
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 10,
-                          alignItems: "center",
-                        }}
-                      >
-                        <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                            <PlayerPill
-                              name={playersById[String(m.aPlayerId)]?.name || "TBD"}
-                              avatarUrl={playersById[String(m.aPlayerId)]?.avatar}
-                              dim={!m?.aPlayerId}
-                            />
-                            <div style={{ fontWeight: 950, opacity: 0.8 }}>VS</div>
-                            <PlayerPill
-                              name={playersById[String(m.bPlayerId)]?.name || "TBD"}
-                              avatarUrl={playersById[String(m.bPlayerId)]?.avatar}
-                              dim={!m?.bPlayerId}
-                            />
-                          </div>
-                          <div style={{ fontSize: 11.5, opacity: 0.75 }}>
-                            {matchLabel(m)} • BO{m?.bestOf ?? "?"}
-                          </div>
-                        </div>
+                  <>
+                    <button
+                      type="button"
+                      onClick={onAutoNextMatch}
+                      style={{
+                        width: "100%",
+                        borderRadius: 14,
+                        padding: "10px 12px",
+                        border: "1px solid rgba(255,255,255,0.10)",
+                        background: "linear-gradient(180deg,#4fb4ff,#1c78d5)",
+                        color: "#0b1220",
+                        fontWeight: 950,
+                        cursor: "pointer",
+                        marginBottom: 10,
+                      }}
+                    >
+                      ▶ LANCER LE PROCHAIN MATCH
+                    </button>
 
-                        <button
-                          type="button"
-                          onClick={() => onStartMatch(m.id)}
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {playableMatches.slice(0, 6).map((m: any) => (
+                        <div
+                          key={m.id}
                           style={{
-                            borderRadius: 999,
-                            padding: "8px 12px",
-                            border: "none",
-                            fontWeight: 950,
-                            cursor: "pointer",
-                            background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
-                            color: "#120c06",
-                            whiteSpace: "nowrap",
+                            borderRadius: 16,
+                            border: "1px solid rgba(255,255,255,0.10)",
+                            background: "linear-gradient(180deg, rgba(0,0,0,0.35), rgba(255,255,255,0.03))",
+                            padding: 12,
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            alignItems: "center",
                           }}
                         >
-                          Jouer
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                          <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                              <PlayerPill
+                                name={playersById[String(m.aPlayerId)]?.name || "Joueur"}
+                                avatarUrl={playersById[String(m.aPlayerId)]?.avatar}
+                              />
+                              <div style={{ fontWeight: 950, opacity: 0.8 }}>VS</div>
+                              <PlayerPill
+                                name={playersById[String(m.bPlayerId)]?.name || "Joueur"}
+                                avatarUrl={playersById[String(m.bPlayerId)]?.avatar}
+                              />
+                            </div>
+                            <div style={{ fontSize: 11.5, opacity: 0.75 }}>
+                              {matchLabel(m)} • BO{m?.bestOf ?? "?"}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => onStartMatch(m.id)}
+                            style={{
+                              borderRadius: 999,
+                              padding: "8px 12px",
+                              border: "none",
+                              fontWeight: 950,
+                              cursor: "pointer",
+                              background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
+                              color: "#120c06",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Jouer
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 ) : null}
               </Card>
 

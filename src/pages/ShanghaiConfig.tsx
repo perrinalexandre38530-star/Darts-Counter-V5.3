@@ -6,6 +6,8 @@
 // ✅ Paramètres pills
 // ✅ Overlay InfoDot avec règles détaillées
 // ✅ CTA sticky bas "LANCER LA PARTIE"
+// ✅ NEW: Toggle BRUITAGES ON/OFF (comme X01Config) + persist store.settings.sfxEnabled
+// ✅ NEW: Toggle VOIX IA ON/OFF + persist store.settings.voiceEnabled
 // ============================================
 
 import React from "react";
@@ -13,6 +15,10 @@ import type { Store } from "../lib/types";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import InfoDot from "../components/InfoDot";
+
+// ✅ NEW
+import { setSfxEnabled } from "../lib/sfx";
+import { setVoiceEnabled } from "../lib/voice";
 
 type Props = {
   store: Store;
@@ -30,6 +36,10 @@ export type ShanghaiConfig = {
   players: PlayerLite[];
   maxRounds: number;
   winRule: "shanghai_or_points" | "points_only";
+
+  // ✅ NEW (compat: optionnel)
+  sfxEnabled?: boolean;
+  voiceEnabled?: boolean;
 };
 
 const LS_BOTS_KEY = "dc_bots_v1";
@@ -103,6 +113,25 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
 
   const [infoOpen, setInfoOpen] = React.useState(false);
 
+  // ✅ NEW: toggles (persist settings)
+  const [sfxEnabled, setSfx] = React.useState<boolean>(() => {
+    const v = (store as any)?.settings?.sfxEnabled;
+    return v !== false; // default ON
+  });
+  const [voiceEnabled, setVoice] = React.useState<boolean>(() => {
+    const v = (store as any)?.settings?.voiceEnabled;
+    return v !== false; // default ON
+  });
+
+  // ✅ Applique au montage (au cas où settings existent déjà)
+  React.useEffect(() => {
+    setSfxEnabled(sfxEnabled);
+  }, [sfxEnabled]);
+
+  React.useEffect(() => {
+    setVoiceEnabled(voiceEnabled);
+  }, [voiceEnabled]);
+
   const canStart = selectedIds.length >= 2;
 
   function toggle(id: string) {
@@ -115,6 +144,18 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
 
   function start() {
     if (!canStart) return;
+
+    // ✅ Apply toggles right before play
+    setSfxEnabled(sfxEnabled);
+    setVoiceEnabled(voiceEnabled);
+
+    // ✅ Persist in store.settings (safe)
+    (store as any).settings = {
+      ...((store as any).settings || {}),
+      sfxEnabled,
+      voiceEnabled,
+    };
+
     const players = allPlayers
       .filter((p) => selectedIds.includes(p.id))
       .map((p) => ({
@@ -128,6 +169,8 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
       players,
       maxRounds: clampRounds(maxRounds),
       winRule,
+      sfxEnabled,
+      voiceEnabled,
     };
 
     go("shanghai_play", { config });
@@ -160,7 +203,7 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
     padding: "6px 4px",
     cursor: "pointer",
     textAlign: "center" as const,
-    opacity: selected ? 1 : 0.42,           // ✅ grisé si non sélectionné
+    opacity: selected ? 1 : 0.42, // ✅ grisé si non sélectionné
     filter: selected ? "none" : "grayscale(1)",
     transition: "opacity 120ms ease",
   });
@@ -246,7 +289,7 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
             SHANGHAI
           </div>
 
-          {/* court résumé (ou supprime cette ligne si tu veux 0 texte) */}
+          {/* court résumé */}
           <div
             style={{
               marginTop: 6,
@@ -308,8 +351,7 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
                     {p.name}
                   </div>
 
-                  <div style={{ marginTop: 4, fontSize: 11, color: theme.textSoft, opacity: 0.9 }}>
-                  </div>
+                  <div style={{ marginTop: 4, fontSize: 11, color: theme.textSoft, opacity: 0.9 }} />
 
                   {sel ? <div style={okPill}>OK</div> : <div style={{ height: 26 }} />}
                 </div>
@@ -359,6 +401,45 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
               </div>
               <div onClick={() => setWinRule("points_only")} style={pill(winRule === "points_only")}>
                 {t("shanghai.settings.win2", "Points seulement")}
+              </div>
+            </div>
+          </div>
+
+          {/* ✅ NEW: Toggles SFX + VOICE (même style pills) */}
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 12.2, fontWeight: 900, color: theme.textSoft, marginBottom: 8 }}>
+              {t("common.audio", "Audio")}
+            </div>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div
+                onClick={() => {
+                  const v = !sfxEnabled;
+                  setSfx(v);
+                  setSfxEnabled(v);
+                  (store as any).settings = {
+                    ...((store as any).settings || {}),
+                    sfxEnabled: v,
+                  };
+                }}
+                style={pill(sfxEnabled)}
+              >
+                {t("common.sfx", "BRUITAGES")} : {sfxEnabled ? "ON" : "OFF"}
+              </div>
+
+              <div
+                onClick={() => {
+                  const v = !voiceEnabled;
+                  setVoice(v);
+                  setVoiceEnabled(v);
+                  (store as any).settings = {
+                    ...((store as any).settings || {}),
+                    voiceEnabled: v,
+                  };
+                }}
+                style={pill(voiceEnabled)}
+              >
+                {t("common.voice", "VOIX IA")} : {voiceEnabled ? "ON" : "OFF"}
               </div>
             </div>
           </div>
@@ -455,7 +536,7 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
                   <li>Simple sur la cible = <b>1×</b> le numéro du tour</li>
                   <li>Double sur la cible = <b>2×</b> le numéro du tour</li>
                   <li>Triple sur la cible = <b>3×</b> le numéro du tour</li>
-                  <li>Hors-cible = <b>0</b> (tu peux adapter plus tard si tu veux “points libres”)</li>
+                  <li>Hors-cible = <b>0</b></li>
                 </ul>
               </div>
 

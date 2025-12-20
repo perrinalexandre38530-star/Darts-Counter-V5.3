@@ -1,39 +1,122 @@
 // ============================================
 // src/lib/sfx.ts — Gestion centralisée des sons
+// SONS DE BASE servis depuis /public/sounds (Vite)
+// + Shanghai servis depuis src/assets/sounds (Vite import)
+// + Cache/pool Audio + unlock autoplay
 // ============================================
 
-// ⚠️ Adapte les chemins d’import à ton arborescence.
-// Place tes mp3 dans: src/assets/sounds/ (ou ajuste)
-import hit from "../assets/sounds/dart-hit.mp3";
-import bust from "../assets/sounds/bust.mp3";
-import s180 from "../assets/sounds/180.mp3";
-import dble from "../assets/sounds/double.mp3";
-import trpl from "../assets/sounds/triple.mp3";
-import bull from "../assets/sounds/bull.mp3";
-import dbull from "../assets/sounds/double-bull.mp3";
+let SFX_ENABLED = true;
 
-export const SFX = {
-  hit,
-  bust,
-  "180": s180,
-  dble,
-  trpl,
-  bull,
-  dbull,
+export function setSfxEnabled(v: boolean) {
+  SFX_ENABLED = !!v;
+}
+
+// ✅ Shanghai: fichiers DANS src/assets/sounds/
+import shanghaiIntroUrl from "../assets/sounds/shanghai.mp3";
+import shanghaiMissUrl from "../assets/sounds/shanghai-miss.mp3";
+
+// 🔊 URLs publiques (public/sounds) + URLs assets (import)
+const SFX = {
+  // Base (public/sounds)
+  hit: "/sounds/dart-hit.mp3",
+  bust: "/sounds/bust.mp3",
+  "180": "/sounds/180.mp3",
+  dble: "/sounds/double.mp3",
+  trpl: "/sounds/triple.mp3",
+  bull: "/sounds/bull.mp3",
+  dbull: "/sounds/double-bull.mp3",
+
+  // Shanghai (assets import)
+  shanghai: shanghaiIntroUrl,
+  shanghaiMiss: shanghaiMissUrl,
 } as const;
 
-function playSafe(url?: string) {
-  if (!url) return;
-  const a = new Audio(url);
-  a.play().catch(() => {}); // évite "uncaught (in promise)"
+type SfxKey = keyof typeof SFX;
+
+/**
+ * ✅ Petit pool Audio pour éviter le lag et permettre chevauchements légers.
+ * - On garde plusieurs instances par son
+ * - On recycle la première qui est libre, sinon on clone
+ */
+const POOL_MAX_PER_URL = 4;
+const pool = new Map<string, HTMLAudioElement[]>();
+
+function getFromPool(url: string) {
+  let list = pool.get(url);
+  if (!list) {
+    list = [];
+    pool.set(url, list);
+  }
+
+  // 1) si une instance est disponible (paused/ended), on la reprend
+  for (const a of list) {
+    if (a.paused || a.ended) return a;
+  }
+
+  // 2) sinon on clone si on peut
+  if (list.length < POOL_MAX_PER_URL) {
+    const a = new Audio(url);
+    a.preload = "auto";
+    a.volume = 0.9;
+    list.push(a);
+    return a;
+  }
+
+  // 3) sinon on recycle la première
+  return list[0];
+}
+
+/**
+ * ✅ IMPORTANT (autoplay mobile):
+ * appelle ça sur un vrai geste utilisateur (clic "LANCER LA PARTIE").
+ * Ça "débloque" souvent l'audio HTML5.
+ */
+export async function unlockAudio() {
+  if (!SFX_ENABLED) return;
+
+  try {
+    // On tente un play ultra court en muet, puis pause.
+    const url = SFX.hit; // un son garanti en public
+    const a = getFromPool(url);
+    a.muted = true;
+    a.currentTime = 0;
+
+    const p = a.play();
+    if (p && typeof (p as any).then === "function") {
+      await p;
+    }
+
+    a.pause();
+    a.currentTime = 0;
+    a.muted = false;
+  } catch {
+    // Si le navigateur refuse encore, pas grave : ça se débloquera au 1er vrai play après geste.
+  }
+}
+
+function playSafeUrl(url?: string) {
+  if (!url || !SFX_ENABLED) return;
+
+  try {
+    const a = getFromPool(url);
+    a.volume = 0.9;
+    a.currentTime = 0;
+
+    const p = a.play();
+    if (p && typeof (p as any).catch === "function") {
+      p.catch(() => {});
+    }
+  } catch {
+    // ignore
+  }
 }
 
 /** Joue un son par clé */
-export function playSfx(key: keyof typeof SFX) {
-  playSafe(SFX[key]);
+export function playSfx(key: SfxKey) {
+  playSafeUrl(SFX[key]);
 }
 
-/** Mappe une flèche vers un son contextuel */
+/** Son d'impact standard (TOUS MODES) */
 export function playThrowSound(dart: { mult: number; value: number }) {
   const { mult, value } = dart;
   if (value === 25 && mult === 2) return playSfx("dbull");
@@ -41,6 +124,25 @@ export function playThrowSound(dart: { mult: number; value: number }) {
   if (mult === 3) return playSfx("trpl");
   if (mult === 2) return playSfx("dble");
   return playSfx("hit");
+}
+
+/** Utilitaire safe depuis UIDart */
+export function playImpactFromDart(dart?: { mult?: number; value?: number } | null) {
+  if (!dart) return;
+  playThrowSound({
+    mult: Number(dart.mult ?? 1),
+    value: Number(dart.value ?? 0),
+  });
+}
+
+/** Son MISS (Shanghai uniquement) */
+export function playShanghaiMiss() {
+  playSfx("shanghaiMiss");
+}
+
+/** Son ambiance au début de Shanghai */
+export function playShanghaiIntro() {
+  playSfx("shanghai");
 }
 
 /** Son spécial 180 */

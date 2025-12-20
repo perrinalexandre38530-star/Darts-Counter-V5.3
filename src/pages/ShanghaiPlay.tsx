@@ -1,8 +1,13 @@
 // ============================================
 // src/pages/ShanghaiPlay.tsx
-// PATCH UI "Scores" :
-// ✅ Nom joueur plus petit
-// ✅ Chips de volée plus petites
+// FIN DE PARTIE + RESUME + SAVE HISTORY
+// ✅ Fin de match = écran résumé (winner + classement + raison)
+// ✅ Bouton "Sauvegarder & quitter" -> props.onFinish(match)
+// ✅ Stats center: match standard "history" (kind: shanghai, status: finished)
+// ✅ SFX: intro shanghai + miss dédié + impacts standards
+// ✅ VOIX IA: annonce joueur + annonce score fin de volée
+// ✅ FIX: intro music BEFORE voice (delay voice)
+// ✅ FIX: voice "jump" (avoid double announce on boot)
 // ============================================
 
 import React from "react";
@@ -13,6 +18,19 @@ import Keypad from "../components/Keypad";
 import type { Dart as UIDart } from "../lib/types";
 import ShanghaiLogo from "../assets/SHANGHAI.png";
 import TargetBg from "../assets/target_bg.png";
+
+// ✅ NEW: SFX + Voice
+import {
+  setSfxEnabled,
+  playImpactFromDart,
+  playShanghaiIntro,
+  playShanghaiMiss,
+} from "../lib/sfx";
+import {
+  setVoiceEnabled,
+  announceTurn,
+  announceVolleyScore,
+} from "../lib/voice";
 
 type PlayerLite = {
   id: string;
@@ -25,12 +43,19 @@ export type ShanghaiConfig = {
   players: PlayerLite[];
   maxRounds: number;
   winRule: "shanghai_or_points" | "points_only";
+
+  // ✅ optionnels (passés depuis config)
+  sfxEnabled?: boolean;
+  voiceEnabled?: boolean;
+
+  // ✅ optionnel : si ShanghaiConfig a déjà joué la musique via clic (autoplay OK)
+  introPlayed?: boolean;
 };
 
 type Props = {
   config?: ShanghaiConfig;
   params?: any;
-  onFinish?: (m: any) => void;
+  onFinish?: (m: any) => void; // -> doit pushHistory côté App.tsx
   onExit?: () => void;
 };
 
@@ -62,8 +87,21 @@ function fmtChip(d?: UIDart) {
   const v = d.v ?? 0;
   const m = d.mult ?? 1;
   if (v === 0) return "MISS";
+  if (v === 25) return m === 2 ? "DBULL" : "BULL";
   return `${m === 3 ? "T" : m === 2 ? "D" : "S"}${v}`;
 }
+
+type EndData = {
+  winnerId: string | null;
+  reason: "shanghai" | "points";
+  ranked: Array<{
+    id: string;
+    name: string;
+    avatarDataUrl?: string | null;
+    score: number;
+  }>;
+  createdAt: number;
+};
 
 export default function ShanghaiPlay(props: Props) {
   const { theme } = useTheme();
@@ -80,7 +118,8 @@ export default function ShanghaiPlay(props: Props) {
   }));
 
   const maxRounds = clampRounds(cfg?.maxRounds ?? 20);
-  const winRule: ShanghaiConfig["winRule"] = cfg?.winRule ?? "shanghai_or_points";
+  const winRule: ShanghaiConfig["winRule"] =
+    cfg?.winRule ?? "shanghai_or_points";
 
   const safePlayers = players.length
     ? players
@@ -98,16 +137,114 @@ export default function ShanghaiPlay(props: Props) {
     return m;
   });
 
-  const [lastThrowsById, setLastThrowsById] = React.useState<Record<string, UIDart[]>>(() => {
+  const [lastThrowsById, setLastThrowsById] = React.useState<
+    Record<string, UIDart[]>
+  >(() => {
     const m: Record<string, UIDart[]> = {};
     for (const p of safePlayers) m[p.id] = [];
     return m;
   });
 
   const [showInfo, setShowInfo] = React.useState(false);
+  const [endData, setEndData] = React.useState<EndData | null>(null);
 
   const target = round;
   const active = safePlayers[turn] || safePlayers[0];
+
+  // ✅ Resolve toggles (config > params.store.settings > default ON)
+  const sfxEnabled =
+    (cfg as any)?.sfxEnabled ??
+    ((props as any)?.params?.store?.settings?.sfxEnabled ?? true);
+
+  const voiceEnabled =
+    (cfg as any)?.voiceEnabled ??
+    ((props as any)?.params?.store?.settings?.voiceEnabled ?? true);
+
+  // ✅ Apply toggles + intro once
+  const didInitRef = React.useRef(false);
+
+  // ✅ prevent double-intro spam
+  const introPlayedRef = React.useRef<boolean>(!!(cfg as any)?.introPlayed);
+
+  // ✅ prevent "double announce" at boot (voice jump)
+  const prevTurnRef = React.useRef<string>("");
+
+  // ✅ delay voice for full intro duration (10s)
+  const INTRO_DELAY_MS = 10000;
+  const NEXT_TURN_DELAY_MS = 220;
+
+  // ✅ keep one pending voice timer (avoid overlaps / "jump")
+  const voiceTimerRef = React.useRef<number | null>(null);
+
+  // ✅ block any announce until this timestamp (boot intro)
+  const voiceBlockUntilRef = React.useRef<number>(0);
+
+  function scheduleAnnounce(name: string, delayMs: number) {
+    if (voiceTimerRef.current) {
+      window.clearTimeout(voiceTimerRef.current);
+      voiceTimerRef.current = null;
+    }
+    voiceTimerRef.current = window.setTimeout(() => {
+      announceTurn(name);
+    }, delayMs) as any;
+  }
+
+  React.useEffect(() => {
+    if (didInitRef.current) return;
+    didInitRef.current = true;
+
+    setSfxEnabled(sfxEnabled !== false);
+    setVoiceEnabled(voiceEnabled !== false);
+
+    // ✅ lock current key now (so the "turn change" effect won't re-announce immediately)
+    prevTurnRef.current = `${round}-${active?.id ?? ""}`;
+
+    // 🎵 intro : si pas déjà joué depuis Config, on tente ici (fallback)
+    // ⚠️ si autoplay est bloqué, ça ne jouera pas (d'où l'option introPlayed depuis config au clic)
+    if (!introPlayedRef.current && sfxEnabled !== false) {
+      try {
+        playShanghaiIntro();
+        introPlayedRef.current = true;
+      } catch {
+        // ignore
+      }
+    }
+
+    // ✅ block voice until end of intro
+    voiceBlockUntilRef.current = Date.now() + INTRO_DELAY_MS;
+
+    // 🗣️ annonce 1er joueur APRÈS l'intro (10s)
+    if (voiceEnabled !== false && active?.name) {
+      scheduleAnnounce(active.name, INTRO_DELAY_MS);
+    }
+
+    return () => {
+      if (voiceTimerRef.current) {
+        window.clearTimeout(voiceTimerRef.current);
+        voiceTimerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 🗣️ annonce à chaque changement de joueur (si pas fin de match)
+  React.useEffect(() => {
+    if (endData) return;
+
+    const key = `${round}-${active?.id ?? ""}`;
+    if (prevTurnRef.current === key) return;
+    prevTurnRef.current = key;
+
+    setSfxEnabled(sfxEnabled !== false);
+    setVoiceEnabled(voiceEnabled !== false);
+
+    // ✅ during intro window: do NOT announce (prevents "jump"/cut)
+    if (Date.now() < voiceBlockUntilRef.current) return;
+
+    if (voiceEnabled !== false && active?.name) {
+      scheduleAnnounce(active.name, NEXT_TURN_DELAY_MS);
+    }
+  }, [round, active?.id, endData, sfxEnabled, voiceEnabled, active?.name]);
 
   const thisTurnTotal = React.useMemo(
     () => shanghaiThrowTotal(target, currentThrow),
@@ -127,6 +264,16 @@ export default function ShanghaiPlay(props: Props) {
   function pushDart(d: UIDart) {
     setCurrentThrow((prev) => {
       if (prev.length >= 3) return prev;
+
+      // ✅ SFX au moment du throw
+      if (sfxEnabled !== false) {
+        if ((d?.v ?? 0) === 0) {
+          playShanghaiMiss();
+        } else {
+          playImpactFromDart({ value: d.v as any, mult: d.mult as any } as any);
+        }
+      }
+
       return [...prev, d];
     });
   }
@@ -136,8 +283,28 @@ export default function ShanghaiPlay(props: Props) {
     setMultiplier(1);
   }
 
-  function finishMatch(winnerId: string | null, reason: string) {
-    const now = Date.now();
+  function computeRanking(extra?: { pid: string; add: number }) {
+    const ranked = safePlayers
+      .map((p) => {
+        const base = scores[p.id] ?? 0;
+        const plus = extra && extra.pid === p.id ? extra.add : 0;
+        return {
+          id: p.id,
+          name: p.name,
+          avatarDataUrl: p.avatarDataUrl ?? null,
+          score: base + plus,
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    return ranked;
+  }
+
+  function buildMatchPayload(
+    winnerId: string | null,
+    reason: "shanghai" | "points",
+    createdAt: number
+  ) {
     const summary = {
       mode: "shanghai",
       winRule,
@@ -151,49 +318,43 @@ export default function ShanghaiPlay(props: Props) {
     };
 
     const match = {
-      id: `shanghai-${now}-${Math.random().toString(36).slice(2, 8)}`,
+      id: `shanghai-${createdAt}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
       kind: "shanghai",
       status: "finished",
-      createdAt: now,
-      updatedAt: now,
+      createdAt,
+      updatedAt: createdAt,
       players: safePlayers.map((p) => ({
         id: p.id,
         name: p.name,
         avatarDataUrl: p.avatarDataUrl ?? null,
+        isBot: !!(p as any).isBot,
       })),
       winnerId,
       summary,
-      payload: { config: cfg, summary },
+      payload: {
+        config: cfg,
+        summary,
+        lastThrowsById,
+      },
     };
 
-    props.onFinish?.(match);
+    return match;
   }
 
-  function goNextAfterValidate(pidForSafety: string, extraScoreForSafety: number) {
-    const nextTurn = turn + 1;
-
-    if (nextTurn < safePlayers.length) {
-      setTurn(nextTurn);
-      return;
-    }
-
-    if (round < maxRounds) {
-      setRound((r) => r + 1);
-      setTurn(0);
-      return;
-    }
-
-    const ranked = safePlayers
-      .map((p) => ({
-        id: p.id,
-        v: (scores[p.id] ?? 0) + (p.id === pidForSafety ? extraScoreForSafety : 0),
-      }))
-      .sort((a, b) => b.v - a.v);
-
-    finishMatch(ranked[0]?.id ?? null, "points");
+  function openEndScreen(
+    winnerId: string | null,
+    reason: "shanghai" | "points",
+    extra?: { pid: string; add: number }
+  ) {
+    const createdAt = Date.now();
+    const ranked = computeRanking(extra);
+    setEndData({ winnerId, reason, ranked, createdAt });
   }
 
   function validateTurn() {
+    if (endData) return;
     if (currentThrow.length !== 3) return;
 
     const pid = active.id;
@@ -202,8 +363,15 @@ export default function ShanghaiPlay(props: Props) {
     const add = shanghaiThrowTotal(target, snapshot);
     const isSh = isShanghaiOnTarget(target, snapshot);
 
+    // mémorise la volée du joueur
     setLastThrowsById((prev) => ({ ...prev, [pid]: snapshot }));
 
+    // 🗣️ annonce score volée (fin de volée)
+    if (voiceEnabled !== false) {
+      announceVolleyScore(active.name, add);
+    }
+
+    // met à jour le score
     setScores((prev) => {
       const next = { ...prev };
       next[pid] = (next[pid] ?? 0) + add;
@@ -212,12 +380,30 @@ export default function ShanghaiPlay(props: Props) {
 
     clearThrow();
 
+    // victoire instantanée ?
     if (winRule === "shanghai_or_points" && isSh) {
-      finishMatch(pid, "shanghai");
+      openEndScreen(pid, "shanghai", { pid, add });
       return;
     }
 
-    goNextAfterValidate(pid, add);
+    // joueur suivant
+    const nextTurn = turn + 1;
+
+    if (nextTurn < safePlayers.length) {
+      setTurn(nextTurn);
+      return;
+    }
+
+    // round suivant
+    if (round < maxRounds) {
+      setRound((r) => r + 1);
+      setTurn(0);
+      return;
+    }
+
+    // fin par points
+    const ranked = computeRanking({ pid, add });
+    openEndScreen(ranked[0]?.id ?? null, "points", { pid, add });
   }
 
   const cardShell: React.CSSProperties = {
@@ -241,7 +427,7 @@ export default function ShanghaiPlay(props: Props) {
     );
   }
 
-  // ✅ chips de volée (plus petites)
+  // chips petites (liste joueurs + preview)
   const renderThrowChips = (arr?: UIDart[]) => {
     const a = arr || [];
     const d0 = a[0];
@@ -253,36 +439,34 @@ export default function ShanghaiPlay(props: Props) {
       const v = d?.v ?? 0;
       const m = d?.mult ?? 1;
 
-      const txt = fmtChip(d);
-
       const accent =
         empty || v === 0
           ? "rgba(255,255,255,.18)"
           : m === 3
-            ? "rgba(251,113,133,.55)"
-            : m === 2
-              ? "rgba(52,211,153,.55)"
-              : `${theme.primary}88`;
+          ? "rgba(251,113,133,.55)"
+          : m === 2
+          ? "rgba(52,211,153,.55)"
+          : `${theme.primary}88`;
 
       return (
         <div
           key={idx ?? Math.random()}
           style={{
-            minWidth: 38,              // ✅ plus petit
+            minWidth: 38,
             textAlign: "center",
-            padding: "6px 8px",        // ✅ plus petit
-            borderRadius: 11,          // ✅ plus petit
+            padding: "6px 8px",
+            borderRadius: 11,
             border: `1px solid ${accent}`,
             background: "rgba(0,0,0,0.22)",
             color: theme.text,
             fontWeight: 950,
-            fontSize: 11.5,            // ✅ plus petit
+            fontSize: 11.5,
             letterSpacing: 0.2,
             boxShadow: empty ? "none" : `0 0 10px ${accent}`,
             lineHeight: 1.05,
           }}
         >
-          {txt}
+          {fmtChip(d)}
         </div>
       );
     };
@@ -295,6 +479,11 @@ export default function ShanghaiPlay(props: Props) {
       </div>
     );
   };
+
+  const winnerName =
+    endData?.winnerId
+      ? safePlayers.find((p) => p.id === endData.winnerId)?.name || "—"
+      : "—";
 
   return (
     <div
@@ -317,7 +506,14 @@ export default function ShanghaiPlay(props: Props) {
           background: theme.bg,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 10,
+          }}
+        >
           <button
             onClick={props.onExit}
             style={{
@@ -359,7 +555,14 @@ export default function ShanghaiPlay(props: Props) {
         </div>
 
         {/* ==== HEADER ==== */}
-        <div style={{ ...cardShell, width: "100%", maxWidth: 520, margin: "0 auto" }}>
+        <div
+          style={{
+            ...cardShell,
+            width: "100%",
+            maxWidth: 520,
+            margin: "0 auto",
+          }}
+        >
           <div
             style={{
               padding: 12,
@@ -384,7 +587,8 @@ export default function ShanghaiPlay(props: Props) {
                 style={{
                   borderRadius: 14,
                   border: `1px solid ${theme.primary}44`,
-                  background: "linear-gradient(180deg, rgba(0,0,0,.22), rgba(0,0,0,.34))",
+                  background:
+                    "linear-gradient(180deg, rgba(0,0,0,.22), rgba(0,0,0,.34))",
                   boxShadow: `0 0 18px ${theme.primary}22`,
                   padding: "8px 10px",
                   display: "grid",
@@ -392,7 +596,14 @@ export default function ShanghaiPlay(props: Props) {
                   minHeight: 44,
                 }}
               >
-                <div style={{ fontSize: 10.5, letterSpacing: 0.9, opacity: 0.85, textTransform: "uppercase" }}>
+                <div
+                  style={{
+                    fontSize: 10.5,
+                    letterSpacing: 0.9,
+                    opacity: 0.85,
+                    textTransform: "uppercase",
+                  }}
+                >
                   {t("shanghai.round", "Tour")}
                 </div>
                 <div
@@ -422,9 +633,21 @@ export default function ShanghaiPlay(props: Props) {
                 }}
               >
                 {active.avatarDataUrl ? (
-                  <img src={active.avatarDataUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <img
+                    src={active.avatarDataUrl}
+                    alt=""
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
                 ) : (
-                  <span style={{ opacity: 0.75, fontWeight: 950, fontSize: 22 }}>?</span>
+                  <span
+                    style={{ opacity: 0.75, fontWeight: 950, fontSize: 22 }}
+                  >
+                    ?
+                  </span>
                 )}
               </div>
             </div>
@@ -462,12 +685,19 @@ export default function ShanghaiPlay(props: Props) {
                     backgroundRepeat: "no-repeat",
                     backgroundPosition: "center",
                     backgroundSize: "cover",
-                    opacity: 0.30,
+                    opacity: 0.3,
                     filter: "saturate(1.12) contrast(1.05)",
                     pointerEvents: "none",
                   }}
                 />
-                <div aria-hidden style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.12)" }} />
+                <div
+                  aria-hidden
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background: "rgba(0,0,0,0.12)",
+                  }}
+                />
 
                 <div
                   style={{
@@ -476,7 +706,8 @@ export default function ShanghaiPlay(props: Props) {
                     borderRadius: 999,
                     display: "grid",
                     placeItems: "center",
-                    background: "linear-gradient(180deg, rgba(255,210,90,.22), rgba(0,0,0,.35))",
+                    background:
+                      "linear-gradient(180deg, rgba(255,210,90,.22), rgba(0,0,0,.35))",
                     border: `1px solid ${theme.primary}66`,
                     boxShadow: `0 0 24px ${theme.primary}33`,
                     position: "relative",
@@ -485,13 +716,26 @@ export default function ShanghaiPlay(props: Props) {
                   aria-label={`Cible ${target}`}
                   title={`Cible ${target}`}
                 >
-                  <div style={{ fontSize: 24, fontWeight: 1000, color: theme.primary, textShadow: `0 0 16px ${theme.primary}66` }}>
+                  <div
+                    style={{
+                      fontSize: 24,
+                      fontWeight: 1000,
+                      color: theme.primary,
+                      textShadow: `0 0 16px ${theme.primary}66`,
+                    }}
+                  >
                     {target}
                   </div>
                 </div>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  gap: 10,
+                }}
+              >
                 {renderThrowChips(currentThrow)}
               </div>
             </div>
@@ -530,8 +774,12 @@ export default function ShanghaiPlay(props: Props) {
                     style={{
                       padding: 10,
                       borderRadius: 16,
-                      border: `1px solid ${isActive ? theme.primary + "66" : theme.borderSoft}`,
-                      background: isActive ? `${theme.primary}12` : "rgba(0,0,0,0.18)",
+                      border: `1px solid ${
+                        isActive ? theme.primary + "66" : theme.borderSoft
+                      }`,
+                      background: isActive
+                        ? `${theme.primary}12`
+                        : "rgba(0,0,0,0.18)",
                       display: "flex",
                       alignItems: "center",
                       gap: 10,
@@ -551,18 +799,25 @@ export default function ShanghaiPlay(props: Props) {
                       }}
                     >
                       {p.avatarDataUrl ? (
-                        <img src={p.avatarDataUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <img
+                          src={p.avatarDataUrl}
+                          alt=""
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                          }}
+                        />
                       ) : (
                         <span style={{ opacity: 0.75, fontWeight: 900 }}>?</span>
                       )}
                     </div>
 
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      {/* ✅ nom plus petit */}
                       <div
                         style={{
                           fontWeight: 900,
-                          fontSize: 13.5, // ✅ plus petit
+                          fontSize: 13.5,
                           whiteSpace: "nowrap",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
@@ -573,7 +828,14 @@ export default function ShanghaiPlay(props: Props) {
                       </div>
 
                       {isActive ? (
-                        <div style={{ fontSize: 11.5, color: theme.primary, fontWeight: 900, marginTop: 2 }}>
+                        <div
+                          style={{
+                            fontSize: 11.5,
+                            color: theme.primary,
+                            fontWeight: 900,
+                            marginTop: 2,
+                          }}
+                        >
                           {t("common.active", "Actif")}
                         </div>
                       ) : (
@@ -581,9 +843,20 @@ export default function ShanghaiPlay(props: Props) {
                       )}
                     </div>
 
-                    <div style={{ flex: "0 0 auto" }}>{renderThrowChips(last)}</div>
+                    <div style={{ flex: "0 0 auto" }}>
+                      {renderThrowChips(last)}
+                    </div>
 
-                    <div style={{ fontWeight: 950, fontSize: 16, minWidth: 28, textAlign: "right" }}>{val}</div>
+                    <div
+                      style={{
+                        fontWeight: 950,
+                        fontSize: 16,
+                        minWidth: 28,
+                        textAlign: "right",
+                      }}
+                    >
+                      {val}
+                    </div>
                   </div>
                 );
               })}
@@ -602,8 +875,10 @@ export default function ShanghaiPlay(props: Props) {
           zIndex: 20,
           padding: 16,
           paddingBottom: 18,
-          background: "linear-gradient(180deg, rgba(0,0,0,0.00), rgba(0,0,0,0.55) 18%, rgba(0,0,0,0.82))",
+          background:
+            "linear-gradient(180deg, rgba(0,0,0,0.00), rgba(0,0,0,0.55) 18%, rgba(0,0,0,0.82))",
           backdropFilter: "blur(6px)",
+          pointerEvents: endData ? "none" : "auto",
         }}
       >
         <div style={{ width: "100%", maxWidth: 520, margin: "0 auto" }}>
@@ -622,17 +897,23 @@ export default function ShanghaiPlay(props: Props) {
               setMultiplier(1);
             }}
             onBull={() => {
-              pushDart({ v: 0, mult: 1 } as any);
+              // ✅ FIX: bull = 25 (pas MISS)
+              const mult = multiplier === 2 ? 2 : 1;
+              pushDart({ v: 25, mult } as any);
               setMultiplier(1);
             }}
-            onValidate={() => {
-              if (currentThrow.length !== 3) return;
-              validateTurn();
-            }}
+            onValidate={validateTurn}
             hidePreview={true}
           />
 
-          <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 10 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: 10,
+              marginTop: 10,
+            }}
+          >
             <div
               style={{
                 borderRadius: 999,
@@ -667,7 +948,182 @@ export default function ShanghaiPlay(props: Props) {
         </div>
       </div>
 
-      {/* ==== MODAL INFO ==== */}
+      {/* ============================= */}
+      {/*  FIN DE PARTIE — RESUME */}
+      {/* ============================= */}
+      {endData && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 80,
+            background: "rgba(0,0,0,0.72)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 520,
+              borderRadius: 18,
+              border: `1px solid ${theme.primary}55`,
+              background: theme.card,
+              boxShadow: `0 18px 44px rgba(0,0,0,.75)`,
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ padding: 16 }}>
+              <div
+                style={{
+                  fontSize: 16,
+                  fontWeight: 1000,
+                  color: theme.primary,
+                  textTransform: "uppercase",
+                  textShadow: `0 0 10px ${theme.primary}55`,
+                }}
+              >
+                {t("common.match_end", "Fin de partie")}
+              </div>
+
+              <div style={{ marginTop: 8, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <div
+                  style={{
+                    borderRadius: 999,
+                    padding: "8px 12px",
+                    border: `1px solid ${theme.borderSoft}`,
+                    background: "rgba(0,0,0,0.18)",
+                    fontWeight: 950,
+                    fontSize: 12.5,
+                  }}
+                >
+                  {t("shanghai.round", "Tour")} {round}/{maxRounds}
+                </div>
+
+                <div
+                  style={{
+                    borderRadius: 999,
+                    padding: "8px 12px",
+                    border: `1px solid ${theme.primary}66`,
+                    background: `${theme.primary}12`,
+                    color: theme.primary,
+                    fontWeight: 950,
+                    fontSize: 12.5,
+                    textShadow: `0 0 10px ${theme.primary}33`,
+                  }}
+                >
+                  {endData.reason === "shanghai" ? "💥 Victoire SHANGHAI" : "🏁 Victoire aux points"}
+                </div>
+              </div>
+
+              <div style={{ marginTop: 10, fontWeight: 950, fontSize: 14 }}>
+                🏆 {t("common.winner", "Gagnant")} :{" "}
+                <span style={{ color: theme.primary, textShadow: `0 0 10px ${theme.primary}33` }}>
+                  {winnerName}
+                </span>
+              </div>
+
+              <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                {endData.ranked.map((r, idx) => (
+                  <div
+                    key={r.id}
+                    style={{
+                      padding: 10,
+                      borderRadius: 16,
+                      border: `1px solid ${idx === 0 ? theme.primary + "66" : theme.borderSoft}`,
+                      background: idx === 0 ? `${theme.primary}12` : "rgba(0,0,0,0.18)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                    }}
+                  >
+                    <div style={{ width: 26, textAlign: "center", fontWeight: 1000, color: idx === 0 ? theme.primary : theme.textSoft }}>
+                      {idx + 1}
+                    </div>
+
+                    <div
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 999,
+                        overflow: "hidden",
+                        border: `1px solid ${theme.borderSoft}`,
+                        background: "rgba(255,255,255,0.06)",
+                        display: "grid",
+                        placeItems: "center",
+                        flex: "0 0 auto",
+                      }}
+                    >
+                      {r.avatarDataUrl ? (
+                        <img src={r.avatarDataUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        <span style={{ opacity: 0.75, fontWeight: 900 }}>?</span>
+                      )}
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: 0, fontWeight: 950, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {r.name}
+                    </div>
+
+                    <div style={{ fontWeight: 1000, fontSize: 16 }}>{r.score}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: 14,
+                borderTop: `1px solid ${theme.borderSoft}`,
+                display: "flex",
+                gap: 10,
+                justifyContent: "flex-end",
+                background: "rgba(0,0,0,0.18)",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => props.onExit?.()}
+                style={{
+                  borderRadius: 999,
+                  padding: "10px 14px",
+                  border: `1px solid ${theme.borderSoft}`,
+                  background: "rgba(0,0,0,0.22)",
+                  color: theme.text,
+                  fontWeight: 900,
+                  cursor: "pointer",
+                }}
+              >
+                {t("common.quit", "Quitter")}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const match = buildMatchPayload(endData.winnerId, endData.reason, endData.createdAt);
+                  props.onFinish?.(match);
+                }}
+                style={{
+                  borderRadius: 999,
+                  padding: "10px 14px",
+                  border: "none",
+                  background: theme.primary,
+                  color: "#000",
+                  fontWeight: 1000,
+                  cursor: "pointer",
+                  boxShadow: `0 12px 26px ${theme.primary}22`,
+                }}
+              >
+                {t("common.save_exit", "Sauvegarder & quitter")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==== MODAL INFO (règles) ==== */}
       {showInfo && (
         <div
           onClick={() => setShowInfo(false)}

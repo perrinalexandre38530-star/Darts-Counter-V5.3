@@ -8,10 +8,17 @@
 // - Barre filtre style pills (Tous / Brouillons / En cours / Terminés)
 // - Ticker défilant (cartes) style Home (fond image/gradient)
 // ✅ FIX NAV: clic carte => go("tournament_view", { id: t.id }) (id fiable)
+// ✅ FIX REFRESH: reload au mount + focus/visibility + event dc_tournaments_updated
 // ============================================
 
 import React from "react";
 import type { Store } from "../lib/types";
+
+// ✅ NEW: source de vérité local (IDB cache + event refresh)
+import {
+  listTournamentsLocal,
+  TOURNAMENTS_UPDATED_EVENT,
+} from "../lib/tournaments/storeLocal";
 
 type Props = {
   store: Store;
@@ -21,18 +28,6 @@ type Props = {
 };
 
 type FilterKey = "all" | "draft" | "running" | "done";
-
-/** --- Safe reader tournaments (compat si ta structure change) --- */
-function readTournaments(store: Store): any[] {
-  const anyStore: any = store as any;
-  // plusieurs noms possibles selon tes versions
-  return (
-    anyStore?.tournaments ||
-    anyStore?.tournamentsLocal ||
-    anyStore?.tournamentsList ||
-    []
-  );
-}
 
 function pillStyle(active: boolean, tint: string) {
   return {
@@ -92,25 +87,31 @@ function Card({
 }
 
 /** --- Mini ticker auto --- */
-function TickerRow() {
+function TickerRow({ go }: { go: (tab: any, params?: any) => void }) {
   const items = [
-    {
-      tag: "AUTO",
-      title: "Les tournois remontent automatiquement",
-      sub: "Dès qu’un match est joué ou repris.",
-      tone: "green" as const,
-    },
     {
       tag: "BRACKET",
       title: "Bracket KO + poules",
-      sub: "Vue claire + progression guidée (bientôt).",
+      sub: "Vue claire + progression guidée.",
       tone: "gold" as const,
+      cta: "Créer en mode BRACKET",
+      onClick: () => go("tournament_create", { mode: "bracket_ko_pools" }),
+    },
+    {
+      tag: "AUTO",
+      title: "Génération auto des matchs",
+      sub: "Tu choisis le format, l’app enchaîne.",
+      tone: "green" as const,
+      cta: "Créer en mode AUTO",
+      onClick: () => go("tournament_create", { mode: "auto" }),
     },
     {
       tag: "ROADMAP",
-      title: "À venir : export / partage",
-      sub: "Et reprise auto des matchs.",
+      title: "À venir : Bye intelligent, Swiss…",
+      sub: "Export / partage, double élimination, stats.",
       tone: "pink" as const,
+      cta: "Voir la roadmap",
+      onClick: () => go("tournament_roadmap"),
     },
   ];
 
@@ -136,6 +137,7 @@ function TickerRow() {
         {items.concat(items).map((it, idx) => (
           <div
             key={idx}
+            onClick={it.onClick}
             style={{
               minWidth: 240,
               maxWidth: 280,
@@ -149,7 +151,10 @@ function TickerRow() {
                   ? "radial-gradient(120% 140% at 0% 0%, rgba(255,79,216,.18), transparent 55%), linear-gradient(180deg, rgba(20,20,24,.92), rgba(10,10,12,.98))"
                   : "radial-gradient(120% 140% at 0% 0%, rgba(127,226,169,.16), transparent 55%), linear-gradient(180deg, rgba(20,20,24,.92), rgba(10,10,12,.98))",
               boxShadow: "0 14px 30px rgba(0,0,0,.55)",
+              cursor: "pointer",
+              userSelect: "none",
             }}
+            title={it.cta}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
               <span
@@ -180,6 +185,23 @@ function TickerRow() {
 
             <div style={{ fontWeight: 950, fontSize: 13 }}>{it.title}</div>
             <div style={{ opacity: 0.82, fontSize: 11.5, marginTop: 2 }}>{it.sub}</div>
+
+            <div style={{ marginTop: 10 }}>
+              <span
+                style={{
+                  display: "inline-block",
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  fontSize: 11.5,
+                  fontWeight: 950,
+                  border: "1px solid rgba(255,255,255,.12)",
+                  background: "rgba(0,0,0,.30)",
+                  color: "rgba(255,255,255,.92)",
+                }}
+              >
+                {it.cta} →
+              </span>
+            </div>
           </div>
         ))}
       </div>
@@ -202,7 +224,61 @@ function TickerRow() {
 export default function TournamentsHome({ store, go, source = "local" }: Props) {
   const [filter, setFilter] = React.useState<FilterKey>("all");
 
-  const tournaments = React.useMemo(() => readTournaments(store), [store]);
+  // ✅ NEW: liste “source de vérité” (IDB cache)
+  const [items, setItems] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(false);
+
+  const reload = React.useCallback(() => {
+    setLoading(true);
+    try {
+      // listTournamentsLocal est sync (cache mémoire), mais on le traite comme un reload
+      const list = listTournamentsLocal() || [];
+      setItems(Array.isArray(list) ? list : []);
+    } catch {
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ✅ FIX: reload au mount + event + focus + visibility
+  React.useEffect(() => {
+    reload();
+
+    const onUpdated = () => reload();
+    const onFocus = () => reload();
+    const onVis = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+
+    window.addEventListener(TOURNAMENTS_UPDATED_EVENT, onUpdated as any);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+
+    return () => {
+      window.removeEventListener(TOURNAMENTS_UPDATED_EVENT, onUpdated as any);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [reload]);
+
+  // compat: si un autre endroit continue à pousser store.tournaments, on merge sans casser
+  React.useEffect(() => {
+    // (Optionnel) si ton store contient déjà des tournois, on s’aligne
+    const anyStore: any = store as any;
+    const legacy =
+      anyStore?.tournaments ||
+      anyStore?.tournamentsLocal ||
+      anyStore?.tournamentsList ||
+      null;
+
+    if (Array.isArray(legacy) && legacy.length && (!items || items.length === 0)) {
+      setItems(legacy);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store]);
+
+  const tournaments = React.useMemo(() => items || [], [items]);
 
   const filtered = React.useMemo(() => {
     const list = Array.isArray(tournaments) ? tournaments : [];
@@ -210,10 +286,19 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
 
     const norm = (t: any): FilterKey => {
       const st = String(t?.status || "").toLowerCase();
-      if (st.includes("draft") || st.includes("brouillon")) return "draft";
-      if (st.includes("run") || st.includes("progress") || st.includes("en_cours") || st.includes("ongoing"))
+      if (st.includes("draft") || st.includes("brouillon") || st.includes("new") || st.includes("config"))
+        return "draft";
+      if (
+        st.includes("run") ||
+        st.includes("progress") ||
+        st.includes("en_cours") ||
+        st.includes("ongoing") ||
+        st.includes("active") ||
+        st.includes("playing")
+      )
         return "running";
-      if (st.includes("done") || st.includes("finish") || st.includes("term")) return "done";
+      if (st.includes("done") || st.includes("finish") || st.includes("term") || st.includes("end"))
+        return "done";
       return "draft";
     };
 
@@ -245,7 +330,9 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
           }}
         >
           <div style={{ fontSize: 12.5, opacity: 0.9 }}>
-            {tournaments?.length ? (
+            {loading ? (
+              <>Chargement…</>
+            ) : tournaments?.length ? (
               <>
                 <b>{tournaments.length}</b> tournoi{tournaments.length > 1 ? "s" : ""} enregistré
                 {tournaments.length > 1 ? "s" : ""}.
@@ -281,8 +368,8 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
           </button>
         </div>
 
-        {/* ticker */}
-        <TickerRow />
+        {/* ✅ ticker développé */}
+        <TickerRow go={go} />
       </Card>
 
       {/* FILTER BAR (style pills) */}
@@ -315,7 +402,9 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
             Terminés
           </button>
 
-          <div style={{ marginLeft: "auto", fontSize: 11.5, opacity: 0.75 }}>Tri : activité récente</div>
+          <div style={{ marginLeft: "auto", fontSize: 11.5, opacity: 0.75 }}>
+            {loading ? "Chargement…" : "Tri : activité récente"}
+          </div>
         </div>
       </div>
 
@@ -336,7 +425,11 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
           <div style={{ display: "grid", gap: 10 }}>
             {filtered
               .slice()
-              .sort((a: any, b: any) => Number(b?.updatedAt || b?.createdAt || 0) - Number(a?.updatedAt || a?.createdAt || 0))
+              .sort(
+                (a: any, b: any) =>
+                  Number(b?.updatedAt || b?.createdAt || 0) -
+                  Number(a?.updatedAt || a?.createdAt || 0)
+              )
               .map((t: any) => {
                 const id = String(t?.id || t?.tournamentId || t?.code || "");
                 const name = t?.name || "Tournoi";
