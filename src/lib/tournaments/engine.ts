@@ -5,6 +5,7 @@
 // ✅ Multi-match parallèle : pending / playing / done
 // ✅ Dépendances : SE round N jouable si joueurs connus
 // ✅ Pipeline: Poules/Qualifs -> Finale auto (génère stage suivant)
+// ✅ FIX: ne JAMAIS créer de match "__BYE__ vs __BYE__" + purge safety
 // ============================================
 
 import type {
@@ -39,6 +40,19 @@ function chunk<T>(arr: T[], chunks: number): T[][] {
   return out;
 }
 
+/** ✅ Helpers BYE/TBD */
+const BYE = "__BYE__";
+const TBD = "__TBD__";
+function isByeId(x: any) {
+  return String(x || "") === BYE;
+}
+function isTbdId(x: any) {
+  return String(x || "") === TBD;
+}
+function isVoidByeMatch(m: any) {
+  return isByeId(m?.aPlayerId) && isByeId(m?.bPlayerId);
+}
+
 // ------------------------------
 // Round Robin (méthode du cercle)
 // ------------------------------
@@ -47,7 +61,7 @@ function roundRobinPairs(playerIds: string[]): Array<[string, string]>[] {
   if (ids.length < 2) return [];
 
   const hasBye = ids.length % 2 === 1;
-  if (hasBye) ids.push("__BYE__");
+  if (hasBye) ids.push(BYE);
 
   const n = ids.length;
   const rounds: Array<[string, string]>[] = [];
@@ -58,7 +72,7 @@ function roundRobinPairs(playerIds: string[]): Array<[string, string]>[] {
     for (let i = 0; i < n / 2; i++) {
       const a = arr[i];
       const b = arr[n - 1 - i];
-      if (a !== "__BYE__" && b !== "__BYE__") pairs.push([a, b]);
+      if (a !== BYE && b !== BYE) pairs.push([a, b]);
     }
     rounds.push(pairs);
 
@@ -84,12 +98,16 @@ function nextPow2(n: number) {
 function bracketFirstRoundSeeding(ids: string[]): Array<[string, string]> {
   const n = nextPow2(ids.length);
   const padded = ids.slice();
-  while (padded.length < n) padded.push("__BYE__");
+  while (padded.length < n) padded.push(BYE);
 
   const pairs: Array<[string, string]> = [];
   for (let i = 0; i < n / 2; i++) {
     const a = padded[i];
     const b = padded[n - 1 - i];
+
+    // ✅ FIX: jamais de "__BYE__ vs __BYE__"
+    if (a === BYE && b === BYE) continue;
+
     pairs.push([a, b]);
   }
   return pairs;
@@ -176,7 +194,7 @@ export function buildInitialMatches(t: Tournament): TournamentMatch[] {
       stagePlayersByIndex[s + 1] = [];
     } else if (st.type === "single_elim") {
       if (!ids.length) {
-        // placeholders : on ne sait pas encore combien ? -> on génère au minimum un bracket "vide"
+        // placeholders
         matches.push({
           id: uid("m"),
           tournamentId: t.id,
@@ -184,8 +202,8 @@ export function buildInitialMatches(t: Tournament): TournamentMatch[] {
           groupIndex: 0,
           roundIndex: 0,
           orderIndex: order++,
-          aPlayerId: "__TBD__",
-          bPlayerId: "__TBD__",
+          aPlayerId: TBD,
+          bPlayerId: TBD,
           status: "pending",
           winnerId: null,
           sessionId: null,
@@ -215,6 +233,7 @@ export function buildInitialMatches(t: Tournament): TournamentMatch[] {
     }
   }
 
+  // ✅ resolve + purge bye/bye
   return resolveBracketPlaceholders(t, matches);
 }
 
@@ -228,23 +247,15 @@ export function getTournamentProgress(t: Tournament, matches: TournamentMatch[])
   return { total, done, playing, pending };
 }
 
-/**
- * ✅ FIX NULL-SAFE:
- * - Certains appels UI peuvent passer matches undefined (boot async / storeLocal)
- * - On garde le comportement historique: "jouables" = pending + joueurs connus (pas TBD/BYE)
- */
-export function getPlayableMatches(
-  t: Tournament,
-  matches?: TournamentMatch[] | null
-): TournamentMatch[] {
-  const safe = Array.isArray(matches) ? matches : [];
+export function getPlayableMatches(t: Tournament, matches: TournamentMatch[]): TournamentMatch[] {
   const tid = t.id;
-  const list = safe.filter((m) => m.tournamentId === tid);
+  const list = matches.filter((m) => m.tournamentId === tid);
 
   return list.filter((m) => {
     if (m.status !== "pending") return false;
-    if (m.aPlayerId === "__TBD__" || m.bPlayerId === "__TBD__") return false;
-    if (m.aPlayerId === "__BYE__" || m.bPlayerId === "__BYE__") return false;
+    if (isTbdId(m.aPlayerId) || isTbdId(m.bPlayerId)) return false;
+    if (isByeId(m.aPlayerId) || isByeId(m.bPlayerId)) return false;
+    if (isVoidByeMatch(m)) return false;
     return true;
   });
 }
@@ -259,7 +270,9 @@ export function startMatch(args: {
   if (!m) return { tournament: args.tournament, matches: args.matches };
 
   if (m.status !== "pending") return { tournament: args.tournament, matches: args.matches };
-  if (m.aPlayerId === "__TBD__" || m.bPlayerId === "__TBD__") return { tournament: args.tournament, matches: args.matches };
+  if (isTbdId(m.aPlayerId) || isTbdId(m.bPlayerId)) return { tournament: args.tournament, matches: args.matches };
+  if (isByeId(m.aPlayerId) || isByeId(m.bPlayerId)) return { tournament: args.tournament, matches: args.matches };
+  if (isVoidByeMatch(m)) return { tournament: args.tournament, matches: args.matches };
 
   const next = args.matches.map((x) => {
     if (x.id !== m.id) return x;
@@ -309,19 +322,17 @@ export function submitResult(args: {
   // 1) résout les brackets SE (TBD -> winners)
   nextMatches = resolveBracketPlaceholders(args.tournament, nextMatches);
 
-  // 2) applique le pipeline (RR terminé -> génère SE suivant)
+  // 2) pipeline
   const adv = applyPipelineAdvancement(args.tournament, nextMatches);
   const nextTournament = adv.tournament;
   nextMatches = adv.matches;
 
-  // 3) statut finished si tout est done
+  // 3) finished ?
   const prog = getTournamentProgress(nextTournament, nextMatches);
   const status =
-    prog.done === prog.total && prog.total > 0
-      ? "finished"
-      : nextTournament.status === "draft"
-      ? "running"
-      : nextTournament.status;
+    prog.done === prog.total && prog.total > 0 ? "finished"
+    : nextTournament.status === "draft" ? "running"
+    : nextTournament.status;
 
   return {
     tournament: { ...nextTournament, status, updatedAt: now() },
@@ -348,18 +359,28 @@ export function computeRRStandings(
   groupIndex: number
 ): RRStandingRow[] {
   const stageMatches = matches.filter(
-    (m) => m.tournamentId === t.id && m.stageIndex === stageIndex && m.groupIndex === groupIndex
+    (m) =>
+      m.tournamentId === t.id &&
+      m.stageIndex === stageIndex &&
+      m.groupIndex === groupIndex
   );
 
   const ids = new Set<string>();
   stageMatches.forEach((m) => {
-    if (m.aPlayerId && !m.aPlayerId.startsWith("__")) ids.add(m.aPlayerId);
-    if (m.bPlayerId && !m.bPlayerId.startsWith("__")) ids.add(m.bPlayerId);
+    if (m.aPlayerId && !String(m.aPlayerId).startsWith("__")) ids.add(m.aPlayerId);
+    if (m.bPlayerId && !String(m.bPlayerId).startsWith("__")) ids.add(m.bPlayerId);
   });
 
   const rows: Record<string, RRStandingRow> = {};
   ids.forEach((pid) => {
-    rows[pid] = { playerId: pid, played: 0, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 };
+    rows[pid] = {
+      playerId: pid,
+      played: 0,
+      wins: 0,
+      losses: 0,
+      pointsFor: 0,
+      pointsAgainst: 0,
+    };
   });
 
   stageMatches.forEach((m) => {
@@ -453,7 +474,9 @@ function regenerateSingleElimStage(
   playerIds: string[],
   randomSeeding: boolean
 ): TournamentMatch[] {
-  const startOrderIndex = matches.reduce((mx, m) => Math.max(mx, m.orderIndex ?? 0), 0) + 1;
+  const startOrderIndex =
+    matches.reduce((mx, m) => Math.max(mx, m.orderIndex ?? 0), 0) + 1;
+
   const ordered = randomSeeding ? shuffle(playerIds) : playerIds.slice();
 
   const newStageMatches = buildSingleElimMatches({
@@ -484,9 +507,13 @@ function buildSingleElimMatches(args: {
   const out: TournamentMatch[] = [];
   let order = args.startOrderIndex;
 
+  // round 0
   firstPairs.forEach(([a, b]) => {
-    const isBye = a === "__BYE__" || b === "__BYE__";
-    const winner = a === "__BYE__" ? b : b === "__BYE__" ? a : null;
+    // ✅ FIX: jamais BYE vs BYE
+    if (a === BYE && b === BYE) return;
+
+    const isBye = a === BYE || b === BYE;
+    const winner = a === BYE ? b : b === BYE ? a : null;
 
     out.push({
       id: uid("m"),
@@ -508,6 +535,7 @@ function buildSingleElimMatches(args: {
     });
   });
 
+  // rounds 1..k placeholders
   for (let r = 1; r < roundsCount; r++) {
     const count = n / Math.pow(2, r + 1);
     for (let i = 0; i < count; i++) {
@@ -518,8 +546,8 @@ function buildSingleElimMatches(args: {
         groupIndex: 0,
         roundIndex: r,
         orderIndex: order++,
-        aPlayerId: "__TBD__",
-        bPlayerId: "__TBD__",
+        aPlayerId: TBD,
+        bPlayerId: TBD,
         status: "pending",
         winnerId: null,
         sessionId: null,
@@ -546,7 +574,7 @@ function resolveBracketPlaceholders(t: Tournament, matches: TournamentMatch[]): 
 
     const stageMatches = list
       .filter((m) => m.tournamentId === t.id && m.stageIndex === sIdx)
-      .sort((a, b) => a.roundIndex - b.roundIndex || a.orderIndex - b.orderIndex);
+      .sort((a, b) => (a.roundIndex - b.roundIndex) || (a.orderIndex - b.orderIndex));
 
     if (stageMatches.length === 0) return;
 
@@ -563,22 +591,25 @@ function resolveBracketPlaceholders(t: Tournament, matches: TournamentMatch[]): 
       const next = rounds[roundIndices[r + 1]] || [];
       if (!curr.length || !next.length) continue;
 
-      const winners = curr.map((m) => (m.status === "done" ? m.winnerId || null : null));
+      const winners = curr.map((m) => (m.status === "done" ? (m.winnerId || null) : null));
 
       for (let i = 0; i < next.length; i++) {
-        const wA = winners[i * 2] || "__TBD__";
-        const wB = winners[i * 2 + 1] || "__TBD__";
+        const wA = winners[i * 2] || TBD;
+        const wB = winners[i * 2 + 1] || TBD;
 
         const target = next[i];
         const needUpdate =
           target.aPlayerId !== wA ||
           target.bPlayerId !== wB ||
-          (target.status === "done" && (wA === "__TBD__" || wB === "__TBD__"));
+          (target.status === "done" && (wA === TBD || wB === TBD));
 
         if (!needUpdate) continue;
 
-        const isBye = wA === "__BYE__" || wB === "__BYE__";
-        const winner = wA === "__BYE__" ? wB : wB === "__BYE__" ? wA : null;
+        // ✅ si BYE/BYE remonte, on le marque done + winner=BYE, puis purge à la fin
+        const isVoid = wA === BYE && wB === BYE;
+
+        const isBye = wA === BYE || wB === BYE;
+        const winner = isVoid ? BYE : wA === BYE ? wB : wB === BYE ? wA : null;
 
         const idx = list.findIndex((m) => m.id === target.id);
         if (idx >= 0) {
@@ -586,8 +617,8 @@ function resolveBracketPlaceholders(t: Tournament, matches: TournamentMatch[]): 
             ...list[idx],
             aPlayerId: wA,
             bPlayerId: wB,
-            status: isBye ? "done" : "pending",
-            winnerId: isBye ? winner : null,
+            status: isVoid ? "done" : isBye ? "done" : "pending",
+            winnerId: isVoid ? BYE : isBye ? winner : null,
             sessionId: null,
             startedAt: null,
             startedBy: null,
@@ -598,16 +629,19 @@ function resolveBracketPlaceholders(t: Tournament, matches: TournamentMatch[]): 
     }
   });
 
+  // safety auto-finish BYE
   for (let i = 0; i < list.length; i++) {
     const m = list[i];
     if (m.status !== "pending") continue;
-    if (m.aPlayerId === "__BYE__" || m.bPlayerId === "__BYE__") {
-      const winner = m.aPlayerId === "__BYE__" ? m.bPlayerId : m.aPlayerId;
-      list[i] = { ...m, status: "done", winnerId: winner, updatedAt: now() };
+
+    if (isByeId(m.aPlayerId) || isByeId(m.bPlayerId)) {
+      const winner = isByeId(m.aPlayerId) ? m.bPlayerId : m.aPlayerId;
+      list[i] = { ...m, status: "done", winnerId: winner || BYE, updatedAt: now() };
     }
   }
 
-  return list;
+  // ✅ PURGE: supprime définitivement les matchs BYE vs BYE
+  return list.filter((m) => !isVoidByeMatch(m));
 }
 
 function nameOf(t: Tournament, pid: string) {

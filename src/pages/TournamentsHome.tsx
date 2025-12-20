@@ -7,6 +7,7 @@
 // - Bouton "CREER TOURNOI" en 1 seule ligne, centré
 // - Barre filtre style pills (Tous / Brouillons / En cours / Terminés)
 // - Ticker défilant (cartes) style Home (fond image/gradient)
+// ✅ FIX NAV: clic carte => go("tournament_view", { id: t.id }) (id fiable)
 // ============================================
 
 import React from "react";
@@ -113,7 +114,6 @@ function TickerRow() {
     },
   ];
 
-  // animation simple (CSS inline)
   return (
     <div
       style={{
@@ -151,14 +151,7 @@ function TickerRow() {
               boxShadow: "0 14px 30px rgba(0,0,0,.55)",
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 6,
-              }}
-            >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
               <span
                 style={{
                   padding: "3px 10px",
@@ -185,12 +178,8 @@ function TickerRow() {
               </span>
             </div>
 
-            <div style={{ fontWeight: 950, fontSize: 13 }}>
-              {it.title}
-            </div>
-            <div style={{ opacity: 0.82, fontSize: 11.5, marginTop: 2 }}>
-              {it.sub}
-            </div>
+            <div style={{ fontWeight: 950, fontSize: 13 }}>{it.title}</div>
+            <div style={{ opacity: 0.82, fontSize: 11.5, marginTop: 2 }}>{it.sub}</div>
           </div>
         ))}
       </div>
@@ -237,9 +226,7 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
     <div className="container" style={{ padding: 16, paddingBottom: 96, color: "#f5f5f7" }}>
       {/* HEADER CARD */}
       <Card tone="gold">
-        <div style={{ fontWeight: 950, fontSize: 20, letterSpacing: 0.5 }}>
-          TOURNOIS
-        </div>
+        <div style={{ fontWeight: 950, fontSize: 20, letterSpacing: 0.5 }}>TOURNOIS</div>
         <div style={{ opacity: 0.82, fontSize: 12.5, marginTop: 4, lineHeight: 1.35 }}>
           Crée des tournois en local (poules, élimination…), et reprends-les facilement avec une vue claire.
         </div>
@@ -253,15 +240,15 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
             background: "rgba(0,0,0,.25)",
             padding: 12,
             display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
+            flexDirection: "column",
             gap: 10,
           }}
         >
           <div style={{ fontSize: 12.5, opacity: 0.9 }}>
             {tournaments?.length ? (
               <>
-                <b>{tournaments.length}</b> tournoi{tournaments.length > 1 ? "s" : ""} enregistré{tournaments.length > 1 ? "s" : ""}.
+                <b>{tournaments.length}</b> tournoi{tournaments.length > 1 ? "s" : ""} enregistré
+                {tournaments.length > 1 ? "s" : ""}.
               </>
             ) : (
               <>
@@ -272,10 +259,10 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
 
           {/* bouton créer tournoi : 1 ligne, centré */}
           <button
+            type="button"
             onClick={() => go("tournament_create")}
             style={{
               width: "100%",
-              marginTop: 10,
               borderRadius: 999,
               padding: "12px 14px",
               border: "none",
@@ -287,6 +274,7 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
               color: "#1b1508",
               boxShadow: "0 16px 30px rgba(0,0,0,.55)",
               cursor: "pointer",
+              whiteSpace: "nowrap",
             }}
           >
             CREER TOURNOI
@@ -299,9 +287,7 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
 
       {/* FILTER BAR (style pills) */}
       <div style={{ marginTop: 14 }}>
-        <div style={{ fontWeight: 900, fontSize: 12, opacity: 0.9, marginBottom: 8 }}>
-          Filtrer
-        </div>
+        <div style={{ fontWeight: 900, fontSize: 12, opacity: 0.9, marginBottom: 8 }}>Filtrer</div>
 
         <div
           style={{
@@ -329,23 +315,17 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
             Terminés
           </button>
 
-          <div style={{ marginLeft: "auto", fontSize: 11.5, opacity: 0.75 }}>
-            Tri : activité récente
-          </div>
+          <div style={{ marginLeft: "auto", fontSize: 11.5, opacity: 0.75 }}>Tri : activité récente</div>
         </div>
       </div>
 
       {/* LIST */}
       <div style={{ marginTop: 12 }}>
-        <div style={{ fontWeight: 900, fontSize: 12, opacity: 0.9, marginBottom: 8 }}>
-          Liste
-        </div>
+        <div style={{ fontWeight: 900, fontSize: 12, opacity: 0.9, marginBottom: 8 }}>Liste</div>
 
         {!hasAny ? (
           <Card tone="blue">
-            <div style={{ fontWeight: 950, fontSize: 16, color: "#4fb4ff" }}>
-              Aucun tournoi
-            </div>
+            <div style={{ fontWeight: 950, fontSize: 16, color: "#4fb4ff" }}>Aucun tournoi</div>
             <div style={{ opacity: 0.85, fontSize: 12.5, marginTop: 6, lineHeight: 1.35 }}>
               Crée ton premier tournoi : poules, matchs et progression seront rangés automatiquement.
               <br />
@@ -354,54 +334,71 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
           </Card>
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
-            {filtered.map((t: any) => {
-              const id = t?.id || t?.tournamentId || t?.code || Math.random().toString(36).slice(2);
-              const name = t?.name || "Tournoi";
-              const mode = String(t?.mode || t?.gameMode || "x01").toUpperCase();
-              const status = String(t?.status || "draft");
-              const updatedAt = Number(t?.updatedAt || t?.createdAt || Date.now());
+            {filtered
+              .slice()
+              .sort((a: any, b: any) => Number(b?.updatedAt || b?.createdAt || 0) - Number(a?.updatedAt || a?.createdAt || 0))
+              .map((t: any) => {
+                const id = String(t?.id || t?.tournamentId || t?.code || "");
+                const name = t?.name || "Tournoi";
+                const mode = String(t?.game?.mode || t?.mode || t?.gameMode || "x01").toUpperCase();
+                const status = String(t?.status || "draft");
+                const updatedAt = Number(t?.updatedAt || t?.createdAt || Date.now());
 
-              return (
-                <div
-                  key={id}
-                  onClick={() => go("tournament_view", { id })}
-                  style={{
-                    borderRadius: 18,
-                    padding: 14,
-                    background:
-                      "radial-gradient(120% 160% at 0% 0%, rgba(255,79,216,.10), transparent 55%), linear-gradient(180deg, rgba(18,18,26,.96), rgba(10,10,12,.98))",
-                    border: "1px solid rgba(255,255,255,.10)",
-                    boxShadow: "0 16px 40px rgba(0,0,0,.60)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 950, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {name}
+                return (
+                  <div
+                    key={id || name + String(updatedAt)}
+                    onClick={() => {
+                      // ✅ FIX NAV: toujours passer l'id sous la clé "id"
+                      if (id) go("tournament_view", { id });
+                    }}
+                    style={{
+                      borderRadius: 18,
+                      padding: 14,
+                      background:
+                        "radial-gradient(120% 160% at 0% 0%, rgba(255,79,216,.10), transparent 55%), linear-gradient(180deg, rgba(18,18,26,.96), rgba(10,10,12,.98))",
+                      border: "1px solid rgba(255,255,255,.10)",
+                      boxShadow: "0 16px 40px rgba(0,0,0,.60)",
+                      cursor: id ? "pointer" : "default",
+                      opacity: id ? 1 : 0.65,
+                    }}
+                    title={id ? "Ouvrir" : "ID manquant"}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontWeight: 950,
+                            fontSize: 14,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {name}
+                        </div>
+                        <div style={{ opacity: 0.78, fontSize: 11.5, marginTop: 2 }}>
+                          {mode} · {new Date(updatedAt).toLocaleString()}
+                        </div>
                       </div>
-                      <div style={{ opacity: 0.78, fontSize: 11.5, marginTop: 2 }}>
-                        {mode} · {new Date(updatedAt).toLocaleString()}
-                      </div>
+
+                      <span
+                        style={{
+                          padding: "5px 10px",
+                          borderRadius: 999,
+                          fontSize: 11,
+                          fontWeight: 950,
+                          border: "1px solid rgba(255,255,255,.12)",
+                          background: "rgba(0,0,0,.35)",
+                          color: "#ffd56a",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {status}
+                      </span>
                     </div>
-
-                    <span
-                      style={{
-                        padding: "5px 10px",
-                        borderRadius: 999,
-                        fontSize: 11,
-                        fontWeight: 950,
-                        border: "1px solid rgba(255,255,255,.12)",
-                        background: "rgba(0,0,0,.35)",
-                        color: "#ffd56a",
-                      }}
-                    >
-                      {status}
-                    </span>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         )}
       </div>
