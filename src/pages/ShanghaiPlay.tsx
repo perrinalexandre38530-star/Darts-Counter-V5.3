@@ -6,6 +6,7 @@
 // ✅ Keypad fixe en bas
 // ✅ End modal cliquable (zIndex/pointerEvents)
 // ✅ FIX MOBILE: avatar header = médaillon CERCLE (pas image plein bloc) + pas de fond blanc
+// ✅ FIX MOBILE SCROLL: zone joueurs = scroll plein écran derrière header+keypad (paddingTop/paddingBottom)
 // ============================================
 
 import React from "react";
@@ -165,7 +166,7 @@ export default function ShanghaiPlay(props: Props) {
 
   const didSaveRef = React.useRef(false);
 
-  // ✅ HEADER FIXE: on mesure sa hauteur pour caler la zone scroll dessous
+  // ✅ HEADER FIXE: on mesure sa hauteur pour caler le padding du scroll
   const headerRef = React.useRef<HTMLDivElement | null>(null);
   const [headerH, setHeaderH] = React.useState<number>(220); // fallback
   React.useEffect(() => {
@@ -606,7 +607,7 @@ export default function ShanghaiPlay(props: Props) {
                   </div>
                 </div>
 
-                {/* ✅ FIX MOBILE: avatar = médaillon cercle, pas image plein bloc */}
+                {/* ✅ FIX MOBILE: avatar = médaillon cercle (pas fond blanc / pas plein bloc) */}
                 <div
                   style={{
                     borderRadius: 16,
@@ -623,7 +624,7 @@ export default function ShanghaiPlay(props: Props) {
                       height: 92,
                       borderRadius: 999,
                       overflow: "hidden",
-                      background: "rgba(0,0,0,0.22)", // ✅ empêche le “blanc” derrière un PNG transparent
+                      background: "rgba(0,0,0,0.22)",
                       border: `1px solid ${theme.borderSoft}`,
                       boxShadow: `0 0 18px rgba(0,0,0,.35)`,
                       display: "grid",
@@ -644,13 +645,7 @@ export default function ShanghaiPlay(props: Props) {
                         }}
                       />
                     ) : (
-                      <span
-                        style={{
-                          opacity: 0.75,
-                          fontWeight: 950,
-                          fontSize: 22,
-                        }}
-                      >
+                      <span style={{ opacity: 0.75, fontWeight: 950, fontSize: 22 }}>
                         ?
                       </span>
                     )}
@@ -696,14 +691,7 @@ export default function ShanghaiPlay(props: Props) {
                       pointerEvents: "none",
                     }}
                   />
-                  <div
-                    aria-hidden
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      background: "rgba(0,0,0,0.10)",
-                    }}
-                  />
+                  <div aria-hidden style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.10)" }} />
 
                   <div
                     style={{
@@ -712,8 +700,7 @@ export default function ShanghaiPlay(props: Props) {
                       borderRadius: 999,
                       display: "grid",
                       placeItems: "center",
-                      background:
-                        "linear-gradient(180deg, rgba(255,210,90,.22), rgba(0,0,0,.35))",
+                      background: "linear-gradient(180deg, rgba(255,210,90,.22), rgba(0,0,0,.35))",
                       border: `1px solid ${theme.primary}66`,
                       boxShadow: `0 0 24px ${theme.primary}33`,
                       position: "relative",
@@ -722,22 +709,13 @@ export default function ShanghaiPlay(props: Props) {
                     aria-label={`Cible ${target}`}
                     title={`Cible ${target}`}
                   >
-                    <div
-                      style={{
-                        fontSize: 23,
-                        fontWeight: 1000,
-                        color: theme.primary,
-                        textShadow: `0 0 16px ${theme.primary}66`,
-                      }}
-                    >
+                    <div style={{ fontSize: 23, fontWeight: 1000, color: theme.primary, textShadow: `0 0 16px ${theme.primary}66` }}>
                       {target}
                     </div>
                   </div>
                 </div>
 
-                <div
-                  style={{ display: "flex", justifyContent: "center", gap: 10 }}
-                >
+                <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
                   {renderThrowChips(currentThrow)}
                 </div>
               </div>
@@ -748,35 +726,24 @@ export default function ShanghaiPlay(props: Props) {
 
       {/* ===================== */}
       {/* LISTE JOUEURS SCROLL */}
+      {/* ✅ FIX MOBILE: scroll plein écran derrière header + keypad */}
       {/* ===================== */}
       <div
         style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          top: headerH,
-          bottom: KEYPAD_H + 16,
-          overflow: "hidden",
-          padding: "0 16px",
+          position: "fixed",
+          inset: 0,
+          zIndex: 5, // < header (40) et < keypad (20)
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+          overscrollBehavior: "contain",
+          paddingTop: Math.max(0, headerH - 4), // ✅ rapproche la liste du header
+          paddingBottom: KEYPAD_H + 10, // ✅ scroll sous le keypad
+          paddingLeft: 16,
+          paddingRight: 16,
         }}
       >
-        <div
-          style={{
-            width: "100%",
-            maxWidth: 520,
-            margin: "0 auto",
-            height: "100%",
-          }}
-        >
-          <div
-            style={{
-              ...cardShell,
-              padding: 12,
-              height: "100%",
-              overflowY: "auto",
-              overscrollBehavior: "contain",
-            }}
-          >
+        <div style={{ width: "100%", maxWidth: 520, margin: "0 auto" }}>
+          <div style={{ ...cardShell, padding: 12 }}>
             <div style={{ display: "grid", gap: 10 }}>
               {safePlayers.map((p) => {
                 const isActive = p.id === active.id;
@@ -817,10 +784,12 @@ export default function ShanghaiPlay(props: Props) {
                         <img
                           src={p.avatarDataUrl}
                           alt=""
+                          draggable={false}
                           style={{
                             width: "100%",
                             height: "100%",
                             objectFit: "cover",
+                            display: "block",
                           }}
                         />
                       ) : (
@@ -858,9 +827,7 @@ export default function ShanghaiPlay(props: Props) {
                       )}
                     </div>
 
-                    <div style={{ flex: "0 0 auto" }}>
-                      {renderThrowChips(last)}
-                    </div>
+                    <div style={{ flex: "0 0 auto" }}>{renderThrowChips(last)}</div>
 
                     <div
                       style={{
@@ -922,14 +889,7 @@ export default function ShanghaiPlay(props: Props) {
             hidePreview={true}
           />
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              gap: 10,
-              marginTop: 10,
-            }}
-          >
+          <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 10 }}>
             <div
               style={{
                 borderRadius: 999,
@@ -944,9 +904,7 @@ export default function ShanghaiPlay(props: Props) {
               +{thisTurnTotal} pts
             </div>
 
-            {winRule === "shanghai_or_points" &&
-            shanghaiNow &&
-            currentThrow.length > 0 ? (
+            {winRule === "shanghai_or_points" && shanghaiNow && currentThrow.length > 0 ? (
               <div
                 style={{
                   borderRadius: 999,
@@ -1010,15 +968,7 @@ export default function ShanghaiPlay(props: Props) {
                 {t("common.match_end", "Fin de partie")}
               </div>
 
-              <div
-                style={{
-                  marginTop: 8,
-                  display: "flex",
-                  gap: 10,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
+              <div style={{ marginTop: 8, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                 <div
                   style={{
                     borderRadius: 999,
@@ -1044,20 +994,13 @@ export default function ShanghaiPlay(props: Props) {
                     textShadow: `0 0 10px ${theme.primary}33`,
                   }}
                 >
-                  {endData.reason === "shanghai"
-                    ? "💥 Victoire SHANGHAI"
-                    : "🏁 Victoire aux points"}
+                  {endData.reason === "shanghai" ? "💥 Victoire SHANGHAI" : "🏁 Victoire aux points"}
                 </div>
               </div>
 
               <div style={{ marginTop: 10, fontWeight: 950, fontSize: 14 }}>
                 🏆 {t("common.winner", "Gagnant")} :{" "}
-                <span
-                  style={{
-                    color: theme.primary,
-                    textShadow: `0 0 10px ${theme.primary}33`,
-                  }}
-                >
+                <span style={{ color: theme.primary, textShadow: `0 0 10px ${theme.primary}33` }}>
                   {winnerName}
                 </span>
               </div>
@@ -1069,24 +1012,14 @@ export default function ShanghaiPlay(props: Props) {
                     style={{
                       padding: 10,
                       borderRadius: 16,
-                      border: `1px solid ${
-                        idx === 0 ? theme.primary + "66" : theme.borderSoft
-                      }`,
-                      background:
-                        idx === 0 ? `${theme.primary}12` : "rgba(0,0,0,0.18)",
+                      border: `1px solid ${idx === 0 ? theme.primary + "66" : theme.borderSoft}`,
+                      background: idx === 0 ? `${theme.primary}12` : "rgba(0,0,0,0.18)",
                       display: "flex",
                       alignItems: "center",
                       gap: 10,
                     }}
                   >
-                    <div
-                      style={{
-                        width: 26,
-                        textAlign: "center",
-                        fontWeight: 1000,
-                        color: idx === 0 ? theme.primary : theme.textSoft,
-                      }}
-                    >
+                    <div style={{ width: 26, textAlign: "center", fontWeight: 1000, color: idx === 0 ? theme.primary : theme.textSoft }}>
                       {idx + 1}
                     </div>
 
@@ -1104,36 +1037,17 @@ export default function ShanghaiPlay(props: Props) {
                       }}
                     >
                       {r.avatarDataUrl ? (
-                        <img
-                          src={r.avatarDataUrl}
-                          alt=""
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                          }}
-                        />
+                        <img src={r.avatarDataUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       ) : (
                         <span style={{ opacity: 0.75, fontWeight: 900 }}>?</span>
                       )}
                     </div>
 
-                    <div
-                      style={{
-                        flex: 1,
-                        minWidth: 0,
-                        fontWeight: 950,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
+                    <div style={{ flex: 1, minWidth: 0, fontWeight: 950, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {r.name}
                     </div>
 
-                    <div style={{ fontWeight: 1000, fontSize: 16 }}>
-                      {r.score}
-                    </div>
+                    <div style={{ fontWeight: 1000, fontSize: 16 }}>{r.score}</div>
                   </div>
                 ))}
               </div>
@@ -1257,9 +1171,7 @@ export default function ShanghaiPlay(props: Props) {
               {t("shanghai.rules.title", "Règles Shanghai")}
             </div>
 
-            <div
-              style={{ fontSize: 13, lineHeight: 1.45, color: theme.textSoft }}
-            >
+            <div style={{ fontSize: 13, lineHeight: 1.45, color: theme.textSoft }}>
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 <li>
                   {t(

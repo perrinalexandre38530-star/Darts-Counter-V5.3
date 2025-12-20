@@ -9,6 +9,7 @@
 // - Ticker défilant (cartes) style Home (fond image/gradient)
 // ✅ FIX NAV: clic carte => go("tournament_view", { id: t.id }) (id fiable)
 // ✅ FIX REFRESH: reload au mount + focus/visibility + event dc_tournaments_updated
+// ✅ NEW TICKER: cartes UTILES + cliquables (Reprendre / AUTO / Brouillons / BRACKET / AUTO create / Roadmap)
 // ============================================
 
 import React from "react";
@@ -17,6 +18,7 @@ import type { Store } from "../lib/types";
 // ✅ NEW: source de vérité local (IDB cache + event refresh)
 import {
   listTournamentsLocal,
+  listMatchesForTournamentLocal,
   TOURNAMENTS_UPDATED_EVENT,
 } from "../lib/tournaments/storeLocal";
 
@@ -86,32 +88,275 @@ function Card({
   );
 }
 
-/** --- Mini ticker auto --- */
-function TickerRow({ go }: { go: (tab: any, params?: any) => void }) {
+/* =============================================================
+ * ✅ Ticker ACTIONS (cartes défilantes + cliquables)
+ * Objectif: pas du décor -> chaque carte amène vers une action.
+ * - Reprendre: ouvre le tournoi le plus pertinent
+ * - AUTO: ouvre le tournoi (et l’utilisateur lance depuis le bouton Résumé)
+ * - Brouillons: filtre Brouillons
+ * - BRACKET: ouvre création preset bracket
+ * - Créer AUTO: ouvre création preset auto
+ * - Roadmap: ouvre roadmap
+ * ============================================================= */
+
+function fmtDate(ts?: number) {
+  if (!ts) return "";
+  try {
+    const d = new Date(ts);
+    return d.toLocaleDateString() + " " + d.toLocaleTimeString().slice(0, 5);
+  } catch {
+    return "";
+  }
+}
+
+function isPlayableReal(m: any) {
+  // IMPORTANT: on ne compte pas BYE/TBD comme jouable
+  const st = String(m?.status || "");
+  if (st !== "pending") return false;
+  const a = String(m?.aPlayerId || "");
+  const b = String(m?.bPlayerId || "");
+  if (!a || !b) return false;
+  if (a === "__BYE__" || b === "__BYE__") return false;
+  if (a === "__TBD__" || b === "__TBD__") return false;
+  if (a === "__BYE__" && b === "__BYE__") return false;
+  return true;
+}
+
+function computeCountsForTournament(tid: string) {
+  const ms = listMatchesForTournamentLocal(tid) || [];
+  const visible = (Array.isArray(ms) ? ms : []).filter(
+    (m: any) => !(String(m?.aPlayerId) === "__BYE__" && String(m?.bPlayerId) === "__BYE__")
+  );
+
+  const pending = visible.filter((m: any) => String(m?.status || "") === "pending").length;
+  const running = visible.filter((m: any) => {
+    const s = String(m?.status || "");
+    return s === "running" || s === "playing";
+  }).length;
+  const done = visible.filter((m: any) => String(m?.status || "") === "done").length;
+  const playable = visible.filter((m: any) => isPlayableReal(m)).length;
+
+  return { pending, running, done, playable, total: visible.length };
+}
+
+function TickerCard({
+  tag,
+  title,
+  sub,
+  tone,
+  cta,
+  kpi,
+  onClick,
+  disabled,
+}: {
+  tag: string;
+  title: string;
+  sub?: string;
+  tone: "gold" | "pink" | "green" | "blue" | "dark" | "violet" | "white";
+  cta: string;
+  kpi?: string;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  const accent =
+    tone === "gold"
+      ? "#ffd56a"
+      : tone === "pink"
+      ? "#ff7fe2"
+      : tone === "green"
+      ? "#7fe2a9"
+      : tone === "blue"
+      ? "#4fb4ff"
+      : tone === "violet"
+      ? "#9b7bff"
+      : tone === "white"
+      ? "#ffffff"
+      : "rgba(255,255,255,0.92)";
+
+  const bg =
+    tone === "gold"
+      ? "radial-gradient(120% 140% at 0% 0%, rgba(255,195,26,.20), transparent 55%), linear-gradient(180deg, rgba(20,20,24,.92), rgba(10,10,12,.98))"
+      : tone === "pink"
+      ? "radial-gradient(120% 140% at 0% 0%, rgba(255,79,216,.18), transparent 55%), linear-gradient(180deg, rgba(20,20,24,.92), rgba(10,10,12,.98))"
+      : tone === "green"
+      ? "radial-gradient(120% 140% at 0% 0%, rgba(127,226,169,.16), transparent 55%), linear-gradient(180deg, rgba(20,20,24,.92), rgba(10,10,12,.98))"
+      : tone === "blue"
+      ? "radial-gradient(120% 140% at 0% 0%, rgba(79,180,255,.16), transparent 55%), linear-gradient(180deg, rgba(20,20,24,.92), rgba(10,10,12,.98))"
+      : tone === "violet"
+      ? "radial-gradient(120% 140% at 0% 0%, rgba(155,123,255,.16), transparent 55%), linear-gradient(180deg, rgba(20,20,24,.92), rgba(10,10,12,.98))"
+      : "linear-gradient(180deg, rgba(22,22,26,.92), rgba(10,10,12,.98))";
+
+  return (
+    <div
+      onClick={disabled ? undefined : onClick}
+      style={{
+        minWidth: 240,
+        maxWidth: 280,
+        borderRadius: 16,
+        padding: 12,
+        border: "1px solid rgba(255,255,255,.10)",
+        background: bg,
+        boxShadow: "0 14px 30px rgba(0,0,0,.55)",
+        cursor: disabled ? "default" : "pointer",
+        userSelect: "none",
+        opacity: disabled ? 0.55 : 1,
+      }}
+      title={cta}
+      role="button"
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+        <span
+          style={{
+            padding: "3px 10px",
+            borderRadius: 999,
+            fontSize: 10.5,
+            fontWeight: 950,
+            border: `1px solid ${accent}55`,
+            color: accent,
+            background: "rgba(0,0,0,.35)",
+            letterSpacing: 0.4,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {tag}
+        </span>
+
+        {kpi ? (
+          <span
+            style={{
+              padding: "3px 10px",
+              borderRadius: 999,
+              fontSize: 10.5,
+              fontWeight: 950,
+              border: `1px solid ${accent}44`,
+              color: "rgba(255,255,255,.92)",
+              background: `linear-gradient(180deg, ${accent}22, rgba(0,0,0,.30))`,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {kpi}
+          </span>
+        ) : null}
+      </div>
+
+      <div style={{ fontWeight: 950, fontSize: 13 }}>{title}</div>
+      {sub ? <div style={{ opacity: 0.82, fontSize: 11.5, marginTop: 2 }}>{sub}</div> : null}
+
+      <div style={{ marginTop: 10 }}>
+        <span
+          style={{
+            display: "inline-block",
+            padding: "6px 10px",
+            borderRadius: 999,
+            fontSize: 11.5,
+            fontWeight: 950,
+            border: "1px solid rgba(255,255,255,.12)",
+            background: "rgba(0,0,0,.30)",
+            color: "rgba(255,255,255,.92)",
+          }}
+        >
+          {cta} →
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** --- Ticker actions --- */
+function TickerRow({
+  go,
+  setFilter,
+}: {
+  go: (tab: any, params?: any) => void;
+  setFilter: (k: FilterKey) => void;
+}) {
+  const tours = listTournamentsLocal() || [];
+  const draft = tours.filter((t: any) => String(t?.status || "").toLowerCase().includes("draft"));
+
+  const running = tours.filter((t: any) => {
+    const s = String(t?.status || "").toLowerCase();
+    return (
+      s.includes("running") ||
+      s.includes("playing") ||
+      s.includes("in_progress") ||
+      s.includes("en_cours") ||
+      s.includes("active")
+    );
+  });
+
+  // tournoi “à reprendre” : le plus récent en cours sinon le plus récent tout court
+  const resumeTour: any = (running[0] || tours[0] || null);
+  const resumeTid = resumeTour?.id ? String(resumeTour.id) : "";
+  const resumeCounts = resumeTid ? computeCountsForTournament(resumeTid) : null;
+
+  const canAuto = !!resumeCounts && (resumeCounts.playable ?? 0) > 0;
+
   const items = [
+    {
+      tag: "REPRENDRE",
+      title: resumeTour ? (resumeTour?.name || "Tournoi") : "Aucun tournoi",
+      sub: resumeTour
+        ? `${String(resumeTour?.game?.mode || "mode").toUpperCase()} • ${fmtDate(resumeTour?.updatedAt || resumeTour?.createdAt)}`
+        : "Crée un tournoi pour démarrer.",
+      tone: "blue" as const,
+      cta: "Ouvrir",
+      kpi: resumeTour ? `${resumeCounts?.playable ?? 0} à jouer` : "—",
+      onClick: resumeTour?.id ? () => go("tournament_view", { id: String(resumeTour.id) }) : undefined,
+      disabled: !resumeTour?.id,
+    },
+    {
+      tag: "AUTO",
+      title: "Prochain match",
+      sub: resumeTour
+        ? canAuto
+          ? "Ouvre le tournoi, puis ‘LANCER LE PROCHAIN MATCH’ (Résumé)."
+          : "Aucun match jouable (attente vainqueur / BYE)."
+        : "Crée un tournoi pour utiliser l’AUTO.",
+      tone: "green" as const,
+      cta: "Ouvrir",
+      kpi: canAuto ? "Prêt" : "—",
+      onClick: resumeTour?.id ? () => go("tournament_view", { id: String(resumeTour.id) }) : undefined,
+      disabled: !resumeTour?.id,
+    },
+    {
+      tag: "BROUILLONS",
+      title: "Tournois en brouillon",
+      sub: "Filtrer la liste sur les brouillons.",
+      tone: "gold" as const,
+      cta: "Afficher",
+      kpi: `${draft.length}`,
+      onClick: () => setFilter("draft"),
+      disabled: false,
+    },
     {
       tag: "BRACKET",
       title: "Bracket KO + poules",
       sub: "Vue claire + progression guidée.",
-      tone: "gold" as const,
-      cta: "Créer en mode BRACKET",
-      onClick: () => go("tournament_create", { mode: "bracket_ko_pools" }),
+      tone: "pink" as const,
+      cta: "Créer BRACKET",
+      kpi: "KO+Poules",
+      onClick: () => go("tournament_create", { preset: "bracket", mode: "bracket_ko_pools" }),
+      disabled: false,
     },
     {
-      tag: "AUTO",
-      title: "Génération auto des matchs",
-      sub: "Tu choisis le format, l’app enchaîne.",
-      tone: "green" as const,
-      cta: "Créer en mode AUTO",
-      onClick: () => go("tournament_create", { mode: "auto" }),
+      tag: "CRÉER",
+      title: "Génération AUTO des matchs",
+      sub: "Tu choisis, l’app enchaîne.",
+      tone: "violet" as const,
+      cta: "Créer AUTO",
+      kpi: "Auto",
+      onClick: () => go("tournament_create", { preset: "auto", mode: "auto" }),
+      disabled: false,
     },
     {
       tag: "ROADMAP",
-      title: "À venir : Bye intelligent, Swiss…",
+      title: "Bye intelligent, Swiss…",
       sub: "Export / partage, double élimination, stats.",
-      tone: "pink" as const,
-      cta: "Voir la roadmap",
+      tone: "white" as const,
+      cta: "Voir",
+      kpi: "À venir",
       onClick: () => go("tournament_roadmap"),
+      disabled: false,
     },
   ];
 
@@ -131,78 +376,21 @@ function TickerRow({ go }: { go: (tab: any, params?: any) => void }) {
           gap: 10,
           padding: 10,
           width: "max-content",
-          animation: "dcTicker 18s linear infinite",
+          animation: "dcTicker 22s linear infinite",
         }}
       >
         {items.concat(items).map((it, idx) => (
-          <div
+          <TickerCard
             key={idx}
+            tag={it.tag}
+            title={it.title}
+            sub={it.sub}
+            tone={it.tone as any}
+            cta={it.cta}
+            kpi={it.kpi}
             onClick={it.onClick}
-            style={{
-              minWidth: 240,
-              maxWidth: 280,
-              borderRadius: 16,
-              padding: 12,
-              border: "1px solid rgba(255,255,255,.10)",
-              background:
-                it.tone === "gold"
-                  ? "radial-gradient(120% 140% at 0% 0%, rgba(255,195,26,.20), transparent 55%), linear-gradient(180deg, rgba(20,20,24,.92), rgba(10,10,12,.98))"
-                  : it.tone === "pink"
-                  ? "radial-gradient(120% 140% at 0% 0%, rgba(255,79,216,.18), transparent 55%), linear-gradient(180deg, rgba(20,20,24,.92), rgba(10,10,12,.98))"
-                  : "radial-gradient(120% 140% at 0% 0%, rgba(127,226,169,.16), transparent 55%), linear-gradient(180deg, rgba(20,20,24,.92), rgba(10,10,12,.98))",
-              boxShadow: "0 14px 30px rgba(0,0,0,.55)",
-              cursor: "pointer",
-              userSelect: "none",
-            }}
-            title={it.cta}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <span
-                style={{
-                  padding: "3px 10px",
-                  borderRadius: 999,
-                  fontSize: 10.5,
-                  fontWeight: 950,
-                  border:
-                    it.tone === "gold"
-                      ? "1px solid rgba(255,195,26,.35)"
-                      : it.tone === "pink"
-                      ? "1px solid rgba(255,79,216,.35)"
-                      : "1px solid rgba(127,226,169,.35)",
-                  color:
-                    it.tone === "gold"
-                      ? "#ffd56a"
-                      : it.tone === "pink"
-                      ? "#ff7fe2"
-                      : "#7fe2a9",
-                  background: "rgba(0,0,0,.35)",
-                  letterSpacing: 0.4,
-                }}
-              >
-                {it.tag}
-              </span>
-            </div>
-
-            <div style={{ fontWeight: 950, fontSize: 13 }}>{it.title}</div>
-            <div style={{ opacity: 0.82, fontSize: 11.5, marginTop: 2 }}>{it.sub}</div>
-
-            <div style={{ marginTop: 10 }}>
-              <span
-                style={{
-                  display: "inline-block",
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  fontSize: 11.5,
-                  fontWeight: 950,
-                  border: "1px solid rgba(255,255,255,.12)",
-                  background: "rgba(0,0,0,.30)",
-                  color: "rgba(255,255,255,.92)",
-                }}
-              >
-                {it.cta} →
-              </span>
-            </div>
-          </div>
+            disabled={it.disabled || !it.onClick}
+          />
         ))}
       </div>
 
@@ -368,8 +556,8 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
           </button>
         </div>
 
-        {/* ✅ ticker développé */}
-        <TickerRow go={go} />
+        {/* ✅ ticker UTILE + cliquable */}
+        <TickerRow go={go} setFilter={setFilter} />
       </Card>
 
       {/* FILTER BAR (style pills) */}
@@ -431,7 +619,7 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
                   Number(a?.updatedAt || a?.createdAt || 0)
               )
               .map((t: any) => {
-                const id = String(t?.id || t?.tournamentId || t?.code || "");
+                const id = String(t?.id || t?.tournamentId || t?.tid || t?.code || "");
                 const name = t?.name || "Tournoi";
                 const mode = String(t?.game?.mode || t?.mode || t?.gameMode || "x01").toUpperCase();
                 const status = String(t?.status || "draft");

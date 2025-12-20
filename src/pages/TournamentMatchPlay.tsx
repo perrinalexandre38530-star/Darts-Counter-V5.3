@@ -197,7 +197,11 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
     } catch {}
     setTour(nextTour);
     setMatches(Array.isArray(nextMatches) ? nextMatches : []);
-    setTm((Array.isArray(nextMatches) ? nextMatches : []).find((x: any) => String(x?.id) === String(matchId)) ?? null);
+    setTm(
+      (Array.isArray(nextMatches) ? nextMatches : []).find(
+        (x: any) => String(x?.id) === String(matchId)
+      ) ?? null
+    );
   }
 
   async function finishAndSubmit(matchPayload: any, historyMatchIdMaybe?: string | null) {
@@ -241,9 +245,7 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
       <div style={{ minHeight: "100vh", padding: 16, background: theme.bg, color: theme.text }}>
         <button onClick={() => go("tournaments")}>← Tournois</button>
         <div style={{ marginTop: 10, fontWeight: 950 }}>Paramètres manquants</div>
-        <div style={{ marginTop: 6, opacity: 0.8 }}>
-          tournamentId/matchId manquants pour lancer un match.
-        </div>
+        <div style={{ marginTop: 6, opacity: 0.8 }}>tournamentId/matchId manquants pour lancer un match.</div>
       </div>
     );
   }
@@ -263,9 +265,7 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
       <div style={{ minHeight: "100vh", padding: 16, background: theme.bg, color: theme.text }}>
         <button onClick={() => go("tournament_view", { id: tournamentId })}>← Retour tournoi</button>
         <div style={{ marginTop: 12, fontWeight: 950 }}>Tournoi introuvable</div>
-        <div style={{ marginTop: 6, opacity: 0.8 }}>
-          Le tournoi n’est pas chargé (ou a été supprimé).
-        </div>
+        <div style={{ marginTop: 6, opacity: 0.8 }}>Le tournoi n’est pas chargé (ou a été supprimé).</div>
       </div>
     );
   }
@@ -275,9 +275,7 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
       <div style={{ minHeight: "100vh", padding: 16, background: theme.bg, color: theme.text }}>
         <button onClick={() => go("tournament_view", { id: tournamentId })}>← Retour tournoi</button>
         <div style={{ marginTop: 12, fontWeight: 950 }}>Match introuvable</div>
-        <div style={{ marginTop: 6, opacity: 0.8 }}>
-          matchId={String(matchId)}
-        </div>
+        <div style={{ marginTop: 6, opacity: 0.8 }}>matchId={String(matchId)}</div>
       </div>
     );
   }
@@ -341,54 +339,66 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
   }
 
   // ------------------------------------------------------------
-  // ✅ X01 V3
+  // ✅ X01 V3  (FIX NaN + header dans X01)
   // ------------------------------------------------------------
   if (mode === "x01" || mode.includes("x01") || mode.includes("501") || mode.includes("301") || mode === "") {
-    const cfgFromTour = tour?.game?.rules?.x01v3 ?? null;
+    const cfgFromTour = (tour?.game?.rules?.x01v3 ?? null) as any;
 
-    const config: any =
-      cfgFromTour ||
-      ({
-        mode: "x01",
-        players: [
-          { id: aId, name: nameOf(tour, aId), avatarDataUrl: avatarOf(tour, aId) },
-          { id: bId, name: nameOf(tour, bId), avatarDataUrl: avatarOf(tour, bId) },
-        ],
-        start: tour?.game?.rules?.start ?? 501,
-        doubleOut: tour?.game?.rules?.doubleOut ?? true,
-        inMode: tour?.game?.rules?.inMode ?? "simple",
-      } as any);
+    const safeInt = (v: any, fallback: number) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+    };
+
+    // ✅ IMPORTANT: X01PlayV3 selon versions peut lire start/startScore/startingScore/x01
+    const startScore = safeInt(
+      cfgFromTour?.start ??
+        cfgFromTour?.startScore ??
+        cfgFromTour?.startingScore ??
+        tour?.game?.rules?.start ??
+        tour?.game?.rules?.x01 ??
+        501,
+      501
+    );
+
+    const doubleOut = Boolean(cfgFromTour?.doubleOut ?? tour?.game?.rules?.doubleOut ?? true);
+
+    const inMode = String(cfgFromTour?.inMode ?? tour?.game?.rules?.inMode ?? "simple") || "simple";
+
+    // ✅ on force players 1v1 du match
+    const players = [
+      { id: aId, name: nameOf(tour, aId), avatarDataUrl: avatarOf(tour, aId) },
+      { id: bId, name: nameOf(tour, bId), avatarDataUrl: avatarOf(tour, bId) },
+    ];
+
+    // ✅ Build config robuste (évite NaN) + met le tournoi dans le header X01
+    const config: any = {
+      ...(cfgFromTour || {}),
+      mode: "x01",
+
+      // champs “header” (suivant ta version de X01PlayV3)
+      title: tour?.name || "Tournoi",
+      subtitle: `${nameOf(tour, aId)} vs ${nameOf(tour, bId)}`,
+
+      players,
+
+      // ✅ ALIAS start score (compat max)
+      start: startScore,
+      startScore,
+      startingScore: startScore,
+      x01: startScore,
+
+      doubleOut,
+      inMode,
+
+      // defaults safe si X01PlayV3 attend legs/sets
+      legs: safeInt(cfgFromTour?.legs ?? 1, 1),
+      sets: safeInt(cfgFromTour?.sets ?? 1, 1),
+    };
 
     return (
       <div style={{ minHeight: "100vh", background: theme.bg, color: theme.text }}>
-        {/* mini header */}
-        <div style={{ padding: 12, paddingBottom: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button
-              onClick={() => go("tournament_view", { id: tournamentId })}
-              style={{
-                borderRadius: 12,
-                padding: "8px 10px",
-                border: `1px solid ${theme.borderSoft}`,
-                background: theme.card,
-                color: theme.text,
-                cursor: "pointer",
-              }}
-            >
-              ← Tournoi
-            </button>
-            <div style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontWeight: 950, color: theme.primary, textShadow: `0 0 10px ${theme.primary}55` }}>
-                {tour?.name || "Tournoi"}
-              </div>
-              <div style={{ fontSize: 12.5, opacity: 0.8 }}>
-                X01 • {nameOf(tour, aId)} vs {nameOf(tour, bId)}
-              </div>
-            </div>
-            <div style={{ width: 90 }} />
-          </div>
-        </div>
-
+        {/* ✅ pas de mini-header ici : on laisse X01PlayV3 gérer SON header
+            => évite le chevauchement (Mon tournoi derrière / doublons) */}
         <X01PlayV3
           config={config}
           onExit={() => go("tournament_view", { id: tournamentId })}
@@ -401,11 +411,7 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
                 rec = await (History as any)?.get?.(historyMatchId);
               } catch {}
 
-              const winnerId =
-                rec?.winnerId ||
-                rec?.payload?.winnerId ||
-                rec?.summary?.winnerId ||
-                null;
+              const winnerId = rec?.winnerId || rec?.payload?.winnerId || rec?.summary?.winnerId || null;
 
               if (winnerId) {
                 const r = submitResult({
@@ -556,8 +562,8 @@ export default function TournamentMatchPlay({ store, go, params }: any) {
         </div>
 
         <div style={{ marginTop: 10, fontSize: 12.5, opacity: 0.8 }}>
-          (Pas d’écran noir) — quand tu me dis quel composant “Play” utiliser pour ce mode,
-          je branche exactement comme X01/Cricket/Killer : onFinish → History → submitResult → retour tournoi.
+          (Pas d’écran noir) — quand tu me dis quel composant “Play” utiliser pour ce mode, je branche exactement comme
+          X01/Cricket/Killer : onFinish → History → submitResult → retour tournoi.
         </div>
 
         <button
