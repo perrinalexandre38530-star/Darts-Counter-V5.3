@@ -1,10 +1,8 @@
 // ============================================
 // src/pages/ShanghaiPlay.tsx
-// PATCH UI header :
-// ✅ Supprime NOM + "Actif" dans le bloc header (avatar only)
-// ✅ Grossit l’avatar pour remplir le bloc gauche
-// ✅ KPI "TOUR" moins haut + contenu centré (2/20)
-// ✅ AJOUT : image légère en fond derrière la cible (TargetBg)
+// PATCH UI "Scores" :
+// ✅ Nom joueur plus petit
+// ✅ Chips de volée plus petites
 // ============================================
 
 import React from "react";
@@ -14,9 +12,6 @@ import InfoDot from "../components/InfoDot";
 import Keypad from "../components/Keypad";
 import type { Dart as UIDart } from "../lib/types";
 import ShanghaiLogo from "../assets/SHANGHAI.png";
-
-// ✅ Mets ton image de fond de cible ici (png/jpg)
-// Exemple: src/assets/shanghai_target_bg.png
 import TargetBg from "../assets/target_bg.png";
 
 type PlayerLite = {
@@ -62,6 +57,14 @@ function isShanghaiOnTarget(target: number, throwDarts: UIDart[]) {
   return s && dd && t;
 }
 
+function fmtChip(d?: UIDart) {
+  if (!d) return "—";
+  const v = d.v ?? 0;
+  const m = d.mult ?? 1;
+  if (v === 0) return "MISS";
+  return `${m === 3 ? "T" : m === 2 ? "D" : "S"}${v}`;
+}
+
 export default function ShanghaiPlay(props: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
@@ -95,6 +98,12 @@ export default function ShanghaiPlay(props: Props) {
     return m;
   });
 
+  const [lastThrowsById, setLastThrowsById] = React.useState<Record<string, UIDart[]>>(() => {
+    const m: Record<string, UIDart[]> = {};
+    for (const p of safePlayers) m[p.id] = [];
+    return m;
+  });
+
   const [showInfo, setShowInfo] = React.useState(false);
 
   const target = round;
@@ -122,12 +131,8 @@ export default function ShanghaiPlay(props: Props) {
     });
   }
 
-  function backspace() {
-    setCurrentThrow((prev) => prev.slice(0, -1));
-  }
-
   function cancelTurn() {
-    backspace();
+    setCurrentThrow((prev) => prev.slice(0, -1));
     setMultiplier(1);
   }
 
@@ -192,8 +197,12 @@ export default function ShanghaiPlay(props: Props) {
     if (currentThrow.length !== 3) return;
 
     const pid = active.id;
-    const add = shanghaiThrowTotal(target, currentThrow);
-    const isSh = isShanghaiOnTarget(target, currentThrow);
+    const snapshot = [...currentThrow].slice(0, 3);
+
+    const add = shanghaiThrowTotal(target, snapshot);
+    const isSh = isShanghaiOnTarget(target, snapshot);
+
+    setLastThrowsById((prev) => ({ ...prev, [pid]: snapshot }));
 
     setScores((prev) => {
       const next = { ...prev };
@@ -231,6 +240,61 @@ export default function ShanghaiPlay(props: Props) {
       </div>
     );
   }
+
+  // ✅ chips de volée (plus petites)
+  const renderThrowChips = (arr?: UIDart[]) => {
+    const a = arr || [];
+    const d0 = a[0];
+    const d1 = a[1];
+    const d2 = a[2];
+
+    const chip = (d?: UIDart, idx?: number) => {
+      const empty = !d;
+      const v = d?.v ?? 0;
+      const m = d?.mult ?? 1;
+
+      const txt = fmtChip(d);
+
+      const accent =
+        empty || v === 0
+          ? "rgba(255,255,255,.18)"
+          : m === 3
+            ? "rgba(251,113,133,.55)"
+            : m === 2
+              ? "rgba(52,211,153,.55)"
+              : `${theme.primary}88`;
+
+      return (
+        <div
+          key={idx ?? Math.random()}
+          style={{
+            minWidth: 38,              // ✅ plus petit
+            textAlign: "center",
+            padding: "6px 8px",        // ✅ plus petit
+            borderRadius: 11,          // ✅ plus petit
+            border: `1px solid ${accent}`,
+            background: "rgba(0,0,0,0.22)",
+            color: theme.text,
+            fontWeight: 950,
+            fontSize: 11.5,            // ✅ plus petit
+            letterSpacing: 0.2,
+            boxShadow: empty ? "none" : `0 0 10px ${accent}`,
+            lineHeight: 1.05,
+          }}
+        >
+          {txt}
+        </div>
+      );
+    };
+
+    return (
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        {chip(d0, 0)}
+        {chip(d1, 1)}
+        {chip(d2, 2)}
+      </div>
+    );
+  };
 
   return (
     <div
@@ -294,7 +358,7 @@ export default function ShanghaiPlay(props: Props) {
           />
         </div>
 
-        {/* ==== HEADER (fix) ==== */}
+        {/* ==== HEADER ==== */}
         <div style={{ ...cardShell, width: "100%", maxWidth: 520, margin: "0 auto" }}>
           <div
             style={{
@@ -316,7 +380,6 @@ export default function ShanghaiPlay(props: Props) {
                 gap: 10,
               }}
             >
-              {/* ✅ KPI TOUR compact + 2/20 centré */}
               <div
                 style={{
                   borderRadius: 14,
@@ -346,7 +409,6 @@ export default function ShanghaiPlay(props: Props) {
                 </div>
               </div>
 
-              {/* ✅ AVATAR ONLY (plus gros) */}
               <div
                 style={{
                   borderRadius: 16,
@@ -360,11 +422,7 @@ export default function ShanghaiPlay(props: Props) {
                 }}
               >
                 {active.avatarDataUrl ? (
-                  <img
-                    src={active.avatarDataUrl}
-                    alt=""
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                  />
+                  <img src={active.avatarDataUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 ) : (
                   <span style={{ opacity: 0.75, fontWeight: 950, fontSize: 22 }}>?</span>
                 )}
@@ -382,13 +440,12 @@ export default function ShanghaiPlay(props: Props) {
                 gap: 10,
               }}
             >
-              {/* ✅ CIBLE + image de fond très légère */}
               <div
                 style={{
                   borderRadius: 16,
                   border: `1px solid ${theme.borderSoft}`,
                   background:
-                    "radial-gradient(circle at 50% 45%, rgba(255,198,58,.18), rgba(0,0,0,.55) 62%), rgba(0,0,0,.22)",
+                    "radial-gradient(circle at 50% 45%, rgba(255,198,58,.16), rgba(0,0,0,.60) 64%), rgba(0,0,0,.22)",
                   position: "relative",
                   overflow: "hidden",
                   minHeight: 120,
@@ -396,7 +453,6 @@ export default function ShanghaiPlay(props: Props) {
                   placeItems: "center",
                 }}
               >
-                {/* ✅ IMAGE DE FOND ULTRA LÉGÈRE */}
                 <div
                   aria-hidden
                   style={{
@@ -406,36 +462,12 @@ export default function ShanghaiPlay(props: Props) {
                     backgroundRepeat: "no-repeat",
                     backgroundPosition: "center",
                     backgroundSize: "cover",
-                    opacity: 0.10, // ajuste 0.06..0.14
-                    filter: "blur(0.2px) saturate(1.05)",
-                    mixBlendMode: "screen",
+                    opacity: 0.30,
+                    filter: "saturate(1.12) contrast(1.05)",
                     pointerEvents: "none",
                   }}
                 />
-                {/* (Optionnel) voile sombre léger */}
-                <div
-                  aria-hidden
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    background: "rgba(0,0,0,0.20)",
-                    pointerEvents: "none",
-                  }}
-                />
-
-                <svg
-                  viewBox="0 0 200 200"
-                  width="120"
-                  height="120"
-                  style={{ position: "absolute", inset: 0, margin: "auto", opacity: 0.22 }}
-                >
-                  <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(255,198,58,.65)" strokeWidth="4" />
-                  <circle cx="100" cy="100" r="62" fill="none" stroke="rgba(255,198,58,.35)" strokeWidth="3" />
-                  <circle cx="100" cy="100" r="38" fill="none" stroke="rgba(255,198,58,.25)" strokeWidth="3" />
-                  <circle cx="100" cy="100" r="14" fill="none" stroke="rgba(255,198,58,.55)" strokeWidth="4" />
-                  <line x1="100" y1="10" x2="100" y2="190" stroke="rgba(255,198,58,.18)" strokeWidth="2" />
-                  <line x1="10" y1="100" x2="190" y2="100" stroke="rgba(255,198,58,.18)" strokeWidth="2" />
-                </svg>
+                <div aria-hidden style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.12)" }} />
 
                 <div
                   style={{
@@ -453,69 +485,14 @@ export default function ShanghaiPlay(props: Props) {
                   aria-label={`Cible ${target}`}
                   title={`Cible ${target}`}
                 >
-                  <div
-                    style={{
-                      fontSize: 24,
-                      fontWeight: 1000,
-                      color: theme.primary,
-                      textShadow: `0 0 16px ${theme.primary}66`,
-                    }}
-                  >
+                  <div style={{ fontSize: 24, fontWeight: 1000, color: theme.primary, textShadow: `0 0 16px ${theme.primary}66` }}>
                     {target}
                   </div>
                 </div>
               </div>
 
               <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
-                {(() => {
-                  const chip = (d?: UIDart, idx?: number) => {
-                    const empty = !d;
-                    const v = d?.v ?? 0;
-                    const m = d?.mult ?? 1;
-
-                    let txt = "—";
-                    if (!empty) {
-                      if (v === 0) txt = "MISS";
-                      else txt = `${m === 3 ? "T" : m === 2 ? "D" : "S"}${v}`;
-                    }
-
-                    const accent =
-                      empty || v === 0
-                        ? "rgba(255,255,255,.20)"
-                        : m === 3
-                          ? "rgba(251,113,133,.55)"
-                          : m === 2
-                            ? "rgba(52,211,153,.55)"
-                            : `${theme.primary}88`;
-
-                    return (
-                      <div
-                        key={idx ?? Math.random()}
-                        style={{
-                          minWidth: 64,
-                          textAlign: "center",
-                          padding: "10px 12px",
-                          borderRadius: 14,
-                          border: `1px solid ${accent}`,
-                          background: "rgba(0,0,0,0.22)",
-                          color: theme.text,
-                          fontWeight: 950,
-                          letterSpacing: 0.4,
-                          boxShadow: empty ? "none" : `0 0 14px ${accent}`,
-                        }}
-                      >
-                        {txt}
-                      </div>
-                    );
-                  };
-                  return (
-                    <>
-                      {chip(currentThrow[0], 0)}
-                      {chip(currentThrow[1], 1)}
-                      {chip(currentThrow[2], 2)}
-                    </>
-                  );
-                })()}
+                {renderThrowChips(currentThrow)}
               </div>
             </div>
           </div>
@@ -545,6 +522,7 @@ export default function ShanghaiPlay(props: Props) {
               {safePlayers.map((p) => {
                 const isActive = p.id === active.id;
                 const val = scores[p.id] ?? 0;
+                const last = lastThrowsById[p.id] || [];
 
                 return (
                   <div
@@ -573,37 +551,39 @@ export default function ShanghaiPlay(props: Props) {
                       }}
                     >
                       {p.avatarDataUrl ? (
-                        <img
-                          src={p.avatarDataUrl}
-                          alt=""
-                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                        />
+                        <img src={p.avatarDataUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                       ) : (
                         <span style={{ opacity: 0.75, fontWeight: 900 }}>?</span>
                       )}
                     </div>
 
                     <div style={{ flex: 1, minWidth: 0 }}>
+                      {/* ✅ nom plus petit */}
                       <div
                         style={{
-                          fontWeight: 950,
+                          fontWeight: 900,
+                          fontSize: 13.5, // ✅ plus petit
                           whiteSpace: "nowrap",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
+                          lineHeight: 1.1,
                         }}
                       >
                         {p.name}
                       </div>
+
                       {isActive ? (
-                        <div style={{ fontSize: 12, color: theme.primary, fontWeight: 900, marginTop: 2 }}>
+                        <div style={{ fontSize: 11.5, color: theme.primary, fontWeight: 900, marginTop: 2 }}>
                           {t("common.active", "Actif")}
                         </div>
                       ) : (
-                        <div style={{ height: 16 }} />
+                        <div style={{ height: 14 }} />
                       )}
                     </div>
 
-                    <div style={{ fontWeight: 950, fontSize: 16 }}>{val}</div>
+                    <div style={{ flex: "0 0 auto" }}>{renderThrowChips(last)}</div>
+
+                    <div style={{ fontWeight: 950, fontSize: 16, minWidth: 28, textAlign: "right" }}>{val}</div>
                   </div>
                 );
               })}
@@ -645,7 +625,10 @@ export default function ShanghaiPlay(props: Props) {
               pushDart({ v: 0, mult: 1 } as any);
               setMultiplier(1);
             }}
-            onValidate={validateTurn}
+            onValidate={() => {
+              if (currentThrow.length !== 3) return;
+              validateTurn();
+            }}
             hidePreview={true}
           />
 
