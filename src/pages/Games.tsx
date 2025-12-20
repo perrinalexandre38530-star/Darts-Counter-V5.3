@@ -5,6 +5,8 @@
 // - Pastille "i" à droite => panneau d'aide (traductions via t())
 // - Modes grisés : non cliquables (enabled = false) + "Coming soon"
 // ✅ NEW: Carte "TOURNOIS" (LOCAL) dans le menu Games
+// ✅ CHANGE: supprime l’entrée "X01" (ancien moteur)
+// ✅ CHANGE: "X01 V3" devient "X01" (même tab x01_config_v3)
 // ============================================
 
 import React from "react";
@@ -19,8 +21,7 @@ type Props = {
 type GameId =
   | "training"
   | "tournaments" // ✅ NEW
-  | "x01"
-  | "x01v3"
+  | "x01v3" // ✅ X01 unique (affiché X01, moteur V3)
   | "cricket"
   | "killer"
   | "shanghai"
@@ -72,34 +73,24 @@ const GAMES: GameDef[] = [
     enabled: true,
   },
 
-  {
-    id: "x01",
-    titleKey: "games.x01.title",
-    titleDefault: "X01",
-    subtitleKey: "games.x01.subtitle",
-    subtitleDefault: "301 / 501 / 701 / 901.",
-    infoTitleKey: "games.x01.infoTitle",
-    infoTitleDefault: "X01",
-    infoBodyKey: "games.x01.infoBody",
-    infoBodyDefault:
-      "Parties classiques de 301/501/701/901 avec statistiques, historique et options avancées.",
-    tab: "x01setup", // 👈 X01 actuel inchangé
-    enabled: true,
-  },
+  // ✅ X01 UNIQUE (affiché "X01", mais c’est ton moteur V3)
   {
     id: "x01v3",
+    // On conserve les keys existantes pour éviter de casser les traductions,
+    // mais on affiche "X01" + sous-titre classique.
     titleKey: "games.x01v3.title",
-    titleDefault: "X01 V3",
+    titleDefault: "X01",
     subtitleKey: "games.x01v3.subtitle",
-    subtitleDefault: "Nouveau moteur + stats complètes.",
+    subtitleDefault: "301 / 501 / 701 / 901.",
     infoTitleKey: "games.x01v3.infoTitle",
-    infoTitleDefault: "X01 V3",
+    infoTitleDefault: "X01",
     infoBodyKey: "games.x01v3.infoBody",
     infoBodyDefault:
-      "Version X01 V3 avec moteur unifié solo / multi / équipes, classement live, suggestions de check-out et stats propres vers le menu Stats.",
-    tab: "x01_config_v3", // 👈 nouvelle page de configuration V3
+      "Parties classiques de 301/501/701/901 avec moteur V3, classement live, suggestions de check-out et stats complètes vers le menu Stats.",
+    tab: "x01_config_v3", // 👈 on garde la navigation V3
     enabled: true,
   },
+
   {
     id: "cricket",
     titleKey: "games.cricket.title",
@@ -139,8 +130,8 @@ const GAMES: GameDef[] = [
     infoBodyKey: "games.shanghai.infoBody",
     infoBodyDefault:
       "Chaque round possède une cible. Touche simple, double et triple sur la même visite pour un Shanghai.",
-    tab: "shanghai",     // ✅ IMPORTANT : active la navigation
-    enabled: true,       // ✅ IMPORTANT : plus grisé
+    tab: "shanghai", // ✅ IMPORTANT : active la navigation
+    enabled: true, // ✅ IMPORTANT : plus grisé
   },
   {
     id: "battle",
