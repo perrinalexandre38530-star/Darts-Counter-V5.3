@@ -2,11 +2,11 @@
 // src/pages/ShanghaiPlay.tsx
 // FIN DE PARTIE + RESUME + SAVE HISTORY
 // ✅ Header FIXE (toujours visible) + réduit en hauteur
-// ✅ Seule la liste joueurs scrolle (entre header et keypad)
-// ✅ Keypad fixe en bas
+// ✅ Seule la liste joueurs scrolle (derrière header + keypad via padding)
+// ✅ Keypad fixe en bas (✅ réduit en hauteur + plus compact)
 // ✅ End modal cliquable (zIndex/pointerEvents)
 // ✅ FIX MOBILE: avatar header = médaillon CERCLE (pas image plein bloc) + pas de fond blanc
-// ✅ FIX MOBILE SCROLL: zone joueurs = scroll plein écran derrière header+keypad (paddingTop/paddingBottom)
+// ✅ UI: liste joueurs + cartes joueurs plus compactes (hauteur réduite)
 // ============================================
 
 import React from "react";
@@ -168,7 +168,7 @@ export default function ShanghaiPlay(props: Props) {
 
   // ✅ HEADER FIXE: on mesure sa hauteur pour caler le padding du scroll
   const headerRef = React.useRef<HTMLDivElement | null>(null);
-  const [headerH, setHeaderH] = React.useState<number>(220); // fallback
+  const [headerH, setHeaderH] = React.useState<number>(210); // fallback
   React.useEffect(() => {
     const el = headerRef.current;
     if (!el) return;
@@ -404,7 +404,8 @@ export default function ShanghaiPlay(props: Props) {
     overflow: "hidden",
   };
 
-  const KEYPAD_H = 360;
+  // ✅ KEYPAD plus bas/compact
+  const KEYPAD_H = 300;
 
   if (!cfg || !cfg.players?.length) {
     return (
@@ -437,17 +438,17 @@ export default function ShanghaiPlay(props: Props) {
         <div
           key={idx ?? Math.random()}
           style={{
-            minWidth: 38,
+            minWidth: 34, // ✅ plus petit
             textAlign: "center",
-            padding: "6px 8px",
-            borderRadius: 11,
+            padding: "5px 7px", // ✅ plus compact
+            borderRadius: 10,
             border: `1px solid ${accent}`,
             background: "rgba(0,0,0,0.22)",
             color: theme.text,
             fontWeight: 950,
-            fontSize: 11.5,
+            fontSize: 11,
             letterSpacing: 0.2,
-            boxShadow: empty ? "none" : `0 0 10px ${accent}`,
+            boxShadow: empty ? "none" : `0 0 9px ${accent}`,
             lineHeight: 1.05,
           }}
         >
@@ -470,6 +471,9 @@ export default function ShanghaiPlay(props: Props) {
       ? safePlayers.find((p) => p.id === endData.winnerId)?.name || "—"
       : "—";
 
+  // ✅ paddingTop: on “colle” la liste au header (valeur négative légère pour compenser border/shadow)
+  const LIST_TOP_PAD = Math.max(0, headerH - 12);
+
   return (
     <div
       style={{
@@ -477,7 +481,7 @@ export default function ShanghaiPlay(props: Props) {
         background: theme.bg,
         color: theme.text,
         position: "relative",
-        overflow: "hidden", // ✅ pas de scroll global
+        overflow: "hidden",
       }}
     >
       {/* ===================== */}
@@ -491,29 +495,21 @@ export default function ShanghaiPlay(props: Props) {
           right: 0,
           top: 0,
           zIndex: 40,
-          padding: 12,
-          paddingBottom: 10,
+          padding: 10, // ✅ réduit
+          paddingBottom: 8,
           background:
             "linear-gradient(180deg, rgba(0,0,0,.65), rgba(0,0,0,.10))",
           backdropFilter: "blur(6px)",
         }}
       >
-        {/* Top bar */}
         <div style={{ width: "100%", maxWidth: 520, margin: "0 auto" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              marginBottom: 8,
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
             <button
               onClick={props.onExit}
               style={{
-                width: 38,
-                height: 38,
-                borderRadius: 14,
+                width: 36,
+                height: 36,
+                borderRadius: 13,
                 border: `1px solid ${theme.borderSoft}`,
                 background: "rgba(0,0,0,0.22)",
                 color: theme.text,
@@ -530,7 +526,7 @@ export default function ShanghaiPlay(props: Props) {
                 src={ShanghaiLogo}
                 alt="Shanghai"
                 style={{
-                  height: 38,
+                  height: 34, // ✅ réduit
                   width: "auto",
                   maxWidth: "100%",
                   display: "block",
@@ -548,14 +544,13 @@ export default function ShanghaiPlay(props: Props) {
             />
           </div>
 
-          {/* Header card */}
           <div style={{ ...cardShell, width: "100%" }}>
             <div
               style={{
-                padding: 10,
+                padding: 8, // ✅ réduit
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
-                gap: 10,
+                gap: 8, // ✅ réduit
                 alignItems: "stretch",
               }}
             >
@@ -565,9 +560,9 @@ export default function ShanghaiPlay(props: Props) {
                   borderRadius: 16,
                   border: `1px solid ${theme.borderSoft}`,
                   background: "rgba(0,0,0,0.18)",
-                  padding: 10,
+                  padding: 8, // ✅ réduit
                   display: "grid",
-                  gap: 8,
+                  gap: 6,
                 }}
               >
                 <div
@@ -577,25 +572,18 @@ export default function ShanghaiPlay(props: Props) {
                     background:
                       "linear-gradient(180deg, rgba(0,0,0,.22), rgba(0,0,0,.34))",
                     boxShadow: `0 0 18px ${theme.primary}22`,
-                    padding: "6px 10px",
+                    padding: "5px 10px", // ✅ réduit
                     display: "grid",
                     placeItems: "center",
-                    minHeight: 40,
+                    minHeight: 36, // ✅ réduit
                   }}
                 >
-                  <div
-                    style={{
-                      fontSize: 10.5,
-                      letterSpacing: 0.9,
-                      opacity: 0.85,
-                      textTransform: "uppercase",
-                    }}
-                  >
+                  <div style={{ fontSize: 10.2, letterSpacing: 0.9, opacity: 0.85, textTransform: "uppercase" }}>
                     {t("shanghai.round", "Tour")}
                   </div>
                   <div
                     style={{
-                      fontSize: 17,
+                      fontSize: 16,
                       fontWeight: 1000,
                       color: theme.primary,
                       textShadow: `0 0 10px ${theme.primary}55`,
@@ -607,26 +595,25 @@ export default function ShanghaiPlay(props: Props) {
                   </div>
                 </div>
 
-                {/* ✅ FIX MOBILE: avatar = médaillon cercle (pas fond blanc / pas plein bloc) */}
                 <div
                   style={{
                     borderRadius: 16,
                     border: `1px solid ${theme.borderSoft}`,
                     background: "rgba(0,0,0,0.14)",
-                    padding: 10,
+                    padding: 8,
                     display: "grid",
                     placeItems: "center",
                   }}
                 >
                   <div
                     style={{
-                      width: 92,
-                      height: 92,
+                      width: 84, // ✅ réduit
+                      height: 84, // ✅ réduit
                       borderRadius: 999,
                       overflow: "hidden",
                       background: "rgba(0,0,0,0.22)",
                       border: `1px solid ${theme.borderSoft}`,
-                      boxShadow: `0 0 18px rgba(0,0,0,.35)`,
+                      boxShadow: `0 0 16px rgba(0,0,0,.35)`,
                       display: "grid",
                       placeItems: "center",
                     }}
@@ -659,9 +646,9 @@ export default function ShanghaiPlay(props: Props) {
                   borderRadius: 16,
                   border: `1px solid ${theme.borderSoft}`,
                   background: "rgba(0,0,0,0.18)",
-                  padding: 10,
+                  padding: 8, // ✅ réduit
                   display: "grid",
-                  gap: 8,
+                  gap: 6,
                 }}
               >
                 <div
@@ -672,7 +659,7 @@ export default function ShanghaiPlay(props: Props) {
                       "radial-gradient(circle at 50% 45%, rgba(255,198,58,.16), rgba(0,0,0,.60) 64%), rgba(0,0,0,.22)",
                     position: "relative",
                     overflow: "hidden",
-                    minHeight: 106,
+                    minHeight: 92, // ✅ réduit
                     display: "grid",
                     placeItems: "center",
                   }}
@@ -695,27 +682,28 @@ export default function ShanghaiPlay(props: Props) {
 
                   <div
                     style={{
-                      width: 62,
-                      height: 62,
+                      width: 58, // ✅ réduit
+                      height: 58, // ✅ réduit
                       borderRadius: 999,
                       display: "grid",
                       placeItems: "center",
-                      background: "linear-gradient(180deg, rgba(255,210,90,.22), rgba(0,0,0,.35))",
+                      background:
+                        "linear-gradient(180deg, rgba(255,210,90,.22), rgba(0,0,0,.35))",
                       border: `1px solid ${theme.primary}66`,
-                      boxShadow: `0 0 24px ${theme.primary}33`,
+                      boxShadow: `0 0 22px ${theme.primary}33`,
                       position: "relative",
                       zIndex: 1,
                     }}
                     aria-label={`Cible ${target}`}
                     title={`Cible ${target}`}
                   >
-                    <div style={{ fontSize: 23, fontWeight: 1000, color: theme.primary, textShadow: `0 0 16px ${theme.primary}66` }}>
+                    <div style={{ fontSize: 21, fontWeight: 1000, color: theme.primary, textShadow: `0 0 16px ${theme.primary}66` }}>
                       {target}
                     </div>
                   </div>
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+                <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
                   {renderThrowChips(currentThrow)}
                 </div>
               </div>
@@ -726,25 +714,25 @@ export default function ShanghaiPlay(props: Props) {
 
       {/* ===================== */}
       {/* LISTE JOUEURS SCROLL */}
-      {/* ✅ FIX MOBILE: scroll plein écran derrière header + keypad */}
       {/* ===================== */}
       <div
         style={{
           position: "fixed",
           inset: 0,
-          zIndex: 5, // < header (40) et < keypad (20)
+          zIndex: 5,
           overflowY: "auto",
           WebkitOverflowScrolling: "touch",
           overscrollBehavior: "contain",
-          paddingTop: Math.max(0, headerH - 4), // ✅ rapproche la liste du header
-          paddingBottom: KEYPAD_H + 10, // ✅ scroll sous le keypad
+          paddingTop: LIST_TOP_PAD, // ✅ encore plus collé
+          paddingBottom: KEYPAD_H + 8, // ✅ scroll sous keypad (plus compact)
           paddingLeft: 16,
           paddingRight: 16,
         }}
       >
         <div style={{ width: "100%", maxWidth: 520, margin: "0 auto" }}>
-          <div style={{ ...cardShell, padding: 12 }}>
-            <div style={{ display: "grid", gap: 10 }}>
+          {/* ✅ On enlève l’impression de “marge” en réduisant le padding du shell */}
+          <div style={{ ...cardShell, padding: 10 }}>
+            <div style={{ display: "grid", gap: 8 }}>
               {safePlayers.map((p) => {
                 const isActive = p.id === active.id;
                 const val = scores[p.id] ?? 0;
@@ -754,27 +742,24 @@ export default function ShanghaiPlay(props: Props) {
                   <div
                     key={p.id}
                     style={{
-                      padding: 10,
-                      borderRadius: 16,
-                      border: `1px solid ${
-                        isActive ? theme.primary + "66" : theme.borderSoft
-                      }`,
-                      background: isActive
-                        ? `${theme.primary}12`
-                        : "rgba(0,0,0,0.18)",
+                      padding: "7px 10px", // ✅ plus petit
+                      borderRadius: 14,
+                      border: `1px solid ${isActive ? theme.primary + "66" : theme.borderSoft}`,
+                      background: isActive ? `${theme.primary}10` : "rgba(0,0,0,0.16)",
                       display: "flex",
                       alignItems: "center",
-                      gap: 10,
+                      gap: 8, // ✅ réduit
+                      minHeight: 52, // ✅ hauteur réduite
                     }}
                   >
                     <div
                       style={{
-                        width: 42,
-                        height: 42,
+                        width: 38, // ✅ réduit
+                        height: 38, // ✅ réduit
                         borderRadius: 999,
                         overflow: "hidden",
                         border: `1px solid ${theme.borderSoft}`,
-                        background: "rgba(255,255,255,0.06)",
+                        background: "rgba(0,0,0,0.18)", // ✅ évite le blanc si PNG transparent
                         display: "grid",
                         placeItems: "center",
                         flex: "0 0 auto",
@@ -793,50 +778,38 @@ export default function ShanghaiPlay(props: Props) {
                           }}
                         />
                       ) : (
-                        <span style={{ opacity: 0.75, fontWeight: 900 }}>?</span>
+                        <span style={{ opacity: 0.75, fontWeight: 900, fontSize: 14 }}>
+                          ?
+                        </span>
                       )}
                     </div>
 
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         style={{
-                          fontWeight: 900,
-                          fontSize: 13.0,
+                          fontWeight: 950,
+                          fontSize: 12.6, // ✅ réduit
                           whiteSpace: "nowrap",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
-                          lineHeight: 1.1,
+                          lineHeight: 1.05,
                         }}
                       >
                         {p.name}
                       </div>
 
                       {isActive ? (
-                        <div
-                          style={{
-                            fontSize: 11.5,
-                            color: theme.primary,
-                            fontWeight: 900,
-                            marginTop: 2,
-                          }}
-                        >
+                        <div style={{ fontSize: 10.8, color: theme.primary, fontWeight: 900, marginTop: 1 }}>
                           {t("common.active", "Actif")}
                         </div>
                       ) : (
-                        <div style={{ height: 14 }} />
+                        <div style={{ height: 12 }} />
                       )}
                     </div>
 
                     <div style={{ flex: "0 0 auto" }}>{renderThrowChips(last)}</div>
 
-                    <div
-                      style={{
-                        fontWeight: 950,
-                        fontSize: 16,
-                        minWidth: 28,
-                        textAlign: "right",
-                      }}
-                    >
+                    <div style={{ fontWeight: 1000, fontSize: 15, minWidth: 26, textAlign: "right" }}>
                       {val}
                     </div>
                   </div>
@@ -848,7 +821,7 @@ export default function ShanghaiPlay(props: Props) {
       </div>
 
       {/* ===================== */}
-      {/* KEYPAD FIXE BOTTOM */}
+      {/* KEYPAD FIXE BOTTOM (compact) */}
       {/* ===================== */}
       <div
         style={{
@@ -857,8 +830,8 @@ export default function ShanghaiPlay(props: Props) {
           right: 0,
           bottom: 0,
           zIndex: 20,
-          padding: 16,
-          paddingBottom: 18,
+          padding: 10, // ✅ réduit
+          paddingBottom: 12, // ✅ réduit
           background:
             "linear-gradient(180deg, rgba(0,0,0,0.00), rgba(0,0,0,0.55) 18%, rgba(0,0,0,0.82))",
           backdropFilter: "blur(6px)",
@@ -866,39 +839,47 @@ export default function ShanghaiPlay(props: Props) {
         }}
       >
         <div style={{ width: "100%", maxWidth: 520, margin: "0 auto" }}>
-          <Keypad
-            currentThrow={currentThrow}
-            multiplier={multiplier}
-            onSimple={() => setMultiplier(1)}
-            onDouble={() => setMultiplier(2)}
-            onTriple={() => setMultiplier(3)}
-            onBackspace={() => setCurrentThrow((prev) => prev.slice(0, -1))}
-            onCancel={cancelTurn}
-            onNumber={(n) => {
-              const v = Number(n);
-              if (!Number.isFinite(v)) return;
-              pushDart({ v, mult: v === 0 ? 1 : multiplier } as any);
-              setMultiplier(1);
+          {/* ✅ scale visuel : réduit “la hauteur” sans toucher au composant Keypad */}
+          <div
+            style={{
+              transform: "scale(0.92)",
+              transformOrigin: "bottom center",
             }}
-            onBull={() => {
-              const mult = multiplier === 2 ? 2 : 1;
-              pushDart({ v: 25, mult } as any);
-              setMultiplier(1);
-            }}
-            onValidate={validateTurn}
-            hidePreview={true}
-          />
+          >
+            <Keypad
+              currentThrow={currentThrow}
+              multiplier={multiplier}
+              onSimple={() => setMultiplier(1)}
+              onDouble={() => setMultiplier(2)}
+              onTriple={() => setMultiplier(3)}
+              onBackspace={() => setCurrentThrow((prev) => prev.slice(0, -1))}
+              onCancel={cancelTurn}
+              onNumber={(n) => {
+                const v = Number(n);
+                if (!Number.isFinite(v)) return;
+                pushDart({ v, mult: v === 0 ? 1 : multiplier } as any);
+                setMultiplier(1);
+              }}
+              onBull={() => {
+                const mult = multiplier === 2 ? 2 : 1;
+                pushDart({ v: 25, mult } as any);
+                setMultiplier(1);
+              }}
+              onValidate={validateTurn}
+              hidePreview={true}
+            />
+          </div>
 
-          <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 10 }}>
+          <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 6 }}>
             <div
               style={{
                 borderRadius: 999,
-                padding: "8px 12px",
+                padding: "6px 10px", // ✅ réduit
                 border: `1px solid ${theme.borderSoft}`,
                 background: "rgba(0,0,0,0.18)",
                 color: theme.textSoft,
                 fontWeight: 900,
-                fontSize: 12.5,
+                fontSize: 12,
               }}
             >
               +{thisTurnTotal} pts
@@ -908,12 +889,12 @@ export default function ShanghaiPlay(props: Props) {
               <div
                 style={{
                   borderRadius: 999,
-                  padding: "8px 12px",
+                  padding: "6px 10px", // ✅ réduit
                   border: `1px solid ${theme.primary}66`,
                   background: `${theme.primary}12`,
                   color: theme.primary,
                   fontWeight: 950,
-                  fontSize: 12.5,
+                  fontSize: 12,
                   textShadow: `0 0 10px ${theme.primary}55`,
                 }}
               >
@@ -1037,7 +1018,11 @@ export default function ShanghaiPlay(props: Props) {
                       }}
                     >
                       {r.avatarDataUrl ? (
-                        <img src={r.avatarDataUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        <img
+                          src={r.avatarDataUrl}
+                          alt=""
+                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                        />
                       ) : (
                         <span style={{ opacity: 0.75, fontWeight: 900 }}>?</span>
                       )}
@@ -1104,11 +1089,7 @@ export default function ShanghaiPlay(props: Props) {
                   if (didSaveRef.current) return;
                   didSaveRef.current = true;
 
-                  const match = buildMatchPayload(
-                    endData.winnerId,
-                    endData.reason,
-                    endData.createdAt
-                  );
+                  const match = buildMatchPayload(endData.winnerId, endData.reason, endData.createdAt);
 
                   setEndData(null);
                   props.onFinish?.(match);
