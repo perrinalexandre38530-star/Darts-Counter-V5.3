@@ -14,6 +14,7 @@
 // ✅ NEW: 2v2 (équipe) + "compléter avec bots" (simple, 1 bot si 3 joueurs)
 // ✅ FIX: BOTS IA affichés depuis src/lib/botsPro.ts (pas localStorage)
 // ✅ FIX: plus de double toggleBot + plus de bloc if non fermé (Unexpected token)
+// ✅ FIX: AVATARS BOTS OK (via ProfileAvatar + avatarKey)
 // ============================================
 
 import React from "react";
@@ -30,9 +31,11 @@ import { playSound } from "../lib/sound";
 import type { Profile } from "../lib/types";
 import type { SavedMatch } from "../lib/history";
 import { DartIconColorizable, CricketMarkIcon } from "../components/MaskIcon";
+import ProfileAvatar from "../components/ProfileAvatar"; // ✅ NEW: resolve avatarKey bots
 
 // ✅ PRO BOTS (source unique)
 import { PRO_BOTS, proBotToProfile } from "../lib/botsPro";
+
 
 const T = {
   bg: "#050712",
@@ -294,118 +297,209 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
   const [teamMode, setTeamMode] = React.useState<boolean>(false);
   const [fillWithBots, setFillWithBots] = React.useState<boolean>(true);
 
-  // ---- Match en cours ----
-  const [state, setState] = React.useState<CricketState | null>(null);
-  const [hitMode, setHitMode] = React.useState<HitMode>("S");
-  const [showHelp, setShowHelp] = React.useState(false);
-  const [showEnd, setShowEnd] = React.useState(false);
+// ---- Match en cours ----
+const [state, setState] = React.useState<CricketState | null>(null);
+const [hitMode, setHitMode] = React.useState<HitMode>("S");
+const [showHelp, setShowHelp] = React.useState(false);
+const [showEnd, setShowEnd] = React.useState(false);
 
-  // 🕒 timestamp de début de manche (pour createdAt)
-  const [legStartAt, setLegStartAt] = React.useState<number | null>(null);
+// 🕒 timestamp de début de manche (pour createdAt)
+const [legStartAt, setLegStartAt] = React.useState<number | null>(null);
 
-  const currentPlayer =
-    state && state.players[state.currentPlayerIndex] ? state.players[state.currentPlayerIndex] : null;
+const currentPlayer =
+  state && state.players[state.currentPlayerIndex]
+    ? state.players[state.currentPlayerIndex]
+    : null;
 
-  const isFinished = !!state?.winnerId;
+const isFinished = !!state?.winnerId;
 
-  const profileById = React.useMemo(() => {
-    const m = new Map<string, Profile>();
-    for (const p of allProfiles) m.set(p.id, p);
-    return m;
-  }, [allProfiles]);
+React.useEffect(() => {
+  if (isFinished) setShowEnd(true);
+}, [isFinished]);
 
-  React.useEffect(() => {
-    if (isFinished) setShowEnd(true);
-  }, [isFinished]);
+// --------------------------------------------------
+// ✅ BOTS IA depuis PRO_BOTS (pas localStorage)
+// + ✅ Avatars bots résolus via Vite glob
+// --------------------------------------------------
 
-  // ✅ BOTS IA depuis PRO_BOTS (pas localStorage)
-  const bots = React.useMemo(() => PRO_BOTS.map(proBotToProfile), []);
+// normalise avatarKey / filename -> clé stable
+const normKey = React.useCallback((s?: string | null) => {
+  if (!s) return "";
+  return String(s)
+    .trim()
+    .toLowerCase()
+    .replace(/\.(png|webp|jpg|jpeg)$/i, "")
+    .replace(/\s+/g, "-")
+    .replace(/_/g, "-");
+}, []);
 
-  // --------------------------------------------------
-  // Helpers visuels
-  // --------------------------------------------------
+// bots "Profile-like" (avec avatarKey)
+const bots = React.useMemo(() => PRO_BOTS.map(proBotToProfile), []);
 
-  function renderAvatarCircle(
-    prof: Profile | null,
-    opts?: { selected?: boolean; size?: number; mode?: "setup" | "play" }
-  ) {
-    const size = opts?.size ?? 40;
-    const selected = !!opts?.selected;
-    const mode = opts?.mode ?? "play";
+// ✅ Avatars BOTS: preload via Vite (obligatoire pour que ça s'affiche partout)
+// Supporte les 2 structures possibles :
+// - src/assets/avatars/bots/pro/*.png
+// - src/assets/avatars/bots pro/*.png   (dossier avec espace)
+const BOT_AVATAR_URLS = React.useMemo(() => {
+  const modulesA = import.meta.glob("../assets/avatars/bots/pro/*.{png,webp,jpg,jpeg}", {
+    eager: true,
+  }) as Record<string, any>;
 
-    const initials =
-      (prof?.name || "")
-        .split(" ")
-        .filter(Boolean)
-        .map((s) => s[0])
-        .join("")
-        .toUpperCase() || "?";
+  const modulesB = import.meta.glob("../assets/avatars/bots pro/*.{png,webp,jpg,jpeg}", {
+    eager: true,
+  }) as Record<string, any>;
 
-    const borderColor = selected ? T.gold : "rgba(148,163,184,0.3)";
-    const showNeon = selected;
-    const grayscale = mode === "setup" && !selected;
+  const modules = { ...modulesA, ...modulesB };
 
-    const avatarDataUrl = (prof as any)?.avatarDataUrl ?? null;
+  const map: Record<string, string> = {};
+  for (const path in modules) {
+    const mod = modules[path];
+    const url = (mod as any)?.default ?? mod;
 
-    if (avatarDataUrl) {
-      return (
-        <div
-          style={{
-            width: size,
-            height: size,
-            borderRadius: "50%",
-            overflow: "hidden",
-            border: `2px solid ${borderColor}`,
-            boxShadow: showNeon
-              ? "0 0 10px rgba(246,194,86,0.9), 0 0 24px rgba(246,194,86,0.7)"
-              : "0 0 4px rgba(0,0,0,0.8)",
-            background:
-              mode === "setup"
-                ? "radial-gradient(circle at 30% 0%, #1f2937 0, #020617 80%)"
-                : "#000",
-            flexShrink: 0,
-          }}
-        >
-          <img
-            src={avatarDataUrl}
-            alt={prof?.name}
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              display: "block",
-              filter: grayscale ? "grayscale(1) brightness(0.6)" : "none",
-              opacity: grayscale ? 0.7 : 1,
-            }}
-          />
-        </div>
-      );
-    }
+    const file = String(path).split("/").pop() || "";
+    const key = file.replace(/\.(png|webp|jpg|jpeg)$/i, "");
+    const k = normKey(key);
 
+    if (k && url) map[k] = url;
+  }
+  return map;
+}, [normKey]);
+
+// ✅ BOTS enrichis: on force avatarDataUrl/avatarUrl depuis BOT_AVATAR_URLS
+// (comme ça renderAvatarCircle n'a rien "à deviner")
+const botsWithResolvedAvatars = React.useMemo(() => {
+  return (bots as any[]).map((b) => {
+    const k = normKey(b?.avatarKey || b?.botAvatarKey || "");
+    const resolved = k ? BOT_AVATAR_URLS[k] : null;
+
+    return {
+      ...b,
+      avatarKey: b?.avatarKey || b?.botAvatarKey || null,
+      avatarDataUrl: b?.avatarDataUrl || resolved || null,
+      avatarUrl: b?.avatarUrl || resolved || null,
+      isBot: true,
+    };
+  });
+}, [bots, BOT_AVATAR_URLS, normKey]);
+
+// ✅ Map profils par id (HUMAINS + BOTS) — DOIT être défini AVANT handleStartMatch/buildHistoryRecord
+const profileById = React.useMemo(() => {
+  const m = new Map<string, any>();
+
+  // profils humains
+  for (const p of allProfiles) {
+    if (p?.id) m.set(p.id, p);
+  }
+
+  // profils bots (avec avatarDataUrl résolu)
+  for (const b of botsWithResolvedAvatars) {
+    if (b?.id) m.set(b.id, b);
+  }
+
+  return m;
+}, [allProfiles, botsWithResolvedAvatars]);
+
+// --------------------------------------------------
+// Helpers visuels
+// --------------------------------------------------
+
+function renderAvatarCircle(
+  prof: Profile | null,
+  opts?: { selected?: boolean; size?: number; mode?: "setup" | "play" }
+) {
+  const size = opts?.size ?? 40;
+  const selected = !!opts?.selected;
+  const mode = opts?.mode ?? "play";
+
+  const initials =
+    (prof?.name || "")
+      .split(" ")
+      .filter(Boolean)
+      .map((s) => s[0])
+      .join("")
+      .toUpperCase() || "?";
+
+  const borderColor = selected ? T.gold : "rgba(148,163,184,0.3)";
+  const showNeon = selected;
+  const grayscale = mode === "setup" && !selected;
+
+  const resolveAvatarSrc = (p: any): string | null => {
+    if (!p) return null;
+
+    // humains (dataUrl / url)
+    const direct =
+      p.avatarDataUrl || p.avatarUrl || p.photoUrl || p.imageUrl || p.avatar || null;
+
+    if (typeof direct === "string" && direct.length > 8) return direct;
+
+    // bots (via avatarKey -> map préchargée)
+    const k = normKey(p.avatarKey || p.botAvatarKey || "");
+    if (!k) return null;
+
+    return BOT_AVATAR_URLS[k] || null;
+  };
+
+  const avatarSrc = resolveAvatarSrc(prof as any);
+
+  if (avatarSrc) {
     return (
       <div
         style={{
           width: size,
           height: size,
           borderRadius: "50%",
-          background: selected ? T.gold : "#0f172a",
-          color: selected ? "#3A2300" : "#e5e7eb",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: size * 0.42,
-          fontWeight: 800,
+          overflow: "hidden",
           border: `2px solid ${borderColor}`,
           boxShadow: showNeon
             ? "0 0 10px rgba(246,194,86,0.9), 0 0 24px rgba(246,194,86,0.7)"
             : "0 0 4px rgba(0,0,0,0.8)",
+          background:
+            mode === "setup"
+              ? "radial-gradient(circle at 30% 0%, #1f2937 0, #020617 80%)"
+              : "#000",
           flexShrink: 0,
         }}
       >
-        {initials}
+        <img
+          src={avatarSrc}
+          alt={(prof as any)?.name ?? "avatar"}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            display: "block",
+            filter: grayscale ? "grayscale(1) brightness(0.6)" : "none",
+            opacity: grayscale ? 0.7 : 1,
+          }}
+        />
       </div>
     );
   }
+
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background: selected ? T.gold : "#0f172a",
+        color: selected ? "#3A2300" : "#e5e7eb",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: size * 0.42,
+        fontWeight: 800,
+        border: `2px solid ${borderColor}`,
+        boxShadow: showNeon
+          ? "0 0 10px rgba(246,194,86,0.9), 0 0 24px rgba(246,194,86,0.7)"
+          : "0 0 4px rgba(0,0,0,0.8)",
+        flexShrink: 0,
+      }}
+    >
+      {initials}
+    </div>
+  );
+}
 
   // --------------------------------------------------
   // SETUP helpers + start match (humans + bots + team)
@@ -451,11 +545,11 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
     if (!canStart) return;
 
     const selectedProfiles = selectedIds
-      .map((id) => allProfiles.find((p) => p.id === id) || null)
+      .map((id) => profileById.get(id) || null)
       .filter(Boolean) as Profile[];
 
     const selectedBots = (selectedBotIds ?? [])
-      .map((id) => bots.find((b: any) => b.id === id) || null)
+      .map((id) => profileById.get(id) || null)
       .filter(Boolean) as any[];
 
     if (selectedProfiles.length + selectedBots.length < 2) return;
@@ -466,6 +560,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
         id: b.id,
         name: (b as any).name ?? (b as any).displayName ?? "BOT",
         avatarDataUrl: (b as any).avatarDataUrl ?? null,
+        avatarKey: (b as any).avatarKey ?? null, // ✅ conserve avatarKey
         isBot: true,
       })),
     ];
@@ -473,13 +568,14 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
     // ✅ auto-complète en 2v2 si 3 joueurs
     if (teamNeedsBot && finalProfiles.length === 3) {
       const bot =
-        bots.find((b: any) => !finalProfiles.some((p) => p.id === (b as any).id)) ?? (bots[0] as any);
+        (bots as any[]).find((bb: any) => !finalProfiles.some((p) => p.id === bb.id)) ?? (bots[0] as any);
 
       if (bot) {
         finalProfiles.push({
-          id: (bot as any).id,
-          name: (bot as any).name ?? (bot as any).displayName ?? "BOT",
-          avatarDataUrl: (bot as any).avatarDataUrl ?? null,
+          id: bot.id,
+          name: bot.name ?? bot.displayName ?? "BOT",
+          avatarDataUrl: bot.avatarDataUrl ?? null,
+          avatarKey: bot.avatarKey ?? null,
           isBot: true,
         });
       }
@@ -655,7 +751,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
       return {
         id: p.id,
         name: p.name,
-        avatarDataUrl: (prof as any)?.avatarDataUrl ?? null,
+        avatarDataUrl: (prof as any)?.avatarDataUrl ?? null, // (historique) ok
       };
     });
 
@@ -966,7 +1062,8 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
                   const active = selectedBotIds.includes(b.id);
                   const j = labelForId(b.id);
 
-                  const botAsProfile = { id: b.id, name: b.name ?? b.displayName ?? "BOT" } as any;
+                  // ✅ IMPORTANT: utiliser le vrai Profile bot (avec avatarKey)
+                  const botProfile = (profileById.get(b.id) as any) ?? (b as any);
 
                   return (
                     <div
@@ -982,7 +1079,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
                         opacity: !active && selectedCountLocal >= 4 ? 0.45 : 1,
                       }}
                     >
-                      {renderAvatarCircle(botAsProfile, { selected: active, size: 58, mode: "setup" })}
+                      {renderAvatarCircle(botProfile as any, { selected: active, size: 58, mode: "setup" })}
 
                       <div
                         style={{
@@ -997,7 +1094,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {botAsProfile.name}
+                        {botProfile.name ?? "BOT"}
                       </div>
 
                       <ChipMini active={active} label={j ?? "BOT"} />
@@ -1017,6 +1114,9 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
           )}
         </div>
 
+        {/* ... LE RESTE DE TON FICHIER EST INCHANGÉ ... */}
+        {/* (À partir d’ici, tu gardes exactement la suite de ton bloc actuel) */}
+
         {/* PARAMÈTRES DE BASE */}
         <SectionCard
           title="Paramètres de base"
@@ -1034,7 +1134,15 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
             </div>
           </div>
 
-          <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <div
+            style={{
+              marginTop: 12,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+            }}
+          >
             <div style={{ fontSize: 13, color: T.textSoft }}>Nombre max de manches</div>
             <div style={{ display: "flex", gap: 8 }}>
               {[10, 15, 20].map((n) => (
@@ -1051,7 +1159,9 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <div style={{ fontSize: 13, color: T.textSoft, lineHeight: 1.2 }}>
               Premier joueur tourne{" "}
-              <span style={{ opacity: 0.7, fontSize: 12 }}>(le lanceur 1 passe en dernier à chaque nouvelle manche)</span>
+              <span style={{ opacity: 0.7, fontSize: 12 }}>
+                (le lanceur 1 passe en dernier à chaque nouvelle manche)
+              </span>
             </div>
             <OnOff value={rotateFirstPlayer} onChange={setRotateFirstPlayer} />
           </div>
@@ -1104,7 +1214,9 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
               padding: "12px 16px",
               borderRadius: 999,
               border: "none",
-              background: canStartLocal ? "linear-gradient(135deg,#ffc63a,#ffaf00)" : "linear-gradient(135deg,#6b7280,#4b5563)",
+              background: canStartLocal
+                ? "linear-gradient(135deg,#ffc63a,#ffaf00)"
+                : "linear-gradient(135deg,#6b7280,#4b5563)",
               color: canStartLocal ? "#211500" : "#e5e7eb",
               fontSize: 15,
               fontWeight: 900,

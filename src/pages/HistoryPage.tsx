@@ -105,12 +105,14 @@ function isKillerEntry(e: SavedEntry) {
 
 function isShanghaiEntry(e: SavedEntry) {
   const m = baseMode(e);
-  const s1 = String((e as any)?.summary?.mode || (e as any)?.summary?.kind || "");
-  const s2 = String((e as any)?.payload?.mode || (e as any)?.payload?.kind || "");
+  const s1 = String((e as any)?.summary?.mode || "");
+  const s2 = String((e as any)?.payload?.mode || "");
+  const s3 = String((e as any)?.decoded?.config?.mode || "");
   return (
     m.includes("shanghai") ||
     s1.toLowerCase().includes("shanghai") ||
-    s2.toLowerCase().includes("shanghai")
+    s2.toLowerCase().includes("shanghai") ||
+    s3.toLowerCase().includes("shanghai")
   );
 }
 

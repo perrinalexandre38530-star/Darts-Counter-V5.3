@@ -117,6 +117,36 @@ function fmtChip(d?: UIDart) {
   return `${m === 3 ? "T" : m === 2 ? "D" : "S"}${v}`;
 }
 
+type HitCounts = {
+  S: number;
+  D: number;
+  T: number;
+  MISS: number;
+  points: number;
+};
+
+function emptyHitCounts(): HitCounts {
+  return { S: 0, D: 0, T: 0, MISS: 0, points: 0 };
+}
+
+function cloneHitMap(m: any) {
+  return JSON.parse(JSON.stringify(m || {}));
+}
+
+function speakText(text: string) {
+  try {
+    const synth = (window as any).speechSynthesis;
+    if (!synth) return;
+    synth.cancel?.();
+    const u = new SpeechSynthesisUtterance(String(text));
+    u.rate = 1.0;
+    u.pitch = 1.0;
+    u.volume = 1.0;
+    synth.speak(u);
+  } catch {}
+}
+
+
 type EndData = {
   winnerId: string | null; // null si égalité
   isTie: boolean;
@@ -189,6 +219,19 @@ export default function ShanghaiPlay(props: Props) {
     for (const p of safePlayers) m[p.id] = [];
     return m;
   });
+
+    // ✅ STATS: hits par cible + timeline score (sparkline)
+    const [hitsById, setHitsById] = React.useState<Record<string, Record<number, HitCounts>>>(() => {
+      const out: any = {};
+      for (const p of safePlayers) out[p.id] = {};
+      return out;
+    });
+  
+    const [scoreTimelineById, setScoreTimelineById] = React.useState<Record<string, number[]>>(() => {
+      const out: any = {};
+      for (const p of safePlayers) out[p.id] = [0];
+      return out;
+    });  
 
   const [showInfo, setShowInfo] = React.useState(false);
   const [endData, setEndData] = React.useState<EndData | null>(null);
@@ -408,6 +451,37 @@ export default function ShanghaiPlay(props: Props) {
     setMultiplier(1);
   }
 
+  // ✅ VOICE: annonce classement final (scores + rang)
+  React.useEffect(() => {
+    if (!endData) return;
+    if (voiceEnabled === false) return;
+
+    try {
+      // petit délai pour laisser UI respirer
+      const id = window.setTimeout(() => {
+        const ranked = endData.ranked || [];
+        if (!ranked.length) return;
+
+        const top = ranked[0]?.score ?? 0;
+        const tied = ranked.filter((r) => (r.score ?? 0) === top);
+
+        if (tied.length >= 2) {
+          const names = tied.map((x) => x.name).join(" et ");
+          speakText(`Fin de partie. Égalité. ${names}. Score ${top}.`);
+        } else {
+          const winner = ranked[0];
+          speakText(`Fin de partie. Victoire de ${winner.name}. Score ${winner.score}.`);
+        }
+
+        // annonce classement complet (court)
+        const lines = ranked.slice(0, 4).map((r, i) => `${i + 1}. ${r.name} ${r.score} points`).join(". ");
+        if (lines) speakText(`Classement. ${lines}.`);
+      }, 450);
+
+      return () => window.clearTimeout(id);
+    } catch {}
+  }, [endData, voiceEnabled]);
+
   function pushDart(d: UIDart) {
     setCurrentThrow((prev) => {
       if (prev.length >= 3) return prev;
@@ -455,7 +529,6 @@ export default function ShanghaiPlay(props: Props) {
     isTie: boolean,
     tieIds: string[]
   ) {
-    // ✅ IMPORTANT: on explicite bien "shanghai" pour éviter le fallback X01
     const summary = {
       kind: "shanghai",
       mode: "shanghai",
@@ -474,31 +547,42 @@ export default function ShanghaiPlay(props: Props) {
         score: scores[p.id] ?? 0,
       })),
     };
-
+  
     return {
       id: `shanghai-${createdAt}-${Math.random().toString(36).slice(2, 8)}`,
       kind: "shanghai",
       status: "finished",
       createdAt,
       updatedAt: createdAt,
+  
       players: safePlayers.map((p) => ({
         id: p.id,
         name: p.name,
         avatarDataUrl: p.avatarDataUrl ?? null,
         isBot: !!(p as any).isBot,
       })),
+  
       winnerId,
       summary,
+  
       payload: {
         config: {
           ...(cfg as any),
           targetOrderMode,
           targetOrder: targetOrderRef.current,
         },
+  
         summary,
         lastThrowsById,
-        isTie,
-        tieIds,
+  
+        // ✅ STATS COMPLÈTES POUR SHANGHAI END
+        statsShanghai: {
+          hitsById,
+          scoreTimelineById,
+          targetOrder: targetOrderRef.current,
+          maxRounds,
+          winRule,
+        },
       },
     };
   }
@@ -536,26 +620,74 @@ export default function ShanghaiPlay(props: Props) {
     const add = shanghaiThrowTotal(target, snapshot);
     const isSh = isShanghaiOnTarget(target, snapshot);
 
+    // --- on détermine si ça termine maintenant ---
+    const isLastPlayer = turn + 1 >= safePlayers.length;
+    const isLastRound = round >= maxRounds;
+    const endsByShanghai = winRule === "shanghai_or_points" && isSh;
+    const endsByRounds = isLastPlayer && isLastRound;
+    const willEnd = endsByShanghai || endsByRounds;
+
     setLastThrowsById((prev) => ({ ...prev, [pid]: snapshot }));
 
-    if (voiceEnabled !== false) {
-      announceVolleyScore(active.name, add);
-    }
+    // ✅ STATS: hits par cible
+    setHitsById((prev) => {
+      const next = cloneHitMap(prev);
+      if (!next[pid]) next[pid] = {};
+      if (!next[pid][target]) next[pid][target] = emptyHitCounts();
 
+      const hc: HitCounts = next[pid][target];
+      for (const d of snapshot) {
+        const v = d?.v ?? 0;
+        const mult = (d?.mult ?? 1) as any;
+
+        if (v !== target || v === 0) {
+          hc.MISS += 1;
+        } else if (mult === 3) {
+          hc.T += 1;
+          hc.points += target * 3;
+        } else if (mult === 2) {
+          hc.D += 1;
+          hc.points += target * 2;
+        } else {
+          hc.S += 1;
+          hc.points += target * 1;
+        }
+      }
+      return next;
+    });
+
+    // ✅ timeline score (sparkline) : score cumul après cette volée
+    setScoreTimelineById((prev) => {
+      const next = { ...prev };
+      const arr = Array.isArray(next[pid]) ? [...next[pid]] : [0];
+      const last = Number(arr[arr.length - 1] ?? 0);
+      arr.push(last + add);
+      next[pid] = arr;
+      return next;
+    });
+
+    // ✅ update score
     setScores((prev) => {
       const next = { ...prev };
       next[pid] = (next[pid] ?? 0) + add;
       return next;
     });
 
+    // ✅ VOICE: si fin => on n’annonce PAS la volée (c’est ce qui t’énerve)
+    if (!willEnd && voiceEnabled !== false) {
+      announceVolleyScore(active.name, add);
+    }
+
     clearThrow();
 
-    if (winRule === "shanghai_or_points" && isSh) {
-      // ✅ victoire immédiate => pas de nul
+    // ---------- FIN PAR SHANGHAI ----------
+    if (endsByShanghai) {
+      // open end screen avec ranking incluant add
       openEndScreen(pid, "shanghai", { pid, add });
       return;
     }
 
+    // ---------- TOUR SUIVANT ----------
     const nextTurn = turn + 1;
     if (nextTurn < safePlayers.length) {
       setTurn(nextTurn);
@@ -568,13 +700,13 @@ export default function ShanghaiPlay(props: Props) {
       return;
     }
 
-    // ✅ fin aux points => peut être égalité
+    // ---------- FIN AUX POINTS ----------
     const ranked = computeRanking({ pid, add });
     const top = ranked[0]?.score ?? 0;
-    const ties = ranked.filter((r) => r.score === top);
-    const isTie = ties.length >= 2;
+    const tied = ranked.filter((r) => (r.score ?? 0) === top);
+    const winnerId = tied.length >= 2 ? null : ranked[0]?.id ?? null;
 
-    openEndScreen(isTie ? null : (ranked[0]?.id ?? null), "points", { pid, add });
+    openEndScreen(winnerId, "points", { pid, add });
   }
 
   const cardShell: React.CSSProperties = {
