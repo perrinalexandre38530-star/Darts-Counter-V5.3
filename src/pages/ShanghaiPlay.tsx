@@ -17,6 +17,7 @@ import React from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { useLang } from "../contexts/LangContext";
 import InfoDot from "../components/InfoDot";
+import BackDot from "../components/BackDot";
 import Keypad from "../components/Keypad";
 import type { Dart as UIDart } from "../lib/types";
 import ShanghaiLogo from "../assets/SHANGHAI.png";
@@ -576,268 +577,257 @@ export default function ShanghaiPlay(props: Props) {
       }}
     >
       {/* ===================== */}
-      {/* HEADER FIXE (réduit) */}
-      {/* ===================== */}
+{/* HEADER FIXE (réduit) */}
+{/* ===================== */}
+<div
+  ref={headerRef}
+  style={{
+    position: "fixed",
+    left: 0,
+    right: 0,
+    top: 0,
+    zIndex: 40,
+    padding: 10,
+    paddingBottom: 8,
+    background: "linear-gradient(180deg, rgba(0,0,0,.65), rgba(0,0,0,.10))",
+    backdropFilter: "blur(6px)",
+  }}
+>
+  <div style={{ width: "100%", maxWidth: 520, margin: "0 auto" }}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        marginBottom: 6,
+      }}
+    >
+      {/* ✅ NEW: BackDot (style InfoDot) */}
+      <BackDot
+        glow={theme.primary + "88"}
+        onClick={(e: any) => {
+          e.stopPropagation();
+          handleBack();
+        }}
+      />
+
+      <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+        <img
+          src={ShanghaiLogo}
+          alt="Shanghai"
+          style={{
+            height: 34,
+            width: "auto",
+            maxWidth: "100%",
+            display: "block",
+            filter: "drop-shadow(0 0 10px rgba(255,180,0,.25))",
+          }}
+        />
+      </div>
+
+      <InfoDot
+        onClick={(ev) => {
+          ev.stopPropagation();
+          setShowInfo(true);
+        }}
+        glow={theme.primary + "88"}
+      />
+    </div>
+
+    <div style={{ ...cardShell, width: "100%" }}>
       <div
-        ref={headerRef}
         style={{
-          position: "fixed",
-          left: 0,
-          right: 0,
-          top: 0,
-          zIndex: 40,
-          padding: 10,
-          paddingBottom: 8,
-          background:
-            "linear-gradient(180deg, rgba(0,0,0,.65), rgba(0,0,0,.10))",
-          backdropFilter: "blur(6px)",
+          padding: 8,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 8,
+          alignItems: "stretch",
         }}
       >
-        <div style={{ width: "100%", maxWidth: 520, margin: "0 auto" }}>
+        {/* gauche */}
+        <div
+          style={{
+            borderRadius: 16,
+            border: `1px solid ${theme.borderSoft}`,
+            background: "rgba(0,0,0,0.18)",
+            padding: 8,
+            display: "grid",
+            gap: 6,
+          }}
+        >
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              marginBottom: 6,
+              borderRadius: 14,
+              border: `1px solid ${theme.primary}44`,
+              background:
+                "linear-gradient(180deg, rgba(0,0,0,.22), rgba(0,0,0,.34))",
+              boxShadow: `0 0 18px ${theme.primary}22`,
+              padding: "5px 10px",
+              display: "grid",
+              placeItems: "center",
+              minHeight: 36,
             }}
           >
-            <button
-              onClick={props.onExit}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 13,
-                border: `1px solid ${theme.borderSoft}`,
-                background: "rgba(0,0,0,0.22)",
-                color: theme.text,
-                fontWeight: 950,
-                cursor: "pointer",
-              }}
-              title="Retour"
-            >
-              ←
-            </button>
-
-            <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
-              <img
-                src={ShanghaiLogo}
-                alt="Shanghai"
-                style={{
-                  height: 34,
-                  width: "auto",
-                  maxWidth: "100%",
-                  display: "block",
-                  filter: "drop-shadow(0 0 10px rgba(255,180,0,.25))",
-                }}
-              />
-            </div>
-
-            <InfoDot
-              onClick={(ev) => {
-                ev.stopPropagation();
-                setShowInfo(true);
-              }}
-              glow={theme.primary + "88"}
-            />
-          </div>
-
-          <div style={{ ...cardShell, width: "100%" }}>
             <div
               style={{
-                padding: 8,
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 8,
-                alignItems: "stretch",
+                fontSize: 10.2,
+                letterSpacing: 0.9,
+                opacity: 0.85,
+                textTransform: "uppercase",
               }}
             >
-              {/* gauche */}
-              <div
-                style={{
-                  borderRadius: 16,
-                  border: `1px solid ${theme.borderSoft}`,
-                  background: "rgba(0,0,0,0.18)",
-                  padding: 8,
-                  display: "grid",
-                  gap: 6,
-                }}
-              >
-                <div
+              {t("shanghai.round", "Tour")}
+            </div>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 1000,
+                color: theme.primary,
+                textShadow: `0 0 10px ${theme.primary}55`,
+                lineHeight: 1,
+                marginTop: 1,
+              }}
+            >
+              {round}/{maxRounds}
+            </div>
+          </div>
+
+          <div
+            style={{
+              borderRadius: 16,
+              border: `1px solid ${theme.borderSoft}`,
+              background: "rgba(0,0,0,0.14)",
+              padding: 8,
+              display: "grid",
+              placeItems: "center",
+            }}
+          >
+            <div
+              style={{
+                width: 84,
+                height: 84,
+                borderRadius: 999,
+                overflow: "hidden",
+                background: "rgba(0,0,0,0.22)",
+                border: `1px solid ${theme.borderSoft}`,
+                boxShadow: `0 0 16px rgba(0,0,0,.35)`,
+                display: "grid",
+                placeItems: "center",
+              }}
+            >
+              {active.avatarDataUrl ? (
+                <img
+                  src={active.avatarDataUrl}
+                  alt=""
+                  draggable={false}
                   style={{
-                    borderRadius: 14,
-                    border: `1px solid ${theme.primary}44`,
-                    background:
-                      "linear-gradient(180deg, rgba(0,0,0,.22), rgba(0,0,0,.34))",
-                    boxShadow: `0 0 18px ${theme.primary}22`,
-                    padding: "5px 10px",
-                    display: "grid",
-                    placeItems: "center",
-                    minHeight: 36,
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    background: "transparent",
+                    display: "block",
+                  }}
+                />
+              ) : (
+                <span
+                  style={{
+                    opacity: 0.75,
+                    fontWeight: 950,
+                    fontSize: 22,
                   }}
                 >
-                  <div
-                    style={{
-                      fontSize: 10.2,
-                      letterSpacing: 0.9,
-                      opacity: 0.85,
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    {t("shanghai.round", "Tour")}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 16,
-                      fontWeight: 1000,
-                      color: theme.primary,
-                      textShadow: `0 0 10px ${theme.primary}55`,
-                      lineHeight: 1,
-                      marginTop: 1,
-                    }}
-                  >
-                    {round}/{maxRounds}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    borderRadius: 16,
-                    border: `1px solid ${theme.borderSoft}`,
-                    background: "rgba(0,0,0,0.14)",
-                    padding: 8,
-                    display: "grid",
-                    placeItems: "center",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 84,
-                      height: 84,
-                      borderRadius: 999,
-                      overflow: "hidden",
-                      background: "rgba(0,0,0,0.22)",
-                      border: `1px solid ${theme.borderSoft}`,
-                      boxShadow: `0 0 16px rgba(0,0,0,.35)`,
-                      display: "grid",
-                      placeItems: "center",
-                    }}
-                  >
-                    {active.avatarDataUrl ? (
-                      <img
-                        src={active.avatarDataUrl}
-                        alt=""
-                        draggable={false}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                          background: "transparent",
-                          display: "block",
-                        }}
-                      />
-                    ) : (
-                      <span
-                        style={{
-                          opacity: 0.75,
-                          fontWeight: 950,
-                          fontSize: 22,
-                        }}
-                      >
-                        ?
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* droite */}
-              <div
-                style={{
-                  borderRadius: 16,
-                  border: `1px solid ${theme.borderSoft}`,
-                  background: "rgba(0,0,0,0.18)",
-                  padding: 8,
-                  display: "grid",
-                  gap: 6,
-                }}
-              >
-                <div
-                  style={{
-                    borderRadius: 16,
-                    border: `1px solid ${theme.borderSoft}`,
-                    background:
-                      "radial-gradient(circle at 50% 45%, rgba(255,198,58,.16), rgba(0,0,0,.60) 64%), rgba(0,0,0,.22)",
-                    position: "relative",
-                    overflow: "hidden",
-                    minHeight: 92,
-                    display: "grid",
-                    placeItems: "center",
-                  }}
-                >
-                  <div
-                    aria-hidden
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      backgroundImage: `url(${TargetBg})`,
-                      backgroundRepeat: "no-repeat",
-                      backgroundPosition: "center",
-                      backgroundSize: "cover",
-                      opacity: 0.42,
-                      filter: "saturate(1.12) contrast(1.05)",
-                      pointerEvents: "none",
-                    }}
-                  />
-                  <div
-                    aria-hidden
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      background: "rgba(0,0,0,0.10)",
-                    }}
-                  />
-
-                  <div
-                    style={{
-                      width: 58,
-                      height: 58,
-                      borderRadius: 999,
-                      display: "grid",
-                      placeItems: "center",
-                      background:
-                        "linear-gradient(180deg, rgba(255,210,90,.22), rgba(0,0,0,.35))",
-                      border: `1px solid ${theme.primary}66`,
-                      boxShadow: `0 0 22px ${theme.primary}33`,
-                      position: "relative",
-                      zIndex: 1,
-                    }}
-                    aria-label={`Cible ${target}`}
-                    title={`Cible ${target}`}
-                  >
-                    <div
-                      style={{
-                        fontSize: 21,
-                        fontWeight: 1000,
-                        color: theme.primary,
-                        textShadow: `0 0 16px ${theme.primary}66`,
-                      }}
-                    >
-                      {target}
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  style={{ display: "flex", justifyContent: "center", gap: 8 }}
-                >
-                  {renderThrowChips(currentThrow)}
-                </div>
-              </div>
+                  ?
+                </span>
+              )}
             </div>
           </div>
         </div>
+
+        {/* droite */}
+        <div
+          style={{
+            borderRadius: 16,
+            border: `1px solid ${theme.borderSoft}`,
+            background: "rgba(0,0,0,0.18)",
+            padding: 8,
+            display: "grid",
+            gap: 6,
+          }}
+        >
+          <div
+            style={{
+              borderRadius: 16,
+              border: `1px solid ${theme.borderSoft}`,
+              background:
+                "radial-gradient(circle at 50% 45%, rgba(255,198,58,.16), rgba(0,0,0,.60) 64%), rgba(0,0,0,.22)",
+              position: "relative",
+              overflow: "hidden",
+              minHeight: 92,
+              display: "grid",
+              placeItems: "center",
+            }}
+          >
+            <div
+              aria-hidden
+              style={{
+                position: "absolute",
+                inset: 0,
+                backgroundImage: `url(${TargetBg})`,
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "center",
+                backgroundSize: "cover",
+                opacity: 0.42,
+                filter: "saturate(1.12) contrast(1.05)",
+                pointerEvents: "none",
+              }}
+            />
+            <div
+              aria-hidden
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "rgba(0,0,0,0.10)",
+              }}
+            />
+
+            <div
+              style={{
+                width: 58,
+                height: 58,
+                borderRadius: 999,
+                display: "grid",
+                placeItems: "center",
+                background:
+                  "linear-gradient(180deg, rgba(255,210,90,.22), rgba(0,0,0,.35))",
+                border: `1px solid ${theme.primary}66`,
+                boxShadow: `0 0 22px ${theme.primary}33`,
+                position: "relative",
+                zIndex: 1,
+              }}
+              aria-label={`Cible ${target}`}
+              title={`Cible ${target}`}
+            >
+              <div
+                style={{
+                  fontSize: 21,
+                  fontWeight: 1000,
+                  color: theme.primary,
+                  textShadow: `0 0 16px ${theme.primary}66`,
+                }}
+              >
+                {target}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
+            {renderThrowChips(currentThrow)}
+          </div>
+        </div>
       </div>
+    </div>
+  </div>
+</div>
 
       {/* ===================== */}
       {/* LISTE JOUEURS — SEUL CONTENEUR SCROLLABLE */}
