@@ -2,6 +2,7 @@
 // src/components/Keypad.tsx
 // Keypad stylé — boutons ANNULER & VALIDER en or
 // (rangée "Flèche 1 / 2 / 3" supprimée pour gagner de la place)
+// ✅ FIX: le "+0pts" (aperçu total) est masqué quand hidePreview=true (Shanghai)
 // ============================================
 import React from "react";
 import type { Dart as UIDart } from "../lib/types";
@@ -13,14 +14,14 @@ type Props = {
   multiplier: 1 | 2 | 3;
 
   // Actions
-  onSimple: () => void;           // repasse à S (après un appui D/T)
-  onDouble: () => void;           // active D
-  onTriple: () => void;           // active T
-  onBackspace?: () => void;       // supprime la dernière entrée locale (utilisé sur clic droit ANNULER)
-  onCancel: () => void;           // logique "Annuler" déléguée au parent (X01V3 : efface dernier hit ou UNDO global)
-  onNumber: (n: number) => void;  // 0..20 (0 = MISS)
-  onBull: () => void;             // OB/DBULL (25/50)
-  onValidate: () => void;         // bouton Valider
+  onSimple: () => void; // repasse à S (après un appui D/T)
+  onDouble: () => void; // active D
+  onTriple: () => void; // active T
+  onBackspace?: () => void; // supprime la dernière entrée locale (utilisé sur clic droit ANNULER)
+  onCancel: () => void; // logique "Annuler" déléguée au parent (X01V3 : efface dernier hit ou UNDO global)
+  onNumber: (n: number) => void; // 0..20 (0 = MISS)
+  onBull: () => void; // OB/DBULL (25/50)
+  onValidate: () => void; // bouton Valider
 
   /** Masquer les 3 badges d’aperçu (si affichés ailleurs) */
   hidePreview?: boolean;
@@ -36,7 +37,7 @@ function fmt(d?: UIDart) {
 function throwTotal(throwDarts: UIDart[]) {
   return (throwDarts || []).reduce((acc, d) => {
     if (!d) return acc;
-    if (d.v === 0) return acc;                             // MISS
+    if (d.v === 0) return acc; // MISS
     if (d.v === 25) return acc + (d.mult === 2 ? 50 : 25); // BULL / DBULL
     return acc + d.v * d.mult;
   }, 0);
@@ -44,7 +45,8 @@ function throwTotal(throwDarts: UIDart[]) {
 
 /* ---------- Styles ---------- */
 const wrapCard: React.CSSProperties = {
-  background: "linear-gradient(180deg, rgba(22,22,23,.85), rgba(12,12,14,.95))",
+  background:
+    "linear-gradient(180deg, rgba(22,22,23,.85), rgba(12,12,14,.95))",
   border: "1px solid rgba(255,255,255,.08)",
   borderRadius: 18,
   padding: 14, // padding un poil réduit car la barre flèches est supprimée
@@ -62,9 +64,20 @@ const btnBase: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const btnGhost: React.CSSProperties = { ...btnBase, background: "rgba(255,255,255,.06)" };
-const btnDouble: React.CSSProperties = { ...btnBase, background: "rgba(46,150,193,.2)", color: "#bfeaff" };
-const btnTriple: React.CSSProperties = { ...btnBase, background: "rgba(179,68,151,.2)", color: "#ffccff" };
+const btnGhost: React.CSSProperties = {
+  ...btnBase,
+  background: "rgba(255,255,255,.06)",
+};
+const btnDouble: React.CSSProperties = {
+  ...btnBase,
+  background: "rgba(46,150,193,.2)",
+  color: "#bfeaff",
+};
+const btnTriple: React.CSSProperties = {
+  ...btnBase,
+  background: "rgba(179,68,151,.2)",
+  color: "#ffccff",
+};
 const btnGold: React.CSSProperties = {
   ...btnBase,
   background: "linear-gradient(180deg, #ffc63a, #ffaf00)",
@@ -73,7 +86,11 @@ const btnGold: React.CSSProperties = {
   boxShadow: "0 10px 22px rgba(255,170,0,.28)",
 };
 const btnCancel: React.CSSProperties = btnGold; // ANNULER en or comme VALIDER
-const btnBull: React.CSSProperties = { ...btnBase, background: "rgba(22,92,66,.35)", color: "#8be0b8" };
+const btnBull: React.CSSProperties = {
+  ...btnBase,
+  background: "rgba(22,92,66,.35)",
+  color: "#8be0b8",
+};
 const cell: React.CSSProperties = { ...btnBase, width: "100%" };
 
 const chip: React.CSSProperties = {
@@ -103,6 +120,15 @@ const totalPill: React.CSSProperties = {
   fontSize: 22,
 };
 
+const ptsHint: React.CSSProperties = {
+  marginTop: 8,
+  textAlign: "center",
+  fontSize: 12,
+  fontWeight: 900,
+  color: "rgba(255,255,255,.55)",
+  letterSpacing: 0.2,
+};
+
 /* ---------- Composant ---------- */
 export default function Keypad({
   currentThrow,
@@ -123,15 +149,27 @@ export default function Keypad({
     [14, 15, 16, 17, 18, 19, 20],
   ];
 
+  const total = throwTotal(currentThrow);
+
   return (
     <div style={wrapCard}>
       {/* (Barre Flèche 1/2/3 supprimée) */}
 
       {/* DOUBLE / TRIPLE / ANNULER */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: 12,
+          marginBottom: 12,
+        }}
+      >
         <button
           type="button"
-          style={{ ...btnDouble, borderColor: multiplier === 2 ? "#9bd7ff" : "rgba(255,255,255,.08)" }}
+          style={{
+            ...btnDouble,
+            borderColor: multiplier === 2 ? "#9bd7ff" : "rgba(255,255,255,.08)",
+          }}
           aria-pressed={multiplier === 2}
           onClick={onDouble}
           onMouseUp={onSimple}
@@ -142,7 +180,10 @@ export default function Keypad({
 
         <button
           type="button"
-          style={{ ...btnTriple, borderColor: multiplier === 3 ? "#ffd0ff" : "rgba(255,255,255,.08)" }}
+          style={{
+            ...btnTriple,
+            borderColor: multiplier === 3 ? "#ffd0ff" : "rgba(255,255,255,.08)",
+          }}
           aria-pressed={multiplier === 3}
           onClick={onTriple}
           onMouseUp={onSimple}
@@ -169,7 +210,14 @@ export default function Keypad({
       {/* Grille chiffres */}
       <div style={{ display: "grid", gap: 10 }}>
         {rows.map((row, idx) => (
-          <div key={idx} style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 10 }}>
+          <div
+            key={idx}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, 1fr)",
+              gap: 10,
+            }}
+          >
             {row.map((n) => (
               <button
                 key={n}
@@ -197,30 +245,51 @@ export default function Keypad({
       >
         {/* Colonne gauche : BULL aligné à gauche */}
         <div style={{ display: "flex" }}>
-          <button type="button" style={{ ...btnBull, minWidth: 96 }} onClick={onBull}>
+          <button
+            type="button"
+            style={{ ...btnBull, minWidth: 96 }}
+            onClick={onBull}
+          >
             BULL
           </button>
         </div>
 
         {/* Colonne centrale : TOTAL parfaitement centré */}
         <div style={{ display: "flex", justifyContent: "center" }}>
-          <span style={totalPill}>{throwTotal(currentThrow)}</span>
+          <span style={totalPill}>{total}</span>
         </div>
 
         {/* Colonne droite : VALIDER aligné à droite */}
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <button type="button" style={{ ...btnGold, width: 140 }} onClick={onValidate}>
+          <button
+            type="button"
+            style={{ ...btnGold, width: 140 }}
+            onClick={onValidate}
+          >
             VALIDER
           </button>
         </div>
       </div>
 
+      {/* ✅ FIX: le "+0pts" ne doit PAS s’afficher quand hidePreview=true */}
+      {!hidePreview && (
+        <div style={ptsHint}>
+          +{total} pts
+        </div>
+      )}
+
       {/* Badges d’aperçu en bas (optionnels) */}
       {!hidePreview && (
         <div style={{ marginTop: 12 }}>
-          <span style={{ ...chip, color: "#eec7ff" }}>{fmt(currentThrow[0])}</span>
-          <span style={{ ...chip, color: "#cfe6ff" }}>{fmt(currentThrow[1])}</span>
-          <span style={{ ...chip, color: "#ffe7c0" }}>{fmt(currentThrow[2])}</span>
+          <span style={{ ...chip, color: "#eec7ff" }}>
+            {fmt(currentThrow[0])}
+          </span>
+          <span style={{ ...chip, color: "#cfe6ff" }}>
+            {fmt(currentThrow[1])}
+          </span>
+          <span style={{ ...chip, color: "#ffe7c0" }}>
+            {fmt(currentThrow[2])}
+          </span>
         </div>
       )}
     </div>

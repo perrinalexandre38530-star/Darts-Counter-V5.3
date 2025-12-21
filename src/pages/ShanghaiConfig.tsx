@@ -8,6 +8,7 @@
 // ✅ CTA sticky bas "LANCER LA PARTIE"
 // ✅ NEW: Toggle BRUITAGES ON/OFF (comme X01Config) + persist store.settings.sfxEnabled
 // ✅ NEW: Toggle VOIX IA ON/OFF + persist store.settings.voiceEnabled
+// ✅ NEW: Ordre des cibles (Chronologique / Aléatoire) + targetOrder stable (anti reshuffle)
 // ============================================
 
 import React from "react";
@@ -40,6 +41,11 @@ export type ShanghaiConfig = {
   // ✅ NEW (compat: optionnel)
   sfxEnabled?: boolean;
   voiceEnabled?: boolean;
+
+  // ✅ NEW: ordre des cibles
+  targetOrderMode?: "chronological" | "random";
+  // ✅ NEW: ordre calculé et fixé (évite reshuffle au reload)
+  targetOrder?: number[];
 };
 
 const LS_BOTS_KEY = "dc_bots_v1";
@@ -79,6 +85,31 @@ function clampRounds(n: any) {
   return Math.max(1, Math.min(20, Math.round(v)));
 }
 
+// ✅ NEW: cible order helpers (stable)
+function makeRange(n: number) {
+  const out: number[] = [];
+  for (let i = 1; i <= n; i++) out.push(i);
+  return out;
+}
+function shuffleArray<T>(arr: T[]) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = a[i];
+    a[i] = a[j];
+    a[j] = tmp;
+  }
+  return a;
+}
+function buildTargetOrder(
+  maxRounds: number,
+  mode: "chronological" | "random"
+) {
+  const base = makeRange(20); // Shanghai classique: 1..20
+  const order = mode === "random" ? shuffleArray(base) : base;
+  return order.slice(0, maxRounds);
+}
+
 export default function ShanghaiConfigPage({ store, go }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
@@ -110,6 +141,11 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
   const [maxRounds, setMaxRounds] = React.useState<number>(20);
   const [winRule, setWinRule] =
     React.useState<ShanghaiConfig["winRule"]>("shanghai_or_points");
+
+  // ✅ NEW: ordre des cibles
+  const [targetOrderMode, setTargetOrderMode] = React.useState<
+    "chronological" | "random"
+  >("chronological");
 
   const [infoOpen, setInfoOpen] = React.useState(false);
 
@@ -165,12 +201,19 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
         isBot: !!p.isBot,
       }));
 
+    const finalRounds = clampRounds(maxRounds);
+
+    // ✅ NEW: calcule un ordre stable (anti reshuffle au reload)
+    const targetOrder = buildTargetOrder(finalRounds, targetOrderMode);
+
     const config: ShanghaiConfig = {
       players,
-      maxRounds: clampRounds(maxRounds),
+      maxRounds: finalRounds,
       winRule,
       sfxEnabled,
       voiceEnabled,
+      targetOrderMode,
+      targetOrder,
     };
 
     go("shanghai_play", { config });
@@ -235,6 +278,13 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
     fontSize: 12,
     letterSpacing: 0.2,
   };
+
+  // ✅ petit aperçu des cibles si aléatoire
+  const targetPreview =
+    targetOrderMode === "random"
+      ? buildTargetOrder(clampRounds(maxRounds), "random").slice(0, 6).join(" • ") +
+        " • …"
+      : "1 • 2 • 3 • 4 • 5 • 6 • …";
 
   return (
     <div
@@ -305,7 +355,14 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
 
         {/* JOUEURS — carrousel X01Multi (sans cartes) */}
         <div style={{ ...cardShell, padding: 14 }}>
-          <div style={{ fontWeight: 950, fontSize: 12.5, letterSpacing: 0.6, color: theme.primary }}>
+          <div
+            style={{
+              fontWeight: 950,
+              fontSize: 12.5,
+              letterSpacing: 0.6,
+              color: theme.primary,
+            }}
+          >
             {t("x01.players.title", "JOUEURS")}
           </div>
 
@@ -329,7 +386,11 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
                       <img
                         src={p.avatarDataUrl}
                         alt=""
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                        }}
                       />
                     ) : (
                       <span style={{ opacity: 0.75, fontWeight: 900 }}>?</span>
@@ -351,7 +412,14 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
                     {p.name}
                   </div>
 
-                  <div style={{ marginTop: 4, fontSize: 11, color: theme.textSoft, opacity: 0.9 }} />
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 11,
+                      color: theme.textSoft,
+                      opacity: 0.9,
+                    }}
+                  />
 
                   {sel ? <div style={okPill}>OK</div> : <div style={{ height: 26 }} />}
                 </div>
@@ -359,7 +427,14 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
             })}
           </div>
 
-          <div style={{ marginTop: 8, fontSize: 12, color: theme.textSoft, opacity: 0.9 }}>
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 12,
+              color: theme.textSoft,
+              opacity: 0.9,
+            }}
+          >
             {t("x01.players.hint", "2 joueurs pour un duel, 3+ pour Multi ou équipes.")}{" "}
             {!canStart ? (
               <span style={{ color: theme.primary, fontWeight: 900 }}>
@@ -371,12 +446,26 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
 
         {/* PARAMÈTRES DE BASE */}
         <div style={{ marginTop: 12, ...cardShell, padding: 14 }}>
-          <div style={{ fontWeight: 950, fontSize: 12.5, letterSpacing: 0.6, color: theme.primary }}>
+          <div
+            style={{
+              fontWeight: 950,
+              fontSize: 12.5,
+              letterSpacing: 0.6,
+              color: theme.primary,
+            }}
+          >
             {t("x01.base.title", "PARAMÈTRES DE BASE")}
           </div>
 
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 12.2, fontWeight: 900, color: theme.textSoft, marginBottom: 8 }}>
+            <div
+              style={{
+                fontSize: 12.2,
+                fontWeight: 900,
+                color: theme.textSoft,
+                marginBottom: 8,
+              }}
+            >
               {t("shanghai.settings.rounds", "Tours")}
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -388,8 +477,56 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
             </div>
           </div>
 
+          {/* ✅ NEW: ordre des cibles */}
           <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 12.2, fontWeight: 900, color: theme.textSoft, marginBottom: 8 }}>
+            <div
+              style={{
+                fontSize: 12.2,
+                fontWeight: 900,
+                color: theme.textSoft,
+                marginBottom: 8,
+              }}
+            >
+              {t("shanghai.settings.order", "Ordre des cibles")}
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div
+                onClick={() => setTargetOrderMode("chronological")}
+                style={pill(targetOrderMode === "chronological")}
+              >
+                {t("shanghai.settings.orderChrono", "Chronologique")}
+              </div>
+              <div
+                onClick={() => setTargetOrderMode("random")}
+                style={pill(targetOrderMode === "random")}
+              >
+                {t("shanghai.settings.orderRandom", "Aléatoire")}
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 12,
+                color: theme.textSoft,
+                opacity: 0.88,
+                lineHeight: 1.25,
+              }}
+            >
+              {t("shanghai.settings.orderPreview", "Aperçu")} :{" "}
+              <span style={{ color: theme.text }}>{targetPreview}</span>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <div
+              style={{
+                fontSize: 12.2,
+                fontWeight: 900,
+                color: theme.textSoft,
+                marginBottom: 8,
+              }}
+            >
               {t("shanghai.settings.win", "Victoire")}
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -399,7 +536,10 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
               >
                 {t("shanghai.settings.win1", "Shanghai 💥 ou points")}
               </div>
-              <div onClick={() => setWinRule("points_only")} style={pill(winRule === "points_only")}>
+              <div
+                onClick={() => setWinRule("points_only")}
+                style={pill(winRule === "points_only")}
+              >
                 {t("shanghai.settings.win2", "Points seulement")}
               </div>
             </div>
@@ -407,7 +547,14 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
 
           {/* ✅ NEW: Toggles SFX + VOICE (même style pills) */}
           <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 12.2, fontWeight: 900, color: theme.textSoft, marginBottom: 8 }}>
+            <div
+              style={{
+                fontSize: 12.2,
+                fontWeight: 900,
+                color: theme.textSoft,
+                marginBottom: 8,
+              }}
+            >
               {t("common.audio", "Audio")}
             </div>
 
@@ -455,7 +602,8 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
           bottom: 88,
           zIndex: 30,
           padding: "10px 14px",
-          background: "linear-gradient(180deg, rgba(0,0,0,0.00), rgba(0,0,0,0.55))",
+          background:
+            "linear-gradient(180deg, rgba(0,0,0,0.00), rgba(0,0,0,0.55))",
         }}
       >
         <div style={{ maxWidth: 520, margin: "0 auto" }}>
@@ -526,42 +674,37 @@ export default function ShanghaiConfigPage({ store, go }: Props) {
 
             <div style={{ fontSize: 13, lineHeight: 1.45, color: theme.textSoft }}>
               <div style={{ marginBottom: 10 }}>
-                <b style={{ color: theme.text }}>But :</b> marquer le plus de points sur {maxRounds} tours.
-                Chaque tour a une <b style={{ color: theme.text }}>cible</b> = le numéro du tour (1→20).
+                <b style={{ color: theme.text }}>But :</b> marquer le plus de points sur{" "}
+                {clampRounds(maxRounds)} tours.
+              </div>
+
+              <div style={{ marginBottom: 10 }}>
+                <b style={{ color: theme.text }}>Cibles :</b>{" "}
+                {targetOrderMode === "random"
+                  ? "ordre aléatoire (fixé au lancement)."
+                  : "ordre chronologique (1 → 20)."}
               </div>
 
               <div style={{ marginBottom: 10 }}>
                 <b style={{ color: theme.text }}>Scoring :</b>
                 <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
-                  <li>Simple sur la cible = <b>1×</b> le numéro du tour</li>
-                  <li>Double sur la cible = <b>2×</b> le numéro du tour</li>
-                  <li>Triple sur la cible = <b>3×</b> le numéro du tour</li>
+                  <li>Simple sur la cible = <b>1×</b> le numéro</li>
+                  <li>Double sur la cible = <b>2×</b> le numéro</li>
+                  <li>Triple sur la cible = <b>3×</b> le numéro</li>
                   <li>Hors-cible = <b>0</b></li>
                 </ul>
               </div>
 
               <div style={{ marginBottom: 10 }}>
                 <b style={{ color: theme.text }}>Shanghai :</b> réussir <b>Simple + Double + Triple</b> de la
-                cible <b>dans le même tour</b> (sur tes 3 fléchettes).
-              </div>
-
-              <div style={{ marginBottom: 10 }}>
-                <b style={{ color: theme.text }}>Victoire :</b>
-                <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
-                  <li>
-                    <b>Shanghai 💥 ou points</b> : un Shanghai termine la partie immédiatement, sinon on joue
-                    jusqu’au dernier tour et on compare les points.
-                  </li>
-                  <li>
-                    <b>Points seulement</b> : même si quelqu’un fait un Shanghai, on continue et seule la
-                    somme des points compte à la fin.
-                  </li>
-                </ul>
+                cible <b>dans le même tour</b>.
               </div>
 
               <div style={{ marginBottom: 2 }}>
-                <b style={{ color: theme.text }}>Conseil :</b> vise la régularité sur la cible, et utilise
-                la dernière fléchette pour tenter le Shanghai quand tu as déjà S ou D.
+                <b style={{ color: theme.text }}>Victoire :</b>{" "}
+                {winRule === "shanghai_or_points"
+                  ? "Shanghai immédiat, sinon aux points en fin de partie."
+                  : "Aux points uniquement (pas de victoire immédiate)."}
               </div>
             </div>
 

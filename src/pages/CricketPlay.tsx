@@ -5,6 +5,10 @@
 // - Play  : tableau Cricket (15..20 + Bull) avec colonnes centrées
 // - Keypad 0..20 (3 × 7) + bouton BULL
 // - Intégration Historique : enregistre chaque manche dans History (kind: "cricket")
+// ✅ FIX: maxRounds appliqué (via engine)
+// ✅ NEW: SFX arcade DOUBLE/TRIPLE/BULL/DBULL + MISS(0..14)=BUST
+// ✅ NEW: Fin de partie = résumé propre + save history + actions
+// ✅ NEW: legStats par joueur dans payload.players pour StatsCricket
 // ============================================
 
 import React from "react";
@@ -24,6 +28,9 @@ import {
   DartIconColorizable,
   CricketMarkIcon,
 } from "../components/MaskIcon";
+
+import CricketSetup from "./cricket/CricketSetup";
+import CricketBoard from "./cricket/CricketBoard";
 
 const T = {
   bg: "#050712",
@@ -72,7 +79,7 @@ type HitMode = "S" | "D" | "T";
 
 type Props = {
   profiles?: Profile[];
-  // 🔥 NOUVEAU : callback pour enregistrer la manche dans l’historique
+  // 🔥 callback pour enregistrer la manche dans l’historique
   onFinish?: (m: SavedMatch) => void;
 };
 
@@ -91,10 +98,17 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
   const [rotateFirstPlayer, setRotateFirstPlayer] =
     React.useState<boolean>(true);
 
+  // ✅ NEW : départ aléatoire (sans changer le visuel global ; pas de bouton ici pour l’instant)
+  // -> on l’ajoutera ensuite proprement dans le setup si tu veux.
+  const [randomStart] = React.useState<boolean>(false);
+
   // ---- Match en cours ----
   const [state, setState] = React.useState<CricketState | null>(null);
   const [hitMode, setHitMode] = React.useState<HitMode>("S");
   const [showHelp, setShowHelp] = React.useState(false);
+
+  // ✅ NEW: modal fin de partie
+  const [showEnd, setShowEnd] = React.useState(false);
 
   // 🕒 timestamp de début de manche (pour createdAt)
   const [legStartAt, setLegStartAt] = React.useState<number | null>(null);
@@ -111,6 +125,10 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
     for (const p of allProfiles) m.set(p.id, p);
     return m;
   }, [allProfiles]);
+
+  React.useEffect(() => {
+    if (isFinished) setShowEnd(true);
+  }, [isFinished]);
 
   // --------------------------------------------------
   // Helpers visuels
@@ -221,34 +239,66 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
   function handleStartMatch() {
     if (!canStart) return;
 
-    const selectedProfiles = allProfiles.filter((p) =>
-      selectedIds.includes(p.id)
-    );
+    // IMPORTANT: ordre = ordre de sélection (selectedIds), pas allProfiles.filter
+    const selectedProfiles = selectedIds
+      .map((id) => allProfiles.find((p) => p.id === id) || null)
+      .filter(Boolean) as Profile[];
+
     if (selectedProfiles.length < 2) return;
 
-    const match = createCricketMatch(
-      selectedProfiles.map((p) => ({
-        id: p.id,
-        name: p.name,
-      })),
-      {
-        withPoints: scoreMode === "points",
-        maxRounds,
-      }
-    );
+    let players = selectedProfiles.map((p) => ({ id: p.id, name: p.name }));
+
+    // (option future) départ aléatoire
+    if (randomStart) {
+      players = [...players].sort(() => Math.random() - 0.5);
+    }
+
+    const match = createCricketMatch(players, {
+      withPoints: scoreMode === "points",
+      maxRounds,
+    });
 
     setState(match);
     setPhase("play");
     setHitMode("S");
     setLegStartAt(Date.now());
+    setShowEnd(false);
     playSound("start");
   }
 
   // --------------------------------------------------
-  // PLAY : logique
+  // PLAY : SFX + logique
   // --------------------------------------------------
 
-  function registerHit(target: CricketTarget) {
+  function sfxForHit(target: number, mult: Multiplier) {
+    // 0..14 => MISS = son BUST demandé
+    if (target >= 0 && target <= 14) {
+      playSound("bust");
+      return;
+    }
+
+    // Bull / DBull
+    if (target === 25) {
+      if (mult === 2) playSound("dbull");
+      else playSound("bull");
+      return;
+    }
+
+    // Double / Triple
+    if (mult === 2) {
+      playSound("double");
+      return;
+    }
+    if (mult === 3) {
+      playSound("triple");
+      return;
+    }
+
+    // Simple valide
+    playSound("ok");
+  }
+
+  function registerHit(rawTarget: number) {
     if (!state || !currentPlayer) return;
     if (state.winnerId) return;
 
@@ -256,32 +306,27 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
     if (hitMode === "D") mult = 2;
     if (hitMode === "T") mult = 3;
 
-    const next = applyCricketHit(state, target, mult);
+    const next = applyCricketHit(state, rawTarget as any, mult);
     setState(next);
-    playSound("ok");
+
+    sfxForHit(rawTarget, mult);
+
+    // après saisie, on revient en "simple" si D/T
+    if (hitMode === "D" || hitMode === "T") {
+      setHitMode("S");
+    }
   }
 
   function handleKeyPress(value: number) {
     if (!state || !currentPlayer) return;
     if (state.winnerId) return;
-
-    const target = value as CricketTarget;
-    registerHit(target);
-
-    // après saisie, on revient en "simple"
-    if (hitMode === "D" || hitMode === "T") {
-      setHitMode("S");
-    }
+    registerHit(value);
   }
 
   function handleBull() {
     if (!state || !currentPlayer) return;
     if (state.winnerId) return;
-
-    registerHit(25 as CricketTarget);
-    if (hitMode === "D" || hitMode === "T") {
-      setHitMode("S");
-    }
+    registerHit(25);
   }
 
   function handleUndo() {
@@ -311,6 +356,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
     setState(match);
     setHitMode("S");
     setLegStartAt(Date.now());
+    setShowEnd(false);
     playSound("start");
   }
 
@@ -319,11 +365,27 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
     setPhase("setup");
     setHitMode("S");
     setLegStartAt(null);
+    setShowEnd(false);
   }
 
   // --------------------------------------------------
   // CONSTRUCTION DU RECORD POUR L'HISTORIQUE
   // --------------------------------------------------
+
+  function computeLegStatsForPlayer(p: any) {
+    const marks = p?.marks || {};
+    const totalMarks = CRICKET_TARGETS.reduce(
+      (acc: number, t: any) => acc + Number(marks[t] ?? 0),
+      0
+    );
+    const totalPoints = Number(p?.score ?? 0);
+
+    return {
+      legs: 1,
+      totalMarks,
+      totalPoints,
+    };
+  }
 
   function buildHistoryRecord(): SavedMatch | null {
     if (!state) return null;
@@ -350,6 +412,8 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
         score: p.score,
         marks: p.marks,
         hits,
+        // ✅ IMPORTANT pour StatsCricket.tsx
+        legStats: computeLegStatsForPlayer(p),
       };
     });
 
@@ -359,9 +423,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
     );
 
     const rec: SavedMatch = {
-      id:
-        `cricket-${createdAt}-` +
-        Math.random().toString(36).slice(2, 8),
+      id: `cricket-${createdAt}-` + Math.random().toString(36).slice(2, 8),
       kind: "cricket",
       status: "finished",
       players: playersLite,
@@ -379,6 +441,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
         withPoints: scoreMode === "points",
         maxRounds,
         rotateFirstPlayer,
+        roundNumber: (state as any).roundNumber ?? undefined,
         players: playersPayload,
       },
     };
@@ -386,8 +449,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
     return rec;
   }
 
-  // Quand la manche est finie + on clique QUITTER
-  function handleFinishAndQuit() {
+  function handleSaveAndQuit() {
     if (isFinished && onFinish) {
       const rec = buildHistoryRecord();
       if (rec) onFinish(rec);
@@ -395,8 +457,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
     handleQuitInternal();
   }
 
-  // Quand la manche est finie + on clique REJOUER
-  function handleFinishAndNewLeg() {
+  function handleSaveAndReplay() {
     if (isFinished && onFinish) {
       const rec = buildHistoryRecord();
       if (rec) onFinish(rec);
@@ -489,9 +550,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
             {/* Flèche gauche */}
             <button
               onClick={() => {
-                const el = document.getElementById(
-                  "cricket-profiles-scroll"
-                );
+                const el = document.getElementById("cricket-profiles-scroll");
                 if (el) el.scrollBy({ left: -90, behavior: "smooth" });
               }}
               style={{
@@ -524,7 +583,6 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
                 gap: 14,
                 overflowX: "auto",
                 scrollSnapType: "x mandatory",
-                // 👉 marge gauche/droite pour espacer des flèches
                 padding: "0 26px 8px 26px",
               }}
             >
@@ -538,7 +596,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
                     onClick={() => toggleProfile(p.id)}
                     style={{
                       scrollSnapAlign: "start",
-                      minWidth: "25%", // 4 profils visibles
+                      minWidth: "25%",
                       display: "flex",
                       flexDirection: "column",
                       alignItems: "center",
@@ -586,9 +644,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
             {/* Flèche droite */}
             <button
               onClick={() => {
-                const el = document.getElementById(
-                  "cricket-profiles-scroll"
-                );
+                const el = document.getElementById("cricket-profiles-scroll");
                 if (el) el.scrollBy({ left: 90, behavior: "smooth" });
               }}
               style={{
@@ -984,11 +1040,23 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
         {!hasMarks ? null : isClosed ? (
           <CricketMarkIcon marks={3} color={accent} size={36} glow={isActive} />
         ) : (
-          <CricketMarkIcon marks={marks} color={accent} size={28} glow={isActive} />
+          <CricketMarkIcon
+            marks={marks}
+            color={accent}
+            size={28}
+            glow={isActive}
+          />
         )}
       </div>
     );
   }
+
+  const winnerName = (() => {
+    const wid = state.winnerId;
+    if (!wid) return null;
+    const p = state.players.find((x) => x.id === wid);
+    return p?.name ?? null;
+  })();
 
   return (
     <div
@@ -1055,13 +1123,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
           </div>
 
           {/* 3 fléchettes */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             {Array.from({ length: totalDartsPerTurn }).map((_, i) => {
               const active = i < thrown;
               return (
@@ -1133,7 +1195,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
             </div>
 
             <div>
-              • Tu dois fermer <strong>15,16,17,18,19,20 & Bull</strong>
+              • Tu dois fermer <strong>15,16,17,18,19,20 &amp; Bull</strong>
               <br />
               • Pour fermer : <strong>3 marques</strong>
               <br />
@@ -1164,14 +1226,239 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
         </div>
       )}
 
+      {/* ✅ MODAL FIN DE PARTIE (résumé + save) */}
+      {showEnd && isFinished && (
+        <div
+          style={{
+            position: "fixed",
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.68)",
+            backdropFilter: "blur(7px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 18,
+            zIndex: 1000,
+          }}
+          onClick={() => setShowEnd(false)}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 380,
+              borderRadius: 18,
+              background: "#111827",
+              border: "1px solid rgba(246,194,86,0.45)",
+              boxShadow: "0 0 24px rgba(246,194,86,0.25)",
+              padding: 16,
+              color: "#fff",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 900,
+                letterSpacing: 1.2,
+                color: T.gold,
+                textAlign: "center",
+                textShadow: "0 0 10px rgba(246,194,86,0.65)",
+                marginBottom: 6,
+              }}
+            >
+              Fin de partie
+            </div>
+
+            <div
+              style={{
+                textAlign: "center",
+                fontSize: 13,
+                color: "rgba(255,255,255,0.75)",
+              }}
+            >
+              {winnerName ? (
+                <>
+                  Vainqueur :{" "}
+                  <strong style={{ color: "#fff" }}>{winnerName}</strong>
+                </>
+              ) : (
+                "Partie terminée"
+              )}
+            </div>
+
+            <div
+              style={{
+                marginTop: 12,
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,0.08)",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    scoreMode === "points" ? "1.7fr 1fr 1fr" : "1.7fr 1fr",
+                  padding: "8px 10px",
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6,
+                  color: "rgba(255,255,255,0.7)",
+                  background: "rgba(0,0,0,0.35)",
+                  borderBottom: "1px solid rgba(255,255,255,0.08)",
+                }}
+              >
+                <div>Joueur</div>
+                <div style={{ textAlign: "right" }}>Marks</div>
+                {scoreMode === "points" && (
+                  <div style={{ textAlign: "right" }}>Pts</div>
+                )}
+              </div>
+
+              {state.players.map((p, idx) => {
+                const accent = ACCENTS[idx % ACCENTS.length];
+                const marksTotal = CRICKET_TARGETS.reduce(
+                  (acc, t) => acc + Number((p.marks as any)?.[t] ?? 0),
+                  0
+                );
+                const winner = p.id === state.winnerId;
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        scoreMode === "points" ? "1.7fr 1fr 1fr" : "1.7fr 1fr",
+                      padding: "8px 10px",
+                      borderBottom: "1px solid rgba(255,255,255,0.06)",
+                      background: winner
+                        ? "rgba(246,194,86,0.12)"
+                        : "transparent",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        minWidth: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: 999,
+                          background: accent,
+                          boxShadow: `0 0 10px ${accent}aa`,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 800,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {p.name}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        textAlign: "right",
+                        fontSize: 13,
+                        fontWeight: 800,
+                      }}
+                    >
+                      {marksTotal}
+                    </div>
+                    {scoreMode === "points" && (
+                      <div
+                        style={{
+                          textAlign: "right",
+                          fontSize: 13,
+                          fontWeight: 800,
+                        }}
+                      >
+                        {p.score}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button
+                onClick={handleSaveAndQuit}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: 999,
+                  border: "none",
+                  background: "linear-gradient(135deg,#ef4444,#b91c1c)",
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  letterSpacing: 1,
+                  cursor: "pointer",
+                }}
+              >
+                Sauver &amp; quitter
+              </button>
+              <button
+                onClick={handleSaveAndReplay}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: 999,
+                  border: "none",
+                  background: "linear-gradient(135deg,#ffc63a,#ffaf00)",
+                  color: "#211500",
+                  fontSize: 13,
+                  fontWeight: 900,
+                  textTransform: "uppercase",
+                  letterSpacing: 1,
+                  cursor: "pointer",
+                }}
+              >
+                Rejouer
+              </button>
+            </div>
+
+            <button
+              onClick={() => setShowEnd(false)}
+              style={{
+                marginTop: 10,
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,0.14)",
+                background: "rgba(0,0,0,0.25)",
+                color: "rgba(255,255,255,0.85)",
+                fontSize: 12,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: 1,
+                cursor: "pointer",
+              }}
+            >
+              Continuer
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* CARTES JOUEURS */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          marginBottom: 12,
-        }}
-      >
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         {state.players.map((p, idx) => {
           const isActive = p.id === currentPlayer.id;
           const isWinnerPlayer = p.id === state.winnerId;
@@ -1293,7 +1580,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
                   }}
                 >
                   <MarkCell
-                    marks={state.players[0].marks[target]}
+                    marks={(state.players[0].marks as any)[target]}
                     playerIndex={0}
                     isActive={state.players[0].id === currentPlayer.id}
                   />
@@ -1315,7 +1602,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
                   </div>
 
                   <MarkCell
-                    marks={state.players[1].marks[target]}
+                    marks={(state.players[1].marks as any)[target]}
                     playerIndex={1}
                     isActive={state.players[1].id === currentPlayer.id}
                   />
@@ -1341,12 +1628,12 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
                   }}
                 >
                   <MarkCell
-                    marks={state.players[0].marks[target]}
+                    marks={(state.players[0].marks as any)[target]}
                     playerIndex={0}
                     isActive={state.players[0].id === currentPlayer.id}
                   />
                   <MarkCell
-                    marks={state.players[1].marks[target]}
+                    marks={(state.players[1].marks as any)[target]}
                     playerIndex={1}
                     isActive={state.players[1].id === currentPlayer.id}
                   />
@@ -1368,12 +1655,12 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
                   </div>
 
                   <MarkCell
-                    marks={state.players[2].marks[target]}
+                    marks={(state.players[2].marks as any)[target]}
                     playerIndex={2}
                     isActive={state.players[2].id === currentPlayer.id}
                   />
                   <MarkCell
-                    marks={state.players[3].marks[target]}
+                    marks={(state.players[3].marks as any)[target]}
                     playerIndex={3}
                     isActive={state.players[3].id === currentPlayer.id}
                   />
@@ -1416,7 +1703,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
                   {state.players.map((p, idx) => (
                     <MarkCell
                       key={p.id}
-                      marks={p.marks[target]}
+                      marks={(p.marks as any)[target]}
                       playerIndex={idx}
                       isActive={p.id === currentPlayer.id}
                     />
@@ -1429,14 +1716,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
       </div>
 
       {/* DOUBLE / TRIPLE / BULL */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          marginBottom: 12,
-        }}
-      >
-        {/* DOUBLE */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <button
           type="button"
           onClick={() => setHitMode("D")}
@@ -1462,7 +1742,6 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
           Double
         </button>
 
-        {/* TRIPLE */}
         <button
           type="button"
           onClick={() => setHitMode("T")}
@@ -1488,7 +1767,6 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
           Triple
         </button>
 
-        {/* BULL */}
         <button
           type="button"
           onClick={handleBull}
@@ -1543,9 +1821,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
                 style={{
                   padding: "11px 0",
                   borderRadius: 16,
-                  border: isCricketNumber
-                    ? `1px solid ${accent}dd`
-                    : "none",
+                  border: isCricketNumber ? `1px solid ${accent}dd` : "none",
                   cursor: "pointer",
                   fontSize: 16,
                   fontWeight: 700,
@@ -1565,14 +1841,7 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
       </div>
 
       {/* BAS : ANNULER / QUITTER / VALIDER */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          marginBottom: 12,
-        }}
-      >
-        {/* ANNULER */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <button
           onClick={handleUndo}
           style={{
@@ -1593,10 +1862,9 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
           Annuler
         </button>
 
-        {/* QUITTER si fini */}
         {isFinished && (
           <button
-            onClick={handleFinishAndQuit}
+            onClick={() => setShowEnd(true)}
             style={{
               flex: 1,
               padding: "10px 12px",
@@ -1615,9 +1883,8 @@ export default function CricketPlay({ profiles, onFinish }: Props) {
           </button>
         )}
 
-        {/* VALIDER / REJOUER */}
         <button
-          onClick={isFinished ? handleFinishAndNewLeg : () => {}}
+          onClick={isFinished ? () => setShowEnd(true) : () => {}}
           style={{
             flex: 1,
             padding: "10px 12px",
