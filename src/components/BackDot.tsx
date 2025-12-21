@@ -1,73 +1,81 @@
 // ============================================
 // src/components/BackDot.tsx
-// Bouton retour compact — style identique à InfoDot (pastille "i")
-// - Cercle + halo
-// - Icône flèche à l'intérieur
+// BackDot robuste (anti "button in button")
+// ✅ Pas de <button> => évite DOM nesting warnings
+// ✅ Click fiable mobile/desktop : onPointerDown + onClick
+// ✅ stopPropagation + preventDefault
 // ============================================
+
 import React from "react";
+import { useTheme } from "../contexts/ThemeContext";
 
 type Props = {
-  onClick?: (e: React.MouseEvent) => void;
-  glow?: string; // ex: theme.primary + "88"
-  size?: number; // default 34
+  onClick?: (e: any) => void;
+  glow?: string;
   title?: string;
-  disabled?: boolean;
-  style?: React.CSSProperties;
+  size?: number; // px
 };
 
 export default function BackDot({
   onClick,
-  glow = "rgba(255,180,0,.55)",
-  size = 34,
+  glow,
   title = "Retour",
-  disabled = false,
-  style,
+  size = 36,
 }: Props) {
-  const s = size;
+  const { theme } = useTheme();
+
+  const handle = React.useCallback(
+    (e: any) => {
+      try {
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+      } catch {}
+      onClick?.(e);
+    },
+    [onClick]
+  );
+
+  const halo = glow ?? theme.primary + "88";
 
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      title={title}
+    <div
+      role="button"
       aria-label={title}
-      onClick={(e) => {
-        if (disabled) return;
-        onClick?.(e);
+      title={title}
+      tabIndex={0}
+      onPointerDown={handle} // 👈 ultra fiable sur mobile
+      onClick={handle} // 👈 fallback desktop
+      onKeyDown={(e: any) => {
+        if (e.key === "Enter" || e.key === " ") handle(e);
       }}
       style={{
-        width: s,
-        height: s,
+        width: size,
+        height: size,
         borderRadius: 999,
-        border: "1px solid rgba(255,255,255,.12)",
-        background: "rgba(0,0,0,0.22)",
-        color: "#fff",
         display: "grid",
         placeItems: "center",
-        cursor: disabled ? "not-allowed" : "pointer",
-        boxShadow: `0 0 16px ${glow}`,
-        backdropFilter: "blur(6px)",
+        cursor: "pointer",
+        userSelect: "none",
         WebkitTapHighlightColor: "transparent",
-        opacity: disabled ? 0.55 : 1,
-        ...style,
+        border: `1px solid ${theme.borderSoft}`,
+        background: "rgba(0,0,0,0.22)",
+        boxShadow: `0 0 0 2px rgba(0,0,0,0.15), 0 0 14px ${halo}`,
+        color: theme.text,
+        flex: "0 0 auto",
+        pointerEvents: "auto",
       }}
     >
-      {/* Flèche gauche (SVG) */}
-      <svg
-        width={Math.round(s * 0.55)}
-        height={Math.round(s * 0.55)}
-        viewBox="0 0 24 24"
-        fill="none"
-        aria-hidden="true"
+      <span
+        style={{
+          fontSize: 18,
+          fontWeight: 1000,
+          lineHeight: 1,
+          transform: "translateX(-1px)",
+          textShadow: `0 0 10px ${halo}`,
+        }}
       >
-        <path
-          d="M14.5 5.5L8.5 12L14.5 18.5"
-          stroke="currentColor"
-          strokeWidth="2.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </button>
+        ←
+      </span>
+    </div>
   );
 }

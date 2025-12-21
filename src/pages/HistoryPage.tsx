@@ -7,8 +7,9 @@
 // - Décodage payload (base64 + gzip) pour récupérer config/summary
 // ✅ FIX: “Voir stats” n’ouvre PLUS les pages X01 pour KILLER
 //    -> KILLER : go("killer_summary", { rec })
-//    -> Autres : go("x01_end", { rec })
-// ✅ (bonus safe) : Reprendre/Voir en cours route aussi KILLER vers "killer_play"
+// ✅ NEW: “Voir stats” ouvre une page dédiée pour SHANGHAI
+//    -> SHANGHAI : go("shanghai_end", { rec }) (fallback safe)
+// ✅ NEW: Reprendre/Voir en cours route aussi SHANGHAI vers "shanghai_play" / "shanghai"
 // ============================================
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -94,11 +95,23 @@ function baseMode(e: SavedEntry) {
   if (k === "leg") return m || "x01";
   return k || m || "x01";
 }
+
 function isKillerEntry(e: SavedEntry) {
   const m = baseMode(e);
   const s1 = String((e as any)?.summary?.mode || "");
   const s2 = String((e as any)?.payload?.mode || "");
   return m.includes("killer") || s1.toLowerCase().includes("killer") || s2.toLowerCase().includes("killer");
+}
+
+function isShanghaiEntry(e: SavedEntry) {
+  const m = baseMode(e);
+  const s1 = String((e as any)?.summary?.mode || (e as any)?.summary?.kind || "");
+  const s2 = String((e as any)?.payload?.mode || (e as any)?.payload?.kind || "");
+  return (
+    m.includes("shanghai") ||
+    s1.toLowerCase().includes("shanghai") ||
+    s2.toLowerCase().includes("shanghai")
+  );
 }
 
 function statusOf(e: SavedEntry): "finished" | "in_progress" {
@@ -238,6 +251,7 @@ const modeColor: Record<string, string> = {
   clock: "#ff40b4",
   training: "#71c9ff",
   killer: "#ff6a3c",
+  shanghai: "#ffb000",
   default: "#888",
 };
 
@@ -380,7 +394,7 @@ const HistoryAPI = {
             }
           }
 
-          // winnerName (KILLER et autres) : tentative soft depuis summary
+          // winnerName : tentative soft depuis summary
           if (!r.winnerName) {
             const wid = r.summary?.winnerId || r.summary?.result?.winnerId || r.summary?.winner?.id;
             if (wid) {
@@ -613,15 +627,41 @@ export default function HistoryPage({
     await loadHistory();
   }
 
+  function safeGo(candidates: string[], params: any) {
+    for (const id of candidates) {
+      try {
+        go(id, params);
+        return true;
+      } catch {}
+    }
+    return false;
+  }
+
   function goResume(e: SavedEntry, preview?: boolean) {
     const resumeId = e.resumeId || matchLink(e) || e.id;
 
     if (isKillerEntry(e)) {
-      // ⚠️ suppose que tu as une route/onglet "killer_play" (ou adapte ici)
-      go("killer_play", { resumeId, from: preview ? "history_preview" : "history", preview: !!preview, mode: "killer" });
+      safeGo(
+        ["killer_play", "killer"],
+        { resumeId, from: preview ? "history_preview" : "history", preview: !!preview, mode: "killer" }
+      );
       return;
     }
 
+    if (isShanghaiEntry(e)) {
+      // ✅ reprise SHANGHAI
+      const ok = safeGo(
+        ["shanghai_play", "shanghai"],
+        { resumeId, from: preview ? "history_preview" : "history", preview: !!preview, mode: "shanghai" }
+      );
+      if (!ok) {
+        // fallback ultime : tenter quand même X01 (évite écran noir si routing inconnu)
+        go("x01_play_v3", { resumeId, from: preview ? "history_preview" : "history", mode: baseMode(e), preview: !!preview });
+      }
+      return;
+    }
+
+    // default X01 / autres
     go("x01_play_v3", {
       resumeId,
       from: preview ? "history_preview" : "history",
@@ -639,6 +679,20 @@ export default function HistoryPage({
       return;
     }
 
+    if (isShanghaiEntry(e)) {
+      // ✅ IMPORTANT : SHANGHAI doit aller sur une page dédiée
+      const ok = safeGo(
+        ["shanghai_end", "shanghai_summary", "stats_shanghai_match"],
+        { rec: e, resumeId, from: "history" }
+      );
+      if (!ok) {
+        // fallback safe : ancien écran (au moins ça ouvre quelque chose)
+        go("x01_end", { rec: e, resumeId, showEnd: true, from: "history", __forcedMode: "shanghai" });
+      }
+      return;
+    }
+
+    // default (X01 & autres)
     go("x01_end", { rec: e, resumeId, showEnd: true, from: "history" });
   }
 
@@ -666,10 +720,7 @@ export default function HistoryPage({
       </div>
 
       {/* ===== RELOAD ===== */}
-      <button
-        style={{ ...S.reloadBtn, opacity: loading ? 0.5 : 1 }}
-        onClick={() => loadHistory()}
-      >
+      <button style={{ ...S.reloadBtn, opacity: loading ? 0.5 : 1 }} onClick={() => loadHistory()}>
         {loading ? "Chargement..." : "Recharger"}
       </button>
 
@@ -684,11 +735,7 @@ export default function HistoryPage({
             ["archives", "ARV"],
           ] as any
         ).map(([key, label]) => (
-          <div
-            key={key}
-            style={S.filterBtn(sub === key)}
-            onClick={() => setSub(key as RangeKey)}
-          >
+          <div key={key} style={S.filterBtn(sub === key)} onClick={() => setSub(key as RangeKey)}>
             {label}
           </div>
         ))}

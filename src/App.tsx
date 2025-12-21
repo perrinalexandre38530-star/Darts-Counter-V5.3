@@ -69,6 +69,7 @@ import TrainingX01Play from "./pages/TrainingX01Play";
 import TrainingClock from "./pages/TrainingClock";
 
 import ShanghaiConfigPage from "./pages/ShanghaiConfig";
+import ShanghaiEnd from "./pages/ShanghaiEnd";
 
 // Historique
 import { History } from "./lib/history";
@@ -1431,6 +1432,11 @@ case "tournament_roadmap": {
             onFinish={(m: any) => pushHistory(m)} // ✅ remonte dans History + stats
           />
         );
+        break;
+      }
+
+      case "shanghai_end": {
+        page = <ShanghaiEnd params={{ ...routeParams, go }} />;
         break;
       }
 
