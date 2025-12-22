@@ -31,10 +31,22 @@ import { playSound } from "../lib/sound";
 import type { Profile } from "../lib/types";
 import type { SavedMatch } from "../lib/history";
 import { DartIconColorizable, CricketMarkIcon } from "../components/MaskIcon";
-import ProfileAvatar from "../components/ProfileAvatar"; // ✅ NEW: resolve avatarKey bots
 
-// ✅ PRO BOTS (source unique)
-import { PRO_BOTS, proBotToProfile } from "../lib/botsPro";
+import ProfileAvatar from "../components/ProfileAvatar";
+import ProfileStarRing from "../components/ProfileStarRing";
+
+// 🔽 IMPORTS DE TOUS LES AVATARS BOTS PRO
+import avatarGreenMachine from "../assets/avatars/bots-pro/green-machine.png";
+import avatarSnakeKing from "../assets/avatars/bots-pro/snake-king.png";
+import avatarWonderKid from "../assets/avatars/bots-pro/wonder-kid.png";
+import avatarIceMan from "../assets/avatars/bots-pro/ice-man.png";
+import avatarFlyingScotsman from "../assets/avatars/bots-pro/flying-scotsman.png";
+import avatarCoolHand from "../assets/avatars/bots-pro/cool-hand.png";
+import avatarThePower from "../assets/avatars/bots-pro/the-power.png";
+import avatarBullyBoy from "../assets/avatars/bots-pro/bully-boy.png";
+import avatarTheAsp from "../assets/avatars/bots-pro/the-asp.png";
+import avatarHollywood from "../assets/avatars/bots-pro/hollywood.png";
+import avatarTheFerret from "../assets/avatars/bots-pro/the-ferret.png";
 
 
 const T = {
@@ -86,6 +98,31 @@ type Props = {
   profiles?: Profile[];
   onFinish?: (m: SavedMatch) => void;
 };
+
+type BotLite = {
+  id: string;
+  name: string;
+  avatarDataUrl?: string | null;
+  botLevel?: string;
+};
+
+// Clé locale BOTS (même que Profils>Bots)
+const LS_BOTS_KEY = "dc_bots_v1";
+
+// BOTS IA "PRO" PRÉDÉFINIS (identique X01)
+const PRO_BOTS: BotLite[] = [
+  { id: "bot_pro_mvg", name: "Green Machine", botLevel: "Légende", avatarDataUrl: avatarGreenMachine },
+  { id: "bot_pro_wright", name: "Snake King", botLevel: "Pro", avatarDataUrl: avatarSnakeKing },
+  { id: "bot_pro_littler", name: "Wonder Kid", botLevel: "Prodige Pro", avatarDataUrl: avatarWonderKid },
+  { id: "bot_pro_price", name: "Ice Man", botLevel: "Pro", avatarDataUrl: avatarIceMan },
+  { id: "bot_pro_anderson", name: "Flying Scotsman", botLevel: "Pro", avatarDataUrl: avatarFlyingScotsman },
+  { id: "bot_pro_humphries", name: "Cool Hand", botLevel: "Pro", avatarDataUrl: avatarCoolHand },
+  { id: "bot_pro_taylor", name: "The Power", botLevel: "Légende", avatarDataUrl: avatarThePower },
+  { id: "bot_pro_smith", name: "Bully Boy", botLevel: "Pro", avatarDataUrl: avatarBullyBoy },
+  { id: "bot_pro_aspinall", name: "The Asp", botLevel: "Fort", avatarDataUrl: avatarTheAsp },
+  { id: "bot_pro_dobey", name: "Hollywood", botLevel: "Fort", avatarDataUrl: avatarHollywood },
+  { id: "bot_pro_clayton", name: "The Ferret", botLevel: "Fort", avatarDataUrl: avatarTheFerret },
+];
 
 // --------------------------------------------------
 // UI helpers style "config X01"
@@ -318,93 +355,110 @@ React.useEffect(() => {
 }, [isFinished]);
 
 // --------------------------------------------------
-// ✅ BOTS IA depuis PRO_BOTS (pas localStorage)
-// + ✅ Avatars bots résolus via Vite glob
+// ✅ BOTS IA (stable, sans casser la syntaxe)
+// - PRO_BOTS : ceux déclarés plus haut dans le fichier
+// - User bots : profils marqués isBot dans profiles[] (si présents)
+// - Fallback LS "dc_bots_v1" si aucun bot dans profiles
 // --------------------------------------------------
 
-// normalise avatarKey / filename -> clé stable
-const normKey = React.useCallback((s?: string | null) => {
-  if (!s) return "";
-  return String(s)
-    .trim()
-    .toLowerCase()
-    .replace(/\.(png|webp|jpg|jpeg)$/i, "")
-    .replace(/\s+/g, "-")
-    .replace(/_/g, "-");
+const [botsFromLS, setBotsFromLS] = React.useState<BotLite[]>([]);
+
+React.useEffect(() => {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(LS_BOTS_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as any[];
+
+    const mapped: BotLite[] = (parsed || []).map((b: any) => ({
+      id: String(b.id),
+      name: b.name || "BOT",
+      avatarDataUrl: b.avatarDataUrl ?? null,
+      botLevel:
+        b.botLevel ??
+        b.levelLabel ??
+        b.levelName ??
+        b.performanceLevel ??
+        b.performance ??
+        b.skill ??
+        b.difficulty ??
+        "",
+    }));
+
+    setBotsFromLS(mapped);
+  } catch (e) {
+    console.warn("[CricketPlay] load bots LS failed:", e);
+  }
 }, []);
 
-// bots "Profile-like" (avec avatarKey)
-const bots = React.useMemo(() => PRO_BOTS.map(proBotToProfile), []);
+const userBotsFromStore: BotLite[] = React.useMemo(() => {
+  return (allProfiles || [])
+    .filter((p: any) => !!p?.isBot)
+    .map((p: any) => ({
+      id: String(p.id),
+      name: p.name || "BOT",
+      avatarDataUrl: p.avatarDataUrl ?? null,
+      botLevel:
+        p.botLevel ??
+        p.levelLabel ??
+        p.levelName ??
+        p.performanceLevel ??
+        p.performance ??
+        p.skill ??
+        p.difficulty ??
+        "",
+    }));
+}, [allProfiles]);
 
-// ✅ Avatars BOTS: preload via Vite (obligatoire pour que ça s'affiche partout)
-// Supporte les 2 structures possibles :
-// - src/assets/avatars/bots/pro/*.png
-// - src/assets/avatars/bots pro/*.png   (dossier avec espace)
-const BOT_AVATAR_URLS = React.useMemo(() => {
-  const modulesA = import.meta.glob("../assets/avatars/bots/pro/*.{png,webp,jpg,jpeg}", {
-    eager: true,
-  }) as Record<string, any>;
+const userBots: BotLite[] = React.useMemo(() => {
+  if (userBotsFromStore.length > 0) return userBotsFromStore;
+  return botsFromLS;
+}, [userBotsFromStore, botsFromLS]);
 
-  const modulesB = import.meta.glob("../assets/avatars/bots pro/*.{png,webp,jpg,jpeg}", {
-    eager: true,
-  }) as Record<string, any>;
+// Liste finale affichée dans le carrousel bots
+const botProfiles = React.useMemo(() => {
+  // PRO_BOTS ont avatarDataUrl (import image) => OK pour ProfileAvatar
+  return [...PRO_BOTS, ...userBots] as any[];
+}, [userBots]);
 
-  const modules = { ...modulesA, ...modulesB };
-
-  const map: Record<string, string> = {};
-  for (const path in modules) {
-    const mod = modules[path];
-    const url = (mod as any)?.default ?? mod;
-
-    const file = String(path).split("/").pop() || "";
-    const key = file.replace(/\.(png|webp|jpg|jpeg)$/i, "");
-    const k = normKey(key);
-
-    if (k && url) map[k] = url;
-  }
-  return map;
-}, [normKey]);
-
-// ✅ BOTS enrichis: on force avatarDataUrl/avatarUrl depuis BOT_AVATAR_URLS
-// (comme ça renderAvatarCircle n'a rien "à deviner")
-const botsWithResolvedAvatars = React.useMemo(() => {
-  return (bots as any[]).map((b) => {
-    const k = normKey(b?.avatarKey || b?.botAvatarKey || "");
-    const resolved = k ? BOT_AVATAR_URLS[k] : null;
-
-    return {
-      ...b,
-      avatarKey: b?.avatarKey || b?.botAvatarKey || null,
-      avatarDataUrl: b?.avatarDataUrl || resolved || null,
-      avatarUrl: b?.avatarUrl || resolved || null,
-      isBot: true,
-    };
-  });
-}, [bots, BOT_AVATAR_URLS, normKey]);
-
-// ✅ Map profils par id (HUMAINS + BOTS) — DOIT être défini AVANT handleStartMatch/buildHistoryRecord
+// Map ID -> profil utilisable partout (humains + bots)
 const profileById = React.useMemo(() => {
   const m = new Map<string, any>();
+  for (const p of allProfiles) if (p?.id) m.set(String(p.id), p);
 
-  // profils humains
-  for (const p of allProfiles) {
-    if (p?.id) m.set(p.id, p);
+  // PRO bots
+  for (const b of PRO_BOTS) {
+    if (!b?.id) continue;
+    m.set(String(b.id), {
+      id: String(b.id),
+      name: b.name || "BOT",
+      avatarDataUrl: b.avatarDataUrl ?? null,
+      isBot: true,
+      botLevel: b.botLevel ?? "",
+    });
   }
 
-  // profils bots (avec avatarDataUrl résolu)
-  for (const b of botsWithResolvedAvatars) {
-    if (b?.id) m.set(b.id, b);
+  // user bots
+  for (const b of userBots) {
+    if (!b?.id) continue;
+    m.set(String(b.id), {
+      id: String(b.id),
+      name: b.name || "BOT",
+      avatarDataUrl: b.avatarDataUrl ?? null,
+      isBot: true,
+      botLevel: b.botLevel ?? "",
+    });
   }
 
   return m;
-}, [allProfiles, botsWithResolvedAvatars]);
+}, [allProfiles, userBots]);
 
 // --------------------------------------------------
 // Helpers visuels
 // --------------------------------------------------
 
 function renderAvatarCircle(
-  prof: Profile | null,
+  prof: any,
   opts?: { selected?: boolean; size?: number; mode?: "setup" | "play" }
 ) {
   const size = opts?.size ?? 40;
@@ -415,7 +469,7 @@ function renderAvatarCircle(
     (prof?.name || "")
       .split(" ")
       .filter(Boolean)
-      .map((s) => s[0])
+      .map((s: string) => s[0])
       .join("")
       .toUpperCase() || "?";
 
@@ -423,25 +477,14 @@ function renderAvatarCircle(
   const showNeon = selected;
   const grayscale = mode === "setup" && !selected;
 
-  const resolveAvatarSrc = (p: any): string | null => {
-    if (!p) return null;
+  // ✅ Source image directe si tu as avatarDataUrl (bots + profils)
+  const src =
+    (prof as any)?.avatarDataUrl ||
+    (prof as any)?.avatarUrl ||
+    (prof as any)?.avatar ||
+    null;
 
-    // humains (dataUrl / url)
-    const direct =
-      p.avatarDataUrl || p.avatarUrl || p.photoUrl || p.imageUrl || p.avatar || null;
-
-    if (typeof direct === "string" && direct.length > 8) return direct;
-
-    // bots (via avatarKey -> map préchargée)
-    const k = normKey(p.avatarKey || p.botAvatarKey || "");
-    if (!k) return null;
-
-    return BOT_AVATAR_URLS[k] || null;
-  };
-
-  const avatarSrc = resolveAvatarSrc(prof as any);
-
-  if (avatarSrc) {
+  if (src) {
     return (
       <div
         style={{
@@ -461,7 +504,7 @@ function renderAvatarCircle(
         }}
       >
         <img
-          src={avatarSrc}
+          src={src}
           alt={(prof as any)?.name ?? "avatar"}
           style={{
             width: "100%",
@@ -476,6 +519,7 @@ function renderAvatarCircle(
     );
   }
 
+  // ✅ Fallback initiales
   return (
     <div
       style={{
@@ -494,6 +538,8 @@ function renderAvatarCircle(
           ? "0 0 10px rgba(246,194,86,0.9), 0 0 24px rgba(246,194,86,0.7)"
           : "0 0 4px rgba(0,0,0,0.8)",
         flexShrink: 0,
+        filter: grayscale ? "grayscale(1) brightness(0.6)" : "none",
+        opacity: grayscale ? 0.7 : 1,
       }}
     >
       {initials}
@@ -568,14 +614,14 @@ function renderAvatarCircle(
     // ✅ auto-complète en 2v2 si 3 joueurs
     if (teamNeedsBot && finalProfiles.length === 3) {
       const bot =
-        (bots as any[]).find((bb: any) => !finalProfiles.some((p) => p.id === bb.id)) ?? (bots[0] as any);
-
+        (PRO_BOTS as any[]).find((bb: any) => !finalProfiles.some((p) => p.id === bb.id)) ??
+        (PRO_BOTS[0] as any);
+    
       if (bot) {
         finalProfiles.push({
-          id: bot.id,
-          name: bot.name ?? bot.displayName ?? "BOT",
+          id: String(bot.id),
+          name: bot.name ?? "BOT",
           avatarDataUrl: bot.avatarDataUrl ?? null,
-          avatarKey: bot.avatarKey ?? null,
           isBot: true,
         });
       }
@@ -958,7 +1004,7 @@ function renderAvatarCircle(
                 padding: "0 26px 8px 26px",
               }}
             >
-              {allProfiles.map((p) => {
+              {allProfiles.filter((p: any) => !p?.isBot).map((p) => {
                 const active = selectedIds.includes(p.id);
                 const j = labelForId(p.id);
 
@@ -1036,8 +1082,8 @@ function renderAvatarCircle(
             Ajoute des bots pour compléter une partie (ils comptent dans les 2–4 joueurs).
           </div>
 
-          {!bots?.length ? (
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>Aucun bot détecté.</div>
+          {!botProfiles?.length ? (
+  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>Aucun bot détecté.</div>
           ) : (
             <div style={{ position: "relative", width: "100%", overflow: "hidden" }}>
               <ArrowBtn
@@ -1058,47 +1104,46 @@ function renderAvatarCircle(
                   padding: "0 26px 8px 26px",
                 }}
               >
-                {bots.map((b: any) => {
-                  const active = selectedBotIds.includes(b.id);
-                  const j = labelForId(b.id);
+                {botProfiles.map((b: any) => {
+  const id = String(b.id);
+  const active = selectedBotIds.includes(id);
+  const j = labelForId(id);
+  const botProfile = (profileById.get(id) as any) ?? (b as any);
 
-                  // ✅ IMPORTANT: utiliser le vrai Profile bot (avec avatarKey)
-                  const botProfile = (profileById.get(b.id) as any) ?? (b as any);
+  return (
+    <div
+      key={id}
+      onClick={() => toggleBot(id)}
+      style={{
+        scrollSnapAlign: "start",
+        minWidth: "25%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        cursor: "pointer",
+        opacity: !active && selectedCountLocal >= 4 ? 0.45 : 1,
+      }}
+    >
+      {renderAvatarCircle(botProfile as any, { selected: active, size: 58, mode: "setup" })}
 
-                  return (
-                    <div
-                      key={b.id}
-                      onClick={() => toggleBot(b.id)}
-                      style={{
-                        scrollSnapAlign: "start",
-                        minWidth: "25%",
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        cursor: "pointer",
-                        opacity: !active && selectedCountLocal >= 4 ? 0.45 : 1,
-                      }}
-                    >
-                      {renderAvatarCircle(botProfile as any, { selected: active, size: 58, mode: "setup" })}
+      <div
+        style={{
+          marginTop: 4,
+          fontSize: 11,
+          fontWeight: 800,
+          color: active ? "#ffffff" : T.textSoft,
+          textAlign: "center",
+          maxWidth: 92,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {botProfile.name ?? "BOT"}
+      </div>
 
-                      <div
-                        style={{
-                          marginTop: 4,
-                          fontSize: 11,
-                          fontWeight: 800,
-                          color: active ? "#ffffff" : T.textSoft,
-                          textAlign: "center",
-                          maxWidth: 92,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {botProfile.name ?? "BOT"}
-                      </div>
-
-                      <ChipMini active={active} label={j ?? "BOT"} />
-                    </div>
+      <ChipMini active={active} label={j ?? "BOT"} />
+    </div>
                   );
                 })}
               </div>

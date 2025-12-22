@@ -220,24 +220,27 @@ export default function ShanghaiPlay(props: Props) {
     return m;
   });
 
-    // ✅ STATS: hits par cible + timeline score (sparkline)
-    const [hitsById, setHitsById] = React.useState<Record<string, Record<number, HitCounts>>>(() => {
-      const out: any = {};
-      for (const p of safePlayers) out[p.id] = {};
-      return out;
-    });
-  
-    const [scoreTimelineById, setScoreTimelineById] = React.useState<Record<string, number[]>>(() => {
-      const out: any = {};
-      for (const p of safePlayers) out[p.id] = [0];
-      return out;
-    });  
+    // ✅ STATS SHANGHAI — refs synchrones (IMPORTANT)
+  const hitsByIdRef = React.useRef<Record<string, Record<number, HitCounts>>>({});
+  const scoreTimelineByIdRef = React.useRef<Record<string, number[]>>({});
 
   const [showInfo, setShowInfo] = React.useState(false);
   const [endData, setEndData] = React.useState<EndData | null>(null);
 
   const target = targetOrderRef.current?.[round - 1] ?? round;
   const active = safePlayers[turn] || safePlayers[0];
+
+  // 🔧 Init stats Shanghai (1 seule fois)
+React.useEffect(() => {
+  for (const p of safePlayers) {
+    if (!hitsByIdRef.current[p.id]) {
+      hitsByIdRef.current[p.id] = {};
+    }
+    if (!scoreTimelineByIdRef.current[p.id]) {
+      scoreTimelineByIdRef.current[p.id] = [0];
+    }
+  }
+}, [safePlayers]);
 
   const sfxEnabled =
     (cfg as any)?.sfxEnabled ??
@@ -577,8 +580,8 @@ export default function ShanghaiPlay(props: Props) {
   
         // ✅ STATS COMPLÈTES POUR SHANGHAI END
         statsShanghai: {
-          hitsById,
-          scoreTimelineById,
+          hitsById: hitsByIdRef.current,
+          scoreTimelineById: scoreTimelineByIdRef.current,
           targetOrder: targetOrderRef.current,
           maxRounds,
           winRule,
@@ -613,36 +616,42 @@ export default function ShanghaiPlay(props: Props) {
   function validateTurn() {
     if (endData) return;
     if (currentThrow.length !== 3) return;
-
+  
     const pid = active.id;
     const snapshot = [...currentThrow].slice(0, 3);
-
+  
     const add = shanghaiThrowTotal(target, snapshot);
     const isSh = isShanghaiOnTarget(target, snapshot);
-
+  
     // --- on détermine si ça termine maintenant ---
     const isLastPlayer = turn + 1 >= safePlayers.length;
     const isLastRound = round >= maxRounds;
     const endsByShanghai = winRule === "shanghai_or_points" && isSh;
     const endsByRounds = isLastPlayer && isLastRound;
     const willEnd = endsByShanghai || endsByRounds;
-
+  
     setLastThrowsById((prev) => ({ ...prev, [pid]: snapshot }));
-
-    // ✅ STATS: hits par cible
-    setHitsById((prev) => {
-      const next = cloneHitMap(prev);
-      if (!next[pid]) next[pid] = {};
-      if (!next[pid][target]) next[pid][target] = emptyHitCounts();
-
-      const hc: HitCounts = next[pid][target];
+  
+    // ✅ STATS (SYNC): hits par cible + timeline score (1 point par manche/cible finie)
+    try {
+      // --- hits ---
+      if (!hitsByIdRef.current) hitsByIdRef.current = {};
+      if (!hitsByIdRef.current[pid]) hitsByIdRef.current[pid] = {};
+      if (!hitsByIdRef.current[pid][target]) hitsByIdRef.current[pid][target] = emptyHitCounts();
+  
+      const hc: HitCounts = hitsByIdRef.current[pid][target];
+  
       for (const d of snapshot) {
         const v = d?.v ?? 0;
         const mult = (d?.mult ?? 1) as any;
-
+  
+        // MISS = tout ce qui ne marque pas sur la cible (y compris 0)
         if (v !== target || v === 0) {
           hc.MISS += 1;
-        } else if (mult === 3) {
+          continue;
+        }
+  
+        if (mult === 3) {
           hc.T += 1;
           hc.points += target * 3;
         } else if (mult === 2) {
@@ -653,61 +662,58 @@ export default function ShanghaiPlay(props: Props) {
           hc.points += target * 1;
         }
       }
-      return next;
-    });
-
-    // ✅ timeline score (sparkline) : score cumul après cette volée
-    setScoreTimelineById((prev) => {
-      const next = { ...prev };
-      const arr = Array.isArray(next[pid]) ? [...next[pid]] : [0];
+  
+      // --- timeline (sparkline) ---
+      // on veut 1 point = fin de manche/cible pour CE joueur
+      if (!scoreTimelineByIdRef.current) scoreTimelineByIdRef.current = {};
+      if (!Array.isArray(scoreTimelineByIdRef.current[pid])) scoreTimelineByIdRef.current[pid] = [0];
+  
+      const arr = scoreTimelineByIdRef.current[pid];
       const last = Number(arr[arr.length - 1] ?? 0);
       arr.push(last + add);
-      next[pid] = arr;
-      return next;
-    });
-
+    } catch {}
+  
     // ✅ update score
     setScores((prev) => {
       const next = { ...prev };
       next[pid] = (next[pid] ?? 0) + add;
       return next;
     });
-
-    // ✅ VOICE: si fin => on n’annonce PAS la volée (c’est ce qui t’énerve)
+  
+    // ✅ VOICE: si fin => on n’annonce PAS la volée
     if (!willEnd && voiceEnabled !== false) {
       announceVolleyScore(active.name, add);
     }
-
+  
     clearThrow();
-
+  
     // ---------- FIN PAR SHANGHAI ----------
     if (endsByShanghai) {
-      // open end screen avec ranking incluant add
       openEndScreen(pid, "shanghai", { pid, add });
       return;
     }
-
+  
     // ---------- TOUR SUIVANT ----------
     const nextTurn = turn + 1;
     if (nextTurn < safePlayers.length) {
       setTurn(nextTurn);
       return;
     }
-
+  
     if (round < maxRounds) {
       setRound((r) => r + 1);
       setTurn(0);
       return;
     }
-
+  
     // ---------- FIN AUX POINTS ----------
     const ranked = computeRanking({ pid, add });
     const top = ranked[0]?.score ?? 0;
     const tied = ranked.filter((r) => (r.score ?? 0) === top);
     const winnerId = tied.length >= 2 ? null : ranked[0]?.id ?? null;
-
+  
     openEndScreen(winnerId, "points", { pid, add });
-  }
+  }  
 
   const cardShell: React.CSSProperties = {
     borderRadius: 18,
