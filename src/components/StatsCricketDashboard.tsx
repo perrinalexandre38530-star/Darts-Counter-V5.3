@@ -2,6 +2,7 @@
 // src/components/StatsCricketDashboard.tsx
 // Dashboard Cricket — KPIs + Heatmap + Tableau
 // Utilise useCricketStatsForProfile()
+// ✅ FIX: anti-crash si stats.targets undefined / clés string
 // ============================================
 
 import React from "react";
@@ -24,6 +25,21 @@ export default function StatsCricketDashboard({
   if (!stats) return <div style={{ padding: 20 }}>Aucune donnée Cricket</div>;
 
   const neon = theme.accent ?? "#FFD700";
+
+  // ✅ FIX: targets peut être undefined / ou clés "20" string
+  const targetsAny: any = (stats as any).targets ?? {};
+
+  const getTarget = (T: number) => {
+    // support number key + string key
+    return (
+      targetsAny[T] ??
+      targetsAny[String(T)] ??
+      null
+    );
+  };
+
+  // ✅ FIX: robust pour accuracy
+  const accuracy = Number((stats as any).accuracy ?? 0) || 0;
 
   return (
     <div style={{ padding: 16 }}>
@@ -50,19 +66,19 @@ export default function StatsCricketDashboard({
           marginBottom: 20,
         }}
       >
-        <KPI label="Hits" value={stats.totalHits} neon={neon} />
+        <KPI label="Hits" value={(stats as any).totalHits ?? 0} neon={neon} />
         <KPI
           label="Précision"
-          value={((stats.accuracy * 100) | 0) + "%"}
+          value={((accuracy * 100) | 0) + "%"}
           neon={neon}
         />
 
-        <KPI label="Singles" value={stats.singles} neon={neon} />
-        <KPI label="Doubles" value={stats.doubles} neon={neon} />
-        <KPI label="Triples" value={stats.triples} neon={neon} />
+        <KPI label="Singles" value={(stats as any).singles ?? 0} neon={neon} />
+        <KPI label="Doubles" value={(stats as any).doubles ?? 0} neon={neon} />
+        <KPI label="Triples" value={(stats as any).triples ?? 0} neon={neon} />
 
-        <KPI label="Meilleure manche" value={stats.bestLeg} neon={neon} />
-        <KPI label="Pire manche" value={stats.worstLeg} neon={neon} />
+        <KPI label="Meilleure manche" value={(stats as any).bestLeg ?? 0} neon={neon} />
+        <KPI label="Pire manche" value={(stats as any).worstLeg ?? 0} neon={neon} />
       </div>
 
       {/* ==============================
@@ -81,23 +97,25 @@ export default function StatsCricketDashboard({
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {[20, 19, 18, 17, 16, 15, 25].map((T) => {
-          const seg = stats.targets[T];
+          const seg: any = getTarget(T);
           if (!seg) return null;
 
-          const S = seg.singles;
-          const D = seg.doubles;
-          const Tr = seg.triples;
+          const S = Number(seg.singles ?? 0) || 0;
+          const D = Number(seg.doubles ?? 0) || 0;
+          const Tr = Number(seg.triples ?? 0) || 0;
 
           const total = S + D + Tr || 1;
           const sPct = (S / total) * 100;
           const dPct = (D / total) * 100;
           const tPct = (Tr / total) * 100;
 
+          const hits = Number(seg.hits ?? 0) || 0;
+
           return (
             <div key={T}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ color: "#ccc" }}>{T === 25 ? "BULL" : T}</span>
-                <span style={{ color: neon }}>{seg.hits} hits</span>
+                <span style={{ color: neon }}>{hits} hits</span>
               </div>
 
               <div
@@ -144,16 +162,24 @@ export default function StatsCricketDashboard({
         </thead>
         <tbody>
           {[20, 19, 18, 17, 16, 15, 25].map((T) => {
-            const seg = stats.targets[T];
+            const seg: any = getTarget(T);
             if (!seg) return null;
+
+            const hits = Number(seg.hits ?? 0) || 0;
+            const ps = Number(seg.pointsScored ?? 0) || 0;
+            const pc = Number(seg.pointsConceded ?? 0) || 0;
+
+            // domination peut être 0..1 OU déjà en %
+            const domRaw = Number(seg.domination ?? 0) || 0;
+            const domPct = domRaw <= 1 ? ((domRaw * 100) | 0) : (domRaw | 0);
 
             return (
               <tr key={T} style={{ color: "#ddd" }}>
                 <td>{T === 25 ? "BULL" : T}</td>
-                <td style={{ textAlign: "center" }}>{seg.hits}</td>
-                <td style={{ textAlign: "center" }}>{seg.pointsScored}</td>
-                <td style={{ textAlign: "center" }}>{seg.pointsConceded}</td>
-                <td style={{ textAlign: "center" }}>{seg.domination}</td>
+                <td style={{ textAlign: "center" }}>{hits}</td>
+                <td style={{ textAlign: "center" }}>{ps}</td>
+                <td style={{ textAlign: "center" }}>{pc}</td>
+                <td style={{ textAlign: "center" }}>{domPct + "%"}</td>
               </tr>
             );
           })}

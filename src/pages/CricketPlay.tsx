@@ -315,6 +315,81 @@ function clampRoundNumber(state: any): number {
   return Number.isFinite(rn) ? rn : 0;
 }
 
+function normalizeBotLevel(lvl: any): string {
+  const s = String(lvl || "").toLowerCase();
+  if (s.includes("légende") || s.includes("legend")) return "legend";
+  if (s.includes("prodige")) return "prodigy";
+  if (s.includes("fort") || s.includes("strong")) return "strong";
+  if (s.includes("pro")) return "pro";
+  return "normal";
+}
+
+function botParams(level: string) {
+  // plus c’est haut, plus ça vise juste + plus de doubles/triples “logiques”
+  switch (level) {
+    case "legend":
+      return { thinkMs: 260, hitQuality: 0.92, preferHighMult: 0.65, mistake: 0.03 };
+    case "prodigy":
+      return { thinkMs: 320, hitQuality: 0.86, preferHighMult: 0.55, mistake: 0.05 };
+    case "pro":
+      return { thinkMs: 380, hitQuality: 0.78, preferHighMult: 0.45, mistake: 0.08 };
+    case "strong":
+      return { thinkMs: 420, hitQuality: 0.72, preferHighMult: 0.40, mistake: 0.11 };
+    default:
+      return { thinkMs: 520, hitQuality: 0.62, preferHighMult: 0.30, mistake: 0.18 };
+  }
+}
+
+function isBotProfile(p: any): boolean {
+  return !!p?.isBot || String(p?.id || "").startsWith("bot_") || !!p?.botLevel;
+}
+
+// Choix “intelligent” du prochain lancer (Cricket)
+function pickCricketBotThrow(state: any, player: any, withPoints: boolean, quality: number) {
+  const marks = player?.marks || {};
+
+  // 1) Priorité: fermer les cibles pas encore fermées
+  const openTargets = CRICKET_TARGETS.filter((t: any) => Number(marks[t] ?? 0) < 3);
+
+  // 2) Si tout est fermé: chercher scoring (si points) sinon random “propre”
+  const scoringTargets = CRICKET_TARGETS.slice();
+
+  // petite chance d’erreur (viser 0..14 => “bust” sfx)
+  const doMistake = Math.random() > quality;
+  if (doMistake) {
+    const miss = Math.floor(Math.random() * 15); // 0..14
+    return { target: miss, mult: 1 };
+  }
+
+  const target = openTargets.length
+    ? openTargets[Math.floor(Math.random() * Math.min(openTargets.length, 2))] // vise plutôt les 2 plus proches
+    : scoringTargets[Math.floor(Math.random() * scoringTargets.length)];
+
+  // Multiplier: selon besoin de marks restant
+  const cur = Number(marks[target] ?? 0);
+  const need = Math.max(0, 3 - cur);
+
+  let mult: Multiplier = 1;
+
+  if (need >= 2) {
+    // si besoin 2 ou 3: double/triple souvent pertinent
+    mult = (Math.random() < 0.55 ? 2 : 3) as any;
+  } else if (need === 1) {
+    mult = (Math.random() < 0.25 ? 2 : 1) as any;
+  } else {
+    // déjà fermé: scoring uniquement si points
+    if (withPoints) mult = (Math.random() < 0.35 ? 2 : 1) as any;
+    else mult = 1;
+  }
+
+  // Bull: autorise dbull parfois
+  if (target === 25) {
+    mult = (Math.random() < 0.25 ? 2 : 1) as any;
+  }
+
+  return { target: Number(target), mult };
+}
+
 export default function CricketPlay({ profiles, onFinish }: Props) {
   const allProfiles = profiles ?? [];
 
@@ -454,6 +529,119 @@ const profileById = React.useMemo(() => {
 }, [allProfiles, userBots]);
 
 // --------------------------------------------------
+// ✅ BOT ENGINE (auto-play) — joue automatiquement quand c'est le tour d'un bot
+// ✅ FIX: anti "stale currentPlayer" -> on capture botId au début et on compare cp.id à botId
+// ✅ Robust: clear timers + lock + UI flag botThinking
+// À COLLER ICI : juste après profileById (sinon profileById pas défini)
+// --------------------------------------------------
+
+const botTurnLockRef = React.useRef(false);
+const botTimersRef = React.useRef<number[]>([]);
+const [botThinking, setBotThinking] = React.useState(false);
+
+React.useEffect(() => {
+  return () => {
+    try {
+      botTimersRef.current.forEach((t) => window.clearTimeout(t));
+    } catch {}
+    botTimersRef.current = [];
+    botTurnLockRef.current = false;
+  };
+}, []);
+
+React.useEffect(() => {
+  if (!state) return;
+  if (!currentPlayer) return;
+  if ((state as any).winnerId) return;
+  if ((state as any).forcedFinished) return;
+
+  const prof = profileById.get(currentPlayer.id) ?? null;
+  if (!isBotProfile(prof)) return;
+
+  // ✅ capture l'id du bot AU MOMENT où l'effet démarre (évite currentPlayer "stale")
+  const botId = String(currentPlayer.id);
+
+  if (botTurnLockRef.current) return;
+  botTurnLockRef.current = true;
+  setBotThinking(true);
+
+  const withPoints = scoreMode === "points";
+  const lvl = normalizeBotLevel((prof as any)?.botLevel);
+  const { thinkMs, hitQuality, preferHighMult, mistake } = botParams(lvl);
+
+  const schedule = (fn: () => void, ms: number) => {
+    const t = window.setTimeout(fn, ms);
+    botTimersRef.current.push(t);
+  };
+
+  const doOneDart = (dartIndex: number) => {
+    schedule(() => {
+      setState((prev) => {
+        if (!prev) return prev;
+        if ((prev as any).winnerId) return prev;
+        if ((prev as any).forcedFinished) return prev;
+
+        const cp = (prev as any).players?.[(prev as any).currentPlayerIndex];
+        if (!cp) return prev;
+
+        // ✅ si ce n’est plus le bot courant (id capturé), stop
+        if (String(cp.id) !== botId) return prev;
+
+        const paramsQuality = Math.max(
+          0.1,
+          Math.min(0.98, hitQuality - (Math.random() < mistake ? 0.25 : 0))
+        );
+
+        const pick = pickCricketBotThrow(prev, cp, withPoints, paramsQuality);
+
+        let mult = pick.mult as any;
+        if (mult > 1 && Math.random() > preferHighMult) mult = 1;
+
+        let next = applyCricketHit(prev as any, pick.target as any, mult) as any;
+
+        // SFX
+        sfxForHit(pick.target, mult);
+
+        // hard stop maxRounds
+        next = maybeApplyMaxRoundsHardStop(next);
+
+        return next;
+      });
+
+      // fin des 3 darts
+      if (dartIndex === 2) {
+        schedule(() => {
+          botTurnLockRef.current = false;
+          setBotThinking(false);
+        }, 80);
+      }
+    }, thinkMs + dartIndex * (thinkMs + 90));
+  };
+
+  doOneDart(0);
+  doOneDart(1);
+  doOneDart(2);
+
+  return () => {
+    try {
+      botTimersRef.current.forEach((t) => window.clearTimeout(t));
+    } catch {}
+    botTimersRef.current = [];
+    botTurnLockRef.current = false;
+    setBotThinking(false);
+  };
+}, [
+  state?.currentPlayerIndex,
+  state?.remainingDarts,
+  state?.winnerId,
+  (state as any)?.forcedFinished,
+  currentPlayer?.id,
+  scoreMode,
+  maxRounds,
+  profileById,
+]);
+
+// --------------------------------------------------
 // Helpers visuels
 // --------------------------------------------------
 
@@ -464,6 +652,8 @@ function renderAvatarCircle(
   const size = opts?.size ?? 40;
   const selected = !!opts?.selected;
   const mode = opts?.mode ?? "play";
+
+  const isBot = !!prof?.isBot || String(prof?.id || "").startsWith("bot_") || !!prof?.botLevel;
 
   const initials =
     (prof?.name || "")
@@ -477,50 +667,44 @@ function renderAvatarCircle(
   const showNeon = selected;
   const grayscale = mode === "setup" && !selected;
 
-  // ✅ Source image directe si tu as avatarDataUrl (bots + profils)
   const src =
-    (prof as any)?.avatarDataUrl ||
-    (prof as any)?.avatarUrl ||
-    (prof as any)?.avatar ||
+    prof?.avatarDataUrl ||
+    prof?.avatarUrl ||
+    prof?.avatar ||
     null;
 
-  if (src) {
-    return (
-      <div
+  const core = src ? (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        overflow: "hidden",
+        border: `2px solid ${borderColor}`,
+        boxShadow: showNeon
+          ? "0 0 10px rgba(246,194,86,0.9), 0 0 24px rgba(246,194,86,0.7)"
+          : "0 0 4px rgba(0,0,0,0.8)",
+        background:
+          mode === "setup"
+            ? "radial-gradient(circle at 30% 0%, #1f2937 0, #020617 80%)"
+            : "#000",
+        flexShrink: 0,
+      }}
+    >
+      <img
+        src={src}
+        alt={prof?.name ?? "avatar"}
         style={{
-          width: size,
-          height: size,
-          borderRadius: "50%",
-          overflow: "hidden",
-          border: `2px solid ${borderColor}`,
-          boxShadow: showNeon
-            ? "0 0 10px rgba(246,194,86,0.9), 0 0 24px rgba(246,194,86,0.7)"
-            : "0 0 4px rgba(0,0,0,0.8)",
-          background:
-            mode === "setup"
-              ? "radial-gradient(circle at 30% 0%, #1f2937 0, #020617 80%)"
-              : "#000",
-          flexShrink: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          display: "block",
+          filter: grayscale ? "grayscale(1) brightness(0.6)" : "none",
+          opacity: grayscale ? 0.7 : 1,
         }}
-      >
-        <img
-          src={src}
-          alt={(prof as any)?.name ?? "avatar"}
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            display: "block",
-            filter: grayscale ? "grayscale(1) brightness(0.6)" : "none",
-            opacity: grayscale ? 0.7 : 1,
-          }}
-        />
-      </div>
-    );
-  }
-
-  // ✅ Fallback initiales
-  return (
+      />
+    </div>
+  ) : (
     <div
       style={{
         width: size,
@@ -543,6 +727,17 @@ function renderAvatarCircle(
       }}
     >
       {initials}
+    </div>
+  );
+
+  return (
+    <div style={{ position: "relative", width: size, height: size }}>
+      {core}
+      {isBot ? (
+        <div style={{ position: "absolute", inset: -6, pointerEvents: "none" }}>
+          <ProfileStarRing profile={{ ...(prof || {}), isBot: true } as any} size={size + 12} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1790,292 +1985,334 @@ function renderAvatarCircle(
       </div>
 
       {/* TABLEAU MARQUES */}
-      <div style={{ borderRadius: 16, background: T.card, border: `1px solid ${T.borderSoft}`, padding: 10, marginBottom: 12 }}>
-        {state.players.length === 2 ? (
-          <>
-            {CRICKET_UI_TARGETS.map((target) => {
-              const label = target === 25 ? "Bull" : String(target);
-              const colColor = getTargetColor(target);
-              return (
-                <div
-                  key={target}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 40px 1fr",
-                    gap: 8,
-                    alignItems: "center",
-                    padding: "5px 0",
-                    borderTop: `1px solid rgba(255,255,255,0.04)`,
-                  }}
-                >
-                  <MarkCell marks={(state.players[0].marks as any)[target]} playerIndex={0} isActive={state.players[0].id === currentPlayer.id} />
+<div
+  style={{
+    borderRadius: 16,
+    background: T.card,
+    border: `1px solid ${T.borderSoft}`,
+    padding: 10,
+    marginBottom: 12,
+  }}
+>
+  {state.players.length === 2 ? (
+    <>
+      {CRICKET_UI_TARGETS.map((target) => {
+        const label = target === 25 ? "Bull" : String(target);
+        const colColor = getTargetColor(target);
+        return (
+          <div
+            key={target}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 40px 1fr",
+              gap: 8,
+              alignItems: "center",
+              padding: "5px 0",
+              borderTop: `1px solid rgba(255,255,255,0.04)`,
+            }}
+          >
+            <MarkCell
+              marks={(state.players[0].marks as any)[target]}
+              playerIndex={0}
+              isActive={state.players[0].id === currentPlayer.id}
+            />
 
-                  <div
-                    style={{
-                      fontSize: label === "Bull" ? 16 : 18,
-                      fontWeight: 900,
-                      textAlign: "center",
-                      color: colColor,
-                      textShadow: `0 0 8px ${colColor}cc, 0 0 18px ${colColor}80`,
-                      letterSpacing: 1,
-                      padding: "2px 0",
-                      borderLeft: `1px solid rgba(148,163,184,0.5)`,
-                      borderRight: `1px solid rgba(148,163,184,0.5)`,
-                    }}
-                  >
-                    {label}
-                  </div>
+            <div
+              style={{
+                fontSize: label === "Bull" ? 16 : 18,
+                fontWeight: 900,
+                textAlign: "center",
+                color: colColor,
+                textShadow: `0 0 8px ${colColor}cc, 0 0 18px ${colColor}80`,
+                letterSpacing: 1,
+                padding: "2px 0",
+                borderLeft: `1px solid rgba(148,163,184,0.5)`,
+                borderRight: `1px solid rgba(148,163,184,0.5)`,
+              }}
+            >
+              {label}
+            </div>
 
-                  <MarkCell marks={(state.players[1].marks as any)[target]} playerIndex={1} isActive={state.players[1].id === currentPlayer.id} />
-                </div>
-              );
-            })}
-          </>
-        ) : state.players.length === 4 ? (
-          <>
-            {CRICKET_UI_TARGETS.map((target) => {
-              const label = target === 25 ? "Bull" : String(target);
-              const colColor = getTargetColor(target);
-              return (
-                <div
-                  key={target}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr 40px 1fr 1fr",
-                    gap: 8,
-                    alignItems: "center",
-                    padding: "5px 0",
-                    borderTop: `1px solid rgba(255,255,255,0.04)`,
-                  }}
-                >
-                  <MarkCell marks={(state.players[0].marks as any)[target]} playerIndex={0} isActive={state.players[0].id === currentPlayer.id} />
-                  <MarkCell marks={(state.players[1].marks as any)[target]} playerIndex={1} isActive={state.players[1].id === currentPlayer.id} />
+            <MarkCell
+              marks={(state.players[1].marks as any)[target]}
+              playerIndex={1}
+              isActive={state.players[1].id === currentPlayer.id}
+            />
+          </div>
+        );
+      })}
+    </>
+  ) : state.players.length === 4 ? (
+    <>
+      {CRICKET_UI_TARGETS.map((target) => {
+        const label = target === 25 ? "Bull" : String(target);
+        const colColor = getTargetColor(target);
+        return (
+          <div
+            key={target}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 40px 1fr 1fr",
+              gap: 8,
+              alignItems: "center",
+              padding: "5px 0",
+              borderTop: `1px solid rgba(255,255,255,0.04)`,
+            }}
+          >
+            <MarkCell
+              marks={(state.players[0].marks as any)[target]}
+              playerIndex={0}
+              isActive={state.players[0].id === currentPlayer.id}
+            />
+            <MarkCell
+              marks={(state.players[1].marks as any)[target]}
+              playerIndex={1}
+              isActive={state.players[1].id === currentPlayer.id}
+            />
 
-                  <div
-                    style={{
-                      fontSize: label === "Bull" ? 16 : 18,
-                      fontWeight: 900,
-                      textAlign: "center",
-                      color: colColor,
-                      textShadow: `0 0 8px ${colColor}cc, 0 0 18px ${colColor}80`,
-                      letterSpacing: 1,
-                      padding: "2px 0",
-                      borderLeft: `1px solid rgba(148,163,184,0.5)`,
-                      borderRight: `1px solid rgba(148,163,184,0.5)`,
-                    }}
-                  >
-                    {label}
-                  </div>
+            <div
+              style={{
+                fontSize: label === "Bull" ? 16 : 18,
+                fontWeight: 900,
+                textAlign: "center",
+                color: colColor,
+                textShadow: `0 0 8px ${colColor}cc, 0 0 18px ${colColor}80`,
+                letterSpacing: 1,
+                padding: "2px 0",
+                borderLeft: `1px solid rgba(148,163,184,0.5)`,
+                borderRight: `1px solid rgba(148,163,184,0.5)`,
+              }}
+            >
+              {label}
+            </div>
 
-                  <MarkCell marks={(state.players[2].marks as any)[target]} playerIndex={2} isActive={state.players[2].id === currentPlayer.id} />
-                  <MarkCell marks={(state.players[3].marks as any)[target]} playerIndex={3} isActive={state.players[3].id === currentPlayer.id} />
-                </div>
-              );
-            })}
-          </>
-        ) : (
-          <>
-            {CRICKET_UI_TARGETS.map((target) => {
-              const label = target === 25 ? "Bull" : String(target);
-              const colColor = getTargetColor(target);
-              return (
-                <div
-                  key={target}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: `40px repeat(${state.players.length}, 1fr)`,
-                    gap: 8,
-                    alignItems: "center",
-                    padding: "5px 0",
-                    borderTop: `1px solid rgba(255,255,255,0.04)`,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: label === "Bull" ? 16 : 18,
-                      fontWeight: 900,
-                      textAlign: "center",
-                      color: colColor,
-                      textShadow: `0 0 8px ${colColor}cc, 0 0 18px ${colColor}80`,
-                      letterSpacing: 1,
-                      padding: "2px 0",
-                      borderRight: `1px solid rgba(148,163,184,0.5)`,
-                    }}
-                  >
-                    {label}
-                  </div>
+            <MarkCell
+              marks={(state.players[2].marks as any)[target]}
+              playerIndex={2}
+              isActive={state.players[2].id === currentPlayer.id}
+            />
+            <MarkCell
+              marks={(state.players[3].marks as any)[target]}
+              playerIndex={3}
+              isActive={state.players[3].id === currentPlayer.id}
+            />
+          </div>
+        );
+      })}
+    </>
+  ) : (
+    <>
+      {CRICKET_UI_TARGETS.map((target) => {
+        const label = target === 25 ? "Bull" : String(target);
+        const colColor = getTargetColor(target);
+        return (
+          <div
+            key={target}
+            style={{
+              display: "grid",
+              gridTemplateColumns: `40px repeat(${state.players.length}, 1fr)`,
+              gap: 8,
+              alignItems: "center",
+              padding: "5px 0",
+              borderTop: `1px solid rgba(255,255,255,0.04)`,
+            }}
+          >
+            <div
+              style={{
+                fontSize: label === "Bull" ? 16 : 18,
+                fontWeight: 900,
+                textAlign: "center",
+                color: colColor,
+                textShadow: `0 0 8px ${colColor}cc, 0 0 18px ${colColor}80`,
+                letterSpacing: 1,
+                padding: "2px 0",
+                borderRight: `1px solid rgba(148,163,184,0.5)`,
+              }}
+            >
+              {label}
+            </div>
 
-                  {state.players.map((p, idx) => (
-                    <MarkCell key={p.id} marks={(p.marks as any)[target]} playerIndex={idx} isActive={p.id === currentPlayer.id} />
-                  ))}
-                </div>
-              );
-            })}
-          </>
-        )}
-      </div>
+            {state.players.map((p, idx) => (
+              <MarkCell
+                key={p.id}
+                marks={(p.marks as any)[target]}
+                playerIndex={idx}
+                isActive={p.id === currentPlayer.id}
+              />
+            ))}
+          </div>
+        );
+      })}
+    </>
+  )}
+</div>
 
-      {/* DOUBLE / TRIPLE / BULL */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+{/* DOUBLE / TRIPLE / BULL */}
+<div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+  <button
+    type="button"
+    onClick={() => setHitMode("D")}
+    disabled={finishedFlag || botThinking}
+    style={{
+      flex: 1,
+      padding: "9px 12px",
+      borderRadius: 999,
+      border: "none",
+      cursor: finishedFlag || botThinking ? "not-allowed" : "pointer",
+      fontSize: 13,
+      fontWeight: 700,
+      textTransform: "uppercase",
+      letterSpacing: 1.1,
+      background: "linear-gradient(135deg,#0f766e,#0b3b4b)",
+      color: "#7dd3fc",
+      boxShadow: hitMode === "D" ? "0 0 20px rgba(56,189,248,0.8)" : "0 0 8px rgba(15,23,42,0.9)",
+      transition: "all 0.12s ease",
+      opacity: finishedFlag || botThinking ? 0.45 : 1,
+    }}
+  >
+    Double
+  </button>
+
+  <button
+    type="button"
+    onClick={() => setHitMode("T")}
+    disabled={finishedFlag || botThinking}
+    style={{
+      flex: 1,
+      padding: "9px 12px",
+      borderRadius: 999,
+      border: "none",
+      cursor: finishedFlag || botThinking ? "not-allowed" : "pointer",
+      fontSize: 13,
+      fontWeight: 700,
+      textTransform: "uppercase",
+      letterSpacing: 1.1,
+      background: "linear-gradient(135deg,#7e22ce,#4c1d95)",
+      color: "#f9a8d4",
+      boxShadow: hitMode === "T" ? "0 0 20px rgba(244,114,182,0.8)" : "0 0 8px rgba(15,23,42,0.9)",
+      transition: "all 0.12s ease",
+      opacity: finishedFlag || botThinking ? 0.45 : 1,
+    }}
+  >
+    Triple
+  </button>
+
+  <button
+    type="button"
+    onClick={handleBull}
+    disabled={finishedFlag || botThinking}
+    style={{
+      flex: 1,
+      padding: "9px 12px",
+      borderRadius: 999,
+      border: "none",
+      cursor: finishedFlag || botThinking ? "not-allowed" : "pointer",
+      fontSize: 13,
+      fontWeight: 700,
+      textTransform: "uppercase",
+      letterSpacing: 1.1,
+      background: "linear-gradient(135deg,#059669,#065f46)",
+      color: "#bbf7d0",
+      boxShadow: "0 0 16px rgba(34,197,94,0.8)",
+      transition: "all 0.12s ease",
+      opacity: finishedFlag || botThinking ? 0.45 : 1,
+    }}
+  >
+    Bull
+  </button>
+</div>
+
+{/* CLAVIER 0–20 */}
+<div
+  style={{
+    borderRadius: 20,
+    background: "#050816",
+    border: `1px solid ${T.borderSoft}`,
+    padding: 10,
+    marginBottom: 10,
+    boxShadow: "0 0 24px rgba(0,0,0,0.6)",
+    opacity: finishedFlag || botThinking ? 0.55 : 1,
+    pointerEvents: finishedFlag || botThinking ? "none" : "auto",
+  }}
+>
+  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0,1fr))", gap: 8 }}>
+    {Array.from({ length: 21 }).map((_, value) => {
+      const isCricketNumber = value >= 15 && value <= 20;
+      const accent = isCricketNumber ? getTargetColor(value as CricketTarget) : "#111827";
+
+      return (
         <button
+          key={value}
           type="button"
-          onClick={() => setHitMode("D")}
+          onClick={() => handleKeyPress(value)}
+          disabled={finishedFlag || botThinking}
           style={{
-            flex: 1,
-            padding: "9px 12px",
-            borderRadius: 999,
-            border: "none",
-            cursor: "pointer",
-            fontSize: 13,
+            padding: "11px 0",
+            borderRadius: 16,
+            border: isCricketNumber ? `1px solid ${accent}dd` : "none",
+            cursor: finishedFlag || botThinking ? "not-allowed" : "pointer",
+            fontSize: 16,
             fontWeight: 700,
-            textTransform: "uppercase",
-            letterSpacing: 1.1,
-            background: "linear-gradient(135deg,#0f766e,#0b3b4b)",
-            color: "#7dd3fc",
-            boxShadow: hitMode === "D" ? "0 0 20px rgba(56,189,248,0.8)" : "0 0 8px rgba(15,23,42,0.9)",
-            transition: "all 0.12s ease",
-            opacity: finishedFlag ? 0.45 : 1,
-          }}
-          disabled={finishedFlag}
-        >
-          Double
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setHitMode("T")}
-          style={{
-            flex: 1,
-            padding: "9px 12px",
-            borderRadius: 999,
-            border: "none",
-            cursor: "pointer",
-            fontSize: 13,
-            fontWeight: 700,
-            textTransform: "uppercase",
-            letterSpacing: 1.1,
-            background: "linear-gradient(135deg,#7e22ce,#4c1d95)",
-            color: "#f9a8d4",
-            boxShadow: hitMode === "T" ? "0 0 20px rgba(244,114,182,0.8)" : "0 0 8px rgba(15,23,42,0.9)",
-            transition: "all 0.12s ease",
-            opacity: finishedFlag ? 0.45 : 1,
-          }}
-          disabled={finishedFlag}
-        >
-          Triple
-        </button>
-
-        <button
-          type="button"
-          onClick={handleBull}
-          style={{
-            flex: 1,
-            padding: "9px 12px",
-            borderRadius: 999,
-            border: "none",
-            cursor: "pointer",
-            fontSize: 13,
-            fontWeight: 700,
-            textTransform: "uppercase",
-            letterSpacing: 1.1,
-            background: "linear-gradient(135deg,#059669,#065f46)",
-            color: "#bbf7d0",
-            boxShadow: "0 0 16px rgba(34,197,94,0.8)",
-            transition: "all 0.12s ease",
-            opacity: finishedFlag ? 0.45 : 1,
-          }}
-          disabled={finishedFlag}
-        >
-          Bull
-        </button>
-      </div>
-
-      {/* CLAVIER 0–20 */}
-      <div
-        style={{
-          borderRadius: 20,
-          background: "#050816",
-          border: `1px solid ${T.borderSoft}`,
-          padding: 10,
-          marginBottom: 10,
-          boxShadow: "0 0 24px rgba(0,0,0,0.6)",
-          opacity: finishedFlag ? 0.55 : 1,
-          pointerEvents: finishedFlag ? "none" : "auto",
-        }}
-      >
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0,1fr))", gap: 8 }}>
-          {Array.from({ length: 21 }).map((_, value) => {
-            const isCricketNumber = value >= 15 && value <= 20;
-            const accent = isCricketNumber ? getTargetColor(value as CricketTarget) : "#111827";
-
-            return (
-              <button
-                key={value}
-                type="button"
-                onClick={() => handleKeyPress(value)}
-                style={{
-                  padding: "11px 0",
-                  borderRadius: 16,
-                  border: isCricketNumber ? `1px solid ${accent}dd` : "none",
-                  cursor: "pointer",
-                  fontSize: 16,
-                  fontWeight: 700,
-                  background: "linear-gradient(135deg,#111827,#020617)",
-                  color: isCricketNumber ? accent : "#f9fafb",
-                  boxShadow: isCricketNumber ? `0 0 12px ${accent}66` : "0 0 14px rgba(0,0,0,0.65)",
-                  transition: "all 0.1s ease",
-                }}
-              >
-                {value}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* BAS : ANNULER / RESUME */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <button
-          type="button"
-          onClick={handleUndo}
-          style={{
-            flex: 1,
-            padding: "10px 12px",
-            borderRadius: 999,
-            border: "none",
-            background: "linear-gradient(135deg,#dc2626,#7f1d1d)",
-            color: "#fee2e2",
-            fontSize: 14,
-            fontWeight: 800,
-            textTransform: "uppercase",
-            letterSpacing: 1.1,
-            cursor: "pointer",
-            boxShadow: "0 0 16px rgba(248,113,113,0.8)",
+            background: "linear-gradient(135deg,#111827,#020617)",
+            color: isCricketNumber ? accent : "#f9fafb",
+            boxShadow: isCricketNumber ? `0 0 12px ${accent}66` : "0 0 14px rgba(0,0,0,0.65)",
+            transition: "all 0.1s ease",
+            opacity: finishedFlag || botThinking ? 0.65 : 1,
           }}
         >
-          Annuler
+          {value}
         </button>
+      );
+    })}
+  </div>
+</div>
 
-        <button
-          type="button"
-          onClick={() => setShowEnd(true)}
-          style={{
-            flex: 1,
-            padding: "10px 12px",
-            borderRadius: 999,
-            border: "none",
-            background: finishedFlag ? "linear-gradient(135deg,#ffc63a,#ffaf00)" : "rgba(255,255,255,0.12)",
-            color: finishedFlag ? "#211500" : "rgba(255,255,255,0.9)",
-            fontSize: 14,
-            fontWeight: 900,
-            textTransform: "uppercase",
-            letterSpacing: 1.1,
-            cursor: "pointer",
-          }}
-        >
-          {finishedFlag ? "Résumé" : "Valider"}
-        </button>
-      </div>
+{/* BAS : ANNULER / RESUME */}
+<div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+  <button
+    type="button"
+    onClick={handleUndo}
+    disabled={botThinking}
+    style={{
+      flex: 1,
+      padding: "10px 12px",
+      borderRadius: 999,
+      border: "none",
+      background: "linear-gradient(135deg,#dc2626,#7f1d1d)",
+      color: "#fee2e2",
+      fontSize: 14,
+      fontWeight: 800,
+      textTransform: "uppercase",
+      letterSpacing: 1.1,
+      cursor: botThinking ? "not-allowed" : "pointer",
+      boxShadow: "0 0 16px rgba(248,113,113,0.8)",
+      opacity: botThinking ? 0.55 : 1,
+    }}
+  >
+    Annuler
+  </button>
+
+  <button
+    type="button"
+    onClick={() => setShowEnd(true)}
+    style={{
+      flex: 1,
+      padding: "10px 12px",
+      borderRadius: 999,
+      border: "none",
+      background: finishedFlag ? "linear-gradient(135deg,#ffc63a,#ffaf00)" : "rgba(255,255,255,0.12)",
+      color: finishedFlag ? "#211500" : "rgba(255,255,255,0.9)",
+      fontSize: 14,
+      fontWeight: 900,
+      textTransform: "uppercase",
+      letterSpacing: 1.1,
+      cursor: "pointer",
+      opacity: botThinking ? 0.7 : 1,
+    }}
+  >
+    {finishedFlag ? "Résumé" : "Valider"}
+  </button>
+</div>
     </div>
   );
 }

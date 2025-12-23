@@ -123,9 +123,9 @@ function dartValue(seg?: Seg) {
 
 /* ---------- Helper interne : charger les CricketLegStats d'un profil ---------- */
 /* NOTE:
-   On suppose que History.list() renvoie des rows pouvant contenir un champ
-   `cricketLegs` (ou `summary.cricketLegs`) = CricketLegStats[] pour chaque match Cricket.
-   Si ce n'est pas (encore) le cas, la fonction renvoie simplement [].
+   Supporte:
+   - ancien format: r.cricketLegs / r.summary.cricketLegs (CricketLegStats[])
+   - nouveau format: r.payload.players[].legStats (objet ou tableau)
 */
 async function loadCricketLegStatsForProfile(
   profileId: string
@@ -134,17 +134,98 @@ async function loadCricketLegStatsForProfile(
     const rows = await History.list();
     const out: CricketLegStats[] = [];
 
+    const toArr = <T,>(v: any): T[] => (Array.isArray(v) ? v : []);
+    const N = (x: any, d = 0) => (Number.isFinite(Number(x)) ? Number(x) : d);
+
     for (const r of rows as any[]) {
-      const legsRaw: any =
+      if (!r) continue;
+
+      // -----------------------------
+      // (A) Ancien format : r.cricketLegs / r.summary.cricketLegs
+      // -----------------------------
+      const legsRawA: any =
         (r && (r.cricketLegs as any)) ??
         (r && r.summary && (r.summary.cricketLegs as any));
 
-      if (!Array.isArray(legsRaw)) continue;
-
-      for (const leg of legsRaw) {
-        if (leg && leg.playerId === profileId) {
-          out.push(leg as CricketLegStats);
+      if (Array.isArray(legsRawA)) {
+        for (const leg of legsRawA) {
+          if (leg && leg.playerId === profileId) {
+            out.push(leg as CricketLegStats);
+          }
         }
+      }
+
+      // -----------------------------
+      // (B) ✅ Nouveau format CricketPlay : payload.players[].legStats (objet ou tableau)
+      // -----------------------------
+      const payloadPlayers =
+        toArr<any>(r.payload?.players) ||
+        toArr<any>((r as any).players) ||
+        toArr<any>(r.summary?.players) ||
+        [];
+
+      if (!payloadPlayers.length) continue;
+
+      const myPlayer =
+        payloadPlayers.find(
+          (p: any) => p?.id === profileId || p?.playerId === profileId
+        ) ?? null;
+
+      if (!myPlayer) continue;
+
+      // legStats peut être : objet unique OU tableau
+      const lsRaw =
+        myPlayer.legStats ??
+        myPlayer.legsStats ??
+        myPlayer.cricketLegStats ??
+        null;
+
+      const legsFromPayload: any[] = Array.isArray(lsRaw)
+        ? lsRaw
+        : lsRaw
+        ? [lsRaw]
+        : [];
+
+      if (!legsFromPayload.length) continue;
+
+      // infos fallback si le payload ne les met pas
+      const matchId = String(r.id ?? r.matchId ?? "");
+      const startedAt = N(r.createdAt ?? r.startedAt, 0) || Date.now();
+      const endedAt = N(r.updatedAt ?? r.endedAt, 0) || startedAt || Date.now();
+
+      const others = payloadPlayers.filter(
+        (p: any) => (p?.id ?? p?.playerId) && (p?.id ?? p?.playerId) !== profileId
+      );
+
+      const opponentLabelFallback =
+        others.length === 1
+          ? String(others[0]?.name ?? others[0]?.label ?? "Opponent")
+          : others.length > 1
+          ? others
+              .map((p: any) => String(p?.name ?? p?.label ?? "Opponent"))
+              .filter(Boolean)
+              .join(" / ")
+          : "Opponent";
+
+      for (let i = 0; i < legsFromPayload.length; i++) {
+        const leg = legsFromPayload[i];
+        if (!leg) continue;
+
+        const fixed: CricketLegStats = {
+          ...(leg as any),
+          matchId: (leg as any).matchId ?? matchId ?? undefined,
+          playerId: (leg as any).playerId ?? profileId,
+          legId:
+            (leg as any).legId ?? `${matchId || "cricket"}:${profileId}:${i}`,
+          startedAt: N((leg as any).startedAt, startedAt) || startedAt,
+          endedAt: N((leg as any).endedAt, endedAt) || endedAt,
+          opponentLabel:
+            (leg as any).opponentLabel ??
+            (myPlayer as any).opponentLabel ??
+            opponentLabelFallback,
+        };
+
+        if (fixed.playerId === profileId) out.push(fixed);
       }
     }
 

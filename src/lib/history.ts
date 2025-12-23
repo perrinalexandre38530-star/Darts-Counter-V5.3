@@ -8,6 +8,7 @@
 // - Fallback : localStorage si IDB indispo (compact, sans payload)
 // - Migration auto depuis l’ancien localStorage KEY = "dc-history-v1"
 // - Trim auto à MAX_ROWS
+// ✅ FIX CRITICAL: legacy LSK peut être JSON OU LZString UTF16 (et parfois base64-ish) -> parse robuste
 // ============================================
 
 /* =========================
@@ -122,6 +123,21 @@ const LZString = (function () {
     }
     return LZ.decompress(output);
   };
+
+  // ✅ Optionnel "best-effort": si quelqu'un a stocké un truc base64-ish,
+  // on peut AU MOINS essayer de le décoder puis decompress() derrière.
+  // (Ça ne couvre pas 100% des variantes LZString compressToBase64,
+  // mais ça évite de crasher et récupère certains cas.)
+  LZ._tryDecodeBase64ToString = function (b64: string) {
+    try {
+      // atob -> bytes -> string (latin1)
+      const bin = atob(b64.replace(/[\r\n\s]/g, ""));
+      return bin;
+    } catch {
+      return "";
+    }
+  };
+
   LZ.compress = function (uncompressed: string) {
     if (uncompressed == null) return "";
     let i,
@@ -180,8 +196,7 @@ const LZString = (function () {
         } else {
           value = context_dictionary[context_w];
           for (i = 0; i < context_numBits; i++) {
-            context_data_val =
-              (context_data_val << 1) | (value & 1);
+            context_data_val = (context_data_val << 1) | (value & 1);
             if (context_data_position == 15) {
               context_data.push(context_data_val);
               context_data_val = 0;
@@ -234,8 +249,7 @@ const LZString = (function () {
       } else {
         value = context_dictionary[context_w];
         for (i = 0; i < context_numBits; i++) {
-          context_data_val =
-            (context_data_val << 1) | (value & 1);
+          context_data_val = (context_data_val << 1) | (value & 1);
           if (context_data_position == 15) {
             context_data.push(context_data_val);
             context_data_val = 0;
@@ -329,7 +343,8 @@ const LZString = (function () {
         numBits++;
       }
       if (dictionary[cc]) entry2 = dictionary[cc];
-      else if (cc === dictSize) entry2 = (w as string) + (w as string).charAt(0);
+      else if (cc === dictSize)
+        entry2 = (w as string) + (w as string).charAt(0);
       else return "";
       result.push(entry2 as string);
       dictionary[dictSize++] = (w as string) + (entry2 as string).charAt(0);
@@ -344,6 +359,82 @@ const LZString = (function () {
   return LZ;
 })();
 /* eslint-enable */
+
+/* =========================
+   ✅ FIX: lecture robuste localStorage (JSON OU LZString)
+   - évite: "Unexpected token '�' is not valid JSON"
+   - supporte: JSON direct, compressToUTF16
+   - best-effort: base64-ish (decode -> JSON direct ou decompress)
+========================= */
+function parseHistoryLocalStorage(raw: string | null): any[] {
+  if (!raw) return [];
+  const s = String(raw);
+
+  // 1) JSON direct
+  const trimmed = s.trim();
+  if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+    try {
+      const v = JSON.parse(trimmed);
+      return Array.isArray(v) ? v : [];
+    } catch {
+      // on tente les décompressions ci-dessous
+    }
+  }
+
+  // 2) LZString UTF16
+  try {
+    const dec = (LZString as any).decompressFromUTF16?.(s);
+    if (typeof dec === "string" && dec.trim().length) {
+      const v = JSON.parse(dec);
+      return Array.isArray(v) ? v : [];
+    }
+  } catch {}
+
+  // 3) Base64-ish (best effort)
+  // - certains legacy ont du base64 (pas forcément lz-string officiel)
+  // - on tente: atob -> JSON, puis atob -> decompress -> JSON
+  try {
+    const isB64 = /^[A-Za-z0-9+/=\r\n\s-]+$/.test(s) && s.length > 16;
+    if (isB64) {
+      const bin = (LZString as any)._tryDecodeBase64ToString?.(s) || "";
+      if (bin) {
+        // 3a) bin est déjà du JSON
+        try {
+          const v = JSON.parse(bin);
+          return Array.isArray(v) ? v : [];
+        } catch {}
+        // 3b) bin est une string compressée version "compress" -> decompress
+        try {
+          const dec = (LZString as any).decompress?.(bin);
+          if (typeof dec === "string" && dec.trim().length) {
+            const v = JSON.parse(dec);
+            return Array.isArray(v) ? v : [];
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
+  // 4) decompress direct (rare)
+  try {
+    const dec = (LZString as any).decompress?.(s);
+    if (typeof dec === "string" && dec.trim().length) {
+      const v = JSON.parse(dec);
+      return Array.isArray(v) ? v : [];
+    }
+  } catch {}
+
+  return [];
+}
+
+/* =========================
+   ✅ Legacy localStorage safe read (rows)
+========================= */
+function readLegacyRowsSafe(): SavedMatch[] {
+  const raw = localStorage.getItem(LSK);
+  const rows = parseHistoryLocalStorage(raw);
+  return Array.isArray(rows) ? (rows as SavedMatch[]) : [];
+}
 
 /* =========================
    IndexedDB helpers
@@ -367,7 +458,9 @@ function openDB(): Promise<IDBDatabase> {
           os.createIndex("by_updatedAt", "updatedAt", { unique: false });
         }
       } catch {
-        try { os.createIndex("by_updatedAt", "updatedAt", { unique: false }); } catch {}
+        try {
+          os.createIndex("by_updatedAt", "updatedAt", { unique: false });
+        } catch {}
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -402,7 +495,14 @@ async function migrateFromLocalStorageOnce() {
   try {
     const raw = localStorage.getItem(LSK);
     if (!raw) return;
-    const rows: SavedMatch[] = JSON.parse(raw);
+
+    // ✅ FIX: legacy peut être JSON OU compressé (parse robuste)
+    const rows: SavedMatch[] = readLegacyRowsSafe();
+    if (!rows.length) {
+      // rien de lisible => on ne migre pas, mais on évite de casser l’app
+      return;
+    }
+
     await withStore("readwrite", async (st) => {
       for (const r of rows) {
         const rec: any = { ...r };
@@ -419,6 +519,7 @@ async function migrateFromLocalStorageOnce() {
         });
       }
     });
+
     localStorage.removeItem(LSK);
     console.info("[history] migration depuis localStorage effectuée");
   } catch (e) {
@@ -438,7 +539,8 @@ export async function list(): Promise<SavedMatch[]> {
         await new Promise<any[]>((resolve, reject) => {
           try {
             // @ts-ignore
-            const hasIndex = st.indexNames && st.indexNames.contains("by_updatedAt");
+            const hasIndex =
+              st.indexNames && st.indexNames.contains("by_updatedAt");
             if (!hasIndex) throw new Error("no_index");
             const ix = st.index("by_updatedAt");
             const req = ix.openCursor(undefined, "prev");
@@ -486,13 +588,8 @@ export async function list(): Promise<SavedMatch[]> {
     });
     return rows as SavedMatch[];
   } catch {
-    // fallback legacy si IDB HS
-    try {
-      const txt = localStorage.getItem(LSK);
-      return txt ? (JSON.parse(txt) as SavedMatch[]) : [];
-    } catch {
-      return [];
-    }
+    // ✅ FIX: fallback legacy robuste (JSON / UTF16 / base64-ish)
+    return readLegacyRowsSafe();
   }
 }
 
@@ -506,32 +603,24 @@ export async function get(id: string): Promise<SavedMatch | null> {
         req.onerror = () => reject(req.error);
       });
     });
+
     if (!rec) {
-      // fallback
-      const rows = (() => {
-        try {
-          return JSON.parse(localStorage.getItem(LSK) || "[]"); // <-- bien "[]"
-        } catch {
-          return [];
-        }
-      })() as any[];
+      // ✅ FIX: fallback legacy robuste
+      const rows = readLegacyRowsSafe();
       return (rows.find((r) => r.id === id) || null) as SavedMatch | null;
     }
+
     const payload =
       rec.payloadCompressed && typeof rec.payloadCompressed === "string"
-        ? JSON.parse(LZString.decompressFromUTF16(rec.payloadCompressed) || "null")
+        ? JSON.parse(
+            LZString.decompressFromUTF16(rec.payloadCompressed) || "null"
+          )
         : null;
     delete rec.payloadCompressed;
     return { ...(rec as any), payload } as SavedMatch;
   } catch (e) {
     console.warn("[history.get] fallback localStorage:", e);
-    const rows = (() => {
-      try {
-        return JSON.parse(localStorage.getItem(LSK) || "[]");
-      } catch {
-        return [];
-      }
-    })() as any[];
+    const rows = readLegacyRowsSafe();
     return (rows.find((r) => r.id === id) || null) as SavedMatch | null;
   }
 }
@@ -554,13 +643,17 @@ export async function upsert(rec: SavedMatch): Promise<void> {
     // payload compressé séparé (IDB)
   };
 
- // ---------------------------------------------
+  // ---------------------------------------------
   // 🎯 Intégration Cricket : calcul auto legStats
   // ---------------------------------------------
   let payloadEffective = rec.payload;
 
   try {
-    if (rec.kind === "cricket" && rec.payload && typeof rec.payload === "object") {
+    if (
+      rec.kind === "cricket" &&
+      rec.payload &&
+      typeof rec.payload === "object"
+    ) {
       const base = rec.payload as any;
       const players = Array.isArray(base.players) ? base.players : [];
 
@@ -588,7 +681,11 @@ export async function upsert(rec: SavedMatch): Promise<void> {
   // 🎯 Intégration X01 : expose startScore pour l'UI
   // ---------------------------------------------
   try {
-    if (rec.kind === "x01" && payloadEffective && typeof payloadEffective === "object") {
+    if (
+      rec.kind === "x01" &&
+      payloadEffective &&
+      typeof payloadEffective === "object"
+    ) {
       const base = payloadEffective as any;
 
       // tentative multi-chemins pour trouver la config X01
@@ -664,15 +761,20 @@ export async function upsert(rec: SavedMatch): Promise<void> {
             if (!pending) return resolve();
             toDelete.forEach((k) => {
               const del = st.delete(k);
-              del.onsuccess = () => { if (--pending === 0) resolve(); };
-              del.onerror = () => { if (--pending === 0) resolve(); };
+              del.onsuccess = () => {
+                if (--pending === 0) resolve();
+              };
+              del.onerror = () => {
+                if (--pending === 0) resolve();
+              };
             });
           } else resolve();
         };
 
         try {
           // @ts-ignore
-          const hasIndex = st.indexNames && st.indexNames.contains("by_updatedAt");
+          const hasIndex =
+            st.indexNames && st.indexNames.contains("by_updatedAt");
           if (hasIndex) {
             const ix = st.index("by_updatedAt");
             const req = ix.openCursor(undefined, "prev");
@@ -715,13 +817,8 @@ export async function upsert(rec: SavedMatch): Promise<void> {
     // Fallback compact si IDB indispo
     console.warn("[history.upsert] fallback localStorage (IDB indispo?):", e);
     try {
-      const rows: any[] = (() => {
-        try {
-          return JSON.parse(localStorage.getItem(LSK) || "[]");
-        } catch {
-          return [];
-        }
-      })();
+      // ✅ FIX: parse robuste (évite crash si LSK est compressé/illisible)
+      const rows: any[] = readLegacyRowsSafe();
       const idx = rows.findIndex((r) => r.id === safe.id);
       const trimmed = { ...safe, payload: null }; // compact
       if (idx >= 0) rows.splice(idx, 1);
@@ -745,13 +842,7 @@ export async function remove(id: string): Promise<void> {
   } catch {
     // fallback
     try {
-      const rows = (() => {
-        try {
-          return JSON.parse(localStorage.getItem(LSK) || "[]");
-        } catch {
-          return [];
-        }
-      })() as any[];
+      const rows = readLegacyRowsSafe() as any[];
       const out = rows.filter((r) => r.id !== id);
       localStorage.setItem(LSK, JSON.stringify(out));
     } catch {}
@@ -827,7 +918,9 @@ function readAllSync(): _LightRow[] {
 /* =========================
    Sélecteurs utilitaires
 ========================= */
-async function listByStatus(status: "in_progress" | "finished"): Promise<SavedMatch[]> {
+async function listByStatus(
+  status: "in_progress" | "finished"
+): Promise<SavedMatch[]> {
   const rows = await list();
   return rows.filter((r) => r.status === status);
 }

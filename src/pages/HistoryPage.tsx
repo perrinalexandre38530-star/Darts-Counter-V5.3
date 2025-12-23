@@ -8,8 +8,9 @@
 // ✅ FIX: “Voir stats” n’ouvre PLUS les pages X01 pour KILLER
 //    -> KILLER : go("killer_summary", { rec })
 // ✅ NEW: “Voir stats” ouvre une page dédiée pour SHANGHAI
-//    -> SHANGHAI : go("shanghai_end", { rec }) (fallback safe)
+//    -> SHANGHAI : go("shanghai_end", { rec })
 // ✅ NEW: Reprendre/Voir en cours route aussi SHANGHAI vers "shanghai_play" / "shanghai"
+// ✅ FIX CRICKET: “Voir stats” ouvre BIEN StatsHub (route = "statsHub") + fallback "cricket_stats"
 // ============================================
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -651,19 +652,16 @@ export default function HistoryPage({
     }
 
     if (isShanghaiEntry(e)) {
-      // ✅ reprise SHANGHAI
       const ok = safeGo(
         ["shanghai_play", "shanghai"],
         { resumeId, from: preview ? "history_preview" : "history", preview: !!preview, mode: "shanghai" }
       );
       if (!ok) {
-        // fallback ultime : tenter quand même X01 (évite écran noir si routing inconnu)
         go("x01_play_v3", { resumeId, from: preview ? "history_preview" : "history", mode: baseMode(e), preview: !!preview });
       }
       return;
     }
 
-    // default X01 / autres
     go("x01_play_v3", {
       resumeId,
       from: preview ? "history_preview" : "history",
@@ -675,35 +673,70 @@ export default function HistoryPage({
   function goStats(e: SavedEntry) {
     const resumeId = e.resumeId || matchLink(e) || e.id;
 
+    const m = baseMode(e);
+
+    // ✅ CRICKET : route correcte => App.tsx = "statsHub" (et non "stats_hub")
+    if (m === "cricket") {
+      const wid =
+        (e.summary && (e.summary.winnerId || e.summary?.result?.winnerId)) ||
+        (e as any)?.winnerId ||
+        null;
+
+      const firstPlayerId =
+        wid ||
+        (e.players && e.players.length ? getId(e.players[0]) : null) ||
+        null;
+
+      // 1) StatsHub direct (ton App.tsx: case "statsHub")
+      try {
+        go("statsHub", {
+          tab: "cricket",
+          initialStatsSubTab: "cricket",
+          initialPlayerId: firstPlayerId,
+          playerId: firstPlayerId,
+          matchId: e.id,
+          resumeId,
+          from: "history",
+        });
+        return;
+      } catch {}
+
+      // 2) fallback page dédiée si le hub ne gère pas cricket correctement
+      try {
+        go("cricket_stats", { profileId: firstPlayerId, from: "history" });
+        return;
+      } catch {}
+
+      // 3) fallback menu stats
+      try {
+        go("stats", { tab: "cricket", profileId: firstPlayerId });
+      } catch {}
+      return;
+    }
+
     if (isKillerEntry(e)) {
-      // ✅ IMPORTANT : KILLER doit aller sur une page dédiée, pas X01
       go("killer_summary", { rec: e, resumeId, from: "history" });
       return;
     }
 
     if (isShanghaiEntry(e)) {
-      // ✅ IMPORTANT : SHANGHAI doit aller sur une page dédiée
       const ok = safeGo(
         ["shanghai_end", "shanghai_summary", "stats_shanghai_match"],
         { rec: e, resumeId, from: "history" }
       );
       if (!ok) {
-        // fallback safe : ancien écran (au moins ça ouvre quelque chose)
         go("x01_end", { rec: e, resumeId, showEnd: true, from: "history", __forcedMode: "shanghai" });
       }
       return;
     }
 
-    // default (X01 & autres)
     go("x01_end", { rec: e, resumeId, showEnd: true, from: "history" });
   }
 
   return (
     <div style={S.page}>
-      {/* ===== TITLE ===== */}
       <div style={S.title}>HISTORIQUE</div>
 
-      {/* ===== KPIs ===== */}
       <div style={S.kpiRow}>
         <div style={S.kpiCard(false, theme.primary)}>
           <div style={S.kpiLabel}>Sauvegardées</div>
@@ -721,12 +754,10 @@ export default function HistoryPage({
         </div>
       </div>
 
-      {/* ===== RELOAD ===== */}
       <button style={{ ...S.reloadBtn, opacity: loading ? 0.5 : 1 }} onClick={() => loadHistory()}>
         {loading ? "Chargement..." : "Recharger"}
       </button>
 
-      {/* ===== FILTERS ===== */}
       <div style={S.filtersRow}>
         {(
           [
@@ -743,7 +774,6 @@ export default function HistoryPage({
         ))}
       </div>
 
-      {/* ===== LIST ===== */}
       <div style={S.list}>
         {filtered.length === 0 ? (
           <div style={{ opacity: 0.7, textAlign: "center", marginTop: 20 }}>Aucune partie ici.</div>
@@ -754,10 +784,8 @@ export default function HistoryPage({
 
             return (
               <div key={key} style={S.card}>
-                {/* Top row */}
                 <div style={S.rowBetween}>
                   <div style={{ display: "flex", gap: 8 }}>
-                    {/* Mode badge */}
                     <span
                       style={{
                         padding: "4px 10px",
@@ -773,7 +801,6 @@ export default function HistoryPage({
                       {modeLabel(e)}
                     </span>
 
-                    {/* Statut */}
                     <span
                       style={{
                         padding: "4px 10px",
@@ -792,7 +819,6 @@ export default function HistoryPage({
                   <span style={{ fontSize: 11, color: theme.primary }}>{fmtDate(e.updatedAt || e.createdAt)}</span>
                 </div>
 
-                {/* Format + score/classement */}
                 <div style={{ marginTop: 8, fontSize: 12, color: "rgba(255,255,255,0.9)" }}>
                   {detectFormat(e)}
                   {(() => {
@@ -801,7 +827,6 @@ export default function HistoryPage({
                   })()}
                 </div>
 
-                {/* Avatars & Winner */}
                 <div style={{ ...S.rowBetween, marginTop: 10 }}>
                   <div style={S.avatars}>
                     {(e.players || []).slice(0, 6).map((p, i) => {
@@ -828,7 +853,6 @@ export default function HistoryPage({
                   ) : null}
                 </div>
 
-                {/* Buttons */}
                 <div style={S.pillRow}>
                   {inProg ? (
                     <>
@@ -860,7 +884,6 @@ export default function HistoryPage({
 }
 
 /* ---------- Date format ---------- */
-
 function fmtDate(ts: number) {
   return new Date(ts).toLocaleString();
 }

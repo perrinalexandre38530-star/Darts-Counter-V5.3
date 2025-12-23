@@ -12,26 +12,47 @@ import StatsPlayerDashboard, {
 import { useQuickStats } from "../hooks/useQuickStats";
 import HistoryPage from "./HistoryPage";
 import SparklinePro from "../components/SparklinePro";
-import TrainingRadar from "../components/TrainingRadar";
 import ProfileAvatar from "../components/ProfileAvatar";
 import ProfileStarRing from "../components/ProfileStarRing";
 import type { Dart as UIDart } from "../lib/types";
-import { getCricketProfileStats, getX01MultiLegsSetsForProfile, type X01MultiLegsSets, } from "../lib/statsBridge";
+import {
+  getCricketProfileStats,
+  getX01MultiLegsSetsForProfile,
+  type X01MultiLegsSets,
+} from "../lib/statsBridge";
 import type { CricketProfileStats } from "../lib/cricketStats";
-import StatsCricketDashboard from "../components/StatsCricketDashboard";
-// Nouvelle version FULL X01 multi
-import X01MultiStatsTabFull from "../stats/X01MultiStatsTabFull";
+
+// ✅ KEEP en import normal (léger / utilisé souvent)
 import StatsX01Compare from "./StatsX01Compare";
 import StatsTrainingSummary from "../components/stats/StatsTrainingSummary";
 import { useCurrentProfile } from "../hooks/useCurrentProfile";
-import StatsLeaderboardsTab from "../components/stats/StatsLeaderboardsTab";
-import StatsKiller from "./StatsKiller";
 import { computeKillerAggForPlayer } from "../lib/statsKillerAgg";
-import StatsDartSetsSection from "../components/StatsDartSetsSection";
 
+// ✅ LAZY-LOAD des modules lourds (gros gain bundle + parse)
+const TrainingRadar = React.lazy(() => import("../components/TrainingRadar"));
+const StatsCricketDashboard = React.lazy(
+  () => import("../components/StatsCricketDashboard")
+);
+const StatsShanghaiDashboard = React.lazy(
+  () => import("../components/StatsShanghaiDashboard")
+);
+const X01MultiStatsTabFull = React.lazy(
+  () => import("../stats/X01MultiStatsTabFull")
+);
+const StatsLeaderboardsTab = React.lazy(
+  () => import("../components/stats/StatsLeaderboardsTab")
+);
+const StatsKiller = React.lazy(() => import("./StatsKiller"));
+const StatsDartSetsSection = React.lazy(
+  () => import("../components/StatsDartSetsSection")
+);
 
-import { loadNormalizedHistory, type NormalizedMatch } from "../lib/statsNormalized";
+import {
+  loadNormalizedHistory,
+  type NormalizedMatch,
+} from "../lib/statsNormalized";
 import { buildDashboardFromNormalized } from "../lib/statsUnifiedAgg";
+
 // Effet "shimmer" à l'intérieur des lettres du nom du joueur
 const statsNameCss = `
 .dc-stats-name-wrapper {
@@ -765,6 +786,23 @@ const row: React.CSSProperties = {
   alignItems: "center",
   gap: 8,
 };
+
+const LazyFallback = ({ label = "Chargement…" }: { label?: string }) => (
+  <div
+    style={{
+      ...card,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: 120,
+      color: T.text70,
+      fontSize: 12,
+      textAlign: "center",
+    }}
+  >
+    {label}
+  </div>
+);
 
 /* ============================================================
    ONGLET TRAINING X01 — v2 complet
@@ -2537,11 +2575,13 @@ const maxStackHits = HITS_SEGMENTS.reduce(
   </div>
 
   {trainingDartsAll.length ? (
+  <React.Suspense fallback={<LazyFallback label="Chargement du radar…" />}>
     <TrainingRadar darts={trainingDartsAll} />
-  ) : (
-    <div style={{ fontSize: 12, color: T.text70 }}>
-      Aucune fléchette enregistrée sur la période.
-    </div>
+  </React.Suspense>
+) : (
+  <div style={{ fontSize: 12, color: T.text70 }}>
+    Aucune fléchette enregistrée sur la période.
+  </div>
   )}
 </div>
 
@@ -3022,13 +3062,14 @@ const maxStackHits = HITS_SEGMENTS.reduce(
               >
                 Radar — session
               </div>
-              {Array.isArray(selected.dartsDetail) &&
-              selected.dartsDetail.length ? (
-                <TrainingRadar darts={selected.dartsDetail} />
-              ) : (
-                <div style={{ fontSize: 11, color: T.text70 }}>
-                  Pas de détail flèche par flèche pour cette session.
-                </div>
+              {Array.isArray(selected.dartsDetail) && selected.dartsDetail.length ? (
+  <React.Suspense fallback={<LazyFallback label="Chargement du radar session…" />}>
+    <TrainingRadar darts={selected.dartsDetail} />
+  </React.Suspense>
+) : (
+  <div style={{ fontSize: 11, color: T.text70 }}>
+    Pas de détail flèche par fléchette pour cette session.
+  </div>
               )}
             </div>
 
@@ -3507,10 +3548,11 @@ React.useEffect(() => {
   const modeDefs = React.useMemo(
     () => [
       { key: "dashboard", label: "Dashboard global" },
-      { key: "dartsets", label: "Mes fléchettes" }, // ✅ NEW
+      { key: "dartsets", label: "Mes fléchettes" },
       { key: "x01_multi", label: "X01 multi" },
       { key: "x01_compare", label: "Comparateur X01" },
       { key: "cricket", label: "Cricket" },
+      { key: "shanghai", label: "Shanghai" }, // ✅ NEW
       { key: "killer", label: "Killer" },
       { key: "leaderboards", label: "Classements" },
       { key: "history", label: "Historique" },
@@ -4328,242 +4370,300 @@ return (
   )}
 </div>
 
+<React.Suspense fallback={<LazyFallback label="Chargement…" />}>
+  {/* ton contenu des modes (dashboard/dartsets/x01_multi/...) */}
+</React.Suspense>
+
       {/* ========= CONTENU PILOTÉ PAR LE CARROUSEL DE MODES ========= */}
-{currentMode === "dashboard" && (
-  <>
-    <div style={row}>
-      {selectedPlayer ? (
-        <StatsPlayerDashboard
-          data={
-            selectedPlayer
-              ? buildDashboardFromNormalized(
-                  String(selectedPlayer.id),
-                  String(selectedPlayer.name || "Joueur"),
-                  normalizedMatches || []
-                )
-              : null
-          }
-          x01MultiLegsSets={x01MultiLegsSets}
-        />
-      ) : (
-        <div style={{ color: T.text70, fontSize: 13 }}>
-          Sélectionne un joueur pour afficher le dashboard.
-        </div>
-      )}
-    </div>
+      <React.Suspense fallback={<LazyFallback label="Chargement…" />}>
+        {currentMode === "dashboard" && (
+          <>
+            <div style={row}>
+              {selectedPlayer ? (
+                <StatsPlayerDashboard
+                  data={
+                    selectedPlayer
+                      ? buildDashboardFromNormalized(
+                          String(selectedPlayer.id),
+                          String(selectedPlayer.name || "Joueur"),
+                          normalizedMatches || []
+                        )
+                      : null
+                  }
+                  x01MultiLegsSets={x01MultiLegsSets}
+                />
+              ) : (
+                <div style={{ color: T.text70, fontSize: 13 }}>
+                  Sélectionne un joueur pour afficher le dashboard.
+                </div>
+              )}
+            </div>
 
-    {/* RÉSUMÉ TRAINING (X01 + Horloge) */}
-    {selectedPlayer && (
-      <div style={{ ...card, marginTop: 8 }}>
-        <StatsTrainingSummary profileId={selectedPlayer.id} />
-      </div>
-    )}
+            {/* RÉSUMÉ TRAINING (X01 + Horloge) */}
+            {selectedPlayer && (
+              <div style={{ ...card, marginTop: 8 }}>
+                <StatsTrainingSummary profileId={selectedPlayer.id} />
+              </div>
+            )}
 
-    {/* =======================
-        ✅ BLOC 3 — RÉSUMÉ KILLER (DASHBOARD)
-        ======================= */}
-    {selectedPlayer && killerAgg && killerAgg.matches > 0 && (
-      <div style={{ ...card, marginTop: 8 }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 10,
-            marginBottom: 8,
-          }}
-        >
-          <div
-            style={{
-              ...goldNeon,
-              fontSize: 13,
-              marginBottom: 0,
-            }}
-          >
-            KILLER — RÉSUMÉ
+            {/* =======================
+                ✅ BLOC 3 — RÉSUMÉ KILLER (DASHBOARD)
+                ======================= */}
+            {selectedPlayer && killerAgg && killerAgg.matches > 0 && (
+              <div style={{ ...card, marginTop: 8 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    marginBottom: 8,
+                  }}
+                >
+                  <div
+                    style={{
+                      ...goldNeon,
+                      fontSize: 13,
+                      marginBottom: 0,
+                    }}
+                  >
+                    KILLER — RÉSUMÉ
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idx = modeDefs.findIndex((m) => m.key === "killer");
+                      if (idx >= 0) setModeIndex(idx);
+                    }}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      border: `1px solid ${T.accent50}`,
+                      background: `radial-gradient(circle at 30% 30%, ${T.accent30}, rgba(0,0,0,.55))`,
+                      color: T.accent,
+                      fontSize: 11,
+                      fontWeight: 900,
+                      letterSpacing: 0.5,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Voir détails ▶
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                    gap: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      borderRadius: 16,
+                      padding: 10,
+                      border: `1px solid rgba(255,255,255,.10)`,
+                      background: "linear-gradient(180deg,#15171B,#0F1014)",
+                      textAlign: "center",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: T.text70,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Matchs
+                    </div>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: T.gold }}>
+                      {killerAgg.matches}
+                    </div>
+                    <div style={{ fontSize: 11, color: T.text70 }}>
+                      Wins {killerAgg.wins} · {killerAgg.winRatePct}%
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      borderRadius: 16,
+                      padding: 10,
+                      border: `1px solid rgba(255,255,255,.10)`,
+                      background: "linear-gradient(180deg,#15171B,#0F1014)",
+                      textAlign: "center",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: T.text70,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Kills
+                    </div>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: "#FF4B4B" }}>
+                      {killerAgg.kills}
+                    </div>
+                    <div style={{ fontSize: 11, color: T.text70 }}>
+                      Total hits {killerAgg.totalHits}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      gridColumn: "1 / -1",
+                      borderRadius: 16,
+                      padding: 10,
+                      border: `1px solid rgba(255,255,255,.10)`,
+                      background: "linear-gradient(180deg,#15171B,#0F1014)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: T.text70,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Numéro favori
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: T.accent }}>
+                      {killerAgg.favNumber
+                        ? `${killerAgg.favNumber} (${killerAgg.favHits})`
+                        : "—"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* RÉSUMÉ CRICKET */}
+            {selectedPlayer && cricketStats && (
+              <div style={{ ...card, marginTop: 8 }}>
+                <React.Suspense fallback={<LazyFallback label="Chargement Cricket…" />}>
+                  <StatsCricketDashboard stats={cricketStats} />
+                </React.Suspense>
+              </div>
+            )}
+          </>
+        )}
+
+        {currentMode === "dartsets" && (
+          <div style={card}>
+            {selectedPlayer ? (
+              <React.Suspense
+                fallback={<LazyFallback label="Chargement des fléchettes…" />}
+              >
+                <StatsDartSetsSection
+                  activeProfileId={selectedPlayer?.id ?? null}
+                  title="MES FLÉCHETTES"
+                />
+              </React.Suspense>
+            ) : (
+              <div style={{ color: T.text70, fontSize: 13 }}>
+                Sélectionne un joueur pour afficher les fléchettes.
+              </div>
+            )}
           </div>
+        )}
 
-          <button
-            type="button"
-            onClick={() => {
-              const idx = modeDefs.findIndex((m) => m.key === "killer");
-              if (idx >= 0) setModeIndex(idx);
-            }}
-            style={{
-              padding: "6px 10px",
-              borderRadius: 999,
-              border: `1px solid ${T.accent50}`,
-              background: `radial-gradient(circle at 30% 30%, ${T.accent30}, rgba(0,0,0,.55))`,
-              color: T.accent,
-              fontSize: 11,
-              fontWeight: 900,
-              letterSpacing: 0.5,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-          >
-            Voir détails ▶
-          </button>
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-            gap: 10,
-          }}
-        >
-          <div
-            style={{
-              borderRadius: 16,
-              padding: 10,
-              border: `1px solid rgba(255,255,255,.10)`,
-              background: "linear-gradient(180deg,#15171B,#0F1014)",
-              textAlign: "center",
-            }}
-          >
-            <div style={{ fontSize: 10, color: T.text70, textTransform: "uppercase" }}>
-              Matchs
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 900, color: T.gold }}>
-              {killerAgg.matches}
-            </div>
-            <div style={{ fontSize: 11, color: T.text70 }}>
-              Wins {killerAgg.wins} · {killerAgg.winRatePct}%
-            </div>
+        {currentMode === "x01_multi" && (
+          <div style={card}>
+            {selectedPlayer ? (
+              <React.Suspense fallback={<LazyFallback label="Chargement X01 multi…" />}>
+                <X01MultiStatsTabFull records={records} playerId={selectedPlayer.id} />
+              </React.Suspense>
+            ) : (
+              <div style={{ color: T.text70, fontSize: 13 }}>
+                Sélectionne un joueur pour afficher les stats X01 multi.
+              </div>
+            )}
           </div>
+        )}
 
-          <div
-            style={{
-              borderRadius: 16,
-              padding: 10,
-              border: `1px solid rgba(255,255,255,.10)`,
-              background: "linear-gradient(180deg,#15171B,#0F1014)",
-              textAlign: "center",
-            }}
-          >
-            <div style={{ fontSize: 10, color: T.text70, textTransform: "uppercase" }}>
-              Kills
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 900, color: "#FF4B4B" }}>
-              {killerAgg.kills}
-            </div>
-            <div style={{ fontSize: 11, color: T.text70 }}>
-              Total hits {killerAgg.totalHits}
-            </div>
+        {currentMode === "x01_compare" && (
+          <div style={card}>
+            {selectedPlayer ? (
+              <StatsX01Compare
+                store={pseudoStoreForCompare as any}
+                profileId={selectedPlayer.id}
+                compact
+              />
+            ) : (
+              <div style={{ color: T.text70, fontSize: 13 }}>
+                Sélectionne un joueur pour afficher le comparateur X01.
+              </div>
+            )}
           </div>
+        )}
 
-          <div
-            style={{
-              gridColumn: "1 / -1",
-              borderRadius: 16,
-              padding: 10,
-              border: `1px solid rgba(255,255,255,.10)`,
-              background: "linear-gradient(180deg,#15171B,#0F1014)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 10,
-            }}
-          >
-            <div style={{ fontSize: 11, color: T.text70, textTransform: "uppercase" }}>
-              Numéro favori
-            </div>
-            <div style={{ fontSize: 14, fontWeight: 900, color: T.accent }}>
-              {killerAgg.favNumber ? `${killerAgg.favNumber} (${killerAgg.favHits})` : "—"}
-            </div>
+        {currentMode === "cricket" && (
+          <div style={card}>
+            {cricketStats ? (
+              <React.Suspense fallback={<LazyFallback label="Chargement Cricket…" />}>
+                <StatsCricketDashboard stats={cricketStats} />
+              </React.Suspense>
+            ) : (
+              <div style={{ color: T.text70, fontSize: 13 }}>
+                Aucune statistique Cricket disponible.
+              </div>
+            )}
           </div>
-        </div>
-      </div>
-    )}
+        )}
 
-    {/* RÉSUMÉ CRICKET */}
-    {selectedPlayer && cricketStats && (
-      <div style={{ ...card, marginTop: 8 }}>
-        <StatsCricketDashboard stats={cricketStats} />
-      </div>
-    )}
-  </>
-)}
-
-{currentMode === "dartsets" && (
+{currentMode === "shanghai" && (
   <div style={card}>
-    <StatsDartSetsSection
-      activeProfileId={selectedPlayer?.id ?? null}
-      title="MES FLÉCHETTES"
-    />
-  </div>
-)}
-
-{currentMode === "x01_multi" && (
-  <div style={card}>
-    {selectedPlayer ? (
-      <X01MultiStatsTabFull records={records} playerId={selectedPlayer.id} />
-    ) : (
-      <div style={{ color: T.text70, fontSize: 13 }}>
-        Sélectionne un joueur pour afficher les stats X01 multi.
-      </div>
-    )}
-  </div>
-)}
-
-{currentMode === "x01_compare" && (
-  <div style={card}>
-    {selectedPlayer ? (
-      <StatsX01Compare
-        store={pseudoStoreForCompare as any}
-        profileId={selectedPlayer.id}
-        compact
+    <React.Suspense fallback={<LazyFallback label="Chargement Shanghai…" />}>
+      <StatsShanghaiDashboard
+        matches={records as any}
+        playerId={selectedPlayer?.id ?? null}
+        playerName={selectedPlayer?.name ?? null}
       />
-    ) : (
-      <div style={{ color: T.text70, fontSize: 13 }}>
-        Sélectionne un joueur pour afficher le comparateur X01.
-      </div>
-    )}
+    </React.Suspense>
   </div>
 )}
 
-{currentMode === "cricket" && (
-  <div style={card}>
-    {cricketStats ? (
-      <StatsCricketDashboard stats={cricketStats} />
-    ) : (
-      <div style={{ color: T.text70, fontSize: 13 }}>
-        Aucune statistique Cricket disponible.
-      </div>
-    )}
-  </div>
-)}
+        {currentMode === "killer" && (
+          <div style={card}>
+            <React.Suspense fallback={<LazyFallback label="Chargement Killer…" />}>
+              <StatsKiller
+                profiles={storeProfiles as any}
+                memHistory={records as any}
+                playerId={
+                  mode === "active"
+                    ? (activePlayerId ?? null)
+                    : (selectedPlayerId ?? null)
+                }
+                title="KILLER"
+              />
+            </React.Suspense>
+          </div>
+        )}
 
-{currentMode === "killer" && (
-        <div style={card}>
-          <StatsKiller
-            profiles={storeProfiles as any}
-            memHistory={records as any}
-            playerId={
-              mode === "active"
-                ? (activePlayerId ?? null)
-                : (selectedPlayerId ?? null)
-            }
-            title="KILLER"
-          />
-        </div>
-      )}
+        {currentMode === "leaderboards" && (
+          <div style={card}>
+            <React.Suspense fallback={<LazyFallback label="Chargement Classements…" />}>
+              <StatsLeaderboardsTab
+                records={records as any}
+                profiles={storeProfiles as any}
+              />
+            </React.Suspense>
+          </div>
+        )}
 
-      {currentMode === "leaderboards" && (
-        <div style={card}>
-          <StatsLeaderboardsTab
-            records={records as any}
-            profiles={storeProfiles as any}
-          />
-        </div>
-      )}
-
-      {currentMode === "history" && (
-        <div style={card}>
-          <HistoryPage go={go} />
-        </div>
-      )}
+        {currentMode === "history" && (
+          <div style={card}>
+            <HistoryPage go={go} />
+          </div>
+        )}
+      </React.Suspense>
     </div>
   </div>
 );

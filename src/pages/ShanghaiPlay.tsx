@@ -11,6 +11,7 @@
 // ✅ FIX: bouton retour -> SUPPRIMÉ (viré du header)
 // ✅ FIX HARD: BACK système (popstate) intercepté SANS passive + anti-loop
 // ✅ NEW: match nul (égalité) supporté + affichage + payload
+// ✅ ADD: zone retour (tap invisible) vers CONFIG Shanghai via goShanghaiConfig()
 // ============================================
 
 import React from "react";
@@ -146,7 +147,6 @@ function speakText(text: string) {
   } catch {}
 }
 
-
 type EndData = {
   winnerId: string | null; // null si égalité
   isTie: boolean;
@@ -160,6 +160,144 @@ type EndData = {
   }>;
   createdAt: number;
 };
+
+function safeShanghaiStatsPack(args: {
+  hitsById: Record<string, Record<number, HitCounts>>;
+  scoreTimelineById: Record<string, number[]>;
+  targetOrder: number[] | null;
+  maxRounds: number;
+  winRule: any;
+}) {
+  const hitsById = args.hitsById || {};
+  const scoreTimelineById = args.scoreTimelineById || {};
+  const targetOrder = Array.isArray(args.targetOrder) ? args.targetOrder : [];
+
+  // pack compact (JSON safe)
+  const compactHits: any = {};
+  for (const pid of Object.keys(hitsById)) {
+    const byTarget = hitsById[pid] || {};
+    const out: any = {};
+    for (const k of Object.keys(byTarget)) {
+      const t = Number(k);
+      const hc = byTarget[t] || emptyHitCounts();
+      out[String(t)] = {
+        S: Number(hc.S || 0),
+        D: Number(hc.D || 0),
+        T: Number(hc.T || 0),
+        MISS: Number(hc.MISS || 0),
+        points: Number(hc.points || 0),
+      };
+    }
+    compactHits[String(pid)] = out;
+  }
+
+  const compactTimeline: any = {};
+  for (const pid of Object.keys(scoreTimelineById)) {
+    const arr = Array.isArray(scoreTimelineById[pid]) ? scoreTimelineById[pid] : [];
+    compactTimeline[String(pid)] = arr.map((x) => Number(x || 0));
+  }
+
+  return {
+    v: 1,
+    maxRounds: Number(args.maxRounds || 20),
+    winRule: args.winRule,
+    targetOrder,
+    hitsById: compactHits,
+    scoreTimelineById: compactTimeline,
+  };
+}
+
+type ShanghaiDerived = {
+  pid: string;
+  totalPoints: number;
+  S: number;
+  D: number;
+  T: number;
+  MISS: number;
+  hits: number;
+  darts: number;
+  accuracy: number; // 0..1
+  volleys: number;
+  avgPerVolley: number;
+  bestVolley: number;
+  bestTarget: number | null;
+  bestTargetPoints: number;
+};
+
+function computeShanghaiDerivedForPlayer(
+  pid: string,
+  hitsById: Record<string, Record<number, HitCounts>>,
+  timelineById: Record<string, number[]>
+): ShanghaiDerived {
+  const byTarget = hitsById?.[pid] || {};
+  let S = 0,
+    D = 0,
+    T = 0,
+    MISS = 0,
+    totalPoints = 0;
+
+  let bestTarget: number | null = null;
+  let bestTargetPoints = -1;
+
+  for (const k of Object.keys(byTarget)) {
+    const target = Number(k);
+    const hc = byTarget[target] || emptyHitCounts();
+    const pts = Number(hc.points || 0);
+
+    S += Number(hc.S || 0);
+    D += Number(hc.D || 0);
+    T += Number(hc.T || 0);
+    MISS += Number(hc.MISS || 0);
+    totalPoints += pts;
+
+    if (pts > bestTargetPoints) {
+      bestTargetPoints = pts;
+      bestTarget = Number.isFinite(target) ? target : null;
+    }
+  }
+
+  const hits = S + D + T;
+  const darts = hits + MISS;
+  const accuracy = darts > 0 ? hits / darts : 0;
+
+  const tl = Array.isArray(timelineById?.[pid]) ? timelineById[pid] : [0];
+  const volleys = Math.max(0, tl.length - 1);
+
+  let bestVolley = 0;
+  for (let i = 1; i < tl.length; i++) {
+    const delta = Number(tl[i] || 0) - Number(tl[i - 1] || 0);
+    if (delta > bestVolley) bestVolley = delta;
+  }
+
+  const avgPerVolley = volleys > 0 ? totalPoints / volleys : 0;
+
+  return {
+    pid,
+    totalPoints,
+    S,
+    D,
+    T,
+    MISS,
+    hits,
+    darts,
+    accuracy,
+    volleys,
+    avgPerVolley,
+    bestVolley,
+    bestTarget: bestTargetPoints >= 0 ? bestTarget : null,
+    bestTargetPoints: bestTargetPoints >= 0 ? bestTargetPoints : 0,
+  };
+}
+
+function pct(n: number) {
+  const v = Math.round((Number(n || 0) * 1000)) / 10; // 1 décimale
+  return `${v}%`;
+}
+
+function round1(n: number) {
+  const v = Math.round(Number(n || 0) * 10) / 10;
+  return `${v}`;
+}
 
 export default function ShanghaiPlay(props: Props) {
   const { theme } = useTheme();
@@ -220,7 +358,7 @@ export default function ShanghaiPlay(props: Props) {
     return m;
   });
 
-    // ✅ STATS SHANGHAI — refs synchrones (IMPORTANT)
+  // ✅ STATS SHANGHAI — refs synchrones (IMPORTANT)
   const hitsByIdRef = React.useRef<Record<string, Record<number, HitCounts>>>({});
   const scoreTimelineByIdRef = React.useRef<Record<string, number[]>>({});
 
@@ -231,16 +369,16 @@ export default function ShanghaiPlay(props: Props) {
   const active = safePlayers[turn] || safePlayers[0];
 
   // 🔧 Init stats Shanghai (1 seule fois)
-React.useEffect(() => {
-  for (const p of safePlayers) {
-    if (!hitsByIdRef.current[p.id]) {
-      hitsByIdRef.current[p.id] = {};
+  React.useEffect(() => {
+    for (const p of safePlayers) {
+      if (!hitsByIdRef.current[p.id]) {
+        hitsByIdRef.current[p.id] = {};
+      }
+      if (!scoreTimelineByIdRef.current[p.id]) {
+        scoreTimelineByIdRef.current[p.id] = [0];
+      }
     }
-    if (!scoreTimelineByIdRef.current[p.id]) {
-      scoreTimelineByIdRef.current[p.id] = [0];
-    }
-  }
-}, [safePlayers]);
+  }, [safePlayers]);
 
   const sfxEnabled =
     (cfg as any)?.sfxEnabled ??
@@ -460,7 +598,6 @@ React.useEffect(() => {
     if (voiceEnabled === false) return;
 
     try {
-      // petit délai pour laisser UI respirer
       const id = window.setTimeout(() => {
         const ranked = endData.ranked || [];
         if (!ranked.length) return;
@@ -473,11 +610,15 @@ React.useEffect(() => {
           speakText(`Fin de partie. Égalité. ${names}. Score ${top}.`);
         } else {
           const winner = ranked[0];
-          speakText(`Fin de partie. Victoire de ${winner.name}. Score ${winner.score}.`);
+          speakText(
+            `Fin de partie. Victoire de ${winner.name}. Score ${winner.score}.`
+          );
         }
 
-        // annonce classement complet (court)
-        const lines = ranked.slice(0, 4).map((r, i) => `${i + 1}. ${r.name} ${r.score} points`).join(". ");
+        const lines = ranked
+          .slice(0, 4)
+          .map((r, i) => `${i + 1}. ${r.name} ${r.score} points`)
+          .join(". ");
         if (lines) speakText(`Classement. ${lines}.`);
       }, 450);
 
@@ -549,35 +690,44 @@ React.useEffect(() => {
         name: p.name,
         score: scores[p.id] ?? 0,
       })),
+    
+      // ✅ AJOUT CRITIQUE: stats dispo même si payload est tronqué/normalisé
+      statsShanghai: safeShanghaiStatsPack({
+        hitsById: hitsByIdRef.current,
+        scoreTimelineById: scoreTimelineByIdRef.current,
+        targetOrder: targetOrderRef.current,
+        maxRounds,
+        winRule,
+      }),
     };
-  
+
     return {
       id: `shanghai-${createdAt}-${Math.random().toString(36).slice(2, 8)}`,
       kind: "shanghai",
       status: "finished",
       createdAt,
       updatedAt: createdAt,
-  
+
       players: safePlayers.map((p) => ({
         id: p.id,
         name: p.name,
         avatarDataUrl: p.avatarDataUrl ?? null,
         isBot: !!(p as any).isBot,
       })),
-  
+
       winnerId,
       summary,
-  
+
       payload: {
         config: {
           ...(cfg as any),
           targetOrderMode,
           targetOrder: targetOrderRef.current,
         },
-  
+
         summary,
         lastThrowsById,
-  
+
         // ✅ STATS COMPLÈTES POUR SHANGHAI END
         statsShanghai: {
           hitsById: hitsByIdRef.current,
@@ -616,41 +766,39 @@ React.useEffect(() => {
   function validateTurn() {
     if (endData) return;
     if (currentThrow.length !== 3) return;
-  
+
     const pid = active.id;
     const snapshot = [...currentThrow].slice(0, 3);
-  
+
     const add = shanghaiThrowTotal(target, snapshot);
     const isSh = isShanghaiOnTarget(target, snapshot);
-  
-    // --- on détermine si ça termine maintenant ---
+
     const isLastPlayer = turn + 1 >= safePlayers.length;
     const isLastRound = round >= maxRounds;
     const endsByShanghai = winRule === "shanghai_or_points" && isSh;
     const endsByRounds = isLastPlayer && isLastRound;
     const willEnd = endsByShanghai || endsByRounds;
-  
+
     setLastThrowsById((prev) => ({ ...prev, [pid]: snapshot }));
-  
-    // ✅ STATS (SYNC): hits par cible + timeline score (1 point par manche/cible finie)
+
+    // ✅ STATS (SYNC)
     try {
-      // --- hits ---
       if (!hitsByIdRef.current) hitsByIdRef.current = {};
       if (!hitsByIdRef.current[pid]) hitsByIdRef.current[pid] = {};
-      if (!hitsByIdRef.current[pid][target]) hitsByIdRef.current[pid][target] = emptyHitCounts();
-  
+      if (!hitsByIdRef.current[pid][target])
+        hitsByIdRef.current[pid][target] = emptyHitCounts();
+
       const hc: HitCounts = hitsByIdRef.current[pid][target];
-  
+
       for (const d of snapshot) {
         const v = d?.v ?? 0;
         const mult = (d?.mult ?? 1) as any;
-  
-        // MISS = tout ce qui ne marque pas sur la cible (y compris 0)
+
         if (v !== target || v === 0) {
           hc.MISS += 1;
           continue;
         }
-  
+
         if (mult === 3) {
           hc.T += 1;
           hc.points += target * 3;
@@ -662,58 +810,52 @@ React.useEffect(() => {
           hc.points += target * 1;
         }
       }
-  
-      // --- timeline (sparkline) ---
-      // on veut 1 point = fin de manche/cible pour CE joueur
+
       if (!scoreTimelineByIdRef.current) scoreTimelineByIdRef.current = {};
-      if (!Array.isArray(scoreTimelineByIdRef.current[pid])) scoreTimelineByIdRef.current[pid] = [0];
-  
+      if (!Array.isArray(scoreTimelineByIdRef.current[pid]))
+        scoreTimelineByIdRef.current[pid] = [0];
+
       const arr = scoreTimelineByIdRef.current[pid];
       const last = Number(arr[arr.length - 1] ?? 0);
       arr.push(last + add);
     } catch {}
-  
-    // ✅ update score
+
     setScores((prev) => {
       const next = { ...prev };
       next[pid] = (next[pid] ?? 0) + add;
       return next;
     });
-  
-    // ✅ VOICE: si fin => on n’annonce PAS la volée
+
     if (!willEnd && voiceEnabled !== false) {
       announceVolleyScore(active.name, add);
     }
-  
+
     clearThrow();
-  
-    // ---------- FIN PAR SHANGHAI ----------
+
     if (endsByShanghai) {
       openEndScreen(pid, "shanghai", { pid, add });
       return;
     }
-  
-    // ---------- TOUR SUIVANT ----------
+
     const nextTurn = turn + 1;
     if (nextTurn < safePlayers.length) {
       setTurn(nextTurn);
       return;
     }
-  
+
     if (round < maxRounds) {
       setRound((r) => r + 1);
       setTurn(0);
       return;
     }
-  
-    // ---------- FIN AUX POINTS ----------
+
     const ranked = computeRanking({ pid, add });
     const top = ranked[0]?.score ?? 0;
     const tied = ranked.filter((r) => (r.score ?? 0) === top);
     const winnerId = tied.length >= 2 ? null : ranked[0]?.id ?? null;
-  
+
     openEndScreen(winnerId, "points", { pid, add });
-  }  
+  }
 
   const cardShell: React.CSSProperties = {
     borderRadius: 18,
@@ -832,9 +974,52 @@ React.useEffect(() => {
               alignItems: "center",
               gap: 10,
               marginBottom: 6,
+              position: "relative",
             }}
           >
-            {/* ✅ BOUTON RETOUR SUPPRIMÉ */}
+            {/* ✅ BOUTON RETOUR SUPPRIMÉ (visuel) */}
+
+            {/* ✅ ADD: ZONE TAP INVISIBLE "RETOUR CONFIG" (fonctionne vraiment) */}
+            <div
+              aria-label="Retour config Shanghai"
+              title="Retour config Shanghai"
+              onClick={(e) => {
+                try {
+                  e.preventDefault();
+                  e.stopPropagation();
+                } catch {}
+                goShanghaiConfig();
+              }}
+              onPointerUp={(e) => {
+                try {
+                  e.preventDefault();
+                  e.stopPropagation();
+                } catch {}
+                goShanghaiConfig();
+              }}
+              onTouchEnd={(e) => {
+                try {
+                  e.preventDefault();
+                  e.stopPropagation();
+                } catch {}
+                goShanghaiConfig();
+              }}
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: 42,
+                height: 42,
+                borderRadius: 14,
+                // 🔥 IMPORTANT: capte les clics même si d'autres éléments existent
+                pointerEvents: "auto",
+                zIndex: 9999,
+                cursor: "pointer",
+                userSelect: "none",
+                // ✅ si tu veux voir la zone (debug), décommente:
+                // background: "rgba(255,0,0,0.25)",
+              }}
+            />
 
             <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
               <img
@@ -954,7 +1139,9 @@ React.useEffect(() => {
                         }}
                       />
                     ) : (
-                      <span style={{ opacity: 0.75, fontWeight: 950, fontSize: 22 }}>
+                      <span
+                        style={{ opacity: 0.75, fontWeight: 950, fontSize: 22 }}
+                      >
                         ?
                       </span>
                     )}
@@ -1039,7 +1226,9 @@ React.useEffect(() => {
                   </div>
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
+                <div
+                  style={{ display: "flex", justifyContent: "center", gap: 8 }}
+                >
                   {renderThrowChips(currentThrow)}
                 </div>
               </div>
@@ -1082,8 +1271,12 @@ React.useEffect(() => {
                     style={{
                       padding: "7px 10px",
                       borderRadius: 14,
-                      border: `1px solid ${isActive ? theme.primary + "66" : theme.borderSoft}`,
-                      background: isActive ? `${theme.primary}10` : "rgba(0,0,0,0.16)",
+                      border: `1px solid ${
+                        isActive ? theme.primary + "66" : theme.borderSoft
+                      }`,
+                      background: isActive
+                        ? `${theme.primary}10`
+                        : "rgba(0,0,0,0.16)",
                       display: "flex",
                       alignItems: "center",
                       gap: 8,
@@ -1116,7 +1309,13 @@ React.useEffect(() => {
                           }}
                         />
                       ) : (
-                        <span style={{ opacity: 0.75, fontWeight: 900, fontSize: 14 }}>
+                        <span
+                          style={{
+                            opacity: 0.75,
+                            fontWeight: 900,
+                            fontSize: 14,
+                          }}
+                        >
                           ?
                         </span>
                       )}
@@ -1152,7 +1351,9 @@ React.useEffect(() => {
                       )}
                     </div>
 
-                    <div style={{ flex: "0 0 auto" }}>{renderThrowChips(last)}</div>
+                    <div style={{ flex: "0 0 auto" }}>
+                      {renderThrowChips(last)}
+                    </div>
 
                     <div
                       style={{
@@ -1192,7 +1393,12 @@ React.useEffect(() => {
         }}
       >
         <div style={{ width: "100%", maxWidth: 520, margin: "0 auto" }}>
-          <div style={{ transform: "scale(0.92)", transformOrigin: "bottom center" }}>
+          <div
+            style={{
+              transform: "scale(0.92)",
+              transformOrigin: "bottom center",
+            }}
+          >
             <Keypad
               currentThrow={currentThrow}
               multiplier={multiplier}
@@ -1217,8 +1423,16 @@ React.useEffect(() => {
             />
           </div>
 
-          {winRule === "shanghai_or_points" && shanghaiNow && currentThrow.length > 0 ? (
-            <div style={{ display: "flex", justifyContent: "center", marginTop: 6 }}>
+          {winRule === "shanghai_or_points" &&
+          shanghaiNow &&
+          currentThrow.length > 0 ? (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                marginTop: 6,
+              }}
+            >
               <div
                 style={{
                   borderRadius: 999,
@@ -1326,15 +1540,27 @@ React.useEffect(() => {
 
               <div style={{ marginTop: 10, fontWeight: 950, fontSize: 14 }}>
                 🏆 {t("common.winner", "Gagnant")} :{" "}
-                <span style={{ color: theme.primary, textShadow: `0 0 10px ${theme.primary}33` }}>
+                <span
+                  style={{
+                    color: theme.primary,
+                    textShadow: `0 0 10px ${theme.primary}33`,
+                  }}
+                >
                   {endData.isTie
                     ? "Égalité"
                     : endData?.winnerId
-                    ? safePlayers.find((p) => p.id === endData.winnerId)?.name || "—"
+                    ? safePlayers.find((p) => p.id === endData.winnerId)?.name ||
+                      "—"
                     : "—"}
                 </span>
                 {endData.isTie ? (
-                  <div style={{ marginTop: 6, fontSize: 12.5, color: theme.textSoft }}>
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: 12.5,
+                      color: theme.textSoft,
+                    }}
+                  >
                     {endData.tieIds
                       .map((id) => safePlayers.find((p) => p.id === id)?.name)
                       .filter(Boolean)
@@ -1350,8 +1576,11 @@ React.useEffect(() => {
                     style={{
                       padding: 10,
                       borderRadius: 16,
-                      border: `1px solid ${idx === 0 ? theme.primary + "66" : theme.borderSoft}`,
-                      background: idx === 0 ? `${theme.primary}12` : "rgba(0,0,0,0.18)",
+                      border: `1px solid ${
+                        idx === 0 ? theme.primary + "66" : theme.borderSoft
+                      }`,
+                      background:
+                        idx === 0 ? `${theme.primary}12` : "rgba(0,0,0,0.18)",
                       display: "flex",
                       alignItems: "center",
                       gap: 10,
@@ -1385,7 +1614,12 @@ React.useEffect(() => {
                         <img
                           src={r.avatarDataUrl}
                           alt=""
-                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            display: "block",
+                          }}
                         />
                       ) : (
                         <span style={{ opacity: 0.75, fontWeight: 900 }}>?</span>
@@ -1405,7 +1639,9 @@ React.useEffect(() => {
                       {r.name}
                     </div>
 
-                    <div style={{ fontWeight: 1000, fontSize: 16 }}>{r.score}</div>
+                    <div style={{ fontWeight: 1000, fontSize: 16 }}>
+                      {r.score}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1534,7 +1770,9 @@ React.useEffect(() => {
               {t("shanghai.rules.title", "Règles Shanghai")}
             </div>
 
-            <div style={{ fontSize: 13, lineHeight: 1.45, color: theme.textSoft }}>
+            <div
+              style={{ fontSize: 13, lineHeight: 1.45, color: theme.textSoft }}
+            >
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 <li>
                   {t(
