@@ -1,3 +1,5 @@
+console.warn("🔥 HISTORY PATCH LOADED v2");
+
 // ============================================
 // src/lib/history.ts — Historique "lourd + compressé"
 // API : list(), get(id), upsert(rec), remove(id), clear()

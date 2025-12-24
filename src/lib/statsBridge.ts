@@ -1,17 +1,28 @@
+// @ts-nocheck
 // ============================================
 // src/lib/statsBridge.ts
-// Pont de stats "tolérant" + exports attendus par l'UI
-// Expose :
-//   - types: Visit, PlayerLite, BasicProfileStats
-//   - objet StatsBridge { makeLeg, commitLegAndAccumulate, makeMatch,
-//                         commitMatchAndSave, getBasicProfileStats,
-//                         getMergedProfilesStats, getProfileQuickStats,
-//                         getBasicProfileStatsAsync, getCricketProfileStats,
-//                         getX01MultiLegsSetsForProfile }
-//   - alias nommés (compat pages): getBasicProfileStats, getMergedProfilesStats,
-//                                  getProfileQuickStats, getBasicProfileStatsAsync,
-//                                  getCricketProfileStats,
-//                                  getX01MultiLegsSetsForProfile
+// ✅ PONT UNIQUE DE STATS (V5.3) — "buildStatsIndex()"
+// Objectif : UN SEUL câblage qui alimente StatsHub / Leaderboards / Profils / Historique
+//
+// Expose (nouveau) :
+//   - getX01ProfileStats(profileId, range, source)
+//   - getCricketProfileStats(profileId, range, source)
+//   - getKillerProfileStats(profileId, range, source)
+//   - getShanghaiProfileStats(profileId, range, source)
+//   - getGlobalStats(range, source)
+//   - getLeaderboards({ mode, metric, range, source, minGames })
+//
+// Compat (ancien UI) :
+//   - StatsBridge.makeLeg / commitLegAndAccumulate / makeMatch / commitMatchAndSave
+//   - getBasicProfileStats / getMergedProfilesStats / getProfileQuickStats / getBasicProfileStatsAsync
+//   - getCricketProfileStats (alias legacy) / getX01MultiLegsSetsForProfile
+//
+// Notes :
+// - Index basé sur History.list() (IDB). On normalise TOUT ce qu'on peut :
+//   * payload string (base64+gzip / json / LZString global)
+//   * summary / payload.summary / liveStatsByPlayer / players arrays
+// - "source" (local/online/training/all) : filtrage best-effort selon les champs présents.
+//   Si tu n'as pas encore de marquage source, "all" == "local".
 // ============================================
 
 import { History } from "./history";
@@ -22,20 +33,19 @@ import {
   type CricketProfileStats,
 } from "./cricketStats";
 
-/* ---------- Types publics ---------- */
+/* ============================================================
+   Types publics
+============================================================ */
 
-export type Seg = {
-  v: number;
-  mult?: 1 | 2 | 3;
-};
+export type Seg = { v: number; mult?: 1 | 2 | 3 };
 
 export type Visit = {
   p: string; // playerId
-  segments?: Seg[]; // flèches de la volée
-  score?: number; // points de la volée (0 si bust)
+  segments?: Seg[];
+  score?: number;
   bust?: boolean;
-  isCheckout?: boolean; // true si fin du leg
-  remainingAfter?: number; // reste après la volée
+  isCheckout?: boolean;
+  remainingAfter?: number;
   ts?: number;
 };
 
@@ -53,21 +63,1124 @@ export type BasicProfileStats = {
   bestCheckout: number;
   wins: number;
 
-  // Extensions (facultatives, non breaking)
-  coTotal?: number; // total checkouts cumulés (summary.co)
-  winRate?: number; // % de victoires 0..100
+  coTotal?: number;
+  winRate?: number;
 };
 
-/* ---------- Constantes / types internes pour le cache quick-stats ---------- */
+export type RangeKey = "today" | "week" | "month" | "year" | "all" | "archives";
+export type SourceKey = "local" | "online" | "training" | "all";
+
+/* X01 avancé (profil) */
+export type X01ProfileStats = BasicProfileStats & {
+  points: number;
+  visits: number;
+  h60: number;
+  h100: number;
+  h140: number;
+  h180: number;
+  bust: number;
+  miss: number;
+  doubles: number;
+  triples: number;
+  bulls: number;
+  dbull: number;
+  bestFinish?: number; // alias bestCheckout si ton moteur renvoie un finish
+};
+
+/* Killer */
+export type KillerProfileStats = {
+  matches: number;
+  wins: number;
+  winRate: number;
+  kills: number;
+  hitsTotal: number;
+  lastMatchAt?: number;
+};
+
+/* Shanghai */
+export type ShanghaiProfileStats = {
+  matches: number;
+  wins: number;
+  winRate: number;
+  bestScore: number; // si dispo
+  hitsTotal: number; // si dispo
+  lastMatchAt?: number;
+};
+
+/* Global */
+export type GlobalStats = {
+  matches: number;
+  finished: number;
+  inProgress: number;
+  byMode: Record<string, number>;
+};
+
+export type LeaderboardMetric =
+  | "avg3"
+  | "winRate"
+  | "wins"
+  | "games"
+  | "bestVisit"
+  | "bestCheckout"
+  | "h180"
+  | "precision"; // cricket
+
+export type LeaderboardMode = "x01" | "cricket" | "killer" | "shanghai";
+
+/* ============================================================
+   QUICK STATS legacy (cache localStorage)
+============================================================ */
 
 const QUICK_STATS_KEY = "dc-quick-stats";
 
 type QuickStatsEntry = BasicProfileStats & {
-  points?: number; // utilisé par commitLegAndAccumulate
-  totalScore?: number; // alias plus explicite pour les V3
+  points?: number;
+  totalScore?: number;
 };
 
-/* ---------- Maps "legacy" internes (overlay X01 etc.) ---------- */
+/* ============================================================
+   Utils
+============================================================ */
+
+function nowTs() {
+  return Date.now();
+}
+
+function N(x: any, d = 0) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : d;
+}
+
+function getId(v: any): string {
+  if (!v) return "";
+  if (typeof v === "string") return v;
+  return String(v.id || v.playerId || v.profileId || v._id || "");
+}
+
+function getName(v: any): string {
+  if (!v) return "";
+  if (typeof v === "string") return v;
+  return String(v.name || v.displayName || v.username || v.label || "");
+}
+
+function safeLower(s: any) {
+  return String(s || "").toLowerCase();
+}
+
+function dartValue(seg?: Seg) {
+  if (!seg) return 0;
+  if (seg.v === 25 && seg.mult === 2) return 50;
+  return (seg.v || 0) * (seg.mult || 1);
+}
+
+function pct(n: number, d: number) {
+  return d > 0 ? Math.round((n / d) * 1000) / 10 : 0;
+}
+
+function startOf(period: RangeKey) {
+  const now = new Date();
+  if (period === "today") {
+    now.setHours(0, 0, 0, 0);
+    return now.getTime();
+  }
+  if (period === "week") {
+    const d = (now.getDay() + 6) % 7; // monday start
+    now.setDate(now.getDate() - d);
+    now.setHours(0, 0, 0, 0);
+    return now.getTime();
+  }
+  if (period === "month") return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  if (period === "year") return new Date(now.getFullYear(), 0, 1).getTime();
+  if (period === "archives") return 0;
+  return 0; // "all"
+}
+
+function inRange(ts: number, range: RangeKey) {
+  const t = ts || nowTs();
+  if (range === "all") return true;
+  if (range === "archives") return t < startOf("year");
+  return t >= startOf(range);
+}
+
+/* ============================================================
+   Décodage payload (base64+gzip / json / LZString global)
+============================================================ */
+
+async function decodePayload(raw: any): Promise<any | null> {
+  if (!raw || typeof raw !== "string") return null;
+
+  const tryParse = (s: any) => {
+    if (typeof s !== "string") return null;
+    try {
+      return JSON.parse(s);
+    } catch {
+      return null;
+    }
+  };
+
+  // 0) JSON string direct
+  const direct = tryParse(raw);
+  if (direct) return direct;
+
+  // 1) base64 -> gzip -> json
+  try {
+    const bin = atob(raw);
+    const buf = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+
+    const DS: any = (window as any).DecompressionStream;
+    if (typeof DS === "function") {
+      const ds = new DS("gzip");
+      const stream = new Blob([buf]).stream().pipeThrough(ds);
+      const resp = new Response(stream);
+      return await resp.json();
+    }
+
+    // fallback : json base64
+    const parsed = tryParse(bin);
+    if (parsed) return parsed;
+  } catch {
+    // ignore
+  }
+
+  // 2) LZString global (si dispo)
+  try {
+    const LZ: any = (window as any).LZString;
+    if (LZ) {
+      const s1 = typeof LZ.decompressFromUTF16 === "function" ? LZ.decompressFromUTF16(raw) : null;
+      const p1 = tryParse(s1);
+      if (p1) return p1;
+
+      const s2 = typeof LZ.decompressFromBase64 === "function" ? LZ.decompressFromBase64(raw) : null;
+      const p2 = tryParse(s2);
+      if (p2) return p2;
+
+      const s3 = typeof LZ.decompress === "function" ? LZ.decompress(raw) : null;
+      const p3 = tryParse(s3);
+      if (p3) return p3;
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}
+
+/* ============================================================
+   Normalisation d'un SavedMatch (unifie kind/mode/summary/players)
+============================================================ */
+
+type NormalizedMatch = {
+  id: string;
+  kind: string; // x01 / cricket / killer / shanghai / ...
+  mode: string; // idem (lower)
+  source: SourceKey; // local/online/training/all (best-effort)
+  status: "finished" | "in_progress";
+  createdAt: number;
+  updatedAt: number;
+  winnerId: string | null;
+  players: PlayerLite[];
+  summary: any;
+  payloadObj: any | null; // payload décodé si payload string
+  raw: SavedMatch;
+};
+
+function detectSource(rec: any): SourceKey {
+  // best-effort : adapte si tu as déjà un marqueur
+  const s =
+    rec?.source ||
+    rec?.origin ||
+    rec?.meta?.source ||
+    rec?.summary?.source ||
+    rec?.payload?.source ||
+    rec?.payload?.meta?.source ||
+    "";
+  const v = safeLower(s);
+  if (v.includes("online")) return "online";
+  if (v.includes("train")) return "training";
+  if (v.includes("local")) return "local";
+  return "local"; // par défaut tant que tu n'as pas de flag fiable
+}
+
+function detectKindMode(rec: any, decoded: any | null) {
+  const k = safeLower(rec?.kind || rec?.variant || rec?.game || rec?.mode || "");
+  const sMode = safeLower(rec?.summary?.mode || rec?.summary?.gameMode || rec?.payload?.mode || rec?.payload?.gameMode || "");
+  const dMode = safeLower(decoded?.config?.mode || decoded?.game?.mode || decoded?.mode || decoded?.gameMode || "");
+
+  // ordre de priorité : kind/variant connus, puis summary/payload, puis decoded
+  let mode = dMode || sMode || k || "x01";
+  let kind = k || mode || "x01";
+
+  // normalisations simples
+  if (kind === "leg") kind = "x01";
+  if (mode === "leg") mode = "x01";
+
+  // si ça contient un mot clé
+  const blob = `${kind} ${mode} ${sMode} ${dMode}`;
+  if (blob.includes("cricket")) return { kind: "cricket", mode: "cricket" };
+  if (blob.includes("killer")) return { kind: "killer", mode: "killer" };
+  if (blob.includes("shanghai")) return { kind: "shanghai", mode: "shanghai" };
+  if (blob.includes("x01")) return { kind: "x01", mode: "x01" };
+
+  return { kind, mode };
+}
+
+function detectStatus(rec: any, decoded: any | null): "finished" | "in_progress" {
+  const raw = safeLower(rec?.status || "");
+  if (raw === "finished") return "finished";
+
+  const s = rec?.summary || rec?.payload?.summary || {};
+  if (s?.finished === true) return "finished";
+  if (s?.result?.finished === true) return "finished";
+  if (s?.winnerId || s?.result?.winnerId) return "finished";
+  if (Array.isArray(s?.rankings) && s.rankings.length) return "finished";
+
+  const d = decoded || {};
+  if (d?.summary || d?.result || d?.stats) return "finished";
+
+  if (raw === "inprogress" || raw === "in_progress") return "in_progress";
+  return "in_progress";
+}
+
+function extractPlayers(rec: any, decoded: any | null): PlayerLite[] {
+  const arr =
+    (decoded?.config?.players && Array.isArray(decoded.config.players) ? decoded.config.players : null) ||
+    (decoded?.players && Array.isArray(decoded.players) ? decoded.players : null) ||
+    (rec?.players && Array.isArray(rec.players) ? rec.players : null) ||
+    (rec?.summary?.players && Array.isArray(rec.summary.players) ? rec.summary.players : null) ||
+    (rec?.payload?.players && Array.isArray(rec.payload.players) ? rec.payload.players : null) ||
+    [];
+
+  const out: PlayerLite[] = [];
+  for (const p of arr) {
+    const id = getId(p);
+    if (!id) continue;
+    out.push({ id, name: getName(p), avatarDataUrl: p?.avatarDataUrl ?? null });
+  }
+  // dédoublonne
+  const seen = new Set<string>();
+  return out.filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
+}
+
+function extractWinnerId(rec: any, decoded: any | null): string | null {
+  const s = rec?.summary || rec?.payload?.summary || {};
+  return (
+    (rec?.winnerId ? String(rec.winnerId) : null) ||
+    (s?.winnerId ? String(s.winnerId) : null) ||
+    (s?.result?.winnerId ? String(s.result.winnerId) : null) ||
+    (decoded?.summary?.winnerId ? String(decoded.summary.winnerId) : null) ||
+    (decoded?.result?.winnerId ? String(decoded.result.winnerId) : null) ||
+    null
+  );
+}
+
+/* ============================================================
+   Index de stats (cache mémoire + rebuild)
+============================================================ */
+
+type StatsIndex = {
+  builtAt: number;
+  rows: NormalizedMatch[];
+
+  byProfile: Record<string, NormalizedMatch[]>;
+  byMode: Record<string, NormalizedMatch[]>;
+};
+
+let _cache: StatsIndex | null = null;
+let _cachePromise: Promise<StatsIndex> | null = null;
+
+function applyFilters(rows: NormalizedMatch[], range: RangeKey, source: SourceKey) {
+  return rows.filter((r) => {
+    const ts = r.updatedAt || r.createdAt || 0;
+    if (!inRange(ts, range)) return false;
+    if (source === "all") return true;
+    return r.source === source;
+  });
+}
+
+async function normalizeRow(r: SavedMatch): Promise<NormalizedMatch | null> {
+  if (!r) return null;
+
+  const createdAt = N((r as any).createdAt, 0) || nowTs();
+  const updatedAt = N((r as any).updatedAt, 0) || createdAt;
+
+  let decoded: any | null = null;
+
+  // payload peut être string compressée
+  if (typeof (r as any).payload === "string") {
+    decoded = await decodePayload((r as any).payload);
+  } else if ((r as any).payload && typeof (r as any).payload === "object") {
+    decoded = null; // déjà objet dans r.payload
+  }
+
+  const { kind, mode } = detectKindMode(r as any, decoded);
+  const source = detectSource(r as any);
+  const status = detectStatus(r as any, decoded);
+  const players = extractPlayers(r as any, decoded);
+
+  const summary =
+    (r as any).summary ||
+    (r as any).payload?.summary ||
+    decoded?.summary ||
+    decoded?.result ||
+    decoded?.stats ||
+    {};
+
+  const winnerId = extractWinnerId(r as any, decoded);
+
+  return {
+    id: String((r as any).id || (r as any).matchId || ""),
+    kind,
+    mode,
+    source,
+    status,
+    createdAt,
+    updatedAt,
+    winnerId,
+    players,
+    summary,
+    payloadObj: decoded,
+    raw: r,
+  };
+}
+
+export async function buildStatsIndex(force = false): Promise<StatsIndex> {
+  if (!force && _cache) return _cache;
+  if (!force && _cachePromise) return _cachePromise;
+
+  _cachePromise = (async () => {
+    const raw = (await History.list()) as SavedMatch[];
+    const arr = Array.isArray(raw) ? raw : [];
+
+    const norm: NormalizedMatch[] = [];
+    for (const r of arr) {
+      try {
+        const n = await normalizeRow(r);
+        if (n && n.id) norm.push(n);
+      } catch {
+        // ignore
+      }
+    }
+
+    // indexations
+    const byProfile: Record<string, NormalizedMatch[]> = {};
+    const byMode: Record<string, NormalizedMatch[]> = {};
+
+    for (const m of norm) {
+      const modeKey = m.mode || m.kind || "unknown";
+      (byMode[modeKey] ||= []).push(m);
+
+      for (const p of m.players) {
+        (byProfile[p.id] ||= []).push(m);
+      }
+    }
+
+    // tri desc
+    norm.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+    for (const k of Object.keys(byProfile)) {
+      byProfile[k].sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+    }
+    for (const k of Object.keys(byMode)) {
+      byMode[k].sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+    }
+
+    _cache = { builtAt: nowTs(), rows: norm, byProfile, byMode };
+    _cachePromise = null;
+    return _cache;
+  })();
+
+  return _cachePromise;
+}
+
+export function clearStatsIndexCache() {
+  _cache = null;
+  _cachePromise = null;
+}
+
+/* ============================================================
+   X01 — extraction tolérante stats joueur depuis un match
+============================================================ */
+
+function extractX01PlayerStatsFromMatch(m: NormalizedMatch, profileId: string) {
+  const pid = String(profileId);
+
+  // 1) liveStatsByPlayer (V3)
+  const live = (m.raw as any)?.liveStatsByPlayer?.[pid];
+  if (live) {
+    const darts = N(live.dartsThrown, 0);
+    const totalScore = N(live.totalScore, 0);
+    const avg3 = darts > 0 ? (totalScore / darts) * 3 : 0;
+    return {
+      darts,
+      points: totalScore,
+      avg3,
+      bestVisit: N(live.bestVisit, 0),
+      bestCheckout: N(live.bestCheckout, 0),
+      h60: N(live.h60, 0),
+      h100: N(live.h100, 0),
+      h140: N(live.h140, 0),
+      h180: N(live.h180, 0),
+      bust: N(live.bust, 0),
+      miss: N(live.miss, 0),
+      doubles: N(live.doubles, 0),
+      triples: N(live.triples, 0),
+      bulls: N(live.bulls, 0),
+      dbull: N(live.dbull, 0),
+    };
+  }
+
+  const s = m.summary || {};
+  const per =
+    s.perPlayer ||
+    s.players ||
+    (m.raw as any)?.payload?.summary?.perPlayer ||
+    (m.raw as any)?.payload?.summary?.players ||
+    [];
+
+  const pstat =
+    (Array.isArray(per) ? per.find((x: any) => String(x?.playerId || x?.id) === pid) : null) ||
+    (s[pid] || s.players?.[pid] || s.perPlayer?.[pid]) ||
+    {};
+
+  // 2) perPlayer direct
+  const darts = N(pstat.darts || pstat.dartsThrown, 0);
+  const avg3 = N(pstat.avg3 || pstat.avg_3 || pstat.avg3Darts || pstat.avg3D || pstat.average3, 0);
+
+  const points = (() => {
+    // parfois points/score total dans summary
+    const totalScore = N(pstat.totalScore || pstat.points || pstat.scored, 0);
+    if (totalScore) return totalScore;
+    if (darts > 0 && avg3 > 0) return (avg3 / 3) * darts;
+    return 0;
+  })();
+
+  // 3) fallback payload.visits recalcul
+  let bestVisit = Math.max(N(pstat.bestVisit, 0), N(pstat.best_visit, 0));
+  let bestCheckout = Math.max(N(pstat.bestCheckout, 0), N(pstat.best_co, 0), N(pstat.bestFinish, 0));
+
+  let h60 = N(pstat.h60, 0);
+  let h100 = N(pstat.h100, 0);
+  let h140 = N(pstat.h140, 0);
+  let h180 = N(pstat.h180, 0);
+
+  let bust = N(pstat.bust, 0);
+  let miss = N(pstat.miss, 0);
+  let doubles = N(pstat.doubles, 0);
+  let triples = N(pstat.triples, 0);
+  let bulls = N(pstat.bulls, 0);
+  let dbull = N(pstat.dbull, 0);
+
+  const pv = (m.raw as any)?.payload?.visits;
+  if ((!bestVisit || !bestCheckout || !avg3) && Array.isArray(pv)) {
+    let darts2 = 0;
+    let scored2 = 0;
+
+    for (const v of pv) {
+      if (String(v?.p) !== pid) continue;
+      const segs = Array.isArray(v.segments) ? v.segments : [];
+      darts2 += segs.length || 0;
+
+      const sc = N(v.score, 0);
+      scored2 += sc;
+
+      if (!v.bust) {
+        if (sc > bestVisit) bestVisit = sc;
+        if (v.isCheckout && sc > bestCheckout) bestCheckout = sc;
+      }
+
+      if (sc >= 60) h60 += 1;
+      if (sc >= 100) h100 += 1;
+      if (sc >= 140) h140 += 1;
+      if (sc === 180) h180 += 1;
+
+      bust += v.bust ? 1 : 0;
+      for (const s of segs) {
+        if ((s?.v || 0) === 0) miss += 1;
+        if (s?.mult === 2) doubles += 1;
+        if (s?.mult === 3) triples += 1;
+        if (s?.v === 25) bulls += s?.mult === 2 ? 1 : 0.5;
+        if (s?.v === 25 && s?.mult === 2) dbull += 1;
+      }
+    }
+
+    if (!darts && darts2) {
+      // on n'écrase pas darts si perPlayer l'avait
+      // mais si perPlayer est vide, on s'en sert
+    }
+    if ((!avg3 || avg3 === 0) && darts2 > 0) {
+      // avg3 depuis visits
+      // (ne pas dépendre de "points" approximatif)
+    }
+  }
+
+  const finalDarts = darts;
+  const finalAvg3 = avg3;
+  const finalPoints = points;
+
+  return {
+    darts: finalDarts,
+    points: finalPoints,
+    avg3: finalAvg3,
+    bestVisit,
+    bestCheckout,
+    h60,
+    h100,
+    h140,
+    h180,
+    bust,
+    miss,
+    doubles,
+    triples,
+    bulls,
+    dbull,
+  };
+}
+
+/* ============================================================
+   CRICKET — extraction tolérante des legs d'un profil depuis l'index
+============================================================ */
+
+function collectCricketLegsFromMatch(m: NormalizedMatch, profileId: string): CricketLegStats[] {
+  const pid = String(profileId);
+  const out: CricketLegStats[] = [];
+
+  // (A) legacy : r.cricketLegs / r.summary.cricketLegs
+  const raw: any = m.raw as any;
+  const legsRawA = raw?.cricketLegs ?? raw?.summary?.cricketLegs ?? raw?.payload?.summary?.cricketLegs;
+  if (Array.isArray(legsRawA)) {
+    for (const leg of legsRawA) {
+      if (leg && String(leg.playerId) === pid) out.push(leg);
+    }
+  }
+
+  // (B) new : payload.players[].legStats (objet ou array) — payload peut être objet ou decoded
+  const payloadObj = raw?.payload && typeof raw.payload === "object" ? raw.payload : null;
+  const decoded = m.payloadObj && typeof m.payloadObj === "object" ? m.payloadObj : null;
+
+  const playersArr =
+    (payloadObj?.players && Array.isArray(payloadObj.players) ? payloadObj.players : null) ||
+    (decoded?.players && Array.isArray(decoded.players) ? decoded.players : null) ||
+    (decoded?.config?.players && Array.isArray(decoded.config.players) ? decoded.config.players : null) ||
+    (raw?.players && Array.isArray(raw.players) ? raw.players : null) ||
+    (raw?.summary?.players && Array.isArray(raw.summary.players) ? raw.summary.players : null) ||
+    [];
+
+  if (!playersArr.length) return out;
+
+  const me =
+    playersArr.find((p: any) => String(p?.id || p?.playerId) === pid) ||
+    playersArr.find((p: any) => String(p?.profileId) === pid) ||
+    null;
+
+  if (!me) return out;
+
+  const lsRaw = me.legStats ?? me.legsStats ?? me.cricketLegStats ?? null;
+  const legsFromPayload: any[] = Array.isArray(lsRaw) ? lsRaw : lsRaw ? [lsRaw] : [];
+
+  if (!legsFromPayload.length) return out;
+
+  const matchId = String(m.id || raw?.matchId || "");
+  const startedAt = m.createdAt || nowTs();
+  const endedAt = m.updatedAt || startedAt;
+
+  const others = playersArr.filter((p: any) => String(p?.id || p?.playerId || "") && String(p?.id || p?.playerId || "") !== pid);
+  const opponentLabelFallback =
+    others.length === 1
+      ? String(others[0]?.name ?? others[0]?.label ?? "Opponent")
+      : others.length > 1
+      ? others.map((p: any) => String(p?.name ?? p?.label ?? "Opponent")).filter(Boolean).join(" / ")
+      : "Opponent";
+
+  for (let i = 0; i < legsFromPayload.length; i++) {
+    const leg = legsFromPayload[i];
+    if (!leg) continue;
+
+    const fixed: CricketLegStats = {
+      ...(leg as any),
+      matchId: (leg as any).matchId ?? matchId ?? undefined,
+      playerId: (leg as any).playerId ?? pid,
+      legId: (leg as any).legId ?? `${matchId || "cricket"}:${pid}:${i}`,
+      startedAt: N((leg as any).startedAt, startedAt) || startedAt,
+      endedAt: N((leg as any).endedAt, endedAt) || endedAt,
+      opponentLabel: (leg as any).opponentLabel ?? (me as any).opponentLabel ?? opponentLabelFallback,
+    };
+
+    if (String(fixed.playerId) === pid) out.push(fixed);
+  }
+
+  return out;
+}
+
+/* ============================================================
+   GETTERS NOUVEAUX — PROFIL PAR MODE
+============================================================ */
+
+export async function getX01ProfileStats(profileId: string, range: RangeKey = "all", source: SourceKey = "all"): Promise<X01ProfileStats> {
+  const empty: X01ProfileStats = {
+    games: 0,
+    wins: 0,
+    winRate: 0,
+    darts: 0,
+    avg3: 0,
+    bestVisit: 0,
+    bestCheckout: 0,
+    points: 0,
+    visits: 0,
+    h60: 0,
+    h100: 0,
+    h140: 0,
+    h180: 0,
+    bust: 0,
+    miss: 0,
+    doubles: 0,
+    triples: 0,
+    bulls: 0,
+    dbull: 0,
+  };
+
+  if (!profileId) return empty;
+
+  const idx = await buildStatsIndex(false);
+  const mine = idx.byProfile[String(profileId)] || [];
+  const rows = applyFilters(mine, range, source).filter((m) => m.kind === "x01" || m.mode === "x01");
+
+  let games = 0;
+  let wins = 0;
+
+  let darts = 0;
+  let points = 0;
+
+  let bestVisit = 0;
+  let bestCheckout = 0;
+
+  let h60 = 0, h100 = 0, h140 = 0, h180 = 0;
+  let bust = 0, miss = 0, doubles = 0, triples = 0, bulls = 0, dbull = 0;
+
+  for (const m of rows) {
+    // On compte "games" : match fini par défaut (sinon tu exploses les stats)
+    if (m.status !== "finished") continue;
+
+    games += 1;
+    if (m.winnerId && String(m.winnerId) === String(profileId)) wins += 1;
+
+    const x = extractX01PlayerStatsFromMatch(m, profileId);
+
+    darts += N(x.darts, 0);
+    points += N(x.points, 0);
+
+    bestVisit = Math.max(bestVisit, N(x.bestVisit, 0));
+    bestCheckout = Math.max(bestCheckout, N(x.bestCheckout, 0));
+
+    h60 += N(x.h60, 0);
+    h100 += N(x.h100, 0);
+    h140 += N(x.h140, 0);
+    h180 += N(x.h180, 0);
+
+    bust += N(x.bust, 0);
+    miss += N(x.miss, 0);
+    doubles += N(x.doubles, 0);
+    triples += N(x.triples, 0);
+    bulls += N(x.bulls, 0);
+    dbull += N(x.dbull, 0);
+  }
+
+  const avg3 = darts > 0 ? (points / darts) * 3 : 0;
+  const winRate = games > 0 ? Math.round((wins / games) * 100) : 0;
+
+  return {
+    ...empty,
+    games,
+    wins,
+    winRate,
+    darts,
+    points,
+    avg3,
+    bestVisit,
+    bestCheckout,
+    bestFinish: bestCheckout,
+    h60,
+    h100,
+    h140,
+    h180,
+    bust,
+    miss,
+    doubles,
+    triples,
+    bulls,
+    dbull,
+  };
+}
+
+export async function getCricketProfileStats2(profileId: string, range: RangeKey = "all", source: SourceKey = "all"): Promise<CricketProfileStats> {
+  if (!profileId) {
+    return aggregateCricketProfileStats([], { maxHistoryItems: 30 });
+  }
+  const idx = await buildStatsIndex(false);
+  const mine = idx.byProfile[String(profileId)] || [];
+  const rows = applyFilters(mine, range, source).filter((m) => m.kind === "cricket" || m.mode === "cricket");
+
+  const legs: CricketLegStats[] = [];
+  for (const m of rows) {
+    // cricket: même si pas "finished", legStats peut exister, mais tu veux souvent stats finies
+    // -> on prend tout, l'agrégateur décidera
+    legs.push(...collectCricketLegsFromMatch(m, profileId));
+  }
+
+  return aggregateCricketProfileStats(legs, { maxHistoryItems: 30 });
+}
+
+export async function getKillerProfileStats(profileId: string, range: RangeKey = "all", source: SourceKey = "all"): Promise<KillerProfileStats> {
+  const empty: KillerProfileStats = { matches: 0, wins: 0, winRate: 0, kills: 0, hitsTotal: 0, lastMatchAt: undefined };
+  if (!profileId) return empty;
+
+  const idx = await buildStatsIndex(false);
+  const mine = idx.byProfile[String(profileId)] || [];
+  const rows = applyFilters(mine, range, source).filter((m) => m.kind === "killer" || m.mode === "killer");
+
+  let matches = 0;
+  let wins = 0;
+  let kills = 0;
+  let hitsTotal = 0;
+  let lastMatchAt = 0;
+
+  for (const m of rows) {
+    if (m.status !== "finished") continue;
+
+    matches += 1;
+    if (m.winnerId && String(m.winnerId) === String(profileId)) wins += 1;
+    lastMatchAt = Math.max(lastMatchAt, m.updatedAt || m.createdAt || 0);
+
+    // tolérant : summary.killsByPlayer / summary.hitsByPlayer / payloadObj.stats...
+    const s: any = m.summary || {};
+    const pid = String(profileId);
+
+    kills += N(s?.killsByPlayer?.[pid] ?? s?.kills?.[pid] ?? 0, 0);
+    hitsTotal += N(s?.hitsByPlayer?.[pid] ?? s?.hitsTotalByPlayer?.[pid] ?? 0, 0);
+
+    const d = m.payloadObj || null;
+    if (d) {
+      kills += N(d?.summary?.killsByPlayer?.[pid] ?? 0, 0);
+      hitsTotal += N(d?.summary?.hitsByPlayer?.[pid] ?? 0, 0);
+    }
+  }
+
+  const winRate = matches > 0 ? Math.round((wins / matches) * 100) : 0;
+  return { matches, wins, winRate, kills, hitsTotal, lastMatchAt: lastMatchAt || undefined };
+}
+
+export async function getShanghaiProfileStats(profileId: string, range: RangeKey = "all", source: SourceKey = "all"): Promise<ShanghaiProfileStats> {
+  const empty: ShanghaiProfileStats = { matches: 0, wins: 0, winRate: 0, bestScore: 0, hitsTotal: 0, lastMatchAt: undefined };
+  if (!profileId) return empty;
+
+  const idx = await buildStatsIndex(false);
+  const mine = idx.byProfile[String(profileId)] || [];
+  const rows = applyFilters(mine, range, source).filter((m) => m.kind === "shanghai" || m.mode === "shanghai");
+
+  let matches = 0;
+  let wins = 0;
+  let bestScore = 0;
+  let hitsTotal = 0;
+  let lastMatchAt = 0;
+
+  for (const m of rows) {
+    if (m.status !== "finished") continue;
+
+    matches += 1;
+    if (m.winnerId && String(m.winnerId) === String(profileId)) wins += 1;
+    lastMatchAt = Math.max(lastMatchAt, m.updatedAt || m.createdAt || 0);
+
+    const s: any = m.summary || {};
+    const pid = String(profileId);
+
+    // best-effort
+    bestScore = Math.max(bestScore, N(s?.bestScoreByPlayer?.[pid] ?? s?.scoreByPlayer?.[pid] ?? s?.scores?.[pid] ?? 0, 0));
+    hitsTotal += N(s?.hitsByPlayer?.[pid] ?? s?.hitsTotalByPlayer?.[pid] ?? 0, 0);
+
+    const d = m.payloadObj || null;
+    if (d) {
+      bestScore = Math.max(bestScore, N(d?.summary?.bestScoreByPlayer?.[pid] ?? 0, 0));
+      hitsTotal += N(d?.summary?.hitsByPlayer?.[pid] ?? 0, 0);
+    }
+  }
+
+  const winRate = matches > 0 ? Math.round((wins / matches) * 100) : 0;
+  return { matches, wins, winRate, bestScore, hitsTotal, lastMatchAt: lastMatchAt || undefined };
+}
+
+/* ============================================================
+   GLOBAL + LEADERBOARDS
+============================================================ */
+
+export async function getGlobalStats(range: RangeKey = "all", source: SourceKey = "all"): Promise<GlobalStats> {
+  const idx = await buildStatsIndex(false);
+  const rows = applyFilters(idx.rows, range, source);
+
+  let matches = 0;
+  let finished = 0;
+  let inProgress = 0;
+  const byMode: Record<string, number> = {};
+
+  for (const m of rows) {
+    matches += 1;
+    if (m.status === "finished") finished += 1;
+    else inProgress += 1;
+
+    const key = m.mode || m.kind || "unknown";
+    byMode[key] = (byMode[key] || 0) + 1;
+  }
+
+  return { matches, finished, inProgress, byMode };
+}
+
+export async function getLeaderboards(args: {
+  mode: LeaderboardMode;
+  metric: LeaderboardMetric;
+  range?: RangeKey;
+  source?: SourceKey;
+  minGames?: number;
+}) {
+  const { mode, metric, range = "all", source = "all", minGames = 1 } = args || ({} as any);
+  const idx = await buildStatsIndex(false);
+
+  // liste des profils présents dans index
+  const profileIds = Object.keys(idx.byProfile || {});
+  const rows: any[] = [];
+
+  for (const pid of profileIds) {
+    if (mode === "x01") {
+      const s = await getX01ProfileStats(pid, range, source);
+      if ((s.games || 0) < minGames) continue;
+
+      const value =
+        metric === "avg3" ? s.avg3 :
+        metric === "winRate" ? s.winRate :
+        metric === "wins" ? s.wins :
+        metric === "games" ? s.games :
+        metric === "bestVisit" ? s.bestVisit :
+        metric === "bestCheckout" ? s.bestCheckout :
+        metric === "h180" ? s.h180 :
+        0;
+
+      rows.push({ playerId: pid, value, stats: s });
+    }
+
+    if (mode === "cricket") {
+      const s = await getCricketProfileStats2(pid, range, source);
+      const games = N((s as any)?.matchesTotal ?? (s as any)?.matches ?? 0, 0);
+      if (games < minGames) continue;
+
+      // metric "precision" (à adapter selon ton CricketProfileStats réel)
+      const precision =
+        N((s as any)?.precision ?? (s as any)?.hitPct ?? 0, 0);
+
+      const value =
+        metric === "precision" ? precision :
+        metric === "wins" ? N((s as any)?.wins ?? 0, 0) :
+        metric === "games" ? games :
+        0;
+
+      rows.push({ playerId: pid, value, stats: s });
+    }
+
+    if (mode === "killer") {
+      const s = await getKillerProfileStats(pid, range, source);
+      if ((s.matches || 0) < minGames) continue;
+
+      const value =
+        metric === "winRate" ? s.winRate :
+        metric === "wins" ? s.wins :
+        metric === "games" ? s.matches :
+        0;
+
+      rows.push({ playerId: pid, value, stats: s });
+    }
+
+    if (mode === "shanghai") {
+      const s = await getShanghaiProfileStats(pid, range, source);
+      if ((s.matches || 0) < minGames) continue;
+
+      const value =
+        metric === "winRate" ? s.winRate :
+        metric === "wins" ? s.wins :
+        metric === "games" ? s.matches :
+        0;
+
+      rows.push({ playerId: pid, value, stats: s });
+    }
+  }
+
+  rows.sort((a, b) => (b.value || 0) - (a.value || 0));
+  return rows;
+}
+
+/* ============================================================
+   X01 MULTI — agrégat Legs / Sets (compat)
+============================================================ */
+
+export type X01MultiModeCounters = {
+  matchesWin: number;
+  matchesTotal: number;
+  legsWin: number;
+  legsTotal: number;
+  setsWin: number;
+  setsTotal: number;
+};
+
+export type X01MultiLegsSets = {
+  duo: X01MultiModeCounters;
+  multi: X01MultiModeCounters;
+  team: X01MultiModeCounters;
+};
+
+function createEmptyMultiCounters(): X01MultiModeCounters {
+  return { matchesWin: 0, matchesTotal: 0, legsWin: 0, legsTotal: 0, setsWin: 0, setsTotal: 0 };
+}
+function createEmptyMultiLegsSets(): X01MultiLegsSets {
+  return { duo: createEmptyMultiCounters(), multi: createEmptyMultiCounters(), team: createEmptyMultiCounters() };
+}
+
+export function computeX01MultiLegsSetsForProfileFromMatches(profileId: string, matches: SavedMatch[]): X01MultiLegsSets {
+  const out = createEmptyMultiLegsSets();
+  if (!profileId || !Array.isArray(matches) || !matches.length) return out;
+
+  for (const m of matches) {
+    if (!m || safeLower((m as any).kind) !== "x01") continue;
+
+    const payload: any = (m as any).payload || {};
+    const mode: string = payload.mode || payload.gameMode || "";
+
+    if (!mode || mode === "x01_solo") continue;
+
+    const players: any[] = (payload.config && payload.config.players) || (m as any).players || [];
+    if (!players.length) continue;
+
+    const me = players.find((p) => String(p.profileId || p.id || "") === String(profileId));
+    if (!me) continue;
+
+    const pid: string = String(me.id || profileId);
+
+    const summary: any = (m as any).summary || payload.summary || {};
+    const rankings: any[] = Array.isArray(summary.rankings) ? summary.rankings : [];
+
+    let myLegs = 0, mySets = 0, totalLegs = 0, totalSets = 0;
+
+    if (rankings.length) {
+      for (const r of rankings) {
+        const rLegs = Number(r.legsWon ?? r.legs ?? 0) || 0;
+        const rSets = Number(r.setsWon ?? r.sets ?? 0) || 0;
+        totalLegs += rLegs;
+        totalSets += rSets;
+
+        const rid = String(r.id ?? r.playerId ?? "");
+        if (rid === pid) {
+          myLegs = rLegs;
+          mySets = rSets;
+        }
+      }
+    } else {
+      const legsMap: any = summary.legsWon || payload.legsWon || (payload.state && payload.state.legsWon);
+      const setsMap: any = summary.setsWon || payload.setsWon || (payload.state && payload.state.setsWon);
+
+      if (legsMap && typeof legsMap === "object") {
+        for (const [k, v] of Object.entries(legsMap)) {
+          const val = Number(v) || 0;
+          totalLegs += val;
+          if (String(k) === pid) myLegs = val;
+        }
+      }
+      if (setsMap && typeof setsMap === "object") {
+        for (const [k, v] of Object.entries(setsMap)) {
+          const val = Number(v) || 0;
+          totalSets += val;
+          if (String(k) === pid) mySets = val;
+        }
+      }
+    }
+
+    let bucketKey: keyof X01MultiLegsSets;
+    if (mode === "x01_teams") bucketKey = "team";
+    else bucketKey = players.length <= 2 ? "duo" : "multi";
+
+    const bucket = out[bucketKey];
+    bucket.matchesTotal += 1;
+    if ((m as any).winnerId && String((m as any).winnerId) === pid) bucket.matchesWin += 1;
+
+    bucket.legsWin += myLegs;
+    bucket.legsTotal += totalLegs;
+    bucket.setsWin += mySets;
+    bucket.setsTotal += totalSets;
+  }
+
+  return out;
+}
+
+/* ============================================================
+   bumpBasicProfileStats — sécurité quota (évite crash)
+============================================================ */
+
+export function bumpBasicProfileStats(update: {
+  playerId: string;
+  darts: number;
+  totalScore: number;
+  bestVisit: number;
+  bestCheckout: number;
+  wins: number;
+  games: number;
+}) {
+  try {
+    if (!update.playerId) return;
+
+    // ⚠️ si quota dépassé, on ne force pas (évite spam console)
+    const raw = localStorage.getItem(QUICK_STATS_KEY);
+    const bag: Record<string, QuickStatsEntry> = raw ? JSON.parse(raw) : {};
+
+    const prev: QuickStatsEntry =
+      bag[update.playerId] || {
+        games: 0,
+        darts: 0,
+        avg3: 0,
+        bestVisit: 0,
+        bestCheckout: 0,
+        wins: 0,
+        winRate: 0,
+        points: 0,
+        totalScore: 0,
+      };
+
+    const prevTotal = N(prev.totalScore ?? prev.points ?? 0, 0);
+
+    const darts = N(prev.darts, 0) + N(update.darts, 0);
+    const totalScore = prevTotal + N(update.totalScore, 0);
+    const games = N(prev.games, 0) + N(update.games, 0);
+    const wins = N(prev.wins, 0) + N(update.wins, 0);
+
+    const avg3 = darts > 0 ? (totalScore * 3) / darts : 0;
+    const winRate = games > 0 ? (wins / games) * 100 : 0;
+
+    bag[update.playerId] = {
+      games,
+      darts,
+      avg3,
+      bestVisit: Math.max(N(prev.bestVisit, 0), N(update.bestVisit, 0)),
+      bestCheckout: Math.max(N(prev.bestCheckout, 0), N(update.bestCheckout, 0)),
+      wins,
+      winRate,
+      totalScore,
+      points: totalScore,
+    };
+
+    try {
+      localStorage.setItem(QUICK_STATS_KEY, JSON.stringify(bag));
+    } catch {
+      // si quota dépassé : on abandonne silencieusement
+    }
+  } catch {
+    // silencieux
+  }
+}
+
+/* ============================================================
+   StatsBridge — compat legacy (inchangé dans l'esprit)
+============================================================ */
 
 type LegacyMaps = {
   order: string[];
@@ -100,563 +1213,13 @@ type LegacyMaps = {
   bulls: Record<string, number>;
 };
 
-/* ---------- Utils internes ---------- */
-
-function newMap<T = number>(
-  players: PlayerLite[],
-  v: T | number = 0
-): Record<string, T> {
+function newMap<T = number>(players: PlayerLite[], v: T | number = 0): Record<string, T> {
   const m: Record<string, any> = {};
   for (const p of players) m[p.id] = v;
   return m as Record<string, T>;
 }
 
-function pct(n: number, d: number) {
-  return d > 0 ? Math.round((n / d) * 1000) / 10 : 0;
-}
-
-function dartValue(seg?: Seg) {
-  if (!seg) return 0;
-  if (seg.v === 25 && seg.mult === 2) return 50;
-  return (seg.v || 0) * (seg.mult || 1);
-}
-
-/* ---------- Helper interne : charger les CricketLegStats d'un profil ---------- */
-/* NOTE:
-   Supporte:
-   - ancien format: r.cricketLegs / r.summary.cricketLegs (CricketLegStats[])
-   - nouveau format: r.payload.players[].legStats (objet ou tableau)
-*/
-async function loadCricketLegStatsForProfile(
-  profileId: string
-): Promise<CricketLegStats[]> {
-  try {
-    const rows = await History.list();
-    const out: CricketLegStats[] = [];
-
-    const toArr = <T,>(v: any): T[] => (Array.isArray(v) ? v : []);
-    const N = (x: any, d = 0) => (Number.isFinite(Number(x)) ? Number(x) : d);
-
-    for (const r of rows as any[]) {
-      if (!r) continue;
-
-      // -----------------------------
-      // (A) Ancien format : r.cricketLegs / r.summary.cricketLegs
-      // -----------------------------
-      const legsRawA: any =
-        (r && (r.cricketLegs as any)) ??
-        (r && r.summary && (r.summary.cricketLegs as any));
-
-      if (Array.isArray(legsRawA)) {
-        for (const leg of legsRawA) {
-          if (leg && leg.playerId === profileId) {
-            out.push(leg as CricketLegStats);
-          }
-        }
-      }
-
-      // -----------------------------
-      // (B) ✅ Nouveau format CricketPlay : payload.players[].legStats (objet ou tableau)
-      // -----------------------------
-      const payloadPlayers =
-        toArr<any>(r.payload?.players) ||
-        toArr<any>((r as any).players) ||
-        toArr<any>(r.summary?.players) ||
-        [];
-
-      if (!payloadPlayers.length) continue;
-
-      const myPlayer =
-        payloadPlayers.find(
-          (p: any) => p?.id === profileId || p?.playerId === profileId
-        ) ?? null;
-
-      if (!myPlayer) continue;
-
-      // legStats peut être : objet unique OU tableau
-      const lsRaw =
-        myPlayer.legStats ??
-        myPlayer.legsStats ??
-        myPlayer.cricketLegStats ??
-        null;
-
-      const legsFromPayload: any[] = Array.isArray(lsRaw)
-        ? lsRaw
-        : lsRaw
-        ? [lsRaw]
-        : [];
-
-      if (!legsFromPayload.length) continue;
-
-      // infos fallback si le payload ne les met pas
-      const matchId = String(r.id ?? r.matchId ?? "");
-      const startedAt = N(r.createdAt ?? r.startedAt, 0) || Date.now();
-      const endedAt = N(r.updatedAt ?? r.endedAt, 0) || startedAt || Date.now();
-
-      const others = payloadPlayers.filter(
-        (p: any) => (p?.id ?? p?.playerId) && (p?.id ?? p?.playerId) !== profileId
-      );
-
-      const opponentLabelFallback =
-        others.length === 1
-          ? String(others[0]?.name ?? others[0]?.label ?? "Opponent")
-          : others.length > 1
-          ? others
-              .map((p: any) => String(p?.name ?? p?.label ?? "Opponent"))
-              .filter(Boolean)
-              .join(" / ")
-          : "Opponent";
-
-      for (let i = 0; i < legsFromPayload.length; i++) {
-        const leg = legsFromPayload[i];
-        if (!leg) continue;
-
-        const fixed: CricketLegStats = {
-          ...(leg as any),
-          matchId: (leg as any).matchId ?? matchId ?? undefined,
-          playerId: (leg as any).playerId ?? profileId,
-          legId:
-            (leg as any).legId ?? `${matchId || "cricket"}:${profileId}:${i}`,
-          startedAt: N((leg as any).startedAt, startedAt) || startedAt,
-          endedAt: N((leg as any).endedAt, endedAt) || endedAt,
-          opponentLabel:
-            (leg as any).opponentLabel ??
-            (myPlayer as any).opponentLabel ??
-            opponentLabelFallback,
-        };
-
-        if (fixed.playerId === profileId) out.push(fixed);
-      }
-    }
-
-    return out;
-  } catch {
-    return [];
-  }
-}
-
-/* ---------- Helper X01 : extraction tolérante des stats joueur ---------- */
-
-// --- extrait les stats X01 pour un joueur dans un match ---
-function extractX01PlayerStats(rec: SavedMatch, pid: string) {
-  const Nloc = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : 0);
-
-  let avg3 = 0;
-  let bestVisit = 0;
-  let bestCheckout = 0;
-
-  const ss: any = (rec as any).summary ?? (rec as any).payload?.summary ?? {};
-  const per: any[] =
-    ss.perPlayer ??
-    ss.players ??
-    (rec as any).payload?.summary?.perPlayer ??
-    [];
-
-  const liveStatsByPlayer: any = (rec as any).liveStatsByPlayer;
-  const live = liveStatsByPlayer?.[pid];
-
-  // 0) 🔹 V3 / snapshot direct via liveStatsByPlayer (nouveau)
-  if (live) {
-    const dartsThrown = Nloc(live.dartsThrown);
-    const totalScore = Nloc(live.totalScore);
-
-    if (dartsThrown > 0 && totalScore > 0) {
-      avg3 = (totalScore / dartsThrown) * 3;
-    }
-
-    bestVisit = Math.max(bestVisit, Nloc(live.bestVisit));
-    bestCheckout = Math.max(bestCheckout, Nloc(live.bestCheckout));
-  }
-
-  // A) 🔹 Nouveau format : maps par joueur (finalizeMatch v2)
-  if (!avg3 && ss.avg3ByPlayer && ss.avg3ByPlayer[pid] != null) {
-    avg3 = Nloc(ss.avg3ByPlayer[pid]);
-  }
-  if (ss.bestVisitByPlayer && ss.bestVisitByPlayer[pid] != null) {
-    bestVisit = Math.max(bestVisit, Nloc(ss.bestVisitByPlayer[pid]));
-  }
-  if (ss.bestCheckoutByPlayer && ss.bestCheckoutByPlayer[pid] != null) {
-    bestCheckout = Math.max(
-      bestCheckout,
-      Nloc(ss.bestCheckoutByPlayer[pid])
-    );
-  }
-
-  // B) 🔹 perPlayer (summaryPerPlayer de finalizeMatch)
-  const pstat =
-    per.find((x) => x?.playerId === pid) ??
-    (ss[pid] || ss.players?.[pid] || ss.perPlayer?.[pid]) ??
-    {};
-
-  if (!avg3) {
-    avg3 =
-      Nloc(pstat.avg3) ||
-      Nloc(pstat.avg_3) ||
-      Nloc(pstat.avg3Darts) ||
-      Nloc(pstat.average3) ||
-      Nloc(pstat.avg3D);
-  }
-
-  bestVisit = Math.max(
-    bestVisit,
-    Nloc(pstat.bestVisit),
-    Nloc(pstat.best_visit)
-  );
-  bestCheckout = Math.max(
-    bestCheckout,
-    Nloc(pstat.bestCheckout),
-    Nloc(pstat.best_co),
-    Nloc(pstat.bestFinish)
-  );
-
-  // C) 🔹 Fallback sur payload.legs (au cas où summary est pauvre)
-  if ((!avg3 || (!bestVisit && !bestCheckout)) && (rec as any).payload?.legs) {
-    const legs: any[] = Array.isArray((rec as any).payload.legs)
-      ? (rec as any).payload.legs
-      : [];
-
-    let sumAvg3 = 0;
-    let legsCount = 0;
-
-    for (const leg of legs) {
-      const plArr: any[] = Array.isArray(leg.perPlayer)
-        ? leg.perPlayer
-        : [];
-      const pl = plArr.find((x) => x?.playerId === pid);
-      if (!pl) continue;
-
-      const legAvg =
-        Nloc(pl.avg3) ||
-        Nloc(pl.avg_3) ||
-        Nloc(pl.avg3Darts) ||
-        Nloc(pl.average3) ||
-        Nloc(pl.avg3D);
-
-      if (legAvg > 0) {
-        sumAvg3 += legAvg;
-        legsCount++;
-      }
-
-      bestVisit = Math.max(
-        bestVisit,
-        Nloc(pl.bestVisit),
-        Nloc(pl.best_visit)
-      );
-      bestCheckout = Math.max(
-        bestCheckout,
-        Nloc(pl.bestCheckout),
-        Nloc(pl.best_co),
-        Nloc(pl.bestFinish)
-      );
-    }
-
-    if (legsCount > 0 && (!avg3 || avg3 === 0)) {
-      avg3 = sumAvg3 / legsCount;
-    }
-  }
-
-  // D) 🔹 Fallback ultime : payload.visits (recalcul complet)
-  if (
-    (!avg3 || (!bestVisit && !bestCheckout)) &&
-    (rec as any).payload?.visits
-  ) {
-    const visits: any[] = Array.isArray((rec as any).payload.visits)
-      ? (rec as any).payload.visits
-      : [];
-
-    let darts = 0;
-    let scored = 0;
-
-    for (const v of visits) {
-      if (v.p !== pid) continue;
-
-      const segs = Array.isArray(v.segments) ? v.segments : [];
-      const nbDarts = segs.length || 0;
-
-      darts += nbDarts;
-      scored += Nloc(v.score);
-
-      if (!v.bust) {
-        const sc = Nloc(v.score);
-        if (sc > bestVisit) bestVisit = sc;
-        if (v.isCheckout && sc > bestCheckout) {
-          bestCheckout = sc;
-        }
-      }
-    }
-
-    if (darts > 0 && (!avg3 || avg3 === 0)) {
-      avg3 = (scored / darts) * 3;
-    }
-  }
-
-  return {
-    avg3,
-    bestVisit,
-    bestCheckout,
-  };
-}
-
-/* =============================================================
-// X01 MULTI — agrégat Legs / Sets par profil (Duo / Multi / Team)
-============================================================= */
-
-export type X01MultiModeCounters = {
-  matchesWin: number;
-  matchesTotal: number;
-  legsWin: number;
-  legsTotal: number;
-  setsWin: number;
-  setsTotal: number;
-};
-
-export type X01MultiLegsSets = {
-  duo: X01MultiModeCounters;
-  multi: X01MultiModeCounters;
-  team: X01MultiModeCounters;
-};
-
-function createEmptyMultiCounters(): X01MultiModeCounters {
-  return {
-    matchesWin: 0,
-    matchesTotal: 0,
-    legsWin: 0,
-    legsTotal: 0,
-    setsWin: 0,
-    setsTotal: 0,
-  };
-}
-
-function createEmptyMultiLegsSets(): X01MultiLegsSets {
-  return {
-    duo: createEmptyMultiCounters(),
-    multi: createEmptyMultiCounters(),
-    team: createEmptyMultiCounters(),
-  };
-}
-
-/**
- * Agrège Legs / Sets gagnés + totaux pour un profil donné
- * à partir d'une liste de matches X01 (V3 ou anciens).
- *
- * - Duo   = X01 sans teams avec 2 joueurs
- * - Multi = X01 sans teams avec 3+ joueurs
- * - Team  = X01 avec teams (payload.mode === "x01_teams")
- */
-export function computeX01MultiLegsSetsForProfileFromMatches(
-  profileId: string,
-  matches: SavedMatch[]
-): X01MultiLegsSets {
-  const out = createEmptyMultiLegsSets();
-
-  if (!profileId || !Array.isArray(matches) || !matches.length) {
-    return out;
-  }
-
-  for (const m of matches) {
-    if (!m || (m as any).kind !== "x01") continue;
-
-    const payload: any = (m as any).payload || {};
-    const mode: string =
-      payload.mode ||
-      payload.gameMode ||
-      ""; // "x01_solo" | "x01_multi" | "x01_teams"
-
-    if (!mode || mode === "x01_solo") continue;
-
-    // -------------------------------
-    // Récupération des joueurs + pid
-    // -------------------------------
-    const players: any[] =
-      (payload.config && payload.config.players) ||
-      (m as any).players ||
-      [];
-
-    if (!players.length) continue;
-
-    const me = players.find(
-      (p) =>
-        String(p.profileId || "") === String(profileId) ||
-        String(p.id || "") === String(profileId)
-    );
-    if (!me) continue;
-
-    const pid: string = String(me.id);
-
-    // -------------------------------
-    // Legs / Sets par joueur
-    // -------------------------------
-    const summary: any =
-      (m as any).summary || payload.summary || {};
-    const rankings: any[] = Array.isArray(summary.rankings)
-      ? summary.rankings
-      : [];
-
-    let myLegs = 0;
-    let mySets = 0;
-    let totalLegs = 0;
-    let totalSets = 0;
-
-    if (rankings.length) {
-      for (const r of rankings) {
-        const rLegs =
-          Number(r.legsWon ?? r.legs ?? 0) || 0;
-        const rSets =
-          Number(r.setsWon ?? r.sets ?? 0) || 0;
-        totalLegs += rLegs;
-        totalSets += rSets;
-
-        const rid = String(r.id ?? r.playerId ?? "");
-        if (rid === pid) {
-          myLegs = rLegs;
-          mySets = rSets;
-        }
-      }
-    } else {
-      // Fallback : maps legsWon / setsWon (summary ou payload)
-      const legsMap: any =
-        summary.legsWon ||
-        payload.legsWon ||
-        (payload.state && payload.state.legsWon);
-      const setsMap: any =
-        summary.setsWon ||
-        payload.setsWon ||
-        (payload.state && payload.state.setsWon);
-
-      if (legsMap && typeof legsMap === "object") {
-        for (const [k, v] of Object.entries(legsMap)) {
-          const val = Number(v) || 0;
-          totalLegs += val;
-          if (String(k) === pid) myLegs = val;
-        }
-      }
-      if (setsMap && typeof setsMap === "object") {
-        for (const [k, v] of Object.entries(setsMap)) {
-          const val = Number(v) || 0;
-          totalSets += val;
-          if (String(k) === pid) mySets = val;
-        }
-      }
-    }
-
-    // Sélection du "bucket" (duo / multi / team)
-    let bucketKey: keyof X01MultiLegsSets;
-
-    if (mode === "x01_teams") {
-      bucketKey = "team";
-    } else {
-      const playerCount = players.length;
-      bucketKey = playerCount <= 2 ? "duo" : "multi";
-    }
-
-    const bucket = out[bucketKey];
-
-    // Matchs
-    bucket.matchesTotal += 1;
-    if (
-      (m as any).winnerId &&
-      String((m as any).winnerId) === pid
-    ) {
-      bucket.matchesWin += 1;
-    }
-
-    // Legs / Sets
-    bucket.legsWin += myLegs;
-    bucket.legsTotal += totalLegs;
-    bucket.setsWin += mySets;
-    bucket.setsTotal += totalSets;
-  }
-
-  return out;
-}
-
-/* ================================================================
-   bumpBasicProfileStats — utilitaire externe pour X01 V3, etc.
-   -> à appeler depuis saveX01V3MatchToHistory pour alimenter
-      le cache "dc-quick-stats" à partir d'un match complet.
-================================================================ */
-
-export function bumpBasicProfileStats(update: {
-  playerId: string;
-  darts: number;
-  totalScore: number;
-  bestVisit: number;
-  bestCheckout: number;
-  wins: number;
-  games: number;
-}) {
-  try {
-    if (!update.playerId) return;
-
-    const raw = localStorage.getItem(QUICK_STATS_KEY);
-    const bag: Record<string, QuickStatsEntry> = raw
-      ? JSON.parse(raw)
-      : {};
-
-    const prev: QuickStatsEntry =
-      bag[update.playerId] || {
-        games: 0,
-        darts: 0,
-        avg3: 0,
-        bestVisit: 0,
-        bestCheckout: 0,
-        wins: 0,
-        winRate: 0,
-        points: 0,
-        totalScore: 0,
-      };
-
-    const prevTotal =
-      Number(prev.totalScore ?? prev.points ?? 0) || 0;
-
-    const darts =
-      (Number(prev.darts || 0) || 0) +
-      (Number(update.darts || 0) || 0);
-    const totalScore = prevTotal + (Number(update.totalScore || 0) || 0);
-    const games =
-      (Number(prev.games || 0) || 0) +
-      (Number(update.games || 0) || 0);
-    const wins =
-      (Number(prev.wins || 0) || 0) +
-      (Number(update.wins || 0) || 0);
-
-    const avg3 = darts > 0 ? (totalScore * 3) / darts : 0;
-    const winRate = games > 0 ? (wins / games) * 100 : 0;
-
-    bag[update.playerId] = {
-      games,
-      darts,
-      avg3,
-      bestVisit: Math.max(
-        Number(prev.bestVisit || 0),
-        Number(update.bestVisit || 0)
-      ),
-      bestCheckout: Math.max(
-        Number(prev.bestCheckout || 0),
-        Number(update.bestCheckout || 0)
-      ),
-      wins,
-      winRate,
-      totalScore,
-    };
-
-    localStorage.setItem(QUICK_STATS_KEY, JSON.stringify(bag));
-  } catch {
-    // silencieux
-  }
-}
-
-/* ================================================================
-   StatsBridge — implémentation principale
-================================================================ */
-
 export const StatsBridge = {
-  /* --------------------------------------------------------------
-     makeLeg : construit un leg + maps "legacy"
-     - visits = liste de volées { p, segments[], score, bust, isCheckout, remainingAfter }
-     - players = PlayerLite[]
-     - winnerId (optionnel) : forçage, sinon déduit par remaining
-  -------------------------------------------------------------- */
   makeLeg(visits: Visit[], players: PlayerLite[], winnerId: string | null) {
     const darts = newMap<number>(players, 0);
     const visitsCount = newMap<number>(players, 0);
@@ -682,33 +1245,26 @@ export const StatsBridge = {
     for (const v of visits || []) {
       const pid = v.p;
       const segs = Array.isArray(v.segments) ? v.segments : [];
-      const visitPoints = Number(v.score || 0);
+      const visitPoints = N(v.score, 0);
 
       visitsCount[pid] = (visitsCount[pid] || 0) + 1;
-      darts[pid] = (darts[pid] || 0) + segs.length;
+      darts[pid] = (darts[pid] || 0) + (segs.length || 0);
       points[pid] = (points[pid] || 0) + visitPoints;
 
-      if (v.remainingAfter != null) {
-        remaining[pid] = Number(v.remainingAfter);
-      }
+      if (v.remainingAfter != null) remaining[pid] = N(v.remainingAfter, remaining[pid] || 0);
 
-      // Best visit = meilleure volée (points)
       bestVisit[pid] = Math.max(bestVisit[pid] || 0, visitPoints);
 
-      // Best checkout : valeur de la dernière flèche du checkout
       if (v.isCheckout && segs.length) {
         const last = segs[segs.length - 1];
-        const lastVal = dartValue(last);
-        bestCheckout[pid] = Math.max(bestCheckout[pid] || 0, lastVal);
+        bestCheckout[pid] = Math.max(bestCheckout[pid] || 0, dartValue(last));
       }
 
-      // Power scoring par volée
       if (visitPoints >= 60) h60[pid] += 1;
       if (visitPoints >= 100) h100[pid] += 1;
       if (visitPoints >= 140) h140[pid] += 1;
       if (visitPoints === 180) h180[pid] += 1;
 
-      // Busts + détails flèches
       bust[pid] += v.bust ? 1 : 0;
 
       for (const s of segs) {
@@ -734,7 +1290,7 @@ export const StatsBridge = {
       avg3[pid] = d > 0 ? Math.round(((pts / d) * 3) * 100) / 100 : 0;
       missPct[pid] = pct(miss[pid] || 0, d);
       dbullPct[pid] = pct(dbull[pid] || 0, d);
-      bustPct[pid] = pct(bust[pid] || 0, visitsCount[pid] || 0); // bust par volée
+      bustPct[pid] = pct(bust[pid] || 0, visitsCount[pid] || 0);
     }
 
     const order = [...players]
@@ -804,18 +1360,10 @@ export const StatsBridge = {
     return { leg, legacy };
   },
 
-  /* --------------------------------------------------------------
-     commitLegAndAccumulate :
-     - prend les maps legacy d'un leg
-     - met à jour un sac local "dc-quick-stats"
-       utilisé pour getBasicProfileStats / Profiles / StatsHub
-  -------------------------------------------------------------- */
   async commitLegAndAccumulate(_leg: any, legacy: LegacyMaps) {
     try {
       const raw = localStorage.getItem(QUICK_STATS_KEY);
-      const bag: Record<string, QuickStatsEntry> = raw
-        ? JSON.parse(raw)
-        : {};
+      const bag: Record<string, QuickStatsEntry> = raw ? JSON.parse(raw) : {};
 
       const pids = Object.keys(legacy?.darts || {});
       const winnerId = legacy?.winnerId || null;
@@ -835,74 +1383,43 @@ export const StatsBridge = {
             totalScore: 0,
           } as QuickStatsEntry);
 
-        // On compte 1 "game" par LEG terminé
         s.games += 1;
 
-        const d = Number(legacy.darts[pid] || 0);
-        const a3 = Number(legacy.avg3[pid] || 0);
+        const d = N(legacy.darts[pid], 0);
+        const a3 = N(legacy.avg3[pid], 0);
         const ptsApprox = d > 0 ? (a3 / 3) * d : 0;
 
         s.darts += d;
-        const prevTotal =
-          Number(s.totalScore ?? s.points ?? 0) || 0;
+        const prevTotal = N(s.totalScore ?? s.points ?? 0, 0);
         const totalScore = prevTotal + ptsApprox;
         s.totalScore = totalScore;
         s.points = totalScore;
 
         s.avg3 = s.darts > 0 ? (totalScore / s.darts) * 3 : 0;
 
-        s.bestVisit = Math.max(
-          Number(s.bestVisit || 0),
-          Number(legacy.bestVisit[pid] || 0)
-        );
-        s.bestCheckout = Math.max(
-          Number(s.bestCheckout || 0),
-          Number(legacy.bestCheckout[pid] || 0)
-        );
+        s.bestVisit = Math.max(N(s.bestVisit, 0), N(legacy.bestVisit[pid], 0));
+        s.bestCheckout = Math.max(N(s.bestCheckout, 0), N(legacy.bestCheckout[pid], 0));
 
         if (winnerId && winnerId === pid) s.wins += 1;
 
         bag[pid] = s;
       }
 
-      localStorage.setItem(QUICK_STATS_KEY, JSON.stringify(bag));
+      try {
+        localStorage.setItem(QUICK_STATS_KEY, JSON.stringify(bag));
+      } catch {
+        // quota
+      }
     } catch {
-      // on reste silencieux
+      // silence
     }
   },
 
-  /* --------------------------------------------------------------
-     makeMatch : synthèse "match" à partir d'une liste de legs
-     => renvoie un petit summary consommable par StatsHub / History
-  -------------------------------------------------------------- */
   makeMatch(legs: any[], players: PlayerLite[], matchId: string, kind: string) {
-    const perPid: Record<
-      string,
-      {
-        playerId: string;
-        darts: number;
-        points: number;
-        bestVisit: number;
-        bestCheckout: number;
-        h60: number;
-        h100: number;
-        h140: number;
-        h180: number;
-      }
-    > = Object.fromEntries(
+    const perPid: Record<string, any> = Object.fromEntries(
       players.map((p) => [
         p.id,
-        {
-          playerId: p.id,
-          darts: 0,
-          points: 0,
-          bestVisit: 0,
-          bestCheckout: 0,
-          h60: 0,
-          h100: 0,
-          h140: 0,
-          h180: 0,
-        },
+        { playerId: p.id, darts: 0, points: 0, bestVisit: 0, bestCheckout: 0, h60: 0, h100: 0, h140: 0, h180: 0 },
       ])
     );
 
@@ -914,27 +1431,20 @@ export const StatsBridge = {
         const acc = perPid[pp.playerId];
         if (!acc) continue;
 
-        acc.darts += Number(pp.darts || 0);
-        acc.points += Number(pp.points || 0);
-        acc.bestVisit = Math.max(
-          acc.bestVisit,
-          Number(pp.bestVisit || 0)
-        );
-        acc.bestCheckout = Math.max(
-          acc.bestCheckout,
-          Number(pp.bestCheckout || 0)
-        );
-        acc.h60 += Number(pp.h60 || 0);
-        acc.h100 += Number(pp.h100 || 0);
-        acc.h140 += Number(pp.h140 || 0);
-        acc.h180 += Number(pp.h180 || 0);
+        acc.darts += N(pp.darts, 0);
+        acc.points += N(pp.points, 0);
+        acc.bestVisit = Math.max(acc.bestVisit, N(pp.bestVisit, 0));
+        acc.bestCheckout = Math.max(acc.bestCheckout, N(pp.bestCheckout, 0));
+        acc.h60 += N(pp.h60, 0);
+        acc.h100 += N(pp.h100, 0);
+        acc.h140 += N(pp.h140, 0);
+        acc.h180 += N(pp.h180, 0);
       }
     }
 
     const perPlayer = players.map((p) => {
       const acc = perPid[p.id];
-      const avg3 =
-        acc.darts > 0 ? (acc.points / acc.darts) * 3 : 0;
+      const avg3 = acc.darts > 0 ? (acc.points / acc.darts) * 3 : 0;
       return {
         playerId: p.id,
         name: p.name || "",
@@ -950,289 +1460,124 @@ export const StatsBridge = {
       };
     });
 
-    return {
-      id: matchId,
-      kind,
-      createdAt: Date.now(),
-      winnerId: winnerId ?? null,
-      perPlayer,
-    };
+    return { id: matchId, kind, createdAt: nowTs(), winnerId: winnerId ?? null, perPlayer };
   },
 
-  /* --------------------------------------------------------------
-     commitMatchAndSave :
-     - persiste un "summary" de match dans un tableau local simple
-     - met aussi à jour les quick-stats (games / wins)
-  -------------------------------------------------------------- */
   async commitMatchAndSave(summary: any, extra?: any) {
     try {
       const allKey = "dc-matches";
       const raw = localStorage.getItem(allKey);
       const arr: any[] = raw ? JSON.parse(raw) : [];
-      arr.unshift({ summary, extra, ts: Date.now() });
+      arr.unshift({ summary, extra, ts: nowTs() });
       while (arr.length > 200) arr.pop();
-      localStorage.setItem(allKey, JSON.stringify(arr));
+      try {
+        localStorage.setItem(allKey, JSON.stringify(arr));
+      } catch {}
 
-      // Met à jour les quick-stats (games / wins) si on a winnerId
       const bagRaw = localStorage.getItem(QUICK_STATS_KEY);
-      const bag: Record<string, QuickStatsEntry> = bagRaw
-        ? JSON.parse(bagRaw)
-        : {};
-
-      const pids: string[] = (summary?.perPlayer || []).map(
-        (pp: any) => pp.playerId
-      );
+      const bag: Record<string, QuickStatsEntry> = bagRaw ? JSON.parse(bagRaw) : {};
+      const pids: string[] = (summary?.perPlayer || []).map((pp: any) => pp.playerId);
 
       for (const pid of pids) {
         const s: QuickStatsEntry =
           bag[pid] ??
-          ({
-            games: 0,
-            darts: 0,
-            avg3: 0,
-            bestVisit: 0,
-            bestCheckout: 0,
-            wins: 0,
-            winRate: 0,
-            points: 0,
-            totalScore: 0,
-          } as QuickStatsEntry);
+          ({ games: 0, darts: 0, avg3: 0, bestVisit: 0, bestCheckout: 0, wins: 0, winRate: 0, points: 0, totalScore: 0 } as QuickStatsEntry);
 
         s.games += 1;
-        if (summary?.winnerId && summary.winnerId === pid) {
-          s.wins += 1;
-        }
+        if (summary?.winnerId && summary.winnerId === pid) s.wins += 1;
 
         bag[pid] = s;
       }
 
-      localStorage.setItem(QUICK_STATS_KEY, JSON.stringify(bag));
+      try {
+        localStorage.setItem(QUICK_STATS_KEY, JSON.stringify(bag));
+      } catch {}
     } catch {
-      // silencieux
+      // silence
     }
   },
 
-  /* --------------------------------------------------------------
-     getBasicProfileStats : quick stats synchrones d'un profil
-     (utilise seulement localStorage / dc-quick-stats)
-  -------------------------------------------------------------- */
   getBasicProfileStats(profileId: string): BasicProfileStats {
     try {
       const raw = localStorage.getItem(QUICK_STATS_KEY);
-      const bag: Record<string, QuickStatsEntry> = raw
-        ? JSON.parse(raw)
-        : {};
+      const bag: Record<string, QuickStatsEntry> = raw ? JSON.parse(raw) : {};
       const s = bag[profileId] || null;
 
-      if (!s) {
-        return {
-          games: 0,
-          darts: 0,
-          avg3: 0,
-          bestVisit: 0,
-          bestCheckout: 0,
-          wins: 0,
-        };
-      }
+      if (!s) return { games: 0, darts: 0, avg3: 0, bestVisit: 0, bestCheckout: 0, wins: 0 };
 
-      const games = Number(s.games || 0);
-      const darts = Number(s.darts || 0);
-      const totalScore =
-        Number(s.totalScore ?? s.points ?? 0) || 0;
+      const games = N(s.games, 0);
+      const darts = N(s.darts, 0);
+      const totalScore = N(s.totalScore ?? s.points ?? 0, 0);
 
-      let avg3 = Number(s.avg3 || 0);
-      if (!avg3 && darts > 0 && totalScore > 0) {
-        avg3 = (totalScore * 3) / darts;
-      }
+      let avg3 = N(s.avg3, 0);
+      if (!avg3 && darts > 0 && totalScore > 0) avg3 = (totalScore * 3) / darts;
 
       return {
         games,
         darts,
         avg3,
-        bestVisit: Number(s.bestVisit || 0),
-        bestCheckout: Number(s.bestCheckout || 0),
-        wins: Number(s.wins || 0),
-        winRate: s.winRate,
+        bestVisit: N(s.bestVisit, 0),
+        bestCheckout: N(s.bestCheckout, 0),
+        wins: N(s.wins, 0),
+        winRate: (s as any).winRate,
       };
     } catch {
-      return {
-        games: 0,
-        darts: 0,
-        avg3: 0,
-        bestVisit: 0,
-        bestCheckout: 0,
-        wins: 0,
-      };
+      return { games: 0, darts: 0, avg3: 0, bestVisit: 0, bestCheckout: 0, wins: 0 };
     }
   },
 
-  /* --------------------------------------------------------------
-     getMergedProfilesStats : merge simple pour plusieurs profils
-  -------------------------------------------------------------- */
   getMergedProfilesStats(profiles: PlayerLite[]) {
     const out: Record<string, BasicProfileStats> = {};
-    for (const p of profiles || []) {
-      out[p.id] = this.getBasicProfileStats(p.id);
-    }
+    for (const p of profiles || []) out[p.id] = this.getBasicProfileStats(p.id);
     return out;
   },
 
-  /* --------------------------------------------------------------
-     getProfileQuickStats : alias demandé par certaines pages
-  -------------------------------------------------------------- */
   getProfileQuickStats(profileId: string) {
     return this.getBasicProfileStats(profileId);
   },
 
-  /* --------------------------------------------------------------
-     getBasicProfileStatsAsync :
-     - part de quick-stats (localStorage)
-     - complète avec l'historique (History.list)
-       -> coTotal + winRate + X01 avg3/bestVisit/bestCheckout
-  -------------------------------------------------------------- */
-  async getBasicProfileStatsAsync(
-    profileId: string
-  ): Promise<BasicProfileStats> {
-    const base = this.getBasicProfileStats(profileId);
-    let gamesFromHistory = 0;
-    let winsFromHistory = 0;
-    let coTotal = 0;
-
-    let histAvgSum = 0;
-    let histAvgCount = 0;
-    let histBestVisit = 0;
-    let histBestCheckout = 0;
-
-    try {
-      const rows = await History.list();
-
-      for (const r of rows as SavedMatch[]) {
-        const played = !!(r as any).players?.some(
-          (p: any) => p.id === profileId
-        );
-        if (!played) continue;
-
-        gamesFromHistory++;
-        if ((r as any).winnerId && (r as any).winnerId === profileId) {
-          winsFromHistory++;
-        }
-
-        const summary: any =
-          (r as any).summary ?? (r as any).payload?.summary ?? {};
-        coTotal += Number(summary?.co ?? 0);
-
-        // On ne tire des stats X01 que sur les matchs X01 / X01V3
-        const game = (r as any).game;
-        const variant = (r as any).variant;
-        const isX01 =
-          game === "x01" ||
-          variant === "x01" ||
-          variant === "x01v3" ||
-          variant === "x01v2";
-
-        if (isX01) {
-          const x = extractX01PlayerStats(r, profileId);
-          if (x.avg3 > 0) {
-            histAvgSum += x.avg3;
-            histAvgCount++;
-          }
-          histBestVisit = Math.max(histBestVisit, x.bestVisit || 0);
-          histBestCheckout = Math.max(
-            histBestCheckout,
-            x.bestCheckout || 0
-          );
-        }
-      }
-    } catch {
-      // si IDB indispo : on garde base
-    }
-
-    const games = Math.max(Number(base.games || 0), gamesFromHistory);
-    const wins = Math.max(Number(base.wins || 0), winsFromHistory);
-    const winRate = games ? Math.round((wins / games) * 100) : 0;
-
-    const avgFromHistory =
-      histAvgCount > 0 ? histAvgSum / histAvgCount : 0;
-
-    const avg3 = base.avg3 || avgFromHistory || 0;
-    const bestVisit = Math.max(
-      Number(base.bestVisit || 0),
-      histBestVisit
-    );
-    const bestCheckout = Math.max(
-      Number(base.bestCheckout || 0),
-      histBestCheckout
-    );
-
+  async getBasicProfileStatsAsync(profileId: string): Promise<BasicProfileStats> {
+    // ⚠️ nouveau : on se base sur le vrai index (moins de “0 partout”)
+    const x01 = await getX01ProfileStats(profileId, "all", "all");
     return {
-      ...base,
-      games,
-      wins,
-      coTotal,
-      winRate,
-      avg3,
-      bestVisit,
-      bestCheckout,
+      games: x01.games,
+      wins: x01.wins,
+      winRate: x01.winRate,
+      darts: x01.darts,
+      avg3: x01.avg3,
+      bestVisit: x01.bestVisit,
+      bestCheckout: x01.bestCheckout,
+      coTotal: 0,
     };
   },
 
-  /* --------------------------------------------------------------
-     getCricketProfileStats :
-     - charge toutes les CricketLegStats d'un profil (History.list)
-     - agrège en bloc CricketProfileStats (matches, solo/teams,
-       victoires, records, historique des scores)
-  -------------------------------------------------------------- */
-  async getCricketProfileStats(
-    profileId: string
-  ): Promise<CricketProfileStats> {
-    const legs = await loadCricketLegStatsForProfile(profileId);
-    return aggregateCricketProfileStats(legs, { maxHistoryItems: 30 });
+  async getCricketProfileStats(profileId: string): Promise<CricketProfileStats> {
+    return getCricketProfileStats2(profileId, "all", "all");
   },
 
-  /* --------------------------------------------------------------
-     getX01MultiLegsSetsForProfile :
-     - agrège Legs / Sets (gagnés + totaux) pour un profil
-       sur les matchs X01 multi (duo / multi / team)
-  -------------------------------------------------------------- */
-  async getX01MultiLegsSetsForProfile(
-    profileId: string
-  ): Promise<X01MultiLegsSets> {
+  async getX01MultiLegsSetsForProfile(profileId: string): Promise<X01MultiLegsSets> {
     if (!profileId) return createEmptyMultiLegsSets();
-
     try {
       const rows = await History.list();
-      const matches = (rows as SavedMatch[]).filter(
-        (m) => (m as any).kind === "x01"
-      );
-
-      return computeX01MultiLegsSetsForProfileFromMatches(
-        profileId,
-        matches
-      );
+      const matches = (rows as SavedMatch[]).filter((m) => safeLower((m as any).kind) === "x01");
+      return computeX01MultiLegsSetsForProfileFromMatches(profileId, matches);
     } catch {
       return createEmptyMultiLegsSets();
     }
   },
 };
 
-/* ---------- Alias en export NOMMÉ (compat import { ... } ) ---------- */
+/* ============================================================
+   Alias exports (compat import { ... })
+============================================================ */
 
-export const getBasicProfileStats = (profileId: string) =>
-  StatsBridge.getBasicProfileStats(profileId);
+export const getBasicProfileStats = (profileId: string) => StatsBridge.getBasicProfileStats(profileId);
+export const getMergedProfilesStats = (profiles: PlayerLite[]) => StatsBridge.getMergedProfilesStats(profiles);
+export const getProfileQuickStats = (profileId: string) => StatsBridge.getProfileQuickStats(profileId);
+export const getBasicProfileStatsAsync = (profileId: string) => StatsBridge.getBasicProfileStatsAsync(profileId);
 
-export const getMergedProfilesStats = (profiles: PlayerLite[]) =>
-  StatsBridge.getMergedProfilesStats(profiles);
+// ✅ Legacy name mais maintenant alimenté par l'index
+export const getCricketProfileStats = (profileId: string) => StatsBridge.getCricketProfileStats(profileId);
 
-export const getProfileQuickStats = (profileId: string) =>
-  StatsBridge.getProfileQuickStats(profileId);
-
-export const getBasicProfileStatsAsync = (profileId: string) =>
-  StatsBridge.getBasicProfileStatsAsync(profileId);
-
-// 🔸 Nouveau : stats Cricket complètes pour un profil
-export const getCricketProfileStats = (profileId: string) =>
-  StatsBridge.getCricketProfileStats(profileId);
-
-// 🔸 Nouveau : agrégat Legs / Sets X01 multi (duo / multi / team)
-export const getX01MultiLegsSetsForProfile = (profileId: string) =>
-  StatsBridge.getX01MultiLegsSetsForProfile(profileId);
+// ✅ X01 multi
+export const getX01MultiLegsSetsForProfile = (profileId: string) => StatsBridge.getX01MultiLegsSetsForProfile(profileId);

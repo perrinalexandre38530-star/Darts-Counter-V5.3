@@ -11,6 +11,8 @@
 //    -> SHANGHAI : go("shanghai_end", { rec })
 // ✅ NEW: Reprendre/Voir en cours route aussi SHANGHAI vers "shanghai_play" / "shanghai"
 // ✅ FIX CRICKET: “Voir stats” ouvre BIEN StatsHub (route = "statsHub") + fallback "cricket_stats"
+// ✅ DEBUG: logs RAW + logs AFTER FILTER (pour comprendre "Aucune partie ici")
+// ✅ FIX BUILD: aucune dépendance npm "lz-string" (fallback via window.LZString si présent)
 // ============================================
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -118,11 +120,27 @@ function isShanghaiEntry(e: SavedEntry) {
 }
 
 function statusOf(e: SavedEntry): "finished" | "in_progress" {
-  const s = (e.status || "").toLowerCase();
-  if (s === "finished") return "finished";
-  if (s === "inprogress" || s === "in_progress") return "in_progress";
-  const sum: any = e.summary || e.payload || {};
-  if (sum?.finished === true || sum?.result?.finished === true) return "finished";
+  // 1️⃣ Status explicite
+  const raw = String(e.status || "").toLowerCase();
+  if (raw === "finished") return "finished";
+
+  // 2️⃣ Summary direct
+  const s: any = e.summary || {};
+  if (s.finished === true) return "finished";
+  if (s.result?.finished === true) return "finished";
+
+  // 3️⃣ Indices forts de fin
+  if (s.winnerId) return "finished";
+  if (Array.isArray(s.rankings) && s.rankings.length > 0) return "finished";
+  if (Array.isArray(s.players) && s.players.length > 0 && s.result) return "finished";
+
+  // 4️⃣ Payload décodé
+  const d: any = e.decoded || {};
+  if (d.summary || d.result || d.stats) return "finished";
+
+  // 5️⃣ Fallback legacy
+  if (raw === "inprogress" || raw === "in_progress") return "in_progress";
+
   return "in_progress";
 }
 
@@ -147,10 +165,26 @@ function matchLink(e: SavedEntry): string | undefined {
   );
 }
 
-/* ---------- Décodage payload (base64 + gzip) ---------- */
+/* ---------- Décodage payload (base64 + gzip) + fallback LZString (sans import npm) ---------- */
 
 async function decodePayload(raw: any): Promise<any | null> {
   if (!raw || typeof raw !== "string") return null;
+
+  // helper parse safe
+  const tryParse = (s: any) => {
+    if (typeof s !== "string") return null;
+    try {
+      return JSON.parse(s);
+    } catch {
+      return null;
+    }
+  };
+
+  // 0) Si déjà JSON string clair
+  const direct = tryParse(raw);
+  if (direct) return direct;
+
+  // 1) Tentative base64 -> (gzip stream) -> json
   try {
     const bin = atob(raw);
     const buf = Uint8Array.from(bin, (c) => c.charCodeAt(0));
@@ -163,10 +197,34 @@ async function decodePayload(raw: any): Promise<any | null> {
       return await resp.json();
     }
 
-    return JSON.parse(bin);
+    // fallback sans gzip: parfois c'est juste du JSON base64
+    const parsed = tryParse(bin);
+    if (parsed) return parsed;
   } catch {
-    return null;
+    // ignore
   }
+
+  // 2) ✅ FIX BUILD: PAS D'IMPORT npm => fallback global window.LZString
+  try {
+    const LZ: any = (window as any).LZString;
+    if (LZ) {
+      const s1 = typeof LZ.decompressFromUTF16 === "function" ? LZ.decompressFromUTF16(raw) : null;
+      const p1 = tryParse(s1);
+      if (p1) return p1;
+
+      const s2 = typeof LZ.decompressFromBase64 === "function" ? LZ.decompressFromBase64(raw) : null;
+      const p2 = tryParse(s2);
+      if (p2) return p2;
+
+      const s3 = typeof LZ.decompress === "function" ? LZ.decompress(raw) : null;
+      const p3 = tryParse(s3);
+      if (p3) return p3;
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
 }
 
 /* ---------- Dédup + range ---------- */
@@ -601,6 +659,45 @@ export default function HistoryPage({
   const [items, setItems] = useState<SavedEntry[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // ============================================================
+  // 🔎 DEBUG HISTORYPAGE — voir RAW vs filtré (pour "Aucune partie ici")
+  // ============================================================
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        const raw = await History.list();
+        if (!mounted) return;
+
+        const arr = Array.isArray(raw) ? raw : [];
+        console.log("[HP][RAW] count =", arr.length);
+        console.log("[HP][RAW] sample =", arr[0]);
+
+        const mini = arr.slice(0, 20).map((r: any) => ({
+          id: r?.id,
+          kind: r?.kind,
+          status: r?.status,
+          game: r?.game,
+          mode: r?.mode,
+          variant: r?.variant,
+          createdAt: r?.createdAt,
+          updatedAt: r?.updatedAt,
+          players: (Array.isArray(r?.players) ? r.players : []).map((p: any) => p?.id),
+          winnerId: r?.winnerId,
+        }));
+
+        console.table(mini);
+      } catch (e) {
+        console.warn("[HP][RAW] History.list failed", e);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   async function loadHistory() {
     setLoading(true);
     try {
@@ -624,6 +721,25 @@ export default function HistoryPage({
   const source = tab === "done" ? done : running;
   const filtered = source.filter((e) => inRange(e.updatedAt || e.createdAt, sub));
 
+  // ✅ DEBUG: ce qui reste après filtres (tab + période + status/dedupe)
+  useEffect(() => {
+    try {
+      console.log(
+        "[HP][VISIBLE] tab =",
+        tab,
+        "range =",
+        sub,
+        "items =",
+        items.length,
+        "source =",
+        source.length,
+        "filtered =",
+        filtered.length
+      );
+      console.log("[HP][VISIBLE] first =", filtered[0]);
+    } catch {}
+  }, [tab, sub, items.length, source.length, filtered.length]);
+
   async function handleDelete(e: SavedEntry) {
     if (!window.confirm("Supprimer cette partie ?")) return;
     await HistoryAPI.remove(e.id);
@@ -644,20 +760,29 @@ export default function HistoryPage({
     const resumeId = e.resumeId || matchLink(e) || e.id;
 
     if (isKillerEntry(e)) {
-      safeGo(
-        ["killer_play", "killer"],
-        { resumeId, from: preview ? "history_preview" : "history", preview: !!preview, mode: "killer" }
-      );
+      safeGo(["killer_play", "killer"], {
+        resumeId,
+        from: preview ? "history_preview" : "history",
+        preview: !!preview,
+        mode: "killer",
+      });
       return;
     }
 
     if (isShanghaiEntry(e)) {
-      const ok = safeGo(
-        ["shanghai_play", "shanghai"],
-        { resumeId, from: preview ? "history_preview" : "history", preview: !!preview, mode: "shanghai" }
-      );
+      const ok = safeGo(["shanghai_play", "shanghai"], {
+        resumeId,
+        from: preview ? "history_preview" : "history",
+        preview: !!preview,
+        mode: "shanghai",
+      });
       if (!ok) {
-        go("x01_play_v3", { resumeId, from: preview ? "history_preview" : "history", mode: baseMode(e), preview: !!preview });
+        go("x01_play_v3", {
+          resumeId,
+          from: preview ? "history_preview" : "history",
+          mode: baseMode(e),
+          preview: !!preview,
+        });
       }
       return;
     }
@@ -678,14 +803,9 @@ export default function HistoryPage({
     // ✅ CRICKET : route correcte => App.tsx = "statsHub" (et non "stats_hub")
     if (m === "cricket") {
       const wid =
-        (e.summary && (e.summary.winnerId || e.summary?.result?.winnerId)) ||
-        (e as any)?.winnerId ||
-        null;
+        (e.summary && (e.summary.winnerId || e.summary?.result?.winnerId)) || (e as any)?.winnerId || null;
 
-      const firstPlayerId =
-        wid ||
-        (e.players && e.players.length ? getId(e.players[0]) : null) ||
-        null;
+      const firstPlayerId = wid || (e.players && e.players.length ? getId(e.players[0]) : null) || null;
 
       // 1) StatsHub direct (ton App.tsx: case "statsHub")
       try {
@@ -720,10 +840,11 @@ export default function HistoryPage({
     }
 
     if (isShanghaiEntry(e)) {
-      const ok = safeGo(
-        ["shanghai_end", "shanghai_summary", "stats_shanghai_match"],
-        { rec: e, resumeId, from: "history" }
-      );
+      const ok = safeGo(["shanghai_end", "shanghai_summary", "stats_shanghai_match"], {
+        rec: e,
+        resumeId,
+        from: "history",
+      });
       if (!ok) {
         go("x01_end", { rec: e, resumeId, showEnd: true, from: "history", __forcedMode: "shanghai" });
       }

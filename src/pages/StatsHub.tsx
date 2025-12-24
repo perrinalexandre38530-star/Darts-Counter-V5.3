@@ -4370,10 +4370,6 @@ return (
   )}
 </div>
 
-<React.Suspense fallback={<LazyFallback label="Chargement…" />}>
-  {/* ton contenu des modes (dashboard/dartsets/x01_multi/...) */}
-</React.Suspense>
-
       {/* ========= CONTENU PILOTÉ PAR LE CARROUSEL DE MODES ========= */}
       <React.Suspense fallback={<LazyFallback label="Chargement…" />}>
         {currentMode === "dashboard" && (
@@ -4558,9 +4554,7 @@ return (
         {currentMode === "dartsets" && (
           <div style={card}>
             {selectedPlayer ? (
-              <React.Suspense
-                fallback={<LazyFallback label="Chargement des fléchettes…" />}
-              >
+              <React.Suspense fallback={<LazyFallback label="Chargement des fléchettes…" />}>
                 <StatsDartSetsSection
                   activeProfileId={selectedPlayer?.id ?? null}
                   title="MES FLÉCHETTES"
@@ -4618,17 +4612,17 @@ return (
           </div>
         )}
 
-{currentMode === "shanghai" && (
-  <div style={card}>
-    <React.Suspense fallback={<LazyFallback label="Chargement Shanghai…" />}>
-      <StatsShanghaiDashboard
-        matches={records as any}
-        playerId={selectedPlayer?.id ?? null}
-        playerName={selectedPlayer?.name ?? null}
-      />
-    </React.Suspense>
-  </div>
-)}
+        {currentMode === "shanghai" && (
+          <div style={card}>
+            <React.Suspense fallback={<LazyFallback label="Chargement Shanghai…" />}>
+              <StatsShanghaiDashboard
+                matches={records as any}
+                playerId={selectedPlayer?.id ?? null}
+                playerName={selectedPlayer?.name ?? null}
+              />
+            </React.Suspense>
+          </div>
+        )}
 
         {currentMode === "killer" && (
           <div style={card}>
@@ -4664,6 +4658,8 @@ return (
           </div>
         )}
       </React.Suspense>
+
+      {/* ✅ IMPORTANT : on ferme bien le layout du return */}
     </div>
   </div>
 );
