@@ -494,29 +494,31 @@ function useHistoryAPI(): SavedMatch[] {
   const [rows, setRows] = React.useState<SavedMatch[]>([]);
 
   React.useEffect(() => {
-    (async () => {
+    // ✅ Guard SSR / build (window undefined)
+    if (typeof window === "undefined") return;
+
+    let mounted = true;
+
+    const load = async () => {
       try {
         const list = await History.list();
+        if (!mounted) return;
         setRows(toArr<SavedMatch>(list));
       } catch {
+        if (!mounted) return;
         setRows([]);
       }
-    })();
-
-    const onUpd = () => {
-      (async () => {
-        try {
-          const list = await History.list();
-          setRows(toArr<SavedMatch>(list));
-        } catch {
-          setRows([]);
-        }
-      })();
     };
 
-    window.addEventListener("dc-history-updated", onUpd);
-    return () =>
-      window.removeEventListener("dc-history-updated", onUpd);
+    load();
+
+    const onUpd = () => load();
+
+    window.addEventListener("dc-history-updated", onUpd as any);
+    return () => {
+      mounted = false;
+      window.removeEventListener("dc-history-updated", onUpd as any);
+    };
   }, []);
 
   return rows;
@@ -785,6 +787,23 @@ const row: React.CSSProperties = {
   gridTemplateColumns: "1fr auto",
   alignItems: "center",
   gap: 8,
+};
+
+const statsPageWrap: React.CSSProperties = {
+  width: "100%",
+  maxWidth: 640,
+  margin: "0 auto",
+  padding: "0 12px",
+  boxSizing: "border-box",
+  overflowX: "hidden",
+};
+
+const statsStack: React.CSSProperties = {
+  width: "100%",
+  display: "flex",
+  flexDirection: "column",
+  gap: 12,
+  boxSizing: "border-box",
 };
 
 const LazyFallback = ({ label = "Chargement…" }: { label?: string }) => (
@@ -3483,308 +3502,402 @@ export default function StatsHub({
   // CSS shimmer
   useInjectStatsNameCss();
 
-  // ============================================================
+// ============================================================
 // 🔎 DEBUG TEMPORAIRE — vérifier IndexedDB (History)
 // ============================================================
 React.useEffect(() => {
   History.list().then((rows: any[]) => {
+    // eslint-disable-next-line no-console
     console.log("[DEBUG] History.list count =", rows?.length || 0);
+    // eslint-disable-next-line no-console
     console.log("[DEBUG] History.sample =", rows?.[0]);
   });
 }, []);
-  
-  // ==========================
-  // ✅ NEW — History normalisée (PHASE 2)
-  // ==========================
-  const [normalizedMatches, setNormalizedMatches] = React.useState<NormalizedMatch[]>([]);
 
-  // ✅ NEW : charge aussi l'historique normalisé (source unique pour stats)
-  React.useEffect(() => {
-    let mounted = true;
+// ==========================
+// ✅ NEW — History normalisée (PHASE 2)
+// ==========================
+const [normalizedMatches, setNormalizedMatches] = React.useState<NormalizedMatch[]>(
+  []
+);
 
-    const load = async () => {
-      try {
-        const nm = await loadNormalizedHistory();
-        if (!mounted) return;
-        setNormalizedMatches(Array.isArray(nm) ? nm : []);
-      } catch {
-        if (!mounted) return;
-        setNormalizedMatches([]);
-      }
-    };
+// ✅ Charge l'historique normalisé (source unique pour stats, à terme)
+React.useEffect(() => {
+  let mounted = true;
 
-    load();
-
-    const onUpd = () => load();
-    if (typeof window !== "undefined") {
-      window.addEventListener("dc-history-updated", onUpd as any);
+  const load = async () => {
+    try {
+      const nm = await loadNormalizedHistory();
+      if (!mounted) return;
+      setNormalizedMatches(Array.isArray(nm) ? nm : []);
+    } catch {
+      if (!mounted) return;
+      setNormalizedMatches([]);
     }
+  };
 
-    return () => {
-      mounted = false;
-      if (typeof window !== "undefined") {
-        window.removeEventListener("dc-history-updated", onUpd as any);
-      }
-    };
-  }, []);
+  load();
 
-// -- 0) BOT helper --
-  function isBotPlayer(p: PlayerLite): boolean {
-    const name = (p.name ?? "").toLowerCase();
-    const id = (p.id ?? "").toLowerCase();
-    return (
-      id.startsWith("bot_") ||
-      id.startsWith("bot:") ||
-      name.includes("bot") ||
-      name.includes("[bot]")
-    );
+  const onUpd = () => load();
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("dc-history-updated", onUpd as any);
   }
 
-  // -- 0 bis) PROFIL ACTUEL (via hook, safe) --
-  const cp = useCurrentProfile();
-  const profile = cp?.profile ?? null;
+  return () => {
+    mounted = false;
+    if (typeof window !== "undefined") {
+      window.removeEventListener("dc-history-updated", onUpd as any);
+    }
+  };
+}, []);
 
-  // -- 1) Carrousel des modes --
-  const modeDefs = React.useMemo(
-    () => [
-      { key: "dashboard", label: "Dashboard global" },
-      { key: "dartsets", label: "Mes fléchettes" },
-      { key: "x01_multi", label: "X01 multi" },
-      { key: "x01_compare", label: "Comparateur X01" },
-      { key: "cricket", label: "Cricket" },
-      { key: "shanghai", label: "Shanghai" }, // ✅ NEW
-      { key: "killer", label: "Killer" },
-      { key: "leaderboards", label: "Classements" },
-      { key: "history", label: "Historique" },
-    ],
-    []
+// -- 0) BOT helper --
+function isBotPlayer(p: PlayerLite): boolean {
+  const name = (p.name ?? "").toLowerCase();
+  const id = (p.id ?? "").toLowerCase();
+  return (
+    id.startsWith("bot_") ||
+    id.startsWith("bot:") ||
+    name.includes("bot") ||
+    name.includes("[bot]")
   );
+}
 
-  const totalModes = modeDefs.length;
+// -- 0 bis) PROFIL ACTUEL (via hook, safe) --
+const cp = useCurrentProfile();
+const profile = cp?.profile ?? null;
 
-  const initialModeIndex = React.useMemo(() => {
-    if (!initialStatsSubTab) return 0;
-    const idx = modeDefs.findIndex((m) => m.key === initialStatsSubTab);
-    return idx >= 0 ? idx : 0;
-  }, [initialStatsSubTab, modeDefs]);
+// -- 1) Carrousel des modes --
+const modeDefs = React.useMemo(
+  () => [
+    { key: "dashboard", label: "Dashboard global" },
+    { key: "dartsets", label: "Mes fléchettes" },
+    { key: "x01_multi", label: "X01 multi" },
+    { key: "x01_compare", label: "Comparateur X01" },
+    { key: "cricket", label: "Cricket" },
+    { key: "shanghai", label: "Shanghai" }, // ✅ NEW
+    { key: "killer", label: "Killer" },
+    { key: "leaderboards", label: "Classements" },
+    { key: "history", label: "Historique" },
+  ],
+  []
+);
 
-  const [modeIndex, setModeIndex] = React.useState(initialModeIndex);
-  const currentMode = modeDefs[modeIndex]?.key ?? "dashboard";
-  const currentModeLabel = modeDefs[modeIndex]?.label ?? "Dashboard global";
+const totalModes = modeDefs.length;
 
-  const goPrevMode = React.useCallback(() => {
-    if (totalModes <= 1) return;
-    setModeIndex((i) => (i - 1 + totalModes) % totalModes);
-  }, [totalModes]);
+const initialModeIndex = React.useMemo(() => {
+  if (!initialStatsSubTab) return 0;
+  const idx = modeDefs.findIndex((m) => m.key === initialStatsSubTab);
+  return idx >= 0 ? idx : 0;
+}, [initialStatsSubTab, modeDefs]);
 
-  const goNextMode = React.useCallback(() => {
-    if (totalModes <= 1) return;
-    setModeIndex((i) => (i + 1) % totalModes);
-  }, [totalModes]);
+const [modeIndex, setModeIndex] = React.useState(initialModeIndex);
+const currentMode = modeDefs[modeIndex]?.key ?? "dashboard";
+const currentModeLabel = modeDefs[modeIndex]?.label ?? "Dashboard global";
 
-  const canScrollModes = totalModes > 1;
+const goPrevMode = React.useCallback(() => {
+  if (totalModes <= 1) return;
+  setModeIndex((i) => (i - 1 + totalModes) % totalModes);
+}, [totalModes]);
 
-    // -- 2) Historiques --
-    const storeHistory = useStoreHistory();
-    const apiHistory = useHistoryAPI();
-  
-    const [storeProfiles, setStoreProfiles] = React.useState<PlayerLite[]>([]);
-  
-    React.useEffect(() => {
-      let mounted = true;
-  
-      (async () => {
-        try {
-          const store: any = await loadStore<any>();
-          if (!mounted) return;
-  
-          const arr: PlayerLite[] = Array.isArray(store?.profiles)
-            ? store.profiles.map((p: any) => ({
-                id: String(p.id),
-                name: p.name,
-                avatarDataUrl: p.avatarDataUrl ?? null,
-              }))
-            : [];
-  
-          setStoreProfiles(arr);
-        } catch {
-          if (!mounted) return;
-          setStoreProfiles([]);
-        }
-      })();
-  
-      return () => {
-        mounted = false;
-      };
-    }, []);
-  
-    // Mini-store pour le comparateur X01 (StatsX01Compare)
-    const pseudoStoreForCompare = React.useMemo(
-      () => ({ profiles: storeProfiles }),
-      [storeProfiles]
-    );
-  
-    // Fusion en éliminant doublons
-    const combinedHistory = React.useMemo(() => {
-      const mem = toArr<SavedMatch>(memHistory);
-      const all = [...mem, ...apiHistory, ...storeHistory];
-  
-      const byId = new Map<string, SavedMatch>();
-      for (const r of all) {
-        const id = String(r.id ?? "");
-        if (!id) continue;
-  
-        const existing = byId.get(id);
-        if (!existing) {
-          byId.set(id, r);
-        } else {
-          const tNew = r.updatedAt ?? r.createdAt ?? 0;
-          const tOld = existing.updatedAt ?? existing.createdAt ?? 0;
-          if (tNew >= tOld) byId.set(id, r);
-        }
-      }
-      return Array.from(byId.values()).sort(
-        (a, b) =>
-          (b.updatedAt ?? b.createdAt ?? 0) -
-          (a.updatedAt ?? a.createdAt ?? 0)
-      );
-    }, [memHistory, apiHistory, storeHistory]);
-  
-    // Normalisation
-    const records = React.useMemo(
-      () =>
-        combinedHistory.map((r) =>
-          normalizeRecordPlayers(r, storeProfiles)
-        ),
-      [combinedHistory, storeProfiles]
-    );  
+const goNextMode = React.useCallback(() => {
+  if (totalModes <= 1) return;
+  setModeIndex((i) => (i + 1) % totalModes);
+}, [totalModes]);
 
-  // -- 3) Liste unique de tous les joueurs vus --
-  const allPlayers = React.useMemo(() => {
-    const map = new Map<string, PlayerLite>();
-    for (const r of records) {
-      for (const p of toArr<PlayerLite>(r.players)) {
-        if (!p?.id) continue;
-        if (!map.has(p.id)) {
-          map.set(p.id, {
-            id: p.id,
-            name: p.name ?? "",
+const canScrollModes = totalModes > 1;
+
+// -- 2) Historiques (legacy + api + mem) --
+const storeHistory = useStoreHistory();
+const apiHistory = useHistoryAPI();
+
+const [storeProfiles, setStoreProfiles] = React.useState<PlayerLite[]>([]);
+
+React.useEffect(() => {
+  let mounted = true;
+
+  (async () => {
+    try {
+      const store: any = await loadStore<any>();
+      if (!mounted) return;
+
+      const arr: PlayerLite[] = Array.isArray(store?.profiles)
+        ? store.profiles.map((p: any) => ({
+            id: String(p.id),
+            name: p.name,
             avatarDataUrl: p.avatarDataUrl ?? null,
-          });
-        }
+          }))
+        : [];
+
+      setStoreProfiles(arr);
+    } catch {
+      if (!mounted) return;
+      setStoreProfiles([]);
+    }
+  })();
+
+  return () => {
+    mounted = false;
+  };
+}, []);
+
+// Mini-store pour le comparateur X01 (StatsX01Compare)
+const pseudoStoreForCompare = React.useMemo(
+  () => ({ profiles: storeProfiles }),
+  [storeProfiles]
+);
+
+// Fusion en éliminant doublons (mem + api + store)
+const combinedHistory = React.useMemo(() => {
+  const mem = toArr<SavedMatch>(memHistory);
+  const all = [...mem, ...apiHistory, ...storeHistory];
+
+  const byId = new Map<string, SavedMatch>();
+  for (const r of all) {
+    const id = String((r as any)?.id ?? "");
+    if (!id) continue;
+
+    const existing = byId.get(id);
+    if (!existing) {
+      byId.set(id, r);
+    } else {
+      const tNew = (r as any)?.updatedAt ?? (r as any)?.createdAt ?? 0;
+      const tOld =
+        (existing as any)?.updatedAt ?? (existing as any)?.createdAt ?? 0;
+      if (tNew >= tOld) byId.set(id, r);
+    }
+  }
+
+  return Array.from(byId.values()).sort(
+    (a, b) =>
+      ((b as any)?.updatedAt ?? (b as any)?.createdAt ?? 0) -
+      ((a as any)?.updatedAt ?? (a as any)?.createdAt ?? 0)
+  );
+}, [memHistory, apiHistory, storeHistory]);
+
+// ✅ IMPORTANT : records DOIT TOUJOURS EXISTER (sinon écran noir)
+// Normalisation "records" pour les composants legacy qui attendent SavedMatch normalisé.
+const records = React.useMemo(() => {
+  try {
+    const arr = Array.isArray(combinedHistory) ? combinedHistory : [];
+    return arr.map((r) => normalizeRecordPlayers(r, storeProfiles));
+  } catch {
+    return [];
+  }
+}, [combinedHistory, storeProfiles]);
+
+// ==========================
+// ✅ DEBUG + SOURCE UNIQUE pour toutes les stats
+// ==========================
+
+// 1) Nettoie/force des ids string dans normalizedMatches + injecte noms/avatars depuis storeProfiles
+const normalizedMatchesClean = React.useMemo(() => {
+  const byId = new Map<string, PlayerLite>();
+  for (const p of storeProfiles) byId.set(String(p.id), p);
+
+  const nm = Array.isArray(normalizedMatches) ? normalizedMatches : [];
+  return nm.map((m: any) => {
+    const players = Array.isArray(m?.players) ? m.players : [];
+    const fixedPlayers = players.map((pp: any) => {
+      const pid = String(pp?.id ?? "");
+      const sp = byId.get(pid);
+      return {
+        ...pp,
+        id: pid,
+        name: pp?.name ?? sp?.name ?? "",
+        avatarDataUrl: pp?.avatarDataUrl ?? sp?.avatarDataUrl ?? null,
+      };
+    });
+
+    return {
+      ...m,
+      id: String(m?.id ?? ""),
+      kind: String(m?.kind ?? m?.mode ?? ""),
+      status: String(m?.status ?? "finished"),
+      players: fixedPlayers,
+    };
+  });
+}, [normalizedMatches, storeProfiles]);
+
+// 2) Fallback best-effort : si normalizedMatches est vide, on fabrique une version "normalized" depuis records
+function recordToNormalizedFallback(r: any): any | null {
+  if (!r) return null;
+
+  const id = String(r.id ?? "");
+  const kind = String(r.kind ?? r.mode ?? r.game ?? "");
+  const status = String(r.status ?? (r.winnerId ? "finished" : "finished"));
+
+  const players = Array.isArray(r.players)
+    ? r.players.map((p: any) => ({
+        id: String(p?.id ?? ""),
+        name: p?.name ?? "",
+        avatarDataUrl: p?.avatarDataUrl ?? null,
+      }))
+    : [];
+
+  const payload = (r.payload ?? r.payloadCompressed ?? r.data ?? null) as any;
+
+  return {
+    id,
+    kind,
+    status,
+    players,
+    payload,
+    createdAt: r.createdAt ?? 0,
+    updatedAt: r.updatedAt ?? 0,
+  };
+}
+
+const nmFromRecordsFallback = React.useMemo(() => {
+  const arr = Array.isArray(records) ? records : [];
+  return arr.map(recordToNormalizedFallback).filter(Boolean);
+}, [records]);
+
+// 3) ✅ SOURCE UNIQUE utilisée PARTOUT dans StatsHub
+const nmEffective = React.useMemo(() => {
+  return normalizedMatchesClean.length ? normalizedMatchesClean : nmFromRecordsFallback;
+}, [normalizedMatchesClean, nmFromRecordsFallback]);
+
+// -- 3) Liste unique de tous les joueurs vus (depuis records) --
+const allPlayers = React.useMemo(() => {
+  const map = new Map<string, PlayerLite>();
+  for (const r of records) {
+    for (const p of toArr<PlayerLite>((r as any)?.players)) {
+      if (!p?.id) continue;
+      if (!map.has(p.id)) {
+        map.set(p.id, {
+          id: p.id,
+          name: p.name ?? "",
+          avatarDataUrl: p.avatarDataUrl ?? null,
+        });
       }
     }
-    return Array.from(map.values());
-  }, [records]);
+  }
+  return Array.from(map.values());
+}, [records]);
 
-  // ---------- 4) Sélection joueur + option BOTS / mode actif vs locaux ----------
+// ---------- 4) Sélection joueur + option BOTS / mode actif vs locaux ----------
 
-  // Id du joueur actif transmis par StatsShell
-  const activePlayerId = playerId ?? initialPlayerId ?? profile?.id ?? null;
+// Id du joueur actif transmis par StatsShell
+const activePlayerId = playerId ?? initialPlayerId ?? profile?.id ?? null;
 
-  // Liste de joueurs selon le mode :
-  // - "active"  => un seul joueur : le joueur actif
-  // - "locals"  => tous les autres joueurs (sans le joueur actif)
-  // - fallback  => allPlayers
-  const playersForMode = React.useMemo(() => {
-    if (!allPlayers.length) return [];
+// Liste de joueurs selon le mode : active / locals / all
+const playersForMode = React.useMemo(() => {
+  if (!allPlayers.length) return [];
 
-    if (mode === "active" && activePlayerId) {
-      const found = allPlayers.find((p) => p.id === activePlayerId);
-      return found ? [found] : [];
-    }
+  if (mode === "active" && activePlayerId) {
+    const found = allPlayers.find((p) => p.id === activePlayerId);
+    return found ? [found] : [];
+  }
 
-    if (mode === "locals" && activePlayerId) {
-      return allPlayers.filter((p) => p.id !== activePlayerId);
-    }
+  if (mode === "locals" && activePlayerId) {
+    return allPlayers.filter((p) => p.id !== activePlayerId);
+  }
 
-    return allPlayers;
-  }, [allPlayers, mode, activePlayerId]);
+  return allPlayers;
+}, [allPlayers, mode, activePlayerId]);
 
-  // Toggle "Inclure les BOTS" : ne sert vraiment que pour le mode "locals"
-  const [showBots, setShowBots] = React.useState(false);
+// Toggle "Inclure les BOTS"
+const [showBots, setShowBots] = React.useState(false);
 
-  // Liste finale visible dans le carrousel
-  const filteredPlayers = React.useMemo(() => {
-    if (!playersForMode.length) return [];
-    return playersForMode
-      .slice()
-      .sort((a, b) =>
-        (a.name ?? "").localeCompare(b.name ?? "", "fr", {
-          sensitivity: "base",
-        })
-      )
-      .filter((p) => {
-        // En mode "active", pas de notion de bots ici : on ne filtre pas
-        if (mode === "active") return true;
-        // En mode "locals", on laisse l'utilisateur décider avec showBots
-        return showBots || !isBotPlayer(p);
-      });
-  }, [playersForMode, showBots, mode]);
+// Liste finale visible dans le carrousel
+const filteredPlayers = React.useMemo(() => {
+  if (!playersForMode.length) return [];
+  return playersForMode
+    .slice()
+    .sort((a, b) =>
+      (a.name ?? "").localeCompare(b.name ?? "", "fr", { sensitivity: "base" })
+    )
+    .filter((p) => {
+      if (mode === "active") return true;
+      return showBots || !isBotPlayer(p);
+    });
+}, [playersForMode, showBots, mode]);
 
-  // Sélection courante
-  const [selectedPlayerId, setSelectedPlayerId] =
-    React.useState<string | null>(activePlayerId ?? null);
+// Sélection courante
+const [selectedPlayerId, setSelectedPlayerId] = React.useState<string | null>(
+  activePlayerId ?? null
+);
 
-  // Si le parent change initialPlayerId / playerId → on suit
-  React.useEffect(() => {
-    if (activePlayerId) {
-      setSelectedPlayerId(activePlayerId);
-    }
-  }, [activePlayerId]);
+// Si le parent change initialPlayerId / playerId → on suit
+React.useEffect(() => {
+  if (activePlayerId) setSelectedPlayerId(activePlayerId);
+}, [activePlayerId]);
 
-  // Si rien de sélectionné OU joueur filtré → 1er dispo
-  React.useEffect(() => {
-    if (!filteredPlayers.length) {
-      setSelectedPlayerId(null);
-      return;
-    }
-    if (!selectedPlayerId) {
-      setSelectedPlayerId(filteredPlayers[0].id);
-      return;
-    }
-    const exists = filteredPlayers.some((p) => p.id === selectedPlayerId);
-    if (!exists) {
-      setSelectedPlayerId(filteredPlayers[0].id);
-    }
-  }, [filteredPlayers, selectedPlayerId]);
+// Si rien de sélectionné OU joueur filtré → 1er dispo
+React.useEffect(() => {
+  if (!filteredPlayers.length) {
+    setSelectedPlayerId(null);
+    return;
+  }
+  if (!selectedPlayerId) {
+    setSelectedPlayerId(filteredPlayers[0].id);
+    return;
+  }
+  const exists = filteredPlayers.some((p) => p.id === selectedPlayerId);
+  if (!exists) setSelectedPlayerId(filteredPlayers[0].id);
+}, [filteredPlayers, selectedPlayerId]);
 
-  const selectedPlayer = React.useMemo(
-    () =>
-      filteredPlayers.find((p) => p.id === selectedPlayerId) ?? null,
-    [filteredPlayers, selectedPlayerId]
-  );
+const selectedPlayer = React.useMemo(
+  () => filteredPlayers.find((p) => p.id === selectedPlayerId) ?? null,
+  [filteredPlayers, selectedPlayerId]
+);
 
-  const currentPlayerIndex = React.useMemo(() => {
-    if (!selectedPlayer) return -1;
-    return filteredPlayers.findIndex((p) => p.id === selectedPlayer.id);
-  }, [filteredPlayers, selectedPlayer]);
+const currentPlayerIndex = React.useMemo(() => {
+  if (!selectedPlayer) return -1;
+  return filteredPlayers.findIndex((p) => p.id === selectedPlayer.id);
+}, [filteredPlayers, selectedPlayer]);
 
-  // 👉 IMPORTANT : en mode "active", on coupe le slide !
-  const canScrollPlayers =
-    mode === "locals" && filteredPlayers.length > 1;
+// 👉 IMPORTANT : en mode "active", on coupe le slide !
+const canScrollPlayers = mode === "locals" && filteredPlayers.length > 1;
 
-  const goPrevPlayer = React.useCallback(() => {
-    if (!canScrollPlayers || !filteredPlayers.length) return;
-    const idx = currentPlayerIndex >= 0 ? currentPlayerIndex : 0;
-    const nextIndex =
-      (idx - 1 + filteredPlayers.length) % filteredPlayers.length;
-    setSelectedPlayerId(filteredPlayers[nextIndex].id);
-  }, [canScrollPlayers, filteredPlayers, currentPlayerIndex]);
+const goPrevPlayer = React.useCallback(() => {
+  if (!canScrollPlayers || !filteredPlayers.length) return;
+  const idx = currentPlayerIndex >= 0 ? currentPlayerIndex : 0;
+  const nextIndex = (idx - 1 + filteredPlayers.length) % filteredPlayers.length;
+  setSelectedPlayerId(filteredPlayers[nextIndex].id);
+}, [canScrollPlayers, filteredPlayers, currentPlayerIndex]);
 
-  const goNextPlayer = React.useCallback(() => {
-    if (!canScrollPlayers || !filteredPlayers.length) return;
-    const idx = currentPlayerIndex >= 0 ? currentPlayerIndex : 0;
-    const nextIndex = (idx + 1) % filteredPlayers.length;
-    setSelectedPlayerId(filteredPlayers[nextIndex].id);
-  }, [canScrollPlayers, filteredPlayers, currentPlayerIndex]);
+const goNextPlayer = React.useCallback(() => {
+  if (!canScrollPlayers || !filteredPlayers.length) return;
+  const idx = currentPlayerIndex >= 0 ? currentPlayerIndex : 0;
+  const nextIndex = (idx + 1) % filteredPlayers.length;
+  setSelectedPlayerId(filteredPlayers[nextIndex].id);
+}, [canScrollPlayers, filteredPlayers, currentPlayerIndex]);
 
-  // ---------- 5) Quick-stats & Cricket + X01 multi ----------
-  const quick = useQuickStats(selectedPlayer?.id ?? null);
+// ==========================
+// ✅ Logs (safe) — ICI (après selectedPlayerId + selectedPlayer) => pas de TDZ
+// ==========================
+React.useEffect(() => {
+  // eslint-disable-next-line no-console
+  console.log("[StatsHub] sources:", {
+    normalizedMatches: normalizedMatches?.length ?? 0,
+    normalizedMatchesClean: normalizedMatchesClean.length,
+    records: records?.length ?? 0,
+    nmEffective: nmEffective.length,
+    selectedPlayerId: selectedPlayerId ?? null,
+    selectedPlayerName: selectedPlayer?.name ?? null,
+  });
+
+  if (nmEffective.length) {
+    // eslint-disable-next-line no-console
+    console.log("[StatsHub] nmEffective[0] =", nmEffective[0]);
+  }
+}, [
+  normalizedMatches?.length,
+  normalizedMatchesClean.length,
+  records?.length,
+  nmEffective.length,
+  selectedPlayerId,
+  selectedPlayer?.name,
+]);
+
+// ---------- 5) Quick-stats & Cricket + X01 multi ----------
+const quick = useQuickStats(selectedPlayer?.id ?? null);
 
 // ============================================================
 // ✅ BLOC 3 — KILLER (agrégat "résumé" pour le Dashboard)
-// -> scan "records" + summaries robustes
 // ============================================================
 type KillerAgg = {
   matches: number;
@@ -3811,11 +3924,9 @@ const killerAgg = React.useMemo<KillerAgg | null>(() => {
   const toArrLoc = <T,>(v: any): T[] => (Array.isArray(v) ? v : []);
 
   for (const r of records || []) {
-    // On ne garde que Killer
     const modeKey = classifyRecordMode(r);
     if (modeKey !== "killer") continue;
 
-    // Le joueur doit être dans le match
     const inMatch = toArrLoc<PlayerLite>((r as any)?.players).some((p) => p?.id === pid);
     if (!inMatch) continue;
 
@@ -3836,7 +3947,6 @@ const killerAgg = React.useMemo<KillerAgg | null>(() => {
       ss?.perPlayer?.[pid] ??
       {};
 
-    // Champs possibles selon versions
     kills += Nn(pstat.kills ?? pstat.kill ?? pstat.kOs ?? 0);
 
     const th =
@@ -3846,7 +3956,6 @@ const killerAgg = React.useMemo<KillerAgg | null>(() => {
       0;
     totalHits += th;
 
-    // favNumberHits possible sous forme { "20": 12, "17": 9, ... }
     const favMap =
       pstat.favNumberHits ??
       pstat.numberHits ??
@@ -3885,781 +3994,754 @@ const killerAgg = React.useMemo<KillerAgg | null>(() => {
   };
 }, [selectedPlayer?.id, records]);
 
-  const [cricketStats, setCricketStats] =
-    React.useState<CricketProfileStats | null>(null);
+const [cricketStats, setCricketStats] =
+  React.useState<CricketProfileStats | null>(null);
 
-  const [x01MultiLegsSets, setX01MultiLegsSets] =
-    React.useState<X01MultiLegsSets | null>(null);
+const [x01MultiLegsSets, setX01MultiLegsSets] =
+  React.useState<X01MultiLegsSets | null>(null);
 
-  React.useEffect(() => {
-    if (!selectedPlayer?.id) {
-      setCricketStats(null);
-      setX01MultiLegsSets(null);
-      return;
-    }
+React.useEffect(() => {
+  if (!selectedPlayer?.id) {
+    setCricketStats(null);
+    setX01MultiLegsSets(null);
+    return;
+  }
 
-    let cancelled = false;
+  let cancelled = false;
 
-    (async () => {
-      try {
-        const [cri, x01multi] = await Promise.all([
-          getCricketProfileStats(selectedPlayer.id),
-          getX01MultiLegsSetsForProfile(selectedPlayer.id),
-        ]);
+  (async () => {
+    try {
+      const [cri, x01multi] = await Promise.all([
+        getCricketProfileStats(selectedPlayer.id),
+        getX01MultiLegsSetsForProfile(selectedPlayer.id),
+      ]);
 
-        if (!cancelled) {
-          setCricketStats(cri);
-          setX01MultiLegsSets(x01multi);
-        }
-      } catch (err) {
-        console.warn(
-          "[StatsHub] load extended profile stats failed",
-          err
-        );
-        if (!cancelled) {
-          setCricketStats(null);
-          setX01MultiLegsSets(null);
-        }
+      if (!cancelled) {
+        setCricketStats(cri);
+        setX01MultiLegsSets(x01multi);
       }
-    })();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[StatsHub] load extended profile stats failed", err);
+      if (!cancelled) {
+        setCricketStats(null);
+        setX01MultiLegsSets(null);
+      }
+    }
+  })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedPlayer?.id]);
+  return () => {
+    cancelled = true;
+  };
+}, [selectedPlayer?.id]);
 
-  // Taille du nom en fonction de la longueur
-  const selectedName = selectedPlayer?.name ?? "";
-  const nameLen = selectedName.length;
-  let nameFontSize = 22;
+// Taille du nom en fonction de la longueur
+const selectedName = selectedPlayer?.name ?? "";
+const nameLen = selectedName.length;
+let nameFontSize = 22;
+if (nameLen > 12) nameFontSize = 20;
+if (nameLen > 16) nameFontSize = 18;
+if (nameLen > 22) nameFontSize = 16;
+if (nameLen > 28) nameFontSize = 14;
 
-  if (nameLen > 12) nameFontSize = 20;
-  if (nameLen > 16) nameFontSize = 18;
-  if (nameLen > 22) nameFontSize = 16;
-  if (nameLen > 28) nameFontSize = 14;
-
-  // ============================================================
-  //  ROUTAGE PRINCIPAL PAR "tab" (StatsShell)
-  // ============================================================
-
-  if (tab === "training") {
-    return (
-      <div style={{ padding: 16, paddingBottom: 80 }}>
-        <TrainingX01StatsTab />
-      </div>
-    );
-  }
-
-  if (tab === "history") {
-    return (
-      <div style={{ padding: 16, paddingBottom: 80 }}>
-        <div style={card}>
-          <HistoryPage go={go} />
-        </div>
-      </div>
-    );
-  }
-
- // ============================================================
-//  VUE PAR DÉFAUT : "STATS"
 // ============================================================
+//  ROUTAGE PRINCIPAL PAR "tab" (StatsShell)
+// ============================================================
+if (tab === "training") {
+  return (
+    <div style={{ padding: 16, paddingBottom: 80 }}>
+      <TrainingX01StatsTab />
+    </div>
+  );
+}
 
-return (
-  <div style={{ padding: 16, paddingBottom: 80 }}>
-    {/* HEADER : titre centré + carrousel modes */}
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 8,
-        marginBottom: 12,
-      }}
-    >
-      {/* Titre centré */}
-      <div
-        style={{
-          fontSize: 15,
-          fontWeight: 900,
-          textTransform: "uppercase",
-          letterSpacing: 1.1,
-          color: T.accent ?? T.gold,
-          textShadow: `
-              0 0 10px ${T.accent ?? T.gold},
-             0 0 22px ${T.accentGlow ?? T.gold}
-            `,
-        }}
-      >
-        Centre de statistiques
-      </div>
-
-      {/* Carrousel modes */}
-      <div
-        style={{
-          marginTop: 2,
-          padding: 8,
-          borderRadius: 18,
-          border: `1px solid ${T.accent30}`,
-          background:
-            "linear-gradient(180deg,rgba(18,18,22,.98),rgba(9,9,12,.96))",
-          boxShadow: `
-              0 0 0 1px ${T.accent20},
-              0 8px 20px rgba(0,0,0,.55)
-            `,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 6,
-          width: "100%",
-        }}
-      >
-        {/* Flèche gauche */}
-        <button
-          type="button"
-          onClick={goPrevMode}
-          disabled={!canScrollModes}
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: 999,
-            border: `1px solid ${T.accent50}`,
-            background: canScrollModes
-              ? `radial-gradient(circle at 30% 30%, ${T.accent40}, transparent 55%)`
-              : "rgba(0,0,0,.45)",
-            color: T.accent,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: canScrollModes ? "pointer" : "default",
-            fontSize: 13,
-          }}
-        >
-          ◀
-        </button>
-
-        {/* Pilule centrale */}
-        <div
-          style={{
-            flex: 1,
-            padding: "7px 10px",
-            borderRadius: 999,
-            border: `1px solid ${T.accent}`,
-            background: `radial-gradient(circle at 0% 0%, ${T.accent40}, transparent 65%)`,
-            textAlign: "center",
-            fontSize: 13,
-            fontWeight: 900,
-            textTransform: "uppercase",
-            letterSpacing: 0.9,
-            color: T.accent,
-            textShadow: `
-                0 0 8px ${T.accent},
-                0 0 16px ${T.accentGlow ?? T.accent}
-              `,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {currentModeLabel}
-        </div>
-
-        {/* Flèche droite */}
-        <button
-          type="button"
-          onClick={goNextMode}
-          disabled={!canScrollModes}
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: 999,
-            border: `1px solid ${T.accent50}`,
-            background: canScrollModes
-              ? `radial-gradient(circle at 70% 30%, ${T.accent40}, transparent 55%)`
-              : "rgba(0,0,0,.45)",
-            color: T.accent,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: canScrollModes ? "pointer" : "default",
-            fontSize: 13,
-          }}
-        >
-          ▶
-        </button>
+if (tab === "history") {
+  return (
+    <div style={{ padding: 16, paddingBottom: 80 }}>
+      <div style={card}>
+        <HistoryPage go={go} />
       </div>
     </div>
+  );
+}
 
-    {/* CONTENU PRINCIPAL : carrousel profil + panels pilotés par currentMode */}
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-      }}
-    >
-      {/* --------- CARROUSEL PROFIL --------- */}
-<div style={card}>
-  {filteredPlayers.length ? (
-    <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-        }}
-      >
-        {/* Flèche gauche — MASQUÉE UNIQUEMENT POUR PROFIL ACTIF */}
-        {mode === "active" ? (
-          <div style={{ width: 26, height: 26 }} />
-        ) : (
-          <button
-            type="button"
-            onClick={goPrevPlayer}
-            disabled={!canScrollPlayers}
-            style={{
-              width: 26,
-              height: 26,
-              borderRadius: 999,
-              border: `1px solid ${T.text30}`,
-              background: canScrollPlayers
-                ? `radial-gradient(circle at 30% 30%, ${T.text30}, transparent 55%)`
-                : "rgba(0,0,0,.45)",
-              color: T.text,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: canScrollPlayers ? "pointer" : "default",
-              fontSize: 13,
-            }}
-          >
-            ◀
-          </button>
-        )}
-
-        {/* Avatar XXL + StarRing + nom (shimmer) */}
-<div
-  style={{
-    flex: 1,
-    display: "flex",
-    justifyContent: "center",
-    minWidth: 0,
-    overflow: "visible", // ✅ évite le clipping par un parent
-  }}
->
-  {selectedPlayer &&
-    (() => {
-      // ⭐ avg3D (ultra safe, tolérant à la forme de "quick")
-      const pid = selectedPlayer.id;
-      const q: any = quick as any;
-
-      const pick = (...vals: any[]) => {
-        for (const v of vals) {
-          const n = Number(v);
-          if (Number.isFinite(n) && n >= 0) return n;
-        }
-        return 0;
-      };
-
-      const avg3d = pick(
-        q?.byId?.[pid]?.avg3d,
-        q?.byId?.[pid]?.avg3,
-        q?.[pid]?.avg3d,
-        q?.[pid]?.avg3,
-        q?.avg3d,
-        q?.avg3
-      );
-
-      // ✅ fallback : si 0, on affiche quand même un ring (sinon parfois “0 étoile”)
-      const avg3dForRing = Number.isFinite(avg3d) && avg3d > 0 ? avg3d : 20;
-
-      const AVATAR = 110;
-      const BORDER = 10;
-      const MEDALLION = AVATAR + BORDER; // 120
-      const STAR = 12;
-
-      return (
+// ============================================================
+//  VUE PAR DÉFAUT : "STATS"
+// ============================================================
+return (
+  <div style={{ padding: 16, paddingBottom: 80 }}>
+    <div style={statsPageWrap}>
+      <div style={statsStack}>
+        {/* HEADER : titre centré + carrousel modes */}
         <div
           style={{
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            gap: 6,
-            overflow: "visible",
+            gap: 8,
+            marginBottom: 12,
           }}
         >
-          {/* Médaillon + anneau étoiles */}
           <div
             style={{
-              position: "relative",
-              width: MEDALLION,
-              height: MEDALLION,
-              borderRadius: "50%",
-              padding: 0,
-              background: "transparent",
-              boxShadow: "none",
-              overflow: "visible", // ✅ important
+              fontSize: 15,
+              fontWeight: 900,
+              textTransform: "uppercase",
+              letterSpacing: 1.1,
+              color: T.accent ?? T.gold,
+              textShadow: `
+                0 0 10px ${T.accent ?? T.gold},
+                0 0 22px ${T.accentGlow ?? T.gold}
+              `,
             }}
           >
-            {/* StarRing au-dessus */}
-            <div
-              aria-hidden
-              style={{
-                position: "absolute",
-                left: -(STAR / 2),
-                top: -(STAR / 2),
-                width: MEDALLION + STAR,
-                height: MEDALLION + STAR,
-                pointerEvents: "none",
-                zIndex: 10, // ✅ au-dessus de tout
-                overflow: "visible",
-              }}
-            >
-              <ProfileStarRing
-                anchorSize={MEDALLION}
-                avg3d={avg3dForRing}
-                gapPx={-1}
-                starSize={STAR}
-                stepDeg={10}
-                rotationDeg={0}
-                animateGlow={true}
-              />
-            </div>
-
-            {/* Avatar centré (ne clippe pas le ring) */}
-            <div
-              style={{
-                position: "absolute",
-                left: "50%",
-                top: "50%",
-                width: AVATAR,
-                height: AVATAR,
-                transform: "translate(-50%,-50%)",
-                borderRadius: "50%",
-                overflow: "hidden",
-                boxShadow: `0 0 18px ${T.accent}`,
-                zIndex: 2,
-                background: "transparent",
-              }}
-            >
-              <ProfileAvatar
-                size={AVATAR}
-                dataUrl={selectedPlayer.avatarDataUrl ?? undefined}
-                label={selectedName?.[0]?.toUpperCase() || "?"}
-                showStars={false}
-              />
-            </div>
+            Centre de statistiques
           </div>
 
-          {/* Nom shimmer */}
-          <span
-            className="dc-stats-name-wrapper"
-            style={
-              {
-                "--dc-accent": T.accent,
-                "--dc-accent-soft": T.accent20,
-                maxWidth: "80vw",
-                display: "block",
-              } as React.CSSProperties
-            }
+          {/* Carrousel modes */}
+          <div
+            style={{
+              marginTop: 2,
+              padding: 8,
+              borderRadius: 18,
+              border: `1px solid ${T.accent30}`,
+              background:
+                "linear-gradient(180deg,rgba(18,18,22,.98),rgba(9,9,12,.96))",
+              boxShadow: `
+                0 0 0 1px ${T.accent20},
+                0 8px 20px rgba(0,0,0,.55)
+              `,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 6,
+              width: "100%",
+            }}
           >
-            <span
-              className="dc-stats-name-base"
+            <button
+              type="button"
+              onClick={goPrevMode}
+              disabled={!canScrollModes}
               style={{
-                fontSize: nameFontSize,
+                width: 26,
+                height: 26,
+                borderRadius: 999,
+                border: `1px solid ${T.accent50}`,
+                background: canScrollModes
+                  ? `radial-gradient(circle at 30% 30%, ${T.accent40}, transparent 55%)`
+                  : "rgba(0,0,0,.45)",
+                color: T.accent,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: canScrollModes ? "pointer" : "default",
+                fontSize: 13,
+              }}
+            >
+              ◀
+            </button>
+
+            <div
+              style={{
+                flex: 1,
+                padding: "7px 10px",
+                borderRadius: 999,
+                border: `1px solid ${T.accent}`,
+                background: `radial-gradient(circle at 0% 0%, ${T.accent40}, transparent 65%)`,
+                textAlign: "center",
+                fontSize: 13,
                 fontWeight: 900,
-                fontFamily: '"Luckiest Guy","Impact","system-ui",sans-serif',
+                textTransform: "uppercase",
+                letterSpacing: 0.9,
+                color: T.accent,
+                textShadow: `
+                  0 0 8px ${T.accent},
+                  0 0 16px ${T.accentGlow ?? T.accent}
+                `,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
-                display: "block",
-                textAlign: "center",
               }}
             >
-              {selectedName}
-            </span>
-
-            <span
-              className="dc-stats-name-shimmer"
-              style={{
-                fontSize: nameFontSize,
-                fontWeight: 900,
-                fontFamily: '"Luckiest Guy","Impact","system-ui",sans-serif',
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                display: "block",
-                textAlign: "center",
-              }}
-            >
-              {selectedName}
-            </span>
-          </span>
-        </div>
-      );
-    })()}
-</div>
-
-        {/* Flèche droite — MASQUÉE UNIQUEMENT POUR PROFIL ACTIF */}
-        {mode === "active" ? (
-          <div style={{ width: 26, height: 26 }} />
-        ) : (
-          <button
-            type="button"
-            onClick={goNextPlayer}
-            disabled={!canScrollPlayers}
-            style={{
-              width: 26,
-              height: 26,
-              borderRadius: 999,
-              border: `1px solid ${T.text30}`,
-              background: canScrollPlayers
-                ? `radial-gradient(circle at 70% 30%, ${T.text30}, transparent 55%)`
-                : "rgba(0,0,0,.45)",
-              color: T.text,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: canScrollPlayers ? "pointer" : "default",
-              fontSize: 13,
-            }}
-          >
-            ▶
-          </button>
-        )}
-      </div>
-
-      {/* Option BOTS — UNIQUEMENT en mode "locals" */}
-      {mode === "locals" && (
-        <div
-          style={{
-            marginTop: 6,
-            display: "flex",
-            justifyContent: "flex-end",
-          }}
-        >
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              fontSize: 10,
-              color: T.text70,
-              cursor: "pointer",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={showBots}
-              onChange={(e) => setShowBots(e.target.checked)}
-              style={{
-                width: 12,
-                height: 12,
-                accentColor: T.accent,
-              }}
-            />
-            <span>Inclure les BOTS</span>
-          </label>
-        </div>
-      )}
-    </>
-  ) : (
-    <span style={{ color: T.text70, fontSize: 13 }}>
-      Aucun joueur trouvé.
-    </span>
-  )}
-</div>
-
-      {/* ========= CONTENU PILOTÉ PAR LE CARROUSEL DE MODES ========= */}
-      <React.Suspense fallback={<LazyFallback label="Chargement…" />}>
-        {currentMode === "dashboard" && (
-          <>
-            <div style={row}>
-              {selectedPlayer ? (
-                <StatsPlayerDashboard
-                  data={
-                    selectedPlayer
-                      ? buildDashboardFromNormalized(
-                          String(selectedPlayer.id),
-                          String(selectedPlayer.name || "Joueur"),
-                          normalizedMatches || []
-                        )
-                      : null
-                  }
-                  x01MultiLegsSets={x01MultiLegsSets}
-                />
-              ) : (
-                <div style={{ color: T.text70, fontSize: 13 }}>
-                  Sélectionne un joueur pour afficher le dashboard.
-                </div>
-              )}
+              {currentModeLabel}
             </div>
 
-            {/* RÉSUMÉ TRAINING (X01 + Horloge) */}
-            {selectedPlayer && (
-              <div style={{ ...card, marginTop: 8 }}>
-                <StatsTrainingSummary profileId={selectedPlayer.id} />
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={goNextMode}
+              disabled={!canScrollModes}
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: 999,
+                border: `1px solid ${T.accent50}`,
+                background: canScrollModes
+                  ? `radial-gradient(circle at 70% 30%, ${T.accent40}, transparent 55%)`
+                  : "rgba(0,0,0,.45)",
+                color: T.accent,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: canScrollModes ? "pointer" : "default",
+                fontSize: 13,
+              }}
+            >
+              ▶
+            </button>
+          </div>
+        </div>
 
-            {/* =======================
-                ✅ BLOC 3 — RÉSUMÉ KILLER (DASHBOARD)
-                ======================= */}
-            {selectedPlayer && killerAgg && killerAgg.matches > 0 && (
-              <div style={{ ...card, marginTop: 8 }}>
+        {/* CONTENU PRINCIPAL */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* --------- CARROUSEL PROFIL --------- */}
+          <div style={card}>
+            {filteredPlayers.length ? (
+              <>
                 <div
                   style={{
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    gap: 10,
-                    marginBottom: 8,
+                    gap: 8,
                   }}
                 >
-                  <div
-                    style={{
-                      ...goldNeon,
-                      fontSize: 13,
-                      marginBottom: 0,
-                    }}
-                  >
-                    KILLER — RÉSUMÉ
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const idx = modeDefs.findIndex((m) => m.key === "killer");
-                      if (idx >= 0) setModeIndex(idx);
-                    }}
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: 999,
-                      border: `1px solid ${T.accent50}`,
-                      background: `radial-gradient(circle at 30% 30%, ${T.accent30}, rgba(0,0,0,.55))`,
-                      color: T.accent,
-                      fontSize: 11,
-                      fontWeight: 900,
-                      letterSpacing: 0.5,
-                      cursor: "pointer",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    Voir détails ▶
-                  </button>
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    gap: 10,
-                  }}
-                >
-                  <div
-                    style={{
-                      borderRadius: 16,
-                      padding: 10,
-                      border: `1px solid rgba(255,255,255,.10)`,
-                      background: "linear-gradient(180deg,#15171B,#0F1014)",
-                      textAlign: "center",
-                    }}
-                  >
-                    <div
+                  {/* Flèche gauche — MASQUÉE UNIQUEMENT POUR PROFIL ACTIF */}
+                  {mode === "active" ? (
+                    <div style={{ width: 26, height: 26 }} />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={goPrevPlayer}
+                      disabled={!canScrollPlayers}
                       style={{
-                        fontSize: 10,
-                        color: T.text70,
-                        textTransform: "uppercase",
+                        width: 26,
+                        height: 26,
+                        borderRadius: 999,
+                        border: `1px solid ${T.text30}`,
+                        background: canScrollPlayers
+                          ? `radial-gradient(circle at 30% 30%, ${T.text30}, transparent 55%)`
+                          : "rgba(0,0,0,.45)",
+                        color: T.text,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: canScrollPlayers ? "pointer" : "default",
+                        fontSize: 13,
                       }}
                     >
-                      Matchs
-                    </div>
-                    <div style={{ fontSize: 18, fontWeight: 900, color: T.gold }}>
-                      {killerAgg.matches}
-                    </div>
-                    <div style={{ fontSize: 11, color: T.text70 }}>
-                      Wins {killerAgg.wins} · {killerAgg.winRatePct}%
-                    </div>
-                  </div>
+                      ◀
+                    </button>
+                  )}
 
+                  {/* Avatar + StarRing + nom */}
                   <div
                     style={{
-                      borderRadius: 16,
-                      padding: 10,
-                      border: `1px solid rgba(255,255,255,.10)`,
-                      background: "linear-gradient(180deg,#15171B,#0F1014)",
-                      textAlign: "center",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 10,
-                        color: T.text70,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      Kills
-                    </div>
-                    <div style={{ fontSize: 18, fontWeight: 900, color: "#FF4B4B" }}>
-                      {killerAgg.kills}
-                    </div>
-                    <div style={{ fontSize: 11, color: T.text70 }}>
-                      Total hits {killerAgg.totalHits}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      gridColumn: "1 / -1",
-                      borderRadius: 16,
-                      padding: 10,
-                      border: `1px solid rgba(255,255,255,.10)`,
-                      background: "linear-gradient(180deg,#15171B,#0F1014)",
+                      flex: 1,
                       display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 10,
+                      justifyContent: "center",
+                      minWidth: 0,
+                      overflow: "visible",
                     }}
                   >
-                    <div
+                    {selectedPlayer &&
+                      (() => {
+                        const pid = selectedPlayer.id;
+                        const q: any = quick as any;
+
+                        const pick = (...vals: any[]) => {
+                          for (const v of vals) {
+                            const n = Number(v);
+                            if (Number.isFinite(n) && n >= 0) return n;
+                          }
+                          return 0;
+                        };
+
+                        const avg3d = pick(
+                          q?.byId?.[pid]?.avg3d,
+                          q?.byId?.[pid]?.avg3,
+                          q?.[pid]?.avg3d,
+                          q?.[pid]?.avg3,
+                          q?.avg3d,
+                          q?.avg3
+                        );
+
+                        const avg3dForRing =
+                          Number.isFinite(avg3d) && avg3d > 0 ? avg3d : 20;
+
+                        const AVATAR = 110;
+                        const BORDER = 10;
+                        const MEDALLION = AVATAR + BORDER;
+                        const STAR = 12;
+
+                        return (
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              gap: 6,
+                              overflow: "visible",
+                            }}
+                          >
+                            <div
+                              style={{
+                                position: "relative",
+                                width: MEDALLION,
+                                height: MEDALLION,
+                                borderRadius: "50%",
+                                overflow: "visible",
+                              }}
+                            >
+                              <div
+                                aria-hidden
+                                style={{
+                                  position: "absolute",
+                                  left: -(STAR / 2),
+                                  top: -(STAR / 2),
+                                  width: MEDALLION + STAR,
+                                  height: MEDALLION + STAR,
+                                  pointerEvents: "none",
+                                  zIndex: 10,
+                                  overflow: "visible",
+                                }}
+                              >
+                                <ProfileStarRing
+                                  anchorSize={MEDALLION}
+                                  avg3d={avg3dForRing}
+                                  gapPx={-1}
+                                  starSize={STAR}
+                                  stepDeg={10}
+                                  rotationDeg={0}
+                                  animateGlow={true}
+                                />
+                              </div>
+
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  left: "50%",
+                                  top: "50%",
+                                  width: AVATAR,
+                                  height: AVATAR,
+                                  transform: "translate(-50%,-50%)",
+                                  borderRadius: "50%",
+                                  overflow: "hidden",
+                                  boxShadow: `0 0 18px ${T.accent}`,
+                                  zIndex: 2,
+                                  background: "transparent",
+                                }}
+                              >
+                                <ProfileAvatar
+                                  size={AVATAR}
+                                  dataUrl={selectedPlayer.avatarDataUrl ?? undefined}
+                                  label={selectedName?.[0]?.toUpperCase() || "?"}
+                                  showStars={false}
+                                />
+                              </div>
+                            </div>
+
+                            <span
+                              className="dc-stats-name-wrapper"
+                              style={
+                                {
+                                  "--dc-accent": T.accent,
+                                  "--dc-accent-soft": T.accent20,
+                                  maxWidth: "80vw",
+                                  display: "block",
+                                } as React.CSSProperties
+                              }
+                            >
+                              <span
+                                className="dc-stats-name-base"
+                                style={{
+                                  fontSize: nameFontSize,
+                                  fontWeight: 900,
+                                  fontFamily:
+                                    '"Luckiest Guy","Impact","system-ui",sans-serif',
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  display: "block",
+                                  textAlign: "center",
+                                }}
+                              >
+                                {selectedName}
+                              </span>
+
+                              <span
+                                className="dc-stats-name-shimmer"
+                                style={{
+                                  fontSize: nameFontSize,
+                                  fontWeight: 900,
+                                  fontFamily:
+                                    '"Luckiest Guy","Impact","system-ui",sans-serif',
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  display: "block",
+                                  textAlign: "center",
+                                }}
+                              >
+                                {selectedName}
+                              </span>
+                            </span>
+                          </div>
+                        );
+                      })()}
+                  </div>
+
+                  {/* Flèche droite — MASQUÉE UNIQUEMENT POUR PROFIL ACTIF */}
+                  {mode === "active" ? (
+                    <div style={{ width: 26, height: 26 }} />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={goNextPlayer}
+                      disabled={!canScrollPlayers}
                       style={{
-                        fontSize: 11,
-                        color: T.text70,
-                        textTransform: "uppercase",
+                        width: 26,
+                        height: 26,
+                        borderRadius: 999,
+                        border: `1px solid ${T.text30}`,
+                        background: canScrollPlayers
+                          ? `radial-gradient(circle at 70% 30%, ${T.text30}, transparent 55%)`
+                          : "rgba(0,0,0,.45)",
+                        color: T.text,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: canScrollPlayers ? "pointer" : "default",
+                        fontSize: 13,
                       }}
                     >
-                      Numéro favori
+                      ▶
+                    </button>
+                  )}
+                </div>
+
+                {/* Option BOTS — UNIQUEMENT en mode "locals" */}
+                {mode === "locals" && (
+                  <div
+                    style={{
+                      marginTop: 6,
+                      display: "flex",
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        fontSize: 10,
+                        color: T.text70,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={showBots}
+                        onChange={(e) => setShowBots(e.target.checked)}
+                        style={{
+                          width: 12,
+                          height: 12,
+                          accentColor: T.accent,
+                        }}
+                      />
+                      <span>Inclure les BOTS</span>
+                    </label>
+                  </div>
+                )}
+              </>
+            ) : (
+              <span style={{ color: T.text70, fontSize: 13 }}>
+                Aucun joueur trouvé.
+              </span>
+            )}
+          </div>
+
+          {/* ========= CONTENU PILOTÉ PAR LE CARROUSEL DE MODES ========= */}
+          <React.Suspense fallback={<LazyFallback label="Chargement…" />}>
+            {currentMode === "dashboard" && (
+              <>
+                <div style={row}>
+                  {selectedPlayer ? (
+                    <StatsPlayerDashboard
+                      data={
+                        selectedPlayer
+                          ? buildDashboardFromNormalized(
+                              String(selectedPlayer.id),
+                              String(selectedPlayer.name || "Joueur"),
+                              nmEffective
+                            )
+                          : null
+                      }
+                      x01MultiLegsSets={x01MultiLegsSets}
+                    />
+                  ) : (
+                    <div style={{ color: T.text70, fontSize: 13 }}>
+                      Sélectionne un joueur pour afficher le dashboard.
                     </div>
-                    <div style={{ fontSize: 14, fontWeight: 900, color: T.accent }}>
-                      {killerAgg.favNumber
-                        ? `${killerAgg.favNumber} (${killerAgg.favHits})`
-                        : "—"}
+                  )}
+                </div>
+
+                {selectedPlayer && (
+                  <div style={{ ...card, marginTop: 8 }}>
+                    <StatsTrainingSummary profileId={selectedPlayer.id} />
+                  </div>
+                )}
+
+                {selectedPlayer && killerAgg && killerAgg.matches > 0 && (
+                  <div style={{ ...card, marginTop: 8 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        marginBottom: 8,
+                      }}
+                    >
+                      <div style={{ ...goldNeon, fontSize: 13, marginBottom: 0 }}>
+                        KILLER — RÉSUMÉ
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const idx = modeDefs.findIndex((m) => m.key === "killer");
+                          if (idx >= 0) setModeIndex(idx);
+                        }}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          border: `1px solid ${T.accent50}`,
+                          background: `radial-gradient(circle at 30% 30%, ${T.accent30}, rgba(0,0,0,.55))`,
+                          color: T.accent,
+                          fontSize: 11,
+                          fontWeight: 900,
+                          letterSpacing: 0.5,
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Voir détails ▶
+                      </button>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                        gap: 10,
+                      }}
+                    >
+                      <div
+                        style={{
+                          borderRadius: 16,
+                          padding: 10,
+                          border: `1px solid rgba(255,255,255,.10)`,
+                          background: "linear-gradient(180deg,#15171B,#0F1014)",
+                          textAlign: "center",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: T.text70,
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          Matchs
+                        </div>
+                        <div style={{ fontSize: 18, fontWeight: 900, color: T.gold }}>
+                          {killerAgg.matches}
+                        </div>
+                        <div style={{ fontSize: 11, color: T.text70 }}>
+                          Wins {killerAgg.wins} · {killerAgg.winRatePct}%
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          borderRadius: 16,
+                          padding: 10,
+                          border: `1px solid rgba(255,255,255,.10)`,
+                          background: "linear-gradient(180deg,#15171B,#0F1014)",
+                          textAlign: "center",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: T.text70,
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          Kills
+                        </div>
+                        <div style={{ fontSize: 18, fontWeight: 900, color: "#FF4B4B" }}>
+                          {killerAgg.kills}
+                        </div>
+                        <div style={{ fontSize: 11, color: T.text70 }}>
+                          Total hits {killerAgg.totalHits}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          gridColumn: "1 / -1",
+                          borderRadius: 16,
+                          padding: 10,
+                          border: `1px solid rgba(255,255,255,.10)`,
+                          background: "linear-gradient(180deg,#15171B,#0F1014)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 10,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: T.text70,
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          Numéro favori
+                        </div>
+                        <div style={{ fontSize: 14, fontWeight: 900, color: T.accent }}>
+                          {killerAgg.favNumber
+                            ? `${killerAgg.favNumber} (${killerAgg.favHits})`
+                            : "—"}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
+
+                {selectedPlayer && cricketStats && (
+                  <div style={{ ...card, marginTop: 8 }}>
+                    <React.Suspense fallback={<LazyFallback label="Chargement Cricket…" />}>
+                      <StatsCricketDashboard stats={cricketStats} />
+                    </React.Suspense>
+                  </div>
+                )}
+              </>
+            )}
+
+            {currentMode === "dartsets" && (
+              <div style={card}>
+                {selectedPlayer ? (
+                  <React.Suspense fallback={<LazyFallback label="Chargement des fléchettes…" />}>
+                    <StatsDartSetsSection
+                      activeProfileId={selectedPlayer?.id ?? null}
+                      title="MES FLÉCHETTES"
+                    />
+                  </React.Suspense>
+                ) : (
+                  <div style={{ color: T.text70, fontSize: 13 }}>
+                    Sélectionne un joueur pour afficher les fléchettes.
+                  </div>
+                )}
               </div>
             )}
 
-            {/* RÉSUMÉ CRICKET */}
-            {selectedPlayer && cricketStats && (
-              <div style={{ ...card, marginTop: 8 }}>
-                <React.Suspense fallback={<LazyFallback label="Chargement Cricket…" />}>
-                  <StatsCricketDashboard stats={cricketStats} />
+            {currentMode === "x01_multi" && (
+              <div style={card}>
+                {selectedPlayer ? (
+                  <React.Suspense fallback={<LazyFallback label="Chargement X01 multi…" />}>
+                    <X01MultiStatsTabFull
+                      records={records}
+                      playerId={selectedPlayer.id}
+                    />
+                  </React.Suspense>
+                ) : (
+                  <div style={{ color: T.text70, fontSize: 13 }}>
+                    Sélectionne un joueur pour afficher les stats X01 multi.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {currentMode === "x01_compare" && (
+              <div style={card}>
+                {selectedPlayer ? (
+                  <StatsX01Compare
+                    store={pseudoStoreForCompare as any}
+                    profileId={selectedPlayer.id}
+                    compact
+                  />
+                ) : (
+                  <div style={{ color: T.text70, fontSize: 13 }}>
+                    Sélectionne un joueur pour afficher le comparateur X01.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {currentMode === "cricket" && (
+              <div style={card}>
+                {cricketStats ? (
+                  <React.Suspense fallback={<LazyFallback label="Chargement Cricket…" />}>
+                    <StatsCricketDashboard stats={cricketStats} />
+                  </React.Suspense>
+                ) : (
+                  <div style={{ color: T.text70, fontSize: 13 }}>
+                    Aucune statistique Cricket disponible.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {currentMode === "shanghai" && (
+              <div style={card}>
+                <React.Suspense fallback={<LazyFallback label="Chargement Shanghai…" />}>
+                  <StatsShanghaiDashboard
+                    matches={records as any}
+                    playerId={selectedPlayer?.id ?? null}
+                    playerName={selectedPlayer?.name ?? null}
+                  />
                 </React.Suspense>
               </div>
             )}
-          </>
-        )}
 
-        {currentMode === "dartsets" && (
-          <div style={card}>
-            {selectedPlayer ? (
-              <React.Suspense fallback={<LazyFallback label="Chargement des fléchettes…" />}>
-                <StatsDartSetsSection
-                  activeProfileId={selectedPlayer?.id ?? null}
-                  title="MES FLÉCHETTES"
-                />
-              </React.Suspense>
-            ) : (
-              <div style={{ color: T.text70, fontSize: 13 }}>
-                Sélectionne un joueur pour afficher les fléchettes.
+            {currentMode === "killer" && (
+              <div style={card}>
+                <React.Suspense fallback={<LazyFallback label="Chargement Killer…" />}>
+                  <StatsKiller
+                    profiles={storeProfiles as any}
+                    memHistory={records as any}
+                    playerId={
+                      mode === "active"
+                        ? (activePlayerId ?? null)
+                        : (selectedPlayerId ?? null)
+                    }
+                    title="KILLER"
+                  />
+                </React.Suspense>
               </div>
             )}
-          </div>
-        )}
 
-        {currentMode === "x01_multi" && (
-          <div style={card}>
-            {selectedPlayer ? (
-              <React.Suspense fallback={<LazyFallback label="Chargement X01 multi…" />}>
-                <X01MultiStatsTabFull records={records} playerId={selectedPlayer.id} />
-              </React.Suspense>
-            ) : (
-              <div style={{ color: T.text70, fontSize: 13 }}>
-                Sélectionne un joueur pour afficher les stats X01 multi.
+            {currentMode === "leaderboards" && (
+              <div style={card}>
+                <React.Suspense fallback={<LazyFallback label="Chargement Classements…" />}>
+                  <StatsLeaderboardsTab
+                    records={records as any}
+                    profiles={storeProfiles as any}
+                  />
+                </React.Suspense>
               </div>
             )}
-          </div>
-        )}
 
-        {currentMode === "x01_compare" && (
-          <div style={card}>
-            {selectedPlayer ? (
-              <StatsX01Compare
-                store={pseudoStoreForCompare as any}
-                profileId={selectedPlayer.id}
-                compact
-              />
-            ) : (
-              <div style={{ color: T.text70, fontSize: 13 }}>
-                Sélectionne un joueur pour afficher le comparateur X01.
+            {currentMode === "history" && (
+              <div style={card}>
+                <HistoryPage go={go} />
               </div>
             )}
-          </div>
-        )}
-
-        {currentMode === "cricket" && (
-          <div style={card}>
-            {cricketStats ? (
-              <React.Suspense fallback={<LazyFallback label="Chargement Cricket…" />}>
-                <StatsCricketDashboard stats={cricketStats} />
-              </React.Suspense>
-            ) : (
-              <div style={{ color: T.text70, fontSize: 13 }}>
-                Aucune statistique Cricket disponible.
-              </div>
-            )}
-          </div>
-        )}
-
-        {currentMode === "shanghai" && (
-          <div style={card}>
-            <React.Suspense fallback={<LazyFallback label="Chargement Shanghai…" />}>
-              <StatsShanghaiDashboard
-                matches={records as any}
-                playerId={selectedPlayer?.id ?? null}
-                playerName={selectedPlayer?.name ?? null}
-              />
-            </React.Suspense>
-          </div>
-        )}
-
-        {currentMode === "killer" && (
-          <div style={card}>
-            <React.Suspense fallback={<LazyFallback label="Chargement Killer…" />}>
-              <StatsKiller
-                profiles={storeProfiles as any}
-                memHistory={records as any}
-                playerId={
-                  mode === "active"
-                    ? (activePlayerId ?? null)
-                    : (selectedPlayerId ?? null)
-                }
-                title="KILLER"
-              />
-            </React.Suspense>
-          </div>
-        )}
-
-        {currentMode === "leaderboards" && (
-          <div style={card}>
-            <React.Suspense fallback={<LazyFallback label="Chargement Classements…" />}>
-              <StatsLeaderboardsTab
-                records={records as any}
-                profiles={storeProfiles as any}
-              />
-            </React.Suspense>
-          </div>
-        )}
-
-        {currentMode === "history" && (
-          <div style={card}>
-            <HistoryPage go={go} />
-          </div>
-        )}
-      </React.Suspense>
-
-      {/* ✅ IMPORTANT : on ferme bien le layout du return */}
+          </React.Suspense>
+        </div>
+      </div>
     </div>
   </div>
 );

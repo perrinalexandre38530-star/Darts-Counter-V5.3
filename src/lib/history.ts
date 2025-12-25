@@ -11,6 +11,7 @@ console.warn("🔥 HISTORY PATCH LOADED v2");
 // - Migration auto depuis l’ancien localStorage KEY = "dc-history-v1"
 // - Trim auto à MAX_ROWS
 // ✅ FIX CRITICAL: legacy LSK peut être JSON OU LZString UTF16 (et parfois base64-ish) -> parse robuste
+// ✅ FIX CRITICAL: 1 match MULTI = 1 record (dédoublonnage list + id canonique upsert)
 // ============================================
 
 /* =========================
@@ -30,6 +31,10 @@ export type SavedMatch = {
   winnerId?: string | null;
   createdAt?: number;
   updatedAt?: number;
+
+  // ✅ NEW (light): id stable du match (pour éviter doublons multi)
+  matchId?: string;
+
   // Config légère de la partie (ex: X01 301 / 501...)
   game?: {
     mode?: string;
@@ -439,6 +444,54 @@ function readLegacyRowsSafe(): SavedMatch[] {
 }
 
 /* =========================
+   ✅ DEDUPE KEY — 1 match réel = 1 id canonique
+   - utilisé par list() (dédoublonne les anciennes données “1 record par joueur”)
+   - utilisé par upsert() (écrit propre : même match => même id)
+========================= */
+function getCanonicalMatchId(rec: any): string | null {
+  if (!rec) return null;
+
+  const direct =
+    rec?.matchId ??
+    rec?.sessionId ??
+    rec?.resumeId ??
+    rec?.summary?.matchId ??
+    rec?.summary?.sessionId ??
+    rec?.summary?.resumeId ??
+    null;
+
+  const payload =
+    rec?.payload ??
+    rec?.payloadRaw ??
+    rec?.engineState?.payload ??
+    rec?.payload?.payload ??
+    null;
+
+  const fromPayload =
+    payload?.matchId ??
+    payload?.sessionId ??
+    payload?.resumeId ??
+    payload?.summary?.matchId ??
+    payload?.summary?.sessionId ??
+    payload?.engineState?.matchId ??
+    payload?.engineState?.sessionId ??
+    null;
+
+  const fromEngine =
+    rec?.engineState?.matchId ??
+    rec?.engineState?.sessionId ??
+    rec?.payload?.engineState?.matchId ??
+    rec?.payload?.engineState?.sessionId ??
+    null;
+
+  const v = direct ?? fromPayload ?? fromEngine ?? null;
+  if (!v) return null;
+
+  const s = String(v);
+  return s.length ? s : null;
+}
+
+/* =========================
    IndexedDB helpers
 ========================= */
 function openDB(): Promise<IDBDatabase> {
@@ -551,7 +604,8 @@ export async function list(): Promise<SavedMatch[]> {
               const cur = req.result as IDBCursorWithValue | null;
               if (cur) {
                 const val = { ...cur.value };
-                delete (val as any).payloadCompressed;
+                // ⚠️ on garde payloadCompressed en mémoire uniquement pour permettre la dédup si besoin,
+                // mais on le supprime ensuite lors de la sortie finale.
                 out.push(val);
                 cur.continue();
               } else resolve(out);
@@ -571,7 +625,6 @@ export async function list(): Promise<SavedMatch[]> {
             const cur = req.result as IDBCursorWithValue | null;
             if (cur) {
               const val = { ...cur.value };
-              delete (val as any).payloadCompressed;
               out.push(val);
               cur.continue();
             } else {
@@ -588,7 +641,56 @@ export async function list(): Promise<SavedMatch[]> {
         return await readWithoutIndex();
       }
     });
-    return rows as SavedMatch[];
+
+    // ✅ NEW: dédoublonnage "1 match = 1 entrée"
+    // (corrige les anciens historiques qui ont 1 record par joueur en MULTI)
+    const byMatch = new Map<string, any>();
+
+    for (const r0 of rows || []) {
+      const r: any = r0;
+      if (!r) continue;
+
+      // 1) clé directe si déjà stockée
+      let key = getCanonicalMatchId(r) ?? String(r?.matchId ?? "");
+
+      // 2) si pas trouvé et que payloadCompressed existe, on tente un peek "best effort"
+      // (on évite de parser tout le payload lourd en temps normal; ici c’est rare mais ça sauve des vieux matchs)
+      if (!key && r?.payloadCompressed && typeof r.payloadCompressed === "string") {
+        try {
+          const dec = LZString.decompressFromUTF16(r.payloadCompressed);
+          if (dec && typeof dec === "string" && dec.length) {
+            const payload = JSON.parse(dec);
+            key =
+              getCanonicalMatchId({ ...r, payload }) ??
+              payload?.matchId ??
+              payload?.sessionId ??
+              null;
+          }
+        } catch {}
+      }
+
+      // 3) fallback ultime
+      if (!key) key = String(r?.id ?? "");
+      if (!key) continue;
+
+      const existing = byMatch.get(key);
+      if (!existing) {
+        const lite = { ...r, id: key, matchId: key };
+        delete (lite as any).payloadCompressed;
+        byMatch.set(key, lite);
+      } else {
+        const tNew = (r as any)?.updatedAt ?? (r as any)?.createdAt ?? 0;
+        const tOld =
+          (existing as any)?.updatedAt ?? (existing as any)?.createdAt ?? 0;
+        if (tNew >= tOld) {
+          const lite = { ...r, id: key, matchId: key };
+          delete (lite as any).payloadCompressed;
+          byMatch.set(key, lite);
+        }
+      }
+    }
+
+    return Array.from(byMatch.values()) as SavedMatch[];
   } catch {
     // ✅ FIX: fallback legacy robuste (JSON / UTF16 / base64-ish)
     return readLegacyRowsSafe();
@@ -619,6 +721,14 @@ export async function get(id: string): Promise<SavedMatch | null> {
           )
         : null;
     delete rec.payloadCompressed;
+
+    // ✅ si on a un matchId dans payload, on le remonte en light
+    const mid = getCanonicalMatchId({ ...rec, payload }) ?? null;
+    if (mid) {
+      rec.matchId = String(mid);
+      rec.id = String(mid); // on autorise get() sur id canonique si stocké ainsi
+    }
+
     return { ...(rec as any), payload } as SavedMatch;
   } catch (e) {
     console.warn("[history.get] fallback localStorage:", e);
@@ -633,8 +743,14 @@ export async function get(id: string): Promise<SavedMatch | null> {
 export async function upsert(rec: SavedMatch): Promise<void> {
   await migrateFromLocalStorageOnce();
   const now = Date.now();
+
+  // ✅ FIX: id canonique (1 match MULTI = 1 record)
+  const canonicalId =
+    getCanonicalMatchId(rec) ?? rec.id ?? (crypto.randomUUID?.() ?? String(now));
+
   const safe: any = {
-    id: rec.id || (crypto.randomUUID?.() ?? String(now)),
+    id: String(canonicalId),
+    matchId: String(canonicalId),
     kind: rec.kind || "x01",
     status: rec.status || "finished",
     players: rec.players || [],
@@ -742,6 +858,16 @@ export async function upsert(rec: SavedMatch): Promise<void> {
           },
         };
       }
+
+      // ✅ essaye d’y stocker un matchId/sessionId léger pour la dédup future
+      const mid =
+        getCanonicalMatchId({ ...rec, payload: payloadEffective }) ??
+        base?.matchId ??
+        base?.sessionId ??
+        base?.engineState?.sessionId ??
+        base?.engineState?.matchId ??
+        null;
+      if (mid) safe.matchId = String(mid);
     }
   } catch (e) {
     console.warn("[history.upsert] x01 enrichment error:", e);
@@ -898,12 +1024,17 @@ async function _hydrateCacheFromList() {
     _saveCache();
   } catch {}
 }
+
 function _applyUpsertToCache(rec: SavedMatch) {
-  const { payload, ...lite } = (rec as any) || {};
-  __cache = [lite as _LightRow, ...__cache.filter((r) => r.id !== lite.id)];
+  const cid = getCanonicalMatchId(rec) ?? (rec as any)?.matchId ?? rec.id;
+  const { payload, ...lite0 } = (rec as any) || {};
+  const lite = { ...lite0, id: String(cid), matchId: String(cid) } as _LightRow;
+
+  __cache = [lite, ...__cache.filter((r) => r.id !== lite.id)];
   if (__cache.length > MAX_ROWS) __cache.length = MAX_ROWS;
   _saveCache();
 }
+
 function _applyRemoveToCache(id: string) {
   __cache = __cache.filter((r) => r.id !== id);
   _saveCache();
@@ -954,7 +1085,7 @@ export const History = {
   get,
   async upsert(rec: SavedMatch) {
     await upsert(rec);
-    _applyUpsertToCache(rec);
+    _applyUpsertToCache(rec); // cache en id canonique
   },
   async remove(id: string) {
     await remove(id);

@@ -2,8 +2,9 @@
 // src/components/StatsPlayerDashboard.tsx
 // Dashboard joueur — Verre dépoli OR (responsive sans dépassement)
 // ✅ Répartition des volées: valeurs visibles + badges scintillants (par bucket)
-// ✅ Mode préféré + Top modes (3 lignes max, sinon carrousel horizontal)
+// ✅ Mode préféré + Top modes (EN PILE, jamais sur une ligne)
 // ✅ sessionsByMode supporté (si fourni par buildDashboardForPlayer)
+// ✅ FIX LAYOUT: centré + width clamp + overflow-x hidden
 // ============================================
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../contexts/ThemeContext";
@@ -151,6 +152,32 @@ const T = {
   chip: "linear-gradient(180deg,rgba(27,29,34,.95),rgba(22,24,29,.95))",
   axis: "rgba(42,43,47,1)",
   grid: "rgba(36,37,40,1)",
+};
+
+// ✅ NEW: wrapper centré + pas d'overflow X
+const pageWrap: React.CSSProperties = {
+  width: "100%",
+  maxWidth: 600,
+  margin: "0 auto",
+  padding: "0 12px",
+  boxSizing: "border-box",
+  overflowX: "hidden",
+};
+
+// ✅ NEW: stack vertical
+const stack: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 12,
+  width: "100%",
+  boxSizing: "border-box",
+};
+
+// ✅ NEW: toutes les cards/sections doivent rester dans la largeur dispo
+const fullW: React.CSSProperties = {
+  width: "100%",
+  maxWidth: "100%",
+  boxSizing: "border-box",
 };
 
 const glassCard: React.CSSProperties = {
@@ -382,6 +409,7 @@ function Tile({
       style={
         {
           ...tile,
+          ...fullW,
           // @ts-ignore
           "--dc-accent": accent,
           // @ts-ignore
@@ -454,7 +482,7 @@ function LineChart({
   }, [pts, height, padding, svgW]);
 
   return (
-    <section style={{ ...glassCard, width: "100%", overflow: "hidden" }}>
+    <section style={{ ...glassCard, ...fullW, overflow: "hidden" }}>
       <div style={{ padding: "16px 16px 8px", display: "flex", alignItems: "center", gap: 12 }}>
         <div style={iconBadge}>
           <IconBars color={T.gold} />
@@ -507,7 +535,7 @@ function LineChart({
   );
 }
 
-/* ---------- Bar chart (responsive) + ✅ valeurs affichées sur chaque barre ---------- */
+/* ---------- Bar chart ---------- */
 function BarChart({
   data,
   height = 240,
@@ -536,7 +564,7 @@ function BarChart({
   const glow = accentSoft || `${accent}33`;
 
   return (
-    <section style={{ ...glassCard, width: "100%", overflow: "hidden" }}>
+    <section style={{ ...glassCard, ...fullW, overflow: "hidden" }}>
       <div style={{ padding: "16px 16px 8px", display: "flex", alignItems: "center", gap: 12 }}>
         <div style={iconBadge}>
           <IconBars color={T.gold} />
@@ -556,7 +584,6 @@ function BarChart({
           preserveAspectRatio="xMidYMid meet"
         >
           <defs>
-            {/* micro “shimmer” uniquement pour le texte (local au SVG) */}
             <linearGradient id="dcBarValueGrad" x1="0" y1="0" x2="1" y2="0">
               <stop offset="0%" stopColor={accent} stopOpacity="0.9" />
               <stop offset="50%" stopColor="#FFFFFF" stopOpacity="0.95" />
@@ -584,11 +611,9 @@ function BarChart({
             </filter>
           </defs>
 
-          {/* axes */}
           <line x1={padding} y1={height - padding} x2={svgW - padding} y2={height - padding} stroke={T.axis} />
           <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke={T.axis} />
 
-          {/* grid + labels Y */}
           {rng(5).map((i) => {
             const y = padding + (i / 4) * plotH;
             const label = Math.round(((4 - i) / 4) * max);
@@ -602,7 +627,6 @@ function BarChart({
             );
           })}
 
-          {/* bars + ✅ value labels */}
           {buckets.map((b, i) => {
             const v = vals[i] ?? 0;
             const h = (v / max) * plotH;
@@ -610,7 +634,6 @@ function BarChart({
             const x = padding + i * (barW + gap);
             const y = padding + (plotH - h);
 
-            // position du label : au-dessus si barre assez haute, sinon à l’intérieur
             const labelInside = h >= 34;
             const labelY = labelInside ? y + 18 : Math.max(padding + 12, y - 10);
 
@@ -618,29 +641,17 @@ function BarChart({
               <g key={b}>
                 <rect x={x} y={y} width={barW} height={h} rx={12} fill={accent} />
                 <rect x={x} y={y} width={barW} height={h} rx={12} fill="transparent" stroke="rgba(122,90,22,.35)" />
-
-                {/* ✅ valeur */}
                 <text
                   x={x + barW / 2}
                   y={labelY}
                   textAnchor="middle"
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 900,
-                    fill: "url(#dcBarValueGrad)",
-                  }}
+                  style={{ fontSize: 13, fontWeight: 900, fill: "url(#dcBarValueGrad)" }}
                   filter="url(#dcTextGlow)"
                 >
                   {v}
                 </text>
 
-                {/* label bucket */}
-                <text
-                  x={x + barW / 2}
-                  y={height - (padding - 14)}
-                  textAnchor="middle"
-                  style={{ fontSize: 11, fill: "rgba(255,255,255,.85)" }}
-                >
+                <text x={x + barW / 2} y={height - (padding - 14)} textAnchor="middle" style={{ fontSize: 11, fill: "rgba(255,255,255,.85)" }}>
                   {b}
                 </text>
               </g>
@@ -698,7 +709,8 @@ function computeFavoriteModeCount(stats: ModeStat[]): number {
   return stats.length ? stats[0].n || 0 : 0;
 }
 
-function ModeRanking({
+// ✅ Top modes EN PILE (pas de carrousel)
+function ModeRankingStack({
   stats,
   accent,
   accentSoft,
@@ -708,8 +720,6 @@ function ModeRanking({
   accentSoft: string;
 }) {
   if (!stats.length) return null;
-
-  const hasMore = stats.length > 3;
 
   const rowStyle: React.CSSProperties = {
     display: "grid",
@@ -721,7 +731,9 @@ function ModeRanking({
     border: "1px solid rgba(255,255,255,.10)",
     background: "rgba(255,255,255,.03)",
     boxShadow: "inset 0 0 0 1px rgba(255,255,255,.02)",
-    minWidth: hasMore ? 220 : undefined,
+    width: "100%",
+    maxWidth: "100%",
+    boxSizing: "border-box",
   };
 
   const rankBadge = (i: number): React.CSSProperties => ({
@@ -737,25 +749,19 @@ function ModeRanking({
     boxShadow: i === 0 ? `0 0 14px ${accentSoft}` : "none",
   });
 
-  const row = (m: ModeStat, i: number) => (
-    <div key={`${m.label}-${i}`} style={rowStyle}>
-      <div style={rankBadge(i)}>{i + 1}</div>
-      <div style={{ fontWeight: 900, letterSpacing: 0.6, textTransform: "uppercase", fontSize: 11, color: T.text }}>
-        {m.label}
-      </div>
-      <div style={{ fontWeight: 900, fontSize: 12, color: accent, textShadow: `0 0 10px ${accentSoft}`, whiteSpace: "nowrap" }}>
-        <span className="dc-shimmer-val">{m.n}</span> sess.
-      </div>
-    </div>
-  );
-
-  if (!hasMore) {
-    return <div style={{ display: "grid", gap: 6 }}>{stats.slice(0, 3).map(row)}</div>;
-  }
-
   return (
-    <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 6, WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
-      {stats.map(row)}
+    <div style={{ display: "grid", gap: 6, width: "100%", maxWidth: "100%" }}>
+      {stats.map((m, i) => (
+        <div key={`${m.label}-${i}`} style={rowStyle}>
+          <div style={rankBadge(i)}>{i + 1}</div>
+          <div style={{ fontWeight: 900, letterSpacing: 0.6, textTransform: "uppercase", fontSize: 11, color: T.text }}>
+            {m.label}
+          </div>
+          <div style={{ fontWeight: 900, fontSize: 12, color: accent, textShadow: `0 0 10px ${accentSoft}`, whiteSpace: "nowrap" }}>
+            <span className="dc-shimmer-val">{m.n}</span> sess.
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -806,119 +812,125 @@ export default function StatsPlayerDashboard({ data, x01MultiLegsSets }: StatsPl
   const [refB, wB] = useContainerWidth<HTMLDivElement>(320);
 
   return (
-    <section
-      style={
-        {
-          color: T.text,
-          // @ts-ignore
-          "--dc-accent": accent,
-          // @ts-ignore
-          "--dc-accent-soft": accentSoft,
-        } as React.CSSProperties
-      }
-    >
-      {/* Header */}
-      <div style={{ ...glassCard, padding: 16, marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={iconBadge}>
-            <IconBars color={T.gold} />
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <H1>Statistiques</H1>
-            <Sub>Analyse des performances par joueur — X01, Cricket & entraînements</Sub>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 10, display: "flex", justifyContent: "center" }}>
-          <span className="dc-stats-name-wrapper" style={{ maxWidth: "80vw", display: "block", textAlign: "center" }}>
-            <span
-              className="dc-stats-name-base"
-              style={{
-                fontSize: 24,
-                fontWeight: 900,
-                fontFamily: '"Luckiest Guy","Impact","system-ui",sans-serif',
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                display: "block",
-                textAlign: "center",
-              }}
-            >
-              {profileName}
-            </span>
-            <span
-              className="dc-stats-name-shimmer"
-              style={{
-                fontSize: 24,
-                fontWeight: 900,
-                fontFamily: '"Luckiest Guy","Impact","system-ui",sans-serif',
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                display: "block",
-                textAlign: "center",
-              }}
-            >
-              {profileName}
-            </span>
-          </span>
-        </div>
-
-        {/* Mode préféré + Top */}
-        <div style={{ marginTop: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-            <BlockTitle text="Mode de jeu préféré" accent={accent} accentSoft={accentSoft} style={{ fontSize: 11 }} />
-            <div
-              style={{
-                padding: "8px 10px",
-                borderRadius: 999,
-                border: "1px solid rgba(255,255,255,.14)",
-                background: `radial-gradient(circle at 0% 0%, ${accentSoft}, transparent 60%), rgba(255,255,255,.04)`,
-                boxShadow: "inset 0 0 0 1px rgba(255,255,255,.02)",
-                fontWeight: 900,
-                letterSpacing: 0.7,
-                color: accent,
-                textShadow: `0 0 10px ${accentSoft}`,
-                textTransform: "uppercase",
-                fontSize: 11,
-                minWidth: 160,
-                textAlign: "center",
-                whiteSpace: "nowrap",
-              }}
-            >
-              <span className="dc-shimmer-val">
-                {favoriteMode}
-                {favoriteModeCount > 0 ? ` · ${favoriteModeCount} sessions` : ""}
-              </span>
+    <div style={pageWrap}>
+      <section
+        style={
+          {
+            ...stack,
+            color: T.text,
+            // @ts-ignore
+            "--dc-accent": accent,
+            // @ts-ignore
+            "--dc-accent-soft": accentSoft,
+          } as React.CSSProperties
+        }
+      >
+        {/* Header */}
+        <div style={{ ...glassCard, ...fullW, padding: 16, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={iconBadge}>
+              <IconBars color={T.gold} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <H1>Statistiques</H1>
+              <Sub>Analyse des performances par joueur — X01, Cricket & entraînements</Sub>
             </div>
           </div>
 
-          <div style={{ marginTop: 10 }}>
-            <BlockTitle text="Top modes" accent={accent} accentSoft={accentSoft} style={{ fontSize: 11, marginBottom: 8 }} />
-            <ModeRanking stats={modeStats} accent={accent} accentSoft={accentSoft} />
+          <div style={{ marginTop: 10, display: "flex", justifyContent: "center" }}>
+            <span className="dc-stats-name-wrapper" style={{ maxWidth: "100%", display: "block", textAlign: "center" }}>
+              <span
+                className="dc-stats-name-base"
+                style={{
+                  fontSize: 24,
+                  fontWeight: 900,
+                  fontFamily: '"Luckiest Guy","Impact","system-ui",sans-serif',
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  display: "block",
+                  textAlign: "center",
+                }}
+              >
+                {profileName}
+              </span>
+              <span
+                className="dc-stats-name-shimmer"
+                style={{
+                  fontSize: 24,
+                  fontWeight: 900,
+                  fontFamily: '"Luckiest Guy","Impact","system-ui",sans-serif',
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  display: "block",
+                  textAlign: "center",
+                }}
+              >
+                {profileName}
+              </span>
+            </span>
+          </div>
+
+          {/* Mode préféré + Top */}
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <BlockTitle text="Mode de jeu préféré" accent={accent} accentSoft={accentSoft} style={{ fontSize: 11 }} />
+              <div
+                style={{
+                  padding: "8px 10px",
+                  borderRadius: 999,
+                  border: "1px solid rgba(255,255,255,.14)",
+                  background: `radial-gradient(circle at 0% 0%, ${accentSoft}, transparent 60%), rgba(255,255,255,.04)`,
+                  boxShadow: "inset 0 0 0 1px rgba(255,255,255,.02)",
+                  fontWeight: 900,
+                  letterSpacing: 0.7,
+                  color: accent,
+                  textShadow: `0 0 10px ${accentSoft}`,
+                  textTransform: "uppercase",
+                  fontSize: 11,
+                  minWidth: 160,
+                  maxWidth: "100%",
+                  textAlign: "center",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                <span className="dc-shimmer-val">
+                  {favoriteMode}
+                  {favoriteModeCount > 0 ? ` · ${favoriteModeCount} sessions` : ""}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 10 }}>
+              <BlockTitle text="Top modes" accent={accent} accentSoft={accentSoft} style={{ fontSize: 11, marginBottom: 8 }} />
+              <ModeRankingStack stats={modeStats} accent={accent} accentSoft={accentSoft} />
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* KPIs */}
-      <div style={{ display: "grid", gap: 12 }}>
-        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(1, minmax(0,1fr))" }} className="sm:grid-cols-2 xl:grid-cols-4">
-          <Tile label="Moyenne / 3 flèches" value={`${avg3.toFixed(1)} pts`} sub="Visites moyennes" icon={<IconBars color={T.gold} />} accent={accent} accentSoft={accentSoft} />
-          <Tile label="Meilleure volée" value={`${bestVisit} pts`} sub="Record personnel" icon={<IconTarget color={T.gold} />} accent={accent} accentSoft={accentSoft} />
-          <Tile label="Taux de victoire" value={`${winRate.toFixed(0)} %`} sub="Toutes manches" icon={<IconPercent color={T.gold} />} accent={accent} accentSoft={accentSoft} />
-          <Tile label="Plus haut checkout" value={bestCheckout != null ? `${bestCheckout}` : "—"} sub="X01" icon={<IconHourglass color={T.gold} />} accent={accent} accentSoft={accentSoft} />
+        {/* KPIs */}
+        <div style={{ ...fullW, display: "grid", gap: 12 }}>
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(1, minmax(0,1fr))" }} className="sm:grid-cols-2 xl:grid-cols-4">
+            <Tile label="Moyenne / 3 flèches" value={`${avg3.toFixed(1)} pts`} sub="Visites moyennes" icon={<IconBars color={T.gold} />} accent={accent} accentSoft={accentSoft} />
+            <Tile label="Meilleure volée" value={`${bestVisit} pts`} sub="Record personnel" icon={<IconTarget color={T.gold} />} accent={accent} accentSoft={accentSoft} />
+            <Tile label="Taux de victoire" value={`${winRate.toFixed(0)} %`} sub="Toutes manches" icon={<IconPercent color={T.gold} />} accent={accent} accentSoft={accentSoft} />
+            <Tile label="Plus haut checkout" value={bestCheckout != null ? `${bestCheckout}` : "—"} sub="X01" icon={<IconHourglass color={T.gold} />} accent={accent} accentSoft={accentSoft} />
+          </div>
         </div>
-      </div>
 
-      {/* Graphs */}
-      <div style={{ display: "grid", gap: 12, marginTop: 16 }} className="lg:grid-cols-2">
-        <div ref={refL} style={{ width: "100%" }}>
-          <LineChart points={evolution} width={wL} accent={accent} accentSoft={accentSoft} />
+        {/* Graphs */}
+        <div style={{ ...fullW, display: "grid", gap: 12, marginTop: 16 }} className="lg:grid-cols-2">
+          <div ref={refL} style={{ width: "100%" }}>
+            <LineChart points={evolution} width={wL} accent={accent} accentSoft={accentSoft} />
+          </div>
+          <div ref={refB} style={{ width: "100%" }}>
+            <BarChart data={distribution} width={wB} accent={accent} accentSoft={accentSoft} />
+          </div>
         </div>
-        <div ref={refB} style={{ width: "100%" }}>
-          <BarChart data={distribution} width={wB} accent={accent} accentSoft={accentSoft} />
-        </div>
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }

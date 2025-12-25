@@ -117,6 +117,128 @@ function fmtDate(ts: number | string | null | undefined): string {
   }
 }
 
+function toMs(n: any): number {
+  const x = typeof n === "string" ? Number(n) : Number(n);
+  if (!Number.isFinite(x) || x <= 0) return 0;
+  // si timestamp en secondes -> convert ms
+  return x < 1e12 ? Math.floor(x * 1000) : Math.floor(x);
+}
+
+function getMatchPlayedAt(rec: any): number {
+  // ✅ priorité aux dates "de jeu" si elles existent
+  const candidates = [
+    rec?.playedAt,
+    rec?.endedAt,
+    rec?.finishedAt,
+    rec?.startedAt,
+    rec?.date,
+    rec?.ts,
+
+    rec?.payload?.playedAt,
+    rec?.payload?.endedAt,
+    rec?.payload?.finishedAt,
+    rec?.payload?.startedAt,
+    rec?.payload?.date,
+    rec?.payload?.ts,
+
+    rec?.engineState?.playedAt,
+    rec?.engineState?.endedAt,
+    rec?.engineState?.finishedAt,
+    rec?.engineState?.startedAt,
+
+    rec?.payload?.summary?.endedAt,
+    rec?.payload?.summary?.startedAt,
+
+    // ⚠️ on garde updatedAt/createdAt EN DERNIER recours
+    rec?.createdAt,
+    rec?.updatedAt,
+  ];
+
+  for (const c of candidates) {
+    const ms = toMs(c);
+    if (ms) return ms;
+  }
+  return 0;
+}
+
+function sameId(a: any, b: any) {
+  return String(a ?? "") === String(b ?? "");
+}
+
+function getStableMatchKey(rec: any): string {
+  // ✅ si ton engine a déjà un id de match “global”, on le prend
+  const direct =
+    rec?.matchId ??
+    rec?.payload?.matchId ??
+    rec?.engineState?.matchId ??
+    rec?.payload?.engineState?.matchId;
+
+  if (direct) return String(direct);
+
+  // ✅ sinon, on construit une signature stable
+  const kind = String(rec?.game ?? rec?.kind ?? "").toLowerCase();
+
+  // ⚠️ on privilégie une date “de jeu” (pas updatedAt)
+  const t =
+    toMs(
+      rec?.playedAt ??
+        rec?.endedAt ??
+        rec?.finishedAt ??
+        rec?.startedAt ??
+        rec?.date ??
+        rec?.ts ??
+        rec?.payload?.playedAt ??
+        rec?.payload?.endedAt ??
+        rec?.payload?.finishedAt ??
+        rec?.payload?.startedAt ??
+        rec?.payload?.date ??
+        rec?.payload?.ts
+    ) || 0;
+
+  const players = Array.isArray(rec?.players) ? rec.players : [];
+  const ids = players
+    .map((p: any) => String(p?.id ?? ""))
+    .filter(Boolean)
+    .sort()
+    .join(",");
+
+  // ✅ bucket minute -> évite micro-variations
+  const bucket = t ? Math.floor(t / 60000) : 0;
+
+  return `${kind}|${bucket}|${ids}`;
+}
+
+
+function rangeStartMs(range: TimeRange, nowMs: number): number {
+  const now = new Date(nowMs);
+
+  if (range === "all") return 0;
+
+  if (range === "day") {
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+
+  if (range === "week") {
+    const d = new Date(now);
+    // semaine glissante 7 jours (simple et efficace)
+    d.setDate(d.getDate() - 7);
+    return d.getTime();
+  }
+
+  if (range === "month") {
+    const d = new Date(now.getFullYear(), now.getMonth(), 1);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+
+  // year
+  const d = new Date(now.getFullYear(), 0, 1);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 // Extraction stats X01 pour un joueur dans un match
 function extractX01PlayerStats(rec: SavedMatch, playerId: string) {
   const anyRec: any = rec;
@@ -202,110 +324,344 @@ type Props = {
 export default function X01MultiStatsTabFull({ records, playerId }: Props) {
   const [range, setRange] = React.useState<TimeRange>("all");
 
-  // ============================================================
-  // 1) FILTRE & EXTRACTION DES MATCHS X01 MULTI
-  // ============================================================
+// ============================================================
+// 1) FILTRE & EXTRACTION DES MATCHS X01 MULTI  ✅ (1 match = 1 entrée)
+// - Fix doublons : 1 entrée par match (matchId/resumeId sinon signature stable)
+// - Fix stats fausses : lit EN PRIORITÉ summary.players / avg3ByPlayer / bestVisitByPlayer / bestCheckoutByPlayer
+// - Fix hits/% : reconstruit une liste de "darts" à partir des détails (S/D/T/MISS) si pas de darts filtrables
+// ============================================================
 
-  const filteredMatches: X01MatchExtract[] = React.useMemo(() => {
-    const now = Date.now();
-    const ONE_DAY = 24 * 3600 * 1000;
-    const seen = new Set<string>();
-    const out: X01MatchExtract[] = [];
+const filteredMatches: X01MatchExtract[] = React.useMemo(() => {
+  const now = Date.now();
+  const out: X01MatchExtract[] = [];
+  const start = rangeStartMs(range, now);
 
-    for (const rec of records) {
-      if (!rec || !rec.id) continue;
-      if (seen.has(rec.id)) continue;
-      seen.add(rec.id);
+  const isFinished = (status: any) => {
+    const s = String(status || "").toLowerCase();
+    return (
+      s === "finished" ||
+      s === "done" ||
+      s === "complete" ||
+      s === "match_end" ||
+      s === "end"
+    );
+  };
 
-      const kind = (rec as any).game ?? (rec as any).kind ?? "";
-      if (!String(kind).toLowerCase().includes("x01")) continue;
+  const getStartScore = (rec: any) => {
+    const v =
+      rec?.summary?.game?.startScore ??
+      rec?.game?.startScore ??
+      rec?.payload?.summary?.game?.startScore ??
+      rec?.payload?.game?.startScore ??
+      rec?.payload?.config?.startScore ??
+      rec?.payload?.config?.start ??
+      rec?.payload?.x01Config?.startScore ??
+      null;
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
 
-      const ts =
-        (rec as any).updatedAt ??
-        (rec as any).createdAt ??
-        (rec as any).ts;
-      const t = typeof ts === "string" ? Number(ts) : ts;
-      if (!t) continue;
+  const getPlayersIdsSorted = (rec: any) => {
+    const players = Array.isArray(rec?.players) ? rec.players : [];
+    const ids = players
+      .map((p: any) => String(p?.id ?? ""))
+      .filter(Boolean)
+      .sort();
+    return ids;
+  };
 
-      const delta = now - t;
-      let allow = false;
-      if (range === "all") allow = true;
-      else if (range === "day") allow = delta <= ONE_DAY;
-      else if (range === "week") allow = delta <= ONE_DAY * 7;
-      else if (range === "month") allow = delta <= ONE_DAY * 31;
-      else if (range === "year") allow = delta <= ONE_DAY * 365;
+  const getMatchId = (rec: any) =>
+    rec?.matchId ??
+    rec?.payload?.matchId ??
+    rec?.engineState?.matchId ??
+    rec?.payload?.engineState?.matchId ??
+    rec?.resumeId ??
+    rec?.payload?.resumeId ??
+    rec?.summary?.matchId ??
+    rec?.payload?.summary?.matchId ??
+    null;
 
-      if (!allow) continue;
+  const getStableKey = (rec: any, t: number) => {
+    const mid = getMatchId(rec);
+    if (mid) return `mid:${String(mid)}`;
 
-      const players = Array.isArray((rec as any).players)
-        ? (rec as any).players
-        : [];
-      const isIn = players.some((p: any) => p?.id === playerId);
-      if (!isIn) continue;
+    const kind = String(rec?.game ?? rec?.kind ?? "").toLowerCase();
+    const startScore = getStartScore(rec);
+    const ids = getPlayersIdsSorted(rec).join("|");
 
-      const status = (rec as any).status;
-      const finished =
-        status === "finished" ||
-        status === "done" ||
-        status === "complete" ||
-        status === "match_end" ||
-        status === "end";
-      if (!finished) continue;
+    // bucket 2 minutes = robuste (évite micro écarts)
+    const bucket = t ? Math.floor(t / 120000) : 0;
 
-      const s = extractX01PlayerStats(rec, playerId);
+    // si aucun playerIds (rare), fallback sur id + bucket
+    const rid = String(rec?.id ?? "");
+    return `sig:${kind}|ss:${startScore ?? ""}|p:${ids || rid}|b:${bucket}`;
+  };
 
-      let result: "W" | "L" | "?" = "?";
-      const winner = (rec as any).winnerId ?? null;
-      if (winner && winner === playerId) result = "W";
-      else if (winner && winner !== playerId) result = "L";
+  const hasPlayer = (rec: any, pid: any) => {
+    if (!pid) return false;
 
-      let darts: UIDart[] = [];
-      const dRaw =
-        (rec as any).darts ??
-        (rec as any).allDarts ??
-        rec.payload?.darts ??
-        (rec as any).engineState?.darts ??
-        [];
-      if (Array.isArray(dRaw)) {
-        darts = dRaw
-          .map((x) => normalizeDart(x))
-          .filter((x): x is UIDart => !!x);
-      }
+    const pKey = String(pid);
 
-      out.push({
-        id: rec.id,
-        t,
-        date: t,
-        avg3: s.avg3,
-        bv: s.bestVisit,
-        bco: s.bestCheckout,
-        result,
-        darts,
-        rec,
-      });
+    // ✅ V3 : summary.players est un objet indexé par playerId
+    const sp = rec?.summary?.players;
+    if (sp && typeof sp === "object" && sp[pKey]) return true;
+
+    // ✅ maps : avg3ByPlayer etc
+    const map =
+      rec?.summary?.avg3ByPlayer ??
+      rec?.payload?.summary?.avg3ByPlayer ??
+      null;
+    if (map && typeof map === "object" && map[pKey] != null) return true;
+
+    // ✅ players[]
+    const players = Array.isArray(rec?.players) ? rec.players : [];
+    if (players.some((p: any) => sameId(p?.id, pid))) return true;
+
+    // ✅ payload.config.players fallback
+    const cfgPlayers = Array.isArray(rec?.payload?.config?.players)
+      ? rec.payload.config.players
+      : [];
+    if (cfgPlayers.some((p: any) => sameId(p?.id, pid))) return true;
+
+    return false;
+  };
+
+  const buildDartsFromDetail = (detail: any): UIDart[] => {
+    if (!detail || typeof detail !== "object") return [];
+
+    const byS =
+      detail?.bySegmentS ??
+      detail?.segments?.S ??
+      detail?.segmentsS ??
+      detail?.hitsBySegmentS ??
+      undefined;
+
+    const byD =
+      detail?.bySegmentD ??
+      detail?.segments?.D ??
+      detail?.segmentsD ??
+      detail?.hitsBySegmentD ??
+      undefined;
+
+    const byT =
+      detail?.bySegmentT ??
+      detail?.segments?.T ??
+      detail?.segmentsT ??
+      detail?.hitsBySegmentT ??
+      undefined;
+
+    const miss =
+      Number(
+        detail?.miss ??
+          detail?.misses ??
+          detail?.MISS ??
+          detail?.M ??
+          detail?.hits?.MISS ??
+          detail?.hits?.M ??
+          0
+      ) || 0;
+
+    // ⚠️ Cap raisonnable (perf UI) — on veut des proportions, pas reconstruire 10k darts
+    const CAP = 360;
+    const cap = (n: number) => Math.min(CAP, Math.max(0, Math.round(n)));
+
+    const keys = new Set<string>([
+      ...Object.keys((byS && typeof byS === "object" ? byS : {}) || {}),
+      ...Object.keys((byD && typeof byD === "object" ? byD : {}) || {}),
+      ...Object.keys((byT && typeof byT === "object" ? byT : {}) || {}),
+    ]);
+
+    const tmp: UIDart[] = [];
+    for (const segStr of keys) {
+      const seg = Number(segStr);
+      if (!Number.isFinite(seg) || seg <= 0) continue;
+
+      const sCount = cap(Number((byS as any)?.[segStr] || 0));
+      const dCount = cap(Number((byD as any)?.[segStr] || 0));
+      const tCount = cap(Number((byT as any)?.[segStr] || 0));
+
+      for (let i = 0; i < sCount; i++) tmp.push({ v: seg, mult: 1 } as UIDart);
+      for (let i = 0; i < dCount; i++) tmp.push({ v: seg, mult: 2 } as UIDart);
+      for (let i = 0; i < tCount; i++) tmp.push({ v: seg, mult: 3 } as UIDart);
     }
 
-    return out.sort((a, b) => a.t - b.t);
-  }, [records, playerId, range]);
+    for (let i = 0; i < cap(miss); i++) tmp.push({ v: 0, mult: 0 } as UIDart);
 
-  const totalMatches = filteredMatches.length;
-  const wins = filteredMatches.filter((m) => m.result === "W").length;
-  const winRate = totalMatches > 0 ? (wins / totalMatches) * 100 : 0;
+    return tmp;
+  };
 
-  const avg3Global =
-    totalMatches > 0
-      ? filteredMatches.reduce((a, b) => a + (b.avg3 || 0), 0) /
-        totalMatches
-      : 0;
+  // ✅ lit stats joueur depuis summary (V3) (plus fiable que per[] legacy)
+  const readStatsForPlayer = (rec: any, pid: string) => {
+    const sum = rec?.summary ?? rec?.payload?.summary ?? null;
 
-  const bestVisit = filteredMatches.reduce(
-    (m, x) => (x.bv > m ? x.bv : m),
-    0
-  );
-  const bestCo = filteredMatches.reduce(
-    (m, x) => (x.bco > m ? x.bco : m),
-    0
-  );
+    const avg3 =
+      Number(
+        sum?.players?.[pid]?.avg3 ??
+          sum?.avg3ByPlayer?.[pid] ??
+          sum?.perPlayer?.[pid]?.avg3 ??
+          sum?.perPlayer?.find?.((x: any) => sameId(x?.playerId, pid))?.avg3 ??
+          0
+      ) || 0;
+
+    const bestVisit =
+      Number(
+        sum?.players?.[pid]?.bestVisit ??
+          sum?.bestVisitByPlayer?.[pid] ??
+          sum?.perPlayer?.[pid]?.bestVisit ??
+          sum?.perPlayer?.find?.((x: any) => sameId(x?.playerId, pid))?.bestVisit ??
+          0
+      ) || 0;
+
+    const bestCheckout =
+      Number(
+        sum?.players?.[pid]?.bestCheckout ??
+          sum?.bestCheckoutByPlayer?.[pid] ??
+          sum?.perPlayer?.[pid]?.bestCheckout ??
+          sum?.perPlayer?.find?.((x: any) => sameId(x?.playerId, pid))?.bestCheckout ??
+          0
+      ) || 0;
+
+    const detail =
+      sum?.detailedByPlayer?.[pid] ??
+      sum?.detailsByPlayer?.[pid] ??
+      sum?.detailed?.[pid] ??
+      sum?.details?.[pid] ??
+      null;
+
+    return { avg3, bestVisit, bestCheckout, detail };
+  };
+
+  // ✅ on garde 1 "meilleur" record par matchKey (celui qui a le summary le plus riche)
+  const bestByKey = new Map<string, any>();
+  const scoreRec = (rec: any) => {
+    const sum = rec?.summary ?? rec?.payload?.summary ?? null;
+    let s = 0;
+    if (sum?.players && typeof sum.players === "object") s += 4;
+    if (sum?.avg3ByPlayer && typeof sum.avg3ByPlayer === "object") s += 2;
+    if (sum?.detailedByPlayer && typeof sum.detailedByPlayer === "object") s += 2;
+    if (Array.isArray(rec?.players) && rec.players.length) s += 1;
+    // darts présents (même si non filtrés par joueur) = bonus léger
+    const dRaw =
+      rec?.payload?.darts ??
+      rec?.darts ??
+      rec?.allDarts ??
+      rec?.payload?.allDarts ??
+      rec?.engineState?.darts ??
+      rec?.payload?.engineState?.darts ??
+      null;
+    if (Array.isArray(dRaw) && dRaw.length) s += 1;
+    return s;
+  };
+
+  for (const rec0 of records) {
+    const rec: any = rec0;
+    if (!rec) continue;
+
+    const kind = (rec as any).game ?? (rec as any).kind ?? "";
+    if (!String(kind).toLowerCase().includes("x01")) continue;
+
+    if (!isFinished(rec?.status)) continue;
+
+    const t = getMatchPlayedAt(rec);
+    if (!t) continue;
+
+    if (range !== "all" && t < start) continue;
+
+    if (!hasPlayer(rec, playerId)) continue;
+
+    const key = getStableKey(rec, t);
+    const prev = bestByKey.get(key);
+    if (!prev) bestByKey.set(key, rec);
+    else if (scoreRec(rec) > scoreRec(prev)) bestByKey.set(key, rec);
+  }
+
+  for (const [key, rec] of bestByKey.entries()) {
+    const t = getMatchPlayedAt(rec);
+    if (!t) continue;
+
+    const pid = String(playerId);
+
+    // ✅ stats joueur (priorité V3 summary)
+    let s = readStatsForPlayer(rec, pid);
+
+    // fallback ultime legacy si summary absent
+    if (!s || (!s.avg3 && !s.bestVisit && !s.bestCheckout && !s.detail)) {
+      const fb = extractX01PlayerStats(rec, pid);
+      s = {
+        avg3: fb?.avg3 || 0,
+        bestVisit: fb?.bestVisit || 0,
+        bestCheckout: fb?.bestCheckout || 0,
+        detail: null,
+      };
+    }
+
+    // ✅ résultat W/L
+    let result: "W" | "L" | "?" = "?";
+    const winner = rec?.winnerId ?? rec?.summary?.winnerId ?? rec?.payload?.summary?.winnerId ?? null;
+    if (winner != null && sameId(winner, pid)) result = "W";
+    else if (winner != null && !sameId(winner, pid)) result = "L";
+
+    // ✅ darts : si une liste contient des playerId => on filtre; sinon on reconstruit via detail
+    let darts: UIDart[] = [];
+
+    const dRaw =
+      rec?.payload?.dartsDetail ??
+      rec?.dartsDetail ??
+      rec?.payload?.darts ??
+      rec?.darts ??
+      rec?.allDarts ??
+      rec?.payload?.allDarts ??
+      rec?.engineState?.darts ??
+      rec?.payload?.engineState?.darts ??
+      null;
+
+    if (Array.isArray(dRaw) && dRaw.length) {
+      // si au moins une dart a un playerId, on filtre strict
+      const anyHasPid = dRaw.some((d: any) => (d?.playerId ?? d?.pid ?? d?.pId ?? d?.ownerId ?? d?.profileId) != null);
+
+      const filtered = anyHasPid
+        ? dRaw.filter((d: any) => {
+            const dp = d?.playerId ?? d?.pid ?? d?.pId ?? d?.ownerId ?? d?.profileId;
+            return dp == null ? false : sameId(dp, pid);
+          })
+        : dRaw; // sinon on garde tout (fallback)
+
+      darts = filtered
+        .map((x: any) => normalizeDart(x))
+        .filter((x: any) => !!x) as UIDart[];
+    }
+
+    if (!darts.length) {
+      darts = buildDartsFromDetail(s.detail);
+    }
+
+    out.push({
+      id: String(getMatchId(rec) ?? rec?.id ?? key),
+      t,
+      date: t,
+      avg3: Number(s.avg3 || 0),
+      bv: Number(s.bestVisit || 0),
+      bco: Number(s.bestCheckout || 0),
+      result,
+      darts,
+      rec,
+    });
+  }
+
+  return out.sort((a, b) => a.t - b.t);
+}, [records, playerId, range]);
+
+const totalMatches = filteredMatches.length;
+const wins = filteredMatches.filter((m) => m.result === "W").length;
+const winRate = totalMatches > 0 ? (wins / totalMatches) * 100 : 0;
+
+const avg3Global =
+  totalMatches > 0
+    ? filteredMatches.reduce((a, b) => a + (b.avg3 || 0), 0) / totalMatches
+    : 0;
+
+const bestVisit = filteredMatches.reduce((m, x) => (x.bv > m ? x.bv : m), 0);
+const bestCo = filteredMatches.reduce((m, x) => (x.bco > m ? x.bco : m), 0);
 
   // ============================================================
   // 2) AGRÉGATION DARTS GLOBAL (KPIs / % / HITS SEGMENTS / RADAR)
@@ -866,61 +1222,132 @@ export default function X01MultiStatsTabFull({ records, playerId }: Props) {
   // 5) STATS MATCHS (tous modes) — 2ᵉ gros tableau
   // ============================================================
 
-  // Agrégat global tous matches où le joueur est présent
-  const allMatches = React.useMemo(() => {
-    const out: X01MatchExtract[] = [];
-    const seen = new Set<string>();
-    for (const rec of records) {
-      if (!rec || !rec.id) continue;
-      if (seen.has(rec.id)) continue;
-      seen.add(rec.id);
+// Agrégat global tous matches où le joueur est présent (✅ 1 match = 1 entrée)
+const allMatches = React.useMemo(() => {
+  const bestByKey = new Map<string, any>();
 
-      const players = Array.isArray((rec as any).players)
-        ? (rec as any).players
-        : [];
-      const isIn = players.some((p: any) => p?.id === playerId);
-      if (!isIn) continue;
+  const isFinished = (status: any) => {
+    const s = String(status || "").toLowerCase();
+    return (
+      s === "finished" ||
+      s === "done" ||
+      s === "complete" ||
+      s === "match_end" ||
+      s === "end"
+    );
+  };
 
-      const status = (rec as any).status;
-      const finished =
-        status === "finished" ||
-        status === "done" ||
-        status === "complete" ||
-        status === "match_end" ||
-        status === "end";
-      if (!finished) continue;
+  const getMatchId = (rec: any) =>
+    rec?.matchId ??
+    rec?.payload?.matchId ??
+    rec?.engineState?.matchId ??
+    rec?.payload?.engineState?.matchId ??
+    rec?.resumeId ??
+    rec?.payload?.resumeId ??
+    rec?.summary?.matchId ??
+    rec?.payload?.summary?.matchId ??
+    null;
 
-      const kind = (rec as any).game ?? (rec as any).kind ?? "";
+  const getStartScore = (rec: any) => {
+    const v =
+      rec?.summary?.game?.startScore ??
+      rec?.game?.startScore ??
+      rec?.payload?.summary?.game?.startScore ??
+      rec?.payload?.game?.startScore ??
+      rec?.payload?.config?.startScore ??
+      rec?.payload?.x01Config?.startScore ??
+      null;
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
 
-      const s = extractX01PlayerStats(rec, playerId);
+  const getKey = (rec: any, t: number) => {
+    const mid = getMatchId(rec);
+    if (mid) return `mid:${String(mid)}`;
+    const kind = String(rec?.game ?? rec?.kind ?? "").toLowerCase();
+    const ss = getStartScore(rec);
+    const players = Array.isArray(rec?.players) ? rec.players : [];
+    const ids = players
+      .map((p: any) => String(p?.id ?? ""))
+      .filter(Boolean)
+      .sort()
+      .join("|");
+    const bucket = t ? Math.floor(t / 120000) : 0;
+    const rid = String(rec?.id ?? "");
+    return `sig:${kind}|ss:${ss ?? ""}|p:${ids || rid}|b:${bucket}`;
+  };
 
-      let result: "W" | "L" | "?" = "?";
-      const winner = (rec as any).winnerId ?? null;
-      if (winner && winner === playerId) result = "W";
-      else if (winner && winner !== playerId) result = "L";
+  const hasPlayer = (rec: any, pid: any) => {
+    if (!pid) return false;
+    const pKey = String(pid);
 
-      out.push({
-        id: rec.id,
-        t:
-          (rec as any).updatedAt ??
-          (rec as any).createdAt ??
-          (rec as any).ts ??
-          0,
-        date:
-          (rec as any).updatedAt ??
-          (rec as any).createdAt ??
-          (rec as any).ts ??
-          0,
-        avg3: s.avg3,
-        bv: s.bestVisit,
-        bco: s.bestCheckout,
-        result,
-        darts: [],
-        rec,
-      });
-    }
-    return out;
-  }, [records, playerId]);
+    const sp = rec?.summary?.players;
+    if (sp && typeof sp === "object" && sp[pKey]) return true;
+
+    const map =
+      rec?.summary?.avg3ByPlayer ??
+      rec?.payload?.summary?.avg3ByPlayer ??
+      null;
+    if (map && typeof map === "object" && map[pKey] != null) return true;
+
+    const players = Array.isArray(rec?.players) ? rec.players : [];
+    if (players.some((p: any) => sameId(p?.id, pid))) return true;
+
+    return false;
+  };
+
+  const scoreRec = (rec: any) => {
+    const sum = rec?.summary ?? rec?.payload?.summary ?? null;
+    let s = 0;
+    if (sum?.players && typeof sum.players === "object") s += 3;
+    if (sum?.avg3ByPlayer && typeof sum.avg3ByPlayer === "object") s += 2;
+    if (Array.isArray(rec?.players) && rec.players.length) s += 1;
+    return s;
+  };
+
+  for (const rec0 of records) {
+    const rec: any = rec0;
+    if (!rec) continue;
+    if (!isFinished(rec?.status)) continue;
+    if (!hasPlayer(rec, playerId)) continue;
+
+    const t = getMatchPlayedAt(rec);
+    if (!t) continue;
+
+    const key = getKey(rec, t);
+    const prev = bestByKey.get(key);
+    if (!prev) bestByKey.set(key, rec);
+    else if (scoreRec(rec) > scoreRec(prev)) bestByKey.set(key, rec);
+  }
+
+  const out: X01MatchExtract[] = [];
+
+  for (const [key, rec] of bestByKey.entries()) {
+    const kind = (rec as any).game ?? (rec as any).kind ?? "";
+    const s = extractX01PlayerStats(rec, String(playerId)); // ok ici: stats globales "tous modes" => fallback acceptable
+
+    let result: "W" | "L" | "?" = "?";
+    const winner = (rec as any).winnerId ?? rec?.summary?.winnerId ?? rec?.payload?.summary?.winnerId ?? null;
+    if (winner != null && sameId(winner, playerId)) result = "W";
+    else if (winner != null && !sameId(winner, playerId)) result = "L";
+
+    const t = getMatchPlayedAt(rec);
+
+    out.push({
+      id: String(getMatchId(rec) ?? rec?.id ?? key),
+      t,
+      date: t,
+      avg3: s.avg3,
+      bv: s.bestVisit,
+      bco: s.bestCheckout,
+      result,
+      darts: [],
+      rec,
+    });
+  }
+
+  return out;
+}, [records, playerId]);
 
   const totalAllMatches = allMatches.length;
   const allWins = allMatches.filter((m) => m.result === "W").length;

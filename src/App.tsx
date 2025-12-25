@@ -14,12 +14,21 @@
 // - Supporte liens : /#/auth/callback  et  /#/auth/reset
 // - Détecte le hash au boot + hashchange
 // - Évite le chaos "otp_expired/access_denied" côté app
+//
+// ✅ NEW: SPLASH SCREEN (logo + jingle) au boot (WEB/PWA)
+// - Pop + bounce + glow + sparkle
+// - Audio best-effort (autoplay peut être bloqué par navigateur)
+// - Durée ~ 1350ms, puis app normale
 // ============================================
 import React from "react";
 import BottomNav from "./components/BottomNav";
 import { AuthSessionProvider, useAuthSession } from "./contexts/AuthSessionContext";
 import AuthStart from "./pages/AuthStart";
 import AccountStart from "./pages/AccountStart";
+
+// ✅ SPLASH (logo + jingle) — adapte les chemins si besoin
+import AppLogo from "./assets/LOGO.png";
+import SplashJingle from "./assets/audio/splash_jingle.mp3";
 
 // Persistance (IndexedDB via storage.ts)
 import { loadStore, saveStore } from "./lib/storage";
@@ -98,7 +107,7 @@ import SyncCenter from "./pages/SyncCenter";
 // Contexts
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { LangProvider } from "./contexts/LangContext";
-import { AuthOnlineProvider, useAuthOnline } from "./hooks/useAuthOnline";
+import { AuthOnlineProvider } from "./hooks/useAuthOnline";
 
 // Dev helper
 import { installHistoryProbe } from "./dev/devHistoryProbe";
@@ -191,8 +200,6 @@ function RedirectToStatsTraining({
 
 /* --------------------------------------------
    ✅ NEW: AUTH CALLBACK (PROD)
-   - Ouvre via email Supabase : /#/auth/callback
-   - Récupère la session et renvoie vers Online
 -------------------------------------------- */
 function AuthCallbackRoute({ go }: { go: (t: Tab, p?: any) => void }) {
   const [msg, setMsg] = React.useState("Connexion en cours…");
@@ -207,7 +214,6 @@ function AuthCallbackRoute({ go }: { go: (t: Tab, p?: any) => void }) {
           await onlineApi.restoreSession();
         } catch {}
 
-        // Supabase doit "consommer" l'URL et produire une session
         const { data, error } = await supabase.auth.getSession();
         if (!alive) return;
 
@@ -218,8 +224,6 @@ function AuthCallbackRoute({ go }: { go: (t: Tab, p?: any) => void }) {
         }
 
         if (data?.session) {
-          // ✅ Session OK : on va sur Online (ton onglet Online = FriendsPage)
-          // On garde un hash propre pour éviter de rester sur /auth/callback
           try {
             window.location.hash = "#/online";
           } catch {}
@@ -227,7 +231,6 @@ function AuthCallbackRoute({ go }: { go: (t: Tab, p?: any) => void }) {
           return;
         }
 
-        // Parfois la session arrive juste après via onAuthStateChange
         const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
           if (session) {
             try {
@@ -237,7 +240,6 @@ function AuthCallbackRoute({ go }: { go: (t: Tab, p?: any) => void }) {
           }
         });
 
-        // UX si ça traîne
         setTimeout(() => {
           if (alive) {
             setMsg(
@@ -271,8 +273,6 @@ function AuthCallbackRoute({ go }: { go: (t: Tab, p?: any) => void }) {
 
 /* --------------------------------------------
    ✅ NEW: FORGOT PASSWORD (REQUEST EMAIL)
-   - Envoie un email Supabase de reset
-   - Redirige vers /#/auth/reset
 -------------------------------------------- */
 function AuthForgotRoute({ go }: { go: (t: Tab, p?: any) => void }) {
   const [email, setEmail] = React.useState("");
@@ -284,16 +284,13 @@ function AuthForgotRoute({ go }: { go: (t: Tab, p?: any) => void }) {
     if (!e || !e.includes("@")) return setStatus("Entre une adresse email valide.");
 
     try {
-      // ⚠️ IMPORTANT: mets bien l’URL de ton app (celle qui ouvre /#/auth/reset)
       const redirectTo = `${window.location.origin}/#/auth/reset`;
-
       const { error } = await supabase.auth.resetPasswordForEmail(e, { redirectTo });
       if (error) {
         console.error("[auth_forgot] resetPasswordForEmail error:", error);
         setStatus("Erreur : " + error.message);
         return;
       }
-
       setStatus("Email envoyé ✅ Ouvre le DERNIER email reçu pour réinitialiser.");
     } catch (err: any) {
       console.error("[auth_forgot] fatal:", err);
@@ -347,8 +344,6 @@ function AuthForgotRoute({ go }: { go: (t: Tab, p?: any) => void }) {
 
 /* --------------------------------------------
    ✅ NEW: RESET PASSWORD (PROD)
-   - Ouvre via email Supabase : /#/auth/reset
-   - Permet updateUser({ password })
 -------------------------------------------- */
 function AuthResetRoute({ go }: { go: (t: Tab, p?: any) => void }) {
   const [pw, setPw] = React.useState("");
@@ -436,9 +431,7 @@ function StatsDetailRoute({ store, go, params }: any) {
     if (params?.rec) {
       return withAvatars(params.rec, store.profiles || []);
     }
-    const fromMem = (store.history || []).find(
-      (r: any) => r.id === params?.matchId
-    );
+    const fromMem = (store.history || []).find((r: any) => r.id === params?.matchId);
     return fromMem ? withAvatars(fromMem, store.profiles || []) : null;
   });
 
@@ -479,9 +472,7 @@ function StatsDetailRoute({ store, go, params }: any) {
     const players = Array.isArray(rec.players) ? rec.players : [];
     return (
       <div style={{ padding: 16 }}>
-        <button onClick={() => go("statsHub", { tab: "history" })}>
-          ← Retour
-        </button>
+        <button onClick={() => go("statsHub", { tab: "history" })}>← Retour</button>
         <h2>
           {(rec.kind || "MATCH").toUpperCase()} — {dateStr}
         </h2>
@@ -494,10 +485,273 @@ function StatsDetailRoute({ store, go, params }: any) {
 
   return (
     <div style={{ padding: 16 }}>
-      <button onClick={() => go("statsHub", { tab: "history" })}>
-        ← Retour
-      </button>
+      <button onClick={() => go("statsHub", { tab: "history" })}>← Retour</button>
       {matchId ? "Chargement..." : "Aucune donnée"}
+    </div>
+  );
+}
+
+/* --------------------------------------------
+   ✅ SPLASH SCREEN (WEB) — POP + IDLE LOOP (16s+)
+   - Phase 1: intro "pop" (~1.35s)
+   - Phase 2: idle loop (glow + float + scanlines + sparkles) jusqu’à la fin
+-------------------------------------------- */
+function SplashScreen({
+  onFinish,
+  durationMs = 16000,
+}: {
+  onFinish: () => void;
+  durationMs?: number;
+}) {
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+
+  React.useEffect(() => {
+    let alive = true;
+
+    // Lance l’audio (best effort)
+    const a = audioRef.current;
+    if (a) {
+      try {
+        a.currentTime = 0;
+        const p = a.play();
+        if (p && typeof (p as any).catch === "function") (p as any).catch(() => {});
+      } catch {}
+    }
+
+    const t = window.setTimeout(() => {
+      if (!alive) return;
+      onFinish();
+    }, durationMs);
+
+    return () => {
+      alive = false;
+      window.clearTimeout(t);
+      try {
+        if (a) {
+          a.pause();
+          a.currentTime = 0;
+        }
+      } catch {}
+    };
+  }, [onFinish, durationMs]);
+
+  return (
+    <div
+      style={{
+        minHeight: "100dvh",
+        display: "grid",
+        placeItems: "center",
+        background:
+          "radial-gradient(1200px 700px at 50% 35%, rgba(255,70,200,.14), rgba(0,0,0,0) 60%), linear-gradient(180deg, #07070b, #0b0b12 45%, #07070b)",
+        overflow: "hidden",
+        position: "relative",
+      }}
+    >
+      {/* Audio */}
+      <audio ref={audioRef} src={SplashJingle} preload="auto" />
+
+      {/* Scanlines (idle) */}
+      <div
+        style={{
+          pointerEvents: "none",
+          position: "absolute",
+          inset: 0,
+          background:
+            "repeating-linear-gradient(180deg, rgba(255,255,255,.03) 0px, rgba(255,255,255,.03) 1px, rgba(0,0,0,0) 3px, rgba(0,0,0,0) 6px)",
+          opacity: 0.08,
+          mixBlendMode: "overlay",
+          animation: "dcScanMove 5.5s linear infinite",
+        }}
+      />
+
+      {/* Vignette pulse (idle) */}
+      <div
+        style={{
+          pointerEvents: "none",
+          position: "absolute",
+          inset: -120,
+          background:
+            "radial-gradient(closest-side at 50% 40%, rgba(255,180,0,.10), rgba(255,70,200,.08), rgba(0,0,0,0) 70%)",
+          filter: "blur(18px)",
+          opacity: 0.8,
+          animation: "dcVignettePulse 6.2s ease-in-out infinite",
+        }}
+      />
+
+      {/* Logo wrapper */}
+      <div style={{ position: "relative", width: 260, height: 260 }}>
+        {/* Glow (intro pop + idle breathing) */}
+        <div
+          style={{
+            position: "absolute",
+            inset: -44,
+            borderRadius: "999px",
+            background:
+              "radial-gradient(circle at 50% 50%, rgba(255,180,0,.20), rgba(255,70,200,.14), rgba(0,0,0,0) 62%)",
+            filter: "blur(12px)",
+            opacity: 0,
+            animation:
+              "dcSplashGlowIntro 1.35s ease-out forwards, dcGlowBreath 3.4s ease-in-out 1.35s infinite",
+          }}
+        />
+
+        {/* Logo (intro pop + idle float) */}
+        <img
+          src={AppLogo}
+          alt="Darts Counter"
+          draggable={false}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+            filter: "drop-shadow(0 16px 40px rgba(0,0,0,.60))",
+            opacity: 0,
+            transform: "scale(.85)",
+            animation:
+              "dcSplashPop 1.35s ease-out forwards, dcIdleFloat 2.9s ease-in-out 1.35s infinite",
+          }}
+        />
+
+        {/* Sparkle center (intro) */}
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            width: 10,
+            height: 10,
+            borderRadius: 999,
+            transform: "translate(-50%,-50%)",
+            boxShadow:
+              "0 0 0 0 rgba(255,200,80,.0), 0 0 0 0 rgba(255,80,210,.0)",
+            animation: "dcSplashSpark 1.35s ease-out forwards",
+            pointerEvents: "none",
+          }}
+        />
+
+        {/* Sparkles orbit (idle) */}
+        <div
+          style={{
+            pointerEvents: "none",
+            position: "absolute",
+            inset: -14,
+            borderRadius: 999,
+            animation: "dcOrbit 4.6s linear 1.35s infinite",
+            opacity: 0.9,
+          }}
+        >
+          {/* dot 1 */}
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: -6,
+              width: 6,
+              height: 6,
+              borderRadius: 999,
+              background: "rgba(255,210,120,.95)",
+              boxShadow: "0 0 18px rgba(255,210,120,.55)",
+              animation: "dcTwinkle 1.7s ease-in-out 1.35s infinite",
+              transform: "translateX(-50%)",
+            }}
+          />
+          {/* dot 2 */}
+          <div
+            style={{
+              position: "absolute",
+              right: -4,
+              top: "52%",
+              width: 5,
+              height: 5,
+              borderRadius: 999,
+              background: "rgba(255,90,220,.92)",
+              boxShadow: "0 0 18px rgba(255,90,220,.45)",
+              animation: "dcTwinkle 2.1s ease-in-out 1.35s infinite",
+              transform: "translateY(-50%)",
+            }}
+          />
+          {/* dot 3 */}
+          <div
+            style={{
+              position: "absolute",
+              left: "22%",
+              bottom: -5,
+              width: 4,
+              height: 4,
+              borderRadius: 999,
+              background: "rgba(255,255,255,.92)",
+              boxShadow: "0 0 16px rgba(255,255,255,.35)",
+              animation: "dcTwinkle 1.9s ease-in-out 1.35s infinite",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* CSS keyframes inline */}
+      <style>
+        {`
+          /* INTRO */
+          @keyframes dcSplashPop {
+            0%   { opacity: 0; transform: scale(.85); }
+            6%   { opacity: 1; transform: scale(.85); }
+            18%  { opacity: 1; transform: scale(1.05); }
+            33%  { opacity: 1; transform: scale(.97); }
+            52%  { opacity: 1; transform: scale(1.00); }
+            100% { opacity: 1; transform: scale(1.00); }
+          }
+
+          @keyframes dcSplashGlowIntro {
+            0%   { opacity: 0; transform: scale(.92); }
+            18%  { opacity: .85; transform: scale(1.00); }
+            52%  { opacity: .55; transform: scale(1.03); }
+            100% { opacity: .32; transform: scale(1.06); }
+          }
+
+          @keyframes dcSplashSpark {
+            0%   { opacity: 0; box-shadow: 0 0 0 0 rgba(255,200,80,0), 0 0 0 0 rgba(255,80,210,0); }
+            18%  { opacity: 1; box-shadow: 0 0 0 10px rgba(255,200,80,.10), 0 0 0 18px rgba(255,80,210,.08); }
+            40%  { opacity: .65; box-shadow: 0 0 0 22px rgba(255,200,80,.0), 0 0 0 34px rgba(255,80,210,.0); }
+            100% { opacity: 0; box-shadow: 0 0 0 40px rgba(255,200,80,0), 0 0 0 60px rgba(255,80,210,0); }
+          }
+
+          /* IDLE LOOP */
+          @keyframes dcIdleFloat {
+            0%   { transform: translateY(0px) scale(1.00); }
+            50%  { transform: translateY(-6px) scale(1.01); }
+            100% { transform: translateY(0px) scale(1.00); }
+          }
+
+          @keyframes dcGlowBreath {
+            0%   { opacity: .28; transform: scale(1.04); }
+            50%  { opacity: .46; transform: scale(1.075); }
+            100% { opacity: .28; transform: scale(1.04); }
+          }
+
+          @keyframes dcTwinkle {
+            0%   { opacity: .35; transform: scale(1); }
+            50%  { opacity: 1; transform: scale(1.35); }
+            100% { opacity: .35; transform: scale(1); }
+          }
+
+          @keyframes dcOrbit {
+            0%   { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+
+          @keyframes dcScanMove {
+            0%   { transform: translateY(0); }
+            100% { transform: translateY(18px); }
+          }
+
+          @keyframes dcVignettePulse {
+            0%   { opacity: .70; transform: scale(1.00); }
+            50%  { opacity: .95; transform: scale(1.03); }
+            100% { opacity: .70; transform: scale(1.00); }
+          }
+        `}
+      </style>
     </div>
   );
 }
@@ -526,8 +780,7 @@ const initialStore: Store = {
 -------------------------------------------- */
 function getX01DefaultStart(store: Store): 301 | 501 | 701 | 901 {
   const profiles = store.profiles ?? [];
-  const active =
-    profiles.find((p) => p.id === store.activeProfileId) ?? null;
+  const active = profiles.find((p) => p.id === store.activeProfileId) ?? null;
 
   const settingsDefault =
     (store.settings.defaultX01 as 301 | 501 | 701 | 901) || 501;
@@ -545,7 +798,6 @@ function getX01DefaultStart(store: Store): 301 | 501 | 701 | 901 {
   const allowed: (301 | 501 | 701 | 901)[] = [301, 501, 701, 901];
 
   if (allowed.includes(pref as any)) return pref as 301 | 501 | 701 | 901;
-
   return settingsDefault;
 }
 
@@ -580,8 +832,7 @@ function saveBotsLS(list: BotLS[]) {
 
 /* Service Worker banner */
 function useServiceWorkerUpdate() {
-  const [waitingWorker, setWaitingWorker] =
-    React.useState<ServiceWorker | null>(null);
+  const [waitingWorker, setWaitingWorker] = React.useState<ServiceWorker | null>(null);
   const [showPrompt, setShowPrompt] = React.useState(false);
 
   React.useEffect(() => {
@@ -596,10 +847,7 @@ function useServiceWorkerUpdate() {
         const newWorker = registration.installing;
         if (!newWorker) return;
         newWorker.addEventListener("statechange", () => {
-          if (
-            newWorker.state === "installed" &&
-            navigator.serviceWorker.controller
-          ) {
+          if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
             setWaitingWorker(newWorker);
             setShowPrompt(true);
           }
@@ -679,6 +927,16 @@ function App() {
   const [routeParams, setRouteParams] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
 
+  // ✅ SPLASH gate (ne s'affiche pas pendant les flows auth)
+  const [showSplash, setShowSplash] = React.useState(() => {
+    const h = String(window.location.hash || "");
+    const isAuthFlow =
+      h.startsWith("#/auth/callback") ||
+      h.startsWith("#/auth/reset") ||
+      h.startsWith("#/auth/forgot");
+    return !isAuthFlow;
+  });
+
   /* Boot: persistance + nettoyage localStorage + warm-up */
   React.useEffect(() => {
     ensurePersisted().catch(() => {});
@@ -693,22 +951,25 @@ function App() {
     onlineApi.restoreSession().catch(() => {});
   }, []);
 
-  // ✅ NEW: détecte les liens email Supabase via hash (/#/auth/callback, /#/auth/reset, /#/auth/forgot)
+  // ✅ NEW: détecte les liens email Supabase via hash
   React.useEffect(() => {
     const applyHashRoute = () => {
       const h = String(window.location.hash || "");
 
       if (h.startsWith("#/auth/callback")) {
+        setShowSplash(false); // ✅ pas de splash pendant auth
         setRouteParams(null);
         setTab("auth_callback");
         return;
       }
       if (h.startsWith("#/auth/reset")) {
+        setShowSplash(false);
         setRouteParams(null);
         setTab("auth_reset");
         return;
       }
       if (h.startsWith("#/auth/forgot")) {
+        setShowSplash(false);
         setRouteParams(null);
         setTab("auth_forgot");
         return;
@@ -729,13 +990,17 @@ function App() {
   const [x01Config, setX01Config] = React.useState<any>(null);
 
   /* X01 v3 config */
-  const [x01ConfigV3, setX01ConfigV3] =
-    React.useState<X01ConfigV3Type | null>(null);
+  const [x01ConfigV3, setX01ConfigV3] = React.useState<X01ConfigV3Type | null>(null);
 
   /* Navigation */
   function go(next: Tab, params?: any) {
     setRouteParams(params ?? null);
     setTab(next);
+
+    // ✅ on coupe le splash si navigation forcée vers auth
+    if (next === "auth_callback" || next === "auth_reset" || next === "auth_forgot") {
+      setShowSplash(false);
+    }
 
     // ✅ optionnel: maintient un hash "propre" pour les routes auth
     try {
@@ -749,7 +1014,7 @@ function App() {
     } catch {}
   }
 
-  // ✅ IMPORTANT: expose go globalement (fix retour TrainingClock si props perdues)
+  // ✅ IMPORTANT: expose go globalement
   React.useEffect(() => {
     try {
       (window as any).__appGo = go;
@@ -758,9 +1023,9 @@ function App() {
       (window as any).__appStore.store = store;
       (window as any).__appStore.tab = tab;
     } catch {}
-  }, [store, tab]); // go est stable via fermeture, on actualise store/tab
+  }, [store, tab]); // go stable par fermeture
 
-  /* Load store from IDB at boot + gate "Se connecter / Créer un compte" */
+  /* Load store from IDB at boot + gate */
   React.useEffect(() => {
     let mounted = true;
     (async () => {
@@ -786,7 +1051,6 @@ function App() {
           const hasProfiles = (base.profiles ?? []).length > 0;
           const hasActive = !!base.activeProfileId;
 
-          // ⚠️ Ne casse pas un callback auth déjà en cours
           const h = String(window.location.hash || "");
           const isAuthFlow =
             h.startsWith("#/auth/callback") ||
@@ -795,7 +1059,6 @@ function App() {
 
           if (!isAuthFlow) {
             if (!hasProfiles || !hasActive) {
-              // ✅ PRO: on passe par la page PORTAIL (choix login / create / forgot)
               setRouteParams(null);
               setTab("account_start");
             } else {
@@ -847,8 +1110,7 @@ function App() {
       (m as any)?.matchId ||
       `x01-${now}-${Math.random().toString(36).slice(2, 8)}`;
 
-    const rawPlayers =
-      (m as any)?.players ?? (m as any)?.payload?.players ?? [];
+    const rawPlayers = (m as any)?.players ?? (m as any)?.payload?.players ?? [];
     const players = rawPlayers.map((p: any) => {
       const prof = (store.profiles || []).find((pr) => pr.id === p?.id);
       return {
@@ -858,16 +1120,14 @@ function App() {
       };
     });
 
-    const summary =
-      (m as any)?.summary ?? (m as any)?.payload?.summary ?? null;
+    const summary = (m as any)?.summary ?? (m as any)?.payload?.summary ?? null;
 
     const saved: any = {
       id,
       kind: (m as any)?.kind || "x01",
       status: "finished",
       players,
-      winnerId:
-        (m as any)?.winnerId || (m as any)?.payload?.winnerId || null,
+      winnerId: (m as any)?.winnerId || (m as any)?.payload?.winnerId || null,
       createdAt: (m as any)?.createdAt || now,
       updatedAt: now,
       summary,
@@ -902,10 +1162,7 @@ function App() {
         summary: saved.summary ?? null,
         stats: (saved.payload as any)?.stats ?? null,
       });
-      localStorage.setItem(
-        LS_ONLINE_MATCHES_KEY,
-        JSON.stringify(list.slice(0, 200))
-      );
+      localStorage.setItem(LS_ONLINE_MATCHES_KEY, JSON.stringify(list.slice(0, 200)));
     } catch {}
 
     /* upload online (best effort) */
@@ -915,10 +1172,7 @@ function App() {
         onlineApi
           .uploadMatch({
             mode: saved.kind as any,
-            payload: {
-              summary: saved.summary ?? null,
-              payload: saved.payload ?? null,
-            },
+            payload: { summary: saved.summary ?? null, payload: saved.payload ?? null },
             isTraining: false,
             startedAt: saved.createdAt,
             finishedAt: saved.updatedAt,
@@ -932,12 +1186,19 @@ function App() {
 
   /* history formatted */
   const historyForUI = React.useMemo(
-    () =>
-      (store.history || []).map((r: any) =>
-        withAvatars(r, store.profiles || [])
-      ),
+    () => (store.history || []).map((r: any) => withAvatars(r, store.profiles || [])),
     [store.history, store.profiles]
   );
+
+// ✅ RENDER SPLASH EN EARLY RETURN (évite AppGate/BottomNav/SW pendant splash)
+if (showSplash) {
+  return (
+    <SplashScreen
+      durationMs={16000} // ⏱️ 16 SECONDES
+      onFinish={() => setShowSplash(false)}
+    />
+  );
+}
 
   /* --------------------------------------------
         ROUTING SWITCH
@@ -984,9 +1245,7 @@ function App() {
             store={store}
             update={update}
             go={go}
-            onConnect={() =>
-              go("profiles", { view: "me", autoCreate: true })
-            }
+            onConnect={() => go("profiles", { view: "me", autoCreate: true })}
           />
         );
         break;
@@ -1003,83 +1262,50 @@ function App() {
             setProfiles={setProfiles}
             go={go}
             params={routeParams}
-            // ✅ important : ton Profiles.tsx attend autoCreate séparément de params
             autoCreate={!!routeParams?.autoCreate}
           />
         );
         break;
 
-      // ✅ TOURNOIS — FIX: on garde UN SEUL case "tournaments"
-case "tournaments": {
-  page = (
-    <TournamentsHome
-      store={store}
-      go={go}
-      update={update}
-      source="local"
-    />
-  );
-  break;
-}
+      // ✅ TOURNOIS — FIX: un seul case "tournaments"
+      case "tournaments": {
+        page = <TournamentsHome store={store} go={go} update={update} source="local" />;
+        break;
+      }
 
-// ============================================
-// src/App.tsx — routes Tournois LOCAL (v2 robuste)
-// ✅ Fix: passe un id fiable à TournamentView
-// ✅ Fix: TournamentMatchPlay reçoit params (comme ton composant l’attend)
-// ✅ Guard: si tournamentId/matchId manquants => fallback UI (pas écran noir)
-// ============================================
+      case "tournament_view": {
+        const id = String(routeParams?.id ?? routeParams?.tournamentId ?? routeParams?.tid ?? "");
+        page = <TournamentView store={store} go={go} id={id} />;
+        break;
+      }
 
-case "tournament_view": {
-  const id = String(
-    routeParams?.id ??
-      routeParams?.tournamentId ??
-      routeParams?.tid ??
-      ""
-  );
+      case "tournament_match_play": {
+        const tournamentId = String(routeParams?.tournamentId ?? routeParams?.id ?? routeParams?.tid ?? "");
+        const matchId = String(routeParams?.matchId ?? "");
 
-  page = <TournamentView store={store} go={go} id={id} />;
-  break;
-}
+        if (!tournamentId || !matchId) {
+          page = (
+            <div style={{ padding: 16 }}>
+              <button onClick={() => go("tournaments")}>← Retour</button>
+              <p>Paramètres manquants (tournamentId/matchId).</p>
+            </div>
+          );
+          break;
+        }
 
-case "tournament_match_play": {
-  const tournamentId = String(
-    routeParams?.tournamentId ??
-      routeParams?.id ??
-      routeParams?.tid ??
-      ""
-  );
-  const matchId = String(routeParams?.matchId ?? "");
+        page = <TournamentMatchPlay store={store} go={go} params={{ tournamentId, matchId }} />;
+        break;
+      }
 
-  if (!tournamentId || !matchId) {
-    page = (
-      <div style={{ padding: 16 }}>
-        <button onClick={() => go("tournaments")}>← Retour</button>
-        <p>Paramètres manquants (tournamentId/matchId).</p>
-      </div>
-    );
-    break;
-  }
+      case "tournament_create": {
+        page = <TournamentCreate store={store} go={go} />;
+        break;
+      }
 
-  // ✅ IMPORTANT : ton TournamentMatchPlay utilise (store, go, params)
-  page = (
-    <TournamentMatchPlay
-      store={store}
-      go={go}
-      params={{ tournamentId, matchId }}
-    />
-  );
-  break;
-}
-
-case "tournament_create": {
-  page = <TournamentCreate store={store} go={go} />;
-  break;
-}
-
-case "tournament_roadmap": {
-  page = <TournamentRoadmap go={go} />;
-  break;
-}  
+      case "tournament_roadmap": {
+        page = <TournamentRoadmap go={go} />;
+        break;
+      }
 
       case "profiles_bots":
         page = <ProfilesBots store={store} go={go} />;
@@ -1120,17 +1346,13 @@ case "tournament_roadmap": {
         page = (
           <StatsCricket
             profiles={store.profiles}
-            activeProfileId={
-              routeParams?.profileId ?? store.activeProfileId ?? null
-            }
+            activeProfileId={routeParams?.profileId ?? store.activeProfileId ?? null}
           />
         );
         break;
 
       case "statsDetail":
-        page = (
-          <StatsDetailRoute store={store} go={go} params={routeParams} />
-        );
+        page = <StatsDetailRoute store={store} go={go} params={routeParams} />;
         break;
 
       case "stats_leaderboards":
@@ -1139,13 +1361,7 @@ case "tournament_roadmap": {
 
       /* ---------- SYNC / PARTAGE ---------- */
       case "sync_center":
-        page = (
-          <SyncCenter
-            store={store}
-            go={go}
-            profileId={routeParams?.profileId ?? null}
-          />
-        );
+        page = <SyncCenter store={store} go={go} profileId={routeParams?.profileId ?? null} />;
         break;
 
       /* ---------- X01 SETUP (v1) ---------- */
@@ -1177,9 +1393,7 @@ case "tournament_roadmap": {
       /* ---------- X01 ONLINE SETUP ---------- */
       case "x01_online_setup": {
         const activeProfile =
-          store.profiles.find((p) => p.id === store.activeProfileId) ??
-          store.profiles[0] ??
-          null;
+          store.profiles.find((p) => p.id === store.activeProfileId) ?? store.profiles[0] ?? null;
 
         const lobbyCode = routeParams?.lobbyCode ?? null;
 
@@ -1187,13 +1401,10 @@ case "tournament_roadmap": {
           page = (
             <div className="container" style={{ padding: 16 }}>
               <p style={{ marginBottom: 8 }}>
-                Aucun profil local n’est configuré pour lancer une manche
-                online.
+                Aucun profil local n’est configuré pour lancer une manche online.
               </p>
               <button
-                onClick={() =>
-                  go("profiles", { view: "me", autoCreate: true })
-                }
+                onClick={() => go("profiles", { view: "me", autoCreate: true })}
                 style={{
                   borderRadius: 999,
                   padding: "8px 12px",
@@ -1212,18 +1423,9 @@ case "tournament_roadmap": {
           break;
         }
 
-        const storeForOnline: Store = {
-          ...store,
-          activeProfileId: activeProfile.id,
-        } as Store;
+        const storeForOnline: Store = { ...store, activeProfileId: activeProfile.id } as Store;
 
-        page = (
-          <X01OnlineSetup
-            store={storeForOnline}
-            go={go}
-            params={{ ...(routeParams || {}), lobbyCode }}
-          />
-        );
+        page = <X01OnlineSetup store={storeForOnline} go={go} params={{ ...(routeParams || {}), lobbyCode }} />;
         break;
       }
 
@@ -1236,17 +1438,11 @@ case "tournament_roadmap": {
 
         if (!effectiveConfig && isOnline && !isResume) {
           const activeProfile =
-            store.profiles.find((p) => p.id === store.activeProfileId) ??
-            store.profiles[0] ??
-            null;
+            store.profiles.find((p) => p.id === store.activeProfileId) ?? store.profiles[0] ?? null;
 
           const startDefault = getX01DefaultStart(store);
-
           const start =
-            startDefault === 301 ||
-            startDefault === 501 ||
-            startDefault === 701 ||
-            startDefault === 901
+            startDefault === 301 || startDefault === 501 || startDefault === 701 || startDefault === 901
               ? startDefault
               : 501;
 
@@ -1269,19 +1465,14 @@ case "tournament_roadmap": {
           break;
         }
 
-        const rawStart =
-          effectiveConfig?.start ?? getX01DefaultStart(store);
-
-        const startClamped: 301 | 501 | 701 | 901 =
-          rawStart >= 901 ? 901 : (rawStart as 301 | 501 | 701 | 901);
+        const rawStart = effectiveConfig?.start ?? getX01DefaultStart(store);
+        const startClamped: 301 | 501 | 701 | 901 = rawStart >= 901 ? 901 : (rawStart as any);
 
         const outMode = effectiveConfig?.doubleOut ? "double" : "simple";
         const playerIds = effectiveConfig?.playerIds ?? [];
 
         const freshToken = routeParams?.fresh ?? Date.now();
-        const key = isResume
-          ? `resume-${routeParams.resumeId}`
-          : `fresh-${freshToken}`;
+        const key = isResume ? `resume-${routeParams.resumeId}` : `fresh-${freshToken}`;
 
         page = (
           <X01Play
@@ -1335,47 +1526,29 @@ case "tournament_roadmap": {
             config={x01ConfigV3}
             onExit={() => go("x01_config_v3")}
             onReplayNewConfig={() => go("x01_config_v3")}
-            onShowSummary={(matchId: string) =>
-              go("statsDetail", { matchId, showEnd: true })
-            }
+            onShowSummary={(matchId: string) => go("statsDetail", { matchId, showEnd: true })}
           />
         );
         break;
       }
 
       /* ---------- X01 END ---------- */
-      case "x01_end": {
+      case "x01_end":
         page = <X01End go={go} params={routeParams} />;
         break;
-      }
 
       /* ---------- AUTRES JEUX ---------- */
-      case "cricket": {
-        page = (
-          <CricketPlay
-            profiles={store.profiles ?? []}
-            onFinish={(m: any) => pushHistory(m)}
-          />
-        );
+      case "cricket":
+        page = <CricketPlay profiles={store.profiles ?? []} onFinish={(m: any) => pushHistory(m)} />;
         break;
-      }
 
-      // ✅ Alias (anciens appels go("killer"))
-      case "killer": {
+      case "killer":
+      case "killer_config":
         page = <KillerConfig store={store} go={go} />;
         break;
-      }
 
-      // ✅ NEW: KILLER CONFIG
-      case "killer_config": {
-        page = <KillerConfig store={store} go={go} />;
-        break;
-      }
-
-      // ✅ NEW: KILLER PLAY (câblage final)
       case "killer_play": {
         const cfg = routeParams?.config;
-
         if (!cfg) {
           page = (
             <div style={{ padding: 16 }}>
@@ -1385,35 +1558,20 @@ case "tournament_roadmap": {
           );
           break;
         }
-
-        page = (
-          <KillerPlay
-            store={store}
-            go={go}
-            config={cfg}
-            onFinish={(m: any) => pushHistory(m)} // ✅ SAVE History + stats mirror
-          />
-        );
+        page = <KillerPlay store={store} go={go} config={cfg} onFinish={(m: any) => pushHistory(m)} />;
         break;
       }
 
-      // ✅ NEW: KILLER SUMMARY
-      case "killer_summary": {
+      case "killer_summary":
         page = <KillerSummaryPage store={store} go={go} params={routeParams} />;
         break;
-      }
 
-      // ==========================
-      // SHANGHAI (Config -> Play)
-      // ==========================
-      case "shanghai": {
+      case "shanghai":
         page = <ShanghaiConfigPage store={store} go={go} />;
         break;
-      }
 
       case "shanghai_play": {
         const cfg = routeParams?.config;
-
         if (!cfg) {
           page = (
             <div style={{ padding: 16 }}>
@@ -1423,50 +1581,30 @@ case "tournament_roadmap": {
           );
           break;
         }
-
-        page = (
-          <ShanghaiPlay
-            store={store}
-            go={go}
-            config={cfg}
-            onFinish={(m: any) => pushHistory(m)} // ✅ remonte dans History + stats
-          />
-        );
+        page = <ShanghaiPlay store={store} go={go} config={cfg} onFinish={(m: any) => pushHistory(m)} />;
         break;
       }
 
-      case "shanghai_end": {
+      case "shanghai_end":
         page = <ShanghaiEnd params={{ ...routeParams, go }} />;
         break;
-      }
 
       /* ---------- TRAINING ---------- */
-      case "training": {
+      case "training":
         page = <TrainingMenu go={go} />;
         break;
-      }
 
-      case "training_x01": {
+      case "training_x01":
         page = <TrainingX01Play go={go} />;
         break;
-      }
 
-      case "training_stats": {
+      case "training_stats":
         page = <RedirectToStatsTraining go={go} />;
         break;
-      }
 
-      // ✅ FIX: TrainingClock reçoit go (sinon retour cassé)
-      case "training_clock": {
-        page = (
-          <TrainingClock
-            profiles={store.profiles ?? []}
-            activeProfileId={store.activeProfileId ?? null}
-            go={go}
-          />
-        );
+      case "training_clock":
+        page = <TrainingClock profiles={store.profiles ?? []} activeProfileId={store.activeProfileId ?? null} go={go} />;
         break;
-      }
 
       /* ---------- AVATAR CREATOR ---------- */
       case "avatar": {
@@ -1479,13 +1617,7 @@ case "tournament_roadmap": {
           const bots = loadBotsLS();
           const targetBot = bots.find((b) => b.id === botId) ?? null;
 
-          function handleSaveAvatarBot({
-            pngDataUrl,
-            name,
-          }: {
-            pngDataUrl: string;
-            name: string;
-          }) {
+          function handleSaveAvatarBot({ pngDataUrl, name }: { pngDataUrl: string; name: string }) {
             if (!targetBot) return go(backTo);
 
             const next = bots.slice();
@@ -1509,39 +1641,22 @@ case "tournament_roadmap": {
               <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
                 ← Retour
               </button>
-              <AvatarCreator
-                size={512}
-                defaultName={targetBot?.name || ""}
-                onSave={handleSaveAvatarBot}
-                isBotMode={true}
-              />
+              <AvatarCreator size={512} defaultName={targetBot?.name || ""} onSave={handleSaveAvatarBot} isBotMode={true} />
             </div>
           );
           break;
         }
 
         const targetProfile =
-          store.profiles.find(
-            (p) => p.id === (profileIdFromParams || store.activeProfileId)
-          ) ?? null;
+          store.profiles.find((p) => p.id === (profileIdFromParams || store.activeProfileId)) ?? null;
 
-        function handleSaveAvatarProfile({
-          pngDataUrl,
-          name,
-        }: {
-          pngDataUrl: string;
-          name: string;
-        }) {
+        function handleSaveAvatarProfile({ pngDataUrl, name }: { pngDataUrl: string; name: string }) {
           if (!targetProfile) return;
 
           setProfiles((list) =>
             list.map((p) =>
               p.id === targetProfile.id
-                ? {
-                    ...p,
-                    name: name?.trim() || p.name,
-                    avatarDataUrl: pngDataUrl,
-                  }
+                ? { ...p, name: name?.trim() || p.name, avatarDataUrl: pngDataUrl }
                 : p
             )
           );
@@ -1554,27 +1669,19 @@ case "tournament_roadmap": {
             <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
               ← Retour
             </button>
-            <AvatarCreator
-              size={512}
-              defaultName={targetProfile?.name || ""}
-              onSave={handleSaveAvatarProfile}
-              isBotMode={isBotMode}
-            />
+            <AvatarCreator size={512} defaultName={targetProfile?.name || ""} onSave={handleSaveAvatarProfile} isBotMode={isBotMode} />
           </div>
         );
         break;
       }
 
-      /* ---------- FALLBACK ---------- */
       default:
         page = (
           <Home
             store={store}
             update={update}
             go={go}
-            onConnect={() =>
-              go("profiles", { view: "me", autoCreate: true })
-            }
+            onConnect={() => go("profiles", { view: "me", autoCreate: true })}
           />
         );
     }
@@ -1597,7 +1704,6 @@ case "tournament_roadmap": {
 
 /* --------------------------------------------
    🔒 APP GATE — NE BLOQUE QUE LES PAGES ONLINE "post-login"
-   ✅ IMPORTANT : FriendsPage = portail login/signup => DOIT rester accessible
 -------------------------------------------- */
 function AppGate({
   go,
@@ -1610,13 +1716,8 @@ function AppGate({
 }) {
   const { status } = useAuthSession();
 
-  // ✅ Pages qui doivent nécessiter une session (ONLINE "après connexion")
-  // FriendsPage sert de portail pour se connecter => NE PAS la bloquer.
-  const needsSession =
-    tab === "stats_online" ||
-    tab === "x01_online_setup"; // (optionnel mais logique: setup online = auth requise)
+  const needsSession = tab === "stats_online" || tab === "x01_online_setup";
 
-  // Pages autorisées pendant un flow auth
   const isAuthFlow =
     tab === "auth_reset" ||
     tab === "auth_callback" ||
@@ -1632,8 +1733,6 @@ function AppGate({
     );
   }
 
-  // ✅ Si signed_out : on laisse TOUT le local fonctionner.
-  // On bloque uniquement les pages Online "post-login".
   if (status === "signed_out" && needsSession && !isAuthFlow) {
     return <AccountEntry go={go} />;
   }
@@ -1678,8 +1777,7 @@ function AccountEntry({ go }: { go: (t: any, p?: any) => void }) {
           width: "min(380px, 92vw)",
           borderRadius: 22,
           padding: 14,
-          background:
-            "linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03))",
+          background: "linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03))",
           border: "1px solid rgba(255,255,255,.10)",
           boxShadow: "0 22px 70px rgba(0,0,0,.62)",
           backdropFilter: "blur(10px)",
@@ -1702,22 +1800,14 @@ function AccountEntry({ go }: { go: (t: any, p?: any) => void }) {
 
         <div style={{ display: "grid", gap: 12 }}>
           <div style={{ textAlign: "center", display: "grid", gap: 6 }}>
-            <div
-              style={{
-                fontSize: 24,
-                fontWeight: 950,
-                color: "rgba(255,255,255,.96)",
-              }}
-            >
+            <div style={{ fontSize: 24, fontWeight: 950, color: "rgba(255,255,255,.96)" }}>
               Compte
             </div>
             <div style={{ fontSize: 12.8, opacity: 0.82, lineHeight: 1.35 }}>
-              Connecte-toi pour synchroniser ton profil et tes stats sur tous tes
-              appareils.
+              Connecte-toi pour synchroniser ton profil et tes stats sur tous tes appareils.
             </div>
           </div>
 
-          {/* ✅ IMPORTANT : on va vers la page Online (FriendsPage) qui contient le login/signup Supabase */}
           <button
             onClick={() => go("friends")}
             style={{
@@ -1752,14 +1842,7 @@ function AccountEntry({ go }: { go: (t: any, p?: any) => void }) {
             Créer un compte
           </button>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              opacity: 0.7,
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, opacity: 0.7 }}>
             <div style={{ height: 1, flex: 1, background: "rgba(255,255,255,.10)" }} />
             <div style={{ fontSize: 12 }}>Mot de passe</div>
             <div style={{ height: 1, flex: 1, background: "rgba(255,255,255,.10)" }} />
@@ -1812,9 +1895,7 @@ function AccountEntry({ go }: { go: (t: any, p?: any) => void }) {
               Envoyer le lien de réinitialisation
             </button>
 
-            {status ? (
-              <div style={{ fontSize: 12.8, opacity: 0.9 }}>{status}</div>
-            ) : null}
+            {status ? <div style={{ fontSize: 12.8, opacity: 0.9 }}>{status}</div> : null}
           </div>
         </div>
       </div>
