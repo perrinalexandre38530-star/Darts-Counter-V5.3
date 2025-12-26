@@ -156,6 +156,7 @@ function readStatsCache(profileId: string): any | null {
  * - soit { dashboard: <PlayerDashboardStats> }
  * - soit directement <PlayerDashboardStats>
  */
+
 function useFastDashboardCache(profileId: string | null) {
   const [cachedDashboard, setCachedDashboard] = React.useState<any | null>(null);
   const [cacheLoaded, setCacheLoaded] = React.useState(false);
@@ -170,10 +171,13 @@ function useFastDashboardCache(profileId: string | null) {
       return;
     }
 
-    // lecture sync très rapide
+    // 🔥 lecture sync ultra-rapide (localStorage)
     const hit = readStatsCache(pid);
+
     if (hit) {
-      setCachedDashboard(hit?.dashboard ?? hit);
+      const dash = hit?.dashboard ?? hit;
+      // ⚠️ CRITIQUE : on rejette les dashboards vides / incomplets
+      setCachedDashboard(looksLikeDashboard(dash) ? dash : null);
     }
 
     setCacheLoaded(true);
@@ -3831,7 +3835,7 @@ function recordToNormalizedFallback(r: any): any | null {
 const nmFromRecordsFallback = React.useMemo(() => {
   const arr = Array.isArray(records) ? records : [];
   return arr.map(recordToNormalizedFallback).filter(Boolean);
-}, [records]);
+}, [records?.length]);
 
 // 3) ✅ SOURCE UNIQUE utilisée PARTOUT dans StatsHub
 const nmEffective = React.useMemo(() => {
@@ -3868,13 +3872,24 @@ const activePlayerId = (playerId ?? initialPlayerId ?? (profile as any)?.id ?? n
   | string
   | null;
 
+  // ✅ DEBUG (à coller ICI, juste après activePlayerId)
+React.useEffect(() => {
+  // eslint-disable-next-line no-console
+  console.log("[StatsHub] activePlayerId =", activePlayerId, "mode =", mode);
+}, [activePlayerId, mode]);
+
 // Liste de joueurs selon le mode : active / locals / all
 const playersForMode = React.useMemo(() => {
   if (!allPlayers.length) return [];
 
-  if (mode === "active" && activePlayerId) {
-    const found = allPlayers.find((p) => p.id === String(activePlayerId));
-    return found ? [found] : [];
+  // ✅ FIX: si activePlayerId n’est pas trouvé dans l’historique,
+  // on fallback sur allPlayers (sinon "Aucun joueur trouvé.")
+  if (mode === "active") {
+    if (activePlayerId) {
+      const found = allPlayers.find((p) => p.id === String(activePlayerId));
+      return found ? [found] : allPlayers; // ✅ fallback
+    }
+    return allPlayers; // ✅ pas d’id -> fallback
   }
 
   if (mode === "locals" && activePlayerId) {

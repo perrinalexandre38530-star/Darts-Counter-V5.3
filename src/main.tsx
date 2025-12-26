@@ -1,8 +1,6 @@
 // ============================================
 // src/main.tsx — Entrée principale Cloudflare + React + Tailwind
-// - PROD : enregistre uniquement /sw.js (non-module), auto-update + auto-reload
-// - DEV  : désenregistre tous les Service Workers + purge caches
-// ✅ NEW: BOOT CRASH SCREEN (capture crash avant rendu React)
+// ✅ NEW: SAFE MODE anti "Aïe aïe aïe" (SW/caches)
 // ============================================
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -12,8 +10,63 @@ import "./index.css";
 import { AuthOnlineProvider } from "./hooks/useAuthOnline";
 
 /* ============================================================
-   ✅ BOOT CRASH SCREEN (avant React)
+   SAFE MODE (si crash au boot -> on coupe SW + purge caches)
 ============================================================ */
+const SAFE_MODE_KEY = "dc_safe_mode_v1";
+
+function setSafeMode(v: boolean) {
+  try {
+    localStorage.setItem(SAFE_MODE_KEY, v ? "1" : "0");
+  } catch {}
+}
+function isSafeMode(): boolean {
+  try {
+    return localStorage.getItem(SAFE_MODE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+async function disableAllServiceWorkersAndCaches() {
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister().catch(() => {})));
+    }
+  } catch {}
+
+  try {
+    if (typeof caches !== "undefined" && (caches as any).keys) {
+      const keys = await (caches as any).keys();
+      await Promise.all(keys.map((k: string) => caches.delete(k)));
+    }
+  } catch {}
+}
+
+function bootScreen(title: string, msg: string) {
+  const el = document.getElementById("root") || document.body;
+  el.innerHTML = `
+    <div style="
+      min-height:100vh;
+      padding:14px;
+      background:#0b0b10;
+      color:#fff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">
+      <div style="font-size:18px;font-weight:900;margin-bottom:10px;">${title}</div>
+      <div style="opacity:.85;font-size:13px;margin-bottom:10px;">${msg}</div>
+      <button onclick="localStorage.setItem('${SAFE_MODE_KEY}','0');location.reload()" style="
+        margin-top:10px;
+        border-radius:999px;
+        padding:10px 12px;
+        border:none;
+        font-weight:900;
+        background:linear-gradient(180deg,#ffc63a,#ffaf00);
+        color:#1b1508;
+        cursor:pointer;">Recharger (mode normal)</button>
+    </div>
+  `;
+}
+
 function bootCrashScreen(payload: any) {
   const format = (e: any) => {
     try {
@@ -28,6 +81,9 @@ function bootCrashScreen(payload: any) {
   };
 
   const msg = format(payload);
+
+  // ✅ on force SAFE MODE au prochain boot
+  setSafeMode(true);
 
   try {
     localStorage.setItem(
@@ -45,7 +101,10 @@ function bootCrashScreen(payload: any) {
       color:#fff;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">
       <div style="font-size:18px;font-weight:900;margin-bottom:10px;">💥 CRASH CAPTURÉ (BOOT)</div>
-      <div style="opacity:.85;font-size:13px;margin-bottom:10px;">Fais une capture de cet écran et envoie-la.</div>
+      <div style="opacity:.85;font-size:13px;margin-bottom:10px;">
+        Safe mode sera activé au prochain démarrage pour couper le Service Worker / caches.
+        Fais une capture de cet écran.
+      </div>
       <pre style="
         white-space:pre-wrap;
         word-break:break-word;
@@ -66,101 +125,109 @@ function bootCrashScreen(payload: any) {
   `;
 }
 
-function installGlobalHandlers() {
-  window.addEventListener("error", (e: any) => {
-    // On log, mais on n’écrase pas l’UI ici (React peut gérer ensuite)
-    console.error("[window.error]", e?.error || e);
-  });
-
-  window.addEventListener("unhandledrejection", (e: any) => {
-    console.error("[unhandledrejection]", e?.reason || e);
-  });
-}
-
-installGlobalHandlers();
-
-/* ---------- Service Worker policy ---------- */
-if ("serviceWorker" in navigator) {
-  if (import.meta.env.PROD) {
-    // Production (Cloudflare Pages) — enregistre /sw.js
-    window.addEventListener("load", async () => {
-      try {
-        // 1) Désenregistre tout SW hérité (ex: /service-worker.js)
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(
-          regs
-            .filter((r) => !r.active?.scriptURL.endsWith("/sw.js"))
-            .map((r) => r.unregister().catch(() => {}))
-        );
-
-        // 2) Enregistre le SW unique
-        const reg = await navigator.serviceWorker.register("/sw.js"); // chemin ABSOLU
-
-        // 3) Si une nouvelle version est trouvée → on force skipWaiting
-        reg.addEventListener("updatefound", () => {
-          const nw = reg.installing;
-          nw?.addEventListener("statechange", () => {
-            if (nw.state === "installed" && navigator.serviceWorker.controller) {
-              reg.waiting?.postMessage({ type: "SKIP_WAITING" });
-            }
-          });
-        });
-
-        // 4) Quand le contrôleur change (nouvelle version active) → reload
-        navigator.serviceWorker.addEventListener("controllerchange", () => {
-          window.location.reload();
-        });
-
-        console.log("✅ Service Worker enregistré :", reg.scope);
-      } catch (err) {
-        console.warn("⚠️ SW register error", err);
-      }
-    });
-  } else {
-    // Développement / StackBlitz — jamais de SW persistant
-    navigator.serviceWorker
-      .getRegistrations()
-      .then((regs) => Promise.all(regs.map((r) => r.unregister())))
-      .catch(() => {});
-    if (typeof caches !== "undefined" && (caches as any).keys) {
-      (caches as any).keys().then((keys: string[]) => keys.forEach((k) => caches.delete(k)));
-    }
+/* ============================================================
+   Service Worker policy (avec SAFE MODE)
+============================================================ */
+async function registerServiceWorkerProd() {
+  // ✅ si SAFE MODE : on coupe tout
+  if (isSafeMode()) {
+    await disableAllServiceWorkersAndCaches();
+    bootScreen(
+      "🧯 SAFE MODE",
+      "Service Worker + caches désactivés (anti crash). Si l’app marche ici, le problème vient du SW/cache."
+    );
+    return;
   }
 
-  // ===== DEBUG: exposer un dump du store dans la console =====
-  (async () => {
-    (window as any).dumpStore = async () => {
-      const { loadStore } = await import("./lib/storage");
-      const s = await loadStore<any>();
-      console.log("STORE =", s);
-      console.log("statsByPlayer =", s?.statsByPlayer);
-      console.log(
-        "Dernier summary =",
-        Array.isArray(s?.history) ? s.history[s.history.length - 1]?.summary : undefined
+  if (!("serviceWorker" in navigator)) return;
+
+  window.addEventListener("load", async () => {
+    try {
+      // 1) Désenregistre tout SW hérité
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(
+        regs
+          .filter((r) => !r.active?.scriptURL.endsWith("/sw.js"))
+          .map((r) => r.unregister().catch(() => {}))
       );
-      return s;
-    };
-  })();
+
+      // 2) Enregistre le SW unique
+      const reg = await navigator.serviceWorker.register("/sw.js");
+
+      // 3) Si une nouvelle version est trouvée → skipWaiting
+      reg.addEventListener("updatefound", () => {
+        const nw = reg.installing;
+        nw?.addEventListener("statechange", () => {
+          if (nw.state === "installed" && navigator.serviceWorker.controller) {
+            reg.waiting?.postMessage({ type: "SKIP_WAITING" });
+          }
+        });
+      });
+
+      // 4) controllerchange → reload
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        window.location.reload();
+      });
+
+      console.log("✅ Service Worker enregistré :", reg.scope);
+    } catch (err) {
+      console.warn("⚠️ SW register error", err);
+    }
+  });
 }
 
-/* ---------- Point d’entrée React (✅ import dynamique pour catch crash) ---------- */
+async function devUnregisterSW() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker
+    .getRegistrations()
+    .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+    .catch(() => {});
+  if (typeof caches !== "undefined" && (caches as any).keys) {
+    (caches as any).keys().then((keys: string[]) => keys.forEach((k) => caches.delete(k)));
+  }
+}
+
+/* ============================================================
+   DEBUG
+============================================================ */
+(async () => {
+  (window as any).dumpStore = async () => {
+    const { loadStore } = await import("./lib/storage");
+    const s = await loadStore<any>();
+    console.log("STORE =", s);
+    console.log("statsByPlayer =", s?.statsByPlayer);
+    console.log(
+      "Dernier summary =",
+      Array.isArray(s?.history) ? s.history[s.history.length - 1]?.summary : undefined
+    );
+    return s;
+  };
+})();
+
+/* ============================================================
+   BOOT
+============================================================ */
 (async () => {
   try {
+    if (import.meta.env.PROD) await registerServiceWorkerProd();
+    else await devUnregisterSW();
+
     const container = document.getElementById("root");
     if (!container) throw new Error("❌ Élément #root introuvable dans index.html");
 
-    // IMPORTANT: import dynamique => si ./App plante à l’import, on catch ici
     const mod = await import("./App");
     const AppRoot = mod.default;
 
     createRoot(container).render(
       <React.StrictMode>
-        {/* 🌐 Contexte Mode Online pour toute l'app */}
         <AuthOnlineProvider>
           <AppRoot />
         </AuthOnlineProvider>
       </React.StrictMode>
     );
+
+    // ✅ si ça render, on peut enlever safe mode
+    setSafeMode(false);
   } catch (e) {
     console.error("[BOOT CRASH]", e);
     bootCrashScreen(e);
