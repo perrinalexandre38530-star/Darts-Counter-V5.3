@@ -3919,6 +3919,18 @@ const effectiveProfileId = String(
 
 const { cachedDashboard } = useFastDashboardCache(effectiveProfileId || null);
 
+// ✅ Dashboard calculé "lazy" (évite recalculs lourds inutiles)
+const computedDashboard = React.useMemo(() => {
+  if (!selectedPlayer) return null;
+  if (cachedDashboard) return null; // ⛔ déjà un cache → pas de calcul
+
+  return buildDashboardFromNormalized(
+    String(selectedPlayer.id),
+    String(selectedPlayer.name || "Joueur"),
+    nmEffective
+  );
+}, [cachedDashboard, selectedPlayer?.id, selectedPlayer?.name, nmEffective]);
+
 const currentPlayerIndex = React.useMemo(() => {
   if (!selectedPlayer) return -1;
   return filteredPlayers.findIndex((p) => p.id === selectedPlayer.id);
@@ -4544,14 +4556,7 @@ return (
                     <StatsPlayerDashboard
                     data={
                       selectedPlayer
-                        ? // ✅ 1) Affiche tout de suite le cache si dispo
-                          (cachedDashboard ??
-                            // ✅ 2) Sinon fallback sur ton calcul normal (plus lent)
-                            buildDashboardFromNormalized(
-                              String(selectedPlayer.id),
-                              String(selectedPlayer.name || "Joueur"),
-                              nmEffective
-                            ))
+                        ? cachedDashboard ?? computedDashboard
                         : null
                     }
                     x01MultiLegsSets={x01MultiLegsSets}

@@ -8,6 +8,7 @@
 // + Bloc "Notifications & communications"
 // + Bouton "Tout réinitialiser" (nukeAll + reload)
 // + Bouton "Supprimer mon compte" (online + local)
+// ✅ NEW (SFX): sons UI sur les boutons (click / open / close) avec fallback safe
 // ============================================
 
 import React from "react";
@@ -18,10 +19,16 @@ import { THEMES, type ThemeId, type AppTheme } from "../theme/themePresets";
 import { useAuthOnline } from "../hooks/useAuthOnline";
 import { supabase } from "../lib/supabase";
 
+// ✅ NEW: SFX (UI click toggle)
+import { setSfxEnabled, UISfx } from "../lib/sfx";
+
 type Props = { go?: (tab: any, params?: any) => void };
 
 // ✅ Nom de la Edge Function (Supabase)
 const DELETE_USER_FN_NAME = "delete-user";
+
+// ✅ NEW: pref localStorage pour sons UI
+const LS_UI_SFX = "dc-ui-sfx";
 
 // ---------------- Thèmes dispo + descriptions fallback ----------------
 
@@ -168,6 +175,38 @@ const LANG_FLAGS: Record<Lang, string> = {
   cs: "🇨🇿",
 };
 
+/* ============================================================
+   ✅ SFX UI (fallback safe)
+============================================================ */
+type UiSfxName = "click" | "open" | "close";
+
+function playUiSfx(name: UiSfxName = "click") {
+  try {
+    const u: any = UISfx as any;
+
+    // si ton module expose déjà des méthodes nommées
+    if (name === "click") {
+      u?.click?.();
+      u?.tap?.();
+      return;
+    }
+    if (name === "open") {
+      u?.open?.();
+      u?.whoosh?.();
+      u?.click?.();
+      return;
+    }
+    if (name === "close") {
+      u?.close?.();
+      u?.back?.();
+      u?.click?.();
+      return;
+    }
+  } catch {
+    // no-op
+  }
+}
+
 // ---------------- Animation halo une seule fois ----------------
 
 function injectSettingsAnimationsOnce() {
@@ -218,7 +257,10 @@ function ThemeChoiceButton({
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={() => {
+        playUiSfx("click");
+        onClick();
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
@@ -307,7 +349,10 @@ function LanguageChoiceButton({
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={() => {
+        playUiSfx("click");
+        onClick();
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
@@ -378,6 +423,23 @@ function AccountSecurityBlock() {
 
   const [prefs, setPrefs] = React.useState<AccountPrefs>(DEFAULT_PREFS);
 
+  // ✅ NEW: toggle SFX UI (persisté)
+  const [uiSfxEnabled, setUiSfxEnabled] = React.useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return window.localStorage.getItem(LS_UI_SFX) !== "0";
+    } catch {
+      return true;
+    }
+  });
+
+  // ✅ NEW: applique le flag SFX global (au boot + changements)
+  React.useEffect(() => {
+    try {
+      setSfxEnabled(!!uiSfxEnabled);
+    } catch {}
+  }, [uiSfxEnabled]);
+
   // Sync quand le profil change (connexion / refresh)
   React.useEffect(() => {
     setDisplayName(auth.profile?.displayName || auth.user?.nickname || "");
@@ -407,6 +469,16 @@ function AccountSecurityBlock() {
     }
   }, [prefs]);
 
+  // ✅ NEW: persist SFX UI
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(LS_UI_SFX, uiSfxEnabled ? "1" : "0");
+    } catch (e) {
+      console.warn("[settings] ui sfx save error", e);
+    }
+  }, [uiSfxEnabled]);
+
   async function handleSaveProfile() {
     if (auth.status !== "signed_in") return;
     setSavingProfile(true);
@@ -419,10 +491,7 @@ function AccountSecurityBlock() {
         country: country.trim() || undefined,
       });
       setMessage(
-        t(
-          "settings.account.save.ok",
-          "Informations de compte mises à jour."
-        )
+        t("settings.account.save.ok", "Informations de compte mises à jour.")
       );
     } catch (e: any) {
       console.warn("[settings] updateProfile error", e);
@@ -479,15 +548,11 @@ function AccountSecurityBlock() {
 
   async function handleDeleteAccount() {
     if (auth.status !== "signed_in" || !auth.user) {
-      setError(
-        t(
-          "settings.account.delete.noUser",
-          "Aucun compte connecté à supprimer."
-        )
-      );
+      setError(t("settings.account.delete.noUser", "Aucun compte connecté à supprimer."));
       return;
     }
 
+    playUiSfx("open");
     const ok = window.confirm(
       "⚠️ SUPPRESSION DÉFINITIVE DU COMPTE ⚠️\n\n" +
         "Cette action va :\n" +
@@ -496,35 +561,32 @@ function AccountSecurityBlock() {
         "Tu devras recréer un compte si tu veux revenir plus tard.\n\n" +
         "Action IRRÉVERSIBLE. Continuer ?"
     );
-    if (!ok) return;
+    if (!ok) {
+      playUiSfx("close");
+      return;
+    }
 
     setMessage(null);
     setError(null);
 
     try {
-      // 1) ✅ Appel Edge Function via supabase-js (gère l'Authorization automatiquement si session active)
-const { data, error: fnError } = await supabase.functions.invoke(
-  DELETE_USER_FN_NAME,
-  {
-    body: { userId: auth.user.id },
-  }
-);
+      const { error: fnError } = await supabase.functions.invoke(
+        DELETE_USER_FN_NAME,
+        { body: { userId: auth.user.id } }
+      );
 
-if (fnError) {
-  console.error("[settings] delete-user invoke error", fnError);
-  throw new Error(fnError.message || "delete-user failed");
-}
+      if (fnError) {
+        console.error("[settings] delete-user invoke error", fnError);
+        throw new Error(fnError.message || "delete-user failed");
+      }
 
-      // 2) Logout propre côté client
       try {
         await auth.logout();
       } catch (e) {
         console.warn("[settings] logout after delete error", e);
       }
 
-      // 3) Reset TOTAL local (ton helper existant)
       await fullHardReset(); // doit déjà faire window.location.reload()
-
     } catch (e: any) {
       console.error("[settings] delete account error", e);
       setError(
@@ -536,7 +598,16 @@ if (fnError) {
       );
     }
   }
-  
+
+  // ✅ NEW: handler toggle UI SFX
+  function handleToggleUiSfx(v: boolean) {
+    setUiSfxEnabled(v);
+    try {
+      // feedback immédiat quand on active
+      if (v) playUiSfx("click");
+    } catch {}
+  }
+
   const emailLabel = auth.user?.email || "—";
 
   return (
@@ -591,18 +662,12 @@ if (fnError) {
 
         {auth.status === "checking" ? (
           <div style={{ color: theme.textSoft }}>
-            {t(
-              "settings.account.checking",
-              "Vérification de la session en cours…"
-            )}
+            {t("settings.account.checking", "Vérification de la session en cours…")}
           </div>
         ) : auth.status === "signed_in" ? (
           <>
             <div style={{ color: theme.textSoft }}>
-              {t(
-                "settings.account.connectedAs",
-                "Connecté en tant que"
-              )}{" "}
+              {t("settings.account.connectedAs", "Connecté en tant que")}{" "}
               <strong>{emailLabel}</strong>
             </div>
             <div
@@ -629,7 +694,6 @@ if (fnError) {
         )}
       </div>
 
-      {/* Si pas connecté, on ne montre que l’explication, pas de formulaire ici */}
       {auth.status !== "signed_in" && (
         <p
           className="subtitle"
@@ -668,12 +732,7 @@ if (fnError) {
               <span style={{ color: theme.textSoft }}>
                 {t("settings.account.email", "Email (lecture seule)")}
               </span>
-              <input
-                className="input"
-                value={emailLabel}
-                disabled
-                style={{ opacity: 0.7 }}
-              />
+              <input className="input" value={emailLabel} disabled style={{ opacity: 0.7 }} />
             </label>
 
             <label
@@ -685,10 +744,7 @@ if (fnError) {
               }}
             >
               <span style={{ color: theme.textSoft }}>
-                {t(
-                  "settings.account.displayName",
-                  "Pseudo en ligne (display name)"
-                )}
+                {t("settings.account.displayName", "Pseudo en ligne (display name)")}
               </span>
               <input
                 className="input"
@@ -717,23 +773,17 @@ if (fnError) {
           </div>
 
           {message && (
-            <div
-              className="subtitle"
-              style={{ color: "#5ad57a", fontSize: 11, marginBottom: 4 }}
-            >
+            <div className="subtitle" style={{ color: "#5ad57a", fontSize: 11, marginBottom: 4 }}>
               {message}
             </div>
           )}
           {error && (
-            <div
-              className="subtitle"
-              style={{ color: "#ff6666", fontSize: 11, marginBottom: 4 }}
-            >
+            <div className="subtitle" style={{ color: "#ff6666", fontSize: 11, marginBottom: 4 }}>
               {error}
             </div>
           )}
 
-          {/* Actions compte : déconnexion / reset / save / delete account */}
+          {/* Actions compte */}
           <div
             style={{
               display: "flex",
@@ -746,7 +796,10 @@ if (fnError) {
             <button
               type="button"
               className="btn sm"
-              onClick={() => auth.logout()}
+              onClick={() => {
+                playUiSfx("click");
+                auth.logout();
+              }}
             >
               {t("settings.account.btn.logout", "Se déconnecter")}
             </button>
@@ -754,17 +807,15 @@ if (fnError) {
             <button
               type="button"
               className="btn sm"
-              onClick={handlePasswordReset}
-              disabled={resettingPwd}
-              style={{
-                borderColor: theme.primary,
+              onClick={() => {
+                playUiSfx("click");
+                handlePasswordReset();
               }}
+              disabled={resettingPwd}
+              style={{ borderColor: theme.primary }}
             >
               {resettingPwd
-                ? t(
-                    "settings.account.reset.loading",
-                    "Envoi du lien…"
-                  )
+                ? t("settings.account.reset.loading", "Envoi du lien…")
                 : t(
                     "settings.account.reset.btn",
                     "Réinitialiser / récupérer mon mot de passe"
@@ -774,7 +825,10 @@ if (fnError) {
             <button
               type="button"
               className="btn primary sm"
-              onClick={handleSaveProfile}
+              onClick={() => {
+                playUiSfx("click");
+                handleSaveProfile();
+              }}
               disabled={savingProfile}
               style={{
                 background: `linear-gradient(180deg, ${theme.primary}, ${theme.primary}AA)`,
@@ -785,13 +839,9 @@ if (fnError) {
             >
               {savingProfile
                 ? t("settings.account.save.loading", "Enregistrement…")
-                : t(
-                    "settings.account.save.btn",
-                    "Enregistrer les changements"
-                  )}
+                : t("settings.account.save.btn", "Enregistrer les changements")}
             </button>
 
-            {/* 🔥 Bouton SUPPRIMER MON COMPTE */}
             <button
               type="button"
               className="btn danger sm"
@@ -807,14 +857,11 @@ if (fnError) {
                 letterSpacing: 0.5,
               }}
             >
-              {t(
-                "settings.account.delete.btn",
-                "Supprimer mon compte"
-              )}
+              {t("settings.account.delete.btn", "Supprimer mon compte")}
             </button>
           </div>
 
-          {/* Bloc Notifications & communications */}
+          {/* Bloc Notifications */}
           <div
             style={{
               marginTop: 8,
@@ -830,11 +877,9 @@ if (fnError) {
                 color: theme.primary,
               }}
             >
-              {t(
-                "settings.account.notifications.title",
-                "Notifications & communications"
-              )}
+              {t("settings.account.notifications.title", "Notifications & communications")}
             </div>
+
             <p
               className="subtitle"
               style={{
@@ -849,27 +894,25 @@ if (fnError) {
               )}
             </p>
 
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-                fontSize: 12,
-              }}
-            >
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
               <ToggleRow
-                label={t(
-                  "settings.account.notifications.emailsNews",
-                  "Emails de nouveautés / promotions"
+                label={t("settings.uiSfx.label", "Bruitages clic UI")}
+                help={t(
+                  "settings.uiSfx.help",
+                  "Active/désactive les petits sons de clic dans l’application."
                 )}
+                checked={uiSfxEnabled}
+                onChange={(v) => handleToggleUiSfx(v)}
+              />
+
+              <ToggleRow
+                label={t("settings.account.notifications.emailsNews", "Emails de nouveautés / promotions")}
                 help={t(
                   "settings.account.notifications.emailsNewsHelp",
                   "Actualités majeures, nouvelles fonctionnalités, offres spéciales."
                 )}
                 checked={prefs.emailsNews}
-                onChange={(v) =>
-                  setPrefs((p) => ({ ...p, emailsNews: v }))
-                }
+                onChange={(v) => setPrefs((p) => ({ ...p, emailsNews: v }))}
               />
 
               <ToggleRow
@@ -882,9 +925,7 @@ if (fnError) {
                   "Récapitulatif occasionnel de tes stats avec quelques tips."
                 )}
                 checked={prefs.emailsStats}
-                onChange={(v) =>
-                  setPrefs((p) => ({ ...p, emailsStats: v }))
-                }
+                onChange={(v) => setPrefs((p) => ({ ...p, emailsStats: v }))}
               />
 
               <ToggleRow
@@ -897,9 +938,7 @@ if (fnError) {
                   "Contrôle les sons d’alerte et les petits messages d’infos dans l’application."
                 )}
                 checked={prefs.inAppNotifs}
-                onChange={(v) =>
-                  setPrefs((p) => ({ ...p, inAppNotifs: v }))
-                }
+                onChange={(v) => setPrefs((p) => ({ ...p, inAppNotifs: v }))}
               />
             </div>
           </div>
@@ -940,36 +979,31 @@ function ToggleRow({
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600, marginBottom: 2 }}>{label}</div>
         {help && (
-          <div
-            className="subtitle"
-            style={{ fontSize: 11, color: theme.textSoft }}
-          >
+          <div className="subtitle" style={{ fontSize: 11, color: theme.textSoft }}>
             {help}
           </div>
         )}
       </div>
+
       <div style={{ flexShrink: 0 }}>
         <button
           type="button"
-          onClick={() => onChange(!checked)}
+          onClick={() => {
+            playUiSfx("click");
+            onChange(!checked);
+          }}
           style={{
             width: 44,
             height: 24,
             borderRadius: 999,
-            background: checked
-              ? primary
-              : "rgba(255,255,255,0.08)",
-            border: `1px solid ${
-              checked ? primary : theme.borderSoft
-            }`,
+            background: checked ? primary : "rgba(255,255,255,0.08)",
+            border: `1px solid ${checked ? primary : theme.borderSoft}`,
             display: "flex",
             alignItems: "center",
             padding: 2,
             boxSizing: "border-box",
             cursor: "pointer",
-            boxShadow: checked
-              ? `0 0 10px ${primary}66`
-              : "none",
+            boxShadow: checked ? `0 0 10px ${primary}66` : "none",
           }}
         >
           <div
@@ -988,103 +1022,6 @@ function ToggleRow({
   );
 }
 
-/* -------------------------------------------------------------
-   RESET TOTAL HARDCORE
-   - Efface localStorage + sessionStorage
-   - Wipe toutes les bases IndexedDB (stats / history / profils…)
-   - Déconnexion Supabase sur cet appareil
-   - Reset du store global (__DARTS_STORE__)
-   - Reload de l'app
-------------------------------------------------------------- */
-async function fullHardReset() {
-  try {
-    console.log(">>> FULL HARD RESET START");
-
-    if (typeof window === "undefined") {
-      console.error("FULL HARD RESET: window is undefined (SSR)");
-      return;
-    }
-
-    // 1) localStorage + sessionStorage
-    try {
-      window.localStorage.clear();
-      window.sessionStorage.clear();
-    } catch (e) {
-      console.warn("FULL HARD RESET: storage clear failed", e);
-    }
-
-    // 2) Wipe IndexedDB complet
-    try {
-      const anyIndexedDB: any = (window as any).indexedDB;
-      if (anyIndexedDB && typeof anyIndexedDB.databases === "function") {
-        const dbs = await anyIndexedDB.databases();
-        for (const db of dbs) {
-          if (db && db.name) {
-            console.log("Deleting DB:", db.name);
-            await new Promise<void>((resolve, reject) => {
-              const req = window.indexedDB.deleteDatabase(
-                db.name as string
-              );
-              req.onsuccess = () => resolve();
-              req.onerror = () => reject(req.error);
-              req.onblocked = () => resolve(); // au cas où
-            });
-          }
-        }
-      } else {
-        // Fallback : on tente les BDD connues
-        const knownDbs = [
-          "dc_stats_v1",
-          "dc_history_v1",
-          "dc_profiles_v1",
-          "dc_training_v1",
-        ];
-        for (const name of knownDbs) {
-          await new Promise<void>((resolve) => {
-            const req = window.indexedDB.deleteDatabase(name);
-            req.onsuccess = () => resolve();
-            req.onerror = () => resolve();
-            req.onblocked = () => resolve();
-          });
-        }
-      }
-    } catch (e) {
-      console.warn("FULL HARD RESET: indexedDB wipe failed", e);
-    }
-
-    // 3) Déconnexion Supabase (session locale)
-    try {
-      await supabase.auth.signOut({ scope: "local" } as any);
-    } catch (e) {
-      console.warn("Supabase signOut fail:", e);
-    }
-
-    // 4) Reset du store interne global s'il existe
-    try {
-      const anyWindow = window as any;
-      if (anyWindow.__DARTS_STORE__?.setState) {
-        anyWindow.__DARTS_STORE__.setState(() => ({
-          profiles: [],
-          bots: [],
-          history: [],
-          settings: {},
-          activeProfileId: null,
-        }));
-      }
-    } catch (e) {
-      console.warn("Store reset error:", e);
-    }
-
-    // 5) Reload complet
-    window.location.reload();
-  } catch (err) {
-    console.error("FULL HARD RESET FAILED", err);
-    alert(
-      "Erreur lors du reset complet. Tu peux aussi vider manuellement les données du site dans les réglages du navigateur."
-    );
-  }
-}
-
 // ---------------- Composant principal ----------------
 
 export default function Settings({ go }: Props) {
@@ -1096,9 +1033,8 @@ export default function Settings({ go }: Props) {
   }, []);
 
   // 🔥 Reset COMPLET de l'app
-  // - Efface tous les profils, stats, historiques, réglages…
-  // - NE GARDE RIEN (même plus le profil actif)
   async function handleFullReset() {
+    playUiSfx("open");
     const ok = window.confirm(
       "⚠️ RÉINITIALISATION COMPLÈTE ⚠️\n\n" +
         "Cette action va effacer TOUTES les données locales de Darts Counter sur cet appareil :\n" +
@@ -1109,7 +1045,11 @@ export default function Settings({ go }: Props) {
         "mais toutes les données locales seront perdues.\n\n" +
         "Action définitive. Continuer ?"
     );
-    if (!ok) return;
+    if (!ok) {
+      playUiSfx("close");
+      return;
+    }
+    playUiSfx("click");
     await fullHardReset();
   }
 
@@ -1127,13 +1067,17 @@ export default function Settings({ go }: Props) {
       {/* Retour */}
       <button
         type="button"
-        onClick={() => go && go("home")}
+        onClick={() => {
+          playUiSfx("click");
+          go && go("home");
+        }}
         style={{
           border: "none",
           background: "transparent",
           color: theme.textSoft,
           marginBottom: 8,
           fontSize: 15,
+          cursor: "pointer",
         }}
       >
         ← {t("settings.back", "Retour")}
@@ -1152,10 +1096,7 @@ export default function Settings({ go }: Props) {
       </h1>
 
       <div style={{ fontSize: 14, color: theme.textSoft, marginBottom: 16 }}>
-        {t(
-          "settings.subtitle",
-          "Personnalise le thème, la langue et ton compte Darts Counter."
-        )}
+        {t("settings.subtitle", "Personnalise le thème, la langue et ton compte Darts Counter.")}
       </div>
 
       {/* ---------- COMPTE & SÉCURITÉ + PREFS ---------- */}
@@ -1166,7 +1107,10 @@ export default function Settings({ go }: Props) {
         <button
           type="button"
           className="btn primary sm"
-          onClick={() => go?.("profiles", { view: "me" })}
+          onClick={() => {
+            playUiSfx("click");
+            go?.("profiles", { view: "me" });
+          }}
           style={{
             marginTop: 4,
             borderRadius: 999,
@@ -1174,6 +1118,7 @@ export default function Settings({ go }: Props) {
             background: `linear-gradient(180deg, ${theme.primary}, ${theme.primary}AA)`,
             color: "#000",
             fontWeight: 700,
+            cursor: "pointer",
           }}
         >
           {t("settings.account.btn", "Gérer mon compte en ligne")}
@@ -1181,7 +1126,6 @@ export default function Settings({ go }: Props) {
       </div>
 
       {/* ---------- BLOC THEME AVEC CARROUSELS ---------- */}
-
       <section
         style={{
           background: CARD_BG,
@@ -1191,18 +1135,10 @@ export default function Settings({ go }: Props) {
           marginBottom: 16,
         }}
       >
-        <h2
-          style={{
-            margin: 0,
-            marginBottom: 10,
-            fontSize: 18,
-            color: theme.primary,
-          }}
-        >
+        <h2 style={{ margin: 0, marginBottom: 10, fontSize: 18, color: theme.primary }}>
           {t("settings.theme", "Thème")}
         </h2>
 
-        {/* --- Catégorie Néons --- */}
         <div
           style={{
             marginTop: 12,
@@ -1216,27 +1152,12 @@ export default function Settings({ go }: Props) {
           ⚡ {t("settings.theme.group.neons", "Néons classiques")}
         </div>
 
-        <div
-          className="dc-scroll-thin"
-          style={{
-            overflowX: "auto",
-            padding: "6px 0 10px 0",
-            marginTop: 4,
-            marginBottom: 4,
-          }}
-        >
+        <div className="dc-scroll-thin" style={{ overflowX: "auto", padding: "6px 0 10px 0" }}>
           <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
             {NEONS.map((id) => {
               const meta = THEME_META[id];
-              const label = t(
-                `settings.theme.${id}.label`,
-                meta.defaultLabel
-              );
-              const desc = t(
-                `settings.theme.${id}.desc`,
-                meta.defaultDesc
-              );
-
+              const label = t(`settings.theme.${id}.label`, meta.defaultLabel);
+              const desc = t(`settings.theme.${id}.desc`, meta.defaultDesc);
               return (
                 <ThemeChoiceButton
                   key={id}
@@ -1251,7 +1172,6 @@ export default function Settings({ go }: Props) {
           </div>
         </div>
 
-        {/* --- Catégorie Douces --- */}
         <div
           style={{
             marginTop: 16,
@@ -1265,27 +1185,12 @@ export default function Settings({ go }: Props) {
           🎨 {t("settings.theme.group.soft", "Couleurs douces")}
         </div>
 
-        <div
-          className="dc-scroll-thin"
-          style={{
-            overflowX: "auto",
-            padding: "6px 0 10px 0",
-            marginTop: 4,
-            marginBottom: 4,
-          }}
-        >
+        <div className="dc-scroll-thin" style={{ overflowX: "auto", padding: "6px 0 10px 0" }}>
           <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
             {SOFTS.map((id) => {
               const meta = THEME_META[id];
-              const label = t(
-                `settings.theme.${id}.label`,
-                meta.defaultLabel
-              );
-              const desc = t(
-                `settings.theme.${id}.desc`,
-                meta.defaultDesc
-              );
-
+              const label = t(`settings.theme.${id}.label`, meta.defaultLabel);
+              const desc = t(`settings.theme.${id}.desc`, meta.defaultDesc);
               return (
                 <ThemeChoiceButton
                   key={id}
@@ -1300,7 +1205,6 @@ export default function Settings({ go }: Props) {
           </div>
         </div>
 
-        {/* --- Catégorie DARK --- */}
         <div
           style={{
             marginTop: 16,
@@ -1314,27 +1218,12 @@ export default function Settings({ go }: Props) {
           🌑 {t("settings.theme.group.dark", "Thèmes Dark Premium")}
         </div>
 
-        <div
-          className="dc-scroll-thin"
-          style={{
-            overflowX: "auto",
-            padding: "6px 0 10px 0",
-            marginTop: 4,
-            marginBottom: 4,
-          }}
-        >
+        <div className="dc-scroll-thin" style={{ overflowX: "auto", padding: "6px 0 10px 0" }}>
           <div style={{ display: "flex", flexWrap: "nowrap", gap: 12 }}>
             {DARKS.map((id) => {
               const meta = THEME_META[id];
-              const label = t(
-                `settings.theme.${id}.label`,
-                meta.defaultLabel
-              );
-              const desc = t(
-                `settings.theme.${id}.desc`,
-                meta.defaultDesc
-              );
-
+              const label = t(`settings.theme.${id}.label`, meta.defaultLabel);
+              const desc = t(`settings.theme.${id}.desc`, meta.defaultDesc);
               return (
                 <ThemeChoiceButton
                   key={id}
@@ -1351,7 +1240,6 @@ export default function Settings({ go }: Props) {
       </section>
 
       {/* ---------- BLOC LANGUE ---------- */}
-
       <section
         style={{
           background: CARD_BG,
@@ -1361,25 +1249,11 @@ export default function Settings({ go }: Props) {
           marginBottom: 16,
         }}
       >
-        <h2
-          style={{
-            margin: 0,
-            marginBottom: 6,
-            fontSize: 18,
-            color: theme.primary,
-          }}
-        >
+        <h2 style={{ margin: 0, marginBottom: 6, fontSize: 18, color: theme.primary }}>
           {t("settings.lang", "Langue")}
         </h2>
 
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 10,
-            marginTop: 12,
-          }}
-        >
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
           {LANG_CHOICES.map((opt) => {
             const label = t(`lang.${opt.id}`, opt.defaultLabel);
             return (
@@ -1397,7 +1271,6 @@ export default function Settings({ go }: Props) {
       </section>
 
       {/* ---------- BLOC RÉINITIALISATION ---------- */}
-
       <section
         style={{
           background: CARD_BG,
@@ -1450,6 +1323,7 @@ export default function Settings({ go }: Props) {
             letterSpacing: 0.5,
             textTransform: "uppercase",
             boxShadow: "0 0 18px rgba(255,80,80,0.65)",
+            cursor: "pointer",
           }}
         >
           {t("settings.reset.button", "Tout réinitialiser")}

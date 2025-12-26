@@ -22,6 +22,9 @@ import {
 } from "../lib/statsBridge";
 import { History } from "../lib/history";
 
+// ✅ NEW: SFX UI (clic boutons)
+import { UISfx } from "../lib/sfx";
+
 type Props = {
   store: Store;
   go: (tab: any, params?: any) => void;
@@ -55,6 +58,43 @@ function pickTickerImage<K extends keyof typeof TICKER_IMAGES>(key: K): string {
   if (!arr || arr.length === 0) return "";
   const idx = Math.floor(Math.random() * arr.length);
   return GH_IMG_BASE + arr[idx];
+}
+
+// ------------------------------------------------------------
+// ✅ Images STABLES (anti-crash mobile)
+// - Empêche de re-randomiser à chaque render (sinon spam download + OOM)
+// ------------------------------------------------------------
+function useStableTickerImages(activeProfileId?: string | null) {
+  const ref = React.useRef<Record<string, string>>({});
+
+  // reset quand on change de profil (optionnel mais propre)
+  React.useEffect(() => {
+    ref.current = {};
+  }, [activeProfileId]);
+
+  const pickStable = React.useCallback(
+    <K extends keyof typeof TICKER_IMAGES>(key: K): string => {
+      const k = String(key);
+      if (!ref.current[k]) {
+        ref.current[k] = pickTickerImage(key);
+      }
+      return ref.current[k];
+    },
+    []
+  );
+
+  return pickStable;
+}
+
+/* ============================================================
+   ✅ SFX helper
+   - Les sons sont déjà activés/désactivés globalement via Settings (setSfxEnabled)
+   - Ici on joue juste un "click" safe
+============================================================ */
+function playUiClick() {
+  try {
+    UISfx.click?.();
+  } catch {}
 }
 
 /* ============================================================
@@ -357,15 +397,9 @@ function resolveWinnerForAnyGame(
   if (me?.isWinner === true || me?.winner === true) isWinner = true;
   if ([me?.rank, me?.place, me?.position].some((v: any) => Number(v) === 1))
     isWinner = true;
-  if (
-    typeof me?.result === "string" &&
-    me.result.toLowerCase().startsWith("win")
-  )
+  if (typeof me?.result === "string" && me.result.toLowerCase().startsWith("win"))
     isWinner = true;
-  if (
-    typeof me?.outcome === "string" &&
-    me.outcome.toLowerCase().startsWith("win")
-  )
+  if (typeof me?.outcome === "string" && me.outcome.toLowerCase().startsWith("win"))
     isWinner = true;
 
   if (!isWinner && Array.isArray(summary?.rankings)) {
@@ -404,10 +438,7 @@ function resolveWinnerForAnyGame(
   return isWinner;
 }
 
-function computeKillerAggFromMatches(
-  allMatches: any[],
-  profileId: string
-): KillerAgg {
+function computeKillerAggFromMatches(allMatches: any[], profileId: string): KillerAgg {
   const agg = makeEmptyKillerAgg();
 
   const killerMatches = Array.isArray(allMatches)
@@ -424,8 +455,7 @@ function computeKillerAggFromMatches(
 
   for (const match of sorted) {
     const summary: any = match?.summary ?? match ?? {};
-    const players: any[] =
-      summary?.perPlayer ?? summary?.players ?? match?.players ?? [];
+    const players: any[] = summary?.perPlayer ?? summary?.players ?? match?.players ?? [];
 
     const { me, key: myKey } = getMyPlayerKeyFromPlayers(players, profileId);
     if (!me || !myKey) continue;
@@ -450,9 +480,7 @@ function computeKillerAggFromMatches(
       me?.kills ??
       me?.stats?.kills ??
       detailedMe?.kills ??
-      (summary?.killsByPlayer
-        ? (summary.killsByPlayer as any)[myKey]
-        : undefined) ??
+      (summary?.killsByPlayer ? (summary.killsByPlayer as any)[myKey] : undefined) ??
       (summary?.killerKillsByPlayer
         ? (summary.killerKillsByPlayer as any)[myKey]
         : undefined);
@@ -497,9 +525,7 @@ function computeKillerAggFromMatches(
    buildStatsForProfile
 ============================================================ */
 
-async function buildStatsForProfile(
-  profileId: string
-): Promise<ActiveProfileStats> {
+async function buildStatsForProfile(profileId: string): Promise<ActiveProfileStats> {
   try {
     const [base, multiRaw, cricket] = await Promise.all([
       getBasicProfileStatsAsync(profileId),
@@ -507,9 +533,7 @@ async function buildStatsForProfile(
         try {
           const anyHistory: any = History as any;
           if (anyHistory.list) {
-            return await anyHistory.list({
-              includePlayers: true,
-            });
+            return await anyHistory.list({ includePlayers: true });
           }
         } catch (e) {
           console.warn("[Home] History.list all games failed", e);
@@ -668,7 +692,8 @@ async function buildStatsForProfile(
 
     for (const match of multiSorted) {
       const summary: any = match.summary ?? match;
-      const players: any[] = summary?.perPlayer ?? summary?.players ?? match.players ?? [];
+      const players: any[] =
+        summary?.perPlayer ?? summary?.players ?? match.players ?? [];
 
       if (!players || !players.length) continue;
 
@@ -700,16 +725,20 @@ async function buildStatsForProfile(
       let isWinner = false;
 
       if (me.isWinner === true || me.winner === true) isWinner = true;
-      if ([me.rank, me.place, me.position].some((v: any) => Number(v) === 1)) isWinner = true;
-      if (typeof me.result === "string" && me.result.toLowerCase().startsWith("win")) isWinner = true;
-      if (typeof me.outcome === "string" && me.outcome.toLowerCase().startsWith("win")) isWinner = true;
+      if ([me.rank, me.place, me.position].some((v: any) => Number(v) === 1))
+        isWinner = true;
+      if (typeof me.result === "string" && me.result.toLowerCase().startsWith("win"))
+        isWinner = true;
+      if (typeof me.outcome === "string" && me.outcome.toLowerCase().startsWith("win"))
+        isWinner = true;
 
       if (!isWinner && Array.isArray(summary?.rankings)) {
         const r = summary.rankings.find((r: any) => {
           const rk = String(r.profileId ?? r.playerId ?? r.id ?? r.key ?? "");
           return rk === myKey;
         });
-        if (r && [r.rank, r.place, r.position].some((v: any) => Number(v) === 1)) isWinner = true;
+        if (r && [r.rank, r.place, r.position].some((v: any) => Number(v) === 1))
+          isWinner = true;
       }
 
       if (!isWinner && summary && summary.winnerId && String(summary.winnerId) === myKey) {
@@ -717,10 +746,23 @@ async function buildStatsForProfile(
       }
 
       if (detailedMe && !isWinner) {
-        if ([detailedMe.rank, detailedMe.place, detailedMe.position].some((v: any) => Number(v) === 1)) isWinner = true;
+        if (
+          [detailedMe.rank, detailedMe.place, detailedMe.position].some(
+            (v: any) => Number(v) === 1
+          )
+        )
+          isWinner = true;
         if (detailedMe.isWinner === true) isWinner = true;
-        if (typeof detailedMe.result === "string" && detailedMe.result.toLowerCase().startsWith("win")) isWinner = true;
-        if (typeof detailedMe.outcome === "string" && detailedMe.outcome.toLowerCase().startsWith("win")) isWinner = true;
+        if (
+          typeof detailedMe.result === "string" &&
+          detailedMe.result.toLowerCase().startsWith("win")
+        )
+          isWinner = true;
+        if (
+          typeof detailedMe.outcome === "string" &&
+          detailedMe.outcome.toLowerCase().startsWith("win")
+        )
+          isWinner = true;
       }
 
       if (isWinner) multiWins += 1;
@@ -743,7 +785,8 @@ async function buildStatsForProfile(
       let oppAvgCount = 0;
       for (const opp of opponents) {
         let oa =
-          Number(opp.avg3D ?? opp.avg3 ?? opp.stats?.avg3D ?? opp.stats?.avg3 ?? 0) || 0;
+          Number(opp.avg3D ?? opp.avg3 ?? opp.stats?.avg3D ?? opp.stats?.avg3 ?? 0) ||
+          0;
 
         if ((!oa || oa <= 0) && summary?.avg3ByPlayer) {
           const ok = String(opp.profileId ?? opp.playerId ?? opp.id ?? "");
@@ -900,8 +943,7 @@ async function buildStatsForProfile(
     const cricketMatches = Number(cricket?.matchesTotal ?? 0);
     const cricketBestPoints = Number(cricket?.bestPointsInMatch ?? 0);
     const cricketWinsTotal = Number(cricket?.winsTotal ?? 0);
-    const cricketWinRate =
-      cricketMatches > 0 ? cricketWinsTotal / cricketMatches : 0;
+    const cricketWinRate = cricketMatches > 0 ? cricketWinsTotal / cricketMatches : 0;
 
     const cAgg = loadClockAggForProfile(profileId);
     const clockTargetsHit = cAgg.targetsHitTotal;
@@ -962,13 +1004,13 @@ async function buildStatsForProfile(
     };
 
     // ✅ Attache les stats KILLER (sans toucher au type ActiveProfileStats)
-    ;(s as any).killerSessions = killerAgg.sessions;
-    ;(s as any).killerWins = killerAgg.wins;
-    ;(s as any).killerWinrate = killerAgg.winRate01;
-    ;(s as any).killerKills = killerAgg.kills;
-    ;(s as any).killerTotalHits = killerAgg.totalHits;
-    ;(s as any).killerFavNumberHits = killerAgg.favNumberHits;
-    ;(s as any).killerFavSegmentHits = killerAgg.favSegmentHits;
+    (s as any).killerSessions = killerAgg.sessions;
+    (s as any).killerWins = killerAgg.wins;
+    (s as any).killerWinrate = killerAgg.winRate01;
+    (s as any).killerKills = killerAgg.kills;
+    (s as any).killerTotalHits = killerAgg.totalHits;
+    (s as any).killerFavNumberHits = killerAgg.favNumberHits;
+    (s as any).killerFavSegmentHits = killerAgg.favSegmentHits;
 
     return s;
   } catch (err) {
@@ -1185,25 +1227,28 @@ function buildTickerDetailRows(
    Blocs visuels pour les 2 mini-cards
 ============================================================ */
 
-function pickStatsBackgroundForTicker(tickerId: string): string {
+function pickStatsBackgroundForTicker(
+  tickerId: string,
+  pickImg: (key: keyof typeof TICKER_IMAGES) => string
+): string {
   switch (tickerId) {
     case "last-records":
-      return pickTickerImage("leaderboard");
+      return pickImg("leaderboard");
     case "last-local-match":
-      return pickTickerImage("training");
+      return pickImg("training");
     case "last-online-match":
-      return pickTickerImage("leaderboard");
+      return pickImg("leaderboard");
     case "online-leader":
-      return pickTickerImage("onlineLast");
+      return pickImg("onlineLast");
     case "training-summary":
-      return pickTickerImage("global");
+      return pickImg("global");
     case "killer-summary":
-      return pickTickerImage("local");
+      return pickImg("local");
     case "month-summary":
-      return pickTickerImage("training");
+      return pickImg("training");
     case "tip-of-day":
     default:
-      return pickTickerImage("global");
+      return pickImg("global");
   }
 }
 
@@ -1215,7 +1260,10 @@ type TipSlide = {
   backgroundImage: string;
 };
 
-function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
+function buildTipSlides(
+  t: (k: string, d?: string) => string,
+  pickImg: (key: keyof typeof TICKER_IMAGES) => string
+): TipSlide[] {
   return [
     {
       id: "tip-training",
@@ -1225,7 +1273,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.training.text",
         "Travaille toujours la même finition pendant quelques minutes, puis change de cible pour rester focus."
       ),
-      backgroundImage: pickTickerImage("tipAdvice"),
+      backgroundImage: pickImg("tipAdvice"),
     },
     {
       id: "tip-bots",
@@ -1235,7 +1283,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.bots.text",
         "Ajoute un BOT dans tes profils pour t’entraîner en conditions réelles, même si tu es seul."
       ),
-      backgroundImage: pickTickerImage("tipAds"),
+      backgroundImage: pickImg("tipAds"),
     },
     {
       id: "tip-news",
@@ -1245,7 +1293,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.news.text",
         "Découvre les nouveaux thèmes néon, les stats Horloge et bientôt les classements Online."
       ),
-      backgroundImage: pickTickerImage("tipNews"),
+      backgroundImage: pickImg("tipNews"),
     },
     {
       id: "tip-clock",
@@ -1255,7 +1303,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.clock.text",
         "Sur le Tour de l’Horloge, vise toujours un repère visuel précis sur le segment pour gagner en régularité."
       ),
-      backgroundImage: pickTickerImage("tipAdvice"),
+      backgroundImage: pickImg("tipAdvice"),
     },
     {
       id: "tip-stats",
@@ -1265,7 +1313,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.stats.text",
         "Va dans l’onglet Stats pour suivre ton avg 3D, tes records et l’évolution de ton niveau."
       ),
-      backgroundImage: pickTickerImage("tipNews"),
+      backgroundImage: pickImg("tipNews"),
     },
   ];
 }
@@ -1348,7 +1396,8 @@ function buildArcadeItems(
   _store: Store,
   profile: Profile | null,
   stats: ActiveProfileStats | null | undefined,
-  t: (k: string, d?: string) => string
+  t: (k: string, d?: string) => string,
+  pickImg: (key: keyof typeof TICKER_IMAGES) => string
 ): ArcadeTickerItem[] {
   const items: ArcadeTickerItem[] = [];
   const s: ActiveProfileStats = stats ?? emptyActiveProfileStats();
@@ -1409,7 +1458,7 @@ function buildArcadeItems(
           .filter(Boolean)
           .join(" · ")
       : "",
-    backgroundImage: pickTickerImage("records"),
+    backgroundImage: pickImg("records"),
     accentColor: "#F6C256",
   });
 
@@ -1427,7 +1476,7 @@ function buildArcadeItems(
             "Aucun match local pour l’instant, invite des amis et lance une partie."
           ),
     detail: x01MultiSessions > 0 ? `${x01MultiSessions} matchs X01 multi` : "",
-    backgroundImage: pickTickerImage("local"),
+    backgroundImage: pickImg("local"),
     accentColor: "#52FFC4",
   });
 
@@ -1453,7 +1502,7 @@ function buildArcadeItems(
             .filter(Boolean)
             .join(" · ")
         : "",
-    backgroundImage: pickTickerImage("onlineLast"),
+    backgroundImage: pickImg("onlineLast"),
     accentColor: "#5ED3FF",
   });
 
@@ -1470,7 +1519,7 @@ function buildArcadeItems(
             "home.ticker.onlineLeader.text.empty",
             "Monte dans le classement en enchaînant les victoires online."
           ),
-    backgroundImage: pickTickerImage("leaderboard"),
+    backgroundImage: pickImg("leaderboard"),
     accentColor: "#FF5E9E",
   });
 
@@ -1491,7 +1540,7 @@ function buildArcadeItems(
       trainingHitsTotal > 0 && trainingGoalPct != null
         ? `Objectifs réussis : ${trainingGoalPct}%`
         : "",
-    backgroundImage: pickTickerImage("training"),
+    backgroundImage: pickImg("training"),
     accentColor: "#9EFF5E",
   });
 
@@ -1519,7 +1568,7 @@ function buildArcadeItems(
             .filter(Boolean)
             .join(" · ")
         : "",
-    backgroundImage: pickTickerImage("local"),
+    backgroundImage: pickImg("local"),
     accentColor: "#FF7A18",
   });
 
@@ -1543,7 +1592,7 @@ function buildArcadeItems(
     ]
       .filter(Boolean)
       .join(" · "),
-    backgroundImage: pickTickerImage("global"),
+    backgroundImage: pickImg("global"),
     accentColor: "#F6C256",
   });
 
@@ -1555,7 +1604,7 @@ function buildArcadeItems(
         "home.ticker.tip.text",
         "Ancre ta finition préférée en la rejouant régulièrement."
       ),
-      backgroundImage: pickTickerImage("tip"),
+      backgroundImage: pickImg("tip"),
       accentColor: "#FFFFFF",
     });
   }
@@ -1566,7 +1615,7 @@ function buildArcadeItems(
 function ensureKillerTickerItemFirst(
   list: ArcadeTickerItem[],
   t: (k: string, d?: string) => string,
-  _themePrimary?: string
+  pickImg: (key: keyof typeof TICKER_IMAGES) => string
 ): ArcadeTickerItem[] {
   const items = Array.isArray(list) ? [...list] : [];
 
@@ -1578,7 +1627,7 @@ function ensureKillerTickerItemFirst(
       "Aucune partie Killer enregistrée pour l’instant, lance un match pour remplir tes stats."
     ),
     detail: "",
-    backgroundImage: pickTickerImage("local"),
+    backgroundImage: pickImg("local"),
     accentColor: "#FF7A18",
   };
 
@@ -1611,17 +1660,20 @@ export default function Home({ store, go }: Props) {
   `;
 
   const anyStore = store as any;
-  const selfStatus: "online" | "away" | "offline" =
-    anyStore.selfStatus ?? "online";
+  const selfStatus: "online" | "away" | "offline" = anyStore.selfStatus ?? "online";
 
   const onlineStatusForUi: "online" | "away" | "offline" =
     auth.status === "signed_in" ? selfStatus : "offline";
 
   const activeProfile = useMemo(() => getActiveProfile(store), [store]);
 
+  // ✅ IMPORTANT: pickImg STABLE (anti OOM / crash mobile)
+  const pickStable = useStableTickerImages(activeProfile?.id ?? null);
+
   const [stats, setStats] = useState<ActiveProfileStats>(() =>
     emptyActiveProfileStats()
   );
+  const [statsLoaded, setStatsLoaded] = useState(false);
 
   const [tickerIndex, setTickerIndex] = useState(0);
 
@@ -1633,12 +1685,18 @@ export default function Home({ store, go }: Props) {
 
     if (!activeProfile) {
       setStats(emptyActiveProfileStats());
+      setStatsLoaded(false);
       return;
     }
 
+    setStatsLoaded(false);
+
     (async () => {
       const s = await buildStatsForProfile(activeProfile.id);
-      if (!cancelled) setStats(s);
+      if (!cancelled) {
+        setStats(s);
+        setStatsLoaded(true);
+      }
     })();
 
     return () => {
@@ -1646,28 +1704,25 @@ export default function Home({ store, go }: Props) {
     };
   }, [activeProfile?.id]);
 
-    // ------------------------------------------------------------
+  // ------------------------------------------------------------
   // Ticker items (✅ on force Killer en 1er + on utilise CETTE liste partout)
   // ------------------------------------------------------------
 
   const tickerItemsRaw = useMemo(
-    () => buildArcadeItems(store, activeProfile, stats, t),
-    [store, activeProfile, stats, t]
+    () => buildArcadeItems(store, activeProfile, stats, t, pickStable),
+    [store, activeProfile, stats, t, pickStable]
   );
 
   const tickerItems = useMemo(() => {
-    const safe = ensureKillerTickerItemFirst(tickerItemsRaw, t, theme.primary);
+    const safe = ensureKillerTickerItemFirst(tickerItemsRaw, t, pickStable);
 
     // DEBUG console (utile pour vérifier en prod mobile aussi)
     try {
-      console.log(
-        "[Home][Ticker] items:",
-        safe.map((x) => x.id).join(" | ")
-      );
+      console.log("[Home][Ticker] items:", safe.map((x) => x.id).join(" | "));
     } catch {}
 
     return safe;
-  }, [tickerItemsRaw, t, theme.primary]);
+  }, [tickerItemsRaw, t, pickStable]);
 
   // ✅ Quand la liste change (ou profil change), on revient au 1er slide (Killer)
   useEffect(() => {
@@ -1679,9 +1734,11 @@ export default function Home({ store, go }: Props) {
   }, [activeProfile?.id, tickerItems.length]);
 
   // ✅ Auto-rotation basée sur la liste UTILISÉE
+  // ✅ Bonus anti-crash: on attend que les stats soient chargées
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!tickerItems.length) return;
+    if (!statsLoaded) return;
 
     const id = window.setInterval(() => {
       setTickerIndex((prev) =>
@@ -1690,7 +1747,7 @@ export default function Home({ store, go }: Props) {
     }, DETAIL_INTERVAL_MS);
 
     return () => window.clearInterval(id);
-  }, [tickerItems.length]);
+  }, [tickerItems.length, statsLoaded]);
 
   // ✅ Clamp index si la taille change
   useEffect(() => {
@@ -1726,10 +1783,10 @@ export default function Home({ store, go }: Props) {
       );
 
   const statsBackgroundImage = currentTicker
-    ? pickStatsBackgroundForTicker(currentTicker.id)
+    ? pickStatsBackgroundForTicker(currentTicker.id, pickStable)
     : "";
 
-  const tipSlides = useMemo(() => buildTipSlides(t), [t]);
+  const tipSlides = useMemo(() => buildTipSlides(t, pickStable), [t, pickStable]);
 
   useEffect(() => {
     if (!tipSlides.length) {
@@ -1741,16 +1798,17 @@ export default function Home({ store, go }: Props) {
 
   useEffect(() => {
     if (typeof window === "undefined" || !tipSlides.length) return;
+    if (!statsLoaded) return;
+
     const id = window.setInterval(() => {
       setTipIndex((i) => (tipSlides.length ? (i + 1) % tipSlides.length : 0));
     }, DETAIL_INTERVAL_MS);
+
     return () => window.clearInterval(id);
-  }, [tipSlides.length]);
+  }, [tipSlides.length, statsLoaded]);
 
   const currentTip: TipSlide | null =
-    tipSlides.length > 0
-      ? tipSlides[Math.min(tipIndex, tipSlides.length - 1)]
-      : null;
+    tipSlides.length > 0 ? tipSlides[Math.min(tipIndex, tipSlides.length - 1)] : null;
 
   const handleTipTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     const x = e.touches[0]?.clientX;
@@ -1766,6 +1824,9 @@ export default function Home({ store, go }: Props) {
       setTipTouchStartX(null);
       return;
     }
+
+    // ✅ NEW: petit click quand on swipe un tip
+    playUiClick();
 
     setTipIndex((prev) => {
       if (!tipSlides.length) return 0;
@@ -1860,16 +1921,18 @@ export default function Home({ store, go }: Props) {
 
         {/* Petit bandeau arcade (auto-slide interne) */}
         <ArcadeTicker
-          items={tickerItems}                 // ✅ IMPORTANT
+          items={tickerItems} // ✅ IMPORTANT
           activeIndex={tickerIndex}
           intervalMs={DETAIL_INTERVAL_MS}
           onIndexChange={(index: number) => {
             if (!tickerItems.length) return;
+            playUiClick(); // ✅ NEW: click quand on change manuellement
             const safe = Math.min(Math.max(index, 0), tickerItems.length - 1);
             setTickerIndex(safe);
           }}
           onActiveIndexChange={(index: number) => {
             if (!tickerItems.length) return;
+            // (on évite de spammer : ce callback peut être appelé en auto-rotation)
             const safe = Math.min(Math.max(index, 0), tickerItems.length - 1);
             setTickerIndex(safe);
           }}
@@ -2019,10 +2082,7 @@ export default function Home({ store, go }: Props) {
                       }}
                     >
                       {currentTip?.title ??
-                        t(
-                          "home.detail.tip.title",
-                          "Astuce, pub & nouveautés du moment"
-                        )}
+                        t("home.detail.tip.title", "Astuce, pub & nouveautés du moment")}
                     </div>
                     <div
                       style={{
@@ -2045,47 +2105,55 @@ export default function Home({ store, go }: Props) {
         )}
 
         {/* Gros boutons de navigation */}
-        <div
-          style={{
-            marginTop: 22,
-            display: "flex",
-            flexDirection: "column",
-            gap: 14,
-          }}
-        >
+        <div style={{ marginTop: 22, display: "flex", flexDirection: "column", gap: 14 }}>
           <HomeBigButton
             label={t("home.nav.profiles", "Profils")}
             subtitle={t("home.nav.profiles.desc", "Profils locaux, avatars & BOTS")}
             icon="user"
-            onClick={() => go("profiles")}
+            onClick={() => {
+              playUiClick();
+              go("profiles");
+            }}
           />
 
           <HomeBigButton
             label={t("home.nav.local", "Local")}
             subtitle={t("home.nav.local.desc", "Joue en présentiel sur cette cible")}
             icon="target"
-            onClick={() => go("games")}
+            onClick={() => {
+              playUiClick();
+              go("games");
+            }}
           />
 
           <HomeBigButton
             label={t("home.nav.online", "Online")}
             subtitle={t("home.nav.online.desc", "Matchs à distance avec tes amis")}
             icon="globe"
-            onClick={() => go("friends")}
+            onClick={() => {
+              playUiClick();
+              go("friends");
+            }}
           />
 
           <HomeBigButton
             label={t("home.nav.stats", "Stats")}
             subtitle={t("home.nav.stats.desc", "Dashboards, courbes, historique")}
             icon="stats"
-            onClick={() => go("stats")}
+            onClick={() => {
+              playUiClick();
+              go("stats");
+            }}
           />
 
           <HomeBigButton
             label={t("home.nav.settings", "Réglages")}
             subtitle={t("home.nav.settings.desc", "Thèmes, langue, reset complet")}
             icon="settings"
-            onClick={() => go("settings")}
+            onClick={() => {
+              playUiClick();
+              go("settings");
+            }}
           />
         </div>
       </div>
@@ -2161,7 +2229,7 @@ function HomeBigButton({ label, subtitle, icon, onClick }: HomeBtnProps) {
           </svg>
         );
     }
-  }, [icon, theme]);
+  }, [icon]);
 
   return (
     <button
