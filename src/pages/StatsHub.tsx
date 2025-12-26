@@ -3842,10 +3842,13 @@ const nmEffective = React.useMemo(() => {
   return normalizedMatchesClean.length ? normalizedMatchesClean : nmFromRecordsFallback;
 }, [normalizedMatchesClean, nmFromRecordsFallback]);
 
-// -- 3bis) Liste unique de tous les joueurs vus (depuis SOURCE UNIQUE nmEffective) --
+// -- 3bis) Liste unique de tous les joueurs vus (SOURCE UNIQUE nmEffective)
+// ✅ FIX CRITICAL : si l'historique normalisé ne remonte pas de players,
+// on fallback sur storeProfiles, puis sur le profil actif (useCurrentProfile)
 const allPlayers = React.useMemo(() => {
   const map = new Map<string, PlayerLite>();
 
+  // 1) Essaye d'abord nmEffective
   const nm = Array.isArray(nmEffective) ? nmEffective : [];
   for (const m of nm) {
     const players = Array.isArray((m as any)?.players) ? (m as any).players : [];
@@ -3862,8 +3865,33 @@ const allPlayers = React.useMemo(() => {
     }
   }
 
+  // 2) Fallback : profils locaux du store
+  if (map.size === 0) {
+    const sp = Array.isArray(storeProfiles) ? storeProfiles : [];
+    for (const p of sp) {
+      const pid = String((p as any)?.id ?? "");
+      if (!pid) continue;
+      if (!map.has(pid)) {
+        map.set(pid, {
+          id: pid,
+          name: (p as any)?.name ?? "",
+          avatarDataUrl: (p as any)?.avatarDataUrl ?? null,
+        });
+      }
+    }
+  }
+
+  // 3) Fallback ultime : profil actif (si dispo)
+  if (map.size === 0 && profile?.id) {
+    map.set(String(profile.id), {
+      id: String(profile.id),
+      name: (profile as any)?.name ?? (profile as any)?.displayName ?? "Joueur",
+      avatarDataUrl: (profile as any)?.avatarDataUrl ?? null,
+    });
+  }
+
   return Array.from(map.values());
-}, [nmEffective]);
+}, [nmEffective, storeProfiles, profile?.id]);
 
 // ---------- 4) Sélection joueur + option BOTS / mode actif vs locaux ----------
 
