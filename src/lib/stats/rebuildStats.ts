@@ -11,6 +11,9 @@ export type StatsBundle = {
   profileId: string;
   updatedAt: number;
 
+  // (optionnel) si plus tard tu veux stocker un dashboard prêt
+  dashboard?: any;
+
   x01?: any;
   cricket?: any;
   dartSets?: any;
@@ -18,7 +21,14 @@ export type StatsBundle = {
 };
 
 const VERSION = 1;
-const CACHE_PREFIX = "dc-stats-cache-v1:";
+
+// ✅ IMPORTANT : on supporte TOUTES les variantes de clés utilisées dans l’app
+const CACHE_PREFIXES = [
+  "dc_stats_cache_v1:",     // ✅ StatsHub lit ça
+  "dc_stats_cache:",        // ✅ StatsHub lit ça
+  "dc-stats-cache:",        // ✅ StatsHub lit ça
+  "dc-stats-cache-v1:",     // ✅ ton ancien writer (fallback)
+];
 
 const inflight = new Map<string, Promise<StatsBundle>>();
 const lastKick = new Map<string, number>();
@@ -27,8 +37,13 @@ function now() {
   return Date.now();
 }
 
-function cacheKey(profileId: string) {
-  return `${CACHE_PREFIX}${String(profileId || "unknown")}`;
+function normPid(profileId: string) {
+  return String(profileId || "unknown");
+}
+
+function cacheKeys(profileId: string) {
+  const pid = normPid(profileId);
+  return CACHE_PREFIXES.map((p) => `${p}${pid}`);
 }
 
 function idle(cb: () => void, timeoutMs = 1200) {
@@ -54,15 +69,21 @@ function idle(cb: () => void, timeoutMs = 1200) {
 }
 
 export function getCachedStatsSync(profileId: string): StatsBundle | null {
-  try {
-    const raw = localStorage.getItem(cacheKey(profileId));
-    if (!raw) return null;
-    const obj = JSON.parse(raw);
-    if (!obj || obj.v !== VERSION) return null;
-    return obj as StatsBundle;
-  } catch {
-    return null;
+  const keys = cacheKeys(profileId);
+
+  for (const k of keys) {
+    try {
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      const obj = JSON.parse(raw);
+      // tolérance: si v absent on accepte quand même (certains caches legacy)
+      if (!obj || (obj.v != null && obj.v !== VERSION)) continue;
+      return obj as StatsBundle;
+    } catch {
+      // continue
+    }
   }
+  return null;
 }
 
 export async function getCachedStats(profileId: string): Promise<StatsBundle | null> {
@@ -72,7 +93,9 @@ export async function getCachedStats(profileId: string): Promise<StatsBundle | n
 function emitUpdated(profileId: string, reason: string) {
   try {
     window.dispatchEvent(
-      new CustomEvent("dc-stats-cache-updated", { detail: { profileId: String(profileId), reason } })
+      new CustomEvent("dc-stats-cache-updated", {
+        detail: { profileId: normPid(profileId), reason },
+      })
     );
   } catch {}
 }
@@ -82,8 +105,10 @@ function emitUpdated(profileId: string, reason: string) {
  * - On essaye plusieurs chemins + noms d'exports
  * - Si rien trouvé → retourne {}
  */
-async function computeAll(profileId: string): Promise<Pick<StatsBundle, "x01" | "cricket" | "dartSets">> {
-  const pid = String(profileId || "unknown");
+async function computeAll(
+  profileId: string
+): Promise<Pick<StatsBundle, "x01" | "cricket" | "dartSets">> {
+  const pid = normPid(profileId);
 
   let x01: any = null;
   let cricket: any = null;
@@ -91,7 +116,6 @@ async function computeAll(profileId: string): Promise<Pick<StatsBundle, "x01" | 
 
   // --- X01 ---
   try {
-    // tente : ./computeX01Stats (export computeX01Stats ou default)
     const m: any = await import("./computeX01Stats").catch(() => null);
     const fn =
       (m && (m.computeX01Stats || m.default || m.computeStats || m.buildX01Stats)) || null;
@@ -108,8 +132,6 @@ async function computeAll(profileId: string): Promise<Pick<StatsBundle, "x01" | 
 
   // --- DartSets ---
   try {
-    // ton erreur vue: "computeDartSetStats" non exporté
-    // on tente donc plusieurs noms possibles
     const m: any = await import("./computeDartSetStats").catch(() => null);
     const fn =
       (m &&
@@ -126,12 +148,26 @@ async function computeAll(profileId: string): Promise<Pick<StatsBundle, "x01" | 
   return { x01, cricket, dartSets };
 }
 
+function writeCacheAllKeys(profileId: string, bundle: StatsBundle) {
+  const pid = normPid(profileId);
+  const raw = JSON.stringify(bundle);
+
+  // ✅ on écrit sur TOUTES les clés pour compat maximale
+  for (const k of cacheKeys(pid)) {
+    try {
+      localStorage.setItem(k, raw);
+    } catch {
+      // si quota localStorage => on essaye au moins une clé
+    }
+  }
+}
+
 /**
  * ✅ API attendue par ton App.tsx
  * Rebuild complet + cache localStorage
  */
 export async function rebuildStatsForProfile(profileId: string): Promise<StatsBundle> {
-  const pid = String(profileId || "unknown");
+  const pid = normPid(profileId);
 
   const existing = inflight.get(pid);
   if (existing) return existing;
@@ -149,7 +185,7 @@ export async function rebuildStatsForProfile(profileId: string): Promise<StatsBu
     };
 
     try {
-      localStorage.setItem(cacheKey(pid), JSON.stringify(out));
+      writeCacheAllKeys(pid, out);
     } catch {}
 
     emitUpdated(pid, "rebuild_done");
@@ -169,7 +205,7 @@ export async function rebuildStatsForProfile(profileId: string): Promise<StatsBu
  * ✅ Rebuild en idle + throttle (pour éviter spam)
  */
 export function scheduleRebuild(profileId: string, reason = "idle") {
-  const pid = String(profileId || "unknown");
+  const pid = normPid(profileId);
   const t = now();
   const last = lastKick.get(pid) || 0;
 

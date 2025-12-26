@@ -22,9 +22,6 @@ import {
 } from "../lib/statsBridge";
 import { History } from "../lib/history";
 
-// ✅ NEW: SFX UI (clic boutons)
-import { UISfx } from "../lib/sfx";
-
 type Props = {
   store: Store;
   go: (tab: any, params?: any) => void;
@@ -58,17 +55,6 @@ function pickTickerImage<K extends keyof typeof TICKER_IMAGES>(key: K): string {
   if (!arr || arr.length === 0) return "";
   const idx = Math.floor(Math.random() * arr.length);
   return GH_IMG_BASE + arr[idx];
-}
-
-/* ============================================================
-   ✅ SFX helper
-   - Les sons sont déjà activés/désactivés globalement via Settings (setSfxEnabled)
-   - Ici on joue juste un "click" safe
-============================================================ */
-function playUiClick() {
-  try {
-    UISfx.click?.();
-  } catch {}
 }
 
 /* ============================================================
@@ -332,7 +318,9 @@ function isKillerMatch(match: any): boolean {
 
   if (mode.includes("killer")) return true;
 
-  const gameId = String(summary?.gameId ?? match?.gameId ?? match?.id ?? "").toLowerCase();
+  const gameId = String(
+    summary?.gameId ?? match?.gameId ?? match?.id ?? ""
+  ).toLowerCase();
   if (gameId.includes("killer")) return true;
 
   return false;
@@ -369,9 +357,15 @@ function resolveWinnerForAnyGame(
   if (me?.isWinner === true || me?.winner === true) isWinner = true;
   if ([me?.rank, me?.place, me?.position].some((v: any) => Number(v) === 1))
     isWinner = true;
-  if (typeof me?.result === "string" && me.result.toLowerCase().startsWith("win"))
+  if (
+    typeof me?.result === "string" &&
+    me.result.toLowerCase().startsWith("win")
+  )
     isWinner = true;
-  if (typeof me?.outcome === "string" && me.outcome.toLowerCase().startsWith("win"))
+  if (
+    typeof me?.outcome === "string" &&
+    me.outcome.toLowerCase().startsWith("win")
+  )
     isWinner = true;
 
   if (!isWinner && Array.isArray(summary?.rankings)) {
@@ -410,7 +404,10 @@ function resolveWinnerForAnyGame(
   return isWinner;
 }
 
-function computeKillerAggFromMatches(allMatches: any[], profileId: string): KillerAgg {
+function computeKillerAggFromMatches(
+  allMatches: any[],
+  profileId: string
+): KillerAgg {
   const agg = makeEmptyKillerAgg();
 
   const killerMatches = Array.isArray(allMatches)
@@ -427,7 +424,8 @@ function computeKillerAggFromMatches(allMatches: any[], profileId: string): Kill
 
   for (const match of sorted) {
     const summary: any = match?.summary ?? match ?? {};
-    const players: any[] = summary?.perPlayer ?? summary?.players ?? match?.players ?? [];
+    const players: any[] =
+      summary?.perPlayer ?? summary?.players ?? match?.players ?? [];
 
     const { me, key: myKey } = getMyPlayerKeyFromPlayers(players, profileId);
     if (!me || !myKey) continue;
@@ -452,7 +450,9 @@ function computeKillerAggFromMatches(allMatches: any[], profileId: string): Kill
       me?.kills ??
       me?.stats?.kills ??
       detailedMe?.kills ??
-      (summary?.killsByPlayer ? (summary.killsByPlayer as any)[myKey] : undefined) ??
+      (summary?.killsByPlayer
+        ? (summary.killsByPlayer as any)[myKey]
+        : undefined) ??
       (summary?.killerKillsByPlayer
         ? (summary.killerKillsByPlayer as any)[myKey]
         : undefined);
@@ -497,7 +497,9 @@ function computeKillerAggFromMatches(allMatches: any[], profileId: string): Kill
    buildStatsForProfile
 ============================================================ */
 
-async function buildStatsForProfile(profileId: string): Promise<ActiveProfileStats> {
+async function buildStatsForProfile(
+  profileId: string
+): Promise<ActiveProfileStats> {
   try {
     const [base, multiRaw, cricket] = await Promise.all([
       getBasicProfileStatsAsync(profileId),
@@ -505,7 +507,9 @@ async function buildStatsForProfile(profileId: string): Promise<ActiveProfileSta
         try {
           const anyHistory: any = History as any;
           if (anyHistory.list) {
-            return await anyHistory.list({ includePlayers: true });
+            return await anyHistory.list({
+              includePlayers: true,
+            });
           }
         } catch (e) {
           console.warn("[Home] History.list all games failed", e);
@@ -664,8 +668,7 @@ async function buildStatsForProfile(profileId: string): Promise<ActiveProfileSta
 
     for (const match of multiSorted) {
       const summary: any = match.summary ?? match;
-      const players: any[] =
-        summary?.perPlayer ?? summary?.players ?? match.players ?? [];
+      const players: any[] = summary?.perPlayer ?? summary?.players ?? match.players ?? [];
 
       if (!players || !players.length) continue;
 
@@ -697,20 +700,16 @@ async function buildStatsForProfile(profileId: string): Promise<ActiveProfileSta
       let isWinner = false;
 
       if (me.isWinner === true || me.winner === true) isWinner = true;
-      if ([me.rank, me.place, me.position].some((v: any) => Number(v) === 1))
-        isWinner = true;
-      if (typeof me.result === "string" && me.result.toLowerCase().startsWith("win"))
-        isWinner = true;
-      if (typeof me.outcome === "string" && me.outcome.toLowerCase().startsWith("win"))
-        isWinner = true;
+      if ([me.rank, me.place, me.position].some((v: any) => Number(v) === 1)) isWinner = true;
+      if (typeof me.result === "string" && me.result.toLowerCase().startsWith("win")) isWinner = true;
+      if (typeof me.outcome === "string" && me.outcome.toLowerCase().startsWith("win")) isWinner = true;
 
       if (!isWinner && Array.isArray(summary?.rankings)) {
         const r = summary.rankings.find((r: any) => {
           const rk = String(r.profileId ?? r.playerId ?? r.id ?? r.key ?? "");
           return rk === myKey;
         });
-        if (r && [r.rank, r.place, r.position].some((v: any) => Number(v) === 1))
-          isWinner = true;
+        if (r && [r.rank, r.place, r.position].some((v: any) => Number(v) === 1)) isWinner = true;
       }
 
       if (!isWinner && summary && summary.winnerId && String(summary.winnerId) === myKey) {
@@ -718,13 +717,10 @@ async function buildStatsForProfile(profileId: string): Promise<ActiveProfileSta
       }
 
       if (detailedMe && !isWinner) {
-        if ([detailedMe.rank, detailedMe.place, detailedMe.position].some((v: any) => Number(v) === 1))
-          isWinner = true;
+        if ([detailedMe.rank, detailedMe.place, detailedMe.position].some((v: any) => Number(v) === 1)) isWinner = true;
         if (detailedMe.isWinner === true) isWinner = true;
-        if (typeof detailedMe.result === "string" && detailedMe.result.toLowerCase().startsWith("win"))
-          isWinner = true;
-        if (typeof detailedMe.outcome === "string" && detailedMe.outcome.toLowerCase().startsWith("win"))
-          isWinner = true;
+        if (typeof detailedMe.result === "string" && detailedMe.result.toLowerCase().startsWith("win")) isWinner = true;
+        if (typeof detailedMe.outcome === "string" && detailedMe.outcome.toLowerCase().startsWith("win")) isWinner = true;
       }
 
       if (isWinner) multiWins += 1;
@@ -904,7 +900,8 @@ async function buildStatsForProfile(profileId: string): Promise<ActiveProfileSta
     const cricketMatches = Number(cricket?.matchesTotal ?? 0);
     const cricketBestPoints = Number(cricket?.bestPointsInMatch ?? 0);
     const cricketWinsTotal = Number(cricket?.winsTotal ?? 0);
-    const cricketWinRate = cricketMatches > 0 ? cricketWinsTotal / cricketMatches : 0;
+    const cricketWinRate =
+      cricketMatches > 0 ? cricketWinsTotal / cricketMatches : 0;
 
     const cAgg = loadClockAggForProfile(profileId);
     const clockTargetsHit = cAgg.targetsHitTotal;
@@ -965,13 +962,13 @@ async function buildStatsForProfile(profileId: string): Promise<ActiveProfileSta
     };
 
     // ✅ Attache les stats KILLER (sans toucher au type ActiveProfileStats)
-    (s as any).killerSessions = killerAgg.sessions;
-    (s as any).killerWins = killerAgg.wins;
-    (s as any).killerWinrate = killerAgg.winRate01;
-    (s as any).killerKills = killerAgg.kills;
-    (s as any).killerTotalHits = killerAgg.totalHits;
-    (s as any).killerFavNumberHits = killerAgg.favNumberHits;
-    (s as any).killerFavSegmentHits = killerAgg.favSegmentHits;
+    ;(s as any).killerSessions = killerAgg.sessions;
+    ;(s as any).killerWins = killerAgg.wins;
+    ;(s as any).killerWinrate = killerAgg.winRate01;
+    ;(s as any).killerKills = killerAgg.kills;
+    ;(s as any).killerTotalHits = killerAgg.totalHits;
+    ;(s as any).killerFavNumberHits = killerAgg.favNumberHits;
+    ;(s as any).killerFavSegmentHits = killerAgg.favSegmentHits;
 
     return s;
   } catch (err) {
@@ -1439,8 +1436,14 @@ function buildArcadeItems(
     title: t("home.ticker.onlineLast", "Dernier match online"),
     text:
       onlineMatches > 0
-        ? t("home.ticker.onlineLast.text.dynamic", `Tu as joué ${onlineMatches} matchs online.`)
-        : t("home.ticker.onlineLast.text.empty", "Aucun duel online pour l’instant, crée un salon pour affronter tes amis."),
+        ? t(
+            "home.ticker.onlineLast.text.dynamic",
+            `Tu as joué ${onlineMatches} matchs online.`
+          )
+        : t(
+            "home.ticker.onlineLast.text.empty",
+            "Aucun duel online pour l’instant, crée un salon pour affronter tes amis."
+          ),
     detail:
       onlineMatches > 0
         ? [
@@ -1459,8 +1462,14 @@ function buildArcadeItems(
     title: t("home.ticker.onlineLeader", "Leader du classement"),
     text:
       onlineBestRank != null
-        ? t("home.ticker.onlineLeader.text.dynamic", `Ton meilleur rang online est #${onlineBestRank}.`)
-        : t("home.ticker.onlineLeader.text.empty", "Monte dans le classement en enchaînant les victoires online."),
+        ? t(
+            "home.ticker.onlineLeader.text.dynamic",
+            `Ton meilleur rang online est #${onlineBestRank}.`
+          )
+        : t(
+            "home.ticker.onlineLeader.text.empty",
+            "Monte dans le classement en enchaînant les victoires online."
+          ),
     backgroundImage: pickTickerImage("leaderboard"),
     accentColor: "#FF5E9E",
   });
@@ -1470,10 +1479,18 @@ function buildArcadeItems(
     title: t("home.ticker.training", "Training du moment"),
     text:
       trainingHitsTotal > 0
-        ? t("home.ticker.training.text.dynamic", `Tu as déjà enregistré ${trainingHitsTotal} hits en Training X01.`)
-        : t("home.ticker.training.text.empty", "Aucun Training X01 enregistré, lance une session pour travailler tes segments."),
+        ? t(
+            "home.ticker.training.text.dynamic",
+            `Tu as déjà enregistré ${trainingHitsTotal} hits en Training X01.`
+          )
+        : t(
+            "home.ticker.training.text.empty",
+            "Aucun Training X01 enregistré, lance une session pour travailler tes segments."
+          ),
     detail:
-      trainingHitsTotal > 0 && trainingGoalPct != null ? `Objectifs réussis : ${trainingGoalPct}%` : "",
+      trainingHitsTotal > 0 && trainingGoalPct != null
+        ? `Objectifs réussis : ${trainingGoalPct}%`
+        : "",
     backgroundImage: pickTickerImage("training"),
     accentColor: "#9EFF5E",
   });
@@ -1484,8 +1501,14 @@ function buildArcadeItems(
     title: t("home.ticker.killer", "Killer du moment"),
     text:
       killerSessions > 0
-        ? t("home.ticker.killer.text.dynamic", `Tu as joué ${killerSessions} parties Killer sur ce profil.`)
-        : t("home.ticker.killer.text.empty", "Aucune partie Killer enregistrée pour l’instant, lance un match pour remplir tes stats."),
+        ? t(
+            "home.ticker.killer.text.dynamic",
+            `Tu as joué ${killerSessions} parties Killer sur ce profil.`
+          )
+        : t(
+            "home.ticker.killer.text.empty",
+            "Aucune partie Killer enregistrée pour l’instant, lance un match pour remplir tes stats."
+          ),
     detail:
       killerSessions > 0
         ? [
@@ -1505,8 +1528,14 @@ function buildArcadeItems(
     title: t("home.ticker.month", "Stats du profil"),
     text:
       sessionsGlobal > 0
-        ? t("home.ticker.month.text.dynamic", `Ce profil a enregistré ${sessionsGlobal} sessions au total.`)
-        : t("home.ticker.month.text.empty", "Aucune session enregistrée, commence par un match X01 ou un training."),
+        ? t(
+            "home.ticker.month.text.dynamic",
+            `Ce profil a enregistré ${sessionsGlobal} sessions au total.`
+          )
+        : t(
+            "home.ticker.month.text.empty",
+            "Aucune session enregistrée, commence par un match X01 ou un training."
+          ),
     detail: [
       sessionsGlobal > 0 ? `${sessionsGlobal} sessions` : null,
       winrateGlobalPct != null ? `${winrateGlobalPct}% de victoires` : null,
@@ -1522,7 +1551,10 @@ function buildArcadeItems(
     items.push({
       id: "tip-of-day",
       title: t("home.ticker.tip", "Astuce du jour"),
-      text: t("home.ticker.tip.text", "Ancre ta finition préférée en la rejouant régulièrement."),
+      text: t(
+        "home.ticker.tip.text",
+        "Ancre ta finition préférée en la rejouant régulièrement."
+      ),
       backgroundImage: pickTickerImage("tip"),
       accentColor: "#FFFFFF",
     });
@@ -1579,14 +1611,18 @@ export default function Home({ store, go }: Props) {
   `;
 
   const anyStore = store as any;
-  const selfStatus: "online" | "away" | "offline" = anyStore.selfStatus ?? "online";
+  const selfStatus: "online" | "away" | "offline" =
+    anyStore.selfStatus ?? "online";
 
   const onlineStatusForUi: "online" | "away" | "offline" =
     auth.status === "signed_in" ? selfStatus : "offline";
 
   const activeProfile = useMemo(() => getActiveProfile(store), [store]);
 
-  const [stats, setStats] = useState<ActiveProfileStats>(() => emptyActiveProfileStats());
+  const [stats, setStats] = useState<ActiveProfileStats>(() =>
+    emptyActiveProfileStats()
+  );
+
   const [tickerIndex, setTickerIndex] = useState(0);
 
   const [tipIndex, setTipIndex] = useState(0);
@@ -1610,7 +1646,7 @@ export default function Home({ store, go }: Props) {
     };
   }, [activeProfile?.id]);
 
-  // ------------------------------------------------------------
+    // ------------------------------------------------------------
   // Ticker items (✅ on force Killer en 1er + on utilise CETTE liste partout)
   // ------------------------------------------------------------
 
@@ -1624,7 +1660,10 @@ export default function Home({ store, go }: Props) {
 
     // DEBUG console (utile pour vérifier en prod mobile aussi)
     try {
-      console.log("[Home][Ticker] items:", safe.map((x) => x.id).join(" | "));
+      console.log(
+        "[Home][Ticker] items:",
+        safe.map((x) => x.id).join(" | ")
+      );
     } catch {}
 
     return safe;
@@ -1645,7 +1684,9 @@ export default function Home({ store, go }: Props) {
     if (!tickerItems.length) return;
 
     const id = window.setInterval(() => {
-      setTickerIndex((prev) => (tickerItems.length ? (prev + 1) % tickerItems.length : 0));
+      setTickerIndex((prev) =>
+        tickerItems.length ? (prev + 1) % tickerItems.length : 0
+      );
     }, DETAIL_INTERVAL_MS);
 
     return () => window.clearInterval(id);
@@ -1674,7 +1715,9 @@ export default function Home({ store, go }: Props) {
   const hasDetailStats = detailRows.length > 0;
   const detailAccent = currentTicker?.accentColor ?? theme.primary ?? "#F6C256";
 
-  const statsTitle = hasDetailStats ? currentTicker?.title ?? "" : t("home.detail.stats.title", "Stats du profil");
+  const statsTitle = hasDetailStats
+    ? currentTicker?.title ?? ""
+    : t("home.detail.stats.title", "Stats du profil");
   const statsText = hasDetailStats
     ? currentTicker?.text ?? ""
     : t(
@@ -1682,7 +1725,9 @@ export default function Home({ store, go }: Props) {
         "Tes stats détaillées apparaîtront ici dès que tu auras joué quelques matchs ou trainings."
       );
 
-  const statsBackgroundImage = currentTicker ? pickStatsBackgroundForTicker(currentTicker.id) : "";
+  const statsBackgroundImage = currentTicker
+    ? pickStatsBackgroundForTicker(currentTicker.id)
+    : "";
 
   const tipSlides = useMemo(() => buildTipSlides(t), [t]);
 
@@ -1703,7 +1748,9 @@ export default function Home({ store, go }: Props) {
   }, [tipSlides.length]);
 
   const currentTip: TipSlide | null =
-    tipSlides.length > 0 ? tipSlides[Math.min(tipIndex, tipSlides.length - 1)] : null;
+    tipSlides.length > 0
+      ? tipSlides[Math.min(tipIndex, tipSlides.length - 1)]
+      : null;
 
   const handleTipTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     const x = e.touches[0]?.clientX;
@@ -1719,9 +1766,6 @@ export default function Home({ store, go }: Props) {
       setTipTouchStartX(null);
       return;
     }
-
-    // ✅ NEW: petit click quand on swipe un tip
-    playUiClick();
 
     setTipIndex((prev) => {
       if (!tipSlides.length) return 0;
@@ -1753,7 +1797,8 @@ export default function Home({ store, go }: Props) {
             borderRadius: 28,
             padding: 18,
             marginBottom: 16,
-            background: "linear-gradient(135deg, rgba(8,10,20,0.98), rgba(14,18,34,0.98))",
+            background:
+              "linear-gradient(135deg, rgba(8,10,20,0.98), rgba(14,18,34,0.98))",
             border: `1px solid ${theme.borderSoft ?? "rgba(255,255,255,0.10)"}`,
             boxShadow: "0 20px 40px rgba(0,0,0,0.7)",
             display: "flex",
@@ -1767,7 +1812,8 @@ export default function Home({ store, go }: Props) {
               padding: "5px 18px",
               borderRadius: 999,
               border: `1px solid ${primary}`,
-              background: "linear-gradient(135deg, rgba(0,0,0,0.9), rgba(255,255,255,0.06))",
+              background:
+                "linear-gradient(135deg, rgba(0,0,0,0.9), rgba(255,255,255,0.06))",
               marginBottom: 10,
             }}
           >
@@ -1805,23 +1851,25 @@ export default function Home({ store, go }: Props) {
 
         {/* Carte joueur actif */}
         {activeProfile && (
-          <ActiveProfileCard profile={activeProfile} stats={stats} status={onlineStatusForUi} />
+          <ActiveProfileCard
+            profile={activeProfile}
+            stats={stats}
+            status={onlineStatusForUi}
+          />
         )}
 
         {/* Petit bandeau arcade (auto-slide interne) */}
         <ArcadeTicker
-          items={tickerItems} // ✅ IMPORTANT
+          items={tickerItems}                 // ✅ IMPORTANT
           activeIndex={tickerIndex}
           intervalMs={DETAIL_INTERVAL_MS}
           onIndexChange={(index: number) => {
             if (!tickerItems.length) return;
-            playUiClick(); // ✅ NEW: click quand on change manuellement
             const safe = Math.min(Math.max(index, 0), tickerItems.length - 1);
             setTickerIndex(safe);
           }}
           onActiveIndexChange={(index: number) => {
             if (!tickerItems.length) return;
-            // (on évite de spammer : ce callback peut être appelé en auto-rotation)
             const safe = Math.min(Math.max(index, 0), tickerItems.length - 1);
             setTickerIndex(safe);
           }}
@@ -1837,7 +1885,8 @@ export default function Home({ store, go }: Props) {
               border: `1px solid ${theme.borderSoft ?? "rgba(255,255,255,0.12)"}`,
               boxShadow: "0 18px 40px rgba(0,0,0,0.85)",
               padding: 8,
-              background: "radial-gradient(circle at top, rgba(255,255,255,0.06), rgba(3,4,10,1))",
+              background:
+                "radial-gradient(circle at top, rgba(255,255,255,0.06), rgba(3,4,10,1))",
             }}
           >
             <div style={{ display: "flex", gap: 8 }}>
@@ -1850,7 +1899,9 @@ export default function Home({ store, go }: Props) {
                   position: "relative",
                   minHeight: 96,
                   backgroundColor: "#05060C",
-                  backgroundImage: statsBackgroundImage ? `url("${statsBackgroundImage}")` : undefined,
+                  backgroundImage: statsBackgroundImage
+                    ? `url("${statsBackgroundImage}")`
+                    : undefined,
                   backgroundSize: "cover",
                   backgroundPosition: "center",
                 }}
@@ -1860,7 +1911,8 @@ export default function Home({ store, go }: Props) {
                   style={{
                     position: "absolute",
                     inset: 0,
-                    background: "linear-gradient(130deg, rgba(0,0,0,0.85), rgba(0,0,0,0.45))",
+                    background:
+                      "linear-gradient(130deg, rgba(0,0,0,0.85), rgba(0,0,0,0.45))",
                     pointerEvents: "none",
                   }}
                 />
@@ -1926,7 +1978,9 @@ export default function Home({ store, go }: Props) {
                   position: "relative",
                   minHeight: 96,
                   backgroundColor: "#05060C",
-                  backgroundImage: currentTip?.backgroundImage ? `url("${currentTip.backgroundImage}")` : undefined,
+                  backgroundImage: currentTip?.backgroundImage
+                    ? `url("${currentTip.backgroundImage}")`
+                    : undefined,
                   backgroundSize: "cover",
                   backgroundPosition: "center",
                 }}
@@ -1938,7 +1992,8 @@ export default function Home({ store, go }: Props) {
                   style={{
                     position: "absolute",
                     inset: 0,
-                    background: "linear-gradient(230deg, rgba(0,0,0,0.9), rgba(0,0,0,0.4))",
+                    background:
+                      "linear-gradient(230deg, rgba(0,0,0,0.9), rgba(0,0,0,0.4))",
                     pointerEvents: "none",
                   }}
                 />
@@ -1964,7 +2019,10 @@ export default function Home({ store, go }: Props) {
                       }}
                     >
                       {currentTip?.title ??
-                        t("home.detail.tip.title", "Astuce, pub & nouveautés du moment")}
+                        t(
+                          "home.detail.tip.title",
+                          "Astuce, pub & nouveautés du moment"
+                        )}
                     </div>
                     <div
                       style={{
@@ -1974,7 +2032,10 @@ export default function Home({ store, go }: Props) {
                       }}
                     >
                       {currentTip?.text ??
-                        t("home.detail.tip.text", "Découvre les nouveautés, astuces ou pubs liées à cette section.")}
+                        t(
+                          "home.detail.tip.text",
+                          "Découvre les nouveautés, astuces ou pubs liées à cette section."
+                        )}
                     </div>
                   </div>
                 </div>
@@ -1984,55 +2045,47 @@ export default function Home({ store, go }: Props) {
         )}
 
         {/* Gros boutons de navigation */}
-        <div style={{ marginTop: 22, display: "flex", flexDirection: "column", gap: 14 }}>
+        <div
+          style={{
+            marginTop: 22,
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+          }}
+        >
           <HomeBigButton
             label={t("home.nav.profiles", "Profils")}
             subtitle={t("home.nav.profiles.desc", "Profils locaux, avatars & BOTS")}
             icon="user"
-            onClick={() => {
-              playUiClick();
-              go("profiles");
-            }}
+            onClick={() => go("profiles")}
           />
 
           <HomeBigButton
             label={t("home.nav.local", "Local")}
             subtitle={t("home.nav.local.desc", "Joue en présentiel sur cette cible")}
             icon="target"
-            onClick={() => {
-              playUiClick();
-              go("games");
-            }}
+            onClick={() => go("games")}
           />
 
           <HomeBigButton
             label={t("home.nav.online", "Online")}
             subtitle={t("home.nav.online.desc", "Matchs à distance avec tes amis")}
             icon="globe"
-            onClick={() => {
-              playUiClick();
-              go("friends");
-            }}
+            onClick={() => go("friends")}
           />
 
           <HomeBigButton
             label={t("home.nav.stats", "Stats")}
             subtitle={t("home.nav.stats.desc", "Dashboards, courbes, historique")}
             icon="stats"
-            onClick={() => {
-              playUiClick();
-              go("stats");
-            }}
+            onClick={() => go("stats")}
           />
 
           <HomeBigButton
             label={t("home.nav.settings", "Réglages")}
             subtitle={t("home.nav.settings.desc", "Thèmes, langue, reset complet")}
             icon="settings"
-            onClick={() => {
-              playUiClick();
-              go("settings");
-            }}
+            onClick={() => go("settings")}
           />
         </div>
       </div>
@@ -2108,7 +2161,7 @@ function HomeBigButton({ label, subtitle, icon, onClick }: HomeBtnProps) {
           </svg>
         );
     }
-  }, [icon]);
+  }, [icon, theme]);
 
   return (
     <button
@@ -2123,7 +2176,8 @@ function HomeBigButton({ label, subtitle, icon, onClick }: HomeBtnProps) {
         borderRadius: 22,
         padding: 14,
         border: "none",
-        background: "linear-gradient(135deg, rgba(10,12,24,0.98), rgba(18,22,40,0.98))",
+        background:
+          "linear-gradient(135deg, rgba(10,12,24,0.98), rgba(18,22,40,0.98))",
         boxShadow: "0 14px 30px rgba(0,0,0,0.6)",
         display: "flex",
         alignItems: "center",
