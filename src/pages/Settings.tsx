@@ -18,16 +18,10 @@ import { THEMES, type ThemeId, type AppTheme } from "../theme/themePresets";
 import { useAuthOnline } from "../hooks/useAuthOnline";
 import { supabase } from "../lib/supabase";
 
-// ✅ NEW: SFX (UI click toggle)
-import { setSfxEnabled, UISfx } from "../lib/sfx";
-
 type Props = { go?: (tab: any, params?: any) => void };
 
 // ✅ Nom de la Edge Function (Supabase)
 const DELETE_USER_FN_NAME = "delete-user";
-
-// ✅ NEW: pref localStorage pour sons UI
-const LS_UI_SFX = "dc-ui-sfx";
 
 // ---------------- Thèmes dispo + descriptions fallback ----------------
 
@@ -384,23 +378,6 @@ function AccountSecurityBlock() {
 
   const [prefs, setPrefs] = React.useState<AccountPrefs>(DEFAULT_PREFS);
 
-  // ✅ NEW: toggle SFX UI (persisté)
-  const [uiSfxEnabled, setUiSfxEnabled] = React.useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    try {
-      return window.localStorage.getItem(LS_UI_SFX) !== "0";
-    } catch {
-      return true;
-    }
-  });
-
-  // ✅ NEW: applique le flag SFX global (au boot + changements)
-  React.useEffect(() => {
-    try {
-      setSfxEnabled(!!uiSfxEnabled);
-    } catch {}
-  }, [uiSfxEnabled]);
-
   // Sync quand le profil change (connexion / refresh)
   React.useEffect(() => {
     setDisplayName(auth.profile?.displayName || auth.user?.nickname || "");
@@ -429,16 +406,6 @@ function AccountSecurityBlock() {
       console.warn("[settings] prefs save error", e);
     }
   }, [prefs]);
-
-  // ✅ NEW: persist SFX UI
-  React.useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(LS_UI_SFX, uiSfxEnabled ? "1" : "0");
-    } catch (e) {
-      console.warn("[settings] ui sfx save error", e);
-    }
-  }, [uiSfxEnabled]);
 
   async function handleSaveProfile() {
     if (auth.status !== "signed_in") return;
@@ -536,17 +503,17 @@ function AccountSecurityBlock() {
 
     try {
       // 1) ✅ Appel Edge Function via supabase-js (gère l'Authorization automatiquement si session active)
-      const { data, error: fnError } = await supabase.functions.invoke(
-        DELETE_USER_FN_NAME,
-        {
-          body: { userId: auth.user.id },
-        }
-      );
+const { data, error: fnError } = await supabase.functions.invoke(
+  DELETE_USER_FN_NAME,
+  {
+    body: { userId: auth.user.id },
+  }
+);
 
-      if (fnError) {
-        console.error("[settings] delete-user invoke error", fnError);
-        throw new Error(fnError.message || "delete-user failed");
-      }
+if (fnError) {
+  console.error("[settings] delete-user invoke error", fnError);
+  throw new Error(fnError.message || "delete-user failed");
+}
 
       // 2) Logout propre côté client
       try {
@@ -557,6 +524,7 @@ function AccountSecurityBlock() {
 
       // 3) Reset TOTAL local (ton helper existant)
       await fullHardReset(); // doit déjà faire window.location.reload()
+
     } catch (e: any) {
       console.error("[settings] delete account error", e);
       setError(
@@ -568,16 +536,7 @@ function AccountSecurityBlock() {
       );
     }
   }
-
-  // ✅ NEW: handler toggle UI SFX
-  function handleToggleUiSfx(v: boolean) {
-    setUiSfxEnabled(v);
-    try {
-      // feedback immédiat quand on active
-      if (v) UISfx.click?.();
-    } catch {}
-  }
-
+  
   const emailLabel = auth.user?.email || "—";
 
   return (
@@ -640,7 +599,10 @@ function AccountSecurityBlock() {
         ) : auth.status === "signed_in" ? (
           <>
             <div style={{ color: theme.textSoft }}>
-              {t("settings.account.connectedAs", "Connecté en tant que")}{" "}
+              {t(
+                "settings.account.connectedAs",
+                "Connecté en tant que"
+              )}{" "}
               <strong>{emailLabel}</strong>
             </div>
             <div
@@ -799,7 +761,10 @@ function AccountSecurityBlock() {
               }}
             >
               {resettingPwd
-                ? t("settings.account.reset.loading", "Envoi du lien…")
+                ? t(
+                    "settings.account.reset.loading",
+                    "Envoi du lien…"
+                  )
                 : t(
                     "settings.account.reset.btn",
                     "Réinitialiser / récupérer mon mot de passe"
@@ -842,7 +807,10 @@ function AccountSecurityBlock() {
                 letterSpacing: 0.5,
               }}
             >
-              {t("settings.account.delete.btn", "Supprimer mon compte")}
+              {t(
+                "settings.account.delete.btn",
+                "Supprimer mon compte"
+              )}
             </button>
           </div>
 
@@ -889,17 +857,6 @@ function AccountSecurityBlock() {
                 fontSize: 12,
               }}
             >
-              {/* ✅ NEW: toggle sons UI */}
-              <ToggleRow
-                label={t("settings.uiSfx.label", "Bruitages clic UI")}
-                help={t(
-                  "settings.uiSfx.help",
-                  "Active/désactive les petits sons de clic dans l’application."
-                )}
-                checked={uiSfxEnabled}
-                onChange={(v) => handleToggleUiSfx(v)}
-              />
-
               <ToggleRow
                 label={t(
                   "settings.account.notifications.emailsNews",
@@ -910,7 +867,9 @@ function AccountSecurityBlock() {
                   "Actualités majeures, nouvelles fonctionnalités, offres spéciales."
                 )}
                 checked={prefs.emailsNews}
-                onChange={(v) => setPrefs((p) => ({ ...p, emailsNews: v }))}
+                onChange={(v) =>
+                  setPrefs((p) => ({ ...p, emailsNews: v }))
+                }
               />
 
               <ToggleRow
@@ -923,7 +882,9 @@ function AccountSecurityBlock() {
                   "Récapitulatif occasionnel de tes stats avec quelques tips."
                 )}
                 checked={prefs.emailsStats}
-                onChange={(v) => setPrefs((p) => ({ ...p, emailsStats: v }))}
+                onChange={(v) =>
+                  setPrefs((p) => ({ ...p, emailsStats: v }))
+                }
               />
 
               <ToggleRow
@@ -936,7 +897,9 @@ function AccountSecurityBlock() {
                   "Contrôle les sons d’alerte et les petits messages d’infos dans l’application."
                 )}
                 checked={prefs.inAppNotifs}
-                onChange={(v) => setPrefs((p) => ({ ...p, inAppNotifs: v }))}
+                onChange={(v) =>
+                  setPrefs((p) => ({ ...p, inAppNotifs: v }))
+                }
               />
             </div>
           </div>
@@ -993,14 +956,20 @@ function ToggleRow({
             width: 44,
             height: 24,
             borderRadius: 999,
-            background: checked ? primary : "rgba(255,255,255,0.08)",
-            border: `1px solid ${checked ? primary : theme.borderSoft}`,
+            background: checked
+              ? primary
+              : "rgba(255,255,255,0.08)",
+            border: `1px solid ${
+              checked ? primary : theme.borderSoft
+            }`,
             display: "flex",
             alignItems: "center",
             padding: 2,
             boxSizing: "border-box",
             cursor: "pointer",
-            boxShadow: checked ? `0 0 10px ${primary}66` : "none",
+            boxShadow: checked
+              ? `0 0 10px ${primary}66`
+              : "none",
           }}
         >
           <div
@@ -1017,6 +986,103 @@ function ToggleRow({
       </div>
     </label>
   );
+}
+
+/* -------------------------------------------------------------
+   RESET TOTAL HARDCORE
+   - Efface localStorage + sessionStorage
+   - Wipe toutes les bases IndexedDB (stats / history / profils…)
+   - Déconnexion Supabase sur cet appareil
+   - Reset du store global (__DARTS_STORE__)
+   - Reload de l'app
+------------------------------------------------------------- */
+async function fullHardReset() {
+  try {
+    console.log(">>> FULL HARD RESET START");
+
+    if (typeof window === "undefined") {
+      console.error("FULL HARD RESET: window is undefined (SSR)");
+      return;
+    }
+
+    // 1) localStorage + sessionStorage
+    try {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    } catch (e) {
+      console.warn("FULL HARD RESET: storage clear failed", e);
+    }
+
+    // 2) Wipe IndexedDB complet
+    try {
+      const anyIndexedDB: any = (window as any).indexedDB;
+      if (anyIndexedDB && typeof anyIndexedDB.databases === "function") {
+        const dbs = await anyIndexedDB.databases();
+        for (const db of dbs) {
+          if (db && db.name) {
+            console.log("Deleting DB:", db.name);
+            await new Promise<void>((resolve, reject) => {
+              const req = window.indexedDB.deleteDatabase(
+                db.name as string
+              );
+              req.onsuccess = () => resolve();
+              req.onerror = () => reject(req.error);
+              req.onblocked = () => resolve(); // au cas où
+            });
+          }
+        }
+      } else {
+        // Fallback : on tente les BDD connues
+        const knownDbs = [
+          "dc_stats_v1",
+          "dc_history_v1",
+          "dc_profiles_v1",
+          "dc_training_v1",
+        ];
+        for (const name of knownDbs) {
+          await new Promise<void>((resolve) => {
+            const req = window.indexedDB.deleteDatabase(name);
+            req.onsuccess = () => resolve();
+            req.onerror = () => resolve();
+            req.onblocked = () => resolve();
+          });
+        }
+      }
+    } catch (e) {
+      console.warn("FULL HARD RESET: indexedDB wipe failed", e);
+    }
+
+    // 3) Déconnexion Supabase (session locale)
+    try {
+      await supabase.auth.signOut({ scope: "local" } as any);
+    } catch (e) {
+      console.warn("Supabase signOut fail:", e);
+    }
+
+    // 4) Reset du store interne global s'il existe
+    try {
+      const anyWindow = window as any;
+      if (anyWindow.__DARTS_STORE__?.setState) {
+        anyWindow.__DARTS_STORE__.setState(() => ({
+          profiles: [],
+          bots: [],
+          history: [],
+          settings: {},
+          activeProfileId: null,
+        }));
+      }
+    } catch (e) {
+      console.warn("Store reset error:", e);
+    }
+
+    // 5) Reload complet
+    window.location.reload();
+  } catch (err) {
+    console.error("FULL HARD RESET FAILED", err);
+    alert(
+      "Erreur lors du reset complet. Tu peux aussi vider manuellement les données du site dans les réglages du navigateur."
+    );
+  }
 }
 
 // ---------------- Composant principal ----------------
