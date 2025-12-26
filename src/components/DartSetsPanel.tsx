@@ -8,6 +8,8 @@
 // - Scanner (sheet) pour associer des visuels
 // - Intégration presets cartoon (dartPresets) pour le visuel
 // - Upload photo perso pour un set (stockée dans dartSetsStore)
+// ✅ FIX VISUELS: si un set a seulement presetId/kind (créé depuis Profiles),
+//   on résout l'image via dartPresets en fallback.
 // =============================================================
 
 import React from "react";
@@ -334,6 +336,30 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       ? sets[activeIndex]
       : null;
 
+  // ==========================================================
+  // ✅ FIX VISUELS (PRESET FALLBACK)
+  // - si un set a seulement presetId (créé ailleurs) et pas d'URL,
+  //   on résout via dartPresets.
+  // ==========================================================
+  const resolveSetImageUrl = (set: DartSet | null): string => {
+    if (!set) return "";
+
+    // 1) Si déjà présent dans le set
+    const direct = String(set.thumbImageUrl || set.mainImageUrl || "").trim();
+    if (direct) return direct;
+
+    // 2) Fallback presetId => dartPresets
+    const anySet: any = set as any;
+    const presetId = String(anySet?.presetId || "").trim();
+    if (presetId) {
+      const p = dartPresets.find((x) => x.id === presetId);
+      const url = String(p?.imgUrlThumb || p?.imgUrlMain || "").trim();
+      if (url) return url;
+    }
+
+    return "";
+  };
+
   // ------------------------------------------------------------------
   // Handlers formulaires
   // ------------------------------------------------------------------
@@ -424,9 +450,6 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
         kind,
         presetId,
       } as any;
-
-      // debug utile si besoin
-      // console.log("[CREATE DART SET payload]", payload);
 
       await Promise.resolve(createDartSet(payload));
       reloadSets();
@@ -1525,9 +1548,10 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                       overflow: "hidden",
                     }}
                   >
-                    {activeSet.thumbImageUrl || activeSet.mainImageUrl ? (
+                    {/* ✅ FIX: fallback presetId => dartPresets */}
+                    {resolveSetImageUrl(activeSet) ? (
                       <DartImage
-                        url={activeSet.thumbImageUrl || activeSet.mainImageUrl!}
+                        url={resolveSetImageUrl(activeSet)}
                         size={66}
                         angleDeg={0}
                       />

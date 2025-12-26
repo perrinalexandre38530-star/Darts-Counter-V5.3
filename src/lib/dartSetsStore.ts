@@ -4,25 +4,30 @@
 // - Stockage local via localStorage (clé "dc_dart_sets_v1")
 // - CRUD complet : list / get / create / update / delete
 // - Prévu pour être étendu plus tard (sync Supabase, etc.)
+// ✅ BONUS: officialise kind/presetId (évite incohérences + compat UI)
 // =============================================================
 
 export type DartSetId = string;
 
 export interface DartSet {
-  id: DartSetId;          // id unique
-  profileId: string;      // profil auquel appartient ce jeu
-  name: string;           // "Noir 22g Target"
-  brand?: string;         // "Target", "Winmau"...
-  weightGrams?: number;   // 18, 20, 22 etc.
+  id: DartSetId; // id unique
+  profileId: string; // profil auquel appartient ce jeu
+  name: string; // "Noir 22g Target"
+  brand?: string; // "Target", "Winmau"...
+  weightGrams?: number; // 18, 20, 22 etc.
   notes?: string;
 
-  mainImageUrl: string;   // image cartoon principale (fond uni)
+  mainImageUrl: string; // image cartoon principale (fond uni)
   thumbImageUrl?: string; // miniature pour overlay avatar
-  bgColor?: string;       // fond du thumb si pas d'image
+  bgColor?: string; // fond du thumb si pas d'image
 
-  isFavorite?: boolean;   // ce profil → set préféré ?
-  usageCount?: number;    // nb de matchs joués avec ce set
-  lastUsedAt?: number;    // timestamp dernier match
+  // ✅ Visuel (optionnel, compat)
+  kind?: "plain" | "preset" | "photo";
+  presetId?: string;
+
+  isFavorite?: boolean; // ce profil → set préféré ?
+  usageCount?: number; // nb de matchs joués avec ce set
+  lastUsedAt?: number; // timestamp dernier match
 
   // 👇 NOUVEAU : portée d'utilisation
   // - "private" : utilisable seulement par le propriétaire
@@ -45,16 +50,24 @@ function safeParse(json: string | null): DartSet[] {
     const arr = JSON.parse(json);
     if (!Array.isArray(arr)) return [];
 
-    // Normalisation + compat anciens sets (sans scope)
+    // Normalisation + compat anciens sets (sans scope / sans kind/presetId)
     return arr.map((raw: any) => {
       const scope: "private" | "public" =
-        raw.scope === "public" || raw.scope === "private"
-          ? raw.scope
-          : "private";
+        raw.scope === "public" || raw.scope === "private" ? raw.scope : "private";
+
+      const kind: "plain" | "preset" | "photo" | undefined =
+        raw.kind === "photo" || raw.kind === "preset" || raw.kind === "plain"
+          ? raw.kind
+          : undefined;
+
+      const presetId: string | undefined =
+        typeof raw.presetId === "string" ? raw.presetId : undefined;
 
       return {
         ...raw,
         scope,
+        kind,
+        presetId,
       } as DartSet;
     });
   } catch {
@@ -89,9 +102,7 @@ export function getAllDartSets(): DartSet[] {
 
 // 👇 Désormais : sets du profil + tous les sets publics
 export function getDartSetsForProfile(profileId: string): DartSet[] {
-  return loadAll().filter(
-    (s) => s.scope === "public" || s.profileId === profileId
-  );
+  return loadAll().filter((s) => s.scope === "public" || s.profileId === profileId);
 }
 
 export function getDartSetById(id: DartSetId): DartSet | undefined {
@@ -107,15 +118,18 @@ export function createDartSet(input: {
   mainImageUrl: string;
   thumbImageUrl?: string;
   bgColor?: string;
+
+  // ✅ BONUS: visuel
+  kind?: "plain" | "preset" | "photo";
+  presetId?: string | null;
+
   // 👇 NOUVEAU : on laisse optionnel pour compat des appels existants
   scope?: "private" | "public";
 }): DartSet {
   const all = loadAll();
   const now = Date.now();
 
-  const alreadyForProfile = all.filter(
-    (s) => s.profileId === input.profileId
-  );
+  const alreadyForProfile = all.filter((s) => s.profileId === input.profileId);
 
   const newSet: DartSet = {
     id: `dartset_${now}_${Math.random().toString(16).slice(2)}`,
@@ -128,6 +142,10 @@ export function createDartSet(input: {
     mainImageUrl: input.mainImageUrl,
     thumbImageUrl: input.thumbImageUrl,
     bgColor: input.bgColor,
+
+    // ✅ BONUS: persist visuel
+    kind: input.kind,
+    presetId: input.presetId ?? undefined,
 
     isFavorite: alreadyForProfile.length === 0, // premier = favori
 
@@ -213,15 +231,11 @@ export function bumpDartSetUsage(dartSetId: DartSetId) {
   saveAll(all);
 }
 
-export function getFavoriteDartSetForProfile(
-  profileId: string
-): DartSet | undefined {
+export function getFavoriteDartSetForProfile(profileId: string): DartSet | undefined {
   const visible = getDartSetsForProfile(profileId);
 
   // 1) Favori parmi les sets appartenant au profil
-  const favoriteOwn = visible.find(
-    (s) => s.profileId === profileId && s.isFavorite
-  );
+  const favoriteOwn = visible.find((s) => s.profileId === profileId && s.isFavorite);
   if (favoriteOwn) return favoriteOwn;
 
   // 2) Sinon : premier set créé appartenant au profil

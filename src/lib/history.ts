@@ -1,7 +1,6 @@
-console.warn("🔥 HISTORY PATCH LOADED v2");
-
+// src/lib/history.ts
 // ============================================
-// src/lib/history.ts — Historique "lourd + compressé"
+// Historique "lourd + compressé"
 // API : list(), get(id), upsert(rec), remove(id), clear()
 // + History.{list,get,upsert,remove,clear,readAll}
 // + History.{getX01, listInProgress, listFinished, listByStatus}
@@ -41,6 +40,7 @@ export type SavedMatch = {
     startScore?: number;
     [k: string]: any;
   } | null;
+
   // Résumé léger (pour listes)
   summary?: {
     legs?: number;
@@ -49,6 +49,7 @@ export type SavedMatch = {
     co?: number;
     [k: string]: any;
   } | null;
+
   // Payload complet (gros) — compressé en base
   payload?: any;
 
@@ -61,13 +62,14 @@ export type SavedMatch = {
 ========================= */
 import { computeCricketLegStats, type CricketHit } from "./StatsCricket";
 
+console.warn("🔥 HISTORY PATCH LOADED v2");
+
 /* =========================
    Constantes
 ========================= */
 const LSK = "dc-history-v1"; // ancien storage (migration + fallback)
 const DB_NAME = "dc-store-v1";
-// ⬇ Bump version pour créer/assurer l’index by_updatedAt
-const DB_VER = 2;
+const DB_VER = 2; // ⬅ bump pour index by_updatedAt
 const STORE = "history";
 const MAX_ROWS = 400;
 
@@ -131,13 +133,9 @@ const LZString = (function () {
     return LZ.decompress(output);
   };
 
-  // ✅ Optionnel "best-effort": si quelqu'un a stocké un truc base64-ish,
-  // on peut AU MOINS essayer de le décoder puis decompress() derrière.
-  // (Ça ne couvre pas 100% des variantes LZString compressToBase64,
-  // mais ça évite de crasher et récupère certains cas.)
+  // ✅ Optionnel "best-effort": certains legacy étaient base64-ish
   LZ._tryDecodeBase64ToString = function (b64: string) {
     try {
-      // atob -> bytes -> string (latin1)
       const bin = atob(b64.replace(/[\r\n\s]/g, ""));
       return bin;
     } catch {
@@ -288,7 +286,6 @@ const LZString = (function () {
       enlargeIn = 4,
       dictSize = 4,
       numBits = 3,
-      entry = "",
       result: string[] = [],
       w: any,
       c: number;
@@ -333,7 +330,7 @@ const LZString = (function () {
     while (true) {
       if (data.index > data.string.length) return "";
       let cc = readBits(numBits);
-      let entry2;
+      let entry2: any;
       if (cc === 0) {
         c = readBits(8);
         dictionary[dictSize++] = String.fromCharCode(c);
@@ -350,8 +347,7 @@ const LZString = (function () {
         numBits++;
       }
       if (dictionary[cc]) entry2 = dictionary[cc];
-      else if (cc === dictSize)
-        entry2 = (w as string) + (w as string).charAt(0);
+      else if (cc === dictSize) entry2 = (w as string) + (w as string).charAt(0);
       else return "";
       result.push(entry2 as string);
       dictionary[dictSize++] = (w as string) + (entry2 as string).charAt(0);
@@ -369,22 +365,19 @@ const LZString = (function () {
 
 /* =========================
    ✅ FIX: lecture robuste localStorage (JSON OU LZString)
-   - évite: "Unexpected token '�' is not valid JSON"
-   - supporte: JSON direct, compressToUTF16
-   - best-effort: base64-ish (decode -> JSON direct ou decompress)
 ========================= */
 function parseHistoryLocalStorage(raw: string | null): any[] {
   if (!raw) return [];
   const s = String(raw);
+  const trimmed = s.trim();
 
   // 1) JSON direct
-  const trimmed = s.trim();
   if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
     try {
       const v = JSON.parse(trimmed);
       return Array.isArray(v) ? v : [];
     } catch {
-      // on tente les décompressions ci-dessous
+      // fallthrough
     }
   }
 
@@ -397,20 +390,18 @@ function parseHistoryLocalStorage(raw: string | null): any[] {
     }
   } catch {}
 
-  // 3) Base64-ish (best effort)
-  // - certains legacy ont du base64 (pas forcément lz-string officiel)
-  // - on tente: atob -> JSON, puis atob -> decompress -> JSON
+  // 3) Base64-ish best effort
   try {
     const isB64 = /^[A-Za-z0-9+/=\r\n\s-]+$/.test(s) && s.length > 16;
     if (isB64) {
       const bin = (LZString as any)._tryDecodeBase64ToString?.(s) || "";
       if (bin) {
-        // 3a) bin est déjà du JSON
+        // 3a) bin déjà JSON
         try {
           const v = JSON.parse(bin);
           return Array.isArray(v) ? v : [];
         } catch {}
-        // 3b) bin est une string compressée version "compress" -> decompress
+        // 3b) bin = compress() -> decompress()
         try {
           const dec = (LZString as any).decompress?.(bin);
           if (typeof dec === "string" && dec.trim().length) {
@@ -434,19 +425,18 @@ function parseHistoryLocalStorage(raw: string | null): any[] {
   return [];
 }
 
-/* =========================
-   ✅ Legacy localStorage safe read (rows)
-========================= */
 function readLegacyRowsSafe(): SavedMatch[] {
-  const raw = localStorage.getItem(LSK);
-  const rows = parseHistoryLocalStorage(raw);
-  return Array.isArray(rows) ? (rows as SavedMatch[]) : [];
+  try {
+    const raw = localStorage.getItem(LSK);
+    const rows = parseHistoryLocalStorage(raw);
+    return Array.isArray(rows) ? (rows as SavedMatch[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 /* =========================
    ✅ DEDUPE KEY — 1 match réel = 1 id canonique
-   - utilisé par list() (dédoublonne les anciennes données “1 record par joueur”)
-   - utilisé par upsert() (écrit propre : même match => même id)
 ========================= */
 function getCanonicalMatchId(rec: any): string | null {
   if (!rec) return null;
@@ -499,14 +489,12 @@ function openDB(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB_NAME, DB_VER);
     req.onupgradeneeded = () => {
       const db = req.result;
-      // créer le store si besoin
       let os: IDBObjectStore;
       if (!db.objectStoreNames.contains(STORE)) {
         os = db.createObjectStore(STORE, { keyPath: "id" });
       } else {
         os = req.transaction!.objectStore(STORE);
       }
-      // créer l’index by_updatedAt si manquant
       try {
         // @ts-ignore
         if (!os.indexNames || !os.indexNames.contains("by_updatedAt")) {
@@ -515,6 +503,17 @@ function openDB(): Promise<IDBDatabase> {
       } catch {
         try {
           os.createIndex("by_updatedAt", "updatedAt", { unique: false });
+        } catch {}
+      }
+      // ✅ index matchId pour chercher par id canonique même si id différent (legacy)
+      try {
+        // @ts-ignore
+        if (!os.indexNames || !os.indexNames.contains("by_matchId")) {
+          os.createIndex("by_matchId", "matchId", { unique: false });
+        }
+      } catch {
+        try {
+          os.createIndex("by_matchId", "matchId", { unique: false });
         } catch {}
       }
     };
@@ -551,12 +550,8 @@ async function migrateFromLocalStorageOnce() {
     const raw = localStorage.getItem(LSK);
     if (!raw) return;
 
-    // ✅ FIX: legacy peut être JSON OU compressé (parse robuste)
     const rows: SavedMatch[] = readLegacyRowsSafe();
-    if (!rows.length) {
-      // rien de lisible => on ne migre pas, mais on évite de casser l’app
-      return;
-    }
+    if (!rows.length) return;
 
     await withStore("readwrite", async (st) => {
       for (const r of rows) {
@@ -589,7 +584,6 @@ export async function list(): Promise<SavedMatch[]> {
   await migrateFromLocalStorageOnce();
   try {
     const rows: any[] = await withStore("readonly", async (st) => {
-      // Essai via l’index (ordre décroissant)
       const readWithIndex = async () =>
         await new Promise<any[]>((resolve, reject) => {
           try {
@@ -603,10 +597,7 @@ export async function list(): Promise<SavedMatch[]> {
             req.onsuccess = () => {
               const cur = req.result as IDBCursorWithValue | null;
               if (cur) {
-                const val = { ...cur.value };
-                // ⚠️ on garde payloadCompressed en mémoire uniquement pour permettre la dédup si besoin,
-                // mais on le supprime ensuite lors de la sortie finale.
-                out.push(val);
+                out.push({ ...cur.value });
                 cur.continue();
               } else resolve(out);
             };
@@ -616,7 +607,6 @@ export async function list(): Promise<SavedMatch[]> {
           }
         });
 
-      // Fallback : lecture du store brut + tri mémoire
       const readWithoutIndex = async () =>
         await new Promise<any[]>((resolve, reject) => {
           const req = st.openCursor();
@@ -624,8 +614,7 @@ export async function list(): Promise<SavedMatch[]> {
           req.onsuccess = () => {
             const cur = req.result as IDBCursorWithValue | null;
             if (cur) {
-              const val = { ...cur.value };
-              out.push(val);
+              out.push({ ...cur.value });
               cur.continue();
             } else {
               out.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
@@ -642,19 +631,16 @@ export async function list(): Promise<SavedMatch[]> {
       }
     });
 
-    // ✅ NEW: dédoublonnage "1 match = 1 entrée"
-    // (corrige les anciens historiques qui ont 1 record par joueur en MULTI)
+    // ✅ DEDUPE: 1 match réel = 1 entrée
     const byMatch = new Map<string, any>();
 
     for (const r0 of rows || []) {
       const r: any = r0;
       if (!r) continue;
 
-      // 1) clé directe si déjà stockée
       let key = getCanonicalMatchId(r) ?? String(r?.matchId ?? "");
 
-      // 2) si pas trouvé et que payloadCompressed existe, on tente un peek "best effort"
-      // (on évite de parser tout le payload lourd en temps normal; ici c’est rare mais ça sauve des vieux matchs)
+      // si pas trouvé et payloadCompressed existe, on tente un peek best-effort
       if (!key && r?.payloadCompressed && typeof r.payloadCompressed === "string") {
         try {
           const dec = LZString.decompressFromUTF16(r.payloadCompressed);
@@ -669,17 +655,17 @@ export async function list(): Promise<SavedMatch[]> {
         } catch {}
       }
 
-      // 3) fallback ultime
       if (!key) key = String(r?.id ?? "");
       if (!key) continue;
 
       const existing = byMatch.get(key);
+      const tNew = (r as any)?.updatedAt ?? (r as any)?.createdAt ?? 0;
+
       if (!existing) {
         const lite = { ...r, id: key, matchId: key };
         delete (lite as any).payloadCompressed;
         byMatch.set(key, lite);
       } else {
-        const tNew = (r as any)?.updatedAt ?? (r as any)?.createdAt ?? 0;
         const tOld =
           (existing as any)?.updatedAt ?? (existing as any)?.createdAt ?? 0;
         if (tNew >= tOld) {
@@ -692,7 +678,6 @@ export async function list(): Promise<SavedMatch[]> {
 
     return Array.from(byMatch.values()) as SavedMatch[];
   } catch {
-    // ✅ FIX: fallback legacy robuste (JSON / UTF16 / base64-ish)
     return readLegacyRowsSafe();
   }
 }
@@ -701,39 +686,72 @@ export async function get(id: string): Promise<SavedMatch | null> {
   await migrateFromLocalStorageOnce();
   try {
     const rec: any = await withStore("readonly", async (st) => {
-      return await new Promise<any>((resolve, reject) => {
+      // 1) lookup direct par id
+      const byId = await new Promise<any>((resolve) => {
         const req = st.get(id);
         req.onsuccess = () => resolve(req.result || null);
-        req.onerror = () => reject(req.error);
+        req.onerror = () => resolve(null);
       });
+      if (byId) return byId;
+
+      // 2) ✅ lookup par matchId (indispensable si list() renvoie id canonique)
+      try {
+        // @ts-ignore
+        const hasIx = st.indexNames && st.indexNames.contains("by_matchId");
+        if (hasIx) {
+          const ix = st.index("by_matchId");
+          const byMatch = await new Promise<any>((resolve) => {
+            const req = ix.get(id);
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => resolve(null);
+          });
+          if (byMatch) return byMatch;
+        }
+      } catch {}
+
+      // 3) fallback scan (dernier recours)
+      const scan = await new Promise<any>((resolve) => {
+        const req = st.openCursor();
+        req.onsuccess = () => {
+          const cur = req.result as IDBCursorWithValue | null;
+          if (!cur) return resolve(null);
+          const v: any = cur.value;
+          if (v?.matchId === id) return resolve(v);
+          cur.continue();
+        };
+        req.onerror = () => resolve(null);
+      });
+      return scan || null;
     });
 
     if (!rec) {
-      // ✅ FIX: fallback legacy robuste
       const rows = readLegacyRowsSafe();
-      return (rows.find((r) => r.id === id) || null) as SavedMatch | null;
+      return (rows.find((r) => r.id === id || r.matchId === id) || null) as
+        | SavedMatch
+        | null;
     }
 
     const payload =
       rec.payloadCompressed && typeof rec.payloadCompressed === "string"
-        ? JSON.parse(
-            LZString.decompressFromUTF16(rec.payloadCompressed) || "null"
-          )
+        ? JSON.parse(LZString.decompressFromUTF16(rec.payloadCompressed) || "null")
         : null;
+
     delete rec.payloadCompressed;
 
-    // ✅ si on a un matchId dans payload, on le remonte en light
-    const mid = getCanonicalMatchId({ ...rec, payload }) ?? null;
+    const mid = getCanonicalMatchId({ ...rec, payload }) ?? rec.matchId ?? null;
     if (mid) {
       rec.matchId = String(mid);
-      rec.id = String(mid); // on autorise get() sur id canonique si stocké ainsi
+      // ⚠️ on NE force PAS rec.id ici : get(id) doit rester stable.
+      // L’UI peut utiliser matchId pour navigation.
     }
 
     return { ...(rec as any), payload } as SavedMatch;
   } catch (e) {
     console.warn("[history.get] fallback localStorage:", e);
     const rows = readLegacyRowsSafe();
-    return (rows.find((r) => r.id === id) || null) as SavedMatch | null;
+    return (rows.find((r) => r.id === id || r.matchId === id) || null) as
+      | SavedMatch
+      | null;
   }
 }
 
@@ -744,9 +762,9 @@ export async function upsert(rec: SavedMatch): Promise<void> {
   await migrateFromLocalStorageOnce();
   const now = Date.now();
 
-  // ✅ FIX: id canonique (1 match MULTI = 1 record)
+  // ✅ id canonique
   const canonicalId =
-    getCanonicalMatchId(rec) ?? rec.id ?? (crypto.randomUUID?.() ?? String(now));
+    getCanonicalMatchId(rec) ?? rec.matchId ?? rec.id ?? (crypto.randomUUID?.() ?? String(now));
 
   const safe: any = {
     id: String(canonicalId),
@@ -758,26 +776,20 @@ export async function upsert(rec: SavedMatch): Promise<void> {
     createdAt: rec.createdAt ?? now,
     updatedAt: now,
     summary: rec.summary || null,
-    // payload compressé séparé (IDB)
   };
 
   // ---------------------------------------------
-  // 🎯 Intégration Cricket : calcul auto legStats
+  // 🎯 Cricket : calcul auto legStats
   // ---------------------------------------------
   let payloadEffective = rec.payload;
 
   try {
-    if (
-      rec.kind === "cricket" &&
-      rec.payload &&
-      typeof rec.payload === "object"
-    ) {
+    if (rec.kind === "cricket" && rec.payload && typeof rec.payload === "object") {
       const base = rec.payload as any;
       const players = Array.isArray(base.players) ? base.players : [];
 
       const playersWithStats = players.map((p: any) => {
         const hits: CricketHit[] = Array.isArray(p.hits) ? p.hits : [];
-        // si legStats déjà fourni, on le garde, sinon on calcule
         const legStats =
           p.legStats && typeof p.legStats === "object"
             ? p.legStats
@@ -790,23 +802,28 @@ export async function upsert(rec: SavedMatch): Promise<void> {
         mode: base.mode ?? "cricket",
         players: playersWithStats,
       };
+
+      // matchId léger si dispo
+      const mid =
+        getCanonicalMatchId({ ...rec, payload: payloadEffective }) ??
+        base?.matchId ??
+        base?.sessionId ??
+        base?.engineState?.matchId ??
+        base?.engineState?.sessionId ??
+        null;
+      if (mid) safe.matchId = String(mid);
     }
   } catch (e) {
     console.warn("[history.upsert] cricket enrichment error:", e);
   }
 
   // ---------------------------------------------
-  // 🎯 Intégration X01 : expose startScore pour l'UI
+  // 🎯 X01 : expose startScore pour l'UI
   // ---------------------------------------------
   try {
-    if (
-      rec.kind === "x01" &&
-      payloadEffective &&
-      typeof payloadEffective === "object"
-    ) {
+    if (rec.kind === "x01" && payloadEffective && typeof payloadEffective === "object") {
       const base = payloadEffective as any;
 
-      // tentative multi-chemins pour trouver la config X01
       const cfg =
         base.config ||
         base.game?.config ||
@@ -823,7 +840,6 @@ export async function upsert(rec: SavedMatch): Promise<void> {
           cfg.startingScore;
 
         if (typeof sc === "number" && sc > 0) {
-          // game.* pour les listes (HistoryPage)
           safe.game = {
             ...(safe.game || {}),
             mode: safe.kind || rec.kind || "x01",
@@ -841,13 +857,9 @@ export async function upsert(rec: SavedMatch): Promise<void> {
         }
       }
 
-      // si le payload contient déjà un summary / result, on le propage
       if (base.summary && typeof base.summary === "object") {
         const prevSummary: any = safe.summary || {};
-        safe.summary = {
-          ...base.summary,
-          ...prevSummary,
-        };
+        safe.summary = { ...base.summary, ...prevSummary };
       } else if (base.result && typeof base.result === "object") {
         const prevSummary: any = safe.summary || {};
         safe.summary = {
@@ -859,13 +871,12 @@ export async function upsert(rec: SavedMatch): Promise<void> {
         };
       }
 
-      // ✅ essaye d’y stocker un matchId/sessionId léger pour la dédup future
       const mid =
         getCanonicalMatchId({ ...rec, payload: payloadEffective }) ??
         base?.matchId ??
         base?.sessionId ??
-        base?.engineState?.sessionId ??
         base?.engineState?.matchId ??
+        base?.engineState?.sessionId ??
         null;
       if (mid) safe.matchId = String(mid);
     }
@@ -875,12 +886,10 @@ export async function upsert(rec: SavedMatch): Promise<void> {
 
   try {
     const payloadStr = payloadEffective ? JSON.stringify(payloadEffective) : "";
-    const payloadCompressed = payloadStr
-      ? LZString.compressToUTF16(payloadStr)
-      : "";
+    const payloadCompressed = payloadStr ? LZString.compressToUTF16(payloadStr) : "";
 
     await withStore("readwrite", async (st) => {
-      // Limiter à MAX_ROWS (par ordre décroissant de updatedAt)
+      // Trim MAX_ROWS
       await new Promise<void>((resolve, reject) => {
         const doTrim = (keys: string[]) => {
           if (keys.length > MAX_ROWS) {
@@ -901,8 +910,7 @@ export async function upsert(rec: SavedMatch): Promise<void> {
 
         try {
           // @ts-ignore
-          const hasIndex =
-            st.indexNames && st.indexNames.contains("by_updatedAt");
+          const hasIndex = st.indexNames && st.indexNames.contains("by_updatedAt");
           if (hasIndex) {
             const ix = st.index("by_updatedAt");
             const req = ix.openCursor(undefined, "prev");
@@ -931,7 +939,7 @@ export async function upsert(rec: SavedMatch): Promise<void> {
             req.onerror = () => reject(req.error);
           }
         } catch {
-          resolve(); // en cas de doute, on ne coupe rien
+          resolve();
         }
       });
 
@@ -942,13 +950,11 @@ export async function upsert(rec: SavedMatch): Promise<void> {
       });
     });
   } catch (e) {
-    // Fallback compact si IDB indispo
     console.warn("[history.upsert] fallback localStorage (IDB indispo?):", e);
     try {
-      // ✅ FIX: parse robuste (évite crash si LSK est compressé/illisible)
       const rows: any[] = readLegacyRowsSafe();
-      const idx = rows.findIndex((r) => r.id === safe.id);
-      const trimmed = { ...safe, payload: null }; // compact
+      const idx = rows.findIndex((r) => (r.id || r.matchId) === safe.id);
+      const trimmed = { ...safe, payload: null };
       if (idx >= 0) rows.splice(idx, 1);
       rows.unshift(trimmed);
       while (rows.length > 120) rows.pop();
@@ -968,10 +974,9 @@ export async function remove(id: string): Promise<void> {
       });
     });
   } catch {
-    // fallback
     try {
       const rows = readLegacyRowsSafe() as any[];
-      const out = rows.filter((r) => r.id !== id);
+      const out = rows.filter((r) => r.id !== id && r.matchId !== id);
       localStorage.setItem(LSK, JSON.stringify(out));
     } catch {}
   }
@@ -1008,6 +1013,7 @@ let __cache: _LightRow[] = (() => {
     return [];
   }
 })();
+
 function _saveCache() {
   try {
     localStorage.setItem(LSK_CACHE, JSON.stringify(__cache));
@@ -1036,9 +1042,10 @@ function _applyUpsertToCache(rec: SavedMatch) {
 }
 
 function _applyRemoveToCache(id: string) {
-  __cache = __cache.filter((r) => r.id !== id);
+  __cache = __cache.filter((r) => r.id !== id && (r as any).matchId !== id);
   _saveCache();
 }
+
 function _clearCache() {
   __cache = [];
   _saveCache();
@@ -1049,21 +1056,24 @@ function readAllSync(): _LightRow[] {
 }
 
 /* =========================
-   Sélecteurs utilitaires
+   Sélecteurs utilitaires (✅ exports nommés)
 ========================= */
-async function listByStatus(
+export async function listByStatus(
   status: "in_progress" | "finished"
 ): Promise<SavedMatch[]> {
   const rows = await list();
   return rows.filter((r) => r.status === status);
 }
-async function listInProgress(): Promise<SavedMatch[]> {
+
+export async function listInProgress(): Promise<SavedMatch[]> {
   return listByStatus("in_progress");
 }
-async function listFinished(): Promise<SavedMatch[]> {
+
+export async function listFinished(): Promise<SavedMatch[]> {
   return listByStatus("finished");
 }
-async function getX01(id: string): Promise<SavedMatch | null> {
+
+export async function getX01(id: string): Promise<SavedMatch | null> {
   const r = await get(id);
   return r && r.kind === "x01" ? r : null;
 }
@@ -1072,7 +1082,6 @@ async function getX01(id: string): Promise<SavedMatch | null> {
    Export objet unique History
 ========================= */
 export const History = {
-  // asynchrone
   async list() {
     const rows = await list();
     __cache = rows.map((r: any) => {
@@ -1085,7 +1094,7 @@ export const History = {
   get,
   async upsert(rec: SavedMatch) {
     await upsert(rec);
-    _applyUpsertToCache(rec); // cache en id canonique
+    _applyUpsertToCache(rec);
   },
   async remove(id: string) {
     await remove(id);

@@ -1,27 +1,28 @@
 // ============================================
 // src/hooks/useCricketStats.ts
 // Stats globales Cricket par profil
-// - Lit History.listFinished() pour trouver les matchs "cricket"
+// - Lit l'historique pour trouver les matchs "cricket"
 // - Charge chaque payload via History.get(id)
 // - Récupère / calcule legStats par joueur (computeCricketLegStats)
 // - Agrège par profil (aggregateCricketMatches)
 //
-// ✅ FIX V2:
-// - Supporte payload "string" (base64 + gzip OU json direct) + payload objet
-// - Si profileId est undefined => retourne automatiquement le 1er profil dispo
-//   (évite "Aucune donnée Cricket" quand StatsHub ne passe pas le profileId)
+// ✅ FIX V2 (robuste):
+// - NE DEPEND PLUS de History.listFinished() (qui peut ne pas exister selon ton history.ts)
+//   => fallback automatique : History.list() + filtre status
+// - Supporte payload "string" (base64+gzip OU json direct) + payload objet
 // - Détecte cricket aussi via champs usuels (kind/mode/config)
+// - Si profileId est undefined => retourne automatiquement le 1er profil dispo
 // ============================================
 
 import * as React from "react";
 import { History } from "../lib/history";
+import type { SavedMatch } from "../lib/history";
 import {
   computeCricketLegStats,
   aggregateCricketMatches,
   type CricketLegStats,
   type CricketMatchAgg,
 } from "../lib/StatsCricket";
-import type { SavedMatch } from "../lib/history";
 
 export type CricketPlayerDashboardStats = CricketMatchAgg & {
   profileId: string;
@@ -30,7 +31,9 @@ export type CricketPlayerDashboardStats = CricketMatchAgg & {
 
 type StateByProfile = Record<string, CricketPlayerDashboardStats>;
 
-/** ---- decode helpers (base64+gzip OR json) ---- */
+/* =========================
+   decode helpers (base64+gzip OR json OR object)
+========================= */
 async function decodeMaybe(raw: any): Promise<any | null> {
   if (!raw) return null;
 
@@ -39,9 +42,21 @@ async function decodeMaybe(raw: any): Promise<any | null> {
 
   if (typeof raw !== "string") return null;
 
-  // Try base64 first
+  const s = raw.trim();
+  if (!s) return null;
+
+  // 1) raw JSON direct
+  if (s.startsWith("{") || s.startsWith("[")) {
+    try {
+      return JSON.parse(s);
+    } catch {
+      // continue
+    }
+  }
+
+  // 2) try base64 (maybe gzip, maybe json string)
   try {
-    const bin = atob(raw);
+    const bin = atob(s);
     const buf = Uint8Array.from(bin, (c) => c.charCodeAt(0));
 
     const DS: any = (window as any).DecompressionStream;
@@ -52,28 +67,31 @@ async function decodeMaybe(raw: any): Promise<any | null> {
         const resp = new Response(stream);
         return await resp.json();
       } catch {
-        // if not gzipped, fallthrough
+        // not gzipped or fail -> continue
       }
     }
 
-    // not gzipped -> maybe plain json inside base64
+    // base64 but not gzip => maybe JSON in decoded text
     try {
       return JSON.parse(bin);
     } catch {
-      // fallthrough
+      // continue
     }
   } catch {
     // not base64
   }
 
-  // Try raw json
+  // 3) last chance: parse string as JSON anyway
   try {
-    return JSON.parse(raw);
+    return JSON.parse(s);
   } catch {
     return null;
   }
 }
 
+/* =========================
+   helpers payload structure
+========================= */
 function pickPlayers(payload: any): any[] {
   if (!payload || typeof payload !== "object") return [];
   const p1 = Array.isArray(payload.players) ? payload.players : [];
@@ -84,15 +102,23 @@ function pickPlayers(payload: any): any[] {
 
 function getPid(p: any): string {
   if (!p) return "";
-  return String(p.profileId || p.id || p.playerId || p.player_id || p.uuid || "");
+  return String(
+    p.profileId ||
+      p.id ||
+      p.playerId ||
+      p.player_id ||
+      p.uuid ||
+      p.uid ||
+      ""
+  );
 }
 
 function getPname(p: any): string | undefined {
   if (!p) return undefined;
-  return p.name || p.displayName || p.username || undefined;
+  return p.name || p.displayName || p.username || p.nickname || undefined;
 }
 
-function isCricketRow(m: any): boolean {
+function looksLikeCricketRow(m: any): boolean {
   const k = String(m?.kind || "").toLowerCase();
   const mode =
     String(m?.mode || "").toLowerCase() ||
@@ -101,12 +127,67 @@ function isCricketRow(m: any): boolean {
 
   if (k === "cricket") return true;
   if (mode.includes("cricket")) return true;
-
-  // some history rows are "leg" with config.mode inside decoded payload, we can't see it here
-  // so we stay permissive when kind is unknown
   return false;
 }
 
+function looksLikeCricketPayload(payload: any, fallbackRow?: any): boolean {
+  if (!payload || typeof payload !== "object") return false;
+
+  const pkind = String(payload?.kind || payload?.game?.kind || "").toLowerCase();
+  const pmode = String(
+    payload?.config?.mode ||
+      payload?.game?.mode ||
+      payload?.mode ||
+      payload?.summary?.mode ||
+      ""
+  ).toLowerCase();
+
+  if (pkind === "cricket") return true;
+  if (pmode.includes("cricket")) return true;
+
+  // si la row "light" dit cricket, on tolère
+  if (String(fallbackRow?.kind || "").toLowerCase() === "cricket") return true;
+
+  return false;
+}
+
+function isFinishedRow(m: any): boolean {
+  const s = String(m?.status || "").toLowerCase();
+  if (s === "finished") return true;
+  // fallback legacy
+  if (s === "done" || s === "completed") return true;
+  // si pas de status, on considère que c'est fini (historique ancien)
+  if (!s) return true;
+  return false;
+}
+
+/* =========================
+   load finished rows (robuste)
+========================= */
+async function loadFinishedRows(): Promise<SavedMatch[]> {
+  // ⚠️ selon ton history.ts, listFinished peut exister OU PAS.
+  const anyH: any = History as any;
+
+  try {
+    if (typeof anyH.listFinished === "function") {
+      return (await anyH.listFinished()) as SavedMatch[];
+    }
+  } catch {
+    // ignore -> fallback
+  }
+
+  // fallback standard : list() + filtre
+  try {
+    const all = (await anyH.list()) as SavedMatch[];
+    return (all || []).filter(isFinishedRow);
+  } catch {
+    return [];
+  }
+}
+
+/* =========================
+   hook principal
+========================= */
 export function useCricketStats() {
   const [loading, setLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<Error | null>(null);
@@ -120,18 +201,12 @@ export function useCricketStats() {
     const run = async () => {
       setLoading(true);
       try {
-        const all: SavedMatch[] = await History.listFinished();
+        const allFinished: SavedMatch[] = await loadFinishedRows();
 
-        // ✅ detect cricket robustly
-        const cricketRows = all.filter((m: any) => {
-          const k = String((m as any)?.kind || "").toLowerCase();
-          if (k === "cricket") return true;
-          const mode =
-            String((m as any)?.mode || "").toLowerCase() ||
-            String((m as any)?.game?.mode || "").toLowerCase() ||
-            String((m as any)?.summary?.mode || "").toLowerCase();
-          return mode.includes("cricket");
-        });
+        // ✅ détecte cricket "light"
+        const cricketRows = (allFinished || []).filter((m: any) =>
+          looksLikeCricketRow(m)
+        );
 
         const legsByProfile: Record<
           string,
@@ -139,34 +214,37 @@ export function useCricketStats() {
         > = {};
 
         for (const row of cricketRows) {
-          const full = await History.get((row as any).id);
+          if (cancelled) break;
+
+          // charge full payload (decompress côté History.get si besoin)
+          const full = await (History as any).get?.((row as any).id);
           const rawPayload =
-            (full as any)?.payload ?? (row as any)?.payload ?? (full as any) ?? null;
+            (full as any)?.payload ??
+            (row as any)?.payload ??
+            (full as any) ??
+            null;
 
           const payload = await decodeMaybe(rawPayload);
           if (!payload || typeof payload !== "object") continue;
 
-          // ✅ ensure it's really cricket (sometimes listFinished includes weird legacy)
-          const pmode =
-            String(payload?.config?.mode || payload?.game?.mode || payload?.mode || payload?.summary?.mode || "")
-              .toLowerCase();
-          const pkind = String(payload?.kind || "").toLowerCase();
-          if (!(pkind === "cricket" || pmode.includes("cricket"))) {
-            // allow anyway if row.kind already says cricket
-            if (String((row as any)?.kind || "").toLowerCase() !== "cricket") continue;
-          }
+          // ✅ re-check : payload doit vraiment être cricket
+          if (!looksLikeCricketPayload(payload, row)) continue;
 
           const players = pickPlayers(payload);
+          if (!players.length) continue;
 
           for (const p of players) {
             const pid = getPid(p);
             if (!pid) continue;
 
             const hits =
-              Array.isArray(p.hits) ? p.hits :
-              Array.isArray(p.throws) ? p.throws :
-              Array.isArray(p.darts) ? p.darts :
-              [];
+              Array.isArray(p.hits)
+                ? p.hits
+                : Array.isArray(p.throws)
+                  ? p.throws
+                  : Array.isArray(p.darts)
+                    ? p.darts
+                    : [];
 
             const legStats: CricketLegStats =
               p.legStats && typeof p.legStats === "object"
@@ -212,7 +290,7 @@ export function useCricketStats() {
 
   const getForProfile = React.useCallback(
     (profileId?: string | null) => {
-      // ✅ if missing, return first available profile stats
+      // ✅ si profileId manquant => prend le premier dispo
       if (!profileId) {
         const first = Object.values(statsByProfile)[0];
         return first ?? null;
