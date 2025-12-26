@@ -1,9 +1,10 @@
 // ============================================
-// src/lib/sfx.ts — Gestion centralisée des sons
+// src/lib/sfx.ts — Gestion centralisée des sons (SAFE MOBILE)
 // SONS DE BASE servis depuis /public/sounds (Vite)
 // + Shanghai servis depuis src/assets/sounds (Vite import)
 // + Cache/pool Audio + unlock autoplay
 // + ✅ UI clicks (click / soft / confirm) servis depuis /public/sounds
+// ✅ SAFE: aucun Audio créé au boot (lazy), play() ne doit JAMAIS crash l’UI
 // ============================================
 
 let SFX_ENABLED = true;
@@ -43,9 +44,24 @@ type SfxKey = keyof typeof SFX;
  * ✅ Petit pool Audio pour éviter le lag et permettre chevauchements légers.
  * - On garde plusieurs instances par son
  * - On recycle la première qui est libre, sinon on clone
+ *
+ * ✅ SAFE MOBILE:
+ * - Aucun Audio créé tant qu’on n’a pas joué un son (donc pas au boot)
+ * - Tous les accès Audio sont try/catch
  */
 const POOL_MAX_PER_URL = 4;
 const pool = new Map<string, HTMLAudioElement[]>();
+
+function makeAudio(url: string) {
+  // ⚠️ lazy instanciation -> appelée seulement au moment d’un playSafeUrl()
+  const a = new Audio(url);
+  // ✅ évite des downloads agressifs au boot (il n’y a pas de création au boot de toute façon)
+  // mais sur certains navigateurs ça aide à rester “soft”.
+  a.preload = "none";
+  (a as any).playsInline = true;
+  a.volume = 0.9;
+  return a;
+}
 
 function getFromPool(url: string) {
   let list = pool.get(url);
@@ -56,19 +72,25 @@ function getFromPool(url: string) {
 
   // 1) si une instance est disponible (paused/ended), on la reprend
   for (const a of list) {
-    if (a.paused || a.ended) return a;
+    try {
+      if (a.paused || a.ended) return a;
+    } catch {
+      // si un élément est “cassé”, on l’ignore
+    }
   }
 
   // 2) sinon on clone si on peut
   if (list.length < POOL_MAX_PER_URL) {
-    const a = new Audio(url);
-    a.preload = "auto";
-    a.volume = 0.9;
-    list.push(a);
-    return a;
+    try {
+      const a = makeAudio(url);
+      list.push(a);
+      return a;
+    } catch {
+      // ignore
+    }
   }
 
-  // 3) sinon on recycle la première
+  // 3) sinon on recycle la première (fallback)
   return list[0];
 }
 
@@ -84,17 +106,25 @@ export async function unlockAudio() {
     // On tente un play ultra court en muet, puis pause.
     const url = SFX.hit; // un son garanti en public
     const a = getFromPool(url);
-    a.muted = true;
-    a.currentTime = 0;
+    if (!a) return;
+
+    try {
+      a.muted = true;
+      a.currentTime = 0;
+    } catch {}
 
     const p = a.play();
     if (p && typeof (p as any).then === "function") {
       await p;
     }
 
-    a.pause();
-    a.currentTime = 0;
-    a.muted = false;
+    try {
+      a.pause();
+      a.currentTime = 0;
+      a.muted = false;
+      // après unlock, on peut laisser preload auto pour réduire le lag sur les plays suivants
+      a.preload = "auto";
+    } catch {}
   } catch {
     // Si le navigateur refuse encore, pas grave : ça se débloquera au 1er vrai play après geste.
   }
@@ -105,15 +135,21 @@ function playSafeUrl(url?: string, vol = 0.9) {
 
   try {
     const a = getFromPool(url);
-    a.volume = vol;
-    a.currentTime = 0;
+    if (!a) return;
+
+    try {
+      a.volume = vol;
+      a.currentTime = 0;
+      // dès qu’on commence à utiliser, on peut autoriser le préchargement
+      a.preload = "auto";
+    } catch {}
 
     const p = a.play();
     if (p && typeof (p as any).catch === "function") {
       p.catch(() => {});
     }
   } catch {
-    // ignore
+    // ✅ ne jamais casser l’app
   }
 }
 

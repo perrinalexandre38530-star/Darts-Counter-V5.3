@@ -103,6 +103,74 @@ const statsNameCss = `
 }
 `;
 
+// ============================================================
+// ✅ FAST STATS CACHE (StatsHub)
+// - Affiche instantanément un dashboard depuis un cache localStorage
+// - Puis laisse ton calcul normal remplacer derrière
+// - Tolérant: ne casse pas si cache absent/corrompu
+// ============================================================
+
+const STATS_CACHE_KEYS = (profileId: string) => [
+  `dc_stats_cache_v1:${profileId}`,
+  `dc_stats_cache:${profileId}`,
+  `dc-stats-cache:${profileId}`,
+];
+
+function safeJsonParse<T = any>(raw: any): T | null {
+  try {
+    if (!raw) return null;
+    if (typeof raw === "object") return raw as T;
+    if (typeof raw === "string") return JSON.parse(raw) as T;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function readStatsCache(profileId: string): any | null {
+  if (!profileId) return null;
+  try {
+    for (const k of STATS_CACHE_KEYS(profileId)) {
+      const raw = localStorage.getItem(k);
+      const parsed = safeJsonParse(raw);
+      if (parsed) return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+/**
+ * Hook: renvoie un "dashboard" instantané depuis cache, puis laisse le calcul normal faire le reste.
+ * Convention attendue du cache:
+ * - soit { dashboard: <PlayerDashboardStats> }
+ * - soit directement <PlayerDashboardStats>
+ */
+function useFastDashboardCache(profileId: string | null) {
+  const [cachedDashboard, setCachedDashboard] = React.useState<any | null>(null);
+  const [cacheLoaded, setCacheLoaded] = React.useState(false);
+
+  React.useEffect(() => {
+    setCacheLoaded(false);
+    setCachedDashboard(null);
+
+    const pid = String(profileId || "");
+    if (!pid) {
+      setCacheLoaded(true);
+      return;
+    }
+
+    // lecture sync très rapide
+    const hit = readStatsCache(pid);
+    if (hit) {
+      setCachedDashboard(hit?.dashboard ?? hit);
+    }
+
+    setCacheLoaded(true);
+  }, [profileId]);
+
+  return { cachedDashboard, cacheLoaded };
+}
+
 function useInjectStatsNameCss() {
   React.useEffect(() => {
     if (typeof document === "undefined") return;
@@ -3844,6 +3912,13 @@ const selectedPlayer = React.useMemo(
   [filteredPlayers, selectedPlayerId]
 );
 
+// ✅ FAST: dashboard instantané depuis cache (localStorage)
+const effectiveProfileId = String(
+  selectedPlayer?.id ?? activePlayerId ?? playerId ?? initialPlayerId ?? profile?.id ?? ""
+);
+
+const { cachedDashboard } = useFastDashboardCache(effectiveProfileId || null);
+
 const currentPlayerIndex = React.useMemo(() => {
   if (!selectedPlayer) return -1;
   return filteredPlayers.findIndex((p) => p.id === selectedPlayer.id);
@@ -4467,17 +4542,20 @@ return (
                 <div style={row}>
                   {selectedPlayer ? (
                     <StatsPlayerDashboard
-                      data={
-                        selectedPlayer
-                          ? buildDashboardFromNormalized(
+                    data={
+                      selectedPlayer
+                        ? // ✅ 1) Affiche tout de suite le cache si dispo
+                          (cachedDashboard ??
+                            // ✅ 2) Sinon fallback sur ton calcul normal (plus lent)
+                            buildDashboardFromNormalized(
                               String(selectedPlayer.id),
                               String(selectedPlayer.name || "Joueur"),
                               nmEffective
-                            )
-                          : null
-                      }
-                      x01MultiLegsSets={x01MultiLegsSets}
-                    />
+                            ))
+                        : null
+                    }
+                    x01MultiLegsSets={x01MultiLegsSets}
+                  />
                   ) : (
                     <div style={{ color: T.text70, fontSize: 13 }}>
                       Sélectionne un joueur pour afficher le dashboard.

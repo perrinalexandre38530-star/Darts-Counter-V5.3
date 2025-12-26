@@ -7,7 +7,6 @@
 // ✅ NEW: Carte "TOURNOIS" (LOCAL) dans le menu Games
 // ✅ CHANGE: supprime l’entrée "X01" (ancien moteur)
 // ✅ CHANGE: "X01 V3" devient "X01" (même tab x01_config_v3)
-// ✅ NEW (SFX): sons UI sur les boutons (click / open / close) avec fallback safe
 // ============================================
 
 import React from "react";
@@ -150,56 +149,6 @@ const GAMES: GameDef[] = [
   },
 ];
 
-/* ============================================================
-   ✅ SFX UI (fallback safe)
-   - Essaie d'abord un moteur global (si tu en as déjà un)
-   - Sinon fallback <audio> sur /sfx/*.mp3 (ne casse pas si absent)
-============================================================ */
-type UiSfxName = "click" | "open" | "close";
-
-function playUiSfx(name: UiSfxName = "click") {
-  if (typeof window === "undefined") return;
-
-  const w: any = window as any;
-
-  try {
-    // 1) Si ton moteur SFX existe déjà en global (Worker/Context/etc.)
-    //    -> adapte le nom si tu l’as (dcPlaySfx / playUiSfx / Sfx.play / etc.)
-    if (typeof w.dcPlaySfx === "function") {
-      w.dcPlaySfx(name);
-      return;
-    }
-    if (typeof w.playUiSfx === "function") {
-      w.playUiSfx(name);
-      return;
-    }
-    if (w.Sfx && typeof w.Sfx.play === "function") {
-      w.Sfx.play(name);
-      return;
-    }
-
-    // 2) Fallback HTMLAudioElement (si les fichiers existent)
-    const cacheKey = `__dc_ui_sfx_${name}`;
-    let a: HTMLAudioElement | null = w[cacheKey] || null;
-
-    if (!a) {
-      // ⚠️ paths par défaut : /public/sfx/click.mp3 etc.
-      a = new Audio(`/sfx/${name}.mp3`);
-      a.preload = "auto";
-      a.volume = 0.65;
-      w[cacheKey] = a;
-    }
-
-    try {
-      a.currentTime = 0;
-    } catch {}
-
-    a.play().catch(() => {});
-  } catch {
-    // no-op (jamais casser l’UI)
-  }
-}
-
 export default function Games({ setTab }: Props) {
   const { theme } = useTheme();
   const { t } = useLang();
@@ -210,7 +159,6 @@ export default function Games({ setTab }: Props) {
 
   function navigate(tab: string | null) {
     if (!tab) return;
-    playUiSfx("click");
     setTab(tab);
   }
 
@@ -327,7 +275,6 @@ export default function Games({ setTab }: Props) {
                 <InfoDot
                   onClick={(ev) => {
                     ev.stopPropagation();
-                    playUiSfx("open");
                     setInfoGame(g);
                   }}
                   glow={theme.primary + "88"}
@@ -341,10 +288,7 @@ export default function Games({ setTab }: Props) {
       {/* Overlay d'information */}
       {infoGame && (
         <div
-          onClick={() => {
-            playUiSfx("close");
-            setInfoGame(null);
-          }}
+          onClick={() => setInfoGame(null)}
           style={{
             position: "fixed",
             inset: 0,
@@ -406,10 +350,7 @@ export default function Games({ setTab }: Props) {
 
             <button
               type="button"
-              onClick={() => {
-                playUiSfx("close");
-                setInfoGame(null);
-              }}
+              onClick={() => setInfoGame(null)}
               style={{
                 display: "block",
                 marginLeft: "auto",
