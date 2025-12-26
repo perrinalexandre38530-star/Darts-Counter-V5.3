@@ -40,6 +40,7 @@ import SplashJingle from "./assets/audio/splash_jingle.mp3";
 
 // ✅ NEW: CRASH CATCHER (à créer dans src/components/CrashCatcher.tsx)
 import CrashCatcher from "./components/CrashCatcher";
+import MobileErrorOverlay from "./components/MobileErrorOverlay";
 
 // Persistance (IndexedDB via storage.ts)
 import { loadStore, saveStore } from "./lib/storage";
@@ -1460,12 +1461,14 @@ function App() {
   return (
     <CrashCatcher>
       <>
+        <MobileErrorOverlay />
+  
         <div className="container" style={{ paddingBottom: 88 }}>
           <AppGate go={go} tab={tab}>
             {page}
           </AppGate>
         </div>
-
+  
         <BottomNav value={tab as any} onChange={(k: any) => go(k)} />
         <SWUpdateBanner />
       </>
