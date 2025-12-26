@@ -9,6 +9,30 @@ import "./index.css";
 // ✅ Mode Online : Provider d'auth globale
 import { AuthOnlineProvider } from "./hooks/useAuthOnline";
 
+// ✅ CRASH LOGGER (affiche l’erreur à l'écran)
+(function attachCrashOverlay() {
+  if (typeof window === "undefined") return;
+
+  const show = (title: string, err: any) => {
+    try {
+      const el = document.createElement("pre");
+      el.style.cssText =
+        "position:fixed;inset:0;z-index:999999;background:#0b0b0f;color:#fff;padding:12px;white-space:pre-wrap;overflow:auto;font:12px/1.35 ui-monospace,Menlo,Consolas;";
+      el.textContent =
+        `[${title}]\n` +
+        (err?.stack || err?.message || String(err)) +
+        "\n\nURL:\n" +
+        String(location.href);
+      document.body.appendChild(el);
+    } catch {}
+  };
+
+  window.addEventListener("error", (e: any) => show("window.error", e?.error || e?.message || e));
+  window.addEventListener("unhandledrejection", (e: any) =>
+    show("unhandledrejection", e?.reason || e)
+  );
+})();
+
 /* ============================================================
    SAFE MODE (si crash au boot -> on coupe SW + purge caches)
 ============================================================ */
