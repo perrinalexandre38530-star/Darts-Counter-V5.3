@@ -764,7 +764,10 @@ export async function upsert(rec: SavedMatch): Promise<void> {
 
   // ✅ id canonique
   const canonicalId =
-    getCanonicalMatchId(rec) ?? rec.matchId ?? rec.id ?? (crypto.randomUUID?.() ?? String(now));
+    getCanonicalMatchId(rec) ??
+    rec.matchId ??
+    rec.id ??
+    (crypto.randomUUID?.() ?? String(now));
 
   const safe: any = {
     id: String(canonicalId),
@@ -886,7 +889,9 @@ export async function upsert(rec: SavedMatch): Promise<void> {
 
   try {
     const payloadStr = payloadEffective ? JSON.stringify(payloadEffective) : "";
-    const payloadCompressed = payloadStr ? LZString.compressToUTF16(payloadStr) : "";
+    const payloadCompressed = payloadStr
+      ? LZString.compressToUTF16(payloadStr)
+      : "";
 
     await withStore("readwrite", async (st) => {
       // Trim MAX_ROWS
@@ -910,7 +915,8 @@ export async function upsert(rec: SavedMatch): Promise<void> {
 
         try {
           // @ts-ignore
-          const hasIndex = st.indexNames && st.indexNames.contains("by_updatedAt");
+          const hasIndex =
+            st.indexNames && st.indexNames.contains("by_updatedAt");
           if (hasIndex) {
             const ix = st.index("by_updatedAt");
             const req = ix.openCursor(undefined, "prev");
@@ -949,6 +955,15 @@ export async function upsert(rec: SavedMatch): Promise<void> {
         putReq.onerror = () => reject(putReq.error);
       });
     });
+
+    // ================================
+    // 🔔 NOTIFY UI/STATS (history changed)
+    // ================================
+    try {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("dc-history-updated"));
+      }
+    } catch {}
   } catch (e) {
     console.warn("[history.upsert] fallback localStorage (IDB indispo?):", e);
     try {
@@ -959,6 +974,15 @@ export async function upsert(rec: SavedMatch): Promise<void> {
       rows.unshift(trimmed);
       while (rows.length > 120) rows.pop();
       localStorage.setItem(LSK, JSON.stringify(rows));
+
+      // ================================
+      // 🔔 NOTIFY UI/STATS (history changed)
+      // ================================
+      try {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("dc-history-updated"));
+        }
+      } catch {}
     } catch {}
   }
 }
@@ -973,11 +997,29 @@ export async function remove(id: string): Promise<void> {
         req.onerror = () => reject(req.error);
       });
     });
+
+    // ================================
+    // 🔔 NOTIFY UI/STATS (history changed)
+    // ================================
+    try {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("dc-history-updated"));
+      }
+    } catch {}
   } catch {
     try {
       const rows = readLegacyRowsSafe() as any[];
       const out = rows.filter((r) => r.id !== id && r.matchId !== id);
       localStorage.setItem(LSK, JSON.stringify(out));
+
+      // ================================
+      // 🔔 NOTIFY UI/STATS (history changed)
+      // ================================
+      try {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("dc-history-updated"));
+        }
+      } catch {}
     } catch {}
   }
 }
@@ -992,9 +1034,27 @@ export async function clear(): Promise<void> {
         req.onerror = () => reject(req.error);
       });
     });
+
+    // ================================
+    // 🔔 NOTIFY UI/STATS (history changed)
+    // ================================
+    try {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("dc-history-updated"));
+      }
+    } catch {}
   } catch {
     try {
       localStorage.removeItem(LSK);
+
+      // ================================
+      // 🔔 NOTIFY UI/STATS (history changed)
+      // ================================
+      try {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("dc-history-updated"));
+        }
+      } catch {}
     } catch {}
   }
 }
@@ -1119,3 +1179,10 @@ export const History = {
 if (!__cache.length) {
   _hydrateCacheFromList();
 }
+
+// DEBUG TEMP — expose History to DevTools
+try {
+  if (typeof window !== "undefined") {
+    (window as any).__DC_HISTORY__ = History;
+  }
+} catch {}

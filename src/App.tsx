@@ -88,6 +88,12 @@ import ShanghaiEnd from "./pages/ShanghaiEnd";
 // Historique
 import { History } from "./lib/history";
 
+// ✅ NEW: rebuild stats cache when history changes (FAST STATS HUB)
+import { rebuildStatsForProfile } from "./lib/stats/rebuildStats";
+
+// ✅ NEW: init SFX enabled at boot (UI clicks inclus)
+import { setSfxEnabled } from "./lib/sfx";
+
 // Stats pages
 import StatsShell from "./pages/StatsShell";
 import StatsHub from "./pages/StatsHub";
@@ -672,10 +678,19 @@ function App() {
     return !isAuthFlow;
   });
 
-  /* Boot: persistance + nettoyage localStorage + warm-up */
+  /* Boot: persistance + nettoyage localStorage + warm-up + ✅ init SFX */
   React.useEffect(() => {
     ensurePersisted().catch(() => {});
     purgeLegacyLocalStorageIfNeeded();
+
+    // ✅ Init SFX (UI clicks + impacts + shanghai...) depuis préférence locale
+    try {
+      const enabled = localStorage.getItem("dc-ui-sfx") !== "0";
+      setSfxEnabled(enabled);
+    } catch {
+      setSfxEnabled(true);
+    }
+
     try {
       warmAggOnce();
     } catch {}
@@ -832,6 +847,53 @@ function App() {
   function setProfiles(fn: (p: Profile[]) => Profile[]) {
     update((s) => ({ ...s, profiles: fn(s.profiles ?? []) }));
   }
+
+  // ============================================================
+  // ✅ FAST STATS HUB : rebuild cache stats au boot + après history update
+  // - écoute "dc-history-updated" (History.upsert/remove/clear)
+  // - rebuild en idle pour éviter de bloquer l'UI
+  // - boot rebuild: une fois que loadStore est terminé (loading=false)
+  // ============================================================
+  const __profilesRef = React.useRef<Profile[]>([]);
+  React.useEffect(() => {
+    __profilesRef.current = (store.profiles ?? []) as any;
+  }, [store.profiles]);
+
+  const __rebuildLockRef = React.useRef(false);
+
+  React.useEffect(() => {
+    const schedule = () => {
+      if (__rebuildLockRef.current) return;
+      __rebuildLockRef.current = true;
+
+      const work = async () => {
+        try {
+          const profiles = (__profilesRef.current ?? []) as any[];
+          await Promise.allSettled(profiles.map((p) => rebuildStatsForProfile(String(p?.id))));
+        } catch (e) {
+          console.warn("[stats] rebuild error:", e);
+        } finally {
+          __rebuildLockRef.current = false;
+        }
+      };
+
+      try {
+        const ric = (window as any).requestIdleCallback;
+        if (typeof ric === "function") ric(() => work(), { timeout: 2000 });
+        else setTimeout(() => work(), 50);
+      } catch {
+        setTimeout(() => work(), 50);
+      }
+    };
+
+    // ✅ BOOT rebuild (après loadStore)
+    if (!loading) schedule();
+
+    // ✅ rebuild après chaque modification History
+    window.addEventListener("dc-history-updated", schedule);
+    return () => window.removeEventListener("dc-history-updated", schedule);
+  }, [loading]);
+  // ============================================================
 
   /* --------------------------------------------
       pushHistory (FIN DE PARTIE)

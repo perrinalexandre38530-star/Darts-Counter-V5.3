@@ -6,12 +6,12 @@
 // - Récupère / calcule legStats par joueur (computeCricketLegStats)
 // - Agrège par profil (aggregateCricketMatches)
 //
-// ✅ FIX V3 (anti "tout à 0"):
-// - Decode payload string: base64+gzip, base64->json, json direct
-// - Détection cricket robuste (kind/mode + inspection payload)
-// - Extraction hits ultra permissive (hits/throws/darts/turns/visits/rounds/events…)
-// - Normalisation hits (S/D/T + 15..20 + 25/50 + MISS)
-// - Si profileId undefined => retourne le 1er profil dispo
+// ✅ FIX V3 (ROBUSTE):
+// - Supporte payload "string" (base64 + gzip OU json direct) + payload objet
+// - Détecte cricket via kind/mode/config + payload
+// - Extrait les hits depuis plusieurs formats legacy (hits/throws/darts/events + turns/visits payload)
+// - Convertit "T20/D19/S18/SBULL/DBULL/MISS" -> CricketHit {target,mult}
+// - Si profileId est undefined => retourne automatiquement le 1er profil dispo
 // ============================================
 
 import * as React from "react";
@@ -21,7 +21,6 @@ import {
   aggregateCricketMatches,
   type CricketLegStats,
   type CricketMatchAgg,
-  type CricketHit, // ✅ important
 } from "../lib/StatsCricket";
 import type { SavedMatch } from "../lib/history";
 
@@ -32,9 +31,19 @@ export type CricketPlayerDashboardStats = CricketMatchAgg & {
 
 type StateByProfile = Record<string, CricketPlayerDashboardStats>;
 
-/* ---------------------------------------------
-   Decode helpers (base64+gzip OR json OR object)
---------------------------------------------- */
+/* -------------------------------------------
+   Utils
+------------------------------------------- */
+function str(v: any): string {
+  return String(v ?? "");
+}
+function lower(v: any): string {
+  return str(v).toLowerCase();
+}
+
+/* -------------------------------------------
+   Decode helpers (object | json | base64 | gzip)
+------------------------------------------- */
 async function decodeMaybe(raw: any): Promise<any | null> {
   if (!raw) return null;
 
@@ -55,11 +64,12 @@ async function decodeMaybe(raw: any): Promise<any | null> {
     }
   }
 
-  // 2) base64 -> maybe gzip(json) OR json
+  // 2) base64 -> maybe gzip(JSON) OR base64(JSON)
   try {
-    const bin = atob(s);
+    const bin = atob(s.replace(/[\r\n\s]/g, ""));
     const buf = Uint8Array.from(bin, (c) => c.charCodeAt(0));
 
+    // 2a) try gzip via DecompressionStream if available
     const DS: any = (window as any).DecompressionStream;
     if (typeof DS === "function") {
       try {
@@ -68,408 +78,380 @@ async function decodeMaybe(raw: any): Promise<any | null> {
         const resp = new Response(stream);
         return await resp.json();
       } catch {
-        // not gzipped
+        // not gzipped, continue
       }
     }
 
-    // base64 contained plain JSON string
+    // 2b) base64(json)
     try {
       return JSON.parse(bin);
     } catch {
       // continue
     }
   } catch {
-    // not base64
+    // not base64, continue
   }
 
-  return null;
-}
-
-/* ---------------------------------------------
-   Helpers: payload navigation
---------------------------------------------- */
-function lower(v: any) {
-  return String(v ?? "").toLowerCase();
-}
-
-function isCricketPayload(payload: any): boolean {
-  if (!payload || typeof payload !== "object") return false;
-
-  const pk = lower(payload.kind);
-  const pm =
-    lower(payload.mode) ||
-    lower(payload.config?.mode) ||
-    lower(payload.game?.mode) ||
-    lower(payload.summary?.mode) ||
-    lower(payload.match?.mode);
-
-  if (pk === "cricket") return true;
-  if (pm.includes("cricket")) return true;
-
-  // parfois le mode est dans engineState / state
-  const em =
-    lower(payload.engineState?.mode) ||
-    lower(payload.engineState?.config?.mode) ||
-    lower(payload.state?.mode) ||
-    lower(payload.state?.config?.mode);
-
-  if (em.includes("cricket")) return true;
-
-  return false;
-}
-
-function pickPlayers(payload: any): any[] {
-  if (!payload || typeof payload !== "object") return [];
-
-  const candidates: any[] = [];
-
-  // direct
-  if (Array.isArray(payload.players)) candidates.push(payload.players);
-
-  // common wrappers
-  if (Array.isArray(payload.result?.players)) candidates.push(payload.result.players);
-  if (Array.isArray(payload.summary?.players)) candidates.push(payload.summary.players);
-
-  // engine/state variants
-  if (Array.isArray(payload.engineState?.players)) candidates.push(payload.engineState.players);
-  if (Array.isArray(payload.state?.players)) candidates.push(payload.state.players);
-  if (Array.isArray(payload.match?.players)) candidates.push(payload.match.players);
-
-  // pick first non-empty
-  for (const arr of candidates) {
-    if (Array.isArray(arr) && arr.length) return arr;
-  }
-  return [];
-}
-
-function getPid(p: any): string {
-  if (!p) return "";
-  return String(p.profileId || p.id || p.playerId || p.player_id || p.uuid || "");
-}
-
-function getPname(p: any): string | undefined {
-  if (!p) return undefined;
-  return p.name || p.displayName || p.username || undefined;
-}
-
-/* ---------------------------------------------
-   ✅ HIT NORMALIZATION (S/D/T + 15..20 + 25/50 + MISS)
-   On renvoie un CricketHit "riche" (plusieurs clés) pour être compatible
---------------------------------------------- */
-function normalizeOneHit(h: any): CricketHit | null {
-  if (!h) return null;
-
-  // string like "T20", "D19", "S15", "SB", "DB", "25", "50", "MISS"
-  if (typeof h === "string") {
-    const s = h.trim().toUpperCase();
-    if (!s) return null;
-    if (s === "MISS" || s === "0" || s === "X") {
-      return { type: "MISS", target: "MISS", mult: 0 } as any;
-    }
-    if (s === "SB" || s === "B" || s === "BULL" || s === "25") {
-      return { type: "BULL", target: 25, n: 25, mult: 1, ring: "S" } as any;
-    }
-    if (s === "DB" || s === "DBULL" || s === "50") {
-      return { type: "DBULL", target: 25, n: 25, mult: 2, ring: "D" } as any;
-    }
-
-    const m = s.match(/^([SDT])\s*(\d{1,2})$/);
-    if (m) {
-      const ring = m[1];
-      const n = Number(m[2]);
-      const mult = ring === "S" ? 1 : ring === "D" ? 2 : 3;
-      if (!Number.isFinite(n) || n <= 0) return null;
-      return { type: ring, ring, target: n, n, mult } as any;
-    }
-
-    const m2 = s.match(/^(\d{1,2})$/);
-    if (m2) {
-      const n = Number(m2[1]);
-      if (n === 25) return { type: "BULL", target: 25, n: 25, mult: 1, ring: "S" } as any;
-      if (n === 50) return { type: "DBULL", target: 25, n: 25, mult: 2, ring: "D" } as any;
-      return { type: "S", ring: "S", target: n, n, mult: 1 } as any;
-    }
-
+  // 3) last resort: JSON parse again
+  try {
+    return JSON.parse(s);
+  } catch {
     return null;
   }
-
-  // object variants
-  if (typeof h === "object") {
-    // already looks like a CricketHit
-    const t = (h as any).target ?? (h as any).n ?? (h as any).number ?? (h as any).value ?? null;
-    const multRaw =
-      (h as any).mult ??
-      (h as any).multiplier ??
-      (h as any).m ??
-      (h as any).ringMult ??
-      null;
-
-    const ringRaw =
-      (h as any).ring ??
-      (h as any).type ??
-      (h as any).segment ??
-      (h as any).kind ??
-      (h as any).area ??
-      null;
-
-    // MISS flags
-    if ((h as any).miss === true || (h as any).isMiss === true) {
-      return { type: "MISS", target: "MISS", mult: 0 } as any;
-    }
-
-    // bull variants
-    const bullLike = String((h as any).bull ?? (h as any).isBull ?? "").toLowerCase();
-    if (bullLike === "true") {
-      return { type: "BULL", target: 25, n: 25, mult: 1, ring: "S" } as any;
-    }
-
-    // If target is 25/50
-    if (t === 25 || t === "25") {
-      const mult = Number(multRaw ?? 1);
-      return { type: mult >= 2 ? "DBULL" : "BULL", target: 25, n: 25, mult: mult >= 2 ? 2 : 1, ring: mult >= 2 ? "D" : "S" } as any;
-    }
-    if (t === 50 || t === "50") {
-      return { type: "DBULL", target: 25, n: 25, mult: 2, ring: "D" } as any;
-    }
-
-    const n = Number(t);
-    if (!Number.isFinite(n) || n <= 0) return null;
-
-    let mult = Number(multRaw);
-    if (!Number.isFinite(mult) || mult <= 0) {
-      const r = String(ringRaw ?? "").toUpperCase();
-      mult = r === "D" ? 2 : r === "T" ? 3 : 1;
-    }
-
-    const ring = mult === 2 ? "D" : mult === 3 ? "T" : "S";
-    return { ...h, ring, target: n, n, mult } as any;
-  }
-
-  return null;
 }
 
-/* ---------------------------------------------
-   ✅ Extract hits from MANY shapes
---------------------------------------------- */
-function flattenAnyArray(x: any): any[] {
-  if (!x) return [];
-  if (!Array.isArray(x)) return [];
-  const out: any[] = [];
-  for (const it of x) {
-    if (Array.isArray(it)) out.push(...flattenAnyArray(it));
-    else out.push(it);
-  }
-  return out;
-}
-
-function tryGetArray(obj: any, path: string[]): any[] {
-  try {
-    let cur = obj;
-    for (const k of path) {
-      if (!cur || typeof cur !== "object") return [];
-      cur = cur[k];
-    }
-    return Array.isArray(cur) ? cur : [];
-  } catch {
-    return [];
-  }
-}
-
-function extractHitsFromPlayer(p: any, payload: any): any[] {
-  if (!p || typeof p !== "object") return [];
-
-  // direct common fields
-  const direct =
-    (Array.isArray((p as any).hits) && (p as any).hits) ||
-    (Array.isArray((p as any).throws) && (p as any).throws) ||
-    (Array.isArray((p as any).darts) && (p as any).darts) ||
-    null;
-
-  if (direct && direct.length) return flattenAnyArray(direct);
-
-  // turns/visits/rounds => darts/throws/hits
-  const turns = (Array.isArray((p as any).turns) && (p as any).turns) ||
-    (Array.isArray((p as any).visits) && (p as any).visits) ||
-    (Array.isArray((p as any).rounds) && (p as any).rounds) ||
-    null;
-
-  if (turns && turns.length) {
-    const acc: any[] = [];
-    for (const t of turns) {
-      if (!t) continue;
-      const a =
-        (Array.isArray((t as any).darts) && (t as any).darts) ||
-        (Array.isArray((t as any).throws) && (t as any).throws) ||
-        (Array.isArray((t as any).hits) && (t as any).hits) ||
-        null;
-      if (a && a.length) acc.push(...flattenAnyArray(a));
-    }
-    if (acc.length) return acc;
-  }
-
-  // player log / actions
-  const log =
-    (Array.isArray((p as any).log) && (p as any).log) ||
-    (Array.isArray((p as any).actions) && (p as any).actions) ||
-    (Array.isArray((p as any).events) && (p as any).events) ||
-    null;
-
-  if (log && log.length) {
-    // often each event has dart/segment/value
-    return flattenAnyArray(log);
-  }
-
-  // global events filtered by player id (best effort)
-  const pid = getPid(p);
-  if (pid && payload && typeof payload === "object") {
-    const globalEvents =
-      (Array.isArray(payload.events) && payload.events) ||
-      (Array.isArray(payload.log) && payload.log) ||
-      (Array.isArray(payload.actions) && payload.actions) ||
-      (Array.isArray(payload.engineState?.events) && payload.engineState.events) ||
-      (Array.isArray(payload.state?.events) && payload.state.events) ||
-      null;
-
-    if (globalEvents && globalEvents.length) {
-      const mine = globalEvents.filter((e: any) => {
-        const ep = String(e?.playerId || e?.profileId || e?.pid || e?.id || "");
-        return ep && ep === pid;
-      });
-      if (mine.length) return flattenAnyArray(mine);
-    }
-  }
-
-  return [];
-}
-
-function normalizeHits(rawHits: any[]): CricketHit[] {
-  const out: CricketHit[] = [];
-  const flat = flattenAnyArray(rawHits);
-
-  for (const h of flat) {
-    // Sometimes events look like {dart:"T20"} or {hit:"D19"} or {segment:"T", n:20}
-    if (h && typeof h === "object") {
-      const token =
-        (h as any).dart ??
-        (h as any).hit ??
-        (h as any).code ??
-        (h as any).label ??
-        (h as any).valueStr ??
-        null;
-
-      if (typeof token === "string") {
-        const nh = normalizeOneHit(token);
-        if (nh) out.push(nh);
-        continue;
-      }
-    }
-
-    const nh = normalizeOneHit(h);
-    if (nh) out.push(nh);
-  }
-
-  return out;
-}
-
-/* ---------------------------------------------
-   Cricket row detection (light)
---------------------------------------------- */
-function isCricketRowLight(m: any): boolean {
+/* -------------------------------------------
+   Cricket detection (row + payload)
+------------------------------------------- */
+function isCricketRowQuick(m: any): boolean {
   const k = lower(m?.kind);
   if (k === "cricket") return true;
 
   const mode =
     lower(m?.mode) ||
     lower(m?.game?.mode) ||
-    lower(m?.summary?.mode);
+    lower(m?.summary?.mode) ||
+    lower(m?.config?.mode);
 
   if (mode.includes("cricket")) return true;
+
+  // legacy: sometimes kind unknown but payload/config says cricket (confirm after decode)
   return false;
 }
 
-/* ---------------------------------------------
+function confirmCricketFromPayload(payload: any, row?: any): boolean {
+  const pkind = lower(payload?.kind);
+  const pmode = lower(
+    payload?.config?.mode ??
+      payload?.game?.mode ??
+      payload?.mode ??
+      payload?.summary?.mode ??
+      payload?.state?.mode ??
+      payload?.engineState?.mode ??
+      ""
+  );
+  const rkind = lower(row?.kind);
+  return pkind === "cricket" || pmode.includes("cricket") || rkind === "cricket";
+}
+
+/* -------------------------------------------
+   Player helpers
+------------------------------------------- */
+function pickPlayers(payload: any, row?: any): any[] {
+  const p = payload && typeof payload === "object" ? payload : null;
+
+  const p1 = Array.isArray(p?.players) ? p.players : [];
+  const p2 = Array.isArray(p?.result?.players) ? p.result.players : [];
+  const p3 = Array.isArray(p?.summary?.players) ? p.summary.players : [];
+  const p4 = Array.isArray(p?.state?.players) ? p.state.players : [];
+  const p5 = Array.isArray(p?.engineState?.players) ? p.engineState.players : [];
+
+  // sometimes row.players is available even if payload minimal
+  const pr = Array.isArray(row?.players) ? row.players : [];
+
+  return p1.length
+    ? p1
+    : p2.length
+    ? p2
+    : p3.length
+    ? p3
+    : p4.length
+    ? p4
+    : p5.length
+    ? p5
+    : pr.length
+    ? pr
+    : [];
+}
+
+function getPid(p: any): string {
+  if (!p) return "";
+  return str(
+    p.profileId || p.id || p.playerId || p.player_id || p.uuid || p.uid || ""
+  );
+}
+
+function getPname(p: any): string | undefined {
+  if (!p) return undefined;
+  return p.name || p.displayName || p.username || p.nickname || undefined;
+}
+
+/* -------------------------------------------
+   Hit normalization
+   - Accept CricketHit-like objects
+   - Accept strings like "T20", "D19", "S18", "SBULL", "DBULL", "MISS"
+------------------------------------------- */
+function parseSegment(seg: any): { target: number; mult: number } | null {
+  if (!seg) return null;
+
+  // already object-ish
+  if (typeof seg === "object") {
+    const t =
+      (seg as any).target ??
+      (seg as any).number ??
+      (seg as any).value ??
+      (seg as any).num ??
+      (seg as any).n ??
+      (seg as any).bed ??
+      null;
+
+    const m =
+      (seg as any).mult ??
+      (seg as any).multiplier ??
+      (seg as any).m ??
+      (seg as any).times ??
+      (seg as any).x ??
+      null;
+
+    if (typeof t === "number" && typeof m === "number") {
+      if (t === 25) return { target: 25, mult: m >= 2 ? 2 : 1 };
+      if (t >= 15 && t <= 20)
+        return { target: t, mult: Math.max(1, Math.min(3, m)) };
+    }
+
+    const s =
+      (seg as any).segment ||
+      (seg as any).seg ||
+      (seg as any).label ||
+      (seg as any).text ||
+      (seg as any).code ||
+      null;
+
+    if (typeof s === "string") return parseSegment(s);
+    return null;
+  }
+
+  if (typeof seg !== "string") return null;
+
+  const s = seg.trim().toUpperCase();
+  if (!s) return null;
+
+  // miss
+  if (s === "MISS" || s === "M" || s === "0") return null;
+
+  // bull
+  if (s === "SBULL" || s === "BULL" || s === "S25" || s === "25") {
+    return { target: 25, mult: 1 };
+  }
+  if (s === "DBULL" || s === "D-BULL" || s === "D25" || s === "50") {
+    return { target: 25, mult: 2 };
+  }
+
+  // standard "T20" "D19" "S18"
+  const mm = /^([SDT])\s*(\d{1,2})$/.exec(s);
+  if (mm) {
+    const mult = mm[1] === "S" ? 1 : mm[1] === "D" ? 2 : 3;
+    const n = Number(mm[2]);
+    if (n >= 15 && n <= 20) return { target: n, mult };
+  }
+
+  // sometimes just "20" (assume single)
+  const n = Number(s);
+  if (Number.isFinite(n) && n >= 15 && n <= 20) return { target: n, mult: 1 };
+
+  return null;
+}
+
+/**
+ * Extract a raw list of "hit-like" events from many legacy shapes.
+ * We accept either:
+ * - already-flat arrays on player: hits/throws/darts/events/actions/log/etc.
+ * - player.turns/player.visits arrays (flatMap darts/hits)
+ * - payload.turns/payload.visits (filter by playerId)
+ */
+function extractHitsForPlayer(player: any, payload: any): any[] {
+  if (!player) return [];
+
+  // 1) direct arrays on player
+  const directCandidates: any[] = [
+    player.hits,
+    player.cricketHits,
+    player.hitLog,
+    player.log,
+    player.events,
+    player.actions,
+    player.throws,
+    player.darts,
+  ];
+  for (const c of directCandidates) {
+    if (Array.isArray(c) && c.length) return c;
+  }
+
+  // 2) arrays of turns/visits on player (need flatten)
+  const playerTurns =
+    (Array.isArray(player.turns) ? player.turns : null) ||
+    (Array.isArray(player.visits) ? player.visits : null) ||
+    null;
+
+  if (Array.isArray(playerTurns) && playerTurns.length) {
+    const out: any[] = [];
+    for (const t of playerTurns) {
+      const darts =
+        (Array.isArray(t?.darts) ? t.darts : null) ||
+        (Array.isArray(t?.throws) ? t.throws : null) ||
+        (Array.isArray(t?.hits) ? t.hits : null) ||
+        (Array.isArray(t?.events) ? t.events : null) ||
+        null;
+      if (Array.isArray(darts) && darts.length) out.push(...darts);
+    }
+    if (out.length) return out;
+  }
+
+  // 3) payload-level turns/visits (filter by playerId)
+  const pid = getPid(player);
+  const turns =
+    (Array.isArray(payload?.turns) ? payload.turns : null) ||
+    (Array.isArray(payload?.visits) ? payload.visits : null) ||
+    (Array.isArray(payload?.rounds) ? payload.rounds : null) ||
+    null;
+
+  if (Array.isArray(turns) && turns.length) {
+    const out: any[] = [];
+    for (const t of turns) {
+      const tPid = str(t?.playerId || t?.pid || t?.profileId || t?.id || "");
+      if (pid && tPid && pid !== tPid) continue;
+
+      const darts =
+        (Array.isArray(t?.darts) ? t.darts : null) ||
+        (Array.isArray(t?.throws) ? t.throws : null) ||
+        (Array.isArray(t?.hits) ? t.hits : null) ||
+        (Array.isArray(t?.events) ? t.events : null) ||
+        null;
+
+      if (Array.isArray(darts) && darts.length) out.push(...darts);
+    }
+    if (out.length) return out;
+  }
+
+  return [];
+}
+
+/**
+ * Normalize into CricketHit-like: { target:number, mult:number }
+ * - If input already {target,mult}, keep it
+ * - If object contains segment/bed/label/code/s -> parseSegment()
+ * - If string -> parseSegment()
+ */
+function normalizeHits(rawHits: any[]): any[] {
+  if (!Array.isArray(rawHits) || !rawHits.length) return [];
+
+  const out: any[] = [];
+
+  for (const h of rawHits) {
+    if (!h) continue;
+
+    if (typeof h === "object") {
+      const target = (h as any).target ?? (h as any).number ?? null;
+      const mult = (h as any).mult ?? (h as any).multiplier ?? null;
+      if (typeof target === "number" && typeof mult === "number") {
+        out.push({ target, mult });
+        continue;
+      }
+
+      const seg =
+        (h as any).segment ??
+        (h as any).bed ??
+        (h as any).label ??
+        (h as any).code ??
+        (h as any).text ??
+        (h as any).s ??
+        null;
+
+      const parsed = parseSegment(seg);
+      if (parsed) out.push(parsed);
+      continue;
+    }
+
+    const parsed = parseSegment(h);
+    if (parsed) out.push(parsed);
+  }
+
+  return out;
+}
+
+/* -------------------------------------------
    Hook
---------------------------------------------- */
+------------------------------------------- */
 export function useCricketStats() {
   const [loading, setLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<Error | null>(null);
-  const [statsByProfile, setStatsByProfile] = React.useState<StateByProfile>({});
+  const [statsByProfile, setStatsByProfile] = React.useState<StateByProfile>(
+    {}
+  );
 
   React.useEffect(() => {
     let cancelled = false;
 
     const run = async () => {
       setLoading(true);
+
       try {
-        // ✅ compat: certaines versions n'ont pas listFinished()
-        const all: SavedMatch[] =
-          typeof (History as any).listFinished === "function"
-            ? await (History as any).listFinished()
-            : typeof (History as any).listByStatus === "function"
-              ? await (History as any).listByStatus("finished")
-              : await History.list();
+        const all: SavedMatch[] = await History.listFinished();
 
-        // pré-filtre (light) + on confirmera avec le payload ensuite
-        const maybeCricket = (all || []).filter(isCricketRowLight);
+        // Quick prefilter: cricket-ish rows
+        const maybeCricket = (all || []).filter((m: any) => {
+          const status = lower(m?.status);
+          if (status && status !== "finished") return false;
+          return isCricketRowQuick(m);
+        });
 
-        const legsByProfile: Record<string, { name?: string; legs: CricketLegStats[] }> = {};
+        const legsByProfile: Record<
+          string,
+          { name?: string; legs: CricketLegStats[] }
+        > = {};
 
         for (const row of maybeCricket) {
-          const rid = String((row as any)?.id ?? "");
-          if (!rid) continue;
-
-          const full = await History.get(rid);
+          const full = await History.get((row as any).id);
           const rawPayload =
             (full as any)?.payload ??
             (row as any)?.payload ??
+            (full as any) ??
             null;
 
           const payload = await decodeMaybe(rawPayload);
           if (!payload || typeof payload !== "object") continue;
 
-          // ✅ confirmer cricket
-          if (!isCricketPayload(payload)) {
-            // si row.kind disait cricket, on tolère quand même
-            if (lower((row as any)?.kind) !== "cricket") continue;
-          }
+          if (!confirmCricketFromPayload(payload, row)) continue;
 
-          const players = pickPlayers(payload);
-          if (!players.length) continue;
+          const players = pickPlayers(payload, row);
 
           for (const p of players) {
             const pid = getPid(p);
             if (!pid) continue;
 
-            // ✅ try already computed legStats first
+            // prefer precomputed legStats if present
             const existingLegStats =
               (p as any).legStats && typeof (p as any).legStats === "object"
-                ? (p as any).legStats
+                ? ((p as any).legStats as CricketLegStats)
                 : null;
 
-            let legStats: CricketLegStats | null = null;
+            let legStats: CricketLegStats;
 
             if (existingLegStats) {
-              legStats = existingLegStats as CricketLegStats;
+              legStats = existingLegStats;
             } else {
-              const rawHits = extractHitsFromPlayer(p, payload);
+              const rawHits = extractHitsForPlayer(p, payload);
               const hits = normalizeHits(rawHits);
-
-              // ⚠️ si hits vides -> on retombe à 0 (mais au moins on a tenté partout)
               legStats = computeCricketLegStats(hits);
             }
 
-            if (!legsByProfile[pid]) legsByProfile[pid] = { name: getPname(p), legs: [] };
+            if (!legsByProfile[pid]) {
+              legsByProfile[pid] = { name: getPname(p), legs: [] };
+            }
             if (!legsByProfile[pid].name) legsByProfile[pid].name = getPname(p);
-
             legsByProfile[pid].legs.push(legStats);
           }
         }
 
         const out: StateByProfile = {};
-        Object.entries(legsByProfile).forEach(([pid, bucket]) => {
+        for (const [pid, bucket] of Object.entries(legsByProfile)) {
           const agg = aggregateCricketMatches(bucket.legs);
-          out[pid] = { ...agg, profileId: pid, profileName: bucket.name };
-        });
+          out[pid] = {
+            ...agg,
+            profileId: pid,
+            profileName: bucket.name,
+          };
+        }
 
         if (!cancelled) {
           setStatsByProfile(out);
@@ -485,8 +467,18 @@ export function useCricketStats() {
     };
 
     void run();
+
+    // refresh if history changes (your history.ts dispatches dc-history-updated)
+    const onUpd = () => void run();
+    if (typeof window !== "undefined") {
+      window.addEventListener("dc-history-updated", onUpd);
+    }
+
     return () => {
       cancelled = true;
+      if (typeof window !== "undefined") {
+        window.removeEventListener("dc-history-updated", onUpd);
+      }
     };
   }, []);
 

@@ -22,6 +22,9 @@ import {
 } from "../lib/statsBridge";
 import { History } from "../lib/history";
 
+// ✅ NEW: SFX UI (clic boutons)
+import { UISfx } from "../lib/sfx";
+
 type Props = {
   store: Store;
   go: (tab: any, params?: any) => void;
@@ -55,6 +58,17 @@ function pickTickerImage<K extends keyof typeof TICKER_IMAGES>(key: K): string {
   if (!arr || arr.length === 0) return "";
   const idx = Math.floor(Math.random() * arr.length);
   return GH_IMG_BASE + arr[idx];
+}
+
+/* ============================================================
+   ✅ SFX helper
+   - Les sons sont déjà activés/désactivés globalement via Settings (setSfxEnabled)
+   - Ici on joue juste un "click" safe
+============================================================ */
+function playUiClick() {
+  try {
+    UISfx.click?.();
+  } catch {}
 }
 
 /* ============================================================
@@ -1646,7 +1660,7 @@ export default function Home({ store, go }: Props) {
     };
   }, [activeProfile?.id]);
 
-    // ------------------------------------------------------------
+  // ------------------------------------------------------------
   // Ticker items (✅ on force Killer en 1er + on utilise CETTE liste partout)
   // ------------------------------------------------------------
 
@@ -1767,6 +1781,9 @@ export default function Home({ store, go }: Props) {
       return;
     }
 
+    // ✅ NEW: petit click quand on swipe un tip
+    playUiClick();
+
     setTipIndex((prev) => {
       if (!tipSlides.length) return 0;
       if (dx < 0) return (prev + 1) % tipSlides.length;
@@ -1860,16 +1877,18 @@ export default function Home({ store, go }: Props) {
 
         {/* Petit bandeau arcade (auto-slide interne) */}
         <ArcadeTicker
-          items={tickerItems}                 // ✅ IMPORTANT
+          items={tickerItems} // ✅ IMPORTANT
           activeIndex={tickerIndex}
           intervalMs={DETAIL_INTERVAL_MS}
           onIndexChange={(index: number) => {
             if (!tickerItems.length) return;
+            playUiClick(); // ✅ NEW: click quand on change manuellement
             const safe = Math.min(Math.max(index, 0), tickerItems.length - 1);
             setTickerIndex(safe);
           }}
           onActiveIndexChange={(index: number) => {
             if (!tickerItems.length) return;
+            // (on évite de spammer : ce callback peut être appelé en auto-rotation)
             const safe = Math.min(Math.max(index, 0), tickerItems.length - 1);
             setTickerIndex(safe);
           }}
@@ -2057,35 +2076,50 @@ export default function Home({ store, go }: Props) {
             label={t("home.nav.profiles", "Profils")}
             subtitle={t("home.nav.profiles.desc", "Profils locaux, avatars & BOTS")}
             icon="user"
-            onClick={() => go("profiles")}
+            onClick={() => {
+              playUiClick();
+              go("profiles");
+            }}
           />
 
           <HomeBigButton
             label={t("home.nav.local", "Local")}
             subtitle={t("home.nav.local.desc", "Joue en présentiel sur cette cible")}
             icon="target"
-            onClick={() => go("games")}
+            onClick={() => {
+              playUiClick();
+              go("games");
+            }}
           />
 
           <HomeBigButton
             label={t("home.nav.online", "Online")}
             subtitle={t("home.nav.online.desc", "Matchs à distance avec tes amis")}
             icon="globe"
-            onClick={() => go("friends")}
+            onClick={() => {
+              playUiClick();
+              go("friends");
+            }}
           />
 
           <HomeBigButton
             label={t("home.nav.stats", "Stats")}
             subtitle={t("home.nav.stats.desc", "Dashboards, courbes, historique")}
             icon="stats"
-            onClick={() => go("stats")}
+            onClick={() => {
+              playUiClick();
+              go("stats");
+            }}
           />
 
           <HomeBigButton
             label={t("home.nav.settings", "Réglages")}
             subtitle={t("home.nav.settings.desc", "Thèmes, langue, reset complet")}
             icon="settings"
-            onClick={() => go("settings")}
+            onClick={() => {
+              playUiClick();
+              go("settings");
+            }}
           />
         </div>
       </div>

@@ -63,7 +63,11 @@ const WEIGHT_OPTIONS = Array.from({ length: 23 }, (_, i) => 10 + i);
  */
 async function fileToCompressedDataUrl(
   file: File,
-  opts?: { maxEdge?: number; quality?: number; mime?: "image/jpeg" | "image/webp" }
+  opts?: {
+    maxEdge?: number;
+    quality?: number;
+    mime?: "image/jpeg" | "image/webp";
+  }
 ): Promise<string> {
   const maxEdge = opts?.maxEdge ?? 512;
   const quality = opts?.quality ?? 0.82;
@@ -110,18 +114,20 @@ async function fileToCompressedDataUrl(
 
 // ----------------------------------------------------------
 // Composant d’affichage de fléchette / visuel
-// ✅ FIX: support "cover" (remplit le cadre) / "contain" (tout visible)
+// ✅ FIX FIT: support rectangulaire (width/height) + cover réel
 // ----------------------------------------------------------
 const DartImage: React.FC<{
   url: string;
-  size?: number;
+  width?: number | string;
+  height?: number | string;
   angleDeg?: number;
   fit?: "cover" | "contain";
   bg?: string;
   radius?: number;
 }> = ({
   url,
-  size = 72,
+  width = 72,
+  height = 72,
   angleDeg = 0,
   fit = "contain",
   bg = "transparent",
@@ -132,18 +138,28 @@ const DartImage: React.FC<{
   return (
     <div
       style={{
-        width: size,
-        height: size,
+        width,
+        height,
         borderRadius: radius,
         overflow: "hidden",
         background: bg,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        display: "block",
       }}
     >
       {!url || broken ? (
-        <span style={{ fontSize: Math.max(18, Math.round(size * 0.33)) }}>🎯</span>
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize:
+              typeof width === "number" ? Math.max(18, Math.round(width * 0.33)) : 22,
+          }}
+        >
+          🎯
+        </div>
       ) : (
         <img
           src={url}
@@ -152,7 +168,7 @@ const DartImage: React.FC<{
           style={{
             width: "100%",
             height: "100%",
-            objectFit: fit, // ✅ cover = remplit, contain = tout visible
+            objectFit: fit, // ✅ cover = remplit VRAIMENT le cadre
             transform: angleDeg ? `rotate(${angleDeg}deg)` : undefined,
             transformOrigin: "center center",
             display: "block",
@@ -204,8 +220,7 @@ const DartSetImageUploader: React.FC<DartSetImageUploaderProps> = ({
       ? "Photo compressée automatiquement (mobile-friendly). Stockage local."
       : "Photo is auto-compressed (mobile-friendly). Stored locally.";
 
-  const currentUrl =
-    (dartSet as any).thumbImageUrl || (dartSet as any).mainImageUrl || "";
+  const currentUrl = (dartSet as any).thumbImageUrl || (dartSet as any).mainImageUrl || "";
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -287,11 +302,12 @@ const DartSetImageUploader: React.FC<DartSetImageUploaderProps> = ({
         {currentUrl ? (
           <DartImage
             url={currentUrl}
-            size={60}
+            width={64}
+            height={64}
             angleDeg={0}
-            fit={isPhoto ? "cover" : "contain"} // ✅ PHOTO => cover
+            fit={isPhoto ? "cover" : "contain"}
             bg={dartSet.bgColor || DEFAULT_BG}
-            radius={12}
+            radius={14}
           />
         ) : (
           <span style={{ fontSize: 26 }}>🎯</span>
@@ -332,17 +348,10 @@ const DartSetImageUploader: React.FC<DartSetImageUploaderProps> = ({
         >
           <span style={{ marginRight: 6 }}>📷</span>
           {btnLabel}
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleFileChange}
-            style={{ display: "none" }}
-          />
+          <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: "none" }} />
         </label>
 
-        <div style={{ fontSize: 10, color: "rgba(255,255,255,.45)", maxWidth: 260 }}>
-          {helper}
-        </div>
+        <div style={{ fontSize: 10, color: "rgba(255,255,255,.45)", maxWidth: 260 }}>{helper}</div>
       </div>
     </div>
   );
@@ -400,9 +409,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       const all = await Promise.resolve(getDartSetsForProfile(profile.id) as any);
       const sorted = sortSets((all || []) as DartSet[]);
       setSets(sorted);
-      setActiveIndex((idx) =>
-        sorted.length === 0 ? 0 : Math.min(idx, sorted.length - 1)
-      );
+      setActiveIndex((idx) => (sorted.length === 0 ? 0 : Math.min(idx, sorted.length - 1)));
     } catch (err) {
       console.warn("[DartSetsPanel] load error", err);
     }
@@ -418,9 +425,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
 
   const hasSets = sets.length > 0;
   const activeSet: DartSet | null =
-    hasSets && activeIndex >= 0 && activeIndex < sets.length
-      ? sets[activeIndex]
-      : null;
+    hasSets && activeIndex >= 0 && activeIndex < sets.length ? sets[activeIndex] : null;
 
   // ------------------------------------------------------------------
   // Handlers formulaires
@@ -428,22 +433,14 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
 
   const handleChange =
     (field: keyof FormState) =>
-    (
-      e: React.ChangeEvent<
-        HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-      >
-    ) => {
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
       const value = e.target.value;
       setForm((prev) => ({ ...prev, [field]: value }));
     };
 
   const handleEditChange =
     (field: keyof FormState) =>
-    (
-      e: React.ChangeEvent<
-        HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-      >
-    ) => {
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
       const value = e.target.value;
       setEditForm((prev) => (prev ? { ...prev, [field]: value } : prev));
     };
@@ -483,9 +480,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
     const weightGrams = Number.isFinite(weight) ? weight : undefined;
     const scope = form.scope;
 
-    const chosenPreset = form.presetId
-      ? dartPresets.find((p) => p.id === form.presetId)
-      : undefined;
+    const chosenPreset = form.presetId ? dartPresets.find((p) => p.id === form.presetId) : undefined;
 
     let kind: "plain" | "preset" | "photo" = "plain";
     let mainImageUrl = "";
@@ -522,11 +517,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       const created = await Promise.resolve(createDartSet(payload));
 
       if (!created) {
-        alert(
-          lang === "fr"
-            ? "Création impossible (stockage plein ?)"
-            : "Creation failed (storage full?)"
-        );
+        alert(lang === "fr" ? "Création impossible (stockage plein ?)" : "Creation failed (storage full?)");
         return;
       }
 
@@ -547,10 +538,8 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
     if (!set) return;
     setIsCreating(false);
 
-    const kind: "plain" | "preset" | "photo" =
-      ((set as any).kind as "plain" | "preset" | "photo") || "plain";
-    const presetId: string | null =
-      ((set as any).presetId as string | null) || null;
+    const kind: "plain" | "preset" | "photo" = ((set as any).kind as any) || "plain";
+    const presetId: string | null = ((set as any).presetId as any) || null;
 
     setEditingId(set.id);
     setEditForm({
@@ -582,17 +571,12 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
     const weightGrams = Number.isFinite(weight) ? weight : undefined;
     const scope = editForm.scope;
 
-    const chosenPreset = editForm.presetId
-      ? dartPresets.find((p) => p.id === editForm.presetId)
-      : undefined;
+    const chosenPreset = editForm.presetId ? dartPresets.find((p) => p.id === editForm.presetId) : undefined;
 
     let kind: "plain" | "preset" | "photo" = editForm.kind;
 
-    if (chosenPreset && kind !== "photo") {
-      kind = "preset";
-    } else if (!chosenPreset && kind === "preset") {
-      kind = "plain";
-    }
+    if (chosenPreset && kind !== "photo") kind = "preset";
+    else if (!chosenPreset && kind === "preset") kind = "plain";
 
     try {
       const res = await Promise.resolve(
@@ -615,11 +599,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       );
 
       if (!res) {
-        alert(
-          lang === "fr"
-            ? "Mise à jour impossible (stockage plein ?)"
-            : "Update failed (storage full?)"
-        );
+        alert(lang === "fr" ? "Mise à jour impossible (stockage plein ?)" : "Update failed (storage full?)");
         return;
       }
 
@@ -628,11 +608,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       setEditForm(null);
     } catch (err) {
       console.warn("[DartSetsPanel] update error", err);
-      alert(
-        lang === "fr"
-          ? "Erreur : mise à jour impossible (quota mobile ?)."
-          : "Error: update failed (mobile quota?)."
-      );
+      alert(lang === "fr" ? "Erreur : mise à jour impossible (quota mobile ?)." : "Error: update failed (mobile quota?).");
     }
   };
 
@@ -672,13 +648,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
   // ------------------------------------------------------------------
 
   const title =
-    lang === "fr"
-      ? "MES FLÉCHETTES"
-      : lang === "es"
-      ? "MIS DARDOS"
-      : lang === "de"
-      ? "MEINE DARTS"
-      : "MY DARTS";
+    lang === "fr" ? "MES FLÉCHETTES" : lang === "es" ? "MIS DARDOS" : lang === "de" ? "MEINE DARTS" : "MY DARTS";
 
   const subtitle =
     lang === "fr"
@@ -689,49 +659,15 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       ? "Verknüpfe deine Statistiken mit jedem Dart-Set."
       : "Link your stats to each dart set.";
 
-  const labelCreate =
-    lang === "fr"
-      ? "Créer"
-      : lang === "es"
-      ? "Crear"
-      : lang === "de"
-      ? "Neu"
-      : "Create";
+  const labelCreate = lang === "fr" ? "Créer" : lang === "es" ? "Crear" : lang === "de" ? "Neu" : "Create";
 
   const labelScanner = lang === "fr" ? "Scanner" : "Scan";
-  const labelEdit =
-    lang === "fr"
-      ? "Éditer"
-      : lang === "es"
-      ? "Editar"
-      : lang === "de"
-      ? "Bearbeiten"
-      : "Edit";
-  const labelDelete =
-    lang === "fr"
-      ? "Suppr."
-      : lang === "es"
-      ? "Eliminar"
-      : lang === "de"
-      ? "Löschen"
-      : "Delete";
-  const labelFav =
-    lang === "fr"
-      ? "Favori"
-      : lang === "es"
-      ? "Favorito"
-      : lang === "de"
-      ? "Favorit"
-      : "Favorite";
+  const labelEdit = lang === "fr" ? "Éditer" : lang === "es" ? "Editar" : lang === "de" ? "Bearbeiten" : "Edit";
+  const labelDelete = lang === "fr" ? "Suppr." : lang === "es" ? "Eliminar" : lang === "de" ? "Löschen" : "Delete";
+  const labelFav = lang === "fr" ? "Favori" : lang === "es" ? "Favorito" : lang === "de" ? "Favorit" : "Favorite";
 
   const visualLabel =
-    lang === "fr"
-      ? "Visuel preset"
-      : lang === "es"
-      ? "Visual preset"
-      : lang === "de"
-      ? "Visual-Preset"
-      : "Preset visual";
+    lang === "fr" ? "Visuel preset" : lang === "es" ? "Visual preset" : lang === "de" ? "Visual-Preset" : "Preset visual";
 
   const uploadLabel =
     lang === "fr"
@@ -762,7 +698,6 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
           ...prev,
           presetId: nextPresetId,
           kind: nextPresetId ? "preset" : prev.photoDataUrl ? "photo" : "plain",
-          // si on choisit un preset, on efface la photo en création
           photoDataUrl: nextPresetId ? null : prev.photoDataUrl ?? null,
         };
       });
@@ -770,9 +705,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
 
     return (
       <div style={{ gridColumn: "1 / span 2", marginTop: 4 }}>
-        <div style={{ fontSize: 11, color: "rgba(255,255,255,.6)", marginBottom: 4 }}>
-          {visualLabel}
-        </div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,.6)", marginBottom: 4 }}>{visualLabel}</div>
 
         <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
           {dartPresets.map((preset) => {
@@ -787,9 +720,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                   minWidth: 112,
                   padding: 6,
                   borderRadius: 14,
-                  border: isSelected
-                    ? "1px solid rgba(245,195,91,.95)"
-                    : "1px solid rgba(255,255,255,.2)",
+                  border: isSelected ? "1px solid rgba(245,195,91,.95)" : "1px solid rgba(255,255,255,.2)",
                   background: isSelected
                     ? "radial-gradient(circle at 0% 0%, rgba(245,195,91,.35), rgba(10,10,22,.95))"
                     : "rgba(4,4,10,.9)",
@@ -865,14 +796,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
       }}
     >
       {/* Header néon */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-        }}
-      >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <div style={{ position: "relative", paddingLeft: 2 }}>
           <div
             style={{
@@ -896,14 +820,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
           >
             {title}
           </div>
-          <div
-            style={{
-              position: "relative",
-              marginTop: 2,
-              fontSize: 10,
-              color: "rgba(255,255,255,.55)",
-            }}
-          >
+          <div style={{ position: "relative", marginTop: 2, fontSize: 10, color: "rgba(255,255,255,.55)" }}>
             {subtitle}
           </div>
         </div>
@@ -1188,14 +1105,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                       justifyContent: "center",
                     }}
                   >
-                    <DartImage
-                      url={form.photoDataUrl}
-                      size={50}
-                      angleDeg={0}
-                      fit="cover" // ✅ aperçu photo => cover
-                      bg="#050509"
-                      radius={12}
-                    />
+                    <DartImage url={form.photoDataUrl} width={54} height={54} angleDeg={0} fit="cover" radius={14} />
                   </div>
                 </div>
               )}
@@ -1221,22 +1131,8 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
           }}
         >
           <div style={{ gridColumn: "1 / span 2" }}>
-            <div
-              style={{
-                fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: 1.6,
-                color: "rgba(127,196,255,.95)",
-                marginBottom: 4,
-              }}
-            >
-              {lang === "fr"
-                ? "Modifier ce set"
-                : lang === "es"
-                ? "Editar este set"
-                : lang === "de"
-                ? "Set bearbeiten"
-                : "Edit this set"}
+            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1.6, color: "rgba(127,196,255,.95)", marginBottom: 4 }}>
+              {lang === "fr" ? "Modifier ce set" : lang === "es" ? "Editar este set" : lang === "de" ? "Set bearbeiten" : "Edit this set"}
             </div>
           </div>
 
@@ -1326,22 +1222,15 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
             />
           </div>
 
-          {/* Presets */}
-          {renderPresetPicker(
-            editForm.presetId,
-            setEditForm as React.Dispatch<React.SetStateAction<FormState | null>>
-          )}
+          {renderPresetPicker(editForm.presetId, setEditForm as any)}
 
           <DartSetImageUploader
             dartSet={sets.find((s) => s.id === editingId) || null}
-            onUpdated={(updated) => {
-              setSets((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-            }}
+            onUpdated={(updated) => setSets((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))}
           />
 
           <div style={{ gridColumn: "1 / span 2", marginTop: 4 }}>
             <div style={{ fontSize: 11, color: "rgba(255,255,255,.6)", marginBottom: 4 }}>Utilisable :</div>
-
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 type="button"
@@ -1495,14 +1384,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
 
             {activeSet && (
               <div style={{ marginInline: 30, display: "flex", flexDirection: "column", gap: 6 }}>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "80px 1fr",
-                    gap: 10,
-                    alignItems: "center",
-                  }}
-                >
+                <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: 10, alignItems: "center" }}>
                   <div
                     style={{
                       width: 80,
@@ -1519,11 +1401,12 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                     {activeSet.thumbImageUrl || activeSet.mainImageUrl ? (
                       <DartImage
                         url={activeSet.thumbImageUrl || activeSet.mainImageUrl!}
-                        size={66}
+                        width={80}
+                        height={70}
                         angleDeg={0}
                         fit={(activeSet as any)?.kind === "photo" ? "cover" : "contain"} // ✅ PHOTO => cover
                         bg={activeSet.bgColor || DEFAULT_BG}
-                        radius={12}
+                        radius={14}
                       />
                     ) : (
                       <span style={{ fontSize: 24 }}>🎯</span>
@@ -1558,38 +1441,14 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                     </div>
 
                     {activeSet.brand && (
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "rgba(255,255,255,.75)",
-                          whiteSpace: "nowrap",
-                          textOverflow: "ellipsis",
-                          overflow: "hidden",
-                        }}
-                      >
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,.75)", whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
                         {activeSet.brand}
                       </div>
                     )}
 
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        fontSize: 11,
-                        color: "rgba(255,255,255,.8)",
-                        flexWrap: "wrap",
-                      }}
-                    >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "rgba(255,255,255,.8)", flexWrap: "wrap" }}>
                       {typeof activeSet.weightGrams === "number" && (
-                        <span
-                          style={{
-                            padding: "2px 8px",
-                            borderRadius: 999,
-                            border: "1px solid rgba(255,255,255,.25)",
-                            fontSize: 10,
-                          }}
-                        >
+                        <span style={{ padding: "2px 8px", borderRadius: 999, border: "1px solid rgba(255,255,255,.25)", fontSize: 10 }}>
                           {activeSet.weightGrams} g
                         </span>
                       )}
@@ -1598,18 +1457,9 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
                         style={{
                           padding: "2px 8px",
                           borderRadius: 999,
-                          border:
-                            activeSet.scope === "public"
-                              ? "1px solid rgba(127,230,165,.8)"
-                              : "1px solid rgba(255,255,255,.25)",
-                          background:
-                            activeSet.scope === "public"
-                              ? "rgba(127,230,165,.18)"
-                              : "rgba(255,255,255,.06)",
-                          color:
-                            activeSet.scope === "public"
-                              ? "rgba(180,255,210,.98)"
-                              : "rgba(220,220,255,.9)",
+                          border: activeSet.scope === "public" ? "1px solid rgba(127,230,165,.8)" : "1px solid rgba(255,255,255,.25)",
+                          background: activeSet.scope === "public" ? "rgba(127,230,165,.18)" : "rgba(255,255,255,.06)",
+                          color: activeSet.scope === "public" ? "rgba(180,255,210,.98)" : "rgba(220,220,255,.9)",
                           textTransform: "uppercase",
                           letterSpacing: 1,
                           fontSize: 10,
@@ -1666,30 +1516,10 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
             }}
           >
             {[
-              {
-                key: "scan",
-                label: labelScanner,
-                onClick: () => activeSet && setScannerTarget(activeSet),
-                disabled: !activeSet,
-              },
-              {
-                key: "edit",
-                label: labelEdit,
-                onClick: () => handleStartEdit(activeSet),
-                disabled: !activeSet,
-              },
-              {
-                key: "delete",
-                label: labelDelete,
-                onClick: () => handleDelete(activeSet),
-                disabled: !activeSet,
-              },
-              {
-                key: "fav",
-                label: labelFav,
-                onClick: () => handleSetFavorite(activeSet),
-                disabled: !activeSet,
-              },
+              { key: "scan", label: labelScanner, onClick: () => activeSet && setScannerTarget(activeSet), disabled: !activeSet },
+              { key: "edit", label: labelEdit, onClick: () => handleStartEdit(activeSet), disabled: !activeSet },
+              { key: "delete", label: labelDelete, onClick: () => handleDelete(activeSet), disabled: !activeSet },
+              { key: "fav", label: labelFav, onClick: () => handleSetFavorite(activeSet), disabled: !activeSet },
             ].map((btn) => (
               <button
                 key={btn.key}
@@ -1746,9 +1576,7 @@ const DartSetsPanel: React.FC<Props> = ({ profile }) => {
           dartSet={scannerTarget}
           onClose={() => setScannerTarget(null)}
           onUpdated={(updated) => {
-            setSets((prev) =>
-              sortSets(prev.map((s) => (s.id === updated.id ? updated : s)))
-            );
+            setSets((prev) => sortSets(prev.map((s) => (s.id === updated.id ? updated : s))));
           }}
         />
       )}

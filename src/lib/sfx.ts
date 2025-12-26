@@ -3,6 +3,7 @@
 // SONS DE BASE servis depuis /public/sounds (Vite)
 // + Shanghai servis depuis src/assets/sounds (Vite import)
 // + Cache/pool Audio + unlock autoplay
+// + ✅ UI clicks (click / soft / confirm) servis depuis /public/sounds
 // ============================================
 
 let SFX_ENABLED = true;
@@ -25,6 +26,11 @@ const SFX = {
   trpl: "/sounds/triple.mp3",
   bull: "/sounds/bull.mp3",
   dbull: "/sounds/double-bull.mp3",
+
+  // ✅ UI clicks (public/sounds)
+  uiClick: "/sounds/ui-click.mp3",
+  uiClickSoft: "/sounds/ui-click-soft.mp3",
+  uiConfirm: "/sounds/ui-confirm.mp3",
 
   // Shanghai (assets import)
   shanghai: shanghaiIntroUrl,
@@ -94,12 +100,12 @@ export async function unlockAudio() {
   }
 }
 
-function playSafeUrl(url?: string) {
+function playSafeUrl(url?: string, vol = 0.9) {
   if (!url || !SFX_ENABLED) return;
 
   try {
     const a = getFromPool(url);
-    a.volume = 0.9;
+    a.volume = vol;
     a.currentTime = 0;
 
     const p = a.play();
@@ -127,7 +133,9 @@ export function playThrowSound(dart: { mult: number; value: number }) {
 }
 
 /** Utilitaire safe depuis UIDart */
-export function playImpactFromDart(dart?: { mult?: number; value?: number } | null) {
+export function playImpactFromDart(
+  dart?: { mult?: number; value?: number } | null
+) {
   if (!dart) return;
   playThrowSound({
     mult: Number(dart.mult ?? 1),
@@ -154,3 +162,31 @@ export function playOneEighty(total: number) {
 export function playBust(isBust: boolean) {
   if (isBust) playSfx("bust");
 }
+
+/* ============================================================
+   ✅ UI CLICKS — centralisés dans le même moteur/pool
+   Utilise-les dans tes boutons/cards/pills/keypad
+============================================================ */
+
+/** Click standard (bouton principal, CTA) */
+export function playUiClick() {
+  // un peu plus bas que les impacts
+  playSafeUrl(SFX.uiClick, 0.55);
+}
+
+/** Click soft (pills / toggles / chips) */
+export function playUiClickSoft() {
+  playSafeUrl(SFX.uiClickSoft, 0.45);
+}
+
+/** Confirm (validation / save / quitter) */
+export function playUiConfirm() {
+  playSafeUrl(SFX.uiConfirm, 0.65);
+}
+
+/** Alias pratique (si tu veux importer un objet) */
+export const UISfx = {
+  click: playUiClick,
+  soft: playUiClickSoft,
+  confirm: playUiConfirm,
+};
