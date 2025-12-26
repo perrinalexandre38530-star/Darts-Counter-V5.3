@@ -128,7 +128,6 @@ import { installHistoryProbe } from "./dev/devHistoryProbe";
 if (import.meta.env.DEV) installHistoryProbe();
 
 /* --- helpers --- */
-
 function withAvatars(rec: any, profiles: any[]) {
   const get = (arr: any[]) =>
     (arr || []).map((p: any) => {
@@ -162,8 +161,8 @@ type Tab =
   | "tournaments"
   | "tournament_create"
   | "tournament_view"
-  | "tournament_match_play" // ✅ NEW: jouer un match de tournoi
-  | "tournament_roadmap" // ✅ NEW: page roadmap tournois
+  | "tournament_match_play"
+  | "tournament_roadmap"
   | "profiles"
   | "profiles_bots"
   | "friends"
@@ -173,15 +172,15 @@ type Tab =
   | "stats_online"
   | "cricket_stats"
   | "statsDetail"
-  | "stats_leaderboards" // ⭐ page CLASSEMENTS
+  | "stats_leaderboards"
   | "x01setup"
   | "x01_online_setup"
   | "x01"
   | "x01_end"
   | "cricket"
   | "killer"
-  | "killer_config" // ✅ NEW
-  | "killer_play" // ✅ NEW
+  | "killer_config"
+  | "killer_play"
   | "killer_summary"
   | "shanghai"
   | "shanghai_play"
@@ -193,18 +192,12 @@ type Tab =
   | "avatar"
   | "x01_config_v3"
   | "x01_play_v3"
-  // ⭐ nouveau onglet
   | "sync_center"
-  // ✅ NEW: Auth callback / reset (Supabase email links)
   | "auth_callback"
   | "auth_reset";
 
 /* redirect TrainingStats → StatsHub */
-function RedirectToStatsTraining({
-  go,
-}: {
-  go: (tab: Tab, params?: any) => void;
-}) {
+function RedirectToStatsTraining({ go }: { go: (tab: Tab, params?: any) => void }) {
   React.useEffect(() => {
     go("statsHub", { tab: "training" });
   }, [go]);
@@ -222,7 +215,6 @@ function AuthCallbackRoute({ go }: { go: (t: Tab, p?: any) => void }) {
 
     (async () => {
       try {
-        // Tente de restaurer la session SDK (best effort)
         try {
           await onlineApi.restoreSession();
         } catch {}
@@ -275,9 +267,7 @@ function AuthCallbackRoute({ go }: { go: (t: Tab, p?: any) => void }) {
 
   return (
     <div style={{ padding: 16 }}>
-      <button onClick={() => go("profiles", { view: "me", autoCreate: true })}>
-        ← Retour
-      </button>
+      <button onClick={() => go("profiles", { view: "me", autoCreate: true })}>← Retour</button>
       <h2 style={{ marginTop: 10 }}>Authentification</h2>
       <p style={{ opacity: 0.9 }}>{msg}</p>
     </div>
@@ -384,9 +374,7 @@ function AuthResetRoute({ go }: { go: (t: Tab, p?: any) => void }) {
 
   return (
     <div style={{ padding: 16 }}>
-      <button onClick={() => go("profiles", { view: "me", autoCreate: true })}>
-        ← Retour
-      </button>
+      <button onClick={() => go("profiles", { view: "me", autoCreate: true })}>← Retour</button>
 
       <h2 style={{ marginTop: 10 }}>Réinitialiser le mot de passe</h2>
 
@@ -681,26 +669,10 @@ function App() {
     return !isAuthFlow;
   });
 
-  /* Boot: persistance + nettoyage localStorage + warm-up + ✅ init SFX */
+  /* Boot: persistance + nettoyage localStorage + warm-up (SANS SFX) */
   React.useEffect(() => {
     ensurePersisted().catch(() => {});
     purgeLegacyLocalStorageIfNeeded();
-
-   // ✅ Init SFX (SAFE) — dynamic import pour éviter crash global
-try {
-  const enabled = localStorage.getItem("dc-ui-sfx") !== "0";
-  if (typeof window !== "undefined") {
-    import("./lib/sfx")
-      .then((m: any) => m?.setSfxEnabled?.(enabled))
-      .catch(() => {});
-  }
-} catch {
-  if (typeof window !== "undefined") {
-    import("./lib/sfx")
-      .then((m: any) => m?.setSfxEnabled?.(true))
-      .catch(() => {});
-  }
-}
 
     try {
       warmAggOnce();
@@ -718,7 +690,7 @@ try {
       const h = String(window.location.hash || "");
 
       if (h.startsWith("#/auth/callback")) {
-        setShowSplash(false); // ✅ pas de splash pendant auth
+        setShowSplash(false);
         setRouteParams(null);
         setTab("auth_callback");
         return;
@@ -758,12 +730,10 @@ try {
     setRouteParams(params ?? null);
     setTab(next);
 
-    // ✅ on coupe le splash si navigation forcée vers auth
     if (next === "auth_callback" || next === "auth_reset" || next === "auth_forgot") {
       setShowSplash(false);
     }
 
-    // ✅ optionnel: maintient un hash "propre" pour les routes auth
     try {
       if (next === "auth_callback") window.location.hash = "#/auth/callback";
       else if (next === "auth_reset") window.location.hash = "#/auth/reset";
@@ -784,7 +754,7 @@ try {
       (window as any).__appStore.store = store;
       (window as any).__appStore.tab = tab;
     } catch {}
-  }, [store, tab]); // go stable par fermeture
+  }, [store, tab]);
 
   /* Load store from IDB at boot + gate */
   React.useEffect(() => {
@@ -861,9 +831,6 @@ try {
 
   // ============================================================
   // ✅ FAST STATS HUB : rebuild cache stats au boot + après history update
-  // - écoute "dc-history-updated" (History.upsert/remove/clear)
-  // - rebuild en idle pour éviter de bloquer l'UI
-  // - boot rebuild: une fois que loadStore est terminé (loading=false)
   // ============================================================
   const __profilesRef = React.useRef<Profile[]>([]);
   React.useEffect(() => {
@@ -897,10 +864,7 @@ try {
       }
     };
 
-    // ✅ BOOT rebuild (après loadStore)
     if (!loading) schedule();
-
-    // ✅ rebuild après chaque modification History
     window.addEventListener("dc-history-updated", schedule);
     return () => window.removeEventListener("dc-history-updated", schedule);
   }, [loading]);
@@ -940,7 +904,6 @@ try {
       payload: { ...(m as any), players },
     };
 
-    /* mémoire locale */
     update((s) => {
       const list = [...(s.history ?? [])];
       const i = list.findIndex((r: any) => r.id === saved.id);
@@ -949,12 +912,10 @@ try {
       return { ...s, history: list };
     });
 
-    /* Historique détaillé IDB */
     try {
       (History as any)?.upsert?.(saved);
     } catch {}
 
-    /* miroir LocalStorage pour StatsOnline */
     try {
       const raw = localStorage.getItem(LS_ONLINE_MATCHES_KEY);
       const list = raw ? JSON.parse(raw) : [];
@@ -971,7 +932,6 @@ try {
       localStorage.setItem(LS_ONLINE_MATCHES_KEY, JSON.stringify(list.slice(0, 200)));
     } catch {}
 
-    /* upload online (best effort) */
     try {
       const supported = ["x01", "cricket", "killer", "shanghai"];
       if (supported.includes(saved.kind)) {
@@ -990,20 +950,17 @@ try {
     go("statsHub", { tab: "history" });
   }
 
-  /* history formatted */
   const historyForUI = React.useMemo(
     () => (store.history || []).map((r: any) => withAvatars(r, store.profiles || [])),
     [store.history, store.profiles]
   );
 
-  // ✅ RENDER SPLASH EN EARLY RETURN (évite AppGate/BottomNav/SW pendant splash)
-  // NOTE: l'audio ne s'arrête plus si SplashScreen pilote le player global (#dc-splash-audio)
   if (showSplash) {
     return (
       <SplashScreen
-        durationMs={6500} // splash plus court
-        fadeOutMs={700} // transition propre
-        allowAudioOverflow={true} // ✅ la musique continue sur Home
+        durationMs={6500}
+        fadeOutMs={700}
+        allowAudioOverflow={true}
         onFinish={() => setShowSplash(false)}
       />
     );
@@ -1076,7 +1033,6 @@ try {
         );
         break;
 
-      // ✅ TOURNOIS — FIX: un seul case "tournaments"
       case "tournaments": {
         page = <TournamentsHome store={store} go={go} update={update} source="local" />;
         break;
@@ -1106,15 +1062,13 @@ try {
         break;
       }
 
-      case "tournament_create": {
+      case "tournament_create":
         page = <TournamentCreate store={store} go={go} />;
         break;
-      }
 
-      case "tournament_roadmap": {
+      case "tournament_roadmap":
         page = <TournamentRoadmap go={go} />;
         break;
-      }
 
       case "profiles_bots":
         page = <ProfilesBots store={store} go={go} />;
@@ -1128,7 +1082,6 @@ try {
         page = <Settings go={go} />;
         break;
 
-      /* ---------- STATS ---------- */
       case "stats":
         page = <StatsShell store={store} go={go} />;
         break;
@@ -1168,12 +1121,10 @@ try {
         page = <StatsLeaderboardsPage store={store} go={go} />;
         break;
 
-      /* ---------- SYNC / PARTAGE ---------- */
       case "sync_center":
         page = <SyncCenter store={store} go={go} profileId={routeParams?.profileId ?? null} />;
         break;
 
-      /* ---------- X01 SETUP (v1) ---------- */
       case "x01setup":
         page = (
           <X01Setup
@@ -1199,7 +1150,6 @@ try {
         );
         break;
 
-      /* ---------- X01 ONLINE SETUP ---------- */
       case "x01_online_setup": {
         const activeProfile =
           store.profiles.find((p) => p.id === store.activeProfileId) ?? store.profiles[0] ?? null;
@@ -1240,7 +1190,6 @@ try {
         break;
       }
 
-      /* ---------- X01 PLAY (v1) ---------- */
       case "x01": {
         const isResume = !!routeParams?.resumeId;
         const isOnline = !!routeParams?.online;
@@ -1301,7 +1250,6 @@ try {
         break;
       }
 
-      /* ---------- X01 V3 CONFIG ---------- */
       case "x01_config_v3":
         page = (
           <X01ConfigV3
@@ -1316,7 +1264,6 @@ try {
         );
         break;
 
-      /* ---------- X01 V3 PLAY ---------- */
       case "x01_play_v3": {
         if (!x01ConfigV3) {
           page = (
@@ -1343,12 +1290,10 @@ try {
         break;
       }
 
-      /* ---------- X01 END ---------- */
       case "x01_end":
         page = <X01End go={go} params={routeParams} />;
         break;
 
-      /* ---------- AUTRES JEUX ---------- */
       case "cricket":
         page = <CricketPlay profiles={store.profiles ?? []} onFinish={(m: any) => pushHistory(m)} />;
         break;
@@ -1369,9 +1314,7 @@ try {
           );
           break;
         }
-        page = (
-          <KillerPlay store={store} go={go} config={cfg} onFinish={(m: any) => pushHistory(m)} />
-        );
+        page = <KillerPlay store={store} go={go} config={cfg} onFinish={(m: any) => pushHistory(m)} />;
         break;
       }
 
@@ -1394,9 +1337,7 @@ try {
           );
           break;
         }
-        page = (
-          <ShanghaiPlay store={store} go={go} config={cfg} onFinish={(m: any) => pushHistory(m)} />
-        );
+        page = <ShanghaiPlay store={store} go={go} config={cfg} onFinish={(m: any) => pushHistory(m)} />;
         break;
       }
 
@@ -1404,7 +1345,6 @@ try {
         page = <ShanghaiEnd params={{ ...routeParams, go }} />;
         break;
 
-      /* ---------- TRAINING ---------- */
       case "training":
         page = <TrainingMenu go={go} />;
         break;
@@ -1427,7 +1367,6 @@ try {
         );
         break;
 
-      /* ---------- AVATAR CREATOR ---------- */
       case "avatar": {
         const botId: string | undefined = routeParams?.botId;
         const profileIdFromParams: string | undefined = routeParams?.profileId;
@@ -1518,7 +1457,6 @@ try {
     }
   }
 
-  /* ---------- RENDER ---------- */
   return (
     <CrashCatcher>
       <>
@@ -1743,7 +1681,7 @@ export default function AppRoot() {
       <LangProvider>
         <AuthOnlineProvider>
           <AuthSessionProvider>
-            {/* ✅ NEW: player audio global persistant (ne se démonte pas entre Splash/Home/Connexion) */}
+            {/* ✅ player audio global persistant (rien à voir avec SFX UI) */}
             <audio id="dc-splash-audio" src={SplashJingle} preload="auto" style={{ display: "none" }} />
             <App />
           </AuthSessionProvider>
