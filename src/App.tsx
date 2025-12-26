@@ -23,6 +23,9 @@
 // ✅ NEW: AUDIO PERSISTANT (overflow) -> la musique ne s'arrête pas au changement de page
 // - On monte un <audio id="dc-splash-audio"> AU NIVEAU AppRoot (ne se démonte pas)
 // - SplashScreen pilote ce player global (au lieu d'avoir son <audio> interne)
+//
+// ✅ NEW: CRASH CATCHER (affiche l'erreur au lieu de "Aïe aïe aïe")
+// - Wrap l'app avec <CrashCatcher> pour capturer erreurs React + window.error + unhandledrejection
 // ============================================
 import React from "react";
 import BottomNav from "./components/BottomNav";
@@ -34,6 +37,9 @@ import SplashScreen from "./components/SplashScreen";
 
 // ✅ NEW: AUDIO SPLASH global (persistant)
 import SplashJingle from "./assets/audio/splash_jingle.mp3";
+
+// ✅ NEW: CRASH CATCHER (à créer dans src/components/CrashCatcher.tsx)
+import CrashCatcher from "./components/CrashCatcher";
 
 // Persistance (IndexedDB via storage.ts)
 import { loadStore, saveStore } from "./lib/storage";
@@ -1509,16 +1515,18 @@ function App() {
 
   /* ---------- RENDER ---------- */
   return (
-    <>
-      <div className="container" style={{ paddingBottom: 88 }}>
-        <AppGate go={go} tab={tab}>
-          {page}
-        </AppGate>
-      </div>
+    <CrashCatcher>
+      <>
+        <div className="container" style={{ paddingBottom: 88 }}>
+          <AppGate go={go} tab={tab}>
+            {page}
+          </AppGate>
+        </div>
 
-      <BottomNav value={tab as any} onChange={(k: any) => go(k)} />
-      <SWUpdateBanner />
-    </>
+        <BottomNav value={tab as any} onChange={(k: any) => go(k)} />
+        <SWUpdateBanner />
+      </>
+    </CrashCatcher>
   );
 }
 

@@ -959,87 +959,178 @@ function renderAvatarCircle(
     setShowEnd(false);
   }
 
-  // --------------------------------------------------
-  // CONSTRUCTION DU RECORD POUR L'HISTORIQUE
-  // --------------------------------------------------
+// --------------------------------------------------
+// CONSTRUCTION DU RECORD POUR L'HISTORIQUE
+// ✅ FIX CRITIQUE : reconstruction des hits Cricket
+// --------------------------------------------------
 
-  function computeLegStatsForPlayer(p: any) {
-    const marks = p?.marks || {};
-    const totalMarks = CRICKET_TARGETS.reduce((acc: number, t: any) => acc + Number(marks[t] ?? 0), 0);
-    const totalPoints = Number(p?.score ?? 0);
+function computeLegStatsForPlayer(p: any) {
+  const marks = p?.marks || {};
+  const totalMarks = CRICKET_TARGETS.reduce((acc: number, t: any) => acc + Number(marks[t] ?? 0), 0);
+  const totalPoints = Number(p?.score ?? 0);
+
+  return {
+    legs: 1,
+    totalMarks,
+    totalPoints,
+    closedTargets: CRICKET_TARGETS.reduce(
+      (acc: number, t: any) => acc + (Number(marks[t] ?? 0) >= 3 ? 1 : 0),
+      0
+    ),
+  };
+}
+
+// --------------------------------------------------
+// HIT NORMALIZATION
+// --------------------------------------------------
+
+function toHitStringFromObj(h: any): string | null {
+  if (!h) return null;
+
+  if (typeof h === "string") {
+    const s = h.trim().toUpperCase();
+    if (!s || s === "0" || s === "M" || s === "MISS") return "MISS";
+    return s;
+  }
+
+  if (typeof h !== "object") return null;
+
+  const seg =
+    h.segment ??
+    h.bed ??
+    h.code ??
+    h.label ??
+    h.text ??
+    null;
+
+  if (typeof seg === "string") {
+    const s = seg.toUpperCase();
+    if (s === "0") return "MISS";
+    return s;
+  }
+
+  const target = h.target ?? h.number ?? null;
+  const mult = h.mult ?? h.multiplier ?? 1;
+
+  if (typeof target === "number") {
+    if (target >= 0 && target <= 14) return "MISS";
+    if (target === 25) return mult >= 2 ? "DBULL" : "SBULL";
+    if (target >= 15 && target <= 20) {
+      return `${mult >= 3 ? "T" : mult >= 2 ? "D" : "S"}${target}`;
+    }
+  }
+
+  return null;
+}
+
+// --------------------------------------------------
+// EXTRACTION DES HITS DEPUIS LE STATE
+// --------------------------------------------------
+
+function extractHitsForPlayerFromState(st: any, playerId: string): string[] {
+  if (!st) return [];
+
+  // priorité : p.hits s’il existe
+  const p = (st.players || []).find((x: any) => String(x.id) === String(playerId));
+  if (Array.isArray(p?.hits) && p.hits.length) {
+    return p.hits.map(toHitStringFromObj).filter(Boolean) as string[];
+  }
+
+  const sources = [
+    st.history,
+    st.events,
+    st.turns,
+    st.visits,
+    st.log,
+    st.throws,
+    st.darts,
+  ].filter(Array.isArray);
+
+  for (const src of sources) {
+    const out: string[] = [];
+    for (const e of src) {
+      if (!e) continue;
+      if (e.playerId && String(e.playerId) !== String(playerId)) continue;
+
+      if (Array.isArray(e.darts)) {
+        e.darts.forEach((d: any) => {
+          const h = toHitStringFromObj(d);
+          if (h) out.push(h);
+        });
+      } else {
+        const h = toHitStringFromObj(e);
+        if (h) out.push(h);
+      }
+    }
+    if (out.length) return out;
+  }
+
+  return [];
+}
+
+// --------------------------------------------------
+// BUILD HISTORY RECORD
+// --------------------------------------------------
+
+function buildHistoryRecord(): SavedMatch | null {
+  if (!state) return null;
+
+  const now = Date.now();
+  const createdAt = legStartAt ?? now;
+  const finishedFlag = !!state.winnerId || !!(state as any).forcedFinished;
+
+  const playersLite = state.players.map((p) => {
+    const prof = profileById.get(p.id);
+    return {
+      id: p.id,
+      name: p.name,
+      avatarDataUrl: prof?.avatarDataUrl ?? null,
+    };
+  });
+
+  const playersPayload = state.players.map((p: any) => {
+    const pid = String(p.id);
+    const hits = extractHitsForPlayerFromState(state, pid);
 
     return {
+      profileId: pid,
+      id: pid,
+      name: p.name,
+      score: p.score,
+      marks: p.marks,
+      hits,
+      legStats: computeLegStatsForPlayer(p),
+    };
+  });
+
+  const totalDarts = playersPayload.reduce((a, p) => a + p.hits.length, 0);
+
+  return {
+    id: `cricket-${createdAt}-${Math.random().toString(36).slice(2, 8)}`,
+    kind: "cricket",
+    status: finishedFlag ? "finished" : "aborted",
+    players: playersLite,
+    winnerId: state.winnerId ?? null,
+    createdAt,
+    updatedAt: now,
+    summary: {
       legs: 1,
-      totalMarks,
-      totalPoints,
-      closedTargets: CRICKET_TARGETS.reduce(
-        (acc: number, t: any) => acc + (Number(marks[t] ?? 0) >= 3 ? 1 : 0),
-        0
-      ),
-    };
-  }
-
-  function buildHistoryRecord(): SavedMatch | null {
-    if (!state) return null;
-
-    const now = Date.now();
-    const createdAt = legStartAt ?? now;
-
-    const finishedFlag = !!state.winnerId || !!(state as any).forcedFinished;
-
-    const playersLite = state.players.map((p) => {
-      const prof = profileById.get(p.id) ?? null;
-      return {
-        id: p.id,
-        name: p.name,
-        avatarDataUrl: (prof as any)?.avatarDataUrl ?? null, // (historique) ok
-      };
-    });
-
-    const playersPayload = state.players.map((p: any) => {
-      const hits = Array.isArray(p.hits) ? p.hits : [];
-      return {
-        id: p.id,
-        name: p.name,
-        score: p.score,
-        marks: p.marks,
-        hits,
-        legStats: computeLegStatsForPlayer(p),
-      };
-    });
-
-    const totalDarts = playersPayload.reduce((acc, p) => acc + (Array.isArray(p.hits) ? p.hits.length : 0), 0);
-
-    const rec: SavedMatch = {
-      id: `cricket-${createdAt}-` + Math.random().toString(36).slice(2, 8),
-      kind: "cricket",
-      status: finishedFlag ? "finished" : "aborted",
-      players: playersLite,
-      winnerId: state.winnerId ?? null,
-      createdAt,
-      updatedAt: now,
-      summary: {
-        legs: 1,
-        darts: totalDarts,
-        avg3ByPlayer: undefined,
-        co: undefined,
-      },
-      payload: {
-        mode: "cricket",
-        withPoints: scoreMode === "points",
-        maxRounds,
-        rotateFirstPlayer,
-        randomStart,
-        teamMode,
-        fillWithBots,
-        roundNumber: (state as any).roundNumber ?? undefined,
-        forcedFinished: !!(state as any).forcedFinished,
-        players: playersPayload,
-      },
-    };
-
-    return rec;
-  }
+      darts: totalDarts,
+    },
+    payload: {
+      mode: "cricket",
+      withPoints: scoreMode === "points",
+      maxRounds,
+      rotateFirstPlayer,
+      randomStart,
+      teamMode,
+      fillWithBots,
+      roundNumber: (state as any).roundNumber,
+      forcedFinished: !!(state as any).forcedFinished,
+      players: playersPayload,
+    },
+  };
+}
 
   function handleSaveAndQuit() {
     const finishedFlag = isFinished || !!(state as any)?.forcedFinished;

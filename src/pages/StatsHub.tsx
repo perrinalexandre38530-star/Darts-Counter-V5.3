@@ -3762,7 +3762,7 @@ const records = React.useMemo(() => {
 // 1) Nettoie/force des ids string dans normalizedMatches + injecte noms/avatars depuis storeProfiles
 const normalizedMatchesClean = React.useMemo(() => {
   const byId = new Map<string, PlayerLite>();
-  for (const p of storeProfiles) byId.set(String(p.id), p);
+  for (const p of storeProfiles) byId.set(String((p as any)?.id), p as any);
 
   const nm = Array.isArray(normalizedMatches) ? normalizedMatches : [];
   return nm.map((m: any) => {
@@ -3773,8 +3773,8 @@ const normalizedMatchesClean = React.useMemo(() => {
       return {
         ...pp,
         id: pid,
-        name: pp?.name ?? sp?.name ?? "",
-        avatarDataUrl: pp?.avatarDataUrl ?? sp?.avatarDataUrl ?? null,
+        name: pp?.name ?? (sp as any)?.name ?? "",
+        avatarDataUrl: pp?.avatarDataUrl ?? (sp as any)?.avatarDataUrl ?? null,
       };
     });
 
@@ -3827,40 +3827,47 @@ const nmEffective = React.useMemo(() => {
   return normalizedMatchesClean.length ? normalizedMatchesClean : nmFromRecordsFallback;
 }, [normalizedMatchesClean, nmFromRecordsFallback]);
 
-// -- 3) Liste unique de tous les joueurs vus (depuis records) --
+// -- 3bis) Liste unique de tous les joueurs vus (depuis SOURCE UNIQUE nmEffective) --
 const allPlayers = React.useMemo(() => {
   const map = new Map<string, PlayerLite>();
-  for (const r of records) {
-    for (const p of toArr<PlayerLite>((r as any)?.players)) {
-      if (!p?.id) continue;
-      if (!map.has(p.id)) {
-        map.set(p.id, {
-          id: p.id,
-          name: p.name ?? "",
-          avatarDataUrl: p.avatarDataUrl ?? null,
+
+  const nm = Array.isArray(nmEffective) ? nmEffective : [];
+  for (const m of nm) {
+    const players = Array.isArray((m as any)?.players) ? (m as any).players : [];
+    for (const p of players) {
+      const pid = String((p as any)?.id ?? "");
+      if (!pid) continue;
+      if (!map.has(pid)) {
+        map.set(pid, {
+          id: pid,
+          name: (p as any)?.name ?? "",
+          avatarDataUrl: (p as any)?.avatarDataUrl ?? null,
         });
       }
     }
   }
+
   return Array.from(map.values());
-}, [records]);
+}, [nmEffective]);
 
 // ---------- 4) Sélection joueur + option BOTS / mode actif vs locaux ----------
 
 // Id du joueur actif transmis par StatsShell
-const activePlayerId = playerId ?? initialPlayerId ?? profile?.id ?? null;
+const activePlayerId = (playerId ?? initialPlayerId ?? (profile as any)?.id ?? null) as
+  | string
+  | null;
 
 // Liste de joueurs selon le mode : active / locals / all
 const playersForMode = React.useMemo(() => {
   if (!allPlayers.length) return [];
 
   if (mode === "active" && activePlayerId) {
-    const found = allPlayers.find((p) => p.id === activePlayerId);
+    const found = allPlayers.find((p) => p.id === String(activePlayerId));
     return found ? [found] : [];
   }
 
   if (mode === "locals" && activePlayerId) {
-    return allPlayers.filter((p) => p.id !== activePlayerId);
+    return allPlayers.filter((p) => p.id !== String(activePlayerId));
   }
 
   return allPlayers;
@@ -3885,12 +3892,12 @@ const filteredPlayers = React.useMemo(() => {
 
 // Sélection courante
 const [selectedPlayerId, setSelectedPlayerId] = React.useState<string | null>(
-  activePlayerId ?? null
+  activePlayerId ? String(activePlayerId) : null
 );
 
 // Si le parent change initialPlayerId / playerId → on suit
 React.useEffect(() => {
-  if (activePlayerId) setSelectedPlayerId(activePlayerId);
+  if (activePlayerId) setSelectedPlayerId(String(activePlayerId));
 }, [activePlayerId]);
 
 // Si rien de sélectionné OU joueur filtré → 1er dispo
@@ -3913,23 +3920,86 @@ const selectedPlayer = React.useMemo(
 );
 
 // ✅ FAST: dashboard instantané depuis cache (localStorage)
+// (le cache est optionnel : on affiche, mais on recalc derrière quoi qu’il arrive)
 const effectiveProfileId = String(
-  selectedPlayer?.id ?? activePlayerId ?? playerId ?? initialPlayerId ?? profile?.id ?? ""
+  selectedPlayer?.id ??
+    activePlayerId ??
+    playerId ??
+    initialPlayerId ??
+    (profile as any)?.id ??
+    ""
 );
 
 const { cachedDashboard } = useFastDashboardCache(effectiveProfileId || null);
 
-// ✅ Dashboard calculé "lazy" (évite recalculs lourds inutiles)
+// ============================================================
+// ✅ PATCH: Dashboard "cache immédiat" + "recalc derrière"
+// - On affiche cachedDashboard instantanément
+// - Puis on calcule un dashboard live (nmEffective) en idle pour remplacer
+// - Fix: évite dashboard bloqué à 0 / cache incomplet
+// ============================================================
+const [liveDashboard, setLiveDashboard] =
+  React.useState<PlayerDashboardStats | null>(null);
+
+React.useEffect(() => {
+  let cancelled = false;
+
+  const pid = String(selectedPlayer?.id ?? "");
+  const pname = String(selectedPlayer?.name ?? "Joueur");
+
+  // reset quand on change de joueur / source
+  setLiveDashboard(null);
+
+  if (!pid) return;
+
+  const compute = () => {
+    try {
+      const dash = buildDashboardFromNormalized(pid, pname, nmEffective);
+      if (!cancelled) setLiveDashboard(dash as any);
+    } catch {
+      if (!cancelled) setLiveDashboard(null);
+    }
+  };
+
+  // On laisse respirer l'UI (cache affiché d'abord), puis calcul derrière
+  // requestIdleCallback si dispo, sinon timeout léger
+  const w = window as any;
+  let idleId: any = null;
+  let toId: any = null;
+
+  if (w && typeof w.requestIdleCallback === "function") {
+    idleId = w.requestIdleCallback(compute, { timeout: 1200 });
+  } else {
+    toId = window.setTimeout(compute, 60);
+  }
+
+  return () => {
+    cancelled = true;
+    if (w && typeof w.cancelIdleCallback === "function" && idleId != null) {
+      w.cancelIdleCallback(idleId);
+    }
+    if (toId != null) window.clearTimeout(toId);
+  };
+}, [selectedPlayer?.id, selectedPlayer?.name, nmEffective.length]);
+
+// ✅ Dashboard calculé "memo" (léger) — NE DOIT PAS être bloqué par le cache
 const computedDashboard = React.useMemo(() => {
   if (!selectedPlayer) return null;
-  if (cachedDashboard) return null; // ⛔ déjà un cache → pas de calcul
+  try {
+    return buildDashboardFromNormalized(
+      String(selectedPlayer.id),
+      String(selectedPlayer.name || "Joueur"),
+      nmEffective
+    );
+  } catch {
+    return null;
+  }
+}, [selectedPlayer?.id, selectedPlayer?.name, nmEffective.length]);
 
-  return buildDashboardFromNormalized(
-    String(selectedPlayer.id),
-    String(selectedPlayer.name || "Joueur"),
-    nmEffective
-  );
-}, [cachedDashboard, selectedPlayer?.id, selectedPlayer?.name, nmEffective]);
+// ✅ Dashboard final à passer au composant (priorité: cache instant -> live recalcul -> memo)
+const dashboardToShow = (cachedDashboard ?? liveDashboard ?? computedDashboard) as
+  | PlayerDashboardStats
+  | null;
 
 const currentPlayerIndex = React.useMemo(() => {
   if (!selectedPlayer) return -1;
@@ -4548,25 +4618,22 @@ return (
           </div>
 
           {/* ========= CONTENU PILOTÉ PAR LE CARROUSEL DE MODES ========= */}
-          <React.Suspense fallback={<LazyFallback label="Chargement…" />}>
-            {currentMode === "dashboard" && (
-              <>
-                <div style={row}>
-                  {selectedPlayer ? (
-                    <StatsPlayerDashboard
-                    data={
-                      selectedPlayer
-                        ? cachedDashboard ?? computedDashboard
-                        : null
-                    }
-                    x01MultiLegsSets={x01MultiLegsSets}
-                  />
-                  ) : (
-                    <div style={{ color: T.text70, fontSize: 13 }}>
-                      Sélectionne un joueur pour afficher le dashboard.
-                    </div>
-                  )}
-                </div>
+<React.Suspense fallback={<LazyFallback label="Chargement…" />}>
+  {currentMode === "dashboard" && (
+    <>
+      <div style={row}>
+        {selectedPlayer ? (
+          <StatsPlayerDashboard
+            // ✅ IMPORTANT: on affiche le cache instantané, puis live recalcul, puis fallback memo
+            data={selectedPlayer ? dashboardToShow : null}
+            x01MultiLegsSets={x01MultiLegsSets}
+          />
+        ) : (
+          <div style={{ color: T.text70, fontSize: 13 }}>
+            Sélectionne un joueur pour afficher le dashboard.
+          </div>
+        )}
+      </div>
 
                 {selectedPlayer && (
                   <div style={{ ...card, marginTop: 8 }}>
