@@ -1,66 +1,42 @@
 // ============================================
 // src/components/SplashScreen.tsx  (WEB / React)
-// ✅ Durée configurable (peut être < 16s)
-// ✅ Animation continue (breathe + glow + scanlines + pixels + glitch visuel)
-// ✅ Audio: splash_jingle.mp3 (best-effort, autoplay parfois bloqué)
-// ✅ Audio "débordant": NE COUPE PAS le son à la fin du splash (continue sur Home)
-// ✅ Transition: fade-out visuel sur la fin
+// ✅ Animation continue (breathe + glow + scanlines + pixels + glitch)
+// ✅ Audio persistant: pilotage du <audio id="dc-splash-audio"> rendu dans App.tsx
+// ✅ La musique NE s’arrête PAS quand on quitte le splash
+// ✅ Fade-out visuel avant onFinish
 // ============================================
 
 import React from "react";
 
 // ⚠️ Depuis src/components -> ../assets
 import AppLogo from "../assets/LOGO.png";
-import SplashJingle from "../assets/audio/splash_jingle.mp3";
 
 type Props = {
   onFinish: () => void;
-
-  /**
-   * durée totale du splash (ms)
-   * - si tu veux court: 4500..8000
-   * - défaut: 6500 (plus agréable + laisse le jingle dépasser sur Home)
-   */
-  durationMs?: number;
-
-  /**
-   * durée du fade-out visuel (ms) avant onFinish
-   * (audio continue)
-   */
-  fadeOutMs?: number;
-
-  /**
-   * si true: l'audio continue après le splash
-   * si false: on coupe le son à la fin
-   */
-  allowAudioOverflow?: boolean;
+  durationMs?: number; // durée totale du splash
+  fadeOutMs?: number;  // fade-out visuel avant la fin
 };
 
-export default function SplashScreen({
-  onFinish,
-  durationMs = 6500,
-  fadeOutMs = 700,
-  allowAudioOverflow = true,
-}: Props) {
-  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+export default function SplashScreen({ onFinish, durationMs = 6500, fadeOutMs = 700 }: Props) {
   const aliveRef = React.useRef(true);
 
   const [glitchOn, setGlitchOn] = React.useState(false);
   const [pixelSeed, setPixelSeed] = React.useState(0);
-
-  // ✅ fade-out visuel en fin de splash
   const [leaving, setLeaving] = React.useState(false);
 
   React.useEffect(() => {
     aliveRef.current = true;
 
-    // 🔊 Play jingle (best effort)
-    const a = audioRef.current;
+    // 🔊 Play sur l'audio GLOBAL (persistant)
+    const a = document.getElementById("dc-splash-audio") as HTMLAudioElement | null;
     if (a) {
       try {
-        a.currentTime = 0;
-        const p = a.play();
-        if (p && typeof (p as any).catch === "function") (p as any).catch(() => {});
+        // si déjà en cours, on laisse; sinon on lance
+        if (a.paused) {
+          a.currentTime = 0;
+          const p = a.play();
+          if (p && typeof (p as any).catch === "function") (p as any).catch(() => {});
+        }
       } catch {}
     }
 
@@ -70,8 +46,7 @@ export default function SplashScreen({
 
       setPixelSeed((x) => (x + 1) % 1000000);
 
-      // toutes les ~1.0..1.7s : petit glitch
-      const jitter = 900 + Math.random() * 800;
+      const jitter = 900 + Math.random() * 800; // 900..1700
       window.setTimeout(() => {
         if (!aliveRef.current) return;
         setGlitchOn(true);
@@ -85,16 +60,14 @@ export default function SplashScreen({
     loopGlitch();
 
     const total = Math.max(1200, Number(durationMs) || 0);
-    const fade = Math.max(0, Math.min(1500, Number(fadeOutMs) || 0));
+    const fade = Math.max(0, Math.min(1800, Number(fadeOutMs) || 0));
     const startFadeAt = Math.max(0, total - fade);
 
-    // ✅ déclenche le fade visuel
     const tFade = window.setTimeout(() => {
       if (!aliveRef.current) return;
       setLeaving(true);
     }, startFadeAt);
 
-    // ✅ fin splash
     const tDone = window.setTimeout(() => {
       if (!aliveRef.current) return;
       onFinish();
@@ -104,30 +77,19 @@ export default function SplashScreen({
       aliveRef.current = false;
       window.clearTimeout(tFade);
       window.clearTimeout(tDone);
-
-      // ✅ IMPORTANT: si allowAudioOverflow = true, on NE coupe PAS le son
-      if (!allowAudioOverflow) {
-        try {
-          const aa = audioRef.current;
-          if (aa) {
-            aa.pause();
-            aa.currentTime = 0;
-          }
-        } catch {}
-      }
+      // ✅ ON NE TOUCHE PAS à l'audio ici (il doit continuer sur Home/Connexion)
     };
-  }, [onFinish, durationMs, fadeOutMs, allowAudioOverflow]);
+  }, [onFinish, durationMs, fadeOutMs]);
 
-  // ✨ Particules “pixels” (24 petits carrés qui montent en boucle)
+  // ✨ Particules “pixels”
   const pixels = React.useMemo(() => {
     const rand = (min: number, max: number) => min + Math.random() * (max - min);
-
     return new Array(24).fill(0).map((_, i) => {
-      const left = rand(10, 90); // %
-      const size = rand(3, 7); // px
-      const delay = rand(0, 2.8); // s
-      const dur = rand(2.6, 5.2); // s
-      const drift = rand(-30, 30); // px
+      const left = rand(10, 90);
+      const size = rand(3, 7);
+      const delay = rand(0, 2.8);
+      const dur = rand(2.6, 5.2);
+      const drift = rand(-30, 30);
       const op = rand(0.06, 0.18);
       return { i, left, size, delay, dur, drift, op };
     });
@@ -151,9 +113,6 @@ export default function SplashScreen({
         transition: `opacity ${fadeOutMs}ms ease, transform ${fadeOutMs}ms ease, filter ${fadeOutMs}ms ease`,
       }}
     >
-      {/* 🔊 Audio (ton fichier existant) */}
-      <audio ref={audioRef} src={SplashJingle} preload="auto" />
-
       {/* Scanlines */}
       <div
         style={{
@@ -182,15 +141,8 @@ export default function SplashScreen({
         }}
       />
 
-      {/* Particules pixels derrière le logo */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
-          overflow: "hidden",
-        }}
-      >
+      {/* Particules pixels */}
+      <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
         {pixels.map((p) => (
           <div
             key={p.i}
@@ -211,7 +163,7 @@ export default function SplashScreen({
         ))}
       </div>
 
-      {/* Wrapper Logo */}
+      {/* Logo */}
       <div
         style={{
           position: "relative",
@@ -221,7 +173,6 @@ export default function SplashScreen({
           transition: "transform 120ms ease-out",
         }}
       >
-        {/* Glow */}
         <div
           style={{
             position: "absolute",
@@ -235,7 +186,6 @@ export default function SplashScreen({
           }}
         />
 
-        {/* Halo ring */}
         <div
           style={{
             position: "absolute",
@@ -248,7 +198,6 @@ export default function SplashScreen({
           }}
         />
 
-        {/* Logo */}
         <img
           src={AppLogo}
           alt="Darts Counter"
@@ -266,7 +215,6 @@ export default function SplashScreen({
           }}
         />
 
-        {/* Spark center */}
         <div
           style={{
             position: "absolute",
@@ -283,7 +231,6 @@ export default function SplashScreen({
         />
       </div>
 
-      {/* Caption */}
       <div
         style={{
           position: "absolute",
@@ -301,7 +248,6 @@ export default function SplashScreen({
         Chargement…
       </div>
 
-      {/* Keyframes */}
       <style>
         {`
           @keyframes dcLogoBreath {
@@ -309,25 +255,21 @@ export default function SplashScreen({
             50%  { transform: scale(1.02); opacity: 1; }
             100% { transform: scale(0.98); opacity: .96; }
           }
-
           @keyframes dcGlowBreath {
             0%   { transform: scale(0.96); opacity: .55; }
             50%  { transform: scale(1.04); opacity: .92; }
             100% { transform: scale(0.96); opacity: .55; }
           }
-
           @keyframes dcRingBreath {
             0%   { transform: scale(0.98); opacity: .55; }
             50%  { transform: scale(1.02); opacity: .95; }
             100% { transform: scale(0.98); opacity: .55; }
           }
-
           @keyframes dcSparkPulse {
             0%   { opacity: .15; box-shadow: 0 0 0 6px rgba(255,200,80,.06), 0 0 0 10px rgba(255,80,210,.04); }
             50%  { opacity: .70; box-shadow: 0 0 0 16px rgba(255,200,80,.10), 0 0 0 24px rgba(255,80,210,.08); }
             100% { opacity: .15; box-shadow: 0 0 0 6px rgba(255,200,80,.06), 0 0 0 10px rgba(255,80,210,.04); }
           }
-
           @keyframes dcPixelFloat {
             0%   { transform: translateY(0) translateX(0); opacity: .0; }
             10%  { opacity: 1; }

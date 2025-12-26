@@ -19,6 +19,10 @@
 // - Pop + bounce + glow + sparkle
 // - Audio best-effort (autoplay peut être bloqué par navigateur)
 // - Durée ~ 1350ms, puis app normale
+//
+// ✅ NEW: AUDIO PERSISTANT (overflow) -> la musique ne s'arrête pas au changement de page
+// - On monte un <audio id="dc-splash-audio"> AU NIVEAU AppRoot (ne se démonte pas)
+// - SplashScreen pilote ce player global (au lieu d'avoir son <audio> interne)
 // ============================================
 import React from "react";
 import BottomNav from "./components/BottomNav";
@@ -27,6 +31,9 @@ import AuthStart from "./pages/AuthStart";
 import AccountStart from "./pages/AccountStart";
 
 import SplashScreen from "./components/SplashScreen";
+
+// ✅ NEW: AUDIO SPLASH global (persistant)
+import SplashJingle from "./assets/audio/splash_jingle.mp3";
 
 // Persistance (IndexedDB via storage.ts)
 import { loadStore, saveStore } from "./lib/storage";
@@ -124,8 +131,7 @@ function withAvatars(rec: any, profiles: any[]) {
       };
     });
 
-  const players =
-    rec?.players?.length ? rec.players : rec?.payload?.players || [];
+  const players = rec?.players?.length ? rec.players : rec?.payload?.players || [];
   const filled = get(players);
 
   return {
@@ -515,9 +521,7 @@ function getX01DefaultStart(store: Store): 301 | 501 | 701 | 901 {
   const profiles = store.profiles ?? [];
   const active = profiles.find((p) => p.id === store.activeProfileId) ?? null;
 
-  const settingsDefault =
-    (store.settings.defaultX01 as 301 | 501 | 701 | 901) || 501;
-
+  const settingsDefault = (store.settings.defaultX01 as 301 | 501 | 701 | 901) || 501;
   if (!active) return settingsDefault;
 
   const pi = ((active as any).privateInfo || {}) as {
@@ -664,9 +668,7 @@ function App() {
   const [showSplash, setShowSplash] = React.useState(() => {
     const h = String(window.location.hash || "");
     const isAuthFlow =
-      h.startsWith("#/auth/callback") ||
-      h.startsWith("#/auth/reset") ||
-      h.startsWith("#/auth/forgot");
+      h.startsWith("#/auth/callback") || h.startsWith("#/auth/reset") || h.startsWith("#/auth/forgot");
     return !isAuthFlow;
   });
 
@@ -786,9 +788,7 @@ function App() {
 
           const h = String(window.location.hash || "");
           const isAuthFlow =
-            h.startsWith("#/auth/callback") ||
-            h.startsWith("#/auth/reset") ||
-            h.startsWith("#/auth/forgot");
+            h.startsWith("#/auth/callback") || h.startsWith("#/auth/reset") || h.startsWith("#/auth/forgot");
 
           if (!isAuthFlow) {
             if (!hasProfiles || !hasActive) {
@@ -923,17 +923,18 @@ function App() {
     [store.history, store.profiles]
   );
 
-// ✅ RENDER SPLASH EN EARLY RETURN (évite AppGate/BottomNav/SW pendant splash)
-if (showSplash) {
-  return (
-    <SplashScreen
-      durationMs={6500}       // splash plus court
-      fadeOutMs={700}         // transition propre
-      allowAudioOverflow={true} // ✅ la musique continue sur Home
-      onFinish={() => setShowSplash(false)}
-    />
-  );
-}
+  // ✅ RENDER SPLASH EN EARLY RETURN (évite AppGate/BottomNav/SW pendant splash)
+  // NOTE: l'audio ne s'arrête plus si SplashScreen pilote le player global (#dc-splash-audio)
+  if (showSplash) {
+    return (
+      <SplashScreen
+        durationMs={6500} // splash plus court
+        fadeOutMs={700} // transition propre
+        allowAudioOverflow={true} // ✅ la musique continue sur Home
+        onFinish={() => setShowSplash(false)}
+      />
+    );
+  }
 
   /* --------------------------------------------
         ROUTING SWITCH
@@ -1160,7 +1161,9 @@ if (showSplash) {
 
         const storeForOnline: Store = { ...store, activeProfileId: activeProfile.id } as Store;
 
-        page = <X01OnlineSetup store={storeForOnline} go={go} params={{ ...(routeParams || {}), lobbyCode }} />;
+        page = (
+          <X01OnlineSetup store={storeForOnline} go={go} params={{ ...(routeParams || {}), lobbyCode }} />
+        );
         break;
       }
 
@@ -1293,7 +1296,9 @@ if (showSplash) {
           );
           break;
         }
-        page = <KillerPlay store={store} go={go} config={cfg} onFinish={(m: any) => pushHistory(m)} />;
+        page = (
+          <KillerPlay store={store} go={go} config={cfg} onFinish={(m: any) => pushHistory(m)} />
+        );
         break;
       }
 
@@ -1316,7 +1321,9 @@ if (showSplash) {
           );
           break;
         }
-        page = <ShanghaiPlay store={store} go={go} config={cfg} onFinish={(m: any) => pushHistory(m)} />;
+        page = (
+          <ShanghaiPlay store={store} go={go} config={cfg} onFinish={(m: any) => pushHistory(m)} />
+        );
         break;
       }
 
@@ -1338,7 +1345,13 @@ if (showSplash) {
         break;
 
       case "training_clock":
-        page = <TrainingClock profiles={store.profiles ?? []} activeProfileId={store.activeProfileId ?? null} go={go} />;
+        page = (
+          <TrainingClock
+            profiles={store.profiles ?? []}
+            activeProfileId={store.activeProfileId ?? null}
+            go={go}
+          />
+        );
         break;
 
       /* ---------- AVATAR CREATOR ---------- */
@@ -1376,7 +1389,12 @@ if (showSplash) {
               <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
                 ← Retour
               </button>
-              <AvatarCreator size={512} defaultName={targetBot?.name || ""} onSave={handleSaveAvatarBot} isBotMode={true} />
+              <AvatarCreator
+                size={512}
+                defaultName={targetBot?.name || ""}
+                onSave={handleSaveAvatarBot}
+                isBotMode={true}
+              />
             </div>
           );
           break;
@@ -1404,7 +1422,12 @@ if (showSplash) {
             <button onClick={() => go(backTo)} style={{ marginBottom: 12 }}>
               ← Retour
             </button>
-            <AvatarCreator size={512} defaultName={targetProfile?.name || ""} onSave={handleSaveAvatarProfile} isBotMode={isBotMode} />
+            <AvatarCreator
+              size={512}
+              defaultName={targetProfile?.name || ""}
+              onSave={handleSaveAvatarProfile}
+              isBotMode={isBotMode}
+            />
           </div>
         );
         break;
@@ -1645,6 +1668,8 @@ export default function AppRoot() {
       <LangProvider>
         <AuthOnlineProvider>
           <AuthSessionProvider>
+            {/* ✅ NEW: player audio global persistant (ne se démonte pas entre Splash/Home/Connexion) */}
+            <audio id="dc-splash-audio" src={SplashJingle} preload="auto" style={{ display: "none" }} />
             <App />
           </AuthSessionProvider>
         </AuthOnlineProvider>
