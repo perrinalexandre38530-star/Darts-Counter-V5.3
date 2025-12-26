@@ -127,6 +127,17 @@ function safeJsonParse<T = any>(raw: any): T | null {
   }
 }
 
+// 🔒 Garde-fou : évite d’utiliser un cache vide / incomplet
+function looksLikeDashboard(x: any): boolean {
+  if (!x || typeof x !== "object") return false;
+
+  return Boolean(
+    x.playerId ||
+    Number.isFinite(Number(x.avg3Overall)) ||
+    x.distribution
+  );
+}
+
 function readStatsCache(profileId: string): any | null {
   if (!profileId) return null;
   try {
