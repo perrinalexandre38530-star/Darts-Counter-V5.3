@@ -6,8 +6,8 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 
-// ✅ Mode Online : Provider d'auth globale
-import { AuthOnlineProvider } from "./hooks/useAuthOnline";
+// ❌ IMPORTANT: NE PAS WRAPPER AuthOnlineProvider ICI
+// ✅ Il doit être UNIQUEMENT dans App.tsx (un seul provider global)
 
 // ✅ CRASH LOGGER (affiche l’erreur à l'écran)
 (function attachCrashOverlay() {
@@ -201,13 +201,18 @@ async function registerServiceWorkerProd() {
 }
 
 async function devUnregisterSW() {
-  if (!("serviceWorker" in navigator)) return;
-  navigator.serviceWorker
-    .getRegistrations()
-    .then((regs) => Promise.all(regs.map((r) => r.unregister())))
-    .catch(() => {});
+  // ✅ DEV: on désactive TOUJOURS le SW + caches (évite 2 SW actifs, vieux chunks, intro bloquée)
+  if ("serviceWorker" in navigator) {
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister().catch(() => {})));
+    } catch {}
+  }
   if (typeof caches !== "undefined" && (caches as any).keys) {
-    (caches as any).keys().then((keys: string[]) => keys.forEach((k) => caches.delete(k)));
+    try {
+      const keys = await (caches as any).keys();
+      await Promise.all(keys.map((k: string) => caches.delete(k)));
+    } catch {}
   }
 }
 
@@ -242,11 +247,10 @@ async function devUnregisterSW() {
     const mod = await import("./App");
     const AppRoot = mod.default;
 
+    // ✅ IMPORTANT: pas de AuthOnlineProvider ici
     createRoot(container).render(
       <React.StrictMode>
-        <AuthOnlineProvider>
-          <AppRoot />
-        </AuthOnlineProvider>
+        <AppRoot />
       </React.StrictMode>
     );
 

@@ -56,7 +56,7 @@ import { warmAggOnce } from "./boot/warmAgg";
 import { onlineApi } from "./lib/onlineApi";
 
 // ✅ Supabase client (à adapter si ton export est ailleurs)
-import { supabase } from "./lib/supabase";
+import { supabase } from "./lib/supabaseClient";
 
 // Types
 import type { Store, Profile, MatchRecord } from "./lib/types";
@@ -122,7 +122,7 @@ import SyncCenter from "./pages/SyncCenter";
 // Contexts
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { LangProvider } from "./contexts/LangContext";
-import { AuthOnlineProvider } from "./hooks/useAuthOnline";
+import { AuthOnlineProvider, useAuthOnline } from "./hooks/useAuthOnline";
 
 // Dev helper
 import { installHistoryProbe } from "./dev/devHistoryProbe";
@@ -148,6 +148,64 @@ function withAvatars(rec: any, profiles: any[]) {
     players: filled,
     payload: { ...(rec?.payload || {}), players: filled },
   };
+}
+
+/* ============================================================
+   ✅ NEW: sanitizeStoreForCloud (anti base64 dans snapshot cloud)
+   - Retire avatarDataUrl "data:" des profils + history.players
+   - Objectif: éviter les snapshots énormes / erreurs quota / perfs
+============================================================ */
+function sanitizeStoreForCloud(s: any) {
+  let clone: any;
+  try {
+    clone = JSON.parse(JSON.stringify(s || {}));
+  } catch {
+    clone = { ...(s || {}) };
+  }
+
+  // profils
+  if (Array.isArray(clone.profiles)) {
+    clone.profiles = clone.profiles.map((p: any) => {
+      const out = { ...(p || {}) };
+      const v = out.avatarDataUrl;
+      if (typeof v === "string" && v.startsWith("data:")) {
+        delete out.avatarDataUrl;
+      }
+      return out;
+    });
+  }
+
+  // history (players)
+  if (Array.isArray(clone.history)) {
+    clone.history = clone.history.map((r: any) => {
+      const rr = { ...(r || {}) };
+      if (Array.isArray(rr.players)) {
+        rr.players = rr.players.map((pl: any) => {
+          const pp = { ...(pl || {}) };
+          const v = pp.avatarDataUrl;
+          if (typeof v === "string" && v.startsWith("data:")) {
+            delete pp.avatarDataUrl;
+          }
+          return pp;
+        });
+      }
+      // payload.players parfois doublonné
+      if (rr.payload && Array.isArray(rr.payload.players)) {
+        rr.payload = { ...(rr.payload || {}) };
+        rr.payload.players = rr.payload.players.map((pl: any) => {
+          const pp = { ...(pl || {}) };
+          const v = pp.avatarDataUrl;
+          if (typeof v === "string" && v.startsWith("data:")) {
+            delete pp.avatarDataUrl;
+          }
+          return pp;
+        });
+      }
+      return rr;
+    });
+  }
+
+  return clone;
 }
 
 /* --------------------------------------------
@@ -657,6 +715,13 @@ function SWUpdateBanner() {
                 APP
 -------------------------------------------- */
 function App() {
+  // ============================================================
+  // ✅ CLOUD SNAPSHOT SYNC (source unique Supabase)
+  // ============================================================
+  const online = useAuthOnline();
+  const [cloudHydrated, setCloudHydrated] = React.useState(false);
+  const cloudPushTimerRef = React.useRef<number | null>(null);
+
   const [store, setStore] = React.useState<Store>(initialStore);
   const [tab, setTab] = React.useState<Tab>("home");
   const [routeParams, setRouteParams] = React.useState<any>(null);
@@ -669,6 +734,18 @@ function App() {
       h.startsWith("#/auth/callback") || h.startsWith("#/auth/reset") || h.startsWith("#/auth/forgot");
     return !isAuthFlow;
   });
+
+    // 🛟 SAFETY NET : ne JAMAIS bloquer l'app sur le splash
+    React.useEffect(() => {
+      if (!showSplash) return;
+  
+      const hardTimeout = window.setTimeout(() => {
+        console.warn("[Splash] forced exit (safety timeout)");
+        setShowSplash(false);
+      }, 8000); // max absolu
+  
+      return () => window.clearTimeout(hardTimeout);
+    }, [showSplash]);
 
   /* Boot: persistance + nettoyage localStorage + warm-up (SANS SFX) */
   React.useEffect(() => {
@@ -810,6 +887,105 @@ function App() {
       mounted = false;
     };
   }, []);
+
+  // ============================================================
+  // ✅ CLOUD HYDRATE (source unique)
+  // - Si connecté : on tente de récupérer le snapshot cloud
+  // - Si pas encore de snapshot : on "seed" avec le store local
+  // ============================================================
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (loading) return;
+      if (!online?.ready) return;
+
+      // Pas connecté -> mode offline/cache local
+      if (online.status !== "signed_in") {
+        setCloudHydrated(true);
+        return;
+      }
+
+      if (cloudHydrated) return;
+
+      try {
+        const snap = await onlineApi.pullStoreSnapshot();
+        const cloudStore = (snap as any)?.payload?.store;
+
+        // ✅ snapshot présent -> hydrate local depuis cloud
+        if (cloudStore && typeof cloudStore === "object") {
+          const next: Store = {
+            ...initialStore,
+            ...(cloudStore as any),
+            profiles: (cloudStore as any).profiles ?? [],
+            friends: (cloudStore as any).friends ?? [],
+            history: (cloudStore as any).history ?? [],
+          };
+
+          if (!cancelled) {
+            setStore(next);
+            try {
+              await saveStore(next);
+            } catch {}
+          }
+        } else {
+          // ✅ pas de snapshot -> seed depuis local
+          const payload = {
+            kind: "dc_store_snapshot_v1",
+            createdAt: new Date().toISOString(),
+            app: "darts-counter-v5",
+            store: sanitizeStoreForCloud(store), // ✅ CHANGED (ne pousse pas les data:)
+          };
+          await onlineApi.pushStoreSnapshot(payload);
+        }
+      } catch (e) {
+        console.warn("[cloud] hydrate error", e);
+      } finally {
+        if (!cancelled) setCloudHydrated(true);
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, online?.ready, online?.status, cloudHydrated, store]);
+
+  // ============================================================
+  // ✅ CLOUD PUSH (debounce)
+  // - chaque changement de store -> snapshot cloud
+  // ============================================================
+  React.useEffect(() => {
+    if (loading) return;
+    if (!cloudHydrated) return;
+    if (!online?.ready || online.status !== "signed_in") return;
+
+    if (cloudPushTimerRef.current) {
+      window.clearTimeout(cloudPushTimerRef.current);
+      cloudPushTimerRef.current = null;
+    }
+
+    cloudPushTimerRef.current = window.setTimeout(async () => {
+      try {
+        const payload = {
+          kind: "dc_store_snapshot_v1",
+          createdAt: new Date().toISOString(),
+          app: "darts-counter-v5",
+          store: sanitizeStoreForCloud(store), // ✅ CHANGED (ne pousse pas les data:)
+        };
+        await onlineApi.pushStoreSnapshot(payload);
+      } catch (e) {
+        console.warn("[cloud] push snapshot error", e);
+      }
+    }, 1200);
+
+    return () => {
+      if (cloudPushTimerRef.current) {
+        window.clearTimeout(cloudPushTimerRef.current);
+        cloudPushTimerRef.current = null;
+      }
+    };
+  }, [store, loading, cloudHydrated, online?.ready, online?.status]);
 
   /* Save store each time it changes */
   React.useEffect(() => {
@@ -1462,13 +1638,13 @@ function App() {
     <CrashCatcher>
       <>
         <MobileErrorOverlay />
-  
+
         <div className="container" style={{ paddingBottom: 88 }}>
           <AppGate go={go} tab={tab}>
             {page}
           </AppGate>
         </div>
-  
+
         <BottomNav value={tab as any} onChange={(k: any) => go(k)} />
         <SWUpdateBanner />
       </>

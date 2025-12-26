@@ -34,8 +34,8 @@ const StatsCricketDashboard = React.lazy(
   () => import("../components/StatsCricketDashboard")
 );
 const StatsShanghaiDashboard = React.lazy(
-  () => import("../components/StatsShanghaiDashboard")
-);
+  () => import("../components/stats/StatsShanghaiDashboard")
+ );
 const X01MultiStatsTabFull = React.lazy(
   () => import("../stats/X01MultiStatsTabFull")
 );
@@ -3589,12 +3589,29 @@ export default function StatsHub({
 // 🔎 DEBUG TEMPORAIRE — vérifier IndexedDB (History)
 // ============================================================
 React.useEffect(() => {
-  History.list().then((rows: any[]) => {
-    // eslint-disable-next-line no-console
-    console.log("[DEBUG] History.list count =", rows?.length || 0);
-    // eslint-disable-next-line no-console
-    console.log("[DEBUG] History.sample =", rows?.[0]);
-  });
+  // 1) Liste les DB visibles par le navigateur (Chrome)
+  try {
+    const anyIDB: any = indexedDB as any;
+    if (typeof anyIDB !== "undefined" && typeof anyIDB.databases === "function") {
+      anyIDB.databases().then((dbs: any[]) => {
+        console.log("[IDB] databases =", dbs);
+      });
+    } else {
+      console.log("[IDB] indexedDB.databases() non supporté ici");
+    }
+  } catch (e) {
+    console.warn("[IDB] databases() failed", e);
+  }
+
+  // 2) Vérifie ce que History.list() retourne réellement
+  History.list()
+    .then((rows: any[]) => {
+      console.log("[DEBUG] History.list count =", rows?.length || 0);
+      console.log("[DEBUG] History.sample =", rows?.[0]);
+    })
+    .catch((e: any) => {
+      console.warn("[DEBUG] History.list error =", e);
+    });
 }, []);
 
 // ==========================
@@ -4204,6 +4221,120 @@ const killerAgg = React.useMemo<KillerAgg | null>(() => {
     favHits,
   };
 }, [selectedPlayer?.id, records]);
+
+// ============================================================
+// ✅ SHANGHAI — période + stats agrégées (pour StatsShanghaiDashboard v2)
+// ============================================================
+const [shPeriod, setShPeriod] = React.useState<TimeRange>("all");
+
+// mini-agrégateur robuste (fallback depuis summary/payload)
+function buildShanghaiStatsFromRecords(
+  rows: SavedMatch[],
+  playerId: string | null,
+  range: TimeRange
+) {
+  const list = Array.isArray(rows) ? rows : [];
+  const pid = playerId ? String(playerId) : null;
+  if (!pid) {
+    return {
+      matches: 0,
+      wins: 0,
+      winRatePct: 0,
+      bestScore: 0,
+      avgScore: 0,
+      totalScore: 0,
+      byTarget: {},
+    };
+  }
+
+  // filtre période
+  const now = Date.now();
+  const ONE_DAY = 24 * 60 * 60 * 1000;
+  const delta =
+    range === "day"
+      ? ONE_DAY
+      : range === "week"
+      ? 7 * ONE_DAY
+      : range === "month"
+      ? 30 * ONE_DAY
+      : range === "year"
+      ? 365 * ONE_DAY
+      : Infinity;
+  const minTs = delta === Infinity ? 0 : now - delta;
+
+  let matches = 0;
+  let wins = 0;
+  let totalScore = 0;
+  let bestScore = 0;
+
+  // (optionnel) distrib hits par cible si dispo dans summary
+  const byTarget: Record<string, number> = {};
+
+  const Nn = (x: any, d = 0) => (Number.isFinite(Number(x)) ? Number(x) : d);
+  const toArrLoc = <T,>(v: any): T[] => (Array.isArray(v) ? v : []);
+
+  for (const r of list) {
+    const t = Nn((r as any)?.updatedAt ?? (r as any)?.createdAt, 0);
+    if (t < minTs) continue;
+
+    // identifie Shanghai
+    const tag = `${String(r.kind ?? "").toLowerCase()}|${String(r.game ?? "").toLowerCase()}|${String(
+      r.mode ?? ""
+    ).toLowerCase()}|${String(r.variant ?? "").toLowerCase()}`;
+    if (!tag.includes("shanghai")) continue;
+
+    // joueur dans le match
+    const inMatch = toArrLoc<PlayerLite>((r as any)?.players).some((p) => String(p?.id ?? "") === pid);
+    if (!inMatch) continue;
+
+    matches++;
+    if (String((r as any)?.winnerId ?? "") === pid) wins++;
+
+    // score par joueur (on tolère plusieurs formats)
+    const ss: any = (r as any)?.summary ?? (r as any)?.payload?.summary ?? {};
+    const per: any[] = ss?.perPlayer ?? ss?.players ?? (r as any)?.payload?.summary?.perPlayer ?? [];
+
+    const pstat =
+      per.find((x) => String(x?.playerId ?? x?.id ?? "") === pid) ??
+      ss?.[pid] ??
+      ss?.players?.[pid] ??
+      ss?.perPlayer?.[pid] ??
+      {};
+
+    const score =
+      Nn(pstat.totalScore) ||
+      Nn(pstat.score) ||
+      Nn(pstat.points) ||
+      0;
+
+    totalScore += score;
+    bestScore = Math.max(bestScore, score);
+
+    const ht = pstat.byTarget ?? pstat.hitsByTarget ?? null;
+    if (ht && typeof ht === "object") {
+      for (const [k, v] of Object.entries(ht)) {
+        byTarget[String(k)] = (byTarget[String(k)] || 0) + Nn(v, 0);
+      }
+    }
+  }
+
+  const avgScore = matches > 0 ? totalScore / matches : 0;
+  const winRatePct = matches > 0 ? Math.round((wins / matches) * 1000) / 10 : 0;
+
+  return {
+    matches,
+    wins,
+    winRatePct,
+    bestScore,
+    avgScore,
+    totalScore,
+    byTarget,
+  };
+}
+
+const shanghaiStats = React.useMemo(() => {
+  return buildShanghaiStatsFromRecords(records, selectedPlayer?.id ?? null, shPeriod);
+}, [records, selectedPlayer?.id, shPeriod]);
 
 const [cricketStats, setCricketStats] =
   React.useState<CricketProfileStats | null>(null);
@@ -4898,17 +5029,18 @@ return (
               </div>
             )}
 
-            {currentMode === "shanghai" && (
-              <div style={card}>
-                <React.Suspense fallback={<LazyFallback label="Chargement Shanghai…" />}>
-                  <StatsShanghaiDashboard
-                    matches={records as any}
-                    playerId={selectedPlayer?.id ?? null}
-                    playerName={selectedPlayer?.name ?? null}
-                  />
-                </React.Suspense>
-              </div>
-            )}
+{currentMode === "shanghai" && (
+  <div style={card}>
+    <React.Suspense fallback={<LazyFallback label="Chargement Shanghai…" />}>
+      <StatsShanghaiDashboard
+        playerName={selectedPlayer?.name}
+        period={shPeriod}
+        setPeriod={setShPeriod}
+        stats={shanghaiStats}
+      />
+    </React.Suspense>
+  </div>
+)}
 
             {currentMode === "killer" && (
               <div style={card}>

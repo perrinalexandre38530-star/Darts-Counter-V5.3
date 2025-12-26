@@ -1655,30 +1655,42 @@ export default function Home({ store, go }: Props) {
     [store, activeProfile, stats, t]
   );
 
+  // ✅ IMPORTANT: pas de side-effects (pas de console.log) dans un useMemo
   const tickerItems = useMemo(() => {
-    const safe = ensureKillerTickerItemFirst(tickerItemsRaw, t, theme.primary);
-
-    // DEBUG console (utile pour vérifier en prod mobile aussi)
-    try {
-      console.log(
-        "[Home][Ticker] items:",
-        safe.map((x) => x.id).join(" | ")
-      );
-    } catch {}
-
-    return safe;
+    return ensureKillerTickerItemFirst(tickerItemsRaw, t, theme.primary);
   }, [tickerItemsRaw, t, theme.primary]);
 
-  // ✅ Quand la liste change (ou profil change), on revient au 1er slide (Killer)
+  // ✅ Signature stable => permet de détecter les VRAIS changements
+  const tickerSignature = useMemo(() => {
+    return tickerItems.map((x) => x.id).join(" | ");
+  }, [tickerItems]);
+
+  // ✅ DEBUG: log UNIQUEMENT quand la liste change (plus de spam)
+  const lastTickerSigRef = React.useRef<string>("");
+  useEffect(() => {
+    try {
+      if (tickerSignature && tickerSignature !== lastTickerSigRef.current) {
+        lastTickerSigRef.current = tickerSignature;
+        console.log("[Home][Ticker] items:", tickerSignature);
+      }
+    } catch {}
+  }, [tickerSignature]);
+
+  // ✅ Quand le profil actif change -> on revient au 1er slide (Killer)
+  useEffect(() => {
+    setTickerIndex(0);
+  }, [activeProfile?.id]);
+
+  // ✅ Clamp index si la liste change (taille / ordre / contenu)
   useEffect(() => {
     if (!tickerItems.length) {
       setTickerIndex(0);
       return;
     }
-    setTickerIndex(0);
-  }, [activeProfile?.id, tickerItems.length]);
+    setTickerIndex((i) => (i >= tickerItems.length ? 0 : i));
+  }, [tickerSignature, tickerItems.length]);
 
-  // ✅ Auto-rotation basée sur la liste UTILISÉE
+  // ✅ Auto-rotation (ne redémarre QUE si la taille change)
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!tickerItems.length) return;
@@ -1690,15 +1702,6 @@ export default function Home({ store, go }: Props) {
     }, DETAIL_INTERVAL_MS);
 
     return () => window.clearInterval(id);
-  }, [tickerItems.length]);
-
-  // ✅ Clamp index si la taille change
-  useEffect(() => {
-    if (!tickerItems.length) {
-      setTickerIndex(0);
-      return;
-    }
-    setTickerIndex((i) => (i >= tickerItems.length ? 0 : i));
   }, [tickerItems.length]);
 
   // ✅ Slide courant basé sur la liste UTILISÉE

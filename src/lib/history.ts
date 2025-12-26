@@ -5,12 +5,16 @@
 // + History.{list,get,upsert,remove,clear,readAll}
 // + History.{getX01, listInProgress, listFinished, listByStatus}
 // - Stockage principal : IndexedDB (objectStore "history")
-// - Compression : LZString (UTF-16) sur le champ payload → stocké en `payloadCompressed`
+// - Compression : LZString (UTF-16) sur le champ payload → stocké en payloadCompressed
 // - Fallback : localStorage si IDB indispo (compact, sans payload)
 // - Migration auto depuis l’ancien localStorage KEY = "dc-history-v1"
 // - Trim auto à MAX_ROWS
 // ✅ FIX CRITICAL: legacy LSK peut être JSON OU LZString UTF16 (et parfois base64-ish) -> parse robuste
 // ✅ FIX CRITICAL: 1 match MULTI = 1 record (dédoublonnage list + id canonique upsert)
+// ✅ PATCH (CRITICAL): NE JAMAIS JSON.parse un payload non maîtrisé (safeJsonParse partout)
+// ✅ FIX STATS CRICKET: list() renvoie payload décodé (sinon stats = 0)
+// ✅ ANTI-FREEZE: ne parse/log QUE si JSON-like + anti-spam logs + decode payload seulement pour Cricket
+// ✅ JSONC PATCH: support // /* */ + trailing commas (sinon JSON.parse casse sur '/')
 // ============================================
 
 /* =========================
@@ -73,6 +77,180 @@ const DB_VER = 2; // ⬅ bump pour index by_updatedAt
 const STORE = "history";
 const MAX_ROWS = 400;
 
+// =========================
+// ✅ PATCH CRITICAL — JSON parse SAFE (ANTI-FREEZE + JSONC)
+// - ne parse QUE si JSON-like ({ ou [)
+// - JSON strict, puis JSONC (strip // comments + block comments + trailing commas)
+// - log 1 seule fois par (id+stage+snippet) (anti-spam)
+// =========================
+const __historyWarnedPayloads = new Set<string>();
+
+function stripJsonCommentsAndTrailingCommas(input: string): string {
+  if (!input) return input;
+
+  // Strip comments safely (ignore "comments" inside strings)
+  let out = "";
+  let inStr = false;
+  let esc = false;
+  let inLine = false;
+  let inBlock = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const c = input[i];
+    const n = input[i + 1];
+
+    if (inLine) {
+      if (c === "\n") {
+        inLine = false;
+        out += c;
+      }
+      continue;
+    }
+
+    if (inBlock) {
+      if (c === "*" && n === "/") {
+        inBlock = false;
+        i++;
+      }
+      continue;
+    }
+
+    if (inStr) {
+      out += c;
+      if (esc) {
+        esc = false;
+      } else if (c === "\\") {
+        esc = true;
+      } else if (c === '"') {
+        inStr = false;
+      }
+      continue;
+    }
+
+    // not in string
+    if (c === '"') {
+      inStr = true;
+      out += c;
+      continue;
+    }
+
+    // start comments
+    if (c === "/" && n === "/") {
+      inLine = true;
+      i++;
+      continue;
+    }
+    if (c === "/" && n === "*") {
+      inBlock = true;
+      i++;
+      continue;
+    }
+
+    out += c;
+  }
+
+  // Remove trailing commas: ",}" and ",]"
+  out = out.replace(/,\s*([}\]])/g, "$1");
+  return out;
+}
+
+function safeJsonParse(raw: any, ctx?: { id?: string; stage?: string }) {
+  if (!raw) return null;
+  if (typeof raw === "object") return raw;
+  if (typeof raw !== "string") return null;
+
+  const s = raw.trim();
+
+  // ✅ ne tente même pas JSON.parse si pas JSON-like
+  if (!(s.startsWith("{") || s.startsWith("["))) return null;
+
+  // 1) JSON strict
+  try {
+    return JSON.parse(s);
+  } catch {
+    // 2) JSONC (comments + trailing commas)
+    try {
+      const cleaned = stripJsonCommentsAndTrailingCommas(s);
+      return JSON.parse(cleaned);
+    } catch {
+      // ✅ anti-spam + log avec id/stage si dispo
+      const key = `${ctx?.id || "?"}::${ctx?.stage || "parse"}::${s.slice(0, 180)}`;
+      if (!__historyWarnedPayloads.has(key)) {
+        __historyWarnedPayloads.add(key);
+        console.warn(
+          "[History] JSON parse failed (skipped record)",
+          { id: ctx?.id, stage: ctx?.stage },
+          s.slice(0, 220)
+        );
+      }
+      return null;
+    }
+  }
+}
+
+function asArray(v: any): any[] {
+  return Array.isArray(v) ? v : [];
+}
+
+/* =========================
+   ✅ FIX STATS: decode payloadCompressed (best-effort, no throw)
+   - ne parse QUE si JSON-like
+   - anti-spam logs
+   - ✅ JSONC support + ctx id/stage
+========================= */
+function decodePayloadCompressedBestEffort(
+  payloadCompressed: any,
+  ctx?: { id?: string; stage?: string }
+): any | null {
+  if (!payloadCompressed) return null;
+  if (typeof payloadCompressed !== "string") return null;
+
+  const s = payloadCompressed;
+
+  const tryParseIfJsonLike = (txt: any, stage: string) => {
+    if (typeof txt !== "string") return null;
+    const t = txt.trim();
+    if (!(t.startsWith("{") || t.startsWith("["))) return null;
+    const obj = safeJsonParse(t, { id: ctx?.id, stage: ctx?.stage ? `${ctx.stage}:${stage}` : stage });
+    return obj && typeof obj === "object" ? obj : null;
+  };
+
+  // 1) UTF16 standard
+  try {
+    const dec = (LZString as any).decompressFromUTF16?.(s);
+    const obj = tryParseIfJsonLike(dec, "lz:utf16");
+    if (obj) return obj;
+  } catch {}
+
+  // 2) decompress direct (rare legacy)
+  try {
+    const dec = (LZString as any).decompress?.(s);
+    const obj = tryParseIfJsonLike(dec, "lz:raw");
+    if (obj) return obj;
+  } catch {}
+
+  // 3) base64-ish → bin → (json OR decompress)
+  try {
+    const isB64 = /^[A-Za-z0-9+/=\r\n\s-]+$/.test(s) && s.length > 16;
+    if (isB64) {
+      const bin = (LZString as any)._tryDecodeBase64ToString?.(s) || "";
+
+      // 3a) bin déjà JSON
+      const obj0 = tryParseIfJsonLike(bin, "b64:bin");
+      if (obj0) return obj0;
+
+      // 3b) bin = compress() -> decompress()
+      try {
+        const dec = (LZString as any).decompress?.(bin);
+        const obj = tryParseIfJsonLike(dec, "b64->lz");
+        if (obj) return obj;
+      } catch {}
+    }
+  } catch {}
+
+  return null;
+}
+
 /* =========================
    Mini LZ-String UTF16
 ========================= */
@@ -132,7 +310,6 @@ const LZString = (function () {
     }
     return LZ.decompress(output);
   };
-
   // ✅ Optionnel "best-effort": certains legacy étaient base64-ish
   LZ._tryDecodeBase64ToString = function (b64: string) {
     try {
@@ -142,7 +319,6 @@ const LZString = (function () {
       return "";
     }
   };
-
   LZ.compress = function (uncompressed: string) {
     if (uncompressed == null) return "";
     let i,
@@ -365,6 +541,7 @@ const LZString = (function () {
 
 /* =========================
    ✅ FIX: lecture robuste localStorage (JSON OU LZString)
+   ✅ PATCH: safeJsonParse partout (0 throw)
 ========================= */
 function parseHistoryLocalStorage(raw: string | null): any[] {
   if (!raw) return [];
@@ -373,20 +550,16 @@ function parseHistoryLocalStorage(raw: string | null): any[] {
 
   // 1) JSON direct
   if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
-    try {
-      const v = JSON.parse(trimmed);
-      return Array.isArray(v) ? v : [];
-    } catch {
-      // fallthrough
-    }
+    const v = safeJsonParse(trimmed, { id: "localStorage", stage: "legacy:json" });
+    return asArray(v);
   }
 
   // 2) LZString UTF16
   try {
     const dec = (LZString as any).decompressFromUTF16?.(s);
     if (typeof dec === "string" && dec.trim().length) {
-      const v = JSON.parse(dec);
-      return Array.isArray(v) ? v : [];
+      const v = safeJsonParse(dec, { id: "localStorage", stage: "legacy:lz:utf16" });
+      return asArray(v);
     }
   } catch {}
 
@@ -397,16 +570,15 @@ function parseHistoryLocalStorage(raw: string | null): any[] {
       const bin = (LZString as any)._tryDecodeBase64ToString?.(s) || "";
       if (bin) {
         // 3a) bin déjà JSON
-        try {
-          const v = JSON.parse(bin);
-          return Array.isArray(v) ? v : [];
-        } catch {}
+        const v0 = safeJsonParse(bin, { id: "localStorage", stage: "legacy:b64:bin" });
+        if (Array.isArray(v0)) return v0;
+
         // 3b) bin = compress() -> decompress()
         try {
           const dec = (LZString as any).decompress?.(bin);
           if (typeof dec === "string" && dec.trim().length) {
-            const v = JSON.parse(dec);
-            return Array.isArray(v) ? v : [];
+            const v = safeJsonParse(dec, { id: "localStorage", stage: "legacy:b64->lz" });
+            return asArray(v);
           }
         } catch {}
       }
@@ -417,8 +589,8 @@ function parseHistoryLocalStorage(raw: string | null): any[] {
   try {
     const dec = (LZString as any).decompress?.(s);
     if (typeof dec === "string" && dec.trim().length) {
-      const v = JSON.parse(dec);
-      return Array.isArray(v) ? v : [];
+      const v = safeJsonParse(dec, { id: "localStorage", stage: "legacy:lz:raw" });
+      return asArray(v);
     }
   } catch {}
 
@@ -440,7 +612,6 @@ function readLegacyRowsSafe(): SavedMatch[] {
 ========================= */
 function getCanonicalMatchId(rec: any): string | null {
   if (!rec) return null;
-
   const direct =
     rec?.matchId ??
     rec?.sessionId ??
@@ -476,7 +647,6 @@ function getCanonicalMatchId(rec: any): string | null {
 
   const v = direct ?? fromPayload ?? fromEngine ?? null;
   if (!v) return null;
-
   const s = String(v);
   return s.length ? s : null;
 }
@@ -486,39 +656,91 @@ function getCanonicalMatchId(rec: any): string | null {
 ========================= */
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const fail = (err: any) => {
+      if (settled) return;
+      settled = true;
+      try {
+        req?.result?.close?.();
+      } catch {}
+      reject(err);
+    };
+
+    // ✅ Timeout anti-freeze (sinon intro bloquée à vie)
+    const t = window.setTimeout(() => {
+      fail(new Error("[history] openDB timeout (IndexedDB blocked?)"));
+    }, 1500);
+
     const req = indexedDB.open(DB_NAME, DB_VER);
+
     req.onupgradeneeded = () => {
-      const db = req.result;
-      let os: IDBObjectStore;
-      if (!db.objectStoreNames.contains(STORE)) {
-        os = db.createObjectStore(STORE, { keyPath: "id" });
-      } else {
-        os = req.transaction!.objectStore(STORE);
-      }
       try {
-        // @ts-ignore
-        if (!os.indexNames || !os.indexNames.contains("by_updatedAt")) {
-          os.createIndex("by_updatedAt", "updatedAt", { unique: false });
+        const db = req.result;
+        let os: IDBObjectStore;
+
+        if (!db.objectStoreNames.contains(STORE)) {
+          os = db.createObjectStore(STORE, { keyPath: "id" });
+        } else {
+          os = req.transaction!.objectStore(STORE);
         }
-      } catch {
+
         try {
-          os.createIndex("by_updatedAt", "updatedAt", { unique: false });
-        } catch {}
-      }
-      // ✅ index matchId pour chercher par id canonique même si id différent (legacy)
-      try {
-        // @ts-ignore
-        if (!os.indexNames || !os.indexNames.contains("by_matchId")) {
-          os.createIndex("by_matchId", "matchId", { unique: false });
+          // @ts-ignore
+          if (!os.indexNames || !os.indexNames.contains("by_updatedAt")) {
+            os.createIndex("by_updatedAt", "updatedAt", { unique: false });
+          }
+        } catch {
+          try {
+            os.createIndex("by_updatedAt", "updatedAt", { unique: false });
+          } catch {}
         }
-      } catch {
+
         try {
-          os.createIndex("by_matchId", "matchId", { unique: false });
-        } catch {}
+          // @ts-ignore
+          if (!os.indexNames || !os.indexNames.contains("by_matchId")) {
+            os.createIndex("by_matchId", "matchId", { unique: false });
+          }
+        } catch {
+          try {
+            os.createIndex("by_matchId", "matchId", { unique: false });
+          } catch {}
+        }
+      } catch (e) {
+        // si upgrade foire, on laissera openDB échouer
+        console.warn("[history] onupgradeneeded error:", e);
       }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+
+    // ✅ IMPORTANT: si un autre onglet bloque l'upgrade, sinon promesse jamais résolue
+    req.onblocked = () => {
+      window.clearTimeout(t);
+      fail(new Error("[history] IndexedDB blocked (close other tabs/windows using the app)"));
+    };
+
+    req.onsuccess = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(t);
+
+      const db = req.result;
+
+      // ✅ si une future upgrade arrive, on ferme pour éviter deadlock
+      try {
+        db.onversionchange = () => {
+          try {
+            db.close();
+          } catch {}
+        };
+      } catch {}
+
+      resolve(db);
+    };
+
+    req.onerror = () => {
+      window.clearTimeout(t);
+      fail(req.error || new Error("[history] openDB error"));
+    };
   });
 }
 
@@ -527,15 +749,58 @@ async function withStore<T>(
   fn: (store: IDBObjectStore) => Promise<T> | T
 ): Promise<T> {
   const db = await openDB();
+
   return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    let result: T;
+
     const tx = db.transaction(STORE, mode);
     const st = tx.objectStore(STORE);
-    Promise.resolve(fn(st))
+
+    const finishResolve = () => {
+      if (settled) return;
+      settled = true;
+      resolve(result as T);
+    };
+
+    const finishReject = (err: any) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+
+    // ✅ handlers AVANT d'exécuter fn (évite race => promise qui ne résout jamais)
+    tx.oncomplete = () => finishResolve();
+    tx.onerror = () => finishReject(tx.error || new Error("IndexedDB tx error"));
+    tx.onabort = () => finishReject(tx.error || new Error("IndexedDB tx aborted"));
+
+    // ✅ safety timeout (évite boot bloqué à vie)
+    const to = window.setTimeout(() => {
+      finishReject(new Error("IndexedDB tx timeout"));
+      try {
+        tx.abort();
+      } catch {}
+    }, 8000);
+
+    const clearTo = () => window.clearTimeout(to);
+
+    Promise.resolve()
+      .then(() => fn(st))
       .then((v) => {
-        tx.oncomplete = () => resolve(v as T);
-        tx.onerror = () => reject(tx.error);
+        result = v as T;
+        // on attend oncomplete (déjà hooké) pour resolve
       })
-      .catch(reject);
+      .catch((e) => {
+        clearTo();
+        finishReject(e);
+        try {
+          tx.abort();
+        } catch {}
+      });
+
+    tx.addEventListener("complete", clearTo);
+    tx.addEventListener("error", clearTo);
+    tx.addEventListener("abort", clearTo);
   });
 }
 
@@ -543,9 +808,11 @@ async function withStore<T>(
    Migration depuis localStorage (une seule fois)
 ========================= */
 let migrDone = false;
+
 async function migrateFromLocalStorageOnce() {
   if (migrDone) return;
   migrDone = true;
+
   try {
     const raw = localStorage.getItem(LSK);
     if (!raw) return;
@@ -562,6 +829,7 @@ async function migrateFromLocalStorageOnce() {
           : "";
         delete rec.payload;
         rec.payloadCompressed = payloadCompressed;
+
         await new Promise<void>((res, rej) => {
           const req = st.put(rec);
           req.onsuccess = () => res();
@@ -582,6 +850,7 @@ async function migrateFromLocalStorageOnce() {
 ========================= */
 export async function list(): Promise<SavedMatch[]> {
   await migrateFromLocalStorageOnce();
+
   try {
     const rows: any[] = await withStore("readonly", async (st) => {
       const readWithIndex = async () =>
@@ -632,47 +901,39 @@ export async function list(): Promise<SavedMatch[]> {
     });
 
     // ✅ DEDUPE: 1 match réel = 1 entrée
+    // ✅ PERF/FIX: on décode payloadCompressed UNIQUEMENT pour CRICKET (sinon boot freeze)
     const byMatch = new Map<string, any>();
 
     for (const r0 of rows || []) {
       const r: any = r0;
       if (!r) continue;
 
-      let key = getCanonicalMatchId(r) ?? String(r?.matchId ?? "");
+      const isCricket = String(r?.kind || "") === "cricket";
+      const payload = isCricket
+        ? decodePayloadCompressedBestEffort(r.payloadCompressed, {
+            id: String(r?.id ?? r?.matchId ?? "?"),
+            stage: "list",
+          })
+        : null;
 
-      // si pas trouvé et payloadCompressed existe, on tente un peek best-effort
-      if (!key && r?.payloadCompressed && typeof r.payloadCompressed === "string") {
-        try {
-          const dec = LZString.decompressFromUTF16(r.payloadCompressed);
-          if (dec && typeof dec === "string" && dec.length) {
-            const payload = JSON.parse(dec);
-            key =
-              getCanonicalMatchId({ ...r, payload }) ??
-              payload?.matchId ??
-              payload?.sessionId ??
-              null;
-          }
-        } catch {}
-      }
-
+      let key =
+        getCanonicalMatchId({ ...r, payload }) ?? String(r?.matchId ?? "");
       if (!key) key = String(r?.id ?? "");
       if (!key) continue;
 
       const existing = byMatch.get(key);
       const tNew = (r as any)?.updatedAt ?? (r as any)?.createdAt ?? 0;
 
+      const out = { ...r, id: key, matchId: key } as any;
+      if (payload) out.payload = payload; // ✅ payload seulement pour Cricket
+      delete out.payloadCompressed; // ✅ alléger le retour (important)
+
       if (!existing) {
-        const lite = { ...r, id: key, matchId: key };
-        delete (lite as any).payloadCompressed;
-        byMatch.set(key, lite);
+        byMatch.set(key, out);
       } else {
         const tOld =
           (existing as any)?.updatedAt ?? (existing as any)?.createdAt ?? 0;
-        if (tNew >= tOld) {
-          const lite = { ...r, id: key, matchId: key };
-          delete (lite as any).payloadCompressed;
-          byMatch.set(key, lite);
-        }
+        if (tNew >= tOld) byMatch.set(key, out);
       }
     }
 
@@ -684,6 +945,7 @@ export async function list(): Promise<SavedMatch[]> {
 
 export async function get(id: string): Promise<SavedMatch | null> {
   await migrateFromLocalStorageOnce();
+
   try {
     const rec: any = await withStore("readonly", async (st) => {
       // 1) lookup direct par id
@@ -721,6 +983,7 @@ export async function get(id: string): Promise<SavedMatch | null> {
         };
         req.onerror = () => resolve(null);
       });
+
       return scan || null;
     });
 
@@ -731,11 +994,10 @@ export async function get(id: string): Promise<SavedMatch | null> {
         | null;
     }
 
-    const payload =
-      rec.payloadCompressed && typeof rec.payloadCompressed === "string"
-        ? JSON.parse(LZString.decompressFromUTF16(rec.payloadCompressed) || "null")
-        : null;
-
+    const payload = decodePayloadCompressedBestEffort(rec.payloadCompressed, {
+      id: String(id),
+      stage: "get",
+    });
     delete rec.payloadCompressed;
 
     const mid = getCanonicalMatchId({ ...rec, payload }) ?? rec.matchId ?? null;
@@ -760,6 +1022,7 @@ export async function get(id: string): Promise<SavedMatch | null> {
 ========================= */
 export async function upsert(rec: SavedMatch): Promise<void> {
   await migrateFromLocalStorageOnce();
+
   const now = Date.now();
 
   // ✅ id canonique
@@ -790,7 +1053,6 @@ export async function upsert(rec: SavedMatch): Promise<void> {
     if (rec.kind === "cricket" && rec.payload && typeof rec.payload === "object") {
       const base = rec.payload as any;
       const players = Array.isArray(base.players) ? base.players : [];
-
       const playersWithStats = players.map((p: any) => {
         const hits: CricketHit[] = Array.isArray(p.hits) ? p.hits : [];
         const legStats =
@@ -826,7 +1088,6 @@ export async function upsert(rec: SavedMatch): Promise<void> {
   try {
     if (rec.kind === "x01" && payloadEffective && typeof payloadEffective === "object") {
       const base = payloadEffective as any;
-
       const cfg =
         base.config ||
         base.game?.config ||
@@ -841,21 +1102,16 @@ export async function upsert(rec: SavedMatch): Promise<void> {
           cfg.x01StartScore ??
           cfg.x01Start ??
           cfg.startingScore;
-
         if (typeof sc === "number" && sc > 0) {
           safe.game = {
             ...(safe.game || {}),
             mode: safe.kind || rec.kind || "x01",
             startScore: sc,
           };
-
           const prevSummary: any = safe.summary || {};
           safe.summary = {
             ...prevSummary,
-            game: {
-              ...(prevSummary.game || {}),
-              startScore: sc,
-            },
+            game: { ...(prevSummary.game || {}), startScore: sc },
           };
         }
       }
@@ -867,10 +1123,7 @@ export async function upsert(rec: SavedMatch): Promise<void> {
         const prevSummary: any = safe.summary || {};
         safe.summary = {
           ...prevSummary,
-          result: {
-            ...(prevSummary.result || {}),
-            ...base.result,
-          },
+          result: { ...(prevSummary.result || {}), ...base.result },
         };
       }
 
@@ -889,9 +1142,7 @@ export async function upsert(rec: SavedMatch): Promise<void> {
 
   try {
     const payloadStr = payloadEffective ? JSON.stringify(payloadEffective) : "";
-    const payloadCompressed = payloadStr
-      ? LZString.compressToUTF16(payloadStr)
-      : "";
+    const payloadCompressed = payloadStr ? LZString.compressToUTF16(payloadStr) : "";
 
     await withStore("readwrite", async (st) => {
       // Trim MAX_ROWS
@@ -915,8 +1166,7 @@ export async function upsert(rec: SavedMatch): Promise<void> {
 
         try {
           // @ts-ignore
-          const hasIndex =
-            st.indexNames && st.indexNames.contains("by_updatedAt");
+          const hasIndex = st.indexNames && st.indexNames.contains("by_updatedAt");
           if (hasIndex) {
             const ix = st.index("by_updatedAt");
             const req = ix.openCursor(undefined, "prev");
@@ -966,6 +1216,7 @@ export async function upsert(rec: SavedMatch): Promise<void> {
     } catch {}
   } catch (e) {
     console.warn("[history.upsert] fallback localStorage (IDB indispo?):", e);
+
     try {
       const rows: any[] = readLegacyRowsSafe();
       const idx = rows.findIndex((r) => (r.id || r.matchId) === safe.id);
@@ -989,6 +1240,7 @@ export async function upsert(rec: SavedMatch): Promise<void> {
 
 export async function remove(id: string): Promise<void> {
   await migrateFromLocalStorageOnce();
+
   try {
     await withStore("readwrite", (st) => {
       return new Promise<void>((resolve, reject) => {
@@ -1026,6 +1278,7 @@ export async function remove(id: string): Promise<void> {
 
 export async function clear(): Promise<void> {
   await migrateFromLocalStorageOnce();
+
   try {
     await withStore("readwrite", (st) => {
       return new Promise<void>((resolve, reject) => {
@@ -1065,10 +1318,12 @@ export async function clear(): Promise<void> {
 type _LightRow = Omit<SavedMatch, "payload">;
 
 const LSK_CACHE = "dc-history-cache-v1";
+
 let __cache: _LightRow[] = (() => {
   try {
     const txt = localStorage.getItem(LSK_CACHE);
-    return txt ? (JSON.parse(txt) as _LightRow[]) : [];
+    const v = txt ? safeJsonParse(txt, { id: "cache", stage: "read" }) : null;
+    return Array.isArray(v) ? (v as _LightRow[]) : [];
   } catch {
     return [];
   }
@@ -1095,7 +1350,6 @@ function _applyUpsertToCache(rec: SavedMatch) {
   const cid = getCanonicalMatchId(rec) ?? (rec as any)?.matchId ?? rec.id;
   const { payload, ...lite0 } = (rec as any) || {};
   const lite = { ...lite0, id: String(cid), matchId: String(cid) } as _LightRow;
-
   __cache = [lite, ...__cache.filter((r) => r.id !== lite.id)];
   if (__cache.length > MAX_ROWS) __cache.length = MAX_ROWS;
   _saveCache();
@@ -1175,9 +1429,13 @@ export const History = {
   readAll: readAllSync,
 };
 
-// Première hydration du cache
+// Première hydration du cache (✅ non-bloquant : ne doit JAMAIS bloquer l'intro)
 if (!__cache.length) {
-  _hydrateCacheFromList();
+  try {
+    window.setTimeout(() => {
+      _hydrateCacheFromList().catch(() => {});
+    }, 0);
+  } catch {}
 }
 
 // DEBUG TEMP — expose History to DevTools

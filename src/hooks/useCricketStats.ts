@@ -254,10 +254,6 @@ function parseSegment(seg: any): { target: number; mult: number } | null {
 
 /**
  * Extract a raw list of "hit-like" events from many legacy shapes.
- * We accept either:
- * - already-flat arrays on player: hits/throws/darts/events/actions/log/etc.
- * - player.turns/player.visits arrays (flatMap darts/hits)
- * - payload.turns/payload.visits (filter by playerId)
  */
 function extractHitsForPlayer(player: any, payload: any): any[] {
   if (!player) return [];
@@ -326,12 +322,6 @@ function extractHitsForPlayer(player: any, payload: any): any[] {
   return [];
 }
 
-/**
- * Normalize into CricketHit-like: { target:number, mult:number }
- * - If input already {target,mult}, keep it
- * - If object contains segment/bed/label/code/s -> parseSegment()
- * - If string -> parseSegment()
- */
 function normalizeHits(rawHits: any[]): any[] {
   if (!Array.isArray(rawHits) || !rawHits.length) return [];
 
@@ -375,9 +365,7 @@ function normalizeHits(rawHits: any[]): any[] {
 export function useCricketStats() {
   const [loading, setLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<Error | null>(null);
-  const [statsByProfile, setStatsByProfile] = React.useState<StateByProfile>(
-    {}
-  );
+  const [statsByProfile, setStatsByProfile] = React.useState<StateByProfile>({});
 
   React.useEffect(() => {
     let cancelled = false;
@@ -395,17 +383,13 @@ export function useCricketStats() {
           return isCricketRowQuick(m);
         });
 
-        const legsByProfile: Record<
-          string,
-          { name?: string; legs: CricketLegStats[] }
-        > = {};
+        const legsByProfile: Record<string, { name?: string; legs: CricketLegStats[] }> = {};
 
         for (const row of maybeCricket) {
           const full = await History.get((row as any).id);
           const rawPayload =
             (full as any)?.payload ??
             (row as any)?.payload ??
-            (full as any) ??
             null;
 
           const payload = await decodeMaybe(rawPayload);
@@ -468,7 +452,7 @@ export function useCricketStats() {
 
     void run();
 
-    // refresh if history changes (your history.ts dispatches dc-history-updated)
+    // refresh if history changes (history.ts dispatches dc-history-updated)
     const onUpd = () => void run();
     if (typeof window !== "undefined") {
       window.addEventListener("dc-history-updated", onUpd);
@@ -488,7 +472,7 @@ export function useCricketStats() {
         const first = Object.values(statsByProfile)[0];
         return first ?? null;
       }
-      return statsByProfile[profileId] ?? null;
+      return statsByProfile[String(profileId)] ?? null;
     },
     [statsByProfile]
   );
