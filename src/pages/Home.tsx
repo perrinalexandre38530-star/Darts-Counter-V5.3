@@ -22,9 +22,6 @@ import {
 } from "../lib/statsBridge";
 import { History } from "../lib/history";
 
-// ✅ NEW: SFX UI (clic boutons)
-import { UISfx } from "../lib/sfx";
-
 type Props = {
   store: Store;
   go: (tab: any, params?: any) => void;
@@ -93,7 +90,11 @@ function useStableTickerImages(activeProfileId?: string | null) {
 ============================================================ */
 function playUiClick() {
   try {
-    UISfx.click?.();
+    if (typeof window === "undefined") return;
+    // ✅ dynamic import : si sfx.ts plante, Home ne crashe plus
+    import("../lib/sfx")
+      .then((m: any) => m?.UISfx?.click?.())
+      .catch(() => {});
   } catch {}
 }
 

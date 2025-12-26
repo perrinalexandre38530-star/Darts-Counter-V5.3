@@ -97,9 +97,6 @@ import { History } from "./lib/history";
 // ✅ NEW: rebuild stats cache when history changes (FAST STATS HUB)
 import { rebuildStatsForProfile } from "./lib/stats/rebuildStats";
 
-// ✅ NEW: init SFX enabled at boot (UI clicks inclus)
-import { setSfxEnabled } from "./lib/sfx";
-
 // Stats pages
 import StatsShell from "./pages/StatsShell";
 import StatsHub from "./pages/StatsHub";
@@ -689,13 +686,21 @@ function App() {
     ensurePersisted().catch(() => {});
     purgeLegacyLocalStorageIfNeeded();
 
-    // ✅ Init SFX (UI clicks + impacts + shanghai...) depuis préférence locale
-    try {
-      const enabled = localStorage.getItem("dc-ui-sfx") !== "0";
-      setSfxEnabled(enabled);
-    } catch {
-      setSfxEnabled(true);
-    }
+   // ✅ Init SFX (SAFE) — dynamic import pour éviter crash global
+try {
+  const enabled = localStorage.getItem("dc-ui-sfx") !== "0";
+  if (typeof window !== "undefined") {
+    import("./lib/sfx")
+      .then((m: any) => m?.setSfxEnabled?.(enabled))
+      .catch(() => {});
+  }
+} catch {
+  if (typeof window !== "undefined") {
+    import("./lib/sfx")
+      .then((m: any) => m?.setSfxEnabled?.(true))
+      .catch(() => {});
+  }
+}
 
     try {
       warmAggOnce();
