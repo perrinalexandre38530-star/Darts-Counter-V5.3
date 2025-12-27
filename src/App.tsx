@@ -151,6 +151,27 @@ function withAvatars(rec: any, profiles: any[]) {
 }
 
 /* ============================================================
+   ✅ FIX AVATAR (anti overwrite par undefined)
+   - Merge défensif : ne remplace JAMAIS les champs avatar par undefined
+============================================================ */
+function mergeProfilesSafe(prev: Profile[], next: Profile[]): Profile[] {
+  const map = new Map((prev || []).map((p: any) => [p?.id, p]));
+  return (next || []).map((p: any) => {
+    const old = map.get(p?.id);
+    if (!old) return p;
+    return {
+      ...old,
+      ...p,
+      // 🔒 champs JAMAIS écrasés par undefined
+      avatarUrl: p?.avatarUrl ?? (old as any)?.avatarUrl,
+      avatarDataUrl: p?.avatarDataUrl ?? (old as any)?.avatarDataUrl,
+      avatarPath: (p as any)?.avatarPath ?? (old as any)?.avatarPath,
+      avatarUpdatedAt: (p as any)?.avatarUpdatedAt ?? (old as any)?.avatarUpdatedAt,
+    };
+  });
+}
+
+/* ============================================================
    ✅ NEW: sanitizeStoreForCloud (anti base64 dans snapshot cloud)
    - Retire avatarDataUrl "data:" des profils + history.players
    - Objectif: éviter les snapshots énormes / erreurs quota / perfs
@@ -735,17 +756,17 @@ function App() {
     return !isAuthFlow;
   });
 
-    // 🛟 SAFETY NET : ne JAMAIS bloquer l'app sur le splash
-    React.useEffect(() => {
-      if (!showSplash) return;
-  
-      const hardTimeout = window.setTimeout(() => {
-        console.warn("[Splash] forced exit (safety timeout)");
-        setShowSplash(false);
-      }, 8000); // max absolu
-  
-      return () => window.clearTimeout(hardTimeout);
-    }, [showSplash]);
+  // 🛟 SAFETY NET : ne JAMAIS bloquer l'app sur le splash
+  React.useEffect(() => {
+    if (!showSplash) return;
+
+    const hardTimeout = window.setTimeout(() => {
+      console.warn("[Splash] forced exit (safety timeout)");
+      setShowSplash(false);
+    }, 8000); // max absolu
+
+    return () => window.clearTimeout(hardTimeout);
+  }, [showSplash]);
 
   /* Boot: persistance + nettoyage localStorage + warm-up (SANS SFX) */
   React.useEffect(() => {
@@ -855,7 +876,11 @@ function App() {
         }
 
         if (mounted) {
-          setStore(base);
+          // ✅ FIX: ne jamais écraser les avatars par undefined (merge défensif)
+          setStore((prev) => ({
+            ...base,
+            profiles: mergeProfilesSafe(prev.profiles ?? [], base.profiles ?? []),
+          }));
 
           const hasProfiles = (base.profiles ?? []).length > 0;
           const hasActive = !!base.activeProfileId;
@@ -923,7 +948,11 @@ function App() {
           };
 
           if (!cancelled) {
-            setStore(next);
+            // ✅ FIX: merge défensif des profils (cloud peut être partiel)
+            setStore((prev) => ({
+              ...next,
+              profiles: mergeProfilesSafe(prev.profiles ?? [], next.profiles ?? []),
+            }));
             try {
               await saveStore(next);
             } catch {}
@@ -1001,9 +1030,12 @@ function App() {
     });
   }
 
-  /* Profiles mutator */
+  /* Profiles mutator (✅ FIX: merge défensif) */
   function setProfiles(fn: (p: Profile[]) => Profile[]) {
-    update((s) => ({ ...s, profiles: fn(s.profiles ?? []) }));
+    update((s) => ({
+      ...s,
+      profiles: mergeProfilesSafe(s.profiles ?? [], fn(s.profiles ?? [])),
+    }));
   }
 
   // ============================================================

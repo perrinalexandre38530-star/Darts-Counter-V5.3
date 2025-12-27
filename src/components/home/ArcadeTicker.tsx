@@ -4,6 +4,8 @@
 // ✅ Affiche STRICTEMENT props.items (ordre respecté)
 // ✅ Supporte activeIndex contrôlé depuis Home
 // ✅ Auto-rotation + swipe + dots
+// ✅ FIX: stop "guirlande de Noël" (backgroundRepeat: no-repeat)
+// ✅ FIX: preload + fallback si image HS
 // =============================================================
 
 import * as React from "react";
@@ -75,6 +77,7 @@ export default function ArcadeTicker({
 
   // auto-rotation
   React.useEffect(() => {
+    if (typeof window === "undefined") return;
     if (!len) return;
     if (!intervalMs || intervalMs <= 0) return;
 
@@ -88,7 +91,35 @@ export default function ArcadeTicker({
   const current = len ? safeItems[Math.min(index, len - 1)] : null;
 
   const accent = current?.accentColor ?? "#F6C256";
-  const bg = current?.backgroundImage ?? "";
+  const bg = (current?.backgroundImage ?? "").trim();
+
+  // ------------------------------------------------------------
+  // ✅ FIX: preload + fallback si l'image ne charge pas
+  // ------------------------------------------------------------
+  const [bgOk, setBgOk] = React.useState(true);
+
+  React.useEffect(() => {
+    if (!bg) {
+      setBgOk(false);
+      return;
+    }
+
+    let cancelled = false;
+    setBgOk(true);
+
+    const img = new Image();
+    img.onload = () => {
+      if (!cancelled) setBgOk(true);
+    };
+    img.onerror = () => {
+      if (!cancelled) setBgOk(false);
+    };
+    img.src = bg;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bg]);
 
   // swipe
   const [touchStartX, setTouchStartX] = React.useState<number | null>(null);
@@ -126,9 +157,15 @@ export default function ArcadeTicker({
         border: "1px solid rgba(255,255,255,0.12)",
         boxShadow: "0 18px 42px rgba(0,0,0,0.85)",
         backgroundColor: "#05060C",
-        backgroundImage: bg ? `url("${bg}")` : undefined,
+
+        // ✅ FIX GUÊRLANDE: no-repeat + cover
+        backgroundImage: bg && bgOk ? `url("${bg}")` : undefined,
         backgroundSize: "cover",
         backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+
+        // petit plus perf/visuel
+        willChange: "background-image, transform",
       }}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}

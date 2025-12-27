@@ -3,9 +3,10 @@
 // Avatar + couronne d’étoiles dorées (moy. 3-darts)
 // - Accepte EITHER {dataUrl,label,size,avg3D,showStars[,ringColor,textColor]}
 //   OR      {profile,size,avg3D,showStars[,ringColor,textColor]}
-// - Aucun accès direct non-sécurisé à profile.*
 // - NEW : overlay fléchette (set préféré ou set imposé via dartSetId)
-//   ➜ Désactivé par défaut, à activer avec showDartOverlay={true}
+// ✅ FIX PRIORITY : Supabase avatarUrl > legacy avatarDataUrl (base64)
+// ✅ FIX PERF : ignore base64 énorme (évite RAM + latence)
+// ✅ CLEAN : suppression logs/DEBUG + pas de cercle rouge
 // ============================================
 
 import React from "react";
@@ -21,15 +22,15 @@ type ProfileLike = {
   name?: string;
   avatarDataUrl?: string | null;
   avatarUrl?: string | null;
+  avatarPath?: string | null;
   stats?: { avg3D?: number | null; avg3?: number | null } | null;
 };
 
-/** Options visuelles communes */
 type VisualOpts = {
   ringColor?: string;
   textColor?: string;
-  dartSetId?: string | null; // set forcé (match X01)
-  showDartOverlay?: boolean; // activer/désactiver overlay (OFF par défaut)
+  dartSetId?: string | null;
+  showDartOverlay?: boolean;
 };
 
 type Props =
@@ -44,43 +45,101 @@ type Props =
   | (VisualOpts & {
       profile?: ProfileLike | null;
       size?: number;
-      avg3D?: number | null; // force/override
+      avg3D?: number | null;
       showStars?: boolean;
       dataUrl?: never;
       label?: never;
     });
 
+function withCacheBust(src: string, salt: string) {
+  if (!/^https?:\/\//i.test(src)) return src;
+  const hasQ = src.includes("?");
+  return `${src}${hasQ ? "&" : "?"}v=${encodeURIComponent(salt)}`;
+}
+
+function normalizeSrc(raw: any): string | null {
+  if (!raw || typeof raw !== "string") return null;
+  const s = raw.trim();
+  if (!s) return null;
+
+  // OK: data:, blob:
+  if (s.startsWith("data:") || s.startsWith("blob:")) return s;
+
+  // OK: http(s)
+  if (s.startsWith("http://") || s.startsWith("https://")) {
+    return s.replace(/ /g, "%20");
+  }
+
+  // path sans host -> pas résolvable ici
+  return null;
+}
+
 export default function ProfileAvatar(props: Props) {
   const size = props.size ?? 56;
   const showStars = props.showStars ?? true;
-
-  // ⚠️ Overlay désactivé par défaut
   const showDartOverlay = props.showDartOverlay === true;
 
-  // -------- Normalisation des données --------
-  const p: ProfileLike | null =
-    ("profile" in props ? props.profile : null) ?? null;
+  const p: ProfileLike | null = ("profile" in props ? props.profile : null) ?? null;
 
-  // Priorité des images : dataUrl explicite > avatarDataUrl > avatarUrl
-  const img =
-    ("dataUrl" in props ? props.dataUrl : undefined) ??
-    p?.avatarDataUrl ??
-    p?.avatarUrl ??
-    null;
+  const name = ("label" in props ? props.label : undefined) ?? p?.name ?? "P";
 
-  const name =
-    ("label" in props ? props.label : undefined) ?? p?.name ?? "P";
-
-  // Moyenne 3-darts pour la couronne
   const avg3D =
     ("avg3D" in props ? props.avg3D : undefined) ??
     p?.stats?.avg3D ??
     p?.stats?.avg3 ??
     null;
 
-  // Options couleurs
   const ringColor = props.ringColor ?? "rgba(255,255,255,0.28)";
   const textColor = props.textColor ?? "#f5f5ff";
+
+  // ============================================================
+  // ✅ SOURCE ORDER FIX
+  // - dataUrl (props) = preview explicite (ex: blob: en édition) -> PRIORITÉ
+  // - avatarUrl (Supabase publicUrl) -> PRIORITÉ
+  // - avatarPath (si déjà un vrai src http/data/blob) -> ok
+  // - avatarDataUrl (legacy base64) -> EN DERNIER, et ignoré si énorme
+  // ============================================================
+  const propDataUrl =
+    "dataUrl" in props && props.dataUrl ? String(props.dataUrl).trim() : "";
+
+  const avatarUrl = p?.avatarUrl ? String(p.avatarUrl).trim() : "";
+  const avatarPath = p?.avatarPath ? String(p.avatarPath).trim() : "";
+  const avatarDataUrl = p?.avatarDataUrl ? String(p.avatarDataUrl).trim() : "";
+
+  const dataUrlLooksHuge =
+    avatarDataUrl.startsWith("data:image/") && avatarDataUrl.length > 200_000;
+
+  const rawImg = React.useMemo(() => {
+    if (propDataUrl) return propDataUrl; // preview explicite (souvent blob:)
+    if (avatarUrl) return avatarUrl; // ✅ Supabase doit gagner
+    if (
+      avatarPath &&
+      (avatarPath.startsWith("http") ||
+        avatarPath.startsWith("data:") ||
+        avatarPath.startsWith("blob:"))
+    ) {
+      return avatarPath;
+    }
+    if (avatarDataUrl && !dataUrlLooksHuge) return avatarDataUrl; // legacy ok si petit
+    return null;
+  }, [propDataUrl, avatarUrl, avatarPath, avatarDataUrl, dataUrlLooksHuge]);
+
+  const [imgBroken, setImgBroken] = React.useState(false);
+
+  React.useEffect(() => {
+    setImgBroken(false);
+  }, [rawImg]);
+
+  const img = React.useMemo(() => {
+    const normalized = normalizeSrc(rawImg);
+    if (!normalized) return null;
+
+    // salt stable-ish (évite cache hard quand supabase met à jour l'image)
+    const salt = String(rawImg).slice(-24) || String(Date.now());
+    return withCacheBust(normalized, salt);
+  }, [rawImg]);
+
+  const shouldShowImg = !!img && !imgBroken;
 
   // ---------- Dart set overlay ----------
   const [dartSet, setDartSet] = React.useState<DartSet | null>(null);
@@ -94,10 +153,8 @@ export default function ProfileAvatar(props: Props) {
     }
 
     try {
-      // Liste de tous les sets du profil
       const all = getDartSetsForProfile(profileId) || [];
 
-      // 1) Si un set est imposé (en match X01 / Cricket)
       if (props.dartSetId) {
         const forced = all.find((s) => s.id === props.dartSetId);
         if (forced) {
@@ -106,26 +163,21 @@ export default function ProfileAvatar(props: Props) {
         }
       }
 
-      // 2) Sinon → jeu préféré du profil
       const fav = getFavoriteDartSetForProfile(profileId);
       if (fav) {
         setDartSet(fav);
         return;
       }
 
-      // 3) Fallback : premier set si aucun préféré explicitement défini
       setDartSet(all[0] || null);
-    } catch (e) {
-      console.warn("[ProfileAvatar] dartSet overlay error:", e);
+    } catch {
       setDartSet(null);
     }
   }, [showDartOverlay, p?.id, props.dartSetId]);
 
-  // Badge fléchettes – taille & offsets (objet qui “frotte” le médaillon)
-  const dartOverlaySize = size * 0.34; // ~34% du diamètre
+  const dartOverlaySize = size * 0.34;
   const dartOverlayOutsideOffset = dartOverlaySize * 0.35;
 
-  // ---------- Rendu ----------
   return (
     <div
       className="relative avatar inline-block"
@@ -133,15 +185,16 @@ export default function ProfileAvatar(props: Props) {
         width: size,
         height: size,
         borderRadius: "50%",
-        position: "relative", // indispensable pour l’overlay
-        overflow: "visible", // permet au badge de déborder comme le flag
+        position: "relative",
+        overflow: "visible",
       }}
     >
-      {/* Image avatar */}
-      {img ? (
+      {shouldShowImg ? (
         <img
-          src={img}
+          key={img as string}
+          src={img as string}
           alt={name ?? "avatar"}
+          onError={() => setImgBroken(true)}
           style={{
             width: "100%",
             height: "100%",
@@ -153,27 +206,36 @@ export default function ProfileAvatar(props: Props) {
         />
       ) : (
         <div
-          className="flex items-center justify-center bg-gray-700 rounded-full"
           style={{
             width: "100%",
             height: "100%",
-            fontSize: Math.max(10, size * 0.4),
-            fontWeight: 700,
             borderRadius: "50%",
             border: `2px solid ${ringColor}`,
             color: textColor,
+            display: "grid",
+            placeItems: "center",
+            textAlign: "center",
+            lineHeight: 1,
+            userSelect: "none",
+            background:
+              "radial-gradient(circle at 30% 30%, rgba(255,255,255,.10), rgba(0,0,0,.35))",
           }}
         >
-          {(name ?? "P").slice(0, 1).toUpperCase()}
+          <div
+            style={{
+              fontSize: Math.max(10, size * 0.4),
+              fontWeight: 900,
+              letterSpacing: 0.5,
+              transform: "translateY(1px)",
+            }}
+          >
+            {(name ?? "P").trim().slice(0, 1).toUpperCase()}
+          </div>
         </div>
       )}
 
-      {/* Couronne d’étoiles */}
-      {showStars && (
-        <ProfileStarRing avg3d={avg3D ?? 0} anchorSize={size} />
-      )}
+      {showStars && <ProfileStarRing avg3d={avg3D ?? 0} anchorSize={size} />}
 
-      {/* ---------- Overlay fléchettes (extérieur du médaillon, image) ---------- */}
       {showDartOverlay && dartSet?.thumbImageUrl && (
         <img
           src={dartSet.thumbImageUrl}
@@ -182,8 +244,8 @@ export default function ProfileAvatar(props: Props) {
             position: "absolute",
             width: dartOverlaySize,
             height: dartOverlaySize,
-            bottom: -dartOverlayOutsideOffset, // sort du cercle
-            right: -dartOverlayOutsideOffset, // sort du cercle
+            bottom: -dartOverlayOutsideOffset,
+            right: -dartOverlayOutsideOffset,
             opacity: 0.96,
             pointerEvents: "none",
             transform: "rotate(18deg)",
@@ -192,7 +254,6 @@ export default function ProfileAvatar(props: Props) {
         />
       )}
 
-      {/* ---------- Overlay fléchettes (fallback 🎯) ---------- */}
       {showDartOverlay && !dartSet?.thumbImageUrl && dartSet && (
         <div
           style={{
@@ -202,7 +263,7 @@ export default function ProfileAvatar(props: Props) {
             bottom: -dartOverlayOutsideOffset,
             right: -dartOverlayOutsideOffset,
             borderRadius: "50%",
-            background: dartSet.bgColor || "#050509",
+            background: (dartSet as any)?.bgColor || "#050509",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",

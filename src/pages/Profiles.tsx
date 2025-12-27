@@ -161,6 +161,172 @@ type FriendLike = {
   };
 };
 
+function DebugAvatar({
+  size,
+  src,
+  label,
+}: {
+  size: number;
+  src?: string | null;
+  label?: string;
+}) {
+  const [ok, setOk] = React.useState(false);
+  const [err, setErr] = React.useState(false);
+
+  const s = (src || "").trim();
+
+  React.useEffect(() => {
+    setOk(false);
+    setErr(false);
+  }, [s]);
+
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 999,
+        overflow: "hidden",
+        position: "relative",
+        background: "#111118",
+        outline: "2px solid rgba(255,0,0,.35)", // ✅ tu verras bien le conteneur
+      }}
+    >
+      {s && !err ? (
+        <img
+          key={s} // ✅ force rerender si URL change
+          src={s}
+          alt=""
+          onLoad={() => {
+            console.log("[DebugAvatar] ✅ IMG LOAD OK", s);
+            setOk(true);
+            setErr(false);
+          }}
+          onError={(e) => {
+            console.warn("[DebugAvatar] ❌ IMG ERROR", s, e);
+            setErr(true);
+            setOk(false);
+          }}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: "center",
+            zIndex: 1,
+            opacity: ok ? 1 : 1, // ✅ pas de fade, on veut voir direct
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "grid",
+            placeItems: "center",
+            fontWeight: 900,
+            fontSize: Math.max(14, Math.floor(size * 0.42)),
+            color: "#F6C256",
+            zIndex: 2,
+          }}
+        >
+          {(label || "?").slice(0, 1).toUpperCase()}
+        </div>
+      )}
+
+      {/* mini badge debug */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 4,
+          left: 4,
+          zIndex: 3,
+          fontSize: 9,
+          padding: "2px 6px",
+          borderRadius: 999,
+          background: "rgba(0,0,0,.7)",
+          border: "1px solid rgba(255,255,255,.2)",
+          color: "#fff",
+        }}
+      >
+        {s ? (err ? "ERR" : ok ? "OK" : "LOAD") : "EMPTY"}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// ✅ AVATAR CACHE (anti overwrite store)
+// - sauve avatarDataUrl / avatarUrl / avatarPath / avatarUpdatedAt
+// - réhydrate si le store revient avec avatar vide
+// ============================================
+const AVATAR_CACHE_KEY = "dc-avatar-cache-v1";
+
+type AvatarCacheEntry = {
+  avatarDataUrl?: string | null;
+  avatarUrl?: string | null;
+  avatarPath?: string | null;
+  avatarUpdatedAt?: number | null;
+};
+
+function readAvatarCache(): Record<string, AvatarCacheEntry> {
+  try {
+    const raw = localStorage.getItem(AVATAR_CACHE_KEY);
+    const obj = raw ? JSON.parse(raw) : {};
+    return obj && typeof obj === "object" ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeAvatarCache(
+  profileId: string,
+  patch: AvatarCacheEntry
+) {
+  try {
+    const all = readAvatarCache();
+    const prev = all[profileId] || {};
+    all[profileId] = { ...prev, ...patch };
+    localStorage.setItem(AVATAR_CACHE_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+}
+
+function getAvatarCache(profileId: string | null | undefined): AvatarCacheEntry | null {
+  if (!profileId) return null;
+  const all = readAvatarCache();
+  return all[profileId] || null;
+}
+
+
+// ============================================
+// ✅ MERGE SAFE PROFILES (anti overwrite avatar)
+// - protège avatarUrl/avatarDataUrl/avatarPath/avatarUpdatedAt
+// - empêche qu’un store "partiel" écrase ces champs avec undefined
+// ============================================
+function mergeProfilesSafe(prev: Profile[], next: Profile[]): Profile[] {
+  const byId = new Map(prev.map((p) => [p.id, p] as const));
+
+  return next.map((p) => {
+    const old = byId.get(p.id);
+    if (!old) return p;
+
+    return {
+      ...old,
+      ...p,
+      // 🔒 champs protégés (jamais écrasés par undefined / null)
+      avatarUrl: (p as any).avatarUrl ?? (old as any).avatarUrl,
+      avatarDataUrl: (p as any).avatarDataUrl ?? (old as any).avatarDataUrl,
+      avatarPath: (p as any).avatarPath ?? (old as any).avatarPath,
+      avatarUpdatedAt: (p as any).avatarUpdatedAt ?? (old as any).avatarUpdatedAt,
+    };
+  });
+}
+
+
+
 /* ================================
    Page — Profils (router interne)
 ================================ */
@@ -187,6 +353,22 @@ export default function Profiles({
     activeProfileId = null,
     selfStatus = "online",
   } = store;
+
+
+  // ============================================
+  // ✅ WRAPPER UNIQUE setProfilesSafe
+  // - applique ton update, puis merge avec l'état précédent
+  // - protège contre toute réhydratation partielle
+  // ============================================
+  const setProfilesSafe = React.useCallback(
+    (buildNext: (prev: Profile[]) => Profile[]) => {
+      setProfiles((prev) => {
+        const next = buildNext(prev);
+        return mergeProfilesSafe(prev, next);
+      });
+    },
+    [setProfiles]
+  );
 
   const friends: FriendLike[] = (store as any).friends ?? [];
 
@@ -265,14 +447,72 @@ export default function Profiles({
   }
 
   function renameProfile(id: string, name: string) {
-    setProfiles((arr) => arr.map((p) => (p.id === id ? { ...p, name } : p)));
+    setProfilesSafe((arr) => arr.map((p) => (p.id === id ? { ...p, name } : p)));
   }
 
   async function changeAvatar(id: string, file: File) {
-    const url = await read(file);
-    setProfiles((arr) =>
-      arr.map((p) => (p.id === id ? { ...p, avatarDataUrl: url } : p))
+    const dataUrl = await read(file);
+    const now = Date.now();
+  
+    // ✅ 0) Cache dédié ANTI-OVERWRITE
+    writeAvatarCache(id, {
+      avatarDataUrl: dataUrl,
+      avatarUpdatedAt: now,
+    });
+  
+    // 1) preview local immédiat (UX) => ON GARDE EN BASE64
+    setProfilesSafe((arr) =>
+      arr.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              avatarDataUrl: dataUrl,
+              avatarUpdatedAt: now, // ✅ NEW
+            }
+          : p
+      )
     );
+  
+    // 2) si connecté online : upload Supabase Storage -> URL publique
+    if (auth.status === "signed_in") {
+      try {
+        const { publicUrl } = await onlineApi.uploadAvatarImage({ dataUrl });
+  
+        const avatarPath = (() => {
+          if (!publicUrl || typeof publicUrl !== "string") return undefined;
+          const marker = "/storage/v1/object/public/avatars/";
+          const i = publicUrl.indexOf(marker);
+          if (i === -1) return undefined;
+          return publicUrl.slice(i + marker.length);
+        })();
+  
+        console.log("[profiles] avatar uploaded:", { id, publicUrl, avatarPath });
+  
+        // ✅ 0bis) Cache dédié ANTI-OVERWRITE
+        writeAvatarCache(id, {
+          avatarUrl: publicUrl,
+          avatarPath,
+          avatarUpdatedAt: Date.now(),
+        });
+  
+        // ✅ IMPORTANT : on N'ECRASE PAS avatarDataUrl (base64)
+        setProfilesSafe((arr) =>
+          arr.map((p) =>
+            p.id === id
+              ? {
+                  ...p,
+                  avatarUrl: publicUrl,
+                  avatarPath,
+                  avatarUpdatedAt: Date.now(), // ✅ NEW
+                }
+              : p
+          )
+        );
+      } catch (err) {
+        console.warn("[profiles] uploadAvatarImage error:", err);
+        // on garde le dataUrl local si l’upload échoue
+      }
+    }
   }
 
   async function delProfile(id: string) {
@@ -282,7 +522,7 @@ export default function Profiles({
     if (!ok) return;
   
     // 1) On supprime le profil dans le store
-    setProfiles((arr) => arr.filter((p) => p.id !== id));
+    setProfilesSafe((arr) => arr.filter((p) => p.id !== id));
   
     if (store.activeProfileId === id) {
       setActiveProfile(null);
@@ -344,11 +584,54 @@ export default function Profiles({
 
     const p: Profile = base;
 
-    setProfiles((arr) => [...arr, p]);
+    setProfilesSafe((arr) => [...arr, p]);
     update((s) => ({ ...s, activeProfileId: s.activeProfileId ?? p.id }));
   }
 
   const active = profiles.find((p) => p.id === activeProfileId) || null;
+
+  // ✅ Réhydratation anti-écrasement : si active revient sans avatar -> on remet depuis cache
+React.useEffect(() => {
+  if (!active?.id) return;
+
+  const hasAny =
+    !!String((active as any)?.avatarUrl || "").trim() ||
+    !!String((active as any)?.avatarDataUrl || "").trim();
+
+  if (hasAny) return;
+
+  const cached = getAvatarCache(active.id);
+  if (!cached) return;
+
+  const cUrl = String(cached.avatarUrl || "").trim();
+  const cData = String(cached.avatarDataUrl || "").trim();
+  const cUpdated =
+    typeof cached.avatarUpdatedAt === "number" ? cached.avatarUpdatedAt : undefined;
+
+  if (!cUrl && !cData) return;
+
+  console.warn("[Profiles] 🔁 rehydrate avatar from cache for", active.id, {
+    avatarUrl: !!cUrl,
+    avatarDataUrl: !!cData,
+    avatarUpdatedAt: cUpdated,
+  });
+
+  setProfilesSafe((arr) =>
+    arr.map((p) =>
+      p.id === active.id
+        ? {
+            ...p,
+            // on ne force que ce qui manque
+            avatarUrl: (p as any).avatarUrl || (cUrl || undefined),
+            avatarDataUrl: (p as any).avatarDataUrl || (cData || undefined),
+            avatarPath: (p as any).avatarPath || (cached.avatarPath || undefined),
+            avatarUpdatedAt: (p as any).avatarUpdatedAt || cUpdated || Date.now(),
+          }
+        : p
+    )
+  );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [active?.id]);
 
   async function resetActiveStats() {
     if (!active?.id) return;
@@ -499,7 +782,7 @@ export default function Profiles({
 
   // ✅ helper générique : patcher privateInfo de n’importe quel profil
   function patchProfilePrivateInfo(id: string, patch: Partial<PrivateInfo>) {
-    setProfiles((arr) =>
+    setProfilesSafe((arr) =>
       arr.map((p) =>
         p.id === id
           ? {
@@ -657,17 +940,10 @@ export default function Profiles({
       onQuit={handleQuit}
       onEdit={(n, f) => {
         if (n && n !== active.name) renameProfile(active.id, n);
+      
         if (f) {
+          // ✅ C’EST LA SEULE SOURCE : changeAvatar gère local preview + upload online + URL publique
           changeAvatar(active.id, f);
-          if (auth.status === "signed_in") {
-            (async () => {
-              try {
-                await (auth as any).updateAvatar?.(f);
-              } catch (err) {
-                console.warn("[profiles] updateAvatar online error:", err);
-              }
-            })();
-          }
         }
       }}
       onOpenStats={() => {
@@ -1036,7 +1312,9 @@ function ActiveProfileBlock({
       ? "#9AA0AA"
       : "#1FB46A";
 
-  // ----- état édition -----
+  // =========================
+  // ÉTAT ÉDITION
+  // =========================
   const [isEditing, setIsEditing] = React.useState(false);
   const [editName, setEditName] = React.useState(active?.name || "");
   const [editFile, setEditFile] = React.useState<File | null>(null);
@@ -1080,7 +1358,46 @@ function ActiveProfileBlock({
     setEditPreview(null);
   }
 
-  // styles boutons pills
+// =========================
+// SOURCE UNIQUE AVATAR
+// priorité : preview > avatarUrl > avatarDataUrl
+// + cache-bust anti Supabase / SW / navigateur
+// =========================
+const cacheBust =
+  typeof (active as any)?.avatarUpdatedAt === "number"
+    ? (active as any).avatarUpdatedAt
+    : 0;
+
+const baseSrc =
+  (editPreview && editPreview.trim()) ||
+  ((active as any)?.avatarUrl && String((active as any).avatarUrl).trim()) ||
+  ((active as any)?.avatarDataUrl && String((active as any).avatarDataUrl).trim()) ||
+  "";
+
+// ✅ si URL http(s) => on ajoute ?v=... (seulement si on a avatarUpdatedAt)
+const avatarSrc =
+  baseSrc && /^https?:\/\//.test(baseSrc) && cacheBust
+    ? baseSrc + (baseSrc.includes("?") ? "&" : "?") + "v=" + cacheBust
+    : baseSrc;
+
+// LOGS DEBUG (volontairement conservés)
+React.useEffect(() => {
+  console.log("[ActiveProfileBlock] id =", active?.id);
+  console.log("[ActiveProfileBlock] avatarUrl =", (active as any)?.avatarUrl);
+  console.log("[ActiveProfileBlock] avatarDataUrl =", (active as any)?.avatarDataUrl);
+  console.log("[ActiveProfileBlock] avatarUpdatedAt =", (active as any)?.avatarUpdatedAt);
+  console.log("[ActiveProfileBlock] avatarSrc =", avatarSrc);
+}, [
+  active?.id,
+  (active as any)?.avatarUrl,
+  (active as any)?.avatarDataUrl,
+  (active as any)?.avatarUpdatedAt,
+  avatarSrc,
+]);
+
+  // =========================
+  // STYLES BOUTONS
+  // =========================
   const pillBtnBase: React.CSSProperties = {
     flex: 1,
     minWidth: 0,
@@ -1097,7 +1414,6 @@ function ActiveProfileBlock({
     boxShadow: "0 8px 16px rgba(0,0,0,.45)",
     cursor: "pointer",
     whiteSpace: "nowrap",
-    transition: "transform .12s ease, box-shadow .12s ease, filter .12s ease",
   };
 
   const pillBtnGhost: React.CSSProperties = {
@@ -1115,7 +1431,7 @@ function ActiveProfileBlock({
 
   return (
     <div className="apb">
-      {/* input fichier caché, déclenché en cliquant sur l’avatar */}
+      {/* input fichier caché */}
       <input
         ref={fileInputRef}
         type="file"
@@ -1124,23 +1440,18 @@ function ActiveProfileBlock({
         onChange={(e) => setEditFile(e.target.files?.[0] ?? null)}
       />
 
-      {/* MÉDAILLON + AVATAR (cliquer pour changer en mode édition) */}
+      {/* MÉDAILLON + AVATAR */}
       <div
         style={{
           width: MEDALLION,
           height: MEDALLION,
           borderRadius: "50%",
-          padding: 0,
-          background: "transparent",
-          boxShadow: "none",
           position: "relative",
-          flex: "0 0 auto",
           cursor: isEditing ? "pointer" : "default",
           margin: "0 auto",
         }}
         onClick={handleAvatarClick}
       >
-        {/* anneau d’étoiles */}
         <div
           aria-hidden
           style={{
@@ -1161,7 +1472,6 @@ function ActiveProfileBlock({
           />
         </div>
 
-        {/* badge édition sur l’avatar quand on est en mode édition */}
         {isEditing && (
           <div
             style={{
@@ -1174,52 +1484,34 @@ function ActiveProfileBlock({
               fontWeight: 700,
               background: "rgba(0,0,0,.7)",
               border: `1px solid ${primary}`,
-              textTransform: "uppercase",
             }}
           >
             {t("profiles.edit.avatarHint", "Changer")}
           </div>
         )}
 
-        <ProfileAvatar
+        <DebugAvatar
           size={AVATAR}
-          dataUrl={editPreview || active?.avatarDataUrl}
+          src={avatarSrc}
           label={active?.name?.[0]?.toUpperCase() || "?"}
-          showStars={false}
         />
       </div>
 
       {/* TEXTE + ACTIONS */}
       <div className="apb__info">
-        {/* === NOM PROFIL ACTIF (SHIMMER PREMIUM) === */}
-        <div style={{ marginBottom: 6, width: "100%", textAlign: "center" }}>
+        <div style={{ marginBottom: 6, textAlign: "center" }}>
           <button
             type="button"
             onClick={() => onOpenStats?.()}
-            title={t(
-              "profiles.connected.seeStats",
-              "Voir les statistiques"
-            )}
-            style={{
-              background: "transparent",
-              border: "none",
-              padding: 0,
-              margin: 0,
-              cursor: onOpenStats ? "pointer" : "default",
-            }}
+            style={{ background: "transparent", border: "none" }}
           >
             <span
               className="dc-stats-name-wrapper"
               style={{
                 fontSize: 32,
-                textTransform: "uppercase",
-                letterSpacing: 1.6,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
                 fontWeight: 900,
-                lineHeight: 1.05,
-                display: "inline-block",
+                letterSpacing: 1.6,
+                textTransform: "uppercase",
                 // @ts-ignore
                 "--dc-accent": primary,
               }}
@@ -1234,110 +1526,56 @@ function ActiveProfileBlock({
           </button>
         </div>
 
-        {/* statut en ligne */}
         <div
           style={{
-            marginTop: 2,
             display: "flex",
             justifyContent: "center",
-            alignItems: "center",
             gap: 6,
             fontSize: 11,
             fontWeight: 700,
-            letterSpacing: 0.8,
-            textTransform: "uppercase",
           }}
         >
           <StatusDot kind={selfStatus} />
-          <span
-            style={{
-              color: statusColor,
-              textShadow: `0 0 6px ${statusColor}, 0 0 12px ${statusColor}`,
-            }}
-          >
-            {statusLabel}
-          </span>
+          <span style={{ color: statusColor }}>{statusLabel}</span>
         </div>
 
-        {/* mini stats */}
         {active?.id && (
-          <div style={{ marginTop: 8, width: "100%" }}>
+          <div style={{ marginTop: 8 }}>
             <GoldMiniStats profileId={active.id} />
           </div>
         )}
 
-        {/* Actions principales */}
-        <div
-          className="row apb__actions"
-          style={{
-            gap: 6,
-            marginTop: 12,
-            flexWrap: "nowrap",
-            justifyContent: "center",
-            width: "100%",
-          }}
-        >
-          {/* EDITER */}
+        <div className="row apb__actions" style={{ gap: 6, marginTop: 12 }}>
           <button
             className="btn sm"
-            type="button"
             onClick={() => setIsEditing((v) => !v)}
             style={pillBtnGhost}
           >
             {t("profiles.locals.actions.edit", "EDITER")}
           </button>
 
-          {/* ABSENT / EN LIGNE */}
-          <button
-            className="btn sm"
-            onClick={onToggleAway}
-            title={t(
-              "profiles.btn.toggleStatus.tooltip",
-              "Basculer le statut"
-            )}
-            style={pillBtnBase}
-          >
-            {selfStatus === "away"
-              ? t("profiles.btn.status.backOnline", "EN LIGNE")
-              : t("profiles.btn.status.away", "ABSENT")}
+          <button className="btn sm" onClick={onToggleAway} style={pillBtnBase}>
+            {selfStatus === "away" ? "EN LIGNE" : "ABSENT"}
           </button>
 
-          {/* RESET STATS actif */}
           {onResetStats && (
             <button
               className="btn sm"
               onClick={onResetStats}
               style={pillBtnDanger}
             >
-              {t("profiles.connected.resetStats", "RESET STATS")}
+              RESET STATS
             </button>
           )}
         </div>
 
-        {/* Bloc enregistrement / annuler sous le reste */}
         {isEditing && (
-          <div
-            className="row"
-            style={{
-              marginTop: 10,
-              justifyContent: "flex-end",
-              gap: 8,
-              flexWrap: "wrap",
-            }}
-          >
-            <button
-              className="btn sm"
-              type="button"
-              onClick={handleCancelEdit}
-            >
-              {t("common.cancel", "Annuler")}
+          <div className="row" style={{ marginTop: 10, gap: 8 }}>
+            <button className="btn sm" onClick={handleCancelEdit}>
+              Annuler
             </button>
-            <button
-              className="btn ok sm"
-              type="button"
-              onClick={handleSaveEdit}
-            >
-              {t("common.save", "Enregistrer")}
+            <button className="btn ok sm" onClick={handleSaveEdit}>
+              Enregistrer
             </button>
           </div>
         )}
@@ -1345,7 +1583,6 @@ function ActiveProfileBlock({
     </div>
   );
 }
-
 
 /* ------ Bloc INFOS PERSONNELLES + SÉCURITÉ ------ */
 
@@ -1761,7 +1998,7 @@ function FriendsMergedBlock({ friends }: { friends: FriendLike[] }) {
 
                       <ProfileAvatar
                         size={AVA}
-                        dataUrl={f.avatarDataUrl}
+                        dataUrl={(f as any)?.avatarUrl || f.avatarDataUrl}
                         label={f.name?.[0]?.toUpperCase() || "?"}
                         showStars={false}
                       />
@@ -2835,7 +3072,7 @@ function LocalProfilesRefonte({
 
                   <ProfileAvatar
                     size={AVATAR}
-                    dataUrl={current.avatarDataUrl}
+                    dataUrl={(current as any)?.avatarUrl || current.avatarDataUrl}
                     label={current.name?.[0]?.toUpperCase() || "?"}
                     showStars={false}
                   />

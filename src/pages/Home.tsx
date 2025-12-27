@@ -32,11 +32,19 @@ const DETAIL_INTERVAL_MS = 7000;
 const TIP_SWIPE_THRESHOLD = 25;
 
 // ------------------------------------------------------------
-// Tickers : images multiples par thème (choix aléatoire)
+// Tickers : images multiples par thème (choix stable, PAS de random en render)
 // ------------------------------------------------------------
-const GH_IMG_BASE =
-  "https://raw.githubusercontent.com/perrinalexandre38530-star/Darts-Counter-V5.3/main/public/img/";
 
+// ✅ Option A (recommandée) : servir en LOCAL (public/img)
+// const IMG_BASE = "/img/";
+
+// ✅ Option B : CDN jsDelivr (plus stable que raw.githubusercontent.com)
+const IMG_BASE =
+  "https://cdn.jsdelivr.net/gh/perrinalexandre38530-star/Darts-Counter-V5.3@main/public/img/";
+
+// ⚠️ IMPORTANT : éviter "ad", "ads", "advice" dans les noms de fichiers (bloqueurs)
+// => si tu n'as pas renommé tes fichiers, garde tes noms actuels MAIS tu risques encore du blocage.
+// Ici je garde tes clés actuelles pour ne rien casser.
 const TICKER_IMAGES = {
   records: ["ticker-records.jpg", "ticker-records-2.jpg"],
   local: ["ticker-x01.jpg", "ticker-x01-2.jpg"],
@@ -50,11 +58,25 @@ const TICKER_IMAGES = {
   tipNews: ["ticker-tip-news.jpg", "ticker-tip-news-2.jpg"],
 } as const;
 
-function pickTickerImage<K extends keyof typeof TICKER_IMAGES>(key: K): string {
+function hashStringToInt(str: string): number {
+  // hash simple & stable (FNV-ish)
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+// ✅ déterministe : même résultat tant que seed ne change pas
+function pickTickerImage<K extends keyof typeof TICKER_IMAGES>(
+  key: K,
+  seed: string
+): string {
   const arr = TICKER_IMAGES[key];
   if (!arr || arr.length === 0) return "";
-  const idx = Math.floor(Math.random() * arr.length);
-  return GH_IMG_BASE + arr[idx];
+  const idx = hashStringToInt(`${key}::${seed}`) % arr.length;
+  return IMG_BASE + arr[idx];
 }
 
 /* ============================================================
@@ -1185,25 +1207,25 @@ function buildTickerDetailRows(
    Blocs visuels pour les 2 mini-cards
 ============================================================ */
 
-function pickStatsBackgroundForTicker(tickerId: string): string {
+function pickStatsBackgroundForTicker(tickerId: string, seed: string): string {
   switch (tickerId) {
     case "last-records":
-      return pickTickerImage("leaderboard");
+      return pickTickerImage("leaderboard", seed);
     case "last-local-match":
-      return pickTickerImage("training");
+      return pickTickerImage("training", seed);
     case "last-online-match":
-      return pickTickerImage("leaderboard");
+      return pickTickerImage("leaderboard", seed);
     case "online-leader":
-      return pickTickerImage("onlineLast");
+      return pickTickerImage("onlineLast", seed);
     case "training-summary":
-      return pickTickerImage("global");
+      return pickTickerImage("global", seed);
     case "killer-summary":
-      return pickTickerImage("local");
+      return pickTickerImage("local", seed);
     case "month-summary":
-      return pickTickerImage("training");
+      return pickTickerImage("training", seed);
     case "tip-of-day":
     default:
-      return pickTickerImage("global");
+      return pickTickerImage("global", seed);
   }
 }
 
@@ -1216,6 +1238,9 @@ type TipSlide = {
 };
 
 function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
+  // ✅ seed stable => pas de random en render => plus de clignotement
+  const seed = "tips-v1";
+
   return [
     {
       id: "tip-training",
@@ -1225,7 +1250,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.training.text",
         "Travaille toujours la même finition pendant quelques minutes, puis change de cible pour rester focus."
       ),
-      backgroundImage: pickTickerImage("tipAdvice"),
+      backgroundImage: pickTickerImage("tipAdvice", `${seed}::tip-training`),
     },
     {
       id: "tip-bots",
@@ -1235,7 +1260,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.bots.text",
         "Ajoute un BOT dans tes profils pour t’entraîner en conditions réelles, même si tu es seul."
       ),
-      backgroundImage: pickTickerImage("tipAds"),
+      backgroundImage: pickTickerImage("tipAds", `${seed}::tip-bots`),
     },
     {
       id: "tip-news",
@@ -1245,7 +1270,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.news.text",
         "Découvre les nouveaux thèmes néon, les stats Horloge et bientôt les classements Online."
       ),
-      backgroundImage: pickTickerImage("tipNews"),
+      backgroundImage: pickTickerImage("tipNews", `${seed}::tip-news`),
     },
     {
       id: "tip-clock",
@@ -1255,7 +1280,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.clock.text",
         "Sur le Tour de l’Horloge, vise toujours un repère visuel précis sur le segment pour gagner en régularité."
       ),
-      backgroundImage: pickTickerImage("tipAdvice"),
+      backgroundImage: pickTickerImage("tipAdvice", `${seed}::tip-clock`),
     },
     {
       id: "tip-stats",
@@ -1265,7 +1290,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.stats.text",
         "Va dans l’onglet Stats pour suivre ton avg 3D, tes records et l’évolution de ton niveau."
       ),
-      backgroundImage: pickTickerImage("tipNews"),
+      backgroundImage: pickTickerImage("tipNews", `${seed}::tip-stats`),
     },
   ];
 }
@@ -1352,6 +1377,7 @@ function buildArcadeItems(
 ): ArcadeTickerItem[] {
   const items: ArcadeTickerItem[] = [];
   const s: ActiveProfileStats = stats ?? emptyActiveProfileStats();
+  const seed = String(profile?.id ?? "anon");
 
   const sessionsGlobal = s.sessionsGlobal ?? 0;
   const winrateGlobalPct =
@@ -1409,7 +1435,7 @@ function buildArcadeItems(
           .filter(Boolean)
           .join(" · ")
       : "",
-    backgroundImage: pickTickerImage("records"),
+    backgroundImage: pickTickerImage("records", `${seed}::last-records`),
     accentColor: "#F6C256",
   });
 
@@ -1427,7 +1453,7 @@ function buildArcadeItems(
             "Aucun match local pour l’instant, invite des amis et lance une partie."
           ),
     detail: x01MultiSessions > 0 ? `${x01MultiSessions} matchs X01 multi` : "",
-    backgroundImage: pickTickerImage("local"),
+    backgroundImage: pickTickerImage("local", `${seed}::last-local-match`),
     accentColor: "#52FFC4",
   });
 
@@ -1453,7 +1479,7 @@ function buildArcadeItems(
             .filter(Boolean)
             .join(" · ")
         : "",
-    backgroundImage: pickTickerImage("onlineLast"),
+    backgroundImage: pickTickerImage("onlineLast", `${seed}::last-online-match`),
     accentColor: "#5ED3FF",
   });
 
@@ -1470,7 +1496,7 @@ function buildArcadeItems(
             "home.ticker.onlineLeader.text.empty",
             "Monte dans le classement en enchaînant les victoires online."
           ),
-    backgroundImage: pickTickerImage("leaderboard"),
+    backgroundImage: pickTickerImage("leaderboard", `${seed}::online-leader`),
     accentColor: "#FF5E9E",
   });
 
@@ -1491,7 +1517,7 @@ function buildArcadeItems(
       trainingHitsTotal > 0 && trainingGoalPct != null
         ? `Objectifs réussis : ${trainingGoalPct}%`
         : "",
-    backgroundImage: pickTickerImage("training"),
+    backgroundImage: pickTickerImage("training", `${seed}::training-summary`),
     accentColor: "#9EFF5E",
   });
 
@@ -1519,7 +1545,7 @@ function buildArcadeItems(
             .filter(Boolean)
             .join(" · ")
         : "",
-    backgroundImage: pickTickerImage("local"),
+    backgroundImage: pickTickerImage("local", `${seed}::killer-summary`),
     accentColor: "#FF7A18",
   });
 
@@ -1543,7 +1569,7 @@ function buildArcadeItems(
     ]
       .filter(Boolean)
       .join(" · "),
-    backgroundImage: pickTickerImage("global"),
+    backgroundImage: pickTickerImage("global", `${seed}::month-summary`),
     accentColor: "#F6C256",
   });
 
@@ -1555,7 +1581,7 @@ function buildArcadeItems(
         "home.ticker.tip.text",
         "Ancre ta finition préférée en la rejouant régulièrement."
       ),
-      backgroundImage: pickTickerImage("tip"),
+      backgroundImage: pickTickerImage("tip", `${seed}::tip-of-day`),
       accentColor: "#FFFFFF",
     });
   }
@@ -1728,9 +1754,10 @@ export default function Home({ store, go }: Props) {
         "Tes stats détaillées apparaîtront ici dès que tu auras joué quelques matchs ou trainings."
       );
 
+  const statsSeed = String(activeProfile?.id ?? "anon");
   const statsBackgroundImage = currentTicker
-    ? pickStatsBackgroundForTicker(currentTicker.id)
-    : "";
+  ? pickStatsBackgroundForTicker(currentTicker.id, `${statsSeed}::stats-card`)
+  : "";
 
   const tipSlides = useMemo(() => buildTipSlides(t), [t]);
 
