@@ -83,6 +83,26 @@ function useInjectStatsNameCss() {
 
 type View = "menu" | "me" | "locals" | "friends";
 
+// ✅ TYPE UNIQUE (évite les collisions / erreurs TS et les patchs qui partent sur un mauvais type)
+export type PrivateInfo = {
+  nickname?: string;
+  lastName?: string;
+  firstName?: string;
+  birthDate?: string;
+  country?: string;
+  city?: string;
+  email?: string;
+  phone?: string;
+  password?: string;
+
+  // lien compte online (hash d’email)
+  onlineKey?: string;
+
+  // prefs app
+  appLang?: Lang;
+  appTheme?: ThemeId;
+};
+
 /* ===== Helper lecture instantanée (mini-cache IDB + quick-stats) ===== */
 function useBasicStats(playerId: string | undefined | null) {
   const empty = React.useMemo(
@@ -325,7 +345,34 @@ function mergeProfilesSafe(prev: Profile[], next: Profile[]): Profile[] {
   });
 }
 
+// ============================================
+// ✅ Helper : construit un src d'avatar fiable
+// priorité : preview > avatarUrl > avatarDataUrl
+// + cache-bust si URL http(s) et avatarUpdatedAt connu
+// ============================================
+function buildAvatarSrc(opts: {
+  preview?: string | null;
+  avatarUrl?: string | null;
+  avatarDataUrl?: string | null;
+  avatarUpdatedAt?: number | null;
+}) {
+  const cacheBust =
+    typeof opts.avatarUpdatedAt === "number" ? opts.avatarUpdatedAt : 0;
 
+  const baseSrc =
+    (opts.preview && opts.preview.trim()) ||
+    (opts.avatarUrl && String(opts.avatarUrl).trim()) ||
+    (opts.avatarDataUrl && String(opts.avatarDataUrl).trim()) ||
+    "";
+
+  if (!baseSrc) return "";
+
+  // ✅ si URL http(s) => on ajoute ?v=... (seulement si on a avatarUpdatedAt)
+  if (/^https?:\/\//.test(baseSrc) && cacheBust) {
+    return baseSrc + (baseSrc.includes("?") ? "&" : "?") + "v=" + cacheBust;
+  }
+  return baseSrc;
+}
 
 /* ================================
    Page — Profils (router interne)
@@ -543,23 +590,6 @@ export default function Profiles({
       console.warn("[Profiles] Erreur purgeAllStatsForProfile", e);
     }
   }
-
-  type PrivateInfo = {
-    nickname?: string;
-    lastName?: string;
-    firstName?: string;
-    birthDate?: string;
-    country?: string;
-    city?: string;
-    email?: string;
-    phone?: string;
-    password?: string;
-    // lien compte online (hash d’email)
-    onlineKey?: string;
-    // prefs app
-    appLang?: Lang;
-    appTheme?: ThemeId;
-  };
 
   async function addProfile(
     name: string,

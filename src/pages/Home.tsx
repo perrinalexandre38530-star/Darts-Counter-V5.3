@@ -1234,13 +1234,10 @@ type TipSlide = {
   kind: "tip" | "ad" | "news";
   title: string;
   text: string;
-  backgroundImage: string;
+  backgroundImage: keyof typeof TICKER_IMAGES; // ✅ clé d'image
 };
 
 function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
-  // ✅ seed stable => pas de random en render => plus de clignotement
-  const seed = "tips-v1";
-
   return [
     {
       id: "tip-training",
@@ -1250,7 +1247,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.training.text",
         "Travaille toujours la même finition pendant quelques minutes, puis change de cible pour rester focus."
       ),
-      backgroundImage: pickTickerImage("tipAdvice", `${seed}::tip-training`),
+      backgroundImage: "tipAdvice",
     },
     {
       id: "tip-bots",
@@ -1260,7 +1257,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.bots.text",
         "Ajoute un BOT dans tes profils pour t’entraîner en conditions réelles, même si tu es seul."
       ),
-      backgroundImage: pickTickerImage("tipAds", `${seed}::tip-bots`),
+      backgroundImage: "tipAds",
     },
     {
       id: "tip-news",
@@ -1270,7 +1267,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.news.text",
         "Découvre les nouveaux thèmes néon, les stats Horloge et bientôt les classements Online."
       ),
-      backgroundImage: pickTickerImage("tipNews", `${seed}::tip-news`),
+      backgroundImage: "tipNews",
     },
     {
       id: "tip-clock",
@@ -1280,7 +1277,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.clock.text",
         "Sur le Tour de l’Horloge, vise toujours un repère visuel précis sur le segment pour gagner en régularité."
       ),
-      backgroundImage: pickTickerImage("tipAdvice", `${seed}::tip-clock`),
+      backgroundImage: "tipAdvice",
     },
     {
       id: "tip-stats",
@@ -1290,7 +1287,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "home.tip.stats.text",
         "Va dans l’onglet Stats pour suivre ton avg 3D, tes records et l’évolution de ton niveau."
       ),
-      backgroundImage: pickTickerImage("tipNews", `${seed}::tip-stats`),
+      backgroundImage: "tipNews",
     },
   ];
 }
@@ -1604,7 +1601,7 @@ function ensureKillerTickerItemFirst(
       "Aucune partie Killer enregistrée pour l’instant, lance un match pour remplir tes stats."
     ),
     detail: "",
-    backgroundImage: pickTickerImage("local"),
+    backgroundImage: pickTickerImage("local", "killer-fallback"),
     accentColor: "#FF7A18",
   };
 
@@ -1781,6 +1778,15 @@ export default function Home({ store, go }: Props) {
     tipSlides.length > 0
       ? tipSlides[Math.min(tipIndex, tipSlides.length - 1)]
       : null;
+
+  // ✅ image qui change à chaque slide (varie avec tipIndex)
+  const tipBgKey = (currentTip?.backgroundImage || "tip") as keyof typeof TICKER_IMAGES;
+  const tipBgSeed = `${activeProfile?.id ?? "anon"}::tipIndex:${tipIndex}::${currentTip?.id ?? "none"}`;
+
+  const currentTipBackgroundImage =
+  tipBgKey && (TICKER_IMAGES as any)[tipBgKey]
+    ? pickTickerImage(tipBgKey, tipBgSeed)
+    : "";    
 
   const handleTipTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     const x = e.touches[0]?.clientX;
@@ -2008,9 +2014,9 @@ export default function Home({ store, go }: Props) {
                   position: "relative",
                   minHeight: 96,
                   backgroundColor: "#05060C",
-                  backgroundImage: currentTip?.backgroundImage
-                    ? `url("${currentTip.backgroundImage}")`
-                    : undefined,
+                  backgroundImage: currentTipBackgroundImage
+                  ? `url("${currentTipBackgroundImage}")`
+                  : undefined,
                   backgroundSize: "cover",
                   backgroundPosition: "center",
                 }}
