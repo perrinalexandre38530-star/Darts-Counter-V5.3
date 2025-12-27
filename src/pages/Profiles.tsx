@@ -600,7 +600,10 @@ export default function Profiles({
     const url = file ? await read(file) : undefined;
 
     const base: any = {
-      id: crypto.randomUUID(),
+      id:
+        globalThis.crypto && "randomUUID" in globalThis.crypto
+          ? globalThis.crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       name: name.trim(),
       avatarDataUrl: url,
     };
@@ -661,7 +664,11 @@ React.useEffect(() => {
     )
   );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [active?.id]);
+}, [
+  active?.id,
+  (active as any)?.avatarUrl,
+  (active as any)?.avatarDataUrl,
+]);
 
   async function resetActiveStats() {
     if (!active?.id) return;
@@ -1621,23 +1628,6 @@ function PrivateInfoBlock({
 }) {
   const { theme } = useTheme();
   const { t } = useLang();
-
-  type PrivateInfo = {
-    nickname?: string;
-    lastName?: string;
-    firstName?: string;
-    birthDate?: string;
-    country?: string;
-    city?: string;
-    email?: string;
-    phone?: string;
-    password?: string;
-    // lien compte online (hash d’email)
-    onlineKey?: string;
-    // prefs app
-    appLang?: Lang;
-    appTheme?: ThemeId;
-  };
 
   const initial: PrivateInfo = React.useMemo(() => {
     if (!active) return {};
@@ -2806,10 +2796,7 @@ function LocalProfilesRefonte({
     privateInfo?: Partial<{ country?: string }>
   ) => void;
   onRename: (id: string, name: string) => void;
-  onPatchPrivateInfo: (
-    id: string,
-    patch: Partial<{ country?: string }>
-  ) => void;
+  onPatchPrivateInfo: (id: string, patch: Partial<{ country?: string }>) => void;
   onAvatar: (id: string, file: File) => void;
   onDelete: (id: string) => void;
   onOpenAvatarCreator?: () => void;
@@ -2857,10 +2844,7 @@ function LocalProfilesRefonte({
     setEditPreview(null);
     setActionsOpen(false);
     if (current) {
-      const pi =
-        ((current as any).privateInfo || {}) as {
-          country?: string;
-        };
+      const pi = ((current as any).privateInfo || {}) as { country?: string };
       setEditName(current.name || "");
       setEditCountry(pi.country || "");
     } else {
@@ -3098,9 +3082,14 @@ function LocalProfilesRefonte({
                     />
                   </div>
 
+                  {/* ✅ PATCH 5 — src propre + cache-bust via helper */}
                   <ProfileAvatar
                     size={AVATAR}
-                    dataUrl={(current as any)?.avatarUrl || current.avatarDataUrl}
+                    dataUrl={buildAvatarSrc({
+                      avatarUrl: (current as any)?.avatarUrl || null,
+                      avatarDataUrl: (current as any)?.avatarDataUrl || null,
+                      avatarUpdatedAt: (current as any)?.avatarUpdatedAt ?? null,
+                    })}
                     label={current.name?.[0]?.toUpperCase() || "?"}
                     showStars={false}
                   />
@@ -3125,12 +3114,8 @@ function LocalProfilesRefonte({
                     "--dc-accent": primary,
                   }}
                 >
-                  <span className="dc-stats-name-base">
-                    {current.name || "—"}
-                  </span>
-                  <span className="dc-stats-name-shimmer">
-                    {current.name || "—"}
-                  </span>
+                  <span className="dc-stats-name-base">{current.name || "—"}</span>
+                  <span className="dc-stats-name-shimmer">{current.name || "—"}</span>
                 </span>
 
                 <div
@@ -3146,10 +3131,9 @@ function LocalProfilesRefonte({
                   }}
                 >
                   {(() => {
-                    const pi =
-                      ((current as any).privateInfo || {}) as {
-                        country?: string;
-                      };
+                    const pi = ((current as any).privateInfo || {}) as {
+                      country?: string;
+                    };
                     const country = pi.country || "";
                     const flag = getCountryFlag(country);
 
@@ -3280,10 +3264,7 @@ function LocalProfilesRefonte({
                           setActionsOpen(false);
                           handlePurgeStats();
                         }}
-                        style={{
-                          justifyContent: "flex-start",
-                          fontSize: 11,
-                        }}
+                        style={{ justifyContent: "flex-start", fontSize: 11 }}
                       >
                         {t(
                           "profiles.locals.actions.purgeStats",
@@ -3298,10 +3279,7 @@ function LocalProfilesRefonte({
                           setActionsOpen(false);
                           handleDeleteProfile();
                         }}
-                        style={{
-                          justifyContent: "flex-start",
-                          fontSize: 11,
-                        }}
+                        style={{ justifyContent: "flex-start", fontSize: 11 }}
                       >
                         {t(
                           "profiles.locals.actions.delete",
@@ -3350,9 +3328,7 @@ function LocalProfilesRefonte({
                         type="file"
                         accept="image/*"
                         style={{ display: "none" }}
-                        onChange={(e) =>
-                          setEditFile(e.target.files?.[0] ?? null)
-                        }
+                        onChange={(e) => setEditFile(e.target.files?.[0] ?? null)}
                       />
                       {editPreview ? (
                         <img
@@ -3365,10 +3341,7 @@ function LocalProfilesRefonte({
                           }}
                         />
                       ) : (
-                        <span
-                          className="subtitle"
-                          style={{ fontSize: 11 }}
-                        >
+                        <span className="subtitle" style={{ fontSize: 11 }}>
                           {t("profiles.locals.add.avatar", "Avatar")}
                         </span>
                       )}
@@ -3393,10 +3366,7 @@ function LocalProfilesRefonte({
                       />
                       <input
                         className="input"
-                        placeholder={t(
-                          "profiles.private.country",
-                          "Pays"
-                        )}
+                        placeholder={t("profiles.private.country", "Pays")}
                         value={editCountry}
                         onChange={(e) => setEditCountry(e.target.value)}
                       />
@@ -3419,10 +3389,9 @@ function LocalProfilesRefonte({
                         setEditFile(null);
                         setEditPreview(null);
                         if (current) {
-                          const pi =
-                            ((current as any).privateInfo || {}) as {
-                              country?: string;
-                            };
+                          const pi = ((current as any).privateInfo || {}) as {
+                            country?: string;
+                          };
                           setEditName(current.name || "");
                           setEditCountry(pi.country || "");
                         }
@@ -3430,11 +3399,7 @@ function LocalProfilesRefonte({
                     >
                       {t("common.cancel", "Annuler")}
                     </button>
-                    <button
-                      className="btn ok sm"
-                      type="button"
-                      onClick={handleSaveEdit}
-                    >
+                    <button className="btn ok sm" type="button" onClick={handleSaveEdit}>
                       {t("common.save", "Enregistrer")}
                     </button>
                   </div>
