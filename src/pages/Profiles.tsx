@@ -1388,42 +1388,38 @@ function ActiveProfileBlock({
     setEditPreview(null);
   }
 
-// =========================
-// SOURCE UNIQUE AVATAR
-// priorité : preview > avatarUrl > avatarDataUrl
-// + cache-bust anti Supabase / SW / navigateur
-// =========================
-const cacheBust =
-  typeof (active as any)?.avatarUpdatedAt === "number"
-    ? (active as any).avatarUpdatedAt
-    : 0;
+  // =========================
+  // ✅ SOURCE UNIQUE AVATAR (via helper)
+  // priorité : preview > avatarUrl > avatarDataUrl
+  // + cache-bust anti Supabase / SW / navigateur
+  // =========================
+  const avatarSrc = buildAvatarSrc({
+    preview: editPreview,
+    avatarUrl: String((active as any)?.avatarUrl || ""),
+    avatarDataUrl: String((active as any)?.avatarDataUrl || ""),
+    avatarUpdatedAt: (active as any)?.avatarUpdatedAt ?? null,
+  });
 
-const baseSrc =
-  (editPreview && editPreview.trim()) ||
-  ((active as any)?.avatarUrl && String((active as any).avatarUrl).trim()) ||
-  ((active as any)?.avatarDataUrl && String((active as any).avatarDataUrl).trim()) ||
-  "";
-
-// ✅ si URL http(s) => on ajoute ?v=... (seulement si on a avatarUpdatedAt)
-const avatarSrc =
-  baseSrc && /^https?:\/\//.test(baseSrc) && cacheBust
-    ? baseSrc + (baseSrc.includes("?") ? "&" : "?") + "v=" + cacheBust
-    : baseSrc;
-
-// LOGS DEBUG (volontairement conservés)
-React.useEffect(() => {
-  console.log("[ActiveProfileBlock] id =", active?.id);
-  console.log("[ActiveProfileBlock] avatarUrl =", (active as any)?.avatarUrl);
-  console.log("[ActiveProfileBlock] avatarDataUrl =", (active as any)?.avatarDataUrl);
-  console.log("[ActiveProfileBlock] avatarUpdatedAt =", (active as any)?.avatarUpdatedAt);
-  console.log("[ActiveProfileBlock] avatarSrc =", avatarSrc);
-}, [
-  active?.id,
-  (active as any)?.avatarUrl,
-  (active as any)?.avatarDataUrl,
-  (active as any)?.avatarUpdatedAt,
-  avatarSrc,
-]);
+  // LOGS DEBUG (volontairement conservés)
+  React.useEffect(() => {
+    console.log("[ActiveProfileBlock] id =", active?.id);
+    console.log("[ActiveProfileBlock] avatarUrl =", (active as any)?.avatarUrl);
+    console.log(
+      "[ActiveProfileBlock] avatarDataUrl =",
+      (active as any)?.avatarDataUrl
+    );
+    console.log(
+      "[ActiveProfileBlock] avatarUpdatedAt =",
+      (active as any)?.avatarUpdatedAt
+    );
+    console.log("[ActiveProfileBlock] avatarSrc =", avatarSrc);
+  }, [
+    active?.id,
+    (active as any)?.avatarUrl,
+    (active as any)?.avatarDataUrl,
+    (active as any)?.avatarUpdatedAt,
+    avatarSrc,
+  ]);
 
   // =========================
   // STYLES BOUTONS
@@ -1546,9 +1542,7 @@ React.useEffect(() => {
                 "--dc-accent": primary,
               }}
             >
-              <span className="dc-stats-name-base">
-                {active?.name || "—"}
-              </span>
+              <span className="dc-stats-name-base">{active?.name || "—"}</span>
               <span className="dc-stats-name-shimmer">
                 {active?.name || "—"}
               </span>
@@ -2028,7 +2022,11 @@ function FriendsMergedBlock({ friends }: { friends: FriendLike[] }) {
 
                       <ProfileAvatar
                         size={AVA}
-                        dataUrl={(f as any)?.avatarUrl || f.avatarDataUrl}
+                        dataUrl={buildAvatarSrc({
+                          avatarUrl: (f as any)?.avatarUrl || null,
+                          avatarDataUrl: (f as any)?.avatarDataUrl || null,
+                          avatarUpdatedAt: (f as any)?.avatarUpdatedAt ?? null,
+                        })}
                         label={f.name?.[0]?.toUpperCase() || "?"}
                         showStars={false}
                       />

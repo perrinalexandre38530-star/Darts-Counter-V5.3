@@ -1235,6 +1235,10 @@ type TipSlide = {
   title: string;
   text: string;
   backgroundImage: keyof typeof TICKER_IMAGES; // ✅ clé d'image
+
+  // ✅ NEW badge system
+  since?: string; // "YYYY-MM-DD"
+  forceNew?: boolean; // si tu veux forcer NEW même si vieux
 };
 
 function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
@@ -1248,6 +1252,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "Travaille toujours la même finition pendant quelques minutes, puis change de cible pour rester focus."
       ),
       backgroundImage: "tipAdvice",
+      since: "2025-12-01",
     },
     {
       id: "tip-bots",
@@ -1258,6 +1263,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "Ajoute un BOT dans tes profils pour t’entraîner en conditions réelles, même si tu es seul."
       ),
       backgroundImage: "tipAds",
+      since: "2025-12-10",
     },
     {
       id: "tip-news",
@@ -1268,6 +1274,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "Découvre les nouveaux thèmes néon, les stats Horloge et bientôt les classements Online."
       ),
       backgroundImage: "tipNews",
+      since: "2025-12-22",
     },
     {
       id: "tip-clock",
@@ -1278,6 +1285,7 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "Sur le Tour de l’Horloge, vise toujours un repère visuel précis sur le segment pour gagner en régularité."
       ),
       backgroundImage: "tipAdvice",
+      since: "2025-12-15",
     },
     {
       id: "tip-stats",
@@ -1288,8 +1296,422 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
         "Va dans l’onglet Stats pour suivre ton avg 3D, tes records et l’évolution de ton niveau."
       ),
       backgroundImage: "tipNews",
+      since: "2025-12-24",
     },
   ];
+}
+
+/* ============================================================
+   ✅ NEW BADGE — système "vu / pas vu" + fenêtre de récence
+============================================================ */
+
+const HOME_TIP_SEEN_KEY = "dc_home_tip_seen_v1";
+const NEW_WINDOW_DAYS = 21; // ajuste: 7 / 14 / 21 / 30
+
+function safeParseJson<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function daysSince(dateStr: string): number {
+  // dateStr: "YYYY-MM-DD"
+  const d = new Date(dateStr + "T00:00:00");
+  const now = new Date();
+  const ms = now.getTime() - d.getTime();
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
+}
+
+function isSlideRecent(slide: TipSlide): boolean {
+  if (slide.forceNew) return true;
+  if (!slide.since) return false;
+  const d = daysSince(slide.since);
+  return d >= 0 && d <= NEW_WINDOW_DAYS;
+}
+
+function loadSeenMap(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  return safeParseJson<Record<string, number>>(
+    window.localStorage.getItem(HOME_TIP_SEEN_KEY),
+    {}
+  );
+}
+
+function markSlideSeen(id: string) {
+  if (typeof window === "undefined") return;
+  const map = loadSeenMap();
+  map[id] = Date.now();
+  try {
+    window.localStorage.setItem(HOME_TIP_SEEN_KEY, JSON.stringify(map));
+  } catch {}
+}
+
+function isSlideSeen(id: string): boolean {
+  const map = loadSeenMap();
+  return !!map[id];
+}
+
+function shouldShowNewBadge(slide: TipSlide | null): boolean {
+  if (!slide) return false;
+  // ✅ badge NEW seulement si récent (ou forcé) ET pas encore vu
+  if (!isSlideRecent(slide)) return false;
+  if (isSlideSeen(slide.id)) return false;
+  return true;
+}
+
+function BadgeNew({ theme }: { theme: any }) {
+  const c = theme?.accent1 ?? "#FFD980";
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "2px 7px",
+        borderRadius: 999,
+        fontSize: 9,
+        fontWeight: 900,
+        letterSpacing: 1.0,
+        textTransform: "uppercase",
+        color: "#05060C",
+        background: `linear-gradient(120deg, ${c}, #FFFFFF, ${c})`,
+        boxShadow: `0 0 10px ${c}66`,
+      }}
+    >
+      NEW
+    </span>
+  );
+}
+
+/* ============================================================
+   ✅ LIVE CONTENT (Feed JSON + Changelog + Contextuel)
+============================================================ */
+
+type TipKind = "tip" | "ad" | "news";
+
+type LiveTipSlide = {
+  id: string;
+  kind: TipKind;
+  title: string;
+  text: string;
+  imageKey: keyof typeof TICKER_IMAGES; // clé => pickTickerImage()
+  weight?: number;
+};
+
+type HomeFeedItem = {
+  id: string;
+  kind?: TipKind;
+  title: string;
+  text: string;
+  imageKey?: keyof typeof TICKER_IMAGES;
+  since?: string; // YYYY-MM-DD
+  until?: string; // YYYY-MM-DD
+  weight?: number;
+};
+
+type ChangelogEntry = {
+  id: string;
+  date?: string; // YYYY-MM-DD
+  title: string;
+  bullets?: string[];
+};
+
+function safeParseDateStr(d?: string): number | null {
+  if (!d || typeof d !== "string") return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d.trim());
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const da = Number(m[3]);
+  const ts = Date.UTC(y, mo, da, 0, 0, 0, 0);
+  return Number.isFinite(ts) ? ts : null;
+}
+
+function getTodayKey(): string {
+  try {
+    return new Date().toISOString().slice(0, 10);
+  } catch {
+    return "1970-01-01";
+  }
+}
+
+async function safeFetchJson<T>(url: string): Promise<T | null> {
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as T;
+    return data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeKind(k: any): TipKind {
+  const s = String(k ?? "").toLowerCase();
+  if (s === "ad") return "ad";
+  if (s === "news") return "news";
+  return "tip";
+}
+
+function isWithinRange(item: HomeFeedItem, todayUtc: number): boolean {
+  const since = safeParseDateStr(item.since);
+  const until = safeParseDateStr(item.until);
+  if (since != null && todayUtc < since) return false;
+  if (until != null && todayUtc > until) return false;
+  return true;
+}
+
+function deterministicShuffle<T>(arr: T[], seed: string): T[] {
+  const a = [...arr];
+  let h = hashStringToInt(seed);
+  for (let i = a.length - 1; i > 0; i--) {
+    h ^= h << 13;
+    h ^= h >>> 17;
+    h ^= h << 5;
+    const j = Math.abs(h) % (i + 1);
+    const tmp = a[i];
+    a[i] = a[j];
+    a[j] = tmp;
+  }
+  return a;
+}
+
+function buildFeedSlides(feedItems: HomeFeedItem[]): LiveTipSlide[] {
+  const todayUtc = safeParseDateStr(getTodayKey()) ?? Date.UTC(1970, 0, 1);
+  const items = Array.isArray(feedItems) ? feedItems : [];
+
+  const filtered = items
+    .filter((it) => it && typeof it === "object")
+    .filter((it) => String(it.id ?? "").trim())
+    .filter((it) => String(it.title ?? "").trim() && String(it.text ?? "").trim())
+    .filter((it) => isWithinRange(it, todayUtc))
+    .map((it) => {
+      const imageKey = (it.imageKey ?? "tipNews") as keyof typeof TICKER_IMAGES;
+      const weight = Number(it.weight ?? 3) || 3;
+      return {
+        id: `feed-${it.id}`,
+        kind: normalizeKind(it.kind),
+        title: String(it.title).trim(),
+        text: String(it.text).trim(),
+        imageKey,
+        weight,
+      } as LiveTipSlide;
+    });
+
+  filtered.sort(
+    (a, b) =>
+      (Number(b.weight ?? 0) - Number(a.weight ?? 0)) ||
+      a.title.localeCompare(b.title)
+  );
+
+  return filtered;
+}
+
+function buildChangelogSlides(
+  t: (k: string, d?: string) => string,
+  entries: ChangelogEntry[]
+): LiveTipSlide[] {
+  const list = Array.isArray(entries) ? entries : [];
+  if (!list.length) return [];
+
+  const sorted = [...list].sort((a, b) => {
+    const ta = safeParseDateStr(a.date ?? "") ?? 0;
+    const tb = safeParseDateStr(b.date ?? "") ?? 0;
+    return tb - ta;
+  });
+
+  return sorted.slice(0, 3).map((e, idx) => {
+    const bullets = Array.isArray(e.bullets) ? e.bullets.filter(Boolean) : [];
+    const text =
+      bullets.length > 0
+        ? bullets.slice(0, 4).map((x) => `• ${x}`).join("\n")
+        : t("home.changelog.empty", "Améliorations et correctifs divers.");
+
+    const dateStr = String(e.date ?? "").trim();
+    const title = dateStr
+      ? `${t("home.changelog.title", "Patch notes")} — ${dateStr}`
+      : t("home.changelog.title", "Patch notes");
+
+    return {
+      id: `changelog-${e.id ?? idx}`,
+      kind: "news",
+      title,
+      text: `${String(e.title ?? "").trim()}\n${text}`.trim(),
+      imageKey: "tipNews",
+      weight: 9 - idx,
+    } as LiveTipSlide;
+  });
+}
+
+function buildContextualSlides(
+  t: (k: string, d?: string) => string,
+  profile: Profile | null,
+  s: ActiveProfileStats
+): LiveTipSlide[] {
+  const slides: LiveTipSlide[] = [];
+  const pid = String(profile?.id ?? "anon");
+
+  const sessionsGlobal = Number(s.sessionsGlobal ?? 0) || 0;
+  const x01MultiSessions = Number(s.x01MultiSessions ?? 0) || 0;
+  const trainingHitsTotal =
+    (Number(s.trainingHitsS ?? 0) || 0) +
+    (Number(s.trainingHitsD ?? 0) || 0) +
+    (Number(s.trainingHitsT ?? 0) || 0);
+
+  const onlineMatches = Number(s.onlineMatches ?? 0) || 0;
+  const clockTargets = Number(s.clockTargetsHit ?? 0) || 0;
+
+  const killerSessions = Number((s as any)?.killerSessions ?? 0) || 0;
+
+  if (sessionsGlobal <= 0 && x01MultiSessions <= 0 && trainingHitsTotal <= 0) {
+    slides.push({
+      id: `ctx-start-${pid}`,
+      kind: "tip",
+      title: t("home.ctx.start.title", "Démarre en 30 secondes"),
+      text: t(
+        "home.ctx.start.text",
+        "Lance un match X01 en local : ça crée tes premiers records et rend le dashboard vivant."
+      ),
+      imageKey: "tipAdvice",
+      weight: 10,
+    });
+  }
+
+  if (trainingHitsTotal <= 0) {
+    slides.push({
+      id: `ctx-training-${pid}`,
+      kind: "tip",
+      title: t("home.ctx.training.title", "Training conseillé"),
+      text: t(
+        "home.ctx.training.text",
+        "Fais 5 minutes sur une même finition (ex: D16), puis change : progression rapide."
+      ),
+      imageKey: "tipAdvice",
+      weight: 7,
+    });
+  }
+
+  if (clockTargets <= 0) {
+    slides.push({
+      id: `ctx-clock-${pid}`,
+      kind: "tip",
+      title: t("home.ctx.clock.title", "Essaye le Tour de l’Horloge"),
+      text: t(
+        "home.ctx.clock.text",
+        "Mode parfait pour travailler la régularité : vise un repère précis sur chaque segment."
+      ),
+      imageKey: "tipAdvice",
+      weight: 5,
+    });
+  }
+
+  if (onlineMatches <= 0) {
+    slides.push({
+      id: `ctx-online-${pid}`,
+      kind: "news",
+      title: t("home.ctx.online.title", "Défis online"),
+      text: t(
+        "home.ctx.online.text",
+        "Crée un salon et envoie le code à un ami : la Home suivra tes stats online."
+      ),
+      imageKey: "tipNews",
+      weight: 4,
+    });
+  }
+
+  if (killerSessions <= 0) {
+    slides.push({
+      id: `ctx-killer-${pid}`,
+      kind: "tip",
+      title: t("home.ctx.killer.title", "Teste le mode Killer"),
+      text: t(
+        "home.ctx.killer.text",
+        "Rapide, fun, idéal à plusieurs : 1 partie suffit pour activer tes stats Killer."
+      ),
+      imageKey: "tipAdvice",
+      weight: 4,
+    });
+  }
+
+  const fav = (s as any)?.favoriteNumberLabel ?? null;
+  if (fav) {
+    slides.push({
+      id: `ctx-fav-${pid}`,
+      kind: "tip",
+      title: t("home.ctx.fav.title", "Ton segment du moment"),
+      text: t(
+        "home.ctx.fav.text",
+        `Tu touches souvent ${String(fav)} : utilise-le comme repère pour tes finishes.`
+      ),
+      imageKey: "tipAdvice",
+      weight: 3,
+    });
+  }
+
+  return slides;
+}
+
+function buildLiveTipSlides(args: {
+  t: (k: string, d?: string) => string;
+  profile: Profile | null;
+  stats: ActiveProfileStats;
+  feedItems: HomeFeedItem[];
+  changelogEntries: ChangelogEntry[];
+}): LiveTipSlide[] {
+  const { t, profile, stats, feedItems, changelogEntries } = args;
+
+  // base fallback = tes slides actuels (on les conserve)
+  const fallback: LiveTipSlide[] = buildTipSlides(t).map((x) => ({
+    id: x.id,
+    kind: x.kind,
+    title: x.title,
+    text: x.text,
+    imageKey: x.backgroundImage,
+    weight: 2,
+  }));
+
+  const ctx = buildContextualSlides(t, profile, stats);
+  const ch = buildChangelogSlides(t, changelogEntries);
+  const feed = buildFeedSlides(feedItems);
+
+  const picked: LiveTipSlide[] = [];
+  const seen = new Set<string>();
+  const pushUnique = (s: LiveTipSlide) => {
+    if (!s?.id || seen.has(s.id)) return;
+    seen.add(s.id);
+    picked.push(s);
+  };
+
+  // 1) changelog (max 2)
+  for (const s of ch.slice(0, 2)) pushUnique(s);
+
+  // 2) feed (max 4)
+  for (const s of feed.slice(0, 4)) pushUnique(s);
+
+  // 3) context (max 6)
+  for (const s of ctx.slice(0, 6)) pushUnique(s);
+
+  // 4) fallback si pas assez
+  for (const s of fallback) {
+    if (picked.length >= 8) break;
+    pushUnique(s);
+  }
+
+  // ordre vivant stable / jour
+  const dayKey = getTodayKey();
+  const seed = `${String(profile?.id ?? "anon")}::homeTips::${dayKey}`;
+
+  const withWeights = [...picked].sort(
+    (a, b) => Number(b.weight ?? 0) - Number(a.weight ?? 0)
+  );
+
+  const head = withWeights.slice(0, 2);
+  const tail = deterministicShuffle(withWeights.slice(2), seed);
+
+  return [...head, ...tail];
 }
 
 /* ============================================================
@@ -1651,6 +2073,46 @@ export default function Home({ store, go }: Props) {
   const [tipIndex, setTipIndex] = useState(0);
   const [tipTouchStartX, setTipTouchStartX] = useState<number | null>(null);
 
+    // ------------------------------------------------------------
+  // ✅ LIVE CONTENT : feed + changelog depuis /public/content/*.json
+  // ------------------------------------------------------------
+  const [homeFeedItems, setHomeFeedItems] = useState<HomeFeedItem[]>([]);
+  const [changelogEntries, setChangelogEntries] = useState<ChangelogEntry[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const dayKey = getTodayKey();
+    const bust = `v=${encodeURIComponent(dayKey)}`;
+
+    (async () => {
+      const feed = await safeFetchJson<{ version?: number; items?: HomeFeedItem[] }>(
+        `/content/home_feed.json?${bust}`
+      );
+      const ch = await safeFetchJson<{ version?: number; entries?: ChangelogEntry[] }>(
+        `/content/changelog.json?${bust}`
+      );
+
+      if (cancelled) return;
+
+      setHomeFeedItems(Array.isArray(feed?.items) ? feed!.items! : []);
+      setChangelogEntries(Array.isArray(ch?.entries) ? ch!.entries! : []);
+
+      try {
+        console.log(
+          "[HomeContent] feed=",
+          Array.isArray(feed?.items) ? feed!.items!.length : 0,
+          "changelog=",
+          Array.isArray(ch?.entries) ? ch!.entries!.length : 0
+        );
+      } catch {}
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -1756,7 +2218,15 @@ export default function Home({ store, go }: Props) {
   ? pickStatsBackgroundForTicker(currentTicker.id, `${statsSeed}::stats-card`)
   : "";
 
-  const tipSlides = useMemo(() => buildTipSlides(t), [t]);
+  const tipSlides = useMemo(() => {
+    return buildLiveTipSlides({
+      t,
+      profile: activeProfile,
+      stats,
+      feedItems: homeFeedItems,
+      changelogEntries,
+    });
+  }, [t, activeProfile?.id, stats, homeFeedItems, changelogEntries]);
 
   useEffect(() => {
     if (!tipSlides.length) {
@@ -1774,13 +2244,29 @@ export default function Home({ store, go }: Props) {
     return () => window.clearInterval(id);
   }, [tipSlides.length]);
 
-  const currentTip: TipSlide | null =
-    tipSlides.length > 0
-      ? tipSlides[Math.min(tipIndex, tipSlides.length - 1)]
-      : null;
+  const currentTip: LiveTipSlide | null =
+  tipSlides.length > 0
+    ? tipSlides[Math.min(tipIndex, tipSlides.length - 1)]
+    : null;
+
+// ============================================================
+// ✅ NEW BADGE — marquer le slide comme "vu" dès qu’il s’affiche
+// - micro-délai pour éviter le spam au mount / rerender
+// ============================================================
+React.useEffect(() => {
+  if (!currentTip?.id) return;
+
+  const timeoutId = window.setTimeout(() => {
+    markSlideSeen(currentTip.id);
+  }, 400);
+
+  return () => {
+    window.clearTimeout(timeoutId);
+  };
+}, [currentTip?.id]);
 
   // ✅ image qui change à chaque slide (varie avec tipIndex)
-  const tipBgKey = (currentTip?.backgroundImage || "tip") as keyof typeof TICKER_IMAGES;
+  const tipBgKey = (currentTip?.imageKey || "tip") as keyof typeof TICKER_IMAGES;
   const tipBgSeed = `${activeProfile?.id ?? "anon"}::tipIndex:${tipIndex}::${currentTip?.id ?? "none"}`;
 
   const currentTipBackgroundImage =
@@ -1826,7 +2312,7 @@ export default function Home({ store, go }: Props) {
     >
       <div style={{ width: "100%", maxWidth: PAGE_MAX_WIDTH }}>
         <style dangerouslySetInnerHTML={{ __html: homeHeaderCss }} />
-
+  
         {/* Haut de page */}
         <div
           style={{
@@ -1865,7 +2351,7 @@ export default function Home({ store, go }: Props) {
               {t("home.welcome", "Bienvenue")}
             </span>
           </div>
-
+  
           <div
             style={{
               fontSize: 32,
@@ -1884,7 +2370,7 @@ export default function Home({ store, go }: Props) {
             DARTS COUNTER
           </div>
         </div>
-
+  
         {/* Carte joueur actif */}
         {activeProfile && (
           <ActiveProfileCard
@@ -1893,10 +2379,10 @@ export default function Home({ store, go }: Props) {
             status={onlineStatusForUi}
           />
         )}
-
+  
         {/* Petit bandeau arcade (auto-slide interne) */}
         <ArcadeTicker
-          items={tickerItems}                 // ✅ IMPORTANT
+          items={tickerItems} // ✅ IMPORTANT
           activeIndex={tickerIndex}
           intervalMs={DETAIL_INTERVAL_MS}
           onIndexChange={(index: number) => {
@@ -1910,7 +2396,7 @@ export default function Home({ store, go }: Props) {
             setTickerIndex(safe);
           }}
         />
-
+  
         {/* Bloc détail du ticker : 2 mini-cards côte à côte */}
         {currentTicker && (
           <div
@@ -1981,7 +2467,7 @@ export default function Home({ store, go }: Props) {
                   >
                     {statsText}
                   </div>
-
+  
                   {hasDetailStats && (
                     <div
                       style={{
@@ -2004,7 +2490,7 @@ export default function Home({ store, go }: Props) {
                   )}
                 </div>
               </div>
-
+  
               {/* --------- Card droite : ASTUCE / PUB / NOUVEAUTÉ (mini-carousel) --------- */}
               <div
                 style={{
@@ -2015,8 +2501,8 @@ export default function Home({ store, go }: Props) {
                   minHeight: 96,
                   backgroundColor: "#05060C",
                   backgroundImage: currentTipBackgroundImage
-                  ? `url("${currentTipBackgroundImage}")`
-                  : undefined,
+                    ? `url("${currentTipBackgroundImage}")`
+                    : undefined,
                   backgroundSize: "cover",
                   backgroundPosition: "center",
                 }}
@@ -2044,22 +2530,41 @@ export default function Home({ store, go }: Props) {
                   }}
                 >
                   <div>
+                    {/* ✅ Titre + badge NEW */}
                     <div
                       style={{
-                        fontSize: 10,
-                        fontWeight: 800,
-                        letterSpacing: 0.8,
-                        textTransform: "uppercase",
-                        color: theme.accent1 ?? "#FFD980",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 8,
                         marginBottom: 3,
                       }}
                     >
-                      {currentTip?.title ??
-                        t(
-                          "home.detail.tip.title",
-                          "Astuce, pub & nouveautés du moment"
-                        )}
+                      <div
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 800,
+                          letterSpacing: 0.8,
+                          textTransform: "uppercase",
+                          color: theme.accent1 ?? "#FFD980",
+                          lineHeight: 1.2,
+                          flex: 1,
+                          minWidth: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {currentTip?.title ??
+                          t(
+                            "home.detail.tip.title",
+                            "Astuce, pub & nouveautés du moment"
+                          )}
+                      </div>
+  
+                      {shouldShowNewBadge(currentTip) && <BadgeNew theme={theme} />}
                     </div>
+  
                     <div
                       style={{
                         fontSize: 11,
@@ -2079,7 +2584,7 @@ export default function Home({ store, go }: Props) {
             </div>
           </div>
         )}
-
+  
         {/* Gros boutons de navigation */}
         <div
           style={{
@@ -2095,28 +2600,28 @@ export default function Home({ store, go }: Props) {
             icon="user"
             onClick={() => go("profiles")}
           />
-
+  
           <HomeBigButton
             label={t("home.nav.local", "Local")}
             subtitle={t("home.nav.local.desc", "Joue en présentiel sur cette cible")}
             icon="target"
             onClick={() => go("games")}
           />
-
+  
           <HomeBigButton
             label={t("home.nav.online", "Online")}
             subtitle={t("home.nav.online.desc", "Matchs à distance avec tes amis")}
             icon="globe"
             onClick={() => go("friends")}
           />
-
+  
           <HomeBigButton
             label={t("home.nav.stats", "Stats")}
             subtitle={t("home.nav.stats.desc", "Dashboards, courbes, historique")}
             icon="stats"
             onClick={() => go("stats")}
           />
-
+  
           <HomeBigButton
             label={t("home.nav.settings", "Réglages")}
             subtitle={t("home.nav.settings.desc", "Thèmes, langue, reset complet")}
@@ -2126,7 +2631,7 @@ export default function Home({ store, go }: Props) {
         </div>
       </div>
     </div>
-  );
+  );  
 }
 
 /* ============================================================
