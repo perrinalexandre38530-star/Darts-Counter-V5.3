@@ -7,6 +7,7 @@
 // ✅ FIX PRIORITY : Supabase avatarUrl > legacy avatarDataUrl (base64)
 // ✅ FIX PERF : ignore base64 énorme (évite RAM + latence)
 // ✅ CLEAN : suppression logs/DEBUG + pas de cercle rouge
+// ✅ NEW GLOBAL FIX : si profile "lite" (id/name) => auto-resolve via loadStore() (sans modifier tous les setups)
 // ============================================
 
 import React from "react";
@@ -16,6 +17,7 @@ import {
   getFavoriteDartSetForProfile,
   getDartSetsForProfile,
 } from "../lib/dartSetsStore";
+import { loadStore } from "../lib/storage";
 
 type ProfileLike = {
   id?: string;
@@ -23,6 +25,7 @@ type ProfileLike = {
   avatarDataUrl?: string | null;
   avatarUrl?: string | null;
   avatarPath?: string | null;
+  avatarUpdatedAt?: number | null; // (optionnel) si tu l’utilises ailleurs
   stats?: { avg3D?: number | null; avg3?: number | null } | null;
 };
 
@@ -74,12 +77,112 @@ function normalizeSrc(raw: any): string | null {
   return null;
 }
 
+/* ============================================================
+   ✅ GLOBAL PROFILE RESOLVER (1 seul endroit)
+   - Cache Map id -> ProfileLike (pour éviter 100 appels)
+   - loadStore() une seule fois (promise partagée)
+============================================================ */
+let _storePromise: Promise<any | null> | null = null;
+let _profilesCache: Map<string, ProfileLike> | null = null;
+
+async function getProfileByIdFromStore(profileId: string): Promise<ProfileLike | null> {
+  try {
+    if (_profilesCache?.has(profileId)) return _profilesCache.get(profileId) || null;
+
+    if (!_storePromise) _storePromise = loadStore<any>();
+    const store = await _storePromise;
+    if (!store) return null;
+
+    const arr: any[] = Array.isArray(store.profiles) ? store.profiles : [];
+    const map = new Map<string, ProfileLike>();
+
+    for (const pr of arr) {
+      const id = pr?.id;
+      if (!id) continue;
+      // on ne garde que ce qui est utile ici (léger)
+      map.set(String(id), {
+        id: String(id),
+        name: pr?.name,
+        avatarUrl: pr?.avatarUrl ?? null,
+        avatarDataUrl: pr?.avatarDataUrl ?? null,
+        avatarPath: pr?.avatarPath ?? null,
+        avatarUpdatedAt: (pr as any)?.avatarUpdatedAt ?? null,
+        stats: pr?.stats ?? null,
+      });
+    }
+
+    _profilesCache = map;
+    return map.get(profileId) || null;
+  } catch {
+    return null;
+  }
+}
+
+function isLiteProfile(p: ProfileLike | null): boolean {
+  if (!p?.id) return false;
+  const hasAny =
+    (p.avatarUrl && String(p.avatarUrl).trim()) ||
+    (p.avatarDataUrl && String(p.avatarDataUrl).trim()) ||
+    (p.avatarPath && String(p.avatarPath).trim());
+  return !hasAny;
+}
+
 export default function ProfileAvatar(props: Props) {
   const size = props.size ?? 56;
   const showStars = props.showStars ?? true;
   const showDartOverlay = props.showDartOverlay === true;
 
-  const p: ProfileLike | null = ("profile" in props ? props.profile : null) ?? null;
+  const inputProfile: ProfileLike | null =
+    ("profile" in props ? props.profile : null) ?? null;
+
+  // ✅ NEW: profil résolu (si on reçoit un profil "lite")
+  const [resolvedProfile, setResolvedProfile] = React.useState<ProfileLike | null>(null);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    const run = async () => {
+      const p = inputProfile;
+      const id = p?.id ? String(p.id) : "";
+      if (!id) {
+        if (mounted) setResolvedProfile(null);
+        return;
+      }
+
+      // si déjà complet -> pas besoin
+      if (!isLiteProfile(p)) {
+        if (mounted) setResolvedProfile(null);
+        return;
+      }
+
+      const full = await getProfileByIdFromStore(id);
+      if (!mounted) return;
+
+      // merge safe: on ne remplace jamais un champ déjà présent dans inputProfile
+      if (full) {
+        setResolvedProfile({
+          ...full,
+          ...p,
+          avatarUrl: (p?.avatarUrl && String(p.avatarUrl).trim()) ? p.avatarUrl : full.avatarUrl,
+          avatarPath: (p?.avatarPath && String(p.avatarPath).trim()) ? p.avatarPath : full.avatarPath,
+          avatarDataUrl:
+            (p?.avatarDataUrl && String(p.avatarDataUrl).trim()) ? p.avatarDataUrl : full.avatarDataUrl,
+          stats: p?.stats ?? full.stats ?? null,
+          name: p?.name ?? full.name,
+        });
+      } else {
+        setResolvedProfile(null);
+      }
+    };
+
+    run();
+    return () => {
+      mounted = false;
+    };
+  }, [inputProfile?.id, inputProfile?.avatarUrl, inputProfile?.avatarPath, inputProfile?.avatarDataUrl]);
+
+  // le profil effectif (résolu si dispo)
+  const p: ProfileLike | null = resolvedProfile ?? inputProfile;
 
   const name = ("label" in props ? props.label : undefined) ?? p?.name ?? "P";
 
@@ -134,10 +237,14 @@ export default function ProfileAvatar(props: Props) {
     const normalized = normalizeSrc(rawImg);
     if (!normalized) return null;
 
-    // salt stable-ish (évite cache hard quand supabase met à jour l'image)
-    const salt = String(rawImg).slice(-24) || String(Date.now());
+    // ✅ salt plus stable si avatarUpdatedAt existe (sinon fallback)
+    const salt =
+      (p && typeof (p as any).avatarUpdatedAt === "number" && String((p as any).avatarUpdatedAt)) ||
+      String(rawImg).slice(-24) ||
+      String(Date.now());
+
     return withCacheBust(normalized, salt);
-  }, [rawImg]);
+  }, [rawImg, p]);
 
   const shouldShowImg = !!img && !imgBroken;
 
@@ -153,7 +260,7 @@ export default function ProfileAvatar(props: Props) {
     }
 
     try {
-      const all = getDartSetsForProfile(profileId) || [];
+      const all = getDartSetsForProfile(String(profileId)) || [];
 
       if (props.dartSetId) {
         const forced = all.find((s) => s.id === props.dartSetId);
@@ -163,7 +270,7 @@ export default function ProfileAvatar(props: Props) {
         }
       }
 
-      const fav = getFavoriteDartSetForProfile(profileId);
+      const fav = getFavoriteDartSetForProfile(String(profileId));
       if (fav) {
         setDartSet(fav);
         return;
