@@ -128,6 +128,53 @@ import { AuthOnlineProvider, useAuthOnline } from "./hooks/useAuthOnline";
 import { installHistoryProbe } from "./dev/devHistoryProbe";
 if (import.meta.env.DEV) installHistoryProbe();
 
+// =============================================================
+// ✅ SAFE MERGE — profils (évite crash au boot)
+// - merge liste existante + liste réhydratée
+// - dédoublonnage par id
+// - préfère les champs "nouveaux" s’ils sont définis
+// =============================================================
+function mergeProfilesSafe<T extends { id: string }>(base: T[], incoming: T[]) {
+  const a = Array.isArray(base) ? base : [];
+  const b = Array.isArray(incoming) ? incoming : [];
+
+  const map = new Map<string, T>();
+
+  for (const p of a) {
+    if (p?.id) map.set(p.id, p);
+  }
+
+  for (const p of b) {
+    if (!p?.id) continue;
+
+    const prev = map.get(p.id);
+
+    if (!prev) {
+      map.set(p.id, p);
+      continue;
+    }
+
+    map.set(p.id, {
+      ...prev,
+      ...p,
+
+      // 🔒 AVATAR LOCK
+      avatarDataUrl:
+        p.avatarDataUrl !== undefined ? p.avatarDataUrl : (prev as any).avatarDataUrl,
+
+      avatarUrl:
+        p.avatarUrl !== undefined ? p.avatarUrl : (prev as any).avatarUrl,
+
+      avatarUpdatedAt:
+        p.avatarUpdatedAt !== undefined
+          ? p.avatarUpdatedAt
+          : (prev as any).avatarUpdatedAt,
+    });
+  }
+
+  return Array.from(map.values());
+}
+
 /* --- helpers --- */
 function withAvatars(rec: any, profiles: any[]) {
   const get = (arr: any[]) =>
@@ -154,22 +201,47 @@ function withAvatars(rec: any, profiles: any[]) {
    ✅ FIX AVATAR (anti overwrite par undefined)
    - Merge défensif : ne remplace JAMAIS les champs avatar par undefined
 ============================================================ */
-function mergeProfilesSafe(prev: Profile[], next: Profile[]): Profile[] {
-  const map = new Map((prev || []).map((p: any) => [p?.id, p]));
-  return (next || []).map((p: any) => {
-    const old = map.get(p?.id);
-    if (!old) return p;
+function buildChangelogSlides(
+  t: (k: string, d?: string) => string,
+  entries: ChangelogEntry[]
+): LiveTipSlide[] {
+  const list = Array.isArray(entries) ? entries : [];
+  if (!list.length) return [];
+
+  const sorted = [...list].sort((a, b) => {
+    const ta = safeParseDateStr(a.date ?? "") ?? 0;
+    const tb = safeParseDateStr(b.date ?? "") ?? 0;
+    return tb - ta;
+  });
+
+  return sorted.slice(0, 3).map((e, idx) => {
+    const bullets = Array.isArray(e.bullets) ? e.bullets.filter(Boolean) : [];
+    const text =
+      bullets.length > 0
+        ? bullets.slice(0, 4).map((x) => `• ${x}`).join("\n")
+        : t("home.changelog.empty", "Améliorations et correctifs divers.");
+
+    const dateStr = String(e.date ?? "").trim();
+    const title = dateStr
+      ? `${t("home.changelog.title", "Patch notes")} — ${dateStr}`
+      : t("home.changelog.title", "Patch notes");
+
     return {
-      ...old,
-      ...p,
-      // 🔒 champs JAMAIS écrasés par undefined
-      avatarUrl: p?.avatarUrl ?? (old as any)?.avatarUrl,
-      avatarDataUrl: p?.avatarDataUrl ?? (old as any)?.avatarDataUrl,
-      avatarPath: (p as any)?.avatarPath ?? (old as any)?.avatarPath,
-      avatarUpdatedAt: (p as any)?.avatarUpdatedAt ?? (old as any)?.avatarUpdatedAt,
-    };
+      id: `changelog-${e.id ?? idx}`,
+      kind: "news",
+      title,
+      text: `${String(e.title ?? "").trim()}\n${text}`.trim(),
+      imageKey: "tipNews",
+      weight: 9 - idx,
+
+      // ✅ TEST IMMÉDIAT : badge visible
+      hot: true,
+      forceNew: true,
+      version: 1,
+    } as LiveTipSlide;
   });
 }
+
 
 /* ============================================================
    ✅ NEW: sanitizeStoreForCloud (anti base64 dans snapshot cloud)
@@ -938,35 +1010,53 @@ function App() {
         const cloudStore = (snap as any)?.payload?.store;
 
         // ✅ snapshot présent -> hydrate local depuis cloud
-        if (cloudStore && typeof cloudStore === "object") {
-          const next: Store = {
-            ...initialStore,
-            ...(cloudStore as any),
-            profiles: (cloudStore as any).profiles ?? [],
-            friends: (cloudStore as any).friends ?? [],
-            history: (cloudStore as any).history ?? [],
-          };
+if (cloudStore && typeof cloudStore === "object") {
+  const next: Store = {
+    ...initialStore,
+    ...(cloudStore as any),
+    profiles: (cloudStore as any).profiles ?? [],
+    friends: (cloudStore as any).friends ?? [],
+    history: (cloudStore as any).history ?? [],
+  };
 
-          if (!cancelled) {
-            // ✅ FIX: merge défensif des profils (cloud peut être partiel)
-            setStore((prev) => ({
-              ...next,
-              profiles: mergeProfilesSafe(prev.profiles ?? [], next.profiles ?? []),
-            }));
-            try {
-              await saveStore(next);
-            } catch {}
-          }
-        } else {
-          // ✅ pas de snapshot -> seed depuis local
-          const payload = {
-            kind: "dc_store_snapshot_v1",
-            createdAt: new Date().toISOString(),
-            app: "darts-counter-v5",
-            store: sanitizeStoreForCloud(store), // ✅ CHANGED (ne pousse pas les data:)
-          };
-          await onlineApi.pushStoreSnapshot(payload);
-        }
+  if (!cancelled) {
+    // ✅ MERGE EN MÉMOIRE
+    let mergedStore: Store | null = null;
+
+    setStore((prev) => {
+      const mergedProfiles = mergeProfilesSafe(
+        prev.profiles ?? [],
+        next.profiles ?? []
+      );
+
+      mergedStore = {
+        ...next,
+        profiles: mergedProfiles,
+        // garde un activeProfileId valide si le cloud est vide/partiel
+        activeProfileId:
+          next.activeProfileId ??
+          prev.activeProfileId ??
+          (mergedProfiles[0]?.id ?? null),
+      };
+
+      return mergedStore!;
+    });
+
+    // ✅ ET SURTOUT : on persiste LE STORE MERGÉ (pas "next")
+    try {
+      if (mergedStore) await saveStore(mergedStore);
+    } catch {}
+  }
+} else {
+  // ✅ pas de snapshot -> seed depuis local
+  const payload = {
+    kind: "dc_store_snapshot_v1",
+    createdAt: new Date().toISOString(),
+    app: "darts-counter-v5",
+    store: sanitizeStoreForCloud(store),
+  };
+  await onlineApi.pushStoreSnapshot(payload);
+}
       } catch (e) {
         console.warn("[cloud] hydrate error", e);
       } finally {

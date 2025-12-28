@@ -327,17 +327,37 @@ function detectKindMode(rec: any, decoded: any | null) {
 function detectStatus(rec: any, decoded: any | null): "finished" | "in_progress" {
   const raw = safeLower(rec?.status || "");
   if (raw === "finished") return "finished";
+  if (raw === "inprogress" || raw === "in_progress") return "in_progress";
 
+  // On décide "finished" seulement sur des marqueurs solides
   const s = rec?.summary || rec?.payload?.summary || {};
+  const winnerId =
+    rec?.winnerId ||
+    s?.winnerId ||
+    s?.result?.winnerId ||
+    rec?.payload?.winnerId ||
+    null;
+
+  if (winnerId) return "finished";
+
+  // certains moteurs stockent rankings ou finished explicitement
   if (s?.finished === true) return "finished";
   if (s?.result?.finished === true) return "finished";
-  if (s?.winnerId || s?.result?.winnerId) return "finished";
   if (Array.isArray(s?.rankings) && s.rankings.length) return "finished";
 
+  // decoded payload : même logique (pas "summary existe" => finished)
   const d = decoded || {};
-  if (d?.summary || d?.result || d?.stats) return "finished";
+  const dw =
+    d?.winnerId ||
+    d?.summary?.winnerId ||
+    d?.result?.winnerId ||
+    null;
 
-  if (raw === "inprogress" || raw === "in_progress") return "in_progress";
+  if (dw) return "finished";
+  if (d?.summary?.finished === true) return "finished";
+  if (d?.result?.finished === true) return "finished";
+  if (Array.isArray(d?.rankings) && d.rankings.length) return "finished";
+
   return "in_progress";
 }
 
@@ -570,12 +590,22 @@ function extractX01PlayerStatsFromMatch(m: NormalizedMatch, profileId: string) {
   let dbull = N(pstat.dbull, 0);
 
   const pv = (m.raw as any)?.payload?.visits;
-  if ((!bestVisit || !bestCheckout || !avg3) && Array.isArray(pv)) {
+  if (Array.isArray(pv)) {
     let darts2 = 0;
     let scored2 = 0;
+    let visits2 = 0;
+
+    let bestVisit2 = 0;
+    let bestCheckout2 = 0;
+
+    let h60_2 = 0, h100_2 = 0, h140_2 = 0, h180_2 = 0;
+    let bust2 = 0, miss2 = 0, doubles2 = 0, triples2 = 0, bulls2 = 0, dbull2 = 0;
 
     for (const v of pv) {
       if (String(v?.p) !== pid) continue;
+
+      visits2 += 1;
+
       const segs = Array.isArray(v.segments) ? v.segments : [];
       darts2 += segs.length || 0;
 
@@ -583,38 +613,64 @@ function extractX01PlayerStatsFromMatch(m: NormalizedMatch, profileId: string) {
       scored2 += sc;
 
       if (!v.bust) {
-        if (sc > bestVisit) bestVisit = sc;
-        if (v.isCheckout && sc > bestCheckout) bestCheckout = sc;
+        if (sc > bestVisit2) bestVisit2 = sc;
+        if (v.isCheckout && sc > bestCheckout2) bestCheckout2 = sc;
       }
 
-      if (sc >= 60) h60 += 1;
-      if (sc >= 100) h100 += 1;
-      if (sc >= 140) h140 += 1;
-      if (sc === 180) h180 += 1;
+      if (sc >= 60) h60_2 += 1;
+      if (sc >= 100) h100_2 += 1;
+      if (sc >= 140) h140_2 += 1;
+      if (sc === 180) h180_2 += 1;
 
-      bust += v.bust ? 1 : 0;
-      for (const s of segs) {
-        if ((s?.v || 0) === 0) miss += 1;
-        if (s?.mult === 2) doubles += 1;
-        if (s?.mult === 3) triples += 1;
-        if (s?.v === 25) bulls += s?.mult === 2 ? 1 : 0.5;
-        if (s?.v === 25 && s?.mult === 2) dbull += 1;
+      bust2 += v.bust ? 1 : 0;
+
+      for (const s2 of segs) {
+        const vv = N(s2?.v, 0);
+        const mm = N(s2?.mult, 1);
+        if (vv === 0) miss2 += 1;
+        if (mm === 2) doubles2 += 1;
+        if (mm === 3) triples2 += 1;
+        if (vv === 25) bulls2 += mm === 2 ? 1 : 0.5;
+        if (vv === 25 && mm === 2) dbull2 += 1;
       }
     }
 
+    // ✅ si perPlayer est vide ou incomplet, on complète depuis visits
     if (!darts && darts2) {
-      // on n'écrase pas darts si perPlayer l'avait
-      // mais si perPlayer est vide, on s'en sert
+      // darts manquants -> on prend
+      (darts as any) = darts2;
     }
-    if ((!avg3 || avg3 === 0) && darts2 > 0) {
-      // avg3 depuis visits
-      // (ne pas dépendre de "points" approximatif)
+    if (!points && scored2) {
+      (points as any) = scored2;
     }
+    if ((!avg3 || avg3 === 0) && (darts || darts2) > 0) {
+      const dd = darts || darts2;
+      const pp = points || scored2;
+      (avg3 as any) = dd > 0 ? (pp / dd) * 3 : 0;
+    }
+
+    if (!bestVisit) bestVisit = bestVisit2;
+    if (!bestCheckout) bestCheckout = bestCheckout2;
+
+    // si ces compteurs étaient absents en summary, on les récup
+    if (!h60 && h60_2) h60 = h60_2;
+    if (!h100 && h100_2) h100 = h100_2;
+    if (!h140 && h140_2) h140 = h140_2;
+    if (!h180 && h180_2) h180 = h180_2;
+
+    if (!bust && bust2) bust = bust2;
+    if (!miss && miss2) miss = miss2;
+    if (!doubles && doubles2) doubles = doubles2;
+    if (!triples && triples2) triples = triples2;
+    if (!bulls && bulls2) bulls = bulls2;
+    if (!dbull && dbull2) dbull = dbull2;
+
+    // visits n’existe pas dans ton return ici, mais tu peux l’ajouter plus tard si besoin
   }
 
-  const finalDarts = darts;
-  const finalAvg3 = avg3;
-  const finalPoints = points;
+  const finalDarts = N(darts, 0);
+  const finalPoints = N(points, 0);
+  const finalAvg3 = N(avg3, 0);
 
   return {
     darts: finalDarts,
@@ -828,13 +884,26 @@ export async function getCricketProfileStats2(profileId: string, range: RangeKey
   return aggregateCricketProfileStats(legs, { maxHistoryItems: 30 });
 }
 
-export async function getKillerProfileStats(profileId: string, range: RangeKey = "all", source: SourceKey = "all"): Promise<KillerProfileStats> {
-  const empty: KillerProfileStats = { matches: 0, wins: 0, winRate: 0, kills: 0, hitsTotal: 0, lastMatchAt: undefined };
+export async function getKillerProfileStats(
+  profileId: string,
+  range: RangeKey = "all",
+  source: SourceKey = "all"
+): Promise<KillerProfileStats> {
+  const empty: KillerProfileStats = {
+    matches: 0,
+    wins: 0,
+    winRate: 0,
+    kills: 0,
+    hitsTotal: 0,
+    lastMatchAt: undefined,
+  };
   if (!profileId) return empty;
 
   const idx = await buildStatsIndex(false);
   const mine = idx.byProfile[String(profileId)] || [];
-  const rows = applyFilters(mine, range, source).filter((m) => m.kind === "killer" || m.mode === "killer");
+  const rows = applyFilters(mine, range, source).filter(
+    (m) => m.kind === "killer" || m.mode === "killer"
+  );
 
   let matches = 0;
   let wins = 0;
@@ -842,29 +911,74 @@ export async function getKillerProfileStats(profileId: string, range: RangeKey =
   let hitsTotal = 0;
   let lastMatchAt = 0;
 
+  const pid = String(profileId);
+
+  const readFromSummary = (sum: any) => {
+    if (!sum) return;
+
+    // ✅ Ton format KillerPlay: summary.perPlayer[] / summary.detailedByPlayer
+    const per = Array.isArray(sum?.perPlayer) ? sum.perPlayer : [];
+    const pp =
+      per.find((x: any) => String(x?.playerId || x?.profileId || x?.id || "") === pid) ||
+      null;
+
+    if (pp) {
+      kills += N(pp.kills, 0);
+
+      // "hitsTotal" best-effort : killerHits + hitsOnSelf (ou offensiveThrows si tu préfères)
+      const ht =
+        N(pp.killerHits, 0) +
+        N(pp.hitsOnSelf, 0);
+
+      if (ht) hitsTotal += ht;
+      else hitsTotal += N(pp.totalThrows, 0); // fallback
+      return;
+    }
+
+    const det = sum?.detailedByPlayer?.[pid];
+    if (det) {
+      kills += N(det.kills, 0);
+      const ht2 = N(det.killerHits, 0) + N(det.hitsOnSelf, 0);
+      if (ht2) hitsTotal += ht2;
+      else hitsTotal += N(det.totalThrows, 0);
+      return;
+    }
+
+    // ✅ fallback ultra-legacy si un jour tu ajoutes des maps killsByPlayer
+    kills += N(sum?.killsByPlayer?.[pid] ?? sum?.kills?.[pid] ?? 0, 0);
+    hitsTotal += N(sum?.hitsByPlayer?.[pid] ?? sum?.hitsTotalByPlayer?.[pid] ?? 0, 0);
+  };
+
   for (const m of rows) {
     if (m.status !== "finished") continue;
 
     matches += 1;
-    if (m.winnerId && String(m.winnerId) === String(profileId)) wins += 1;
+    if (m.winnerId && String(m.winnerId) === pid) wins += 1;
     lastMatchAt = Math.max(lastMatchAt, m.updatedAt || m.createdAt || 0);
 
-    // tolérant : summary.killsByPlayer / summary.hitsByPlayer / payloadObj.stats...
-    const s: any = m.summary || {};
-    const pid = String(profileId);
+    readFromSummary(m.summary);
 
-    kills += N(s?.killsByPlayer?.[pid] ?? s?.kills?.[pid] ?? 0, 0);
-    hitsTotal += N(s?.hitsByPlayer?.[pid] ?? s?.hitsTotalByPlayer?.[pid] ?? 0, 0);
-
+    // payloadObj éventuel (payload string décodé)
     const d = m.payloadObj || null;
-    if (d) {
-      kills += N(d?.summary?.killsByPlayer?.[pid] ?? 0, 0);
-      hitsTotal += N(d?.summary?.hitsByPlayer?.[pid] ?? 0, 0);
+    if (d) readFromSummary(d?.summary || d?.result || d?.stats || null);
+
+    // payload objet direct (si présent)
+    const rawPayload = (m.raw as any)?.payload;
+    if (rawPayload && typeof rawPayload === "object") {
+      readFromSummary(rawPayload?.summary || null);
     }
   }
 
   const winRate = matches > 0 ? Math.round((wins / matches) * 100) : 0;
-  return { matches, wins, winRate, kills, hitsTotal, lastMatchAt: lastMatchAt || undefined };
+
+  return {
+    matches,
+    wins,
+    winRate,
+    kills,
+    hitsTotal,
+    lastMatchAt: lastMatchAt || undefined,
+  };
 }
 
 export async function getShanghaiProfileStats(profileId: string, range: RangeKey = "all", source: SourceKey = "all"): Promise<ShanghaiProfileStats> {

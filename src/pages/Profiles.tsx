@@ -21,10 +21,13 @@ import type { ThemeId } from "../theme/themePresets";
 
 import { sha256 } from "../lib/crypto";
 import DartSetsPanel from "../components/DartSetsPanel";
+import { saveStore } from "../lib/storage";
 
 // 🔥 nouveau : bloc préférences joueur
 import PlayerPrefsBlock from "../components/profile/PlayerPrefsBlock";
 import OnlineProfileForm from "../components/OnlineProfileForm";
+
+import { getAvatarCache as getAvatarCacheLib } from "../lib/avatarCache";
 
 // Effet "shimmer" du nom joueur (copié de StatsHub)
 const statsNameCss = `
@@ -277,6 +280,32 @@ function DebugAvatar({
 }
 
 // ============================================
+// ✅ PROFILES CACHE (anti wipe store)
+// - sauve la liste de profils en localStorage
+// - réhydrate si un "loadStore" écrase profiles=[]
+// ============================================
+const PROFILES_CACHE_KEY = "dc-profiles-cache-v1";
+
+function readProfilesCache(): Profile[] {
+  try {
+    const raw = localStorage.getItem(PROFILES_CACHE_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? (arr as Profile[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeProfilesCache(profiles: Profile[]) {
+  try {
+    localStorage.setItem(PROFILES_CACHE_KEY, JSON.stringify(profiles || []));
+  } catch {
+    // ignore
+  }
+}
+
+
+// ============================================
 // ✅ AVATAR CACHE (anti overwrite store)
 // - sauve avatarDataUrl / avatarUrl / avatarPath / avatarUpdatedAt
 // - réhydrate si le store revient avec avatar vide
@@ -320,17 +349,25 @@ function getAvatarCache(profileId: string | null | undefined): AvatarCacheEntry 
   return all[profileId] || null;
 }
 
-
 // ============================================
-// ✅ MERGE SAFE PROFILES (anti overwrite avatar)
+// ✅ MERGE SAFE PROFILES (anti overwrite + anti "wipe")
 // - protège avatarUrl/avatarDataUrl/avatarPath/avatarUpdatedAt
-// - empêche qu’un store "partiel" écrase ces champs avec undefined
+// - empêche qu’un store "partiel" (ex: []) wipe les profils
+// - MAIS permet la suppression quand allowRemoval=true
 // ============================================
-function mergeProfilesSafe(prev: Profile[], next: Profile[]): Profile[] {
-  const byId = new Map(prev.map((p) => [p.id, p] as const));
+function mergeProfilesSafe(
+  prev: Profile[],
+  next: Profile[],
+  opts?: { allowRemoval?: boolean }
+): Profile[] {
+  const allowRemoval = !!opts?.allowRemoval;
 
-  return next.map((p) => {
-    const old = byId.get(p.id);
+  const prevById = new Map(prev.map((p) => [p.id, p] as const));
+  const nextById = new Map(next.map((p) => [p.id, p] as const));
+
+  // 1) On part de NEXT (ordre conservé)
+  const merged: Profile[] = next.map((p) => {
+    const old = prevById.get(p.id);
     if (!old) return p;
 
     return {
@@ -343,6 +380,24 @@ function mergeProfilesSafe(prev: Profile[], next: Profile[]): Profile[] {
       avatarUpdatedAt: (p as any).avatarUpdatedAt ?? (old as any).avatarUpdatedAt,
     };
   });
+
+  // 2) Anti-wipe : si NEXT oublie des profils (réhydratation partielle)
+  //    on les conserve depuis PREV (sauf si suppression volontaire)
+  if (!allowRemoval) {
+    for (const p of prev) {
+      if (!nextById.has(p.id)) {
+        merged.push(p);
+      }
+    }
+  }
+
+  // 3) Petit garde-fou : si next est vide mais prev non vide, on garde prev
+  //    (ça évite le cas "flash puis disparition" à cause d’un reset)
+  if (!allowRemoval && next.length === 0 && prev.length > 0) {
+    return prev;
+  }
+
+  return merged;
 }
 
 // ============================================
@@ -401,17 +456,66 @@ export default function Profiles({
     selfStatus = "online",
   } = store;
 
+    // ✅ Anti-wipe global : si un rehydrate remet profiles=[] après ajout,
+  // on restaure depuis un cache local.
+  React.useEffect(() => {
+    if (profiles.length > 0) {
+      writeProfilesCache(profiles);
+      return;
+    }
+
+    const cached = readProfilesCache();
+    if (!cached || cached.length === 0) return;
+
+    console.warn("[Profiles] 🛟 PROFILES RESTORE from cache (anti-wipe)", {
+      cachedLen: cached.length,
+      cachedIds: cached.map((p) => p.id),
+    });
+
+    // restaure uniquement si store est vide
+    setProfiles((prev) => {
+      if (prev && prev.length > 0) return prev;
+      return cached;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profiles.length]);
 
   // ============================================
-  // ✅ WRAPPER UNIQUE setProfilesSafe
-  // - applique ton update, puis merge avec l'état précédent
-  // - protège contre toute réhydratation partielle
+  // ✅ WRAPPERS SAFE (ANTI-WIPE)
+  // - setProfilesSafe : empêche qu’un “profiles=[]” écrase tout
+  // - setProfilesReplace : autorise la suppression volontaire (delete)
   // ============================================
   const setProfilesSafe = React.useCallback(
     (buildNext: (prev: Profile[]) => Profile[]) => {
       setProfiles((prev) => {
         const next = buildNext(prev);
-        return mergeProfilesSafe(prev, next);
+        const merged = mergeProfilesSafe(prev, next);
+  
+        console.log("[setProfilesSafe] prev -> next -> merged", {
+          prevLen: prev.length,
+          nextLen: next.length,
+          mergedLen: merged.length,
+          prevIds: prev.map((p) => p.id),
+          nextIds: next.map((p) => p.id),
+          mergedIds: merged.map((p) => p.id),
+        });
+
+        // ✅ keep cache in sync (anti flash)
+        writeProfilesCache(merged);
+  
+        return merged;
+      });
+    },
+    [setProfiles]
+  );
+
+  const setProfilesReplace = React.useCallback(
+    (buildNext: (prev: Profile[]) => Profile[]) => {
+      setProfiles((prev: Profile[]) => {
+        const next = buildNext(prev);
+        const merged = mergeProfilesSafe(prev, next, { allowRemoval: true });
+        writeProfilesCache(merged);
+        return merged;
       });
     },
     [setProfiles]
@@ -422,6 +526,14 @@ export default function Profiles({
   const { theme, themeId, setThemeId } = useTheme() as any;
   const { t, setLang, lang } = useLang();
   const auth = useAuthOnline();
+
+  React.useEffect(() => {
+    console.log("[Profiles] RENDER WATCH profiles=", profiles.length, {
+      activeProfileId,
+      ids: profiles.map((p) => p.id),
+    });
+  }, [profiles, activeProfileId]);
+
 
   // 🔥 Shimmer du nom "NINJA" (copie du Home)
   const primary = theme.primary ?? "#F6C256";
@@ -569,7 +681,7 @@ export default function Profiles({
     if (!ok) return;
   
     // 1) On supprime le profil dans le store
-    setProfilesSafe((arr) => arr.filter((p) => p.id !== id));
+    setProfilesReplace((arr) => arr.filter((p) => p.id !== id));
   
     if (store.activeProfileId === id) {
       setActiveProfile(null);
@@ -596,79 +708,169 @@ export default function Profiles({
     file?: File | null,
     privateInfo?: Partial<PrivateInfo>
   ) {
-    if (!name.trim()) return;
-    const url = file ? await read(file) : undefined;
-
-    const base: any = {
+    const cleanName = (name || "").trim();
+    if (!cleanName) return;
+  
+    const now = Date.now();
+    const avatarDataUrl = file ? await read(file) : null;
+  
+    const p: Profile = {
       id:
         globalThis.crypto && "randomUUID" in globalThis.crypto
           ? globalThis.crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      name: name.trim(),
-      avatarDataUrl: url,
+          : `${now}-${Math.random().toString(16).slice(2)}`,
+      name: cleanName,
+      avatarDataUrl,
+      avatarUpdatedAt: now,
+      privateInfo:
+        privateInfo && Object.keys(privateInfo).length ? { ...privateInfo } : undefined,
     };
-
-    if (privateInfo && Object.keys(privateInfo).length > 0) {
-      base.privateInfo = {
-        ...(base.privateInfo || {}),
-        ...privateInfo,
+  
+    // ✅ 1) Calcule un nextStore depuis la vraie source (s), PAS depuis "store" capturé
+    let nextStoreSnapshot: any = null;
+  
+    update((s: any) => {
+      const nextProfiles = Array.isArray(s?.profiles) ? [...s.profiles, p] : [p];
+  
+      const nextStore = {
+        ...s,
+        profiles: nextProfiles,
+        activeProfileId: s?.activeProfileId ?? p.id,
       };
+  
+      nextStoreSnapshot = nextStore;
+      return nextStore;
+    });
+  
+    // ✅ 2) Persistance : on sauvegarde LE snapshot qu’on vient de construire
+    if (nextStoreSnapshot) {
+      await saveStore(nextStoreSnapshot);
     }
-
-    const p: Profile = base;
-
-    setProfilesSafe((arr) => [...arr, p]);
-    update((s) => ({ ...s, activeProfileId: s.activeProfileId ?? p.id }));
+  
+    // ✅ 3) Si tu as un state local "profiles", mets-le juste pour l’UI (SANS saveStore ici)
+    setProfilesSafe?.((prev: any[]) => {
+      const arr = Array.isArray(prev) ? prev : [];
+      return [...arr, p];
+    });
+  
+    console.log("[Profiles] ✅ Profil local créé + persisté", p.id);
   }
-
+  
   const active = profiles.find((p) => p.id === activeProfileId) || null;
 
-  // ✅ Réhydratation anti-écrasement : si active revient sans avatar -> on remet depuis cache
+// ✅ AUTO-UPLOAD AVATAR : si connecté online et qu'on a encore un avatar en base64 (dataUrl)
+// => on pousse vers Supabase Storage pour obtenir avatarUrl (synchro cross-device)
 React.useEffect(() => {
-  if (!active?.id) return;
+  let cancelled = false;
 
-  const hasAny =
-    !!String((active as any)?.avatarUrl || "").trim() ||
-    !!String((active as any)?.avatarDataUrl || "").trim();
+  (async () => {
+    if (!active?.id) return;
+    if (auth.status !== "signed_in") return;
 
-  if (hasAny) return;
+    const hasUrl = !!String((active as any)?.avatarUrl || "").trim();
+    const dataUrl = String((active as any)?.avatarDataUrl || "").trim();
 
-  const cached = getAvatarCache(active.id);
-  if (!cached) return;
+    if (hasUrl) return;
+    if (!dataUrl.startsWith("data:image/")) return;
 
-  const cUrl = String(cached.avatarUrl || "").trim();
-  const cData = String(cached.avatarDataUrl || "").trim();
-  const cUpdated =
-    typeof cached.avatarUpdatedAt === "number" ? cached.avatarUpdatedAt : undefined;
+    try {
+      const { publicUrl } = await onlineApi.uploadAvatarImage({ dataUrl });
+      if (cancelled) return;
+      if (!publicUrl) return;
 
-  if (!cUrl && !cData) return;
+      const avatarPath = (() => {
+        const marker = "/storage/v1/object/public/avatars/";
+        const i = publicUrl.indexOf(marker);
+        return i === -1 ? undefined : publicUrl.slice(i + marker.length);
+      })();
 
-  console.warn("[Profiles] 🔁 rehydrate avatar from cache for", active.id, {
-    avatarUrl: !!cUrl,
-    avatarDataUrl: !!cData,
-    avatarUpdatedAt: cUpdated,
-  });
+      const now = Date.now();
 
-  setProfilesSafe((arr) =>
-    arr.map((p) =>
-      p.id === active.id
-        ? {
-            ...p,
-            // on ne force que ce qui manque
-            avatarUrl: (p as any).avatarUrl || (cUrl || undefined),
-            avatarDataUrl: (p as any).avatarDataUrl || (cData || undefined),
-            avatarPath: (p as any).avatarPath || (cached.avatarPath || undefined),
-            avatarUpdatedAt: (p as any).avatarUpdatedAt || cUpdated || Date.now(),
-          }
-        : p
-    )
-  );
+      // ✅ update profile local (ça sera ensuite push dans le snapshot cloud)
+      setProfilesSafe((arr) =>
+        arr.map((p) =>
+          p.id === active.id
+            ? {
+                ...p,
+                avatarUrl: publicUrl,
+                avatarPath,
+                avatarUpdatedAt: now,
+              }
+            : p
+        )
+      );
+
+      // ✅ met aussi ton cache anti-wipe si tu veux
+      try {
+        writeAvatarCache(active.id, {
+          avatarUrl: publicUrl,
+          avatarPath,
+          avatarUpdatedAt: now,
+        });
+      } catch {}
+    } catch (e) {
+      console.warn("[Profiles] auto-upload avatar failed", e);
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+  };
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [
   active?.id,
+  auth.status,
   (active as any)?.avatarUrl,
   (active as any)?.avatarDataUrl,
+  (active as any)?.avatarUpdatedAt,
 ]);
+  
+  // ✅ Réhydratation anti-écrasement : si active revient sans avatar -> on remet depuis cache
+  React.useEffect(() => {
+    if (!active?.id) return;
+  
+    const hasAny =
+      !!String((active as any)?.avatarUrl || "").trim() ||
+      !!String((active as any)?.avatarDataUrl || "").trim();
+  
+    if (hasAny) return;
+  
+    const cached = getAvatarCacheLib(active.id);
+    if (!cached) return;
+  
+    const cUrl = String(cached.avatarUrl || "").trim();
+    const cData = String(cached.avatarDataUrl || "").trim();
+    const cUpdated =
+      typeof cached.avatarUpdatedAt === "number" ? cached.avatarUpdatedAt : undefined;
+  
+    if (!cUrl && !cData) return;
+  
+    console.warn("[Profiles] 🔁 rehydrate avatar from cache for", active.id, {
+      avatarUrl: !!cUrl,
+      avatarDataUrl: !!cData,
+      avatarUpdatedAt: cUpdated,
+    });
+  
+    setProfilesSafe((arr) =>
+      arr.map((p) =>
+        p.id === active.id
+          ? {
+              ...p,
+              // on ne force que ce qui manque
+              avatarUrl: (p as any).avatarUrl || (cUrl || undefined),
+              avatarDataUrl: (p as any).avatarDataUrl || (cData || undefined),
+              avatarPath: (p as any).avatarPath || (cached.avatarPath || undefined),
+              avatarUpdatedAt: (p as any).avatarUpdatedAt || cUpdated || Date.now(),
+            }
+          : p
+      )
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    active?.id,
+    (active as any)?.avatarUrl,
+    (active as any)?.avatarDataUrl,
+  ]);  
 
   async function resetActiveStats() {
     if (!active?.id) return;
@@ -3453,12 +3655,27 @@ function AddLocalProfile({
   }
 
   function submit() {
-    if (!name.trim()) return;
+    console.log("[AddLocalProfile] submit() click", {
+      name,
+      country,
+      hasFile: !!file,
+    });
+  
+    if (!name.trim()) {
+      console.warn("[AddLocalProfile] blocked: name is empty");
+      return;
+    }
+  
     const trimmedName = name.trim();
     const trimmedCountry = country.trim();
     const privateInfo: { country?: string } = {};
     if (trimmedCountry) privateInfo.country = trimmedCountry;
-
+  
+    console.log("[AddLocalProfile] calling onCreate()", {
+      trimmedName,
+      privateInfo,
+    });
+  
     onCreate(trimmedName, file, privateInfo);
     reset();
   }

@@ -1236,10 +1236,10 @@ type TipSlide = {
   text: string;
   backgroundImage: keyof typeof TICKER_IMAGES;
 
-  // ✅ NEW badge system
-  version?: number; // bump => NEW revient
-  since?: string; // "YYYY-MM-DD"
+  version?: number;
+  since?: string;
   forceNew?: boolean;
+  hot?: boolean; // ✅ AJOUT
 };
 
 function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
@@ -1309,7 +1309,9 @@ function buildTipSlides(t: (k: string, d?: string) => string): TipSlide[] {
 }
 
 /* ============================================================
-   BADGES (NEW / HOT) — helpers
+   BADGES (NEW / HOT) — helpers (VERSIONNÉ)
+   - NEW : pas vu OU version a augmenté OU forceNew
+   - HOT : booléen hot (prioritaire)
 ============================================================ */
 
 const HOME_TIP_SEEN_KEY = "dc_home_tip_seen_v1";
@@ -1335,15 +1337,31 @@ function saveTipSeenMap(map: TipSeenMap) {
   } catch {}
 }
 
-// ✅ NEW si pas vu ou si version a augmenté
+function tipIdOf(tip: any): string {
+  return String(tip?.id ?? "").trim();
+}
+
+function tipVersionOf(tip: any): number {
+  const v = Number(tip?.version ?? 1);
+  return Number.isFinite(v) && v > 0 ? v : 1;
+}
+
+// ✅ HOT simple (prioritaire)
+function shouldShowHotBadge(tip: any): boolean {
+  return !!tip?.hot;
+}
+
+// ✅ NEW si pas vu OU version a augmenté OU forceNew
 function shouldShowNewBadge(tip: any): boolean {
   if (!tip) return false;
-  const id = String(tip.id ?? "");
+  const id = tipIdOf(tip);
   if (!id) return false;
 
-  const v = Number((tip as any).version ?? 1) || 1;
+  if (tip?.forceNew === true) return true;
+
   const seen = loadTipSeenMap();
   const lastSeenV = Number(seen[id] ?? 0) || 0;
+  const v = tipVersionOf(tip);
 
   return v > lastSeenV;
 }
@@ -1351,12 +1369,14 @@ function shouldShowNewBadge(tip: any): boolean {
 // ✅ Marque le tip comme “vu” (au niveau version)
 function markTipSeen(tip: any) {
   if (!tip) return;
-  const id = String(tip.id ?? "");
+  const id = tipIdOf(tip);
   if (!id) return;
 
-  const v = Number((tip as any).version ?? 1) || 1;
+  const v = tipVersionOf(tip);
   const seen = loadTipSeenMap();
-  if ((Number(seen[id] ?? 0) || 0) >= v) return;
+  const lastSeenV = Number(seen[id] ?? 0) || 0;
+
+  if (lastSeenV >= v) return;
 
   seen[id] = v;
   saveTipSeenMap(seen);
@@ -1421,13 +1441,13 @@ type LiveTipSlide = {
   kind: TipKind;
   title: string;
   text: string;
-  imageKey: keyof typeof TICKER_IMAGES; // clé => pickTickerImage()
+  imageKey: keyof typeof TICKER_IMAGES;
   weight?: number;
 
-  // ✅ NEW badge system
-  version?: number; // bump => NEW revient
-  // (optionnel pour plus tard si tu veux HOT)
-  hotIfNeverPlayed?: "tournaments" | "shanghai" | "battle" | "cricket" | "killer";
+  // ✅ badges
+  version?: number;
+  forceNew?: boolean;
+  hot?: boolean; // ✅ IMPORTANT
 };
 
 type HomeFeedItem = {
@@ -1571,6 +1591,11 @@ function buildChangelogSlides(
       text: `${String(e.title ?? "").trim()}\n${text}`.trim(),
       imageKey: "tipNews",
       weight: 9 - idx,
+
+      // ✅ TEST IMMÉDIAT : badge visible
+      hot: true,
+      forceNew: true,
+      version: 1,
     } as LiveTipSlide;
   });
 }
@@ -1701,8 +1726,10 @@ function buildLiveTipSlides(args: {
     imageKey: x.backgroundImage,
     weight: 2,
   
-    // ✅ important: on transmet version au slide final
+    // ✅ PROPAGATION BADGES
     version: Number((x as any).version ?? 1) || 1,
+    forceNew: (x as any).forceNew === true,
+    hot: (x as any).hot === true,
   }));
 
   const ctx = buildContextualSlides(t, profile, stats);
@@ -2282,20 +2309,20 @@ export default function Home({ store, go }: Props) {
     : null;
 
 // ============================================================
-// ✅ NEW BADGE — marquer le slide comme "vu" dès qu’il s’affiche
+// ✅ NEW / HOT — marquer le slide comme "vu" après affichage (versionné)
 // ============================================================
 React.useEffect(() => {
+  if (typeof window === "undefined") return;
   if (!currentTip) return;
 
   const timeoutId = window.setTimeout(() => {
-    // ✅ utilise TON helper existant (markTipSeen)
     markTipSeen(currentTip);
   }, 400);
 
   return () => {
     window.clearTimeout(timeoutId);
   };
-}, [currentTip?.id, tipIndex]);
+}, [currentTip?.id, (currentTip as any)?.version, tipIndex]);
 
   // ✅ image qui change à chaque slide (varie avec tipIndex)
   const tipBgKey = (currentTip?.imageKey || "tip") as keyof typeof TICKER_IMAGES;
@@ -2470,6 +2497,7 @@ React.useEffect(() => {
                     pointerEvents: "none",
                   }}
                 />
+  
                 <div
                   style={{
                     position: "relative",
@@ -2490,6 +2518,7 @@ React.useEffect(() => {
                   >
                     {statsTitle}
                   </div>
+  
                   <div
                     style={{
                       fontSize: 11,
@@ -2541,6 +2570,23 @@ React.useEffect(() => {
                 onTouchStart={handleTipTouchStart}
                 onTouchEnd={handleTipTouchEnd}
               >
+                {/* ✅ BADGE OVERLAY (toujours au-dessus, ne dépend pas du titre) */}
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 8,
+                    right: 8,
+                    zIndex: 50,
+                    pointerEvents: "none",
+                  }}
+                >
+                  {shouldShowHotBadge(currentTip) ? (
+                    <BadgeHot theme={theme} />
+                  ) : shouldShowNewBadge(currentTip) ? (
+                    <BadgeNew theme={theme} />
+                  ) : null}
+                </div>
+  
                 <div
                   aria-hidden
                   style={{
@@ -2551,6 +2597,7 @@ React.useEffect(() => {
                     pointerEvents: "none",
                   }}
                 />
+  
                 <div
                   style={{
                     position: "relative",
@@ -2559,42 +2606,32 @@ React.useEffect(() => {
                     flexDirection: "column",
                     justifyContent: "space-between",
                     height: "100%",
+                    // ✅ réserve un peu de place en haut à droite pour le badge
+                    paddingRight: 46,
                   }}
                 >
                   <div>
-                    {/* ✅ Titre + badge HOT/NEW (badge en overlay, toujours visible) */}
-                    <div style={{ position: "relative", paddingRight: 42, marginBottom: 3 }}>
-                      <div
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 800,
-                          letterSpacing: 0.8,
-                          textTransform: "uppercase",
-                          color: theme.accent1 ?? "#FFD980",
-                          lineHeight: 1.2,
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        letterSpacing: 0.8,
+                        textTransform: "uppercase",
+                        color: theme.accent1 ?? "#FFD980",
+                        lineHeight: 1.2,
   
-                          // ✅ 2 lignes max + ellipsis
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                        }}
-                      >
-                        {currentTip?.title ??
-                          t(
-                            "home.detail.tip.title",
-                            "Astuce, pub & nouveautés du moment"
-                          )}
-                      </div>
-  
-                      <div style={{ position: "absolute", top: 0, right: 0 }}>
-                        {/* ✅ HOT prioritaire, sinon NEW si pas encore vu */}
-                        {currentTip?.hot ? (
-                          <BadgeHot theme={theme} />
-                        ) : (
-                          shouldShowNewBadge(currentTip) && <BadgeNew theme={theme} />
+                        // ✅ 2 lignes max + ellipsis
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {currentTip?.title ??
+                        t(
+                          "home.detail.tip.title",
+                          "Astuce, pub & nouveautés du moment"
                         )}
-                      </div>
                     </div>
   
                     <div
@@ -2602,6 +2639,8 @@ React.useEffect(() => {
                         fontSize: 11,
                         lineHeight: 1.35,
                         color: theme.textSoft ?? "rgba(255,255,255,0.9)",
+                        marginTop: 3,
+                        whiteSpace: "pre-line",
                       }}
                     >
                       {currentTip?.text ??
@@ -2663,7 +2702,7 @@ React.useEffect(() => {
         </div>
       </div>
     </div>
-  );   
+  );    
 }
 
 /* ============================================================
