@@ -11,9 +11,10 @@
 // - FIX: onStart peut être absent -> fallback go("killer_play", { config })
 //
 // ✅ NEW:
-// - Option "Ordre de départ" (randomStartOrder) stockée dans config
-// - FIX AVATAR BOTS: normalisation src (vite/webpack default export) + passage via prop `profile`
-//   -> évite le cas où ProfileAvatar ignore `dataUrl` ou où l'import png est {default: "..."}.
+// - Ordre de départ (randomStartOrder) en haut des options
+// - Attribution des numéros juste dessous
+// - Variantes renommées (compréhensibles) + suppression variante C (inutile)
+// - AVATARS BOTS OK avec ton ProfileAvatar actuel (qui refuse /assets/)
 // =============================================================
 
 import React from "react";
@@ -49,7 +50,7 @@ export type KillerConfigPlayer = {
   avatarDataUrl?: string | null;
   isBot?: boolean;
   botLevel?: string;
-  number: number; // 1..20 (Killer number) ; 0 si numberAssignMode === "throw"
+  number: number; // 1..20 ; 0 si numberAssignMode === "throw"
 };
 
 export type KillerConfig = {
@@ -57,33 +58,26 @@ export type KillerConfig = {
   mode: "killer";
   createdAt: number;
 
-  lives: number; // vies de départ
-  becomeRule: KillerBecomeRule; // simple/double sur son numéro
-  damageRule: KillerDamageRule; // -1 ou multiplicateur S/D/T
+  lives: number;
+  becomeRule: KillerBecomeRule;
+  damageRule: KillerDamageRule;
 
-  // ✅ NEW (choix du numéro)
-  numberAssignMode: KillerNumberAssignMode; // random = actuel, throw = 1er lancer choisit le numéro
+  numberAssignMode: KillerNumberAssignMode;
   autoKill: boolean; // alias lisible de ownNumberHurtsWhenKiller (compat KillerPlay)
 
-  // ✅ NEW — ordre de départ
-  randomStartOrder?: boolean; // optionnel = compat configs anciennes
+  randomStartOrder?: boolean;
 
   // variantes
-  friendlyFire: boolean; // le killer peut se toucher (ou variantes)
-  ownNumberHurtsWhenKiller: boolean; // toucher son numéro quand killer coûte des vies
-  exactLivesRequired: boolean; // élimination seulement si on tombe EXACT à 0
+  friendlyFire: boolean;
+  ownNumberHurtsWhenKiller: boolean;
 
   players: KillerConfigPlayer[];
 };
 
 type Props = {
   store: Store;
-
-  // ✅ parfois tu as go, parfois non
   go?: (tab: any, params?: any) => void;
   onBack?: () => void;
-
-  // ✅ selon les pages, le parent peut exposer différents noms
   onStart?: (cfg: KillerConfig) => void;
   onStartGame?: (cfg: KillerConfig) => void;
   onPlay?: (cfg: KillerConfig) => void;
@@ -168,13 +162,11 @@ function PillButton({ label, active, onClick, primary, primarySoft, compact, dis
   const isDisabled = !!disabled;
 
   const bg = isDisabled ? "rgba(40,42,60,0.7)" : active ? primarySoft : "rgba(9,11,20,0.9)";
-
   const border = isDisabled
     ? "1px solid rgba(255,255,255,0.04)"
     : active
     ? `1px solid ${primary}`
     : "1px solid rgba(255,255,255,0.07)";
-
   const color = isDisabled ? "#777b92" : active ? "#fdf9ee" : "#d0d3ea";
 
   return (
@@ -216,15 +208,15 @@ function BotMedallion({ bot, level, active }: { bot: BotLite; level: number; act
   const lvl = Math.max(1, Math.min(5, level));
   const fakeAvg3d = 15 + (lvl - 1) * 12;
 
-  // ✅ IMPORTANT: passer via `profile` (même chemin que les humains) + src normalisé
+  // ✅ IMPORTANT: passer via profile (ProfileAvatar refuse /assets/ si on le met en dataUrl brut)
   const src = normalizeImgSrc(bot.avatarDataUrl);
   const fakeProfile = React.useMemo(
     () =>
       ({
         id: bot.id,
         name: bot.name,
-        avatarDataUrl: src,
-        avatarUrl: src,
+        avatarUrl: src, // ✅ avatarUrl gagne dans ProfileAvatar
+        avatarDataUrl: null,
       }) as any,
     [bot.id, bot.name, src]
   );
@@ -277,7 +269,7 @@ function BotMedallion({ bot, level, active }: { bot: BotLite; level: number; act
           overflow: "hidden",
         }}
       >
-        <ProfileAvatar profile={fakeProfile} size={AVATAR} />
+        <ProfileAvatar profile={fakeProfile} size={AVATAR} showStars={false} />
       </div>
     </div>
   );
@@ -288,7 +280,6 @@ function uniqueKillerNumbers(selected: Record<string, number>) {
   const out: Record<string, number> = { ...selected };
   for (const pid of Object.keys(out)) {
     let n = clampInt(out[pid], 1, 20, 20);
-    // décale jusqu’à numéro libre
     for (let k = 0; k < 40; k++) {
       if (!used.has(n)) break;
       n = n - 1;
@@ -303,7 +294,6 @@ function uniqueKillerNumbers(selected: Record<string, number>) {
 export default function KillerConfigPage(props: Props) {
   const { store, go, onBack } = props;
 
-  // ✅ FIX: onStart peut être absent / mauvais nom -> on résout un callback fiable
   const startCb =
     (typeof (props as any).onStart === "function" && (props as any).onStart) ||
     (typeof (props as any).onStartGame === "function" && (props as any).onStartGame) ||
@@ -318,12 +308,10 @@ export default function KillerConfigPage(props: Props) {
   const textMain = theme?.text ?? "#f5f5ff";
   const cardBg = "rgba(10, 12, 24, 0.96)";
 
-  // ✅ Profils robustes
   const profiles: Profile[] = ((store as any)?.profiles || []) as Profile[];
   const humanProfiles = (profiles || []).filter((p: any) => !p?.isBot);
   const storeBots = (profiles || []).filter((p: any) => !!p?.isBot);
 
-  // ✅ bots LS fallback
   const [botsFromLS, setBotsFromLS] = React.useState<BotLite[]>([]);
   React.useEffect(() => {
     try {
@@ -341,7 +329,6 @@ export default function KillerConfigPage(props: Props) {
   }, []);
 
   const userBots: BotLite[] = React.useMemo(() => {
-    // priorité store (si tu as migré les bots dedans)
     if (storeBots.length > 0) {
       return storeBots.map((p: any) => ({
         id: p.id,
@@ -353,12 +340,8 @@ export default function KillerConfigPage(props: Props) {
     return botsFromLS;
   }, [storeBots, botsFromLS]);
 
-  // ✅ IMPORTANT: normaliser les imports png + laisser les dataUrl tels quels
   const botProfiles: BotLite[] = React.useMemo(() => {
-    const pro = PRO_BOTS.map((b) => ({
-      ...b,
-      avatarDataUrl: normalizeImgSrc(b.avatarDataUrl) ?? null,
-    }));
+    const pro = PRO_BOTS.map((b) => ({ ...b, avatarDataUrl: normalizeImgSrc(b.avatarDataUrl) ?? null }));
     const usr = (userBots || []).map((b) => ({
       ...b,
       avatarDataUrl: normalizeImgSrc(b.avatarDataUrl) ?? (typeof b.avatarDataUrl === "string" ? b.avatarDataUrl : null),
@@ -371,34 +354,27 @@ export default function KillerConfigPage(props: Props) {
   const [becomeRule, setBecomeRule] = React.useState<KillerBecomeRule>("single");
   const [damageRule, setDamageRule] = React.useState<KillerDamageRule>("one");
 
-  // ✅ NEW
   const [numberAssignMode, setNumberAssignMode] = React.useState<KillerNumberAssignMode>("random");
-
-  // ✅ NEW — ordre de départ
   const [randomStartOrder, setRandomStartOrder] = React.useState<boolean>(false);
 
+  // Variantes conservées (2)
   const [friendlyFire, setFriendlyFire] = React.useState<boolean>(false);
   const [ownNumberHurtsWhenKiller, setOwnNumberHurtsWhenKiller] = React.useState<boolean>(false);
-  const [exactLivesRequired, setExactLivesRequired] = React.useState<boolean>(false);
 
-  // sélection joueurs (par défaut: 2 premiers humains si dispo)
   const [selectedIds, setSelectedIds] = React.useState<string[]>(() => {
     if (humanProfiles.length >= 2) return [humanProfiles[0].id, humanProfiles[1].id];
     if (humanProfiles.length === 1) return [humanProfiles[0].id];
     return [];
   });
 
-  // numéro killer par joueur
   const [killerNumberById, setKillerNumberById] = React.useState<Record<string, number>>({});
 
-  // init numbers quand on sélectionne
   React.useEffect(() => {
     setKillerNumberById((prev) => {
       const next = { ...prev };
       for (const id of selectedIds) {
-        if (!next[id]) next[id] = 20; // défaut
+        if (!next[id]) next[id] = 20;
       }
-      // supprime ceux non sélectionnés
       for (const id of Object.keys(next)) {
         if (!selectedIds.includes(id)) delete next[id];
       }
@@ -409,19 +385,15 @@ export default function KillerConfigPage(props: Props) {
   function togglePlayer(id: string) {
     setSelectedIds((prev) => {
       const exists = prev.includes(id);
-      const next = exists ? prev.filter((x) => x !== id) : [...prev, id];
-      return next;
+      return exists ? prev.filter((x) => x !== id) : [...prev, id];
     });
   }
 
   function randomizeNumbers() {
-    // si mode "throw" => bouton désactivé, mais on protège quand même
     if (numberAssignMode === "throw") return;
-
     setKillerNumberById((prev) => {
       const ids = Object.keys(prev);
       const pool = Array.from({ length: 20 }, (_, i) => i + 1);
-      // shuffle simple
       for (let i = pool.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -450,7 +422,7 @@ export default function KillerConfigPage(props: Props) {
       return {
         id: bot.id,
         name: bot.name,
-        avatarDataUrl: normalizeImgSrc(bot.avatarDataUrl) ?? bot.avatarDataUrl ?? null,
+        avatarDataUrl: normalizeImgSrc(bot.avatarDataUrl) ?? (bot.avatarDataUrl ?? null),
         isBot: true,
         botLevel: bot.botLevel ?? undefined,
       };
@@ -475,16 +447,11 @@ export default function KillerConfigPage(props: Props) {
           avatarDataUrl: base.avatarDataUrl ?? null,
           isBot: !!base.isBot,
           botLevel: base.botLevel,
-
-          // ✅ IMPORTANT:
-          // - mode random : on utilise le numéro choisi ici
-          // - mode throw  : number=0 (non défini) => KillerPlay fixera au 1er lancer
           number: numberAssignMode === "throw" ? 0 : clampInt(killerNumberById[id], 1, 20, 20),
         };
       })
       .filter(Boolean) as any[];
 
-    // ✅ sécurité: numéros uniques (uniquement si on assigne ici)
     if (numberAssignMode !== "throw") {
       const used = new Set<number>();
       for (const p of players) {
@@ -507,37 +474,25 @@ export default function KillerConfigPage(props: Props) {
       becomeRule,
       damageRule,
 
-      // ✅ NEW
       numberAssignMode,
       autoKill: ownNumberHurtsWhenKiller,
-
-      // ✅ NEW — ordre de départ
       randomStartOrder,
 
       friendlyFire,
       ownNumberHurtsWhenKiller,
-      exactLivesRequired,
       players,
     };
 
-    // ✅ FIX: onStart absent -> fallback go(...)
     if (startCb) {
       startCb(cfg);
       return;
     }
-
     if (typeof go === "function") {
       go("killer_play", { config: cfg });
       return;
     }
 
-    console.error("[KillerConfig] Aucun callback de start fourni (onStart/onStartGame/onPlay/go).", {
-      onStart: typeof (props as any).onStart,
-      onStartGame: typeof (props as any).onStartGame,
-      onPlay: typeof (props as any).onPlay,
-      go: typeof go,
-    });
-
+    console.error("[KillerConfig] Aucun callback de start fourni (onStart/onStartGame/onPlay/go).");
     alert("Impossible de lancer : callback manquant (voir console).");
   }
 
@@ -559,7 +514,7 @@ export default function KillerConfigPage(props: Props) {
         <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
           <button
             type="button"
-            onClick={() => (onBack ? onBack() : (typeof go === "function" ? go("games") : null))}
+            onClick={() => (onBack ? onBack() : typeof go === "function" ? go("games") : null)}
             style={{
               borderRadius: 999,
               border: "1px solid rgba(255,255,255,0.12)",
@@ -609,15 +564,7 @@ export default function KillerConfigPage(props: Props) {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-            <div
-              style={{
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                fontWeight: 800,
-                color: primary,
-              }}
-            >
+            <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 1, fontWeight: 800, color: primary }}>
               Joueurs
             </div>
 
@@ -670,7 +617,6 @@ export default function KillerConfigPage(props: Props) {
                 {humanProfiles.map((p) => {
                   const active = selectedIds.includes(p.id);
                   const num = killerNumberById[p.id] ?? 20;
-
                   const disableManualNumber = numberAssignMode === "throw";
 
                   return (
@@ -717,7 +663,7 @@ export default function KillerConfigPage(props: Props) {
                             transition: "filter .2s ease, opacity .2s ease",
                           }}
                         >
-                          <ProfileAvatar profile={p} size={78} />
+                          <ProfileAvatar profile={p as any} size={78} />
                         </div>
                       </div>
 
@@ -856,96 +802,7 @@ export default function KillerConfigPage(props: Props) {
             Options
           </div>
 
-          {/* vies */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Vies de départ</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {[1, 2, 3, 4, 5, 6].map((n) => (
-                <PillButton
-                  key={n}
-                  label={String(n)}
-                  active={lives === n}
-                  onClick={() => setLives(n)}
-                  primary={primary}
-                  primarySoft={primarySoft}
-                  compact
-                />
-              ))}
-            </div>
-            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>Vies identiques pour tous les joueurs.</div>
-          </div>
-
-          {/* become rule */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Règle pour devenir KILLER</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <PillButton
-                label="Toucher son numéro (simple)"
-                active={becomeRule === "single"}
-                onClick={() => setBecomeRule("single")}
-                primary={primary}
-                primarySoft={primarySoft}
-              />
-              <PillButton
-                label="Double sur son numéro"
-                active={becomeRule === "double"}
-                onClick={() => setBecomeRule("double")}
-                primary={primary}
-                primarySoft={primarySoft}
-              />
-            </div>
-          </div>
-
-          {/* damage rule */}
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Dégâts quand on est KILLER</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <PillButton
-                label="-1 par hit"
-                active={damageRule === "one"}
-                onClick={() => setDamageRule("one")}
-                primary={primary}
-                primarySoft={primarySoft}
-              />
-              <PillButton
-                label="Multiplicateur (S/D/T)"
-                active={damageRule === "multiplier"}
-                onClick={() => setDamageRule("multiplier")}
-                primary={primary}
-                primarySoft={primarySoft}
-              />
-            </div>
-            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>Quand tu touches le numéro d’un adversaire vivant.</div>
-          </div>
-
-          {/* ✅ NEW — Attribution des numéros */}
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Attribution des numéros</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <PillButton
-                label="🎲 Numéros aléatoires"
-                active={numberAssignMode === "random"}
-                onClick={() => setNumberAssignMode("random")}
-                primary={primary}
-                primarySoft={primarySoft}
-              />
-              <PillButton
-                label="🎯 1er lancer = choisir son numéro"
-                active={numberAssignMode === "throw"}
-                onClick={() => setNumberAssignMode("throw")}
-                primary={primary}
-                primarySoft={primarySoft}
-              />
-            </div>
-
-            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
-              En mode “1er lancer”, les numéros du menu sont ignorés (le premier tir de chaque joueur fixe son numéro).
-            </div>
-          </div>
-
-          {/* =========================
-              ✅ ORDRE DE DÉPART
-             ========================= */}
+          {/* ✅ ORDRE DE DÉPART (EN HAUT) */}
           <div style={{ marginTop: 2, marginBottom: 14 }}>
             <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Ordre de départ</div>
 
@@ -990,42 +847,101 @@ export default function KillerConfigPage(props: Props) {
             </div>
           </div>
 
+          {/* ✅ ATTRIBUTION DES NUMÉROS (JUSTE DESSOUS) */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Attribution des numéros</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <PillButton
+                label="🎲 Numéros aléatoires"
+                active={numberAssignMode === "random"}
+                onClick={() => setNumberAssignMode("random")}
+                primary={primary}
+                primarySoft={primarySoft}
+              />
+              <PillButton
+                label="🎯 1er lancer = choisir son numéro"
+                active={numberAssignMode === "throw"}
+                onClick={() => setNumberAssignMode("throw")}
+                primary={primary}
+                primarySoft={primarySoft}
+              />
+            </div>
+
+            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
+              En mode “1er lancer”, les numéros du menu sont ignorés (le premier tir de chaque joueur fixe son numéro).
+            </div>
+          </div>
+
+          {/* vies */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Vies de départ</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {[1, 2, 3, 4, 5, 6].map((n) => (
+                <PillButton key={n} label={String(n)} active={lives === n} onClick={() => setLives(n)} primary={primary} primarySoft={primarySoft} compact />
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>Vies identiques pour tous les joueurs.</div>
+          </div>
+
+          {/* become rule */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Règle pour devenir KILLER</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <PillButton
+                label="Toucher son numéro (simple)"
+                active={becomeRule === "single"}
+                onClick={() => setBecomeRule("single")}
+                primary={primary}
+                primarySoft={primarySoft}
+              />
+              <PillButton
+                label="Double sur son numéro"
+                active={becomeRule === "double"}
+                onClick={() => setBecomeRule("double")}
+                primary={primary}
+                primarySoft={primarySoft}
+              />
+            </div>
+          </div>
+
+          {/* damage rule */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Dégâts quand on est KILLER</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <PillButton label="-1 par hit" active={damageRule === "one"} onClick={() => setDamageRule("one")} primary={primary} primarySoft={primarySoft} />
+              <PillButton
+                label="Multiplicateur (S/D/T)"
+                active={damageRule === "multiplier"}
+                onClick={() => setDamageRule("multiplier")}
+                primary={primary}
+                primarySoft={primarySoft}
+              />
+            </div>
+            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
+              Quand tu touches le numéro d’un adversaire vivant.
+            </div>
+          </div>
+
           {/* variantes */}
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 10 }}>
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 900,
-                color: "#9fa4c0",
-                textTransform: "uppercase",
-                letterSpacing: 0.9,
-              }}
-            >
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#9fa4c0", textTransform: "uppercase", letterSpacing: 0.9 }}>
               Variantes
             </div>
 
             <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
               <VariantRow
-                title="Friendly Fire"
-                desc="Si ON, certaines variantes permettent de se toucher (auto-pénalités)."
+                title="Auto-hit autorisé"
+                desc="Si ON, on peut toucher son propre numéro."
                 value={friendlyFire}
                 onChange={setFriendlyFire}
                 primary={primary}
                 primarySoft={primarySoft}
               />
               <VariantRow
-                title="Son numéro blesse quand KILLER"
-                desc="Si ON, toucher son propre numéro quand on est KILLER fait perdre des vies."
+                title="Auto-pénalité quand Killer"
+                desc="Si ON, toucher son propre numéro quand on est KILLER fait perdre 1 vie."
                 value={ownNumberHurtsWhenKiller}
                 onChange={setOwnNumberHurtsWhenKiller}
-                primary={primary}
-                primarySoft={primarySoft}
-              />
-              <VariantRow
-                title="Exact lives required"
-                desc="Si ON, élimination seulement si on tombe EXACTEMENT à 0."
-                value={exactLivesRequired}
-                onChange={setExactLivesRequired}
                 primary={primary}
                 primarySoft={primarySoft}
               />
@@ -1044,16 +960,7 @@ export default function KillerConfigPage(props: Props) {
             border: "1px solid rgba(255,255,255,0.04)",
           }}
         >
-          <div
-            style={{
-              fontSize: 12,
-              textTransform: "uppercase",
-              letterSpacing: 1,
-              fontWeight: 800,
-              color: primary,
-              marginBottom: 10,
-            }}
-          >
+          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 1, fontWeight: 800, color: primary, marginBottom: 10 }}>
             Bots IA
           </div>
 
