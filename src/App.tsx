@@ -139,37 +139,13 @@ function mergeProfilesSafe<T extends { id: string }>(base: T[], incoming: T[]) {
   const b = Array.isArray(incoming) ? incoming : [];
 
   const map = new Map<string, T>();
-
   for (const p of a) {
-    if (p?.id) map.set(p.id, p);
+    if (p && typeof p.id === "string") map.set(p.id, p);
   }
-
   for (const p of b) {
-    if (!p?.id) continue;
-
+    if (!p || typeof p.id !== "string") continue;
     const prev = map.get(p.id);
-
-    if (!prev) {
-      map.set(p.id, p);
-      continue;
-    }
-
-    map.set(p.id, {
-      ...prev,
-      ...p,
-
-      // 🔒 AVATAR LOCK
-      avatarDataUrl:
-        p.avatarDataUrl !== undefined ? p.avatarDataUrl : (prev as any).avatarDataUrl,
-
-      avatarUrl:
-        p.avatarUrl !== undefined ? p.avatarUrl : (prev as any).avatarUrl,
-
-      avatarUpdatedAt:
-        p.avatarUpdatedAt !== undefined
-          ? p.avatarUpdatedAt
-          : (prev as any).avatarUpdatedAt,
-    });
+    map.set(p.id, prev ? ({ ...prev, ...p } as T) : p);
   }
 
   return Array.from(map.values());
@@ -1010,53 +986,35 @@ function App() {
         const cloudStore = (snap as any)?.payload?.store;
 
         // ✅ snapshot présent -> hydrate local depuis cloud
-if (cloudStore && typeof cloudStore === "object") {
-  const next: Store = {
-    ...initialStore,
-    ...(cloudStore as any),
-    profiles: (cloudStore as any).profiles ?? [],
-    friends: (cloudStore as any).friends ?? [],
-    history: (cloudStore as any).history ?? [],
-  };
+        if (cloudStore && typeof cloudStore === "object") {
+          const next: Store = {
+            ...initialStore,
+            ...(cloudStore as any),
+            profiles: (cloudStore as any).profiles ?? [],
+            friends: (cloudStore as any).friends ?? [],
+            history: (cloudStore as any).history ?? [],
+          };
 
-  if (!cancelled) {
-    // ✅ MERGE EN MÉMOIRE
-    let mergedStore: Store | null = null;
-
-    setStore((prev) => {
-      const mergedProfiles = mergeProfilesSafe(
-        prev.profiles ?? [],
-        next.profiles ?? []
-      );
-
-      mergedStore = {
-        ...next,
-        profiles: mergedProfiles,
-        // garde un activeProfileId valide si le cloud est vide/partiel
-        activeProfileId:
-          next.activeProfileId ??
-          prev.activeProfileId ??
-          (mergedProfiles[0]?.id ?? null),
-      };
-
-      return mergedStore!;
-    });
-
-    // ✅ ET SURTOUT : on persiste LE STORE MERGÉ (pas "next")
-    try {
-      if (mergedStore) await saveStore(mergedStore);
-    } catch {}
-  }
-} else {
-  // ✅ pas de snapshot -> seed depuis local
-  const payload = {
-    kind: "dc_store_snapshot_v1",
-    createdAt: new Date().toISOString(),
-    app: "darts-counter-v5",
-    store: sanitizeStoreForCloud(store),
-  };
-  await onlineApi.pushStoreSnapshot(payload);
-}
+          if (!cancelled) {
+            // ✅ FIX: merge défensif des profils (cloud peut être partiel)
+            setStore((prev) => ({
+              ...next,
+              profiles: mergeProfilesSafe(prev.profiles ?? [], next.profiles ?? []),
+            }));
+            try {
+              await saveStore(next);
+            } catch {}
+          }
+        } else {
+          // ✅ pas de snapshot -> seed depuis local
+          const payload = {
+            kind: "dc_store_snapshot_v1",
+            createdAt: new Date().toISOString(),
+            app: "darts-counter-v5",
+            store: sanitizeStoreForCloud(store), // ✅ CHANGED (ne pousse pas les data:)
+          };
+          await onlineApi.pushStoreSnapshot(payload);
+        }
       } catch (e) {
         console.warn("[cloud] hydrate error", e);
       } finally {
