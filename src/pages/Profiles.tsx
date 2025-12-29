@@ -27,6 +27,8 @@ import { saveStore } from "../lib/storage";
 import PlayerPrefsBlock from "../components/profile/PlayerPrefsBlock";
 import OnlineProfileForm from "../components/OnlineProfileForm";
 
+import { getAvatarCache as getAvatarCacheLib } from "../lib/avatarCache";
+
 // Effet "shimmer" du nom joueur (copié de StatsHub)
 const statsNameCss = `
 .dc-stats-name-wrapper {
@@ -755,6 +757,73 @@ export default function Profiles({
   }
   
   const active = profiles.find((p) => p.id === activeProfileId) || null;
+
+// ✅ AUTO-UPLOAD AVATAR : si connecté online et qu'on a encore un avatar en base64 (dataUrl)
+// => on pousse vers Supabase Storage pour obtenir avatarUrl (synchro cross-device)
+React.useEffect(() => {
+  let cancelled = false;
+
+  (async () => {
+    if (!active?.id) return;
+    if (auth.status !== "signed_in") return;
+
+    const hasUrl = !!String((active as any)?.avatarUrl || "").trim();
+    const dataUrl = String((active as any)?.avatarDataUrl || "").trim();
+
+    if (hasUrl) return;
+    if (!dataUrl.startsWith("data:image/")) return;
+
+    try {
+      const { publicUrl } = await onlineApi.uploadAvatarImage({ dataUrl });
+      if (cancelled) return;
+      if (!publicUrl) return;
+
+      const avatarPath = (() => {
+        const marker = "/storage/v1/object/public/avatars/";
+        const i = publicUrl.indexOf(marker);
+        return i === -1 ? undefined : publicUrl.slice(i + marker.length);
+      })();
+
+      const now = Date.now();
+
+      // ✅ update profile local (ça sera ensuite push dans le snapshot cloud)
+      setProfilesSafe((arr) =>
+        arr.map((p) =>
+          p.id === active.id
+            ? {
+                ...p,
+                avatarUrl: publicUrl,
+                avatarPath,
+                avatarUpdatedAt: now,
+              }
+            : p
+        )
+      );
+
+      // ✅ met aussi ton cache anti-wipe si tu veux
+      try {
+        writeAvatarCache(active.id, {
+          avatarUrl: publicUrl,
+          avatarPath,
+          avatarUpdatedAt: now,
+        });
+      } catch {}
+    } catch (e) {
+      console.warn("[Profiles] auto-upload avatar failed", e);
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [
+  active?.id,
+  auth.status,
+  (active as any)?.avatarUrl,
+  (active as any)?.avatarDataUrl,
+  (active as any)?.avatarUpdatedAt,
+]);
   
   // ✅ Réhydratation anti-écrasement : si active revient sans avatar -> on remet depuis cache
   React.useEffect(() => {
@@ -766,7 +835,7 @@ export default function Profiles({
   
     if (hasAny) return;
   
-    const cached = getAvatarCache(active.id);
+    const cached = getAvatarCacheLib(active.id);
     if (!cached) return;
   
     const cUrl = String(cached.avatarUrl || "").trim();
@@ -1820,9 +1889,8 @@ function PrivateInfoBlock({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [(active as any)?.id]); // <-- seulement l'id
-
-  function handleChange<K extends keyof PrivateInfo>(key: K, value: string) {
-    setFields((f) => ({ ...(f || {}), [key]: value } as PrivateInfo));
+function handleChange<K extends keyof PrivateInfo>(key: K, value: string) {
+    setFields((f) => ({ ...f, [key]: value }));
   }
 
   function handleCancel() {
@@ -1834,7 +1902,7 @@ function PrivateInfoBlock({
   }
 
   function handleSubmit() {
-    const patch: PrivateInfo = { ...(fields || {}) };
+    const patch: PrivateInfo = { ...fields };
 
     // === Nouveau mot de passe ?
     if (newPass || newPass2) {
@@ -1883,8 +1951,14 @@ function PrivateInfoBlock({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* ====== INFOS PERSONNELLES ====== */}
-      <div className="subtitle" style={{ fontSize: 12, color: theme.textSoft }}>
-        {t("profiles.private.hint", "Ces informations restent locales et privées.")}
+      <div
+        className="subtitle"
+        style={{ fontSize: 12, color: theme.textSoft }}
+      >
+        {t(
+          "profiles.private.hint",
+          "Ces informations restent locales et privées."
+        )}
       </div>
 
       <div style={{ display: "grid", gap: 10 }}>
@@ -1933,11 +2007,15 @@ function PrivateInfoBlock({
         />
 
         {/* mot de passe actuel */}
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <label
+          style={{ display: "flex", flexDirection: "column", gap: 4 }}
+        >
           <span style={{ color: theme.textSoft }}>
             {t("profiles.private.password", "Mot de passe actuel")}
           </span>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <div
+            style={{ display: "flex", gap: 6, alignItems: "center" }}
+          >
             <input
               type={showPassword ? "text" : "password"}
               className="input"
@@ -1947,10 +2025,11 @@ function PrivateInfoBlock({
             />
             <button
               className="btn sm"
-              type="button"
               onClick={() => setShowPassword((v) => !v)}
             >
-              {showPassword ? t("common.hide", "Masquer") : t("common.show", "Afficher")}
+              {showPassword
+                ? t("common.hide", "Masquer")
+                : t("common.show", "Afficher")}
             </button>
           </div>
         </label>
@@ -1970,27 +2049,35 @@ function PrivateInfoBlock({
 
       <div style={{ display: "grid", gap: 10 }}>
         <PrivateField
-          label={t("profiles.private.newPassword", "Nouveau mot de passe")}
+          label={t(
+            "profiles.private.newPassword",
+            "Nouveau mot de passe"
+          )}
           type="password"
           value={newPass}
           onChange={(v) => setNewPass(v)}
         />
         <PrivateField
-          label={t("profiles.private.newPasswordConfirm", "Confirmer nouveau mot de passe")}
+          label={t(
+            "profiles.private.newPasswordConfirm",
+            "Confirmer nouveau mot de passe"
+          )}
           type="password"
           value={newPass2}
           onChange={(v) => setNewPass2(v)}
         />
 
-        {passError && <div style={{ fontSize: 11, color: "#ff6666" }}>{passError}</div>}
+        {passError && (
+          <div style={{ fontSize: 11, color: "#ff6666" }}>{passError}</div>
+        )}
       </div>
 
       {/* BOUTONS */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-        <button className="btn sm" type="button" onClick={handleCancel}>
+        <button className="btn sm" onClick={handleCancel}>
           {t("common.cancel", "Annuler")}
         </button>
-        <button className="btn ok sm" type="button" onClick={handleSubmit}>
+        <button className="btn ok sm" onClick={handleSubmit}>
           {t("common.save", "Enregistrer")}
         </button>
       </div>

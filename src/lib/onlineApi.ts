@@ -590,34 +590,35 @@ type StoreSnapshotRow = {
 };
 
 async function pullStoreSnapshot(): Promise<{
-  payload: any;
-  updatedAt: number;
-} | null> {
-  const session = await restoreSession();
-  if (!session?.user?.id) return null;
+  status: "ok" | "not_found" | "error";
+  payload?: any;
+  updatedAt?: string | null;
+  error?: any;
+} > {
+  if (!supabase) return { status: "error", error: new Error("Supabase client not ready") };
 
-  const userId = session.user.id;
+  const userId = await getCurrentUserId();
+  if (!userId) return { status: "error", error: new Error("Not signed in") };
 
   const { data, error } = await supabase
     .from("dc_store_snapshots")
-    .select("payload, updated_at")
+    .select("payload,updated_at")
     .eq("user_id", userId)
     .limit(1)
     .maybeSingle();
 
-  if (error) {
-    console.warn("[onlineApi] pullStoreSnapshot error", error);
-    return null;
+  // ✅ maybeSingle() : si aucune row -> data = null et error = null
+  if (!data && !error) {
+    return { status: "not_found", payload: null, updatedAt: null };
   }
 
-  if (!data?.payload) return null;
+  if (error) {
+    console.warn("[pullStoreSnapshot] error", error);
+    return { status: "error", error };
+  }
 
-  return {
-    payload: (data as any).payload,
-    updatedAt: data.updated_at ? Date.parse(data.updated_at) : Date.now(),
-  };
+  return { status: "ok", payload: (data as any)?.payload, updatedAt: (data as any)?.updated_at ?? null };
 }
-
 async function pushStoreSnapshot(payload: any): Promise<void> {
   const session = await restoreSession();
   if (!session?.user?.id) throw new Error("Non authentifié");

@@ -789,6 +789,27 @@ function App() {
   // ============================================================
   const online = useAuthOnline();
   const [cloudHydrated, setCloudHydrated] = React.useState(false);
+  // ✅ Cloud hydrate est "par user" : quand on se reconnecte (après clear site data),
+  // on doit forcer un nouveau pull du snapshot.
+  const cloudHydratedUserRef = React.useRef<string>("");
+
+  React.useEffect(() => {
+    if (!online?.ready) return;
+    const uid = String((online as any)?.session?.user?.id || (online as any)?.user?.id || "");
+
+    // Pas connecté : on ne "bloque" pas l’app, mais on ne marque pas la donnée cloud comme hydratée pour un user.
+    if (online.status !== "signed_in") {
+      cloudHydratedUserRef.current = "";
+      return;
+    }
+
+    // Connecté : si c’est un nouvel user (ou après clear data) => on réactive l’hydratation.
+    if (uid && cloudHydratedUserRef.current !== uid) {
+      cloudHydratedUserRef.current = uid;
+      setCloudHydrated(false);
+    }
+  }, [online?.ready, online?.status, (online as any)?.session?.user?.id]);
+
   const cloudPushTimerRef = React.useRef<number | null>(null);
 
   const [store, setStore] = React.useState<Store>(initialStore);
@@ -962,9 +983,10 @@ function App() {
   }, []);
 
   // ============================================================
+    // ============================================================
   // ✅ CLOUD HYDRATE (source unique)
-  // - Si connecté : on tente de récupérer le snapshot cloud
-  // - Si pas encore de snapshot : on "seed" avec le store local
+  // - Quand on se CONNECTE (même après "Clear site data") => on PULL le snapshot cloud
+  // - On ne SEED le cloud que si on est sûr que le snapshot n’existe pas (not_found)
   // ============================================================
   React.useEffect(() => {
     let cancelled = false;
@@ -973,56 +995,59 @@ function App() {
       if (loading) return;
       if (!online?.ready) return;
 
-      // Pas connecté -> mode offline/cache local
-      if (online.status !== "signed_in") {
-        setCloudHydrated(true);
-        return;
-      }
+      // Tant qu'on n'est pas connecté, on ne fait rien ici.
+      if (online.status !== "signed_in") return;
 
+      // On hydrate une seule fois par user (ref gère les reconnect)
       if (cloudHydrated) return;
 
       try {
-        const snap = await onlineApi.pullStoreSnapshot();
-        const cloudStore = (snap as any)?.payload?.store;
+        const res = await onlineApi.pullStoreSnapshot();
 
-        // ✅ snapshot présent -> hydrate local depuis cloud
-        if (cloudStore && typeof cloudStore === "object") {
-          const next: Store = {
-            ...initialStore,
-            ...(cloudStore as any),
-            profiles: (cloudStore as any).profiles ?? [],
-            friends: (cloudStore as any).friends ?? [],
-            history: (cloudStore as any).history ?? [],
-          };
+        if (res?.status === "ok") {
+          const cloudStore = (res as any)?.payload?.store;
 
-          if (!cancelled) {
-            // ✅ FIX: merge défensif des profils (cloud peut être partiel)
-            // + on persiste le STORE MERGÉ (pas le cloud brut)
-            let mergedToSave: Store | null = null;
+          if (cloudStore && typeof cloudStore === "object") {
+            const next: Store = {
+              ...initialStore,
+              ...(cloudStore as any),
+              profiles: (cloudStore as any).profiles ?? [],
+              friends: (cloudStore as any).friends ?? [],
+              history: (cloudStore as any).history ?? [],
+            };
 
-            setStore((prev) => {
-              const mergedProfiles = mergeProfilesSafe(
-                prev.profiles ?? [],
-                next.profiles ?? []
-              );
-              const mergedStore: Store = { ...next, profiles: mergedProfiles };
-              mergedToSave = mergedStore;
-              return mergedStore;
-            });
+            if (!cancelled) {
+              // ✅ merge défensif des profils (cloud peut être partiel)
+              setStore((prev) => ({
+                ...next,
+                profiles: mergeProfilesSafe(prev.profiles ?? [], next.profiles ?? []),
+              }));
+              try {
+                await saveStore(next);
+              } catch {}
+            }
+          }
+        } else if (res?.status === "not_found") {
+          // ✅ Pas de snapshot : on seed UNIQUEMENT si on a déjà des données locales utiles.
+          const hasLocalData =
+            (store?.profiles?.length || 0) > 0 ||
+            (store as any)?.activeProfileId ||
+            (store?.friends?.length || 0) > 0 ||
+            (store?.history?.length || 0) > 0;
 
-            try {
-              if (mergedToSave) await saveStore(mergedToSave);
-            } catch {}
+          if (hasLocalData) {
+            const payload = {
+              kind: "dc_store_snapshot_v1",
+              createdAt: new Date().toISOString(),
+              app: "darts-counter-v5",
+              store: sanitizeStoreForCloud(store), // ✅ ne pousse pas les data: (avatars locaux)
+            };
+            await onlineApi.pushStoreSnapshot(payload);
+          } else {
+            console.warn("[cloud] no snapshot yet + local empty -> skip seed (avoid wiping cloud by mistake)");
           }
         } else {
-          // ✅ pas de snapshot -> seed depuis local
-          const payload = {
-            kind: "dc_store_snapshot_v1",
-            createdAt: new Date().toISOString(),
-            app: "darts-counter-v5",
-            store: sanitizeStoreForCloud(store), // ✅ CHANGED (ne pousse pas les data:)
-          };
-          await onlineApi.pushStoreSnapshot(payload);
+          console.warn("[cloud] hydrate error (skip seed)", (res as any)?.error);
         }
       } catch (e) {
         console.warn("[cloud] hydrate error", e);
@@ -1035,6 +1060,7 @@ function App() {
     return () => {
       cancelled = true;
     };
+    // ⚠️ store dans deps : si tu seed, on veut la version la plus récente.
   }, [loading, online?.ready, online?.status, cloudHydrated, store]);
 
   // ============================================================

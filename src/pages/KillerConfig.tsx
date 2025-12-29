@@ -9,6 +9,11 @@
 // - Corrige warning: pas de <button> imbriqués
 // - Sort un KillerConfig consommé par KillerPlay (routeParams.config)
 // - FIX: onStart peut être absent -> fallback go("killer_play", { config })
+//
+// ✅ NEW:
+// - Option "Ordre de départ" (randomStartOrder) stockée dans config
+// - FIX AVATAR BOTS: normalisation src (vite/webpack default export) + passage via prop `profile`
+//   -> évite le cas où ProfileAvatar ignore `dataUrl` ou où l'import png est {default: "..."}.
 // =============================================================
 
 import React from "react";
@@ -60,6 +65,9 @@ export type KillerConfig = {
   numberAssignMode: KillerNumberAssignMode; // random = actuel, throw = 1er lancer choisit le numéro
   autoKill: boolean; // alias lisible de ownNumberHurtsWhenKiller (compat KillerPlay)
 
+  // ✅ NEW — ordre de départ
+  randomStartOrder?: boolean; // optionnel = compat configs anciennes
+
   // variantes
   friendlyFire: boolean; // le killer peut se toucher (ou variantes)
   ownNumberHurtsWhenKiller: boolean; // toucher son numéro quand killer coûte des vies
@@ -93,17 +101,17 @@ const LS_BOTS_KEY = "dc_bots_v1";
 
 // Bots PRO (comme X01)
 const PRO_BOTS: BotLite[] = [
-  { id: "bot_pro_mvg", name: "Green Machine", botLevel: "Légende", avatarDataUrl: avatarGreenMachine },
-  { id: "bot_pro_wright", name: "Snake King", botLevel: "Pro", avatarDataUrl: avatarSnakeKing },
-  { id: "bot_pro_littler", name: "Wonder Kid", botLevel: "Prodige Pro", avatarDataUrl: avatarWonderKid },
-  { id: "bot_pro_price", name: "Ice Man", botLevel: "Pro", avatarDataUrl: avatarIceMan },
-  { id: "bot_pro_anderson", name: "Flying Scotsman", botLevel: "Pro", avatarDataUrl: avatarFlyingScotsman },
-  { id: "bot_pro_humphries", name: "Cool Hand", botLevel: "Pro", avatarDataUrl: avatarCoolHand },
-  { id: "bot_pro_taylor", name: "The Power", botLevel: "Légende", avatarDataUrl: avatarThePower },
-  { id: "bot_pro_smith", name: "Bully Boy", botLevel: "Pro", avatarDataUrl: avatarBullyBoy },
-  { id: "bot_pro_aspinall", name: "The Asp", botLevel: "Fort", avatarDataUrl: avatarTheAsp },
-  { id: "bot_pro_dobey", name: "Hollywood", botLevel: "Fort", avatarDataUrl: avatarHollywood },
-  { id: "bot_pro_clayton", name: "The Ferret", botLevel: "Fort", avatarDataUrl: avatarTheFerret },
+  { id: "bot_pro_mvg", name: "Green Machine", botLevel: "Légende", avatarDataUrl: avatarGreenMachine as any },
+  { id: "bot_pro_wright", name: "Snake King", botLevel: "Pro", avatarDataUrl: avatarSnakeKing as any },
+  { id: "bot_pro_littler", name: "Wonder Kid", botLevel: "Prodige Pro", avatarDataUrl: avatarWonderKid as any },
+  { id: "bot_pro_price", name: "Ice Man", botLevel: "Pro", avatarDataUrl: avatarIceMan as any },
+  { id: "bot_pro_anderson", name: "Flying Scotsman", botLevel: "Pro", avatarDataUrl: avatarFlyingScotsman as any },
+  { id: "bot_pro_humphries", name: "Cool Hand", botLevel: "Pro", avatarDataUrl: avatarCoolHand as any },
+  { id: "bot_pro_taylor", name: "The Power", botLevel: "Légende", avatarDataUrl: avatarThePower as any },
+  { id: "bot_pro_smith", name: "Bully Boy", botLevel: "Pro", avatarDataUrl: avatarBullyBoy as any },
+  { id: "bot_pro_aspinall", name: "The Asp", botLevel: "Fort", avatarDataUrl: avatarTheAsp as any },
+  { id: "bot_pro_dobey", name: "Hollywood", botLevel: "Fort", avatarDataUrl: avatarHollywood as any },
+  { id: "bot_pro_clayton", name: "The Ferret", botLevel: "Fort", avatarDataUrl: avatarTheFerret as any },
 ];
 
 function clampInt(n: any, min: number, max: number, fb: number) {
@@ -133,6 +141,17 @@ function pickAvatar(p: any): string | null {
   return p.avatarDataUrl ?? p.avatar ?? p.avatarUrl ?? p.photoDataUrl ?? null;
 }
 
+// ✅ normalise vite/webpack: import png peut être string OU {default:string}
+function normalizeImgSrc(v: any): string | null {
+  if (!v) return null;
+  if (typeof v === "string") return v.trim() || null;
+  if (typeof v === "object") {
+    const d = (v as any).default;
+    if (typeof d === "string") return d.trim() || null;
+  }
+  return null;
+}
+
 // ------------------ UI bits ------------------
 
 type PillProps = {
@@ -148,11 +167,7 @@ type PillProps = {
 function PillButton({ label, active, onClick, primary, primarySoft, compact, disabled }: PillProps) {
   const isDisabled = !!disabled;
 
-  const bg = isDisabled
-    ? "rgba(40,42,60,0.7)"
-    : active
-    ? primarySoft
-    : "rgba(9,11,20,0.9)";
+  const bg = isDisabled ? "rgba(40,42,60,0.7)" : active ? primarySoft : "rgba(9,11,20,0.9)";
 
   const border = isDisabled
     ? "1px solid rgba(255,255,255,0.04)"
@@ -201,6 +216,19 @@ function BotMedallion({ bot, level, active }: { bot: BotLite; level: number; act
   const lvl = Math.max(1, Math.min(5, level));
   const fakeAvg3d = 15 + (lvl - 1) * 12;
 
+  // ✅ IMPORTANT: passer via `profile` (même chemin que les humains) + src normalisé
+  const src = normalizeImgSrc(bot.avatarDataUrl);
+  const fakeProfile = React.useMemo(
+    () =>
+      ({
+        id: bot.id,
+        name: bot.name,
+        avatarDataUrl: src,
+        avatarUrl: src,
+      }) as any,
+    [bot.id, bot.name, src]
+  );
+
   return (
     <div style={{ position: "relative", width: WRAP, height: WRAP, flex: "0 0 auto", overflow: "visible" }}>
       <div
@@ -239,24 +267,17 @@ function BotMedallion({ bot, level, active }: { bot: BotLite; level: number; act
             : isPro
             ? "linear-gradient(135deg, #2a2a1f, #1a1a12)"
             : "linear-gradient(135deg, #2c3640, #141b26)",
-          boxShadow: active
-            ? `0 0 24px ${COLOR_GLOW}, inset 0 0 10px rgba(0,0,0,.7)`
-            : `0 0 14px rgba(0,0,0,0.7)`,
+          boxShadow: active ? `0 0 24px ${COLOR_GLOW}, inset 0 0 10px rgba(0,0,0,.7)` : `0 0 14px rgba(0,0,0,0.7)`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           transform: active ? "scale(1.05)" : "scale(1)",
           transition: "transform .15s ease, box-shadow .15s ease",
           border: active ? `2px solid ${COLOR}` : `2px solid ${isPro ? "rgba(247,200,92,0.5)" : "rgba(144,228,255,0.9)"}`,
+          overflow: "hidden",
         }}
       >
-        <ProfileAvatar
-          size={AVATAR}
-          // @ts-ignore (support dataUrl chez toi)
-          dataUrl={bot.avatarDataUrl ?? undefined}
-          label={bot.name?.[0]?.toUpperCase() || "B"}
-          showStars={false}
-        />
+        <ProfileAvatar profile={fakeProfile} size={AVATAR} />
       </div>
     </div>
   );
@@ -332,7 +353,18 @@ export default function KillerConfigPage(props: Props) {
     return botsFromLS;
   }, [storeBots, botsFromLS]);
 
-  const botProfiles: BotLite[] = React.useMemo(() => [...PRO_BOTS, ...userBots], [userBots]);
+  // ✅ IMPORTANT: normaliser les imports png + laisser les dataUrl tels quels
+  const botProfiles: BotLite[] = React.useMemo(() => {
+    const pro = PRO_BOTS.map((b) => ({
+      ...b,
+      avatarDataUrl: normalizeImgSrc(b.avatarDataUrl) ?? null,
+    }));
+    const usr = (userBots || []).map((b) => ({
+      ...b,
+      avatarDataUrl: normalizeImgSrc(b.avatarDataUrl) ?? (typeof b.avatarDataUrl === "string" ? b.avatarDataUrl : null),
+    }));
+    return [...pro, ...usr];
+  }, [userBots]);
 
   // ------------------ state config ------------------
   const [lives, setLives] = React.useState<number>(3);
@@ -341,6 +373,9 @@ export default function KillerConfigPage(props: Props) {
 
   // ✅ NEW
   const [numberAssignMode, setNumberAssignMode] = React.useState<KillerNumberAssignMode>("random");
+
+  // ✅ NEW — ordre de départ
+  const [randomStartOrder, setRandomStartOrder] = React.useState<boolean>(false);
 
   const [friendlyFire, setFriendlyFire] = React.useState<boolean>(false);
   const [ownNumberHurtsWhenKiller, setOwnNumberHurtsWhenKiller] = React.useState<boolean>(false);
@@ -415,7 +450,7 @@ export default function KillerConfigPage(props: Props) {
       return {
         id: bot.id,
         name: bot.name,
-        avatarDataUrl: bot.avatarDataUrl ?? null,
+        avatarDataUrl: normalizeImgSrc(bot.avatarDataUrl) ?? bot.avatarDataUrl ?? null,
         isBot: true,
         botLevel: bot.botLevel ?? undefined,
       };
@@ -475,6 +510,9 @@ export default function KillerConfigPage(props: Props) {
       // ✅ NEW
       numberAssignMode,
       autoKill: ownNumberHurtsWhenKiller,
+
+      // ✅ NEW — ordre de départ
+      randomStartOrder,
 
       friendlyFire,
       ownNumberHurtsWhenKiller,
@@ -662,9 +700,7 @@ export default function KillerConfigPage(props: Props) {
                           borderRadius: "50%",
                           overflow: "hidden",
                           boxShadow: active ? `0 0 28px ${primary}aa` : "0 0 14px rgba(0,0,0,0.65)",
-                          background: active
-                            ? `radial-gradient(circle at 30% 20%, #fff8d0, ${primary})`
-                            : "#111320",
+                          background: active ? `radial-gradient(circle at 30% 20%, #fff8d0, ${primary})` : "#111320",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
@@ -836,9 +872,7 @@ export default function KillerConfigPage(props: Props) {
                 />
               ))}
             </div>
-            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
-              Vies identiques pour tous les joueurs.
-            </div>
+            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>Vies identiques pour tous les joueurs.</div>
           </div>
 
           {/* become rule */}
@@ -881,9 +915,7 @@ export default function KillerConfigPage(props: Props) {
                 primarySoft={primarySoft}
               />
             </div>
-            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
-              Quand tu touches le numéro d’un adversaire vivant.
-            </div>
+            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>Quand tu touches le numéro d’un adversaire vivant.</div>
           </div>
 
           {/* ✅ NEW — Attribution des numéros */}
@@ -908,6 +940,53 @@ export default function KillerConfigPage(props: Props) {
 
             <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
               En mode “1er lancer”, les numéros du menu sont ignorés (le premier tir de chaque joueur fixe son numéro).
+            </div>
+          </div>
+
+          {/* =========================
+              ✅ ORDRE DE DÉPART
+             ========================= */}
+          <div style={{ marginTop: 2, marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Ordre de départ</div>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+              <button
+                type="button"
+                onClick={() => setRandomStartOrder(false)}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: 14,
+                  fontWeight: 900,
+                  border: !randomStartOrder ? "1px solid rgba(255,198,58,.55)" : "1px solid rgba(255,255,255,.12)",
+                  background: !randomStartOrder ? "rgba(255,198,58,.18)" : "rgba(0,0,0,.35)",
+                  color: !randomStartOrder ? "#ffe7b0" : "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                Ordre des joueurs
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRandomStartOrder(true)}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: 14,
+                  fontWeight: 900,
+                  border: randomStartOrder ? "1px solid rgba(255,198,58,.55)" : "1px solid rgba(255,255,255,.12)",
+                  background: randomStartOrder ? "rgba(255,198,58,.18)" : "rgba(0,0,0,.35)",
+                  color: randomStartOrder ? "#ffe7b0" : "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                🎲 Aléatoire
+              </button>
+            </div>
+
+            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
+              Si activé, l’ordre de jeu est mélangé automatiquement au lancement.
             </div>
           </div>
 
@@ -1160,22 +1239,8 @@ function VariantRow({
       </div>
 
       <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-        <PillButton
-          label="ON"
-          active={value === true}
-          onClick={() => onChange(true)}
-          primary={primary}
-          primarySoft={primarySoft}
-          compact
-        />
-        <PillButton
-          label="OFF"
-          active={value === false}
-          onClick={() => onChange(false)}
-          primary={primary}
-          primarySoft={primarySoft}
-          compact
-        />
+        <PillButton label="ON" active={value === true} onClick={() => onChange(true)} primary={primary} primarySoft={primarySoft} compact />
+        <PillButton label="OFF" active={value === false} onClick={() => onChange(false)} primary={primary} primarySoft={primarySoft} compact />
       </div>
     </div>
   );

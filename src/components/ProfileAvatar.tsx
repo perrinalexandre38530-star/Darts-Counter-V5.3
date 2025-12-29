@@ -8,6 +8,7 @@
 // ✅ FIX PERF : ignore base64 énorme (évite RAM + latence)
 // ✅ CLEAN : suppression logs/DEBUG + pas de cercle rouge
 // ✅ NEW GLOBAL FIX : si profile "lite" (id/name) => auto-resolve via loadStore() (sans modifier tous les setups)
+// ✅ FIX ASSETS : accepte /assets/... + chemins relatifs + import png {default: "..."} (bots PRO)
 // ============================================
 
 import React from "react";
@@ -22,9 +23,9 @@ import { loadStore } from "../lib/storage";
 type ProfileLike = {
   id?: string;
   name?: string;
-  avatarDataUrl?: string | null;
-  avatarUrl?: string | null;
-  avatarPath?: string | null;
+  avatarDataUrl?: any | null; // ⚠️ peut être string OU import png (object {default})
+  avatarUrl?: any | null;     // idem
+  avatarPath?: any | null;
   avatarUpdatedAt?: number | null; // (optionnel) si tu l’utilises ailleurs
   stats?: { avg3D?: number | null; avg3?: number | null } | null;
 };
@@ -38,7 +39,7 @@ type VisualOpts = {
 
 type Props =
   | (VisualOpts & {
-      dataUrl?: string;
+      dataUrl?: any;   // string OU import
       label?: string;
       size?: number;
       avg3D?: number | null;
@@ -54,15 +55,37 @@ type Props =
       label?: never;
     });
 
+// ✅ import png peut être string OU {default: string}
+function normalizeImport(v: any): string | null {
+  if (!v) return null;
+  if (typeof v === "string") {
+    const s = v.trim();
+    return s ? s : null;
+  }
+  if (typeof v === "object") {
+    const d = (v as any).default;
+    if (typeof d === "string") {
+      const s = d.trim();
+      return s ? s : null;
+    }
+  }
+  return null;
+}
+
+// ✅ cache bust pour http(s) MAIS AUSSI /assets + relatifs
 function withCacheBust(src: string, salt: string) {
-  if (!/^https?:\/\//i.test(src)) return src;
+  if (!src) return src;
+
+  // pas besoin pour data/blob
+  if (/^data:|^blob:/i.test(src)) return src;
+
   const hasQ = src.includes("?");
   return `${src}${hasQ ? "&" : "?"}v=${encodeURIComponent(salt)}`;
 }
 
+// ✅ accepte data/blob/http(s) + /assets + chemins relatifs + fichiers .png/.jpg...
 function normalizeSrc(raw: any): string | null {
-  if (!raw || typeof raw !== "string") return null;
-  const s = raw.trim();
+  const s = normalizeImport(raw);
   if (!s) return null;
 
   // OK: data:, blob:
@@ -73,7 +96,14 @@ function normalizeSrc(raw: any): string | null {
     return s.replace(/ /g, "%20");
   }
 
-  // path sans host -> pas résolvable ici
+  // ✅ OK: assets Vite (/assets/xxxx.png)
+  if (s.startsWith("/assets/")) return s.replace(/ /g, "%20");
+
+  // ✅ OK: chemins relatifs (./ ../) ou fichier direct (xxx.png)
+  if (s.startsWith("./") || s.startsWith("../")) return s.replace(/ /g, "%20");
+  if (/\.(png|jpg|jpeg|webp|gif|svg)(\?.*)?$/i.test(s)) return s.replace(/ /g, "%20");
+
+  // sinon: inconnu (ex: "avatars/bot1" sans extension)
   return null;
 }
 
@@ -99,7 +129,6 @@ async function getProfileByIdFromStore(profileId: string): Promise<ProfileLike |
     for (const pr of arr) {
       const id = pr?.id;
       if (!id) continue;
-      // on ne garde que ce qui est utile ici (léger)
       map.set(String(id), {
         id: String(id),
         name: pr?.name,
@@ -121,9 +150,9 @@ async function getProfileByIdFromStore(profileId: string): Promise<ProfileLike |
 function isLiteProfile(p: ProfileLike | null): boolean {
   if (!p?.id) return false;
   const hasAny =
-    (p.avatarUrl && String(p.avatarUrl).trim()) ||
-    (p.avatarDataUrl && String(p.avatarDataUrl).trim()) ||
-    (p.avatarPath && String(p.avatarPath).trim());
+    (normalizeImport(p.avatarUrl) || "") ||
+    (normalizeImport(p.avatarDataUrl) || "") ||
+    (normalizeImport(p.avatarPath) || "");
   return !hasAny;
 }
 
@@ -135,7 +164,7 @@ export default function ProfileAvatar(props: Props) {
   const inputProfile: ProfileLike | null =
     ("profile" in props ? props.profile : null) ?? null;
 
-  // ✅ NEW: profil résolu (si on reçoit un profil "lite")
+  // ✅ profil résolu (si on reçoit un profil "lite")
   const [resolvedProfile, setResolvedProfile] = React.useState<ProfileLike | null>(null);
 
   React.useEffect(() => {
@@ -149,7 +178,6 @@ export default function ProfileAvatar(props: Props) {
         return;
       }
 
-      // si déjà complet -> pas besoin
       if (!isLiteProfile(p)) {
         if (mounted) setResolvedProfile(null);
         return;
@@ -158,15 +186,13 @@ export default function ProfileAvatar(props: Props) {
       const full = await getProfileByIdFromStore(id);
       if (!mounted) return;
 
-      // merge safe: on ne remplace jamais un champ déjà présent dans inputProfile
       if (full) {
         setResolvedProfile({
           ...full,
           ...p,
-          avatarUrl: (p?.avatarUrl && String(p.avatarUrl).trim()) ? p.avatarUrl : full.avatarUrl,
-          avatarPath: (p?.avatarPath && String(p.avatarPath).trim()) ? p.avatarPath : full.avatarPath,
-          avatarDataUrl:
-            (p?.avatarDataUrl && String(p.avatarDataUrl).trim()) ? p.avatarDataUrl : full.avatarDataUrl,
+          avatarUrl: normalizeImport(p?.avatarUrl) ? p?.avatarUrl : full.avatarUrl,
+          avatarPath: normalizeImport(p?.avatarPath) ? p?.avatarPath : full.avatarPath,
+          avatarDataUrl: normalizeImport(p?.avatarDataUrl) ? p?.avatarDataUrl : full.avatarDataUrl,
           stats: p?.stats ?? full.stats ?? null,
           name: p?.name ?? full.name,
         });
@@ -197,33 +223,25 @@ export default function ProfileAvatar(props: Props) {
 
   // ============================================================
   // ✅ SOURCE ORDER FIX
-  // - dataUrl (props) = preview explicite (ex: blob: en édition) -> PRIORITÉ
+  // - dataUrl (props) = preview explicite -> PRIORITÉ
   // - avatarUrl (Supabase publicUrl) -> PRIORITÉ
-  // - avatarPath (si déjà un vrai src http/data/blob) -> ok
+  // - avatarPath (si déjà un vrai src résolvable) -> ok
   // - avatarDataUrl (legacy base64) -> EN DERNIER, et ignoré si énorme
   // ============================================================
-  const propDataUrl =
-    "dataUrl" in props && props.dataUrl ? String(props.dataUrl).trim() : "";
+  const propDataUrl = "dataUrl" in props ? normalizeImport(props.dataUrl) ?? "" : "";
 
-  const avatarUrl = p?.avatarUrl ? String(p.avatarUrl).trim() : "";
-  const avatarPath = p?.avatarPath ? String(p.avatarPath).trim() : "";
-  const avatarDataUrl = p?.avatarDataUrl ? String(p.avatarDataUrl).trim() : "";
+  const avatarUrl = normalizeImport(p?.avatarUrl) ?? "";
+  const avatarPath = normalizeImport(p?.avatarPath) ?? "";
+  const avatarDataUrl = normalizeImport(p?.avatarDataUrl) ?? "";
 
   const dataUrlLooksHuge =
     avatarDataUrl.startsWith("data:image/") && avatarDataUrl.length > 200_000;
 
   const rawImg = React.useMemo(() => {
     if (propDataUrl) return propDataUrl; // preview explicite (souvent blob:)
-    if (avatarUrl) return avatarUrl; // ✅ Supabase doit gagner
-    if (
-      avatarPath &&
-      (avatarPath.startsWith("http") ||
-        avatarPath.startsWith("data:") ||
-        avatarPath.startsWith("blob:"))
-    ) {
-      return avatarPath;
-    }
-    if (avatarDataUrl && !dataUrlLooksHuge) return avatarDataUrl; // legacy ok si petit
+    if (avatarUrl) return avatarUrl;     // ✅ Supabase doit gagner
+    if (avatarPath) return avatarPath;   // peut être /assets/... ou relatif maintenant
+    if (avatarDataUrl && !dataUrlLooksHuge) return avatarDataUrl;
     return null;
   }, [propDataUrl, avatarUrl, avatarPath, avatarDataUrl, dataUrlLooksHuge]);
 
@@ -237,10 +255,10 @@ export default function ProfileAvatar(props: Props) {
     const normalized = normalizeSrc(rawImg);
     if (!normalized) return null;
 
-    // ✅ salt plus stable si avatarUpdatedAt existe (sinon fallback)
+    // ✅ salt stable si avatarUpdatedAt existe
     const salt =
       (p && typeof (p as any).avatarUpdatedAt === "number" && String((p as any).avatarUpdatedAt)) ||
-      String(rawImg).slice(-24) ||
+      (typeof rawImg === "string" ? String(rawImg).slice(-24) : "") ||
       String(Date.now());
 
     return withCacheBust(normalized, salt);

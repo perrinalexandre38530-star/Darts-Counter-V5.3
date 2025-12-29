@@ -3,7 +3,7 @@
 // Remplace totalement l'ancienne version localStorage
 // API principale : loadStore(), saveStore(), clearStore()
 // + Helpers : getKV()/setKV()/delKV(), exportAll(), importAll(), storageEstimate()
-// + Reset : nukeAll(), nukeAllKeepActiveProfile()
+// + Tools : nukeAll(), migrateFromLocalStorage(), nukeAllKeepActiveProfile()
 // ============================================
 
 import type { Store, Profile } from "./types";
@@ -21,14 +21,13 @@ const supportsCompression =
 
 /* ---------- Encodage / décodage ---------- */
 async function compressGzip(data: string): Promise<Uint8Array | string> {
-  if (!supportsCompression) return data; // fallback string (non compressé)
+  if (!supportsCompression) return data;
   try {
     const cs = new (globalThis as any).CompressionStream("gzip");
     const stream = new Blob([data]).stream().pipeThrough(cs);
     const buf = await new Response(stream).arrayBuffer();
     return new Uint8Array(buf);
   } catch {
-    // En cas d’échec, on renvoie la string
     return data;
   }
 }
@@ -38,27 +37,18 @@ async function decompressGzip(
 ): Promise<string> {
   if (typeof payload === "string") return payload;
 
+  // Pas de support gzip : on essaye de décoder brut
   if (!supportsCompression) {
-    // Pas de support gzip : on essaye de décoder brut
-    try {
-      return new TextDecoder().decode(payload as ArrayBufferLike);
-    } catch {
-      return "";
-    }
+    return new TextDecoder().decode(payload as ArrayBufferLike);
   }
 
   try {
     const ds = new (globalThis as any).DecompressionStream("gzip");
-    // ✅ Blob accepte Uint8Array / ArrayBuffer
-    const stream = new Blob([payload as any]).stream().pipeThrough(ds);
+    const stream = new Blob([payload as ArrayBuffer]).stream().pipeThrough(ds);
     return await new Response(stream).text();
   } catch {
-    // En dernier recours, tentative de décodage brut
-    try {
-      return new TextDecoder().decode(payload as ArrayBufferLike);
-    } catch {
-      return "";
-    }
+    // Dernier recours
+    return new TextDecoder().decode(payload as ArrayBufferLike);
   }
 }
 
@@ -66,12 +56,14 @@ async function decompressGzip(
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
+
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
       }
     };
+
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -83,6 +75,7 @@ async function idbGet<T = unknown>(key: IDBValidKey): Promise<T | undefined> {
     const tx = db.transaction(STORE_NAME, "readonly");
     const store = tx.objectStore(STORE_NAME);
     const req = store.get(key);
+
     req.onsuccess = () => resolve(req.result as T | undefined);
     req.onerror = () => reject(req.error);
   });
@@ -94,6 +87,7 @@ async function idbSet(key: IDBValidKey, value: any): Promise<void> {
     const tx = db.transaction(STORE_NAME, "readwrite");
     const store = tx.objectStore(STORE_NAME);
     const req = store.put(value, key);
+
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
@@ -105,6 +99,7 @@ async function idbDel(key: IDBValidKey): Promise<void> {
     const tx = db.transaction(STORE_NAME, "readwrite");
     const store = tx.objectStore(STORE_NAME);
     const req = store.delete(key);
+
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
@@ -144,6 +139,7 @@ async function idbClear(): Promise<void> {
     const tx = db.transaction(STORE_NAME, "readwrite");
     const store = tx.objectStore(STORE_NAME);
     const req = store.clear();
+
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
@@ -154,7 +150,8 @@ export async function storageEstimate() {
   try {
     const est =
       (await (navigator.storage?.estimate?.() ??
-        Promise.resolve(undefined as any))) ?? (undefined as any);
+        Promise.resolve(undefined as any))) ?? null;
+
     return {
       quota: est?.quota ?? null, // bytes
       usage: est?.usage ?? null, // bytes
@@ -167,15 +164,23 @@ export async function storageEstimate() {
 
 /* ============================================================
    ✅ NORMALISATION AVATARS (COMPAT)
-   Certains écrans utilisent p.avatarDataUrl uniquement.
-   => si avatarUrl (Supabase) existe, on le copie dans avatarDataUrl (si vide).
+   Certains écrans legacy lisent uniquement profile.avatarDataUrl.
+   => si avatarUrl (Supabase) ou avatarPath existe, et avatarDataUrl vide,
+      on copie l’URL vers avatarDataUrl.
 ============================================================ */
-function normalizeStoreAvatarsCompatSync<T extends any>(store: T): T {
+function normalizeStoreAvatarsCompatSync<T extends any>(store: T): {
+  store: T;
+  changed: boolean;
+} {
   try {
     const profiles = (store as any)?.profiles;
-    if (!Array.isArray(profiles) || !profiles.length) return store;
+    if (!Array.isArray(profiles) || profiles.length === 0) {
+      return { store, changed: false };
+    }
 
-    (store as any).profiles = profiles.map((p: any) => {
+    let changed = false;
+
+    const nextProfiles = profiles.map((p: any) => {
       if (!p || typeof p !== "object") return p;
 
       const avatarUrl = typeof p.avatarUrl === "string" ? p.avatarUrl.trim() : "";
@@ -185,7 +190,10 @@ function normalizeStoreAvatarsCompatSync<T extends any>(store: T): T {
         typeof p.avatarDataUrl === "string" ? p.avatarDataUrl.trim() : "";
 
       if (!avatarDataUrl) {
-        if (avatarUrl) return { ...p, avatarDataUrl: avatarUrl };
+        if (avatarUrl) {
+          changed = true;
+          return { ...p, avatarDataUrl: avatarUrl };
+        }
 
         if (
           avatarPath &&
@@ -194,6 +202,7 @@ function normalizeStoreAvatarsCompatSync<T extends any>(store: T): T {
             avatarPath.startsWith("data:") ||
             avatarPath.startsWith("blob:"))
         ) {
+          changed = true;
           return { ...p, avatarDataUrl: avatarPath };
         }
       }
@@ -201,15 +210,21 @@ function normalizeStoreAvatarsCompatSync<T extends any>(store: T): T {
       return p;
     });
 
-    return store;
+    if (!changed) return { store, changed: false };
+
+    return {
+      store: { ...(store as any), profiles: nextProfiles } as T,
+      changed: true,
+    };
   } catch {
-    return store;
+    return { store, changed: false };
   }
 }
 
 /* ============================================================
-   ✅ AVATAR NORMALIZER (DATAURL HUGE)
-   Objectif : éviter les dataUrl énormes (RAM/latence)
+   ✅ NORMALISATION AVATAR (PERF)
+   Objectif : éviter les dataUrl énormes (RAM/latence + UI qui casse)
+   - si data:image/... trop gros => downscale JPEG 256px
 ============================================================ */
 function isHugeImageDataUrl(s: any, minLen = 200_000): s is string {
   return typeof s === "string" && s.startsWith("data:image/") && s.length > minLen;
@@ -244,7 +259,7 @@ async function downscaleImageDataUrl(
 
           ctx.drawImage(img, 0, 0, tw, th);
 
-          // jpeg compact (si besoin transparence -> image/webp)
+          // JPEG compact ; si tu veux transparence => "image/webp"
           const out = canvas.toDataURL("image/jpeg", quality);
           resolve(out || dataUrl);
         } catch {
@@ -259,7 +274,7 @@ async function downscaleImageDataUrl(
   });
 }
 
-async function normalizeStoreAvatarsHeavy<T extends Store>(
+async function normalizeStoreAvatarsPerf<T extends Store>(
   store: T
 ): Promise<{ store: T; changed: boolean }> {
   try {
@@ -267,13 +282,19 @@ async function normalizeStoreAvatarsHeavy<T extends Store>(
       ? (store as any).profiles
       : [];
 
+    if (profiles.length === 0) return { store, changed: false };
+
     let changed = false;
 
     const nextProfiles = await Promise.all(
       profiles.map(async (p) => {
-        if (!p || typeof p !== "object") return p;
+        if (!p) return p;
 
-        // ⚠️ on downscale uniquement les dataUrl (pas les http)
+        // Si avatarUrl existe (Supabase) -> on ne touche pas ici
+        const hasAvatarUrl =
+          typeof p.avatarUrl === "string" && p.avatarUrl.trim().length > 0;
+        if (hasAvatarUrl) return p;
+
         const raw = p.avatarDataUrl;
 
         if (isHugeImageDataUrl(raw)) {
@@ -289,11 +310,27 @@ async function normalizeStoreAvatarsHeavy<T extends Store>(
     );
 
     if (!changed) return { store, changed: false };
-    const next = { ...(store as any), profiles: nextProfiles } as T;
-    return { store: next, changed: true };
+
+    return {
+      store: { ...(store as any), profiles: nextProfiles } as T,
+      changed: true,
+    };
   } catch {
     return { store, changed: false };
   }
+}
+
+async function normalizeStoreAll<T extends Store>(
+  store: T
+): Promise<{ store: T; changed: boolean }> {
+  // 1) compat sync (copie avatarUrl->avatarDataUrl si besoin)
+  const compat = normalizeStoreAvatarsCompatSync(store);
+  // 2) perf async (downscale dataUrl énormes)
+  const perf = await normalizeStoreAvatarsPerf(compat.store);
+  return {
+    store: perf.store,
+    changed: compat.changed || perf.changed,
+  };
 }
 
 /* ---------- API publique principale ---------- */
@@ -309,22 +346,16 @@ export async function loadStore<T extends Store>(): Promise<T | null> {
       const json = await decompressGzip(raw as any);
       const parsed = JSON.parse(json) as T;
 
-      // ✅ compat (avatarUrl -> avatarDataUrl si vide)
-      const compat = normalizeStoreAvatarsCompatSync(parsed);
-
-      // ✅ heavy (downscale huge dataUrl)
-      const { store: normalized, changed } = await normalizeStoreAvatarsHeavy(
-        compat as any
-      );
-
-      // ✅ si modifié, on persiste UNE FOIS ici
-      if (changed) {
+      const norm = await normalizeStoreAll(parsed);
+      // ✅ si on a modifié, on persiste directement sans repasser par saveStore (évite boucles)
+      if (norm.changed) {
         try {
-          await saveStore(normalized as any);
+          const payload = await compressGzip(JSON.stringify(norm.store));
+          await idbSet(STORE_KEY, payload);
         } catch {}
       }
 
-      return normalized;
+      return norm.store;
     }
 
     // 2) Migration depuis localStorage (legacy)
@@ -332,14 +363,14 @@ export async function loadStore<T extends Store>(): Promise<T | null> {
     if (legacy) {
       const parsed = JSON.parse(legacy) as T;
 
-      const compat = normalizeStoreAvatarsCompatSync(parsed);
-      const { store: normalized } = await normalizeStoreAvatarsHeavy(compat as any);
+      const norm = await normalizeStoreAll(parsed);
 
-      await saveStore(normalized as any);
+      await saveStore(norm.store);
       try {
         localStorage.removeItem(LEGACY_LS_KEY);
       } catch {}
-      return normalized;
+
+      return norm.store;
     }
 
     return null;
@@ -349,25 +380,39 @@ export async function loadStore<T extends Store>(): Promise<T | null> {
   }
 }
 
+type SaveOpts = {
+  /** évite l’étape async (downscale) si tu veux une écriture ultra rapide */
+  skipAsyncNormalize?: boolean;
+};
+
 /** Sauvegarde complète du store (écrase la valeur précédente). */
-export async function saveStore<T extends Store>(store: T): Promise<void> {
+export async function saveStore<T extends Store>(
+  store: T,
+  opts?: SaveOpts
+): Promise<void> {
   try {
-    // ✅ compat léger à l’écriture
+    // ✅ normalise toujours au minimum (compat)
     const compat = normalizeStoreAvatarsCompatSync(store);
 
-    const json = JSON.stringify(compat);
+    // ✅ perf (optionnel)
+    const final =
+      opts?.skipAsyncNormalize === true
+        ? { store: compat.store as T, changed: compat.changed }
+        : await normalizeStoreAll(compat.store as T);
+
+    const json = JSON.stringify(final.store);
     const payload = await compressGzip(json);
 
-    // Garde-fou : si on a une estimation et qu’on dépasse ~90% du quota, on log.
-    try {
-      const est = await storageEstimate();
-      if (est.quota != null && est.usage != null && typeof payload !== "string") {
-        const projected = est.usage + (payload as Uint8Array).byteLength;
-        if (projected > est.quota * 0.98) {
-          console.warn("[storage] quota presque plein, écriture risquée.");
-        }
+    // Garde-fou quota (warning seulement)
+    const est = await storageEstimate();
+    if (est.quota != null && est.usage != null && typeof payload !== "string") {
+      const projected = est.usage + (payload as Uint8Array).byteLength;
+      if (projected > est.quota * 0.98) {
+        console.warn(
+          "[storage] quota presque plein, tentative d’écriture quand même."
+        );
       }
-    } catch {}
+    }
 
     await idbSet(STORE_KEY, payload);
   } catch (err) {
@@ -442,7 +487,7 @@ export async function exportAll(): Promise<Record<string, any>> {
         data = JSON.parse(v);
       }
     } catch {
-      data = v; // si ce n’est pas du JSON, on laisse brut
+      data = v;
     }
 
     out[String(k)] = data;
@@ -507,8 +552,8 @@ export async function nukeAllKeepActiveProfile(): Promise<void> {
 
       const activeId = parsed.activeProfileId ?? null;
       if (activeId) {
-        activeProfile = parsed.profiles?.find((p) => p.id === activeId) || null;
-        activeProfile = activeProfile ? { ...activeProfile } : null;
+        const prof = parsed.profiles?.find((p) => p.id === activeId) || null;
+        activeProfile = prof ? { ...prof } : null;
       }
     }
   } catch (err) {
@@ -529,7 +574,10 @@ export async function nukeAllKeepActiveProfile(): Promise<void> {
 
   // 4) Si on avait un profil actif → on recrée un store minimal
   if (activeProfile) {
-    const cleanProfile: Profile = { ...activeProfile };
+    const cleanProfile: Profile = {
+      ...activeProfile,
+      // si tu veux purger certains champs, fais-le ici
+    };
 
     const newStore: Store = {
       profiles: [cleanProfile],
@@ -538,8 +586,7 @@ export async function nukeAllKeepActiveProfile(): Promise<void> {
     } as Store;
 
     try {
-      const json = JSON.stringify(newStore);
-      const payload = await compressGzip(json);
+      const payload = await compressGzip(JSON.stringify(newStore));
       await idbSet(STORE_KEY, payload);
     } catch (err) {
       console.warn("[storage] unable to write minimal store after reset", err);
