@@ -1762,24 +1762,38 @@ function PrivateInfoBlock({
   const { theme } = useTheme();
   const { t } = useLang();
 
+  // ✅ initial stable : dépend de l'id + des champs sources (évite reset à chaque render)
   const initial: PrivateInfo = React.useMemo(() => {
-    if (!active) return {};
-    const pi = ((active as any).privateInfo || {}) as PrivateInfo;
+    const pi = ((active as any)?.privateInfo || {}) as PrivateInfo;
     return {
-      nickname: pi.nickname || "",
-      lastName: pi.lastName || "",
-      firstName: pi.firstName || "",
-      birthDate: pi.birthDate || "",
-      country: pi.country || "",
-      city: pi.city || "",
-      email: pi.email || "",
-      phone: pi.phone || "",
-      password: pi.password || "",
+      nickname: String(pi.nickname || ""),
+      lastName: String(pi.lastName || ""),
+      firstName: String(pi.firstName || ""),
+      birthDate: String(pi.birthDate || ""),
+      country: String(pi.country || ""),
+      city: String(pi.city || ""),
+      email: String(pi.email || ""),
+      phone: String(pi.phone || ""),
+      password: String(pi.password || ""),
       onlineKey: pi.onlineKey, // 👈 on le garde
       appLang: pi.appLang,
       appTheme: pi.appTheme,
     };
-  }, [active]);
+  }, [
+    (active as any)?.id,
+    (active as any)?.privateInfo?.nickname,
+    (active as any)?.privateInfo?.lastName,
+    (active as any)?.privateInfo?.firstName,
+    (active as any)?.privateInfo?.birthDate,
+    (active as any)?.privateInfo?.country,
+    (active as any)?.privateInfo?.city,
+    (active as any)?.privateInfo?.email,
+    (active as any)?.privateInfo?.phone,
+    (active as any)?.privateInfo?.password,
+    (active as any)?.privateInfo?.onlineKey,
+    (active as any)?.privateInfo?.appLang,
+    (active as any)?.privateInfo?.appTheme,
+  ]);
 
   const [fields, setFields] = React.useState<PrivateInfo>(initial);
   const [showPassword, setShowPassword] = React.useState(false);
@@ -1789,12 +1803,26 @@ function PrivateInfoBlock({
   const [newPass2, setNewPass2] = React.useState("");
   const [passError, setPassError] = React.useState<string | null>(null);
 
+  // ✅ reset UNIQUEMENT quand on change de profil actif (id)
+  const lastIdRef = React.useRef<string>("");
+
   React.useEffect(() => {
-    setFields(initial);
-  }, [initial]);
+    const id = String((active as any)?.id || "");
+    if (!id) return;
+
+    if (lastIdRef.current !== id) {
+      lastIdRef.current = id;
+      setFields(initial);
+      setShowPassword(false);
+      setNewPass("");
+      setNewPass2("");
+      setPassError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(active as any)?.id]); // <-- seulement l'id
 
   function handleChange<K extends keyof PrivateInfo>(key: K, value: string) {
-    setFields((f) => ({ ...f, [key]: value }));
+    setFields((f) => ({ ...(f || {}), [key]: value } as PrivateInfo));
   }
 
   function handleCancel() {
@@ -1806,7 +1834,7 @@ function PrivateInfoBlock({
   }
 
   function handleSubmit() {
-    const patch: PrivateInfo = { ...fields };
+    const patch: PrivateInfo = { ...(fields || {}) };
 
     // === Nouveau mot de passe ?
     if (newPass || newPass2) {
@@ -1855,14 +1883,8 @@ function PrivateInfoBlock({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* ====== INFOS PERSONNELLES ====== */}
-      <div
-        className="subtitle"
-        style={{ fontSize: 12, color: theme.textSoft }}
-      >
-        {t(
-          "profiles.private.hint",
-          "Ces informations restent locales et privées."
-        )}
+      <div className="subtitle" style={{ fontSize: 12, color: theme.textSoft }}>
+        {t("profiles.private.hint", "Ces informations restent locales et privées.")}
       </div>
 
       <div style={{ display: "grid", gap: 10 }}>
@@ -1911,15 +1933,11 @@ function PrivateInfoBlock({
         />
 
         {/* mot de passe actuel */}
-        <label
-          style={{ display: "flex", flexDirection: "column", gap: 4 }}
-        >
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ color: theme.textSoft }}>
             {t("profiles.private.password", "Mot de passe actuel")}
           </span>
-          <div
-            style={{ display: "flex", gap: 6, alignItems: "center" }}
-          >
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <input
               type={showPassword ? "text" : "password"}
               className="input"
@@ -1929,11 +1947,10 @@ function PrivateInfoBlock({
             />
             <button
               className="btn sm"
+              type="button"
               onClick={() => setShowPassword((v) => !v)}
             >
-              {showPassword
-                ? t("common.hide", "Masquer")
-                : t("common.show", "Afficher")}
+              {showPassword ? t("common.hide", "Masquer") : t("common.show", "Afficher")}
             </button>
           </div>
         </label>
@@ -1953,35 +1970,27 @@ function PrivateInfoBlock({
 
       <div style={{ display: "grid", gap: 10 }}>
         <PrivateField
-          label={t(
-            "profiles.private.newPassword",
-            "Nouveau mot de passe"
-          )}
+          label={t("profiles.private.newPassword", "Nouveau mot de passe")}
           type="password"
           value={newPass}
           onChange={(v) => setNewPass(v)}
         />
         <PrivateField
-          label={t(
-            "profiles.private.newPasswordConfirm",
-            "Confirmer nouveau mot de passe"
-          )}
+          label={t("profiles.private.newPasswordConfirm", "Confirmer nouveau mot de passe")}
           type="password"
           value={newPass2}
           onChange={(v) => setNewPass2(v)}
         />
 
-        {passError && (
-          <div style={{ fontSize: 11, color: "#ff6666" }}>{passError}</div>
-        )}
+        {passError && <div style={{ fontSize: 11, color: "#ff6666" }}>{passError}</div>}
       </div>
 
       {/* BOUTONS */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-        <button className="btn sm" onClick={handleCancel}>
+        <button className="btn sm" type="button" onClick={handleCancel}>
           {t("common.cancel", "Annuler")}
         </button>
-        <button className="btn ok sm" onClick={handleSubmit}>
+        <button className="btn ok sm" type="button" onClick={handleSubmit}>
           {t("common.save", "Enregistrer")}
         </button>
       </div>
