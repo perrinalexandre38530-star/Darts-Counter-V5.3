@@ -10,10 +10,11 @@
 // - Sort un KillerConfig consommé par KillerPlay (routeParams.config)
 // - FIX: onStart peut être absent -> fallback go("killer_play", { config })
 //
-// ✅ NEW:
+// ✅ NEW (ce fichier):
 // - Ordre de départ (randomStartOrder) en haut des options
 // - Attribution des numéros juste dessous
-// - Variantes renommées (compréhensibles) + suppression variante C (inutile)
+// - Variantes renommées (compréhensibles) + suppression variante inutile
+// - ✅ Variantes avancées : self-penalty, multiplier self-penalty, life steal, blind killer
 // - AVATARS BOTS OK avec ton ProfileAvatar actuel (qui refuse /assets/)
 // =============================================================
 
@@ -63,13 +64,14 @@ export type KillerConfig = {
   damageRule: KillerDamageRule;
 
   numberAssignMode: KillerNumberAssignMode;
-  autoKill: boolean; // alias lisible de ownNumberHurtsWhenKiller (compat KillerPlay)
-
   randomStartOrder?: boolean;
 
-  // variantes
-  friendlyFire: boolean;
-  ownNumberHurtsWhenKiller: boolean;
+  // ✅ Variantes claires (et prévues pour KillerPlay patché)
+  friendlyFire: boolean; // KILLER peut frapper un autre KILLER (Killer vs Killer)
+  selfHitWhileKiller: boolean; // toucher son numéro quand KILLER => perd vie(s) (PAS dead instant)
+  selfHitUsesMultiplier: boolean; // si ON : perte = 1/2/3 selon S/D/T sinon -1
+  lifeSteal: boolean; // vols de vies : ce que perd la cible est gagné par le killer
+  blindKiller: boolean; // masque les numéros à l'écran pendant la partie (mode aveugle)
 
   players: KillerConfigPlayer[];
 };
@@ -357,9 +359,12 @@ export default function KillerConfigPage(props: Props) {
   const [numberAssignMode, setNumberAssignMode] = React.useState<KillerNumberAssignMode>("random");
   const [randomStartOrder, setRandomStartOrder] = React.useState<boolean>(false);
 
-  // Variantes conservées (2)
+  // ✅ variantes (claires)
   const [friendlyFire, setFriendlyFire] = React.useState<boolean>(false);
-  const [ownNumberHurtsWhenKiller, setOwnNumberHurtsWhenKiller] = React.useState<boolean>(false);
+  const [selfHitWhileKiller, setSelfHitWhileKiller] = React.useState<boolean>(false);
+  const [selfHitUsesMultiplier, setSelfHitUsesMultiplier] = React.useState<boolean>(false);
+  const [lifeSteal, setLifeSteal] = React.useState<boolean>(false);
+  const [blindKiller, setBlindKiller] = React.useState<boolean>(false);
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>(() => {
     if (humanProfiles.length >= 2) return [humanProfiles[0].id, humanProfiles[1].id];
@@ -475,11 +480,14 @@ export default function KillerConfigPage(props: Props) {
       damageRule,
 
       numberAssignMode,
-      autoKill: ownNumberHurtsWhenKiller,
       randomStartOrder,
 
       friendlyFire,
-      ownNumberHurtsWhenKiller,
+      selfHitWhileKiller,
+      selfHitUsesMultiplier,
+      lifeSteal,
+      blindKiller,
+
       players,
     };
 
@@ -877,7 +885,15 @@ export default function KillerConfigPage(props: Props) {
             <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Vies de départ</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {[1, 2, 3, 4, 5, 6].map((n) => (
-                <PillButton key={n} label={String(n)} active={lives === n} onClick={() => setLives(n)} primary={primary} primarySoft={primarySoft} compact />
+                <PillButton
+                  key={n}
+                  label={String(n)}
+                  active={lives === n}
+                  onClick={() => setLives(n)}
+                  primary={primary}
+                  primarySoft={primarySoft}
+                  compact
+                />
               ))}
             </div>
             <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>Vies identiques pour tous les joueurs.</div>
@@ -908,7 +924,13 @@ export default function KillerConfigPage(props: Props) {
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Dégâts quand on est KILLER</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <PillButton label="-1 par hit" active={damageRule === "one"} onClick={() => setDamageRule("one")} primary={primary} primarySoft={primarySoft} />
+              <PillButton
+                label="-1 par hit"
+                active={damageRule === "one"}
+                onClick={() => setDamageRule("one")}
+                primary={primary}
+                primarySoft={primarySoft}
+              />
               <PillButton
                 label="Multiplicateur (S/D/T)"
                 active={damageRule === "multiplier"}
@@ -924,24 +946,65 @@ export default function KillerConfigPage(props: Props) {
 
           {/* variantes */}
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 900, color: "#9fa4c0", textTransform: "uppercase", letterSpacing: 0.9 }}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 900,
+                color: "#9fa4c0",
+                textTransform: "uppercase",
+                letterSpacing: 0.9,
+              }}
+            >
               Variantes
             </div>
 
             <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
               <VariantRow
-                title="Auto-hit autorisé"
-                desc="Si ON, on peut toucher son propre numéro."
+                title="Killer vs Killer (Friendly Fire)"
+                desc="Si ON, un KILLER peut faire perdre des vies à un autre KILLER (en touchant son numéro)."
                 value={friendlyFire}
                 onChange={setFriendlyFire}
                 primary={primary}
                 primarySoft={primarySoft}
               />
+
               <VariantRow
-                title="Auto-pénalité quand Killer"
-                desc="Si ON, toucher son propre numéro quand on est KILLER fait perdre 1 vie."
-                value={ownNumberHurtsWhenKiller}
-                onChange={setOwnNumberHurtsWhenKiller}
+                title="Auto-pénalité (toucher son numéro quand KILLER)"
+                desc="Si ON, quand tu es KILLER et que tu touches ton numéro, tu perds des vies (pas mort instant)."
+                value={selfHitWhileKiller}
+                onChange={(v) => {
+                  setSelfHitWhileKiller(v);
+                  if (!v) setSelfHitUsesMultiplier(false);
+                }}
+                primary={primary}
+                primarySoft={primarySoft}
+              />
+
+              <div style={{ opacity: selfHitWhileKiller ? 1 : 0.45, pointerEvents: selfHitWhileKiller ? "auto" : "none" }}>
+                <VariantRow
+                  title="Auto-pénalité = multiplicateur (S/D/T)"
+                  desc="Si ON, la pénalité vaut 1/2/3 selon S/D/T (sinon c'est toujours -1)."
+                  value={selfHitUsesMultiplier}
+                  onChange={setSelfHitUsesMultiplier}
+                  primary={primary}
+                  primarySoft={primarySoft}
+                />
+              </div>
+
+              <VariantRow
+                title="Vol de vies (Life Steal)"
+                desc="Si ON, les vies perdues par la cible sont transférées au KILLER (plus de chaos)."
+                value={lifeSteal}
+                onChange={setLifeSteal}
+                primary={primary}
+                primarySoft={primarySoft}
+              />
+
+              <VariantRow
+                title="Blind Killer (mode aveugle)"
+                desc="Si ON, les numéros sont masqués à l'écran pendant la partie (plus dur, plus fun)."
+                value={blindKiller}
+                onChange={setBlindKiller}
                 primary={primary}
                 primarySoft={primarySoft}
               />
