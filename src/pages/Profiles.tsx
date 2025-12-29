@@ -27,8 +27,6 @@ import { saveStore } from "../lib/storage";
 import PlayerPrefsBlock from "../components/profile/PlayerPrefsBlock";
 import OnlineProfileForm from "../components/OnlineProfileForm";
 
-import { getAvatarCache as getAvatarCacheLib } from "../lib/avatarCache";
-
 // Effet "shimmer" du nom joueur (copié de StatsHub)
 const statsNameCss = `
 .dc-stats-name-wrapper {
@@ -473,95 +471,55 @@ export default function Profiles({
     });
 
     // restaure uniquement si store est vide
-commitProfilesToStoreAndPersist(cached, "profilesRestoreFromCache");
+    setProfiles((prev) => {
+      if (prev && prev.length > 0) return prev;
+      return cached;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profiles.length]);
 
   // ============================================
-// ✅ COMMIT + PERSIST (SOURCE UNIQUE)
-// - Toute modif de profiles passe ici : update(store) + saveStore(snapshot)
-// - Sans ça : l'UI peut changer, mais au reload/login tout repart à zéro.
-// ============================================
-const persistSeqRef = React.useRef(0);
-
-const updateAndPersist = React.useCallback(
-  (mut: (s: Store) => Store, tag = "updateAndPersist") => {
-    const seq = ++persistSeqRef.current;
-
-    // microtask : évite les boucles “setState dans setState”
-    Promise.resolve().then(() => {
-      if (seq !== persistSeqRef.current) return;
-      update((s: any) => mut(s as Store));
-    });
-  },
-  [update]
-);
-
-const commitProfilesToStoreAndPersist = React.useCallback(
-  (nextProfiles: Profile[], tag = "commitProfiles") => {
-    updateAndPersist(
-      (s) => {
-        const nextStore: any = { ...(s as any), profiles: nextProfiles };
-        // garde-fou : si aucun profil actif, on en prend un
-        if (!nextStore.activeProfileId && nextProfiles.length > 0) {
-          nextStore.activeProfileId = nextProfiles[0].id;
-        }
-        return nextStore as Store;
-      },
-      tag
-    );
-  },
-  [updateAndPersist]
-);
-
-// ============================================
-// ✅ WRAPPERS SAFE (ANTI-WIPE)
-// - setProfilesSafe : empêche qu’un “profiles=[]” wipe tout
-// - setProfilesReplace : autorise la suppression volontaire (delete)
-// ============================================
-const setProfilesSafe = React.useCallback(
-  (buildNext: (prev: Profile[]) => Profile[]) => {
-    updateAndPersist(
-      (s) => {
-        const prev = Array.isArray((s as any).profiles)
-          ? ((s as any).profiles as Profile[])
-          : [];
+  // ✅ WRAPPERS SAFE (ANTI-WIPE)
+  // - setProfilesSafe : empêche qu’un “profiles=[]” écrase tout
+  // - setProfilesReplace : autorise la suppression volontaire (delete)
+  // ============================================
+  const setProfilesSafe = React.useCallback(
+    (buildNext: (prev: Profile[]) => Profile[]) => {
+      setProfiles((prev) => {
         const next = buildNext(prev);
         const merged = mergeProfilesSafe(prev, next);
+  
+        console.log("[setProfilesSafe] prev -> next -> merged", {
+          prevLen: prev.length,
+          nextLen: next.length,
+          mergedLen: merged.length,
+          prevIds: prev.map((p) => p.id),
+          nextIds: next.map((p) => p.id),
+          mergedIds: merged.map((p) => p.id),
+        });
 
         // ✅ keep cache in sync (anti flash)
         writeProfilesCache(merged);
+  
+        return merged;
+      });
+    },
+    [setProfiles]
+  );
 
-        return { ...(s as any), profiles: merged } as Store;
-      },
-      "setProfilesSafe"
-    );
-  },
-  [updateAndPersist]
-);
-
-const setProfilesReplace = React.useCallback(
-  (buildNext: (prev: Profile[]) => Profile[]) => {
-    updateAndPersist(
-      (s) => {
-        const prev = Array.isArray((s as any).profiles)
-          ? ((s as any).profiles as Profile[])
-          : [];
+  const setProfilesReplace = React.useCallback(
+    (buildNext: (prev: Profile[]) => Profile[]) => {
+      setProfiles((prev: Profile[]) => {
         const next = buildNext(prev);
         const merged = mergeProfilesSafe(prev, next, { allowRemoval: true });
-
-        // ✅ keep cache in sync
         writeProfilesCache(merged);
+        return merged;
+      });
+    },
+    [setProfiles]
+  );
 
-        return { ...(s as any), profiles: merged } as Store;
-      },
-      "setProfilesReplace"
-    );
-  },
-  [updateAndPersist]
-);
-
-const friends: FriendLike[] = (store as any).friends ?? [];
+  const friends: FriendLike[] = (store as any).friends ?? [];
 
   const { theme, themeId, setThemeId } = useTheme() as any;
   const { t, setLang, lang } = useLang();
@@ -617,7 +575,7 @@ const friends: FriendLike[] = (store as any).friends ?? [];
 
   function setActiveProfile(id: string | null) {
     // 1) on met à jour le store
-    updateAndPersist((s) => ({ ...(s as any), activeProfileId: id } as Store), "setActiveProfile");
+    update((s) => ({ ...s, activeProfileId: id }));
 
     // 2) si un profil est sélectionné → on applique ses prefs app (lang + thème)
     if (!id) return;
@@ -744,113 +702,59 @@ const friends: FriendLike[] = (store as any).friends ?? [];
   }
 
   async function addProfile(
-  name: string,
-  file?: File | null,
-  privateInfo?: Partial<PrivateInfo>
-) {
-  const cleanName = (name || "").trim();
-  if (!cleanName) return;
-
-  const now = Date.now();
-  const avatarDataUrl = file ? await read(file) : null;
-
-  const p: Profile = {
-    id:
-      globalThis.crypto && "randomUUID" in globalThis.crypto
-        ? globalThis.crypto.randomUUID()
-        : `${now}-${Math.random().toString(16).slice(2)}`,
-    name: cleanName,
-    avatarDataUrl,
-    avatarUpdatedAt: now,
-    privateInfo:
-      privateInfo && Object.keys(privateInfo).length
-        ? { ...privateInfo }
-        : undefined,
-  };
-
-  // ✅ source unique : on écrit dans le store + persist une seule fois
-  setProfilesSafe((prev) => {
-    const arr = Array.isArray(prev) ? prev : [];
-    const next = [...arr, p];
-    return next;
-  });
-
-  // ✅ cache anti-wipe (immédiat)
-  try {
-    const next = [...profiles, p];
-    writeProfilesCache(next);
-  } catch {}
-
-  console.log("[Profiles] ✅ Profil local créé + persisté", p.id);
-}
-const active = profiles.find((p) => p.id === activeProfileId) || null;
-
-// ✅ AUTO-UPLOAD AVATAR : si connecté online et qu'on a encore un avatar en base64 (dataUrl)
-// => on pousse vers Supabase Storage pour obtenir avatarUrl (synchro cross-device)
-React.useEffect(() => {
-  let cancelled = false;
-
-  (async () => {
-    if (!active?.id) return;
-    if (auth.status !== "signed_in") return;
-
-    const hasUrl = !!String((active as any)?.avatarUrl || "").trim();
-    const dataUrl = String((active as any)?.avatarDataUrl || "").trim();
-
-    if (hasUrl) return;
-    if (!dataUrl.startsWith("data:image/")) return;
-
-    try {
-      const { publicUrl } = await onlineApi.uploadAvatarImage({ dataUrl });
-      if (cancelled) return;
-      if (!publicUrl) return;
-
-      const avatarPath = (() => {
-        const marker = "/storage/v1/object/public/avatars/";
-        const i = publicUrl.indexOf(marker);
-        return i === -1 ? undefined : publicUrl.slice(i + marker.length);
-      })();
-
-      const now = Date.now();
-
-      // ✅ update profile local (ça sera ensuite push dans le snapshot cloud)
-      setProfilesSafe((arr) =>
-        arr.map((p) =>
-          p.id === active.id
-            ? {
-                ...p,
-                avatarUrl: publicUrl,
-                avatarPath,
-                avatarUpdatedAt: now,
-              }
-            : p
-        )
-      );
-
-      // ✅ met aussi ton cache anti-wipe si tu veux
-      try {
-        writeAvatarCache(active.id, {
-          avatarUrl: publicUrl,
-          avatarPath,
-          avatarUpdatedAt: now,
-        });
-      } catch {}
-    } catch (e) {
-      console.warn("[Profiles] auto-upload avatar failed", e);
+    name: string,
+    file?: File | null,
+    privateInfo?: Partial<PrivateInfo>
+  ) {
+    const cleanName = (name || "").trim();
+    if (!cleanName) return;
+  
+    const now = Date.now();
+    const avatarDataUrl = file ? await read(file) : null;
+  
+    const p: Profile = {
+      id:
+        globalThis.crypto && "randomUUID" in globalThis.crypto
+          ? globalThis.crypto.randomUUID()
+          : `${now}-${Math.random().toString(16).slice(2)}`,
+      name: cleanName,
+      avatarDataUrl,
+      avatarUpdatedAt: now,
+      privateInfo:
+        privateInfo && Object.keys(privateInfo).length ? { ...privateInfo } : undefined,
+    };
+  
+    // ✅ 1) Calcule un nextStore depuis la vraie source (s), PAS depuis "store" capturé
+    let nextStoreSnapshot: any = null;
+  
+    update((s: any) => {
+      const nextProfiles = Array.isArray(s?.profiles) ? [...s.profiles, p] : [p];
+  
+      const nextStore = {
+        ...s,
+        profiles: nextProfiles,
+        activeProfileId: s?.activeProfileId ?? p.id,
+      };
+  
+      nextStoreSnapshot = nextStore;
+      return nextStore;
+    });
+  
+    // ✅ 2) Persistance : on sauvegarde LE snapshot qu’on vient de construire
+    if (nextStoreSnapshot) {
+      await saveStore(nextStoreSnapshot);
     }
-  })();
-
-  return () => {
-    cancelled = true;
-  };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [
-  active?.id,
-  auth.status,
-  (active as any)?.avatarUrl,
-  (active as any)?.avatarDataUrl,
-  (active as any)?.avatarUpdatedAt,
-]);
+  
+    // ✅ 3) Si tu as un state local "profiles", mets-le juste pour l’UI (SANS saveStore ici)
+    setProfilesSafe?.((prev: any[]) => {
+      const arr = Array.isArray(prev) ? prev : [];
+      return [...arr, p];
+    });
+  
+    console.log("[Profiles] ✅ Profil local créé + persisté", p.id);
+  }
+  
+  const active = profiles.find((p) => p.id === activeProfileId) || null;
   
   // ✅ Réhydratation anti-écrasement : si active revient sans avatar -> on remet depuis cache
   React.useEffect(() => {
@@ -862,7 +766,7 @@ React.useEffect(() => {
   
     if (hasAny) return;
   
-    const cached = getAvatarCacheLib(active.id);
+    const cached = getAvatarCache(active.id);
     if (!cached) return;
   
     const cUrl = String(cached.avatarUrl || "").trim();

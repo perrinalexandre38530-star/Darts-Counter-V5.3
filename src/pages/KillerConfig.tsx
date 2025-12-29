@@ -36,6 +36,7 @@ import avatarTheFerret from "../assets/avatars/bots-pro/the-ferret.png";
 // --------------------------------------------------
 export type KillerBecomeRule = "single" | "double";
 export type KillerDamageRule = "one" | "multiplier";
+export type KillerNumberAssignMode = "random" | "throw";
 
 export type KillerConfigPlayer = {
   id: string;
@@ -43,7 +44,7 @@ export type KillerConfigPlayer = {
   avatarDataUrl?: string | null;
   isBot?: boolean;
   botLevel?: string;
-  number: number; // 1..20 (Killer number)
+  number: number; // 1..20 (Killer number) ; 0 si numberAssignMode === "throw"
 };
 
 export type KillerConfig = {
@@ -54,6 +55,10 @@ export type KillerConfig = {
   lives: number; // vies de départ
   becomeRule: KillerBecomeRule; // simple/double sur son numéro
   damageRule: KillerDamageRule; // -1 ou multiplicateur S/D/T
+
+  // ✅ NEW (choix du numéro)
+  numberAssignMode: KillerNumberAssignMode; // random = actuel, throw = 1er lancer choisit le numéro
+  autoKill: boolean; // alias lisible de ownNumberHurtsWhenKiller (compat KillerPlay)
 
   // variantes
   friendlyFire: boolean; // le killer peut se toucher (ou variantes)
@@ -334,6 +339,9 @@ export default function KillerConfigPage(props: Props) {
   const [becomeRule, setBecomeRule] = React.useState<KillerBecomeRule>("single");
   const [damageRule, setDamageRule] = React.useState<KillerDamageRule>("one");
 
+  // ✅ NEW
+  const [numberAssignMode, setNumberAssignMode] = React.useState<KillerNumberAssignMode>("random");
+
   const [friendlyFire, setFriendlyFire] = React.useState<boolean>(false);
   const [ownNumberHurtsWhenKiller, setOwnNumberHurtsWhenKiller] = React.useState<boolean>(false);
   const [exactLivesRequired, setExactLivesRequired] = React.useState<boolean>(false);
@@ -372,6 +380,9 @@ export default function KillerConfigPage(props: Props) {
   }
 
   function randomizeNumbers() {
+    // si mode "throw" => bouton désactivé, mais on protège quand même
+    if (numberAssignMode === "throw") return;
+
     setKillerNumberById((prev) => {
       const ids = Object.keys(prev);
       const pool = Array.from({ length: 20 }, (_, i) => i + 1);
@@ -422,36 +433,49 @@ export default function KillerConfigPage(props: Props) {
       .map((id) => {
         const base = resolvePlayer(id);
         if (!base) return null;
+
         return {
           id: base.id,
           name: base.name,
           avatarDataUrl: base.avatarDataUrl ?? null,
           isBot: !!base.isBot,
           botLevel: base.botLevel,
-          number: clampInt(killerNumberById[id], 1, 20, 20),
+
+          // ✅ IMPORTANT:
+          // - mode random : on utilise le numéro choisi ici
+          // - mode throw  : number=0 (non défini) => KillerPlay fixera au 1er lancer
+          number: numberAssignMode === "throw" ? 0 : clampInt(killerNumberById[id], 1, 20, 20),
         };
       })
       .filter(Boolean) as any[];
 
-    // sécurité: numéros uniques
-    const used = new Set<number>();
-    for (const p of players) {
-      let n = clampInt(p.number, 1, 20, 20);
-      while (used.has(n)) {
-        n = n - 1;
-        if (n < 1) n = 20;
+    // ✅ sécurité: numéros uniques (uniquement si on assigne ici)
+    if (numberAssignMode !== "throw") {
+      const used = new Set<number>();
+      for (const p of players) {
+        let n = clampInt(p.number, 1, 20, 20);
+        while (used.has(n)) {
+          n = n - 1;
+          if (n < 1) n = 20;
+        }
+        used.add(n);
+        p.number = n;
       }
-      used.add(n);
-      p.number = n;
     }
 
     const cfg: KillerConfig = {
       id: `killer-${Date.now()}`,
       mode: "killer",
       createdAt: Date.now(),
+
       lives: clampInt(lives, 1, 9, 3),
       becomeRule,
       damageRule,
+
+      // ✅ NEW
+      numberAssignMode,
+      autoKill: ownNumberHurtsWhenKiller,
+
       friendlyFire,
       ownNumberHurtsWhenKiller,
       exactLivesRequired,
@@ -562,6 +586,7 @@ export default function KillerConfigPage(props: Props) {
             <button
               type="button"
               onClick={randomizeNumbers}
+              disabled={numberAssignMode === "throw"}
               style={{
                 borderRadius: 999,
                 border: `1px solid ${primary}55`,
@@ -572,7 +597,14 @@ export default function KillerConfigPage(props: Props) {
                 fontSize: 11,
                 textTransform: "uppercase",
                 letterSpacing: 0.7,
+                opacity: numberAssignMode === "throw" ? 0.45 : 1,
+                cursor: numberAssignMode === "throw" ? "default" : "pointer",
               }}
+              title={
+                numberAssignMode === "throw"
+                  ? "Désactivé : en mode 1er lancer, les numéros sont choisis pendant la partie."
+                  : "Assigner des numéros aléatoires"
+              }
             >
               Numéros aléatoires
             </button>
@@ -594,11 +626,14 @@ export default function KillerConfigPage(props: Props) {
                   marginTop: 12,
                   paddingLeft: 14,
                   paddingRight: 8,
+                  opacity: numberAssignMode === "throw" ? 0.78 : 1,
                 }}
               >
                 {humanProfiles.map((p) => {
                   const active = selectedIds.includes(p.id);
                   const num = killerNumberById[p.id] ?? 20;
+
+                  const disableManualNumber = numberAssignMode === "throw";
 
                   return (
                     <div
@@ -674,7 +709,14 @@ export default function KillerConfigPage(props: Props) {
                           gap: 6,
                           width: "100%",
                           justifyContent: "center",
+                          opacity: disableManualNumber ? 0.55 : 1,
+                          pointerEvents: disableManualNumber ? "none" : "auto",
                         }}
+                        title={
+                          disableManualNumber
+                            ? "Mode 1er lancer : le numéro sera choisi pendant la partie."
+                            : "Ajuster le numéro KILLER"
+                        }
                       >
                         <button
                           type="button"
@@ -739,7 +781,9 @@ export default function KillerConfigPage(props: Props) {
                         </button>
                       </div>
 
-                      <div style={{ fontSize: 10, opacity: 0.65 }}>Numéro KILLER</div>
+                      <div style={{ fontSize: 10, opacity: 0.65 }}>
+                        {numberAssignMode === "throw" ? "Numéro choisi au 1er lancer" : "Numéro KILLER"}
+                      </div>
                     </div>
                   );
                 })}
@@ -842,9 +886,42 @@ export default function KillerConfigPage(props: Props) {
             </div>
           </div>
 
+          {/* ✅ NEW — Attribution des numéros */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Attribution des numéros</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <PillButton
+                label="🎲 Numéros aléatoires"
+                active={numberAssignMode === "random"}
+                onClick={() => setNumberAssignMode("random")}
+                primary={primary}
+                primarySoft={primarySoft}
+              />
+              <PillButton
+                label="🎯 1er lancer = choisir son numéro"
+                active={numberAssignMode === "throw"}
+                onClick={() => setNumberAssignMode("throw")}
+                primary={primary}
+                primarySoft={primarySoft}
+              />
+            </div>
+
+            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
+              En mode “1er lancer”, les numéros du menu sont ignorés (le premier tir de chaque joueur fixe son numéro).
+            </div>
+          </div>
+
           {/* variantes */}
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 900, color: "#9fa4c0", textTransform: "uppercase", letterSpacing: 0.9 }}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 900,
+                color: "#9fa4c0",
+                textTransform: "uppercase",
+                letterSpacing: 0.9,
+              }}
+            >
               Variantes
             </div>
 

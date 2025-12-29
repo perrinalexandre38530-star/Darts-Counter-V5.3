@@ -997,12 +997,21 @@ function App() {
 
           if (!cancelled) {
             // ✅ FIX: merge défensif des profils (cloud peut être partiel)
-            setStore((prev) => ({
-              ...next,
-              profiles: mergeProfilesSafe(prev.profiles ?? [], next.profiles ?? []),
-            }));
+            // + on persiste le STORE MERGÉ (pas le cloud brut)
+            let mergedToSave: Store | null = null;
+
+            setStore((prev) => {
+              const mergedProfiles = mergeProfilesSafe(
+                prev.profiles ?? [],
+                next.profiles ?? []
+              );
+              const mergedStore: Store = { ...next, profiles: mergedProfiles };
+              mergedToSave = mergedStore;
+              return mergedStore;
+            });
+
             try {
-              await saveStore(next);
+              if (mergedToSave) await saveStore(mergedToSave);
             } catch {}
           }
         } else {
