@@ -8,11 +8,12 @@
 // ✅ Étape 2: Paramètres MATCH (dépend du mode) + Format tournoi
 // ✅ Étape 3: Sélection des JOUEURS (min 2) + avatars/initiales (CAROUSEL)
 //
-// ✅ NEW (PATCH GLOBAL):
+// ✅ PATCH GLOBAL (FINAL):
 // - PAGE 100% "THEME" (doré) partout
 // - Joueurs : HALO léger quand sélectionné (pas de cercle jaune/noir),
 //   + STARRING visible AU-DESSUS basé sur la moyenne globale avg3D
-// - BOTS IA : avatars PRO importés (comme X01Config) + medaillons OK
+// - BOTS IA : ✅ TOUS les bots PRO existants (assets) + ✅ bots créés par l’utilisateur (Profiles → bots)
+// - ❌ Suppression des bots fictifs “Solid Pro/Mid/Rookie”
 // - Format tournoi : 1 OPTION PAR LIGNE (plus de 2 options sur la même ligne)
 // - Boutons "i" : À L’EXTÉRIEUR, alignés, et ouvrent un MODAL centré (plus de popover)
 // - Auto-fill BOTS IA : garde la logique, supprime toute notion UI de "cap bots" (inutile)
@@ -37,13 +38,12 @@ import ProfileAvatar from "../components/ProfileAvatar";
 import ProfileStarRing from "../components/ProfileStarRing";
 
 // ✅ AVATARS BOTS PRO (assets existants)
-import avatarBullyBoy from "../assets/avatars/bots-pro/bully-boy-pro.png";
+import avatarBullyBoy from "../assets/avatars/bots-pro/bully-boy.png";
 import avatarCoolHand from "../assets/avatars/bots-pro/cool-hand.png";
 import avatarFlyingScotsman from "../assets/avatars/bots-pro/flying-scotsman.png";
 import avatarGreenMachine from "../assets/avatars/bots-pro/green-machine.png";
 import avatarHollywood from "../assets/avatars/bots-pro/hollywood.png";
 import avatarIceMan from "../assets/avatars/bots-pro/ice-man.png";
-import avatarIronMan from "../assets/avatars/bots-pro/iron-man.png";
 import avatarSnakeKing from "../assets/avatars/bots-pro/snake-king.png";
 import avatarTheAsp from "../assets/avatars/bots-pro/the-asp.png";
 import avatarTheFerret from "../assets/avatars/bots-pro/the-ferret.png";
@@ -88,7 +88,7 @@ try {
 } catch {}
 
 /* -----------------------------
-   Rating -> stars + bots
+   Rating -> stars + stats resolver
 ------------------------------ */
 
 function starsFromAvg3D(avg: number) {
@@ -114,6 +114,10 @@ function resolveAvg3D(obj: any): number {
     obj?.quickStats?.avg3,
     obj?.globalStats?.avg3D,
     obj?.globalStats?.avg3,
+    obj?.rating,
+    obj?.level,
+    obj?.botLevel,
+    obj?.difficulty,
   ];
 
   for (const v of candidates) {
@@ -157,36 +161,235 @@ async function safeAvg3DForProfile(profileRaw: any, store?: any): Promise<number
   return 0;
 }
 
-// ✅ BOTS PRO + fallback bots (pour auto-fill)
-const BOT_POOL = [
-  {
-    id: "bot_pro_mvg",
-    name: "Green Machine",
-    rating: 78,
-    avatarDataUrl: avatarGreenMachine,
-  },
-  {
-    id: "bot_pro_wright",
-    name: "Snake King",
-    rating: 72,
-    avatarDataUrl: avatarSnakeKing,
-  },
-  {
-    id: "bot_pro_littler",
-    name: "Wonder Kid",
-    rating: 68,
-    avatarDataUrl: avatarWonderKid,
-  },
+/* -----------------------------
+   ✅ BOTS CATALOG (assets + user-created)
+------------------------------ */
 
-  { id: "bot_solid", name: "Solid Pro", rating: 60, avatarDataUrl: null },
-  { id: "bot_mid", name: "Mid Shooter", rating: 50, avatarDataUrl: null },
-  { id: "bot_rook", name: "Rookie", rating: 35, avatarDataUrl: null },
+// ✅ 1) Bots PRO (assets réels)
+const BOTS_PRO_ASSETS = [
+  { id: "bot_bully_boy", name: "Bully Boy", rating: 66, avatarDataUrl: avatarBullyBoy },
+  { id: "bot_cool_hand", name: "Cool Hand", rating: 64, avatarDataUrl: avatarCoolHand },
+  { id: "bot_flying_scotsman", name: "Flying Scotsman", rating: 62, avatarDataUrl: avatarFlyingScotsman },
+
+  { id: "bot_green_machine", name: "Green Machine", rating: 78, avatarDataUrl: avatarGreenMachine },
+  { id: "bot_hollywood", name: "Hollywood", rating: 70, avatarDataUrl: avatarHollywood },
+  { id: "bot_ice_man", name: "Ice Man", rating: 69, avatarDataUrl: avatarIceMan },
+
+  { id: "bot_snake_king", name: "Snake King", rating: 72, avatarDataUrl: avatarSnakeKing },
+  { id: "bot_the_asp", name: "The Asp", rating: 67, avatarDataUrl: avatarTheAsp },
+  { id: "bot_the_ferret", name: "The Ferret", rating: 65, avatarDataUrl: avatarTheFerret },
+  { id: "bot_the_power", name: "The Power", rating: 74, avatarDataUrl: avatarThePower },
+
+  { id: "bot_wonder_kid", name: "Wonder Kid", rating: 68, avatarDataUrl: avatarWonderKid },
+
+  // ⚠️ si tu ajoutes the-nuke.png :
+  // { id: "bot_the_nuke", name: "The Nuke", rating: 71, avatarDataUrl: avatarTheNuke },
 ];
 
-function pickBotsToFill(need: number, avgTarget: number) {
-  const sorted = [...BOT_POOL].sort(
-    (a, b) => Math.abs(a.rating - avgTarget) - Math.abs(b.rating - avgTarget)
+const BOT_PRO_AVATAR_BY_NAME: Record<string, any> = Object.fromEntries(
+  BOTS_PRO_ASSETS.map((b) => [
+    String(b.name || "").trim().toLowerCase(),
+    b.avatarDataUrl,
+  ])
+);
+
+function botAvatarFor(obj: any) {
+  const nameKey = String(obj?.name || "").trim().toLowerCase();
+  return (
+    obj?.avatarUrl ||
+    obj?.avatarDataUrl ||
+    obj?.avatarPath ||
+    obj?.avatar ||
+    obj?.photo ||
+    obj?.thumb ||
+    BOT_PRO_AVATAR_BY_NAME[nameKey] ||
+    null
   );
+}
+
+// ✅ detect bot “créé user” (Profiles → création bot) — ROBUSTE
+function isBotProfile(p: any) {
+  if (!p) return false;
+
+  // flags fréquents
+  if (p.isBot === true) return true;
+  if (p.ai === true || p.isAI === true) return true;
+
+  // flags string
+  if (String(p.isBot).toLowerCase() === "true") return true;
+  if (String(p.ai).toLowerCase() === "true") return true;
+  if (String(p.isAI).toLowerCase() === "true") return true;
+
+  // types/kinds
+  const t = String(p.type || p.kind || p.profileType || p.source || p.role || "")
+    .toLowerCase()
+    .trim();
+  if (t === "bot" || t === "ai" || t === "cpu") return true;
+  if (t.includes("bot")) return true;
+
+  // signature bot user
+  if (p.botLevel != null) return true;
+  if (p.difficulty != null) return true;
+  if (p.skill != null) return true;
+
+  return false;
+}
+
+// ✅ localStorage bots : clés connues + scan "bot" (fallback)
+function readBotsFromLocalStorage(): any[] {
+  const keys = [
+    "dc_bots_v1",
+    "dc-bots-v1",
+    "dcBotsV1",
+    "darts-counter-bots",
+    "bots",
+  ];
+
+  // 1) clés connues
+  for (const k of keys) {
+    try {
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+
+      const arr = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.bots)
+          ? parsed.bots
+          : Array.isArray(parsed?.items)
+            ? parsed.items
+            : Array.isArray(parsed?.list)
+              ? parsed.list
+              : [];
+
+      if (Array.isArray(arr) && arr.length) return arr;
+    } catch {}
+  }
+
+  // 2) scan localStorage: toute clé contenant "bot"
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (!/bot/i.test(k)) continue;
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+
+      try {
+        const parsed = JSON.parse(raw);
+        const arr = Array.isArray(parsed)
+          ? parsed
+          : Array.isArray(parsed?.bots)
+            ? parsed.bots
+            : Array.isArray(parsed?.items)
+              ? parsed.items
+              : Array.isArray(parsed?.list)
+                ? parsed.list
+                : [];
+
+        if (Array.isArray(arr) && arr.length) return arr;
+      } catch {}
+    }
+  } catch {}
+
+  return [];
+}
+
+// ✅ petit “fingerprint” stable pour détecter un changement de bots en localStorage
+function botsFingerprintLS(): string {
+  try {
+    const keys = [
+      "dc_bots_v1",
+      "dc-bots-v1",
+      "dcBotsV1",
+      "darts-counter-bots",
+      "bots",
+    ];
+    const chunks: string[] = [];
+    for (const k of keys) {
+      const v = localStorage.getItem(k);
+      if (v) chunks.push(k + ":" + String(v.length));
+    }
+    // + scan clé "bot"
+    try {
+      let countBotKeys = 0;
+      let sumLen = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (!/bot/i.test(k)) continue;
+        countBotKeys++;
+        const v = localStorage.getItem(k);
+        if (v) sumLen += v.length;
+      }
+      chunks.push("scan:" + countBotKeys + ":" + sumLen);
+    } catch {}
+
+    return chunks.join("|");
+  } catch {
+    return "";
+  }
+}
+
+function getBotsFromStore(store: any) {
+  const out: any[] = [];
+  const seen = new Set<string>();
+
+  const pushBot = (p: any, forcedBot = false) => {
+    if (!p) return;
+    if (!forcedBot && !isBotProfile(p)) return;
+
+    const id = String(p?.id || p?.uuid || p?.botId || "");
+    const name = String(p?.name || p?.displayName || p?.pseudo || "Bot").trim();
+    const key = id || `bot_${name.toLowerCase()}`;
+
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+
+    const avg = resolveAvg3D(p) || Number(p?.rating || p?.level || 0) || 0;
+
+    out.push({
+      id: id || key,
+      name,
+      avatar: botAvatarFor(p),
+      avg3D: Number(avg) || 0,
+      isBot: true,
+      raw: p,
+    });
+  };
+
+  // 1) store buckets (bots déjà dedans)
+  try {
+    if (Array.isArray(store?.bots)) store.bots.forEach((b: any) => pushBot(b, true));
+    if (Array.isArray(store?.botProfiles)) store.botProfiles.forEach((b: any) => pushBot(b, true));
+    if (Array.isArray(store?.aiBots)) store.aiBots.forEach((b: any) => pushBot(b, true));
+    if (Array.isArray(store?.settings?.bots)) store.settings.bots.forEach((b: any) => pushBot(b, true));
+  } catch {}
+
+  // 2) profiles : parfois les bots sont stockés ici
+  try {
+    if (Array.isArray(store?.profiles)) store.profiles.forEach((p: any) => pushBot(p, false));
+  } catch {}
+
+  // 3) localStorage : ALWAYS bots (forced)
+  try {
+    const lsBots = readBotsFromLocalStorage();
+    if (Array.isArray(lsBots)) lsBots.forEach((b: any) => pushBot(b, true));
+  } catch {}
+
+  return out;
+}
+
+function pickBotsToFill(fromCatalog: any[], need: number, avgTarget: number) {
+  const pool = Array.isArray(fromCatalog) ? fromCatalog.filter(Boolean) : [];
+  if (!pool.length || need <= 0) return [];
+
+  const sorted = [...pool].sort(
+    (a, b) =>
+      Math.abs((Number(a.avg3D) || 0) - avgTarget) -
+      Math.abs((Number(b.avg3D) || 0) - avgTarget)
+  );
+
   const out: any[] = [];
   for (let i = 0; i < need; i++) out.push(sorted[i % sorted.length]);
   return out;
@@ -528,7 +731,7 @@ function PlayerMedallion({
         />
       </div>
 
-      {/* ✅ HALO : un peu plus visible, mais pas large */}
+      {/* ✅ HALO */}
       {active ? (
         <div
           aria-hidden
@@ -545,7 +748,7 @@ function PlayerMedallion({
         />
       ) : null}
 
-      {/* AVATAR — pas de dark ring */}
+      {/* AVATAR */}
       <div
         style={{
           width: AVATAR,
@@ -825,37 +1028,92 @@ export default function TournamentCreate({ store, go }: Props) {
     setInfoOpen(true);
   };
 
-  // ---- Players (LOCAL)
+  // ✅ IMPORTANT: refresh bots même si store ne change pas
+  const [botsRefresh, setBotsRefresh] = React.useState(0);
+
+  // 1) bump sur focus / visibility + storage (autres onglets)
+  React.useEffect(() => {
+    const bump = () => setBotsRefresh((x) => x + 1);
+
+    window.addEventListener("focus", bump);
+    document.addEventListener("visibilitychange", bump);
+    window.addEventListener("storage", bump);
+
+    return () => {
+      window.removeEventListener("focus", bump);
+      document.removeEventListener("visibilitychange", bump);
+      window.removeEventListener("storage", bump);
+    };
+  }, []);
+
+  // 2) ✅ poll léger: détecte changement localStorage DANS LE MÊME ONGLET
+  React.useEffect(() => {
+    let mounted = true;
+    let last = botsFingerprintLS();
+
+    const tick = () => {
+      if (!mounted) return;
+      const now = botsFingerprintLS();
+      if (now !== last) {
+        last = now;
+        setBotsRefresh((x) => x + 1);
+      }
+    };
+
+    const t = window.setInterval(tick, 700);
+    return () => {
+      mounted = false;
+      window.clearInterval(t);
+    };
+  }, []);
+
+  // ---- Players (LOCAL) : humains uniquement ici
   const profiles = React.useMemo(() => {
     const arr = (store as any)?.profiles || [];
     return arr
-      .filter((p: any) => p?.id && !(p as any)?.isBot)
+      .filter((p: any) => p?.id && !isBotProfile(p))
       .map((p: any) => ({
         id: String(p.id),
         name: p?.name || p?.displayName || p?.pseudo || "Joueur",
-        avatar:
-          p?.avatarUrl ||
-          p?.avatarDataUrl ||
-          p?.avatar ||
-          p?.photo ||
-          null,
+        avatar: p?.avatarUrl || p?.avatarDataUrl || p?.avatar || p?.photo || null,
         raw: p,
       }))
       .filter((p: any) => !!p.id);
-  }, [store]);
+  }, [store, botsRefresh]);
 
-  // ✅ BOTS (catalog) avec avatars PRO
+  // ✅ BOTS CATALOG = assets PRO + bots user (store + localStorage) + dédupe
   const botsCatalog = React.useMemo(() => {
-    return BOT_POOL.map((b) => ({
+    const pro = BOTS_PRO_ASSETS.map((b) => ({
       id: String(b.id),
       name: b.name,
       avatar: b.avatarDataUrl ?? null,
-      avg3D: b.rating,
+      avg3D: Number(b.rating) || 0,
       isBot: true,
+      raw: b,
     }));
-  }, []);
 
-  // avg3D cache
+    const userBots = getBotsFromStore(store as any);
+
+    const out: any[] = [];
+    const seen = new Set<string>();
+
+    for (const b of [...pro, ...userBots]) {
+      const key = String(b?.id || b?.name || "");
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+
+      out.push({
+        ...b,
+        avatar: botAvatarFor(b?.raw || b) || b.avatar || null,
+        avg3D: Number(b.avg3D || 0) || 0,
+        isBot: true,
+      });
+    }
+
+    return out;
+  }, [store, botsRefresh]);
+
+  // avg3D cache (humains)
   const [avgMap, setAvgMap] = React.useState<Record<string, number>>({});
   const [loadingAvg, setLoadingAvg] = React.useState(false);
 
@@ -980,7 +1238,7 @@ export default function TournamentCreate({ store, go }: Props) {
     players:
       "Sélectionne des profils humains et/ou des BOTS IA. Minimum 2 joueurs pour créer.",
     botsSelect:
-      "Sélection BOTS : ajoute des bots en plus des profils humains, style X01Config.",
+      "Sélection BOTS : bots PRO (assets) + bots créés via Profiles → bots.",
     bestOf:
       "Best-of = nombre de manches à gagner. BO3 = 2 manches gagnantes, BO5 = 3, etc.",
     seedMode:
@@ -1099,15 +1357,15 @@ export default function TournamentCreate({ store, go }: Props) {
     });
 
     const selectedBots = botsCatalog
-      .filter((b) => botIds.includes(b.id))
-      .map((b) => ({
-        id: `${b.id}_${Date.now()}`,
+      .filter((b: any) => botIds.includes(String(b.id)))
+      .map((b: any, idx: number) => ({
+        id: `bot_${String(b.id)}_${idx}_${Date.now()}`,
         name: b.name,
         avatarDataUrl: b.avatar ?? null,
         source: "bot",
         isBot: true,
-        avg3D: b.avg3D,
-        stars: starsFromAvg3D(b.avg3D),
+        avg3D: Number(b.avg3D) || 0,
+        stars: starsFromAvg3D(Number(b.avg3D) || 0),
       }));
 
     const merged = basePlayers.concat(selectedBots);
@@ -1116,10 +1374,7 @@ export default function TournamentCreate({ store, go }: Props) {
       seedMode === "byLevel"
         ? merged
             .slice()
-            .sort(
-              (a: any, b: any) =>
-                Number(b.avg3D || 0) - Number(a.avg3D || 0)
-            )
+            .sort((a: any, b: any) => Number(b.avg3D || 0) - Number(a.avg3D || 0))
         : merged;
 
     let finalPlayers = seededPlayers.slice();
@@ -1128,16 +1383,18 @@ export default function TournamentCreate({ store, go }: Props) {
     const shouldFill = autoFillBots && format !== "round_robin";
     if (shouldFill && finalPlayers.length < targetSize) {
       const avgTarget = computeAvgTarget(finalPlayers);
-      const need = Math.max(0, targetSize - finalPlayers.length); // ✅ PAS DE CAP
-      const bots = pickBotsToFill(need, avgTarget).map((b: any, idx: number) => ({
-        id: `${b.id}_${idx}_${Date.now()}`,
-        name: b.name,
-        avatarDataUrl: b.avatarDataUrl ?? null,
-        source: "bot",
-        isBot: true,
-        avg3D: b.rating,
-        stars: starsFromAvg3D(b.rating),
-      }));
+      const need = Math.max(0, targetSize - finalPlayers.length);
+      const bots = pickBotsToFill(botsCatalog, need, avgTarget).map(
+        (b: any, idx: number) => ({
+          id: `autobot_${String(b.id)}_${idx}_${Date.now()}`,
+          name: b.name,
+          avatarDataUrl: b.avatar ?? null,
+          source: "bot",
+          isBot: true,
+          avg3D: Number(b.avg3D) || 0,
+          stars: starsFromAvg3D(Number(b.avg3D) || 0),
+        })
+      );
       finalPlayers = finalPlayers.concat(bots);
     }
 
@@ -1197,22 +1454,15 @@ export default function TournamentCreate({ store, go }: Props) {
     go("tournament_view", { id: tour.id });
   }
 
-  // ✅ Modal content centralisé
   const infoContent = (() => {
     const k = String(infoKey || "");
-    if (k === "players")
-      return { title: "Joueurs", body: <>{OTHER_INFO.players}</> };
-    if (k === "botsSelect")
-      return { title: "Bots IA", body: <>{OTHER_INFO.botsSelect}</> };
+    if (k === "players") return { title: "Joueurs", body: <>{OTHER_INFO.players}</> };
+    if (k === "botsSelect") return { title: "Bots IA", body: <>{OTHER_INFO.botsSelect}</> };
 
-    if (k === "type_single")
-      return { title: "Élimination simple", body: <>{TYPE_INFO.single_ko}</> };
-    if (k === "type_double")
-      return { title: "Élimination double", body: <>{TYPE_INFO.double_ko}</> };
-    if (k === "type_rr")
-      return { title: "Championnat (RR)", body: <>{TYPE_INFO.round_robin}</> };
-    if (k === "type_groups")
-      return { title: "Poules + KO", body: <>{TYPE_INFO.groups_ko}</> };
+    if (k === "type_single") return { title: "Élimination simple", body: <>{TYPE_INFO.single_ko}</> };
+    if (k === "type_double") return { title: "Élimination double", body: <>{TYPE_INFO.double_ko}</> };
+    if (k === "type_rr") return { title: "Championnat (RR)", body: <>{TYPE_INFO.round_robin}</> };
+    if (k === "type_groups") return { title: "Poules + KO", body: <>{TYPE_INFO.groups_ko}</> };
 
     if (k === "bestof") return { title: "Best-of", body: <>{OTHER_INFO.bestOf}</> };
     if (k === "seed") return { title: "Têtes de série", body: <>{OTHER_INFO.seedMode}</> };
@@ -1273,9 +1523,7 @@ export default function TournamentCreate({ store, go }: Props) {
       <Section title="Infos du tournoi" subtitle="Nom + choix du mode." accent={primary}>
         <div style={{ display: "grid", gap: 10 }}>
           <div>
-            <div style={{ fontSize: 11.5, opacity: 0.82, marginBottom: 6 }}>
-              Nom
-            </div>
+            <div style={{ fontSize: 11.5, opacity: 0.82, marginBottom: 6 }}>Nom</div>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -1358,8 +1606,7 @@ export default function TournamentCreate({ store, go }: Props) {
           }}
         >
           <div style={{ fontSize: 12, opacity: 0.82 }}>
-            <b style={{ color: primary }}>{totalSelectedIds.length}</b>{" "}
-            sélectionné(s)
+            <b style={{ color: primary }}>{totalSelectedIds.length}</b> sélectionné(s)
           </div>
 
           <div
@@ -1437,7 +1684,7 @@ export default function TournamentCreate({ store, go }: Props) {
           >
             <NeonGhost
               label="Tous les bots"
-              onClick={() => setBotIds(botsCatalog.map((b) => b.id))}
+              onClick={() => setBotIds(botsCatalog.map((b: any) => String(b.id)))}
             />
             <NeonGhost label="Aucun bot" onClick={() => setBotIds([])} />
             <InfoIconButton onClick={() => openInfo("botsSelect")} />
@@ -1460,13 +1707,13 @@ export default function TournamentCreate({ store, go }: Props) {
         >
           {botsCatalog.map((b: any) => (
             <PlayerCarouselTile
-              key={b.id}
-              active={botIds.includes(b.id)}
+              key={String(b.id)}
+              active={botIds.includes(String(b.id))}
               name={b.name}
               avatarUrl={b.avatar}
               avg3D={Number(b.avg3D) || 0}
               isBot
-              onClick={() => toggleBot(b.id)}
+              onClick={() => toggleBot(String(b.id))}
               primary={primary}
             />
           ))}
@@ -1481,11 +1728,7 @@ export default function TournamentCreate({ store, go }: Props) {
 
       {/* Params match */}
       {mode === "x01" ? (
-        <Section
-          title="Match — Paramètres X01"
-          subtitle="Score de départ + IN/OUT."
-          accent={primary}
-        >
+        <Section title="Match — Paramètres X01" subtitle="Score de départ + IN/OUT." accent={primary}>
           <RowTitle label="Score de départ" />
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {[301, 501, 701, 901].map((v) => (
@@ -1503,110 +1746,39 @@ export default function TournamentCreate({ store, go }: Props) {
 
           <RowTitle label="Mode d’entrée" />
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <NeonPill
-              active={x01In === "simple"}
-              label="Simple IN"
-              onClick={() => setX01In("simple")}
-              primary={primary}
-            />
-            <NeonPill
-              active={x01In === "double"}
-              label="Double IN"
-              onClick={() => setX01In("double")}
-              primary={primary}
-            />
-            <NeonPill
-              active={x01In === "master"}
-              label="Master IN"
-              onClick={() => setX01In("master")}
-              primary={primary}
-            />
+            <NeonPill active={x01In === "simple"} label="Simple IN" onClick={() => setX01In("simple")} primary={primary} />
+            <NeonPill active={x01In === "double"} label="Double IN" onClick={() => setX01In("double")} primary={primary} />
+            <NeonPill active={x01In === "master"} label="Master IN" onClick={() => setX01In("master")} primary={primary} />
           </div>
 
           <div style={{ height: 10 }} />
 
           <RowTitle label="Mode de sortie" />
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <NeonPill
-              active={x01Out === "simple"}
-              label="Simple OUT"
-              onClick={() => setX01Out("simple")}
-              primary={primary}
-            />
-            <NeonPill
-              active={x01Out === "double"}
-              label="Double OUT"
-              onClick={() => setX01Out("double")}
-              primary={primary}
-            />
-            <NeonPill
-              active={x01Out === "master"}
-              label="Master OUT"
-              onClick={() => setX01Out("master")}
-              primary={primary}
-            />
+            <NeonPill active={x01Out === "simple"} label="Simple OUT" onClick={() => setX01Out("simple")} primary={primary} />
+            <NeonPill active={x01Out === "double"} label="Double OUT" onClick={() => setX01Out("double")} primary={primary} />
+            <NeonPill active={x01Out === "master"} label="Master OUT" onClick={() => setX01Out("master")} primary={primary} />
           </div>
         </Section>
       ) : null}
 
-      {/* ✅ Format tournoi — 1 option par ligne + i à l’extérieur + modal centré */}
-      <Section
-        title="Format du tournoi"
-        subtitle="Chaque option a son (i) comme TYPE."
-        accent={primary}
-      >
+      {/* ✅ Format tournoi */}
+      <Section title="Format du tournoi" subtitle="Chaque option a son (i) comme TYPE." accent={primary}>
         <RowTitle label="Type" />
         <div style={{ display: "grid", gap: 10 }}>
-          <LineOption
-            label="Élimination simple"
-            active={format === "single_ko"}
-            onClick={() => setFormat("single_ko")}
-            onInfo={() => openInfo("type_single")}
-            primary={primary}
-          />
-          <LineOption
-            label="Élimination double"
-            active={format === "double_ko"}
-            onClick={() => setFormat("double_ko")}
-            onInfo={() => openInfo("type_double")}
-            primary={primary}
-          />
-          <LineOption
-            label="Championnat (RR)"
-            active={format === "round_robin"}
-            onClick={() => setFormat("round_robin")}
-            onInfo={() => openInfo("type_rr")}
-            primary={primary}
-          />
-          <LineOption
-            label="Poules + KO"
-            active={format === "groups_ko"}
-            onClick={() => setFormat("groups_ko")}
-            onInfo={() => openInfo("type_groups")}
-            primary={primary}
-          />
+          <LineOption label="Élimination simple" active={format === "single_ko"} onClick={() => setFormat("single_ko")} onInfo={() => openInfo("type_single")} primary={primary} />
+          <LineOption label="Élimination double" active={format === "double_ko"} onClick={() => setFormat("double_ko")} onInfo={() => openInfo("type_double")} primary={primary} />
+          <LineOption label="Championnat (RR)" active={format === "round_robin"} onClick={() => setFormat("round_robin")} onInfo={() => openInfo("type_rr")} primary={primary} />
+          <LineOption label="Poules + KO" active={format === "groups_ko"} onClick={() => setFormat("groups_ko")} onInfo={() => openInfo("type_groups")} primary={primary} />
         </div>
 
         <div style={{ height: 14 }} />
 
         <RowTitle label="Match — Best-of" />
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr auto",
-            gap: 10,
-            alignItems: "center",
-          }}
-        >
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {([1, 3, 5, 7] as BestOf[]).map((v) => (
-              <NeonPill
-                key={v}
-                active={bestOf === v}
-                label={`BO${v}`}
-                onClick={() => setBestOf(v)}
-                primary={primary}
-              />
+              <NeonPill key={v} active={bestOf === v} label={`BO${v}`} onClick={() => setBestOf(v)} primary={primary} />
             ))}
           </div>
           <InfoIconButton onClick={() => openInfo("bestof")} />
@@ -1615,27 +1787,10 @@ export default function TournamentCreate({ store, go }: Props) {
         <div style={{ height: 14 }} />
 
         <RowTitle label="Têtes de série" />
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr auto",
-            gap: 10,
-            alignItems: "center",
-          }}
-        >
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <NeonPill
-              active={seedMode === "random"}
-              label="Aléatoire"
-              onClick={() => setSeedMode("random")}
-              primary={primary}
-            />
-            <NeonPill
-              active={seedMode === "byLevel"}
-              label="Par niveau (avg3D)"
-              onClick={() => setSeedMode("byLevel")}
-              primary={primary}
-            />
+            <NeonPill active={seedMode === "random"} label="Aléatoire" onClick={() => setSeedMode("random")} primary={primary} />
+            <NeonPill active={seedMode === "byLevel"} label="Par niveau (avg3D)" onClick={() => setSeedMode("byLevel")} primary={primary} />
           </div>
           <InfoIconButton onClick={() => openInfo("seed")} />
         </div>
@@ -1643,27 +1798,10 @@ export default function TournamentCreate({ store, go }: Props) {
         <div style={{ height: 14 }} />
 
         <RowTitle label="Repêchage" />
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr auto",
-            gap: 10,
-            alignItems: "center",
-          }}
-        >
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <NeonPill
-              active={repechageEnabled}
-              label="ON"
-              onClick={() => setRepechageEnabled(true)}
-              primary={primary}
-            />
-            <NeonPill
-              active={!repechageEnabled}
-              label="OFF"
-              onClick={() => setRepechageEnabled(false)}
-              primary={primary}
-            />
+            <NeonPill active={repechageEnabled} label="ON" onClick={() => setRepechageEnabled(true)} primary={primary} />
+            <NeonPill active={!repechageEnabled} label="OFF" onClick={() => setRepechageEnabled(false)} primary={primary} />
           </div>
           <InfoIconButton onClick={() => openInfo("repechage")} />
         </div>
@@ -1671,23 +1809,10 @@ export default function TournamentCreate({ store, go }: Props) {
         <div style={{ height: 14 }} />
 
         <RowTitle label="Taille cible" />
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr auto",
-            gap: 10,
-            alignItems: "center",
-          }}
-        >
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {([4, 8, 16] as const).map((n) => (
-              <NeonPill
-                key={n}
-                active={targetSize === n}
-                label={`${n} joueurs`}
-                onClick={() => setTargetSize(n)}
-                primary={primary}
-              />
+              <NeonPill key={n} active={targetSize === n} label={`${n} joueurs`} onClick={() => setTargetSize(n)} primary={primary} />
             ))}
           </div>
           <InfoIconButton onClick={() => openInfo("target")} />
@@ -1696,29 +1821,10 @@ export default function TournamentCreate({ store, go }: Props) {
         <div style={{ height: 14 }} />
 
         <RowTitle label="Auto-fill BOTS IA" />
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr auto",
-            gap: 10,
-            alignItems: "center",
-          }}
-        >
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <NeonPill
-              active={autoFillBots}
-              label="ON"
-              onClick={() => setAutoFillBots(true)}
-              disabled={format === "round_robin"}
-              primary={primary}
-            />
-            <NeonPill
-              active={!autoFillBots}
-              label="OFF"
-              onClick={() => setAutoFillBots(false)}
-              disabled={format === "round_robin"}
-              primary={primary}
-            />
+            <NeonPill active={autoFillBots} label="ON" onClick={() => setAutoFillBots(true)} disabled={format === "round_robin"} primary={primary} />
+            <NeonPill active={!autoFillBots} label="OFF" onClick={() => setAutoFillBots(false)} disabled={format === "round_robin"} primary={primary} />
           </div>
           <InfoIconButton onClick={() => openInfo("autofill")} />
         </div>
@@ -1732,12 +1838,7 @@ export default function TournamentCreate({ store, go }: Props) {
 
       {/* CTA */}
       <div style={{ marginTop: 14 }}>
-        <NeonPrimary
-          label="Créer le tournoi"
-          onClick={createTournament}
-          disabled={!canCreate}
-          primary={primary}
-        />
+        <NeonPrimary label="Créer le tournoi" onClick={createTournament} disabled={!canCreate} primary={primary} />
         {!canCreate ? (
           <div style={{ marginTop: 8, fontSize: 11.5, opacity: 0.72 }}>
             ⚠️ Renseigne un nom, choisis un mode et sélectionne au moins 2 joueurs.
@@ -1746,12 +1847,7 @@ export default function TournamentCreate({ store, go }: Props) {
       </div>
 
       {/* Sheet mode */}
-      <Sheet
-        open={sheetMode}
-        title="Choisir un mode"
-        onClose={() => setSheetMode(false)}
-        primary={primary}
-      >
+      <Sheet open={sheetMode} title="Choisir un mode" onClose={() => setSheetMode(false)} primary={primary}>
         <div style={{ display: "grid", gap: 10 }}>
           <div style={{ display: "grid", gap: 8 }}>
             {(["x01", "cricket", "killer", "shanghai"] as Mode[]).map((m) => (

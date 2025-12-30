@@ -16,6 +16,7 @@
 // - Variantes renommées (compréhensibles) + suppression variante inutile
 // - ✅ Variantes avancées : self-penalty, multiplier self-penalty, life steal, blind killer
 // - AVATARS BOTS OK avec ton ProfileAvatar actuel (qui refuse /assets/)
+// - ✅ FIX: randomStartOrder appliqué DIRECTEMENT dans le cfg.players (shuffle garanti)
 // =============================================================
 
 import React from "react";
@@ -146,6 +147,16 @@ function normalizeImgSrc(v: any): string | null {
     if (typeof d === "string") return d.trim() || null;
   }
   return null;
+}
+
+// ✅ FIX: shuffle garanti dans cfg.players
+function shuffleArray<T>(arr: T[]) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 // ------------------ UI bits ------------------
@@ -470,6 +481,9 @@ export default function KillerConfigPage(props: Props) {
       }
     }
 
+    // ✅ FIX: ordre de départ aléatoire appliqué AU CONFIG (garanti)
+    const finalPlayers = randomStartOrder ? shuffleArray(players) : players;
+
     const cfg: KillerConfig = {
       id: `killer-${Date.now()}`,
       mode: "killer",
@@ -488,7 +502,7 @@ export default function KillerConfigPage(props: Props) {
       lifeSteal,
       blindKiller,
 
-      players,
+      players: finalPlayers, // ✅ ici
     };
 
     if (startCb) {

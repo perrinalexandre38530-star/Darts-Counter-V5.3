@@ -224,6 +224,34 @@ function decideBotThrow(
   assignActive: boolean
 ): ThrowInput {
   const skill = resolveBotSkill(me.botLevel);
+
+  // helpers
+  const randInt = (min: number, max: number) =>
+    min + Math.floor(Math.random() * (max - min + 1));
+
+  const pickRandomTargetAvoid = (avoid?: number) => {
+    if (!avoid || avoid < 1 || avoid > 20) return randInt(1, 20);
+    for (let i = 0; i < 10; i++) {
+      const n = randInt(1, 20);
+      if (n !== avoid) return n;
+    }
+    let n = randInt(1, 20);
+    if (n === avoid) n = avoid === 20 ? 19 : avoid + 1;
+    return n;
+  };
+
+  // mult choice when attacking (damage rule)
+  const pickAttackMult = (): 1 | 2 | 3 => {
+    if (config.damageRule !== "multiplier") return 1;
+
+    const r = rand01();
+    if (skill <= 1) return r < 0.92 ? 1 : r < 0.99 ? 2 : 3;
+    if (skill === 2) return r < 0.82 ? 1 : r < 0.97 ? 2 : 3;
+    if (skill === 3) return r < 0.68 ? 1 : r < 0.92 ? 2 : 3;
+    if (skill === 4) return r < 0.52 ? 1 : r < 0.84 ? 2 : 3;
+    return r < 0.42 ? 1 : r < 0.78 ? 2 : 3;
+  };
+
   const aliveOthers = all.filter((p) => !p.eliminated && p.id !== me.id);
 
   const missRate =
@@ -236,7 +264,26 @@ function decideBotThrow(
       : skill === 4
       ? 0.06
       : 0.03;
-  const bullRate = skill >= 4 ? 0.03 : 0.015;
+
+  // ----------------------------
+  // ✅ Variantes Bull
+  // ----------------------------
+  const bullSplashOn = !!(config as any)?.bullSplash; // BULL/DBULL dmg zone
+  const bullHealOn = !!(config as any)?.bullHeal;     // BULL/DBULL heal
+  const isKillerActive = me.killerPhase === "ACTIVE";
+
+  const bullBase = skill >= 4 ? 0.03 : 0.015;
+
+  const manyOpponents = aliveOthers.length >= 3;
+  const lowLives = (me.lives ?? 0) <= 2;
+
+  // boost bull UNIQUEMENT si variantes utiles en mode killer actif
+  const bullBoost =
+    isKillerActive && (bullSplashOn || bullHealOn)
+      ? (bullSplashOn && manyOpponents ? 0.03 : 0) + (bullHealOn && lowLives ? 0.03 : 0)
+      : 0;
+
+  const bullRate = Math.min(0.12, bullBase + bullBoost);
 
   const r = rand01();
   if (r < missRate) return { target: 0, mult: 1 };
@@ -245,14 +292,16 @@ function decideBotThrow(
 
   // ✅ phase SELECT (assignation) => bot choisit un numéro random 1..20
   if (assignActive && me.killerPhase === "SELECT") {
-    const n = 1 + Math.floor(Math.random() * 20);
+    const n = randInt(1, 20);
     return { target: n, mult: 1 };
   }
 
-  // pas killer
+  // ----------------------------
+  // PAS KILLER ACTIF (chercher à devenir killer)
+  // ----------------------------
   if (me.killerPhase !== "ACTIVE") {
     if (!me.number) {
-      const n = 1 + Math.floor(Math.random() * 20);
+      const n = randInt(1, 20);
       return { target: n, mult: 1 };
     }
 
@@ -268,17 +317,28 @@ function decideBotThrow(
         ? 0.88
         : 0.94;
 
-    if (rand01() < hitOwnRate)
+    if (rand01() < hitOwnRate) {
       return {
         target: me.number,
         mult: pickMultForBot(skill, config.becomeRule, wantsDouble),
       };
+    }
 
-    const n = 1 + Math.floor(Math.random() * 20);
+    const n = randInt(1, 20);
     return { target: n, mult: pickMultForBot(skill, config.becomeRule, false) };
   }
 
-  // killer actif : vise une victime
+  // ----------------------------
+  // KILLER ACTIF : viser une victime
+  // ----------------------------
+  if (aliveOthers.length === 0) return { target: 0, mult: 1 };
+
+  // ✅ FriendlyFire supprimé => on vise toujours un adversaire vivant
+  const eligibleVictims = aliveOthers;
+
+  // si self-penalty ON, on évite aussi son propre numéro en random
+  const avoidSelf = !!config.selfHitWhileKiller ? me.number : undefined;
+
   const hitVictimRate =
     skill <= 1
       ? 0.52
@@ -290,24 +350,28 @@ function decideBotThrow(
       ? 0.86
       : 0.92;
 
-  if (aliveOthers.length === 0) return { target: 0, mult: 1 };
-
   if (rand01() < hitVictimRate) {
-    const sorted = [...aliveOthers].sort(
+    const sorted = [...eligibleVictims].sort(
       (a, b) => (a.lives ?? 0) - (b.lives ?? 0)
     );
     const pick = sorted[0];
+
+    // sécurité anti "même numéro" si ça arrive
+    if (avoidSelf && pick.number === avoidSelf) {
+      const n = pickRandomTargetAvoid(avoidSelf);
+      return { target: n, mult: pickAttackMult() };
+    }
+
     return {
       target: pick.number,
-      mult: pickMultForBot(skill, config.becomeRule, false),
+      mult: pickAttackMult(),
     };
   }
 
-  const n = 1 + Math.floor(Math.random() * 20);
-  return { target: n, mult: pickMultForBot(skill, config.becomeRule, false) };
+  // raté / random : éviter son numéro si self-penalty ON
+  const n = pickRandomTargetAvoid(avoidSelf);
+  return { target: n, mult: pickAttackMult() };
 }
-
-
 
 // -----------------------------
 // UI helpers
@@ -1915,6 +1979,56 @@ React.useEffect(() => {
     return rec as MatchRecord;
   }
 
+  // ✅ Variantes robustes (supporte plusieurs structures config)
+const selfPenaltyOn = truthy(
+  (config as any)?.selfHitWhileKiller ??
+    (config as any)?.selfPenalty ??
+    (config as any)?.self_penalty ??
+    (config as any)?.variants?.selfHitWhileKiller ??
+    (config as any)?.variants?.selfPenalty ??
+    (config as any)?.variants?.self_penalty ??
+    (config as any)?.options?.selfPenalty ??
+    (config as any)?.rules?.selfPenalty
+);
+
+const selfPenaltyMultOn = truthy(
+  (config as any)?.selfHitUsesMultiplier ??
+    (config as any)?.selfPenaltyMultiplier ??
+    (config as any)?.self_penalty_multiplier ??
+    (config as any)?.variants?.selfHitUsesMultiplier ??
+    (config as any)?.variants?.selfPenaltyMultiplier ??
+    (config as any)?.options?.selfPenaltyMultiplier ??
+    (config as any)?.rules?.selfPenaltyMultiplier
+);
+
+const lifeStealOn = truthy(
+  (config as any)?.lifeSteal ??
+    (config as any)?.life_steal ??
+    (config as any)?.variants?.lifeSteal ??
+    (config as any)?.variants?.life_steal ??
+    (config as any)?.options?.lifeSteal ??
+    (config as any)?.rules?.lifeSteal
+);
+
+const bullSplashOn = truthy(
+  (config as any)?.bullSplash ??
+    (config as any)?.bull_splash ??
+    (config as any)?.variants?.bullSplash ??
+    (config as any)?.variants?.bull_splash ??
+    (config as any)?.options?.bullSplash ??
+    (config as any)?.rules?.bullSplash
+);
+
+const bullHealOn = truthy(
+  (config as any)?.bullHeal ??
+    (config as any)?.bull_heal ??
+    (config as any)?.variants?.bullHeal ??
+    (config as any)?.variants?.bull_heal ??
+    (config as any)?.options?.bullHeal ??
+    (config as any)?.rules?.bullHeal
+);
+
+
   function applyThrow(t: ThrowInput) {
     if (inputDisabledBase) return;
     if (dartsLeft <= 0) return;
@@ -1973,13 +2087,90 @@ React.useEffect(() => {
         return next;
       }
   
-      // BULL / DBULL (25)
-      if (thr.target === 25) {
-        me.uselessHits += 1;
-        pushLog(`🎯 ${me.name} : ${fmtThrow(thr)}`);
-        pushEvent({ t: Date.now(), type: "THROW", actorId: me.id, throw: thr });
-        return next;
+      // BULL / DBULL (25) — variantes possibles si KILLER ACTIF
+if (thr.target === 25) {
+  const isDBull = thr.mult === 2;
+
+  const bullSplashOn = !!(config as any)?.bullSplash; // dmg zone
+  const bullHealOn = !!(config as any)?.bullHeal;     // heal
+
+  // Si pas killer actif OU pas de variantes -> comportement "inutile" (comme avant)
+  if (me.killerPhase !== "ACTIVE" || (!bullSplashOn && !bullHealOn)) {
+    me.uselessHits += 1;
+    pushLog(`🎯 ${me.name} : ${fmtThrow(thr)}`);
+    pushEvent({ t: Date.now(), type: "THROW", actorId: me.id, throw: thr });
+    return next;
+  }
+
+  // ✅ KILLER ACTIF + variantes bull
+  let didSomething = false;
+
+  // 1) Splash dmg: enlève 1 à tous (BULL) / 2 à tous (DBULL)
+  if (bullSplashOn) {
+    const dmg = isDBull ? 2 : 1;
+    const victims = next.filter((p, idx) => idx !== turnIndex && !p.eliminated);
+
+    let totalLoss = 0;
+
+    for (const v of victims) {
+      const before = v.lives;
+      v.lives = Math.max(0, v.lives - dmg);
+      const loss = Math.max(0, before - v.lives);
+      if (loss > 0) {
+        totalLoss += loss;
+        v.livesLost += loss;
+        didSomething = true;
+
+        if (v.lives <= 0) {
+          v.eliminated = true;
+          v.eliminatedAt = Date.now();
+          me.kills += 1;
+          if (!elimOrderRef.current.includes(v.id)) {
+            elimOrderRef.current = [...(elimOrderRef.current || []), v.id];
+          }
+        }
       }
+    }
+
+    if (totalLoss > 0) {
+      me.killerHits += 1;
+      me.livesTaken += totalLoss;
+      playKillMult = thr.mult;
+    }
+
+    pushLog(
+      didSomething
+        ? `💥 ${me.name} fait ${fmtThrow(thr)} → dégâts de zone (-${dmg} à tous)`
+        : `🎯 ${me.name} : ${fmtThrow(thr)}`
+    );
+    pushEvent({
+      t: Date.now(),
+      type: "BULL_SPLASH",
+      actorId: me.id,
+      dmg,
+      throw: thr,
+      totalLoss,
+    });
+  }
+
+  // 2) Heal: récupère 1 (BULL) / 2 (DBULL)
+  if (bullHealOn) {
+    const heal = isDBull ? 2 : 1;
+    const before = me.lives;
+    me.lives = Math.max(0, me.lives + heal);
+    const gained = Math.max(0, me.lives - before);
+    if (gained > 0) didSomething = true;
+
+    pushLog(`💚 ${me.name} fait ${fmtThrow(thr)} → +${gained} vie(s)`);
+    pushEvent({ t: Date.now(), type: "BULL_HEAL", actorId: me.id, heal: gained, throw: thr });
+  }
+
+  if (!didSomething) {
+    me.uselessHits += 1;
+  }
+
+  return next;
+}
   
       // SELECT NUMBER (assignation au lancer)
       if (assignActive && numberAssignMode === "throw" && me.killerPhase === "SELECT") {
@@ -2102,73 +2293,127 @@ React.useEffect(() => {
       }
   
       // ACTIVE => attaque
-      if (me.killerPhase === "ACTIVE") {
-        const victimIdx = next.findIndex(
-          (p, idx) => idx !== turnIndex && !p.eliminated && p.number === thr.target
-        );
-  
-        if (victimIdx >= 0) {
-          const victim = next[victimIdx];
-  
-          me.offensiveThrows += 1;
-  
-          const dmg = dmgFrom(thr.mult, config.damageRule);
-          const before = victim.lives;
-          victim.lives = Math.max(0, victim.lives - dmg);
-  
-          const actualLoss = Math.max(0, before - victim.lives);
-          if (actualLoss > 0) {
-            me.killerHits += 1;
-            me.livesTaken += actualLoss;
-            victim.livesLost += actualLoss;
-  
-            // ✅ IMPORTANT: si on enlève des vies => on jouera KILL S/D/T et PAS dart-hit
-            playKillMult = thr.mult;
-          }
-  
-          pushEvent({
-            t: Date.now(),
-            type: "HIT_VICTIM",
-            actorId: me.id,
-            targetId: victim.id,
-            targetNumber: victim.number,
-            dmg,
-            throw: thr,
-          });
-  
-          if (victim.lives <= 0) {
-            victim.eliminated = true;
-            victim.eliminatedAt = Date.now();
-            me.kills += 1;
-  
-            if (!elimOrderRef.current.includes(victim.id)) {
-              elimOrderRef.current = [...(elimOrderRef.current || []), victim.id];
-            }
-  
-            pushLog(
-              `💀 ${me.name} élimine ${victim.name} (${fmtThrow(thr)} sur ${thr.target}, -${dmg})`
-            );
-            pushEvent({
-              t: Date.now(),
-              type: "KILL",
-              actorId: me.id,
-              targetId: victim.id,
-              targetNumber: victim.number,
-              throw: thr,
-            });
-  
-            try {
-              sfx.death?.();
-            } catch {}
-          } else {
-            pushLog(
-              `🔻 ${me.name} touche ${victim.name} (${fmtThrow(thr)} sur ${thr.target}, -${dmg}) → ${victim.lives} vie(s)`
-            );
-          }
-  
-          return next;
-        }
+if (me.killerPhase === "ACTIVE") {
+  // ✅ AUTO-PÉNALITÉ (KILLER qui touche SON numéro)
+  if (me.number && thr.target === me.number && selfPenaltyOn) {
+    me.hitsOnSelf = (me.hitsOnSelf ?? 0) + 1;
+
+    const dmg = selfPenaltyMultOn ? dmgFrom(thr.mult, "multiplier") : 1;
+
+    const beforeMe = me.lives;
+    me.lives = Math.max(0, me.lives - dmg);
+    const actualLossMe = Math.max(0, beforeMe - me.lives);
+
+    if (actualLossMe > 0) {
+      me.livesLost += actualLossMe;
+
+      // ✅ IMPORTANT SFX: si perte de vies => kill S/D/T (pas dart-hit)
+      playKillMult = thr.mult;
+    }
+
+    pushLog(
+      `⚠️ ${me.name} se pénalise (${fmtThrow(thr)} sur ${thr.target}, -${dmg}) → ${me.lives} vie(s)`
+    );
+    pushEvent({
+      t: Date.now(),
+      type: "SELF_PENALTY",
+      actorId: me.id,
+      number: me.number,
+      dmg,
+      throw: thr,
+    });
+
+    if (me.lives <= 0) {
+      me.eliminated = true;
+      me.eliminatedAt = Date.now();
+      me.killerPhase = "ARMING";
+      me.isKiller = false;
+
+      if (!elimOrderRef.current.includes(me.id)) {
+        elimOrderRef.current = [...(elimOrderRef.current || []), me.id];
       }
+
+      pushLog(`☠️ ${me.name} meurt par auto-pénalité`);
+      try {
+        sfx.death?.();
+      } catch {}
+    }
+
+    return next;
+  }
+
+  // ✅ HIT VICTIME (numéro d'un adversaire vivant)
+  const victimIdx = next.findIndex(
+    (p, idx) => idx !== turnIndex && !p.eliminated && p.number === thr.target
+  );
+
+  if (victimIdx >= 0) {
+    const victim = next[victimIdx];
+
+    me.offensiveThrows += 1;
+
+    const dmg = dmgFrom(thr.mult, config.damageRule);
+    const before = victim.lives;
+    victim.lives = Math.max(0, victim.lives - dmg);
+
+    const actualLoss = Math.max(0, before - victim.lives);
+    if (actualLoss > 0) {
+      me.killerHits += 1;
+      me.livesTaken += actualLoss;
+      victim.livesLost += actualLoss;
+
+      // ✅ LIFE STEAL
+      if (lifeStealOn) {
+        me.lives = Math.max(0, (me.lives ?? 0) + actualLoss);
+      }
+
+      playKillMult = thr.mult;
+    }
+
+    pushEvent({
+      t: Date.now(),
+      type: "HIT_VICTIM",
+      actorId: me.id,
+      targetId: victim.id,
+      targetNumber: victim.number,
+      dmg,
+      actualLoss,
+      throw: thr,
+    });
+
+    if (victim.lives <= 0) {
+      victim.eliminated = true;
+      victim.eliminatedAt = Date.now();
+      me.kills += 1;
+
+      if (!elimOrderRef.current.includes(victim.id)) {
+        elimOrderRef.current = [...(elimOrderRef.current || []), victim.id];
+      }
+
+      pushLog(
+        `💀 ${me.name} élimine ${victim.name} (${fmtThrow(thr)} sur ${thr.target}, -${dmg})`
+      );
+      pushEvent({
+        t: Date.now(),
+        type: "KILL",
+        actorId: me.id,
+        targetId: victim.id,
+        targetNumber: victim.number,
+        throw: thr,
+      });
+
+      try {
+        sfx.death?.();
+      } catch {}
+    } else {
+      pushLog(
+        `🔻 ${me.name} touche ${victim.name} (${fmtThrow(thr)} sur ${thr.target}, -${dmg}) → ${victim.lives} vie(s)`
+      );
+    }
+
+    return next;
+  }
+}
   
       me.uselessHits += 1;
       pushLog(`🎯 ${me.name} : ${fmtThrow(thr)}`);
@@ -2338,18 +2583,98 @@ React.useEffect(() => {
         return next;
       }
 
-      if (thrSafe.target === 25) {
-        me2.uselessHits += 1;
-        pushLog(`🎯 ${me2.name} : ${fmtThrow(thrSafe)}`);
-        pushEvent({
-          t: Date.now(),
-          type: "THROW",
-          actorId: me2.id,
-          throw: thrSafe,
-          bot: true,
-        });
-        return next;
+      // BULL / DBULL (25) — variantes possibles si KILLER ACTIF
+if (thrSafe.target === 25) {
+  const isDBull = thrSafe.mult === 2;
+
+  // Si pas killer actif OU pas de variantes -> inutile
+  if (me2.killerPhase !== "ACTIVE" || (!bullSplashOn && !bullHealOn)) {
+    me2.uselessHits += 1;
+    pushLog(`🎯 ${me2.name} : ${fmtThrow(thrSafe)}`);
+    pushEvent({
+      t: Date.now(),
+      type: "THROW",
+      actorId: me2.id,
+      throw: thrSafe,
+      bot: true,
+    });
+    return next;
+  }
+
+  let didSomething = false;
+
+  // 1) Splash dmg: -1 à tous (BULL) / -2 à tous (DBULL)
+  if (bullSplashOn) {
+    const dmg = isDBull ? 2 : 1;
+    const victims = next.filter((p, idx) => idx !== activeTurnIndex && !p.eliminated);
+
+    let totalLoss = 0;
+
+    for (const v of victims) {
+      const before = v.lives;
+      v.lives = Math.max(0, v.lives - dmg);
+      const loss = Math.max(0, before - v.lives);
+      if (loss > 0) {
+        totalLoss += loss;
+        v.livesLost += loss;
+        didSomething = true;
+
+        if (v.lives <= 0) {
+          v.eliminated = true;
+          v.eliminatedAt = Date.now();
+          me2.kills += 1;
+          if (!elimOrderRef.current.includes(v.id)) {
+            elimOrderRef.current = [...(elimOrderRef.current || []), v.id];
+          }
+        }
       }
+    }
+
+    if (totalLoss > 0) {
+      me2.killerHits += 1;
+      me2.livesTaken += totalLoss;
+      botPlayKillMult = thrSafe.mult;
+    }
+
+    pushLog(
+      didSomething
+        ? `💥 ${me2.name} fait ${fmtThrow(thrSafe)} → dégâts de zone (-${dmg} à tous)`
+        : `🎯 ${me2.name} : ${fmtThrow(thrSafe)}`
+    );
+
+    pushEvent({
+      t: Date.now(),
+      type: "BULL_SPLASH",
+      actorId: me2.id,
+      dmg,
+      totalLoss,
+      throw: thrSafe,
+      bot: true,
+    });
+  }
+
+  // 2) Heal: +1 (BULL) / +2 (DBULL)
+  if (bullHealOn) {
+    const heal = isDBull ? 2 : 1;
+    const before = me2.lives;
+    me2.lives = Math.max(0, me2.lives + heal);
+    const gained = Math.max(0, me2.lives - before);
+    if (gained > 0) didSomething = true;
+
+    pushLog(`💚 ${me2.name} fait ${fmtThrow(thrSafe)} → +${gained} vie(s)`);
+    pushEvent({
+      t: Date.now(),
+      type: "BULL_HEAL",
+      actorId: me2.id,
+      heal: gained,
+      throw: thrSafe,
+      bot: true,
+    });
+  }
+
+  if (!didSomething) me2.uselessHits += 1;
+  return next;
+}
 
       if (
         assignActive &&
@@ -2470,29 +2795,81 @@ React.useEffect(() => {
       }
 
       if (me2.killerPhase === "ACTIVE") {
+        // ✅ AUTO-PÉNALITÉ (BOT)
+        if (me2.number && thrSafe.target === me2.number && selfPenaltyOn) {
+          me2.hitsOnSelf = (me2.hitsOnSelf ?? 0) + 1;
+      
+          const dmg = selfPenaltyMultOn ? dmgFrom(thrSafe.mult, "multiplier") : 1;
+      
+          const beforeMe = me2.lives;
+          me2.lives = Math.max(0, me2.lives - dmg);
+          const actualLossMe = Math.max(0, beforeMe - me2.lives);
+      
+          if (actualLossMe > 0) {
+            me2.livesLost += actualLossMe;
+            botPlayKillMult = thrSafe.mult;
+          }
+      
+          pushLog(
+            `⚠️ ${me2.name} se pénalise (${fmtThrow(thrSafe)} sur ${thrSafe.target}, -${dmg}) → ${me2.lives} vie(s)`
+          );
+          pushEvent({
+            t: Date.now(),
+            type: "SELF_PENALTY",
+            actorId: me2.id,
+            number: me2.number,
+            dmg,
+            throw: thrSafe,
+            bot: true,
+          });
+      
+          if (me2.lives <= 0) {
+            me2.eliminated = true;
+            me2.eliminatedAt = Date.now();
+            me2.killerPhase = "ARMING";
+            me2.isKiller = false;
+      
+            if (!elimOrderRef.current.includes(me2.id)) {
+              elimOrderRef.current = [...(elimOrderRef.current || []), me2.id];
+            }
+      
+            pushLog(`☠️ ${me2.name} meurt par auto-pénalité`);
+            try {
+              sfx.death?.();
+            } catch {}
+          }
+      
+          return next;
+        }
+      
+        // ✅ HIT VICTIME (BOT)
         const victimIdx = next.findIndex(
-          (p, idx) =>
-            idx !== activeTurnIndex && !p.eliminated && p.number === thrSafe.target
+          (p, idx) => idx !== activeTurnIndex && !p.eliminated && p.number === thrSafe.target
         );
+      
         if (victimIdx >= 0) {
           const victim = next[victimIdx];
-
+      
           me2.offensiveThrows += 1;
-
+      
           const dmg = dmgFrom(thrSafe.mult, config.damageRule);
           const before = victim.lives;
           victim.lives = Math.max(0, victim.lives - dmg);
-
+      
           const actualLoss = Math.max(0, before - victim.lives);
           if (actualLoss > 0) {
             me2.killerHits += 1;
             me2.livesTaken += actualLoss;
             victim.livesLost += actualLoss;
-
-            // ✅ IMPORTANT: si on enlève des vies => kill S/D/T, pas dart-hit
+      
+            // ✅ LIFE STEAL
+            if (lifeStealOn) {
+              me2.lives = Math.max(0, (me2.lives ?? 0) + actualLoss);
+            }
+      
             botPlayKillMult = thrSafe.mult;
           }
-
+      
           pushEvent({
             t: Date.now(),
             type: "HIT_VICTIM",
@@ -2500,19 +2877,20 @@ React.useEffect(() => {
             targetId: victim.id,
             targetNumber: victim.number,
             dmg,
+            actualLoss,
             throw: thrSafe,
             bot: true,
           });
-
+      
           if (victim.lives <= 0) {
             victim.eliminated = true;
             victim.eliminatedAt = Date.now();
             me2.kills += 1;
-
+      
             if (!elimOrderRef.current.includes(victim.id)) {
               elimOrderRef.current = [...(elimOrderRef.current || []), victim.id];
             }
-
+      
             pushLog(
               `💀 ${me2.name} élimine ${victim.name} (${fmtThrow(thrSafe)} sur ${thrSafe.target}, -${dmg})`
             );
@@ -2525,7 +2903,7 @@ React.useEffect(() => {
               throw: thrSafe,
               bot: true,
             });
-
+      
             try {
               sfx.death?.();
             } catch {}
@@ -2534,7 +2912,7 @@ React.useEffect(() => {
               `🔻 ${me2.name} touche ${victim.name} (${fmtThrow(thrSafe)} sur ${thrSafe.target}, -${dmg}) → ${victim.lives} vie(s)`
             );
           }
-
+      
           return next;
         }
       }

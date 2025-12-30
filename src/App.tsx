@@ -151,6 +151,43 @@ function mergeProfilesSafe<T extends { id: string }>(base: T[], incoming: T[]) {
   return Array.from(map.values());
 }
 
+// =============================================================
+// ✅ NEW: Helpers upload avatar Supabase (PROFILES)
+// - dataUrl (png base64) -> Blob
+// - upload (upsert) dans bucket public "avatars"
+// - renvoie publicUrl
+// =============================================================
+async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  // fetch() supporte les dataURL (base64) dans les navigateurs modernes
+  const res = await fetch(dataUrl);
+  if (!res.ok) throw new Error("Impossible de convertir dataUrl -> Blob");
+  return await res.blob();
+}
+
+async function uploadAvatarToSupabase(opts: {
+  bucket: string;
+  objectPath: string; // ex: `${profileId}/avatar.png`
+  pngDataUrl: string;
+}): Promise<{ publicUrl: string }> {
+  const blob = await dataUrlToBlob(opts.pngDataUrl);
+
+  const { error: upErr } = await supabase.storage
+    .from(opts.bucket)
+    .upload(opts.objectPath, blob, {
+      upsert: true,
+      contentType: "image/png",
+      cacheControl: "3600", // cache OK car cache-bust via avatarUpdatedAt
+    });
+
+  if (upErr) throw upErr;
+
+  const { data } = supabase.storage.from(opts.bucket).getPublicUrl(opts.objectPath);
+  const publicUrl = (data as any)?.publicUrl || "";
+  if (!publicUrl) throw new Error("getPublicUrl() a renvoyé une URL vide");
+
+  return { publicUrl };
+}
+
 /* --- helpers --- */
 function withAvatars(rec: any, profiles: any[]) {
   const get = (arr: any[]) =>
@@ -217,7 +254,6 @@ function buildChangelogSlides(
     } as LiveTipSlide;
   });
 }
-
 
 /* ============================================================
    ✅ NEW: sanitizeStoreForCloud (anti base64 dans snapshot cloud)
@@ -433,9 +469,7 @@ function AuthForgotRoute({ go }: { go: (t: Tab, p?: any) => void }) {
     <div style={{ padding: 16 }}>
       <button onClick={() => go("account_start")}>← Retour</button>
       <h2 style={{ marginTop: 10 }}>Mot de passe oublié</h2>
-      <p style={{ opacity: 0.85 }}>
-        Entre ton email, on t’envoie un lien de réinitialisation.
-      </p>
+      <p style={{ opacity: 0.85 }}>Entre ton email, on t’envoie un lien de réinitialisation.</p>
 
       <div style={{ display: "grid", gap: 10, maxWidth: 420, marginTop: 10 }}>
         <input
@@ -605,9 +639,7 @@ function StatsDetailRoute({ store, go, params }: any) {
         <h2>
           {(rec.kind || "MATCH").toUpperCase()} — {dateStr}
         </h2>
-        <div style={{ opacity: 0.85 }}>
-          Joueurs : {players.map((p) => p.name).join(" · ")}
-        </div>
+        <div style={{ opacity: 0.85 }}>Joueurs : {players.map((p) => p.name).join(" · ")}</div>
       </div>
     );
   }
@@ -789,28 +821,30 @@ function App() {
   // ============================================================
   const online = useAuthOnline();
   const [cloudHydrated, setCloudHydrated] = React.useState(false);
-// ✅ Cloud hydrate est "par user" : quand on se reconnecte (après clear site data),
-// on doit forcer un nouveau pull du snapshot.
-const cloudHydratedUserRef = React.useRef<string>("");
+  // ✅ Cloud hydrate est "par user" : quand on se reconnecte (après clear site data),
+  // on doit forcer un nouveau pull du snapshot.
+  const cloudHydratedUserRef = React.useRef<string>("");
 
-React.useEffect(() => {
-  if (!online?.ready) return;
-  const uid = String((online as any)?.session?.user?.id || (online as any)?.user?.id || "");
+  React.useEffect(() => {
+    if (!online?.ready) return;
+    const uid = String(
+      (online as any)?.session?.user?.id || (online as any)?.user?.id || ""
+    );
 
-  // Pas connecté : on ne marque pas l’hydratation pour un user.
-  if (online.status !== "signed_in") {
-    cloudHydratedUserRef.current = "";
-    return;
-  }
+    // Pas connecté : on ne marque pas l’hydratation pour un user.
+    if (online.status !== "signed_in") {
+      cloudHydratedUserRef.current = "";
+      return;
+    }
 
-  // Connecté : nouvel user => on réactive l’hydratation
-  if (uid && cloudHydratedUserRef.current !== uid) {
-    cloudHydratedUserRef.current = uid;
-    setCloudHydrated(false);
-  }
-}, [online?.ready, online?.status, (online as any)?.session?.user?.id]);
+    // Connecté : nouvel user => on réactive l’hydratation
+    if (uid && cloudHydratedUserRef.current !== uid) {
+      cloudHydratedUserRef.current = uid;
+      setCloudHydrated(false);
+    }
+  }, [online?.ready, online?.status, (online as any)?.session?.user?.id]);
 
-const cloudPushTimerRef = React.useRef<number | null>(null);
+  const cloudPushTimerRef = React.useRef<number | null>(null);
 
   const [store, setStore] = React.useState<Store>(initialStore);
   const [tab, setTab] = React.useState<Tab>("home");
@@ -821,7 +855,9 @@ const cloudPushTimerRef = React.useRef<number | null>(null);
   const [showSplash, setShowSplash] = React.useState(() => {
     const h = String(window.location.hash || "");
     const isAuthFlow =
-      h.startsWith("#/auth/callback") || h.startsWith("#/auth/reset") || h.startsWith("#/auth/forgot");
+      h.startsWith("#/auth/callback") ||
+      h.startsWith("#/auth/reset") ||
+      h.startsWith("#/auth/forgot");
     return !isAuthFlow;
   });
 
@@ -891,7 +927,9 @@ const cloudPushTimerRef = React.useRef<number | null>(null);
   const [x01Config, setX01Config] = React.useState<any>(null);
 
   /* X01 v3 config */
-  const [x01ConfigV3, setX01ConfigV3] = React.useState<X01ConfigV3Type | null>(null);
+  const [x01ConfigV3, setX01ConfigV3] = React.useState<X01ConfigV3Type | null>(
+    null
+  );
 
   /* Navigation */
   function go(next: Tab, params?: any) {
@@ -956,7 +994,9 @@ const cloudPushTimerRef = React.useRef<number | null>(null);
 
           const h = String(window.location.hash || "");
           const isAuthFlow =
-            h.startsWith("#/auth/callback") || h.startsWith("#/auth/reset") || h.startsWith("#/auth/forgot");
+            h.startsWith("#/auth/callback") ||
+            h.startsWith("#/auth/reset") ||
+            h.startsWith("#/auth/forgot");
 
           if (!isAuthFlow) {
             if (!hasProfiles || !hasActive) {
@@ -983,87 +1023,86 @@ const cloudPushTimerRef = React.useRef<number | null>(null);
   }, []);
 
   // ============================================================
-// ✅ CLOUD HYDRATE (source unique)
-// - Quand on se CONNECTE (même après "Clear site data") => on PULL le snapshot cloud
-// - On ne SEED le cloud que si on est sûr que le snapshot n’existe pas (not_found)
-// ============================================================
-React.useEffect(() => {
-  let cancelled = false;
+  // ✅ CLOUD HYDRATE (source unique)
+  // - Quand on se CONNECTE (même après "Clear site data") => on PULL le snapshot cloud
+  // - On ne SEED le cloud que si on est sûr que le snapshot n’existe pas (not_found)
+  // ============================================================
+  React.useEffect(() => {
+    let cancelled = false;
 
-  const run = async () => {
-    if (loading) return;
-    if (!online?.ready) return;
+    const run = async () => {
+      if (loading) return;
+      if (!online?.ready) return;
 
-    // Tant qu'on n'est pas connecté, on ne fait rien ici.
-    if (online.status !== "signed_in") return;
+      // Tant qu'on n'est pas connecté, on ne fait rien ici.
+      if (online.status !== "signed_in") return;
 
-    // On hydrate une seule fois par user (reset géré par cloudHydratedUserRef)
-    if (cloudHydrated) return;
+      // On hydrate une seule fois par user (reset géré par cloudHydratedUserRef)
+      if (cloudHydrated) return;
 
-    try {
-      const res: any = await onlineApi.pullStoreSnapshot();
+      try {
+        const res: any = await onlineApi.pullStoreSnapshot();
 
-      if (res?.status === "ok") {
-        const cloudStore = res?.payload?.store;
+        if (res?.status === "ok") {
+          const cloudStore = res?.payload?.store;
 
-        if (cloudStore && typeof cloudStore === "object") {
-          const next: Store = {
-            ...initialStore,
-            ...(cloudStore as any),
-            profiles: (cloudStore as any).profiles ?? [],
-            friends: (cloudStore as any).friends ?? [],
-            history: (cloudStore as any).history ?? [],
-          };
+          if (cloudStore && typeof cloudStore === "object") {
+            const next: Store = {
+              ...initialStore,
+              ...(cloudStore as any),
+              profiles: (cloudStore as any).profiles ?? [],
+              friends: (cloudStore as any).friends ?? [],
+              history: (cloudStore as any).history ?? [],
+            };
 
-          if (!cancelled) {
-            // ✅ merge défensif des profils (cloud peut être partiel)
-            setStore((prev) => ({
-              ...next,
-              profiles: mergeProfilesSafe(prev.profiles ?? [], next.profiles ?? []),
-            }));
-            try {
-              await saveStore(next);
-            } catch {}
+            if (!cancelled) {
+              // ✅ merge défensif des profils (cloud peut être partiel)
+              setStore((prev) => ({
+                ...next,
+                profiles: mergeProfilesSafe(prev.profiles ?? [], next.profiles ?? []),
+              }));
+              try {
+                await saveStore(next);
+              } catch {}
+            }
           }
-        }
-      } else if (res?.status === "not_found") {
-        // ✅ Pas de snapshot : on seed UNIQUEMENT si on a déjà des données locales utiles.
-        const hasLocalData =
-          (store?.profiles?.length || 0) > 0 ||
-          !!(store as any)?.activeProfileId ||
-          (store?.friends?.length || 0) > 0 ||
-          (store?.history?.length || 0) > 0;
+        } else if (res?.status === "not_found") {
+          // ✅ Pas de snapshot : on seed UNIQUEMENT si on a déjà des données locales utiles.
+          const hasLocalData =
+            (store?.profiles?.length || 0) > 0 ||
+            !!(store as any)?.activeProfileId ||
+            (store?.friends?.length || 0) > 0 ||
+            (store?.history?.length || 0) > 0;
 
-        if (hasLocalData) {
-          const payload = {
-            kind: "dc_store_snapshot_v1",
-            createdAt: new Date().toISOString(),
-            app: "darts-counter-v5",
-            store: sanitizeStoreForCloud(store), // ✅ ne pousse pas les data: (avatars locaux)
-          };
-          await onlineApi.pushStoreSnapshot(payload);
+          if (hasLocalData) {
+            const payload = {
+              kind: "dc_store_snapshot_v1",
+              createdAt: new Date().toISOString(),
+              app: "darts-counter-v5",
+              store: sanitizeStoreForCloud(store), // ✅ ne pousse pas les data: (avatars locaux)
+            };
+            await onlineApi.pushStoreSnapshot(payload);
+          } else {
+            console.warn(
+              "[cloud] no snapshot yet + local empty -> skip seed (avoid wiping cloud by mistake)"
+            );
+          }
         } else {
-          console.warn(
-            "[cloud] no snapshot yet + local empty -> skip seed (avoid wiping cloud by mistake)"
-          );
+          console.warn("[cloud] hydrate error (skip seed)", res?.error || res);
         }
-      } else {
-        console.warn("[cloud] hydrate error (skip seed)", res?.error || res);
+      } catch (e) {
+        console.warn("[cloud] hydrate error", e);
+      } finally {
+        if (!cancelled) setCloudHydrated(true);
       }
-    } catch (e) {
-      console.warn("[cloud] hydrate error", e);
-    } finally {
-      if (!cancelled) setCloudHydrated(true);
-    }
-  };
+    };
 
-  run();
-  return () => {
-    cancelled = true;
-  };
-  // ⚠️ store dans deps : si tu seed, on veut la version la plus récente.
-}, [loading, online?.ready, online?.status, cloudHydrated, store]);
-
+    run();
+    return () => {
+      cancelled = true;
+    };
+    // ⚠️ store dans deps : si tu seed, on veut la version la plus récente.
+  }, [loading, online?.ready, online?.status, cloudHydrated, store]);
 
   // ============================================================
   // ✅ CLOUD PUSH (debounce)
@@ -1141,7 +1180,9 @@ React.useEffect(() => {
       const work = async () => {
         try {
           const profiles = (__profilesRef.current ?? []) as any[];
-          await Promise.allSettled(profiles.map((p) => rebuildStatsForProfile(String(p?.id))));
+          await Promise.allSettled(
+            profiles.map((p) => rebuildStatsForProfile(String(p?.id)))
+          );
         } catch (e) {
           console.warn("[stats] rebuild error:", e);
         } finally {
@@ -1339,7 +1380,9 @@ React.useEffect(() => {
       }
 
       case "tournament_match_play": {
-        const tournamentId = String(routeParams?.tournamentId ?? routeParams?.id ?? routeParams?.tid ?? "");
+        const tournamentId = String(
+          routeParams?.tournamentId ?? routeParams?.id ?? routeParams?.tid ?? ""
+        );
         const matchId = String(routeParams?.matchId ?? "");
 
         if (!tournamentId || !matchId) {
@@ -1446,7 +1489,9 @@ React.useEffect(() => {
 
       case "x01_online_setup": {
         const activeProfile =
-          store.profiles.find((p) => p.id === store.activeProfileId) ?? store.profiles[0] ?? null;
+          store.profiles.find((p) => p.id === store.activeProfileId) ??
+          store.profiles[0] ??
+          null;
 
         const lobbyCode = routeParams?.lobbyCode ?? null;
 
@@ -1478,9 +1523,7 @@ React.useEffect(() => {
 
         const storeForOnline: Store = { ...store, activeProfileId: activeProfile.id } as Store;
 
-        page = (
-          <X01OnlineSetup store={storeForOnline} go={go} params={{ ...(routeParams || {}), lobbyCode }} />
-        );
+        page = <X01OnlineSetup store={storeForOnline} go={go} params={{ ...(routeParams || {}), lobbyCode }} />;
         break;
       }
 
@@ -1492,7 +1535,9 @@ React.useEffect(() => {
 
         if (!effectiveConfig && isOnline && !isResume) {
           const activeProfile =
-            store.profiles.find((p) => p.id === store.activeProfileId) ?? store.profiles[0] ?? null;
+            store.profiles.find((p) => p.id === store.activeProfileId) ??
+            store.profiles[0] ??
+            null;
 
           const startDefault = getX01DefaultStart(store);
           const start =
@@ -1707,20 +1752,70 @@ React.useEffect(() => {
         }
 
         const targetProfile =
-          store.profiles.find((p) => p.id === (profileIdFromParams || store.activeProfileId)) ?? null;
+          store.profiles.find((p) => p.id === (profileIdFromParams || store.activeProfileId)) ??
+          null;
 
-        function handleSaveAvatarProfile({ pngDataUrl, name }: { pngDataUrl: string; name: string }) {
+        // ============================================================
+        // ✅ SAVE AVATAR PROFILE -> Upload Supabase + avatarUrl + avatarUpdatedAt
+        // - IMPORTANT: avatarDataUrl => null (sinon clear site data = perdu)
+        // - Fallback: si upload échoue => on garde avatarDataUrl local
+        // ============================================================
+        async function handleSaveAvatarProfile({
+          pngDataUrl,
+          name,
+        }: {
+          pngDataUrl: string;
+          name: string;
+        }) {
           if (!targetProfile) return;
 
-          setProfiles((list) =>
-            list.map((p) =>
-              p.id === targetProfile.id
-                ? { ...p, name: name?.trim() || p.name, avatarDataUrl: pngDataUrl }
-                : p
-            )
-          );
+          const trimmedName = (name || "").trim();
+          const now = Date.now();
 
-          go(backTo);
+          // ✅ Bucket public + chemin par profileId (multi-profils OK)
+          const bucket = "avatars";
+          const objectPath = `${targetProfile.id}/avatar.png`;
+
+          try {
+            const { publicUrl } = await uploadAvatarToSupabase({
+              bucket,
+              objectPath,
+              pngDataUrl,
+            });
+
+            setProfiles((list) =>
+              list.map((p) =>
+                p.id === targetProfile.id
+                  ? {
+                      ...p,
+                      name: trimmedName || p.name,
+                      avatarUrl: publicUrl,
+                      avatarUpdatedAt: now,
+                      avatarDataUrl: null,
+                    }
+                  : p
+              )
+            );
+
+            go(backTo);
+          } catch (e) {
+            console.error("[AvatarUpload] upload failed -> fallback local avatarDataUrl", e);
+
+            setProfiles((list) =>
+              list.map((p) =>
+                p.id === targetProfile.id
+                  ? {
+                      ...p,
+                      name: trimmedName || p.name,
+                      avatarDataUrl: pngDataUrl,
+                      // ⚠️ on ne touche pas avatarUrl/avatarUpdatedAt si déjà présents
+                    }
+                  : p
+              )
+            );
+
+            go(backTo);
+          }
         }
 
         page = (
@@ -1844,7 +1939,8 @@ function AccountEntry({ go }: { go: (t: any, p?: any) => void }) {
           width: "min(380px, 92vw)",
           borderRadius: 22,
           padding: 14,
-          background: "linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03))",
+          background:
+            "linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03))",
           border: "1px solid rgba(255,255,255,.10)",
           boxShadow: "0 22px 70px rgba(0,0,0,.62)",
           backdropFilter: "blur(10px)",
@@ -1978,7 +2074,12 @@ export default function AppRoot() {
         <AuthOnlineProvider>
           <AuthSessionProvider>
             {/* ✅ player audio global persistant (rien à voir avec SFX UI) */}
-            <audio id="dc-splash-audio" src={SplashJingle} preload="auto" style={{ display: "none" }} />
+            <audio
+              id="dc-splash-audio"
+              src={SplashJingle}
+              preload="auto"
+              style={{ display: "none" }}
+            />
             <App />
           </AuthSessionProvider>
         </AuthOnlineProvider>
