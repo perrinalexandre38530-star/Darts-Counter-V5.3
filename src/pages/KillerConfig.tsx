@@ -15,6 +15,9 @@
 // - Attribution des numéros juste dessous
 // - Variantes renommées (compréhensibles) + suppression variante inutile
 // - ✅ Variantes avancées : self-penalty, multiplier self-penalty, life steal, blind killer
+// - ✅ NEW variantes BULL : bullSplash (BULL/DBULL dmg AOE) + bullHeal (BULL/DBULL heal)
+// - ❌ SUPPRIMÉ : Killer vs Killer (friendlyFire) (inutile = jeu de base / confusion)
+//
 // - AVATARS BOTS OK avec ton ProfileAvatar actuel (qui refuse /assets/)
 // - ✅ FIX: randomStartOrder appliqué DIRECTEMENT dans le cfg.players (shuffle garanti)
 // =============================================================
@@ -67,12 +70,16 @@ export type KillerConfig = {
   numberAssignMode: KillerNumberAssignMode;
   randomStartOrder?: boolean;
 
-  // ✅ Variantes claires (et prévues pour KillerPlay patché)
-  friendlyFire: boolean; // KILLER peut frapper un autre KILLER (Killer vs Killer)
+  // ✅ Variantes prévues pour KillerPlay patché
+  // ❌ friendlyFire supprimé
   selfHitWhileKiller: boolean; // toucher son numéro quand KILLER => perd vie(s) (PAS dead instant)
   selfHitUsesMultiplier: boolean; // si ON : perte = 1/2/3 selon S/D/T sinon -1
   lifeSteal: boolean; // vols de vies : ce que perd la cible est gagné par le killer
   blindKiller: boolean; // masque les numéros à l'écran pendant la partie (mode aveugle)
+
+  // ✅ NEW BULL variants
+  bullSplash: boolean; // BULL enlève 1 vie à chaque adversaire / DBULL enlève 2 (quand lanceur est KILLER)
+  bullHeal: boolean; // BULL rend 1 vie / DBULL rend 2 (quand lanceur est KILLER)
 
   players: KillerConfigPlayer[];
 };
@@ -370,12 +377,15 @@ export default function KillerConfigPage(props: Props) {
   const [numberAssignMode, setNumberAssignMode] = React.useState<KillerNumberAssignMode>("random");
   const [randomStartOrder, setRandomStartOrder] = React.useState<boolean>(false);
 
-  // ✅ variantes (claires)
-  const [friendlyFire, setFriendlyFire] = React.useState<boolean>(false);
+  // ✅ variantes (claires) — friendlyFire supprimé
   const [selfHitWhileKiller, setSelfHitWhileKiller] = React.useState<boolean>(false);
   const [selfHitUsesMultiplier, setSelfHitUsesMultiplier] = React.useState<boolean>(false);
   const [lifeSteal, setLifeSteal] = React.useState<boolean>(false);
   const [blindKiller, setBlindKiller] = React.useState<boolean>(false);
+
+  // ✅ NEW bull variants
+  const [bullSplash, setBullSplash] = React.useState<boolean>(false);
+  const [bullHeal, setBullHeal] = React.useState<boolean>(false);
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>(() => {
     if (humanProfiles.length >= 2) return [humanProfiles[0].id, humanProfiles[1].id];
@@ -496,11 +506,13 @@ export default function KillerConfigPage(props: Props) {
       numberAssignMode,
       randomStartOrder,
 
-      friendlyFire,
       selfHitWhileKiller,
       selfHitUsesMultiplier,
       lifeSteal,
       blindKiller,
+
+      bullSplash,
+      bullHeal,
 
       players: finalPlayers, // ✅ ici
     };
@@ -974,15 +986,6 @@ export default function KillerConfigPage(props: Props) {
 
             <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
               <VariantRow
-                title="Killer vs Killer (Friendly Fire)"
-                desc="Si ON, un KILLER peut faire perdre des vies à un autre KILLER (en touchant son numéro)."
-                value={friendlyFire}
-                onChange={setFriendlyFire}
-                primary={primary}
-                primarySoft={primarySoft}
-              />
-
-              <VariantRow
                 title="Auto-pénalité (toucher son numéro quand KILLER)"
                 desc="Si ON, quand tu es KILLER et que tu touches ton numéro, tu perds des vies (pas mort instant)."
                 value={selfHitWhileKiller}
@@ -1022,6 +1025,28 @@ export default function KillerConfigPage(props: Props) {
                 primary={primary}
                 primarySoft={primarySoft}
               />
+
+              <VariantRow
+                title="BULL/DBULL Splash"
+                desc="Si ON, quand tu es KILLER : BULL enlève 1 vie à chaque adversaire, DBULL enlève 2 vies à chaque adversaire."
+                value={bullSplash}
+                onChange={setBullSplash}
+                primary={primary}
+                primarySoft={primarySoft}
+              />
+
+              <VariantRow
+                title="BULL/DBULL Heal"
+                desc="Si ON, quand tu es KILLER : BULL te rend 1 vie, DBULL te rend 2 vies."
+                value={bullHeal}
+                onChange={setBullHeal}
+                primary={primary}
+                primarySoft={primarySoft}
+              />
+            </div>
+
+            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 8 }}>
+              Note : les variantes BULL ne s’appliquent que si le lanceur est <b>KILLER</b>.
             </div>
           </div>
         </section>
