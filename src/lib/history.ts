@@ -15,6 +15,7 @@
 // ✅ FIX STATS CRICKET: list() renvoie payload décodé (sinon stats = 0)
 // ✅ ANTI-FREEZE: ne parse/log QUE si JSON-like + anti-spam logs + decode payload seulement pour Cricket
 // ✅ JSONC PATCH: support // /* */ + trailing commas (sinon JSON.parse casse sur '/')
+// ✅ PATCH CLOUD (CRITICAL): push snapshot cloud après upsert/remove/clear
 // ============================================
 
 /* =========================
@@ -65,6 +66,99 @@ export type SavedMatch = {
    Cricket stats (nouveau)
 ========================= */
 import { computeCricketLegStats, type CricketHit } from "./StatsCricket";
+
+/* =========================
+   ✅ CLOUD SNAPSHOT PUSH (PATCH CRITICAL)
+   - après un match / remove / clear -> push snapshot cloud (debounce)
+   - évite “tout a disparu après clear site data”
+========================= */
+import type { Store } from "./types";
+import { loadStore } from "./storage";
+import { onlineApi } from "./onlineApi";
+
+// mini-sanitize local (anti data: énormes + perfs)
+function _sanitizeStoreForCloudMini(s: any) {
+  let clone: any;
+  try {
+    clone = JSON.parse(JSON.stringify(s || {}));
+  } catch {
+    clone = { ...(s || {}) };
+  }
+
+  // profiles: supprime avatarDataUrl data:
+  if (Array.isArray(clone.profiles)) {
+    clone.profiles = clone.profiles.map((p: any) => {
+      const out = { ...(p || {}) };
+      const v = out.avatarDataUrl;
+      if (typeof v === "string" && v.startsWith("data:")) delete out.avatarDataUrl;
+      return out;
+    });
+  }
+
+  // history: players / payload.players supprime avatarDataUrl data:
+  if (Array.isArray(clone.history)) {
+    clone.history = clone.history.map((r: any) => {
+      const rr = { ...(r || {}) };
+      if (Array.isArray(rr.players)) {
+        rr.players = rr.players.map((pl: any) => {
+          const pp = { ...(pl || {}) };
+          const v = pp.avatarDataUrl;
+          if (typeof v === "string" && v.startsWith("data:")) delete pp.avatarDataUrl;
+          return pp;
+        });
+      }
+      if (rr.payload && Array.isArray(rr.payload.players)) {
+        rr.payload = { ...(rr.payload || {}) };
+        rr.payload.players = rr.payload.players.map((pl: any) => {
+          const pp = { ...(pl || {}) };
+          const v = pp.avatarDataUrl;
+          if (typeof v === "string" && v.startsWith("data:")) delete pp.avatarDataUrl;
+          return pp;
+        });
+      }
+      return rr;
+    });
+  }
+
+  return clone;
+}
+
+let __cloudPushTimer: number | null = null;
+
+function scheduleCloudSnapshotPush(reason: string) {
+  try {
+    if (typeof window === "undefined") return;
+
+    if (__cloudPushTimer) {
+      window.clearTimeout(__cloudPushTimer);
+      __cloudPushTimer = null;
+    }
+
+    __cloudPushTimer = window.setTimeout(async () => {
+      try {
+        // on vérifie une session réelle
+        const sess = await onlineApi.getCurrentSession().catch(() => null);
+        const uid = String((sess as any)?.user?.id || "");
+        if (!uid) return;
+
+        const store = await loadStore<Store>().catch(() => null);
+        if (!store) return;
+
+        const payload = {
+          kind: "dc_store_snapshot_v1",
+          createdAt: new Date().toISOString(),
+          app: "darts-counter-v5",
+          reason,
+          store: _sanitizeStoreForCloudMini(store),
+        };
+
+        await onlineApi.pushStoreSnapshot(payload);
+      } catch (e) {
+        console.warn("[history] cloud snapshot push failed:", e);
+      }
+    }, 900);
+  } catch {}
+}
 
 console.warn("🔥 HISTORY PATCH LOADED v2");
 
@@ -1214,6 +1308,11 @@ export async function upsert(rec: SavedMatch): Promise<void> {
         window.dispatchEvent(new Event("dc-history-updated"));
       }
     } catch {}
+
+    // ================================
+    // ✅ PUSH SNAPSHOT TO CLOUD (debounced)
+    // ================================
+    scheduleCloudSnapshotPush("history:upsert");
   } catch (e) {
     console.warn("[history.upsert] fallback localStorage (IDB indispo?):", e);
 
@@ -1234,6 +1333,11 @@ export async function upsert(rec: SavedMatch): Promise<void> {
           window.dispatchEvent(new Event("dc-history-updated"));
         }
       } catch {}
+
+      // ================================
+      // ✅ PUSH SNAPSHOT TO CLOUD (debounced)
+      // ================================
+      scheduleCloudSnapshotPush("history:upsert:ls_fallback");
     } catch {}
   }
 }
@@ -1258,6 +1362,9 @@ export async function remove(id: string): Promise<void> {
         window.dispatchEvent(new Event("dc-history-updated"));
       }
     } catch {}
+
+    // ✅ CLOUD
+    scheduleCloudSnapshotPush("history:remove");
   } catch {
     try {
       const rows = readLegacyRowsSafe() as any[];
@@ -1272,6 +1379,9 @@ export async function remove(id: string): Promise<void> {
           window.dispatchEvent(new Event("dc-history-updated"));
         }
       } catch {}
+
+      // ✅ CLOUD
+      scheduleCloudSnapshotPush("history:remove:ls_fallback");
     } catch {}
   }
 }
@@ -1296,6 +1406,9 @@ export async function clear(): Promise<void> {
         window.dispatchEvent(new Event("dc-history-updated"));
       }
     } catch {}
+
+    // ✅ CLOUD
+    scheduleCloudSnapshotPush("history:clear");
   } catch {
     try {
       localStorage.removeItem(LSK);
@@ -1308,6 +1421,9 @@ export async function clear(): Promise<void> {
           window.dispatchEvent(new Event("dc-history-updated"));
         }
       } catch {}
+
+      // ✅ CLOUD
+      scheduleCloudSnapshotPush("history:clear:ls_fallback");
     } catch {}
   }
 }

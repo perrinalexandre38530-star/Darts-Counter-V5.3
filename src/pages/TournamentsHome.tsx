@@ -5,7 +5,7 @@
 // - Titre "TOURNOIS" + description
 // - Supprime infos inutiles
 // - Bouton "CREER TOURNOI" en 1 seule ligne, centré
-// - Barre filtre style pills (Tous / Brouillons / En cours / Terminés)
+// - Barre filtre style pills (Tous / Brouillons / En cours / Terminés) ✅ LOOK CAPTURE 2
 // - Ticker défilant (cartes) style Home (fond image/gradient)
 // ✅ FIX NAV: clic carte => go("tournament_view", { id: t.id }) (id fiable)
 // ✅ FIX REFRESH: reload au mount + focus/visibility + event dc_tournaments_updated
@@ -31,22 +31,36 @@ type Props = {
 
 type FilterKey = "all" | "draft" | "running" | "done";
 
-function pillStyle(active: boolean, tint: string) {
+/** ✅ Pills style “capture 2” */
+function pillStyle(active: boolean, tint: string, disabled = false) {
+  const fgOn = "#121014";
+  const fgOff = "rgba(255,255,255,.90)";
+
   return {
-    padding: "7px 10px",
+    padding: "7px 12px",
     borderRadius: 999,
-    border: active ? `1px solid ${tint}` : "1px solid rgba(255,255,255,.10)",
+    border: active ? `1px solid ${tint}88` : "1px solid rgba(255,255,255,.12)",
     background: active
-      ? `linear-gradient(180deg, ${tint}, rgba(0,0,0,.35))`
-      : "rgba(255,255,255,.04)",
-    color: active ? "#08130c" : "rgba(255,255,255,.86)",
-    fontWeight: 900,
+      ? `linear-gradient(180deg, ${tint} 0%, ${tint}55 55%, rgba(0,0,0,.20) 100%)`
+      : "linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02))",
+    color: active ? fgOn : fgOff,
+    fontWeight: 950,
     fontSize: 12,
-    cursor: "pointer",
-    boxShadow: active ? `0 10px 18px rgba(0,0,0,.45)` : "none",
+    letterSpacing: 0.4,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.45 : 1,
     userSelect: "none" as const,
     whiteSpace: "nowrap" as const,
-  };
+    boxShadow: active
+      ? `0 0 0 1px rgba(0,0,0,.25),
+         0 10px 20px rgba(0,0,0,.55),
+         0 0 18px ${tint}55,
+         0 0 38px ${tint}22`
+      : "0 10px 18px rgba(0,0,0,.35)",
+    transform: active ? "translateY(-0.5px)" : "translateY(0px)",
+    transition:
+      "transform 120ms ease, box-shadow 160ms ease, background 160ms ease, border-color 160ms ease, opacity 160ms ease",
+  } as React.CSSProperties;
 }
 
 function Card({
@@ -88,17 +102,6 @@ function Card({
   );
 }
 
-/* =============================================================
- * ✅ Ticker ACTIONS (cartes défilantes + cliquables)
- * Objectif: pas du décor -> chaque carte amène vers une action.
- * - Reprendre: ouvre le tournoi le plus pertinent
- * - AUTO: ouvre le tournoi (et l’utilisateur lance depuis le bouton Résumé)
- * - Brouillons: filtre Brouillons
- * - BRACKET: ouvre création preset bracket
- * - Créer AUTO: ouvre création preset auto
- * - Roadmap: ouvre roadmap
- * ============================================================= */
-
 function fmtDate(ts?: number) {
   if (!ts) return "";
   try {
@@ -110,7 +113,6 @@ function fmtDate(ts?: number) {
 }
 
 function isPlayableReal(m: any) {
-  // IMPORTANT: on ne compte pas BYE/TBD comme jouable
   const st = String(m?.status || "");
   if (st !== "pending") return false;
   const a = String(m?.aPlayerId || "");
@@ -262,7 +264,6 @@ function TickerCard({
   );
 }
 
-/** --- Ticker actions --- */
 function TickerRow({
   go,
   setFilter,
@@ -284,7 +285,6 @@ function TickerRow({
     );
   });
 
-  // tournoi “à reprendre” : le plus récent en cours sinon le plus récent tout court
   const resumeTour: any = (running[0] || tours[0] || null);
   const resumeTid = resumeTour?.id ? String(resumeTour.id) : "";
   const resumeCounts = resumeTid ? computeCountsForTournament(resumeTid) : null;
@@ -340,12 +340,12 @@ function TickerRow({
     },
     {
       tag: "CRÉER",
-      title: "Génération AUTO des matchs",
-      sub: "Tu choisis, l’app enchaîne.",
+      title: "Tournoi avancé",
+      sub: "Repêchage, têtes de série, bots auto.",
       tone: "violet" as const,
-      cta: "Créer AUTO",
-      kpi: "Auto",
-      onClick: () => go("tournament_create", { preset: "auto", mode: "auto" }),
+      cta: "Configurer",
+      kpi: "NEW",
+      onClick: () => go("tournament_create", { preset: "advanced", mode: "advanced" }),
       disabled: false,
     },
     {
@@ -412,14 +412,12 @@ function TickerRow({
 export default function TournamentsHome({ store, go, source = "local" }: Props) {
   const [filter, setFilter] = React.useState<FilterKey>("all");
 
-  // ✅ NEW: liste “source de vérité” (IDB cache)
   const [items, setItems] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(false);
 
   const reload = React.useCallback(() => {
     setLoading(true);
     try {
-      // listTournamentsLocal est sync (cache mémoire), mais on le traite comme un reload
       const list = listTournamentsLocal() || [];
       setItems(Array.isArray(list) ? list : []);
     } catch {
@@ -429,7 +427,6 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
     }
   }, []);
 
-  // ✅ FIX: reload au mount + event + focus + visibility
   React.useEffect(() => {
     reload();
 
@@ -450,9 +447,7 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
     };
   }, [reload]);
 
-  // compat: si un autre endroit continue à pousser store.tournaments, on merge sans casser
   React.useEffect(() => {
-    // (Optionnel) si ton store contient déjà des tournois, on s’aligne
     const anyStore: any = store as any;
     const legacy =
       anyStore?.tournaments ||
@@ -497,14 +492,12 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
 
   return (
     <div className="container" style={{ padding: 16, paddingBottom: 96, color: "#f5f5f7" }}>
-      {/* HEADER CARD */}
       <Card tone="gold">
         <div style={{ fontWeight: 950, fontSize: 20, letterSpacing: 0.5 }}>TOURNOIS</div>
         <div style={{ opacity: 0.82, fontSize: 12.5, marginTop: 4, lineHeight: 1.35 }}>
           Crée des tournois en local (poules, élimination…), et reprends-les facilement avec une vue claire.
         </div>
 
-        {/* Mini info “aucun tournoi” */}
         <div
           style={{
             marginTop: 12,
@@ -532,7 +525,6 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
             )}
           </div>
 
-          {/* bouton créer tournoi : 1 ligne, centré */}
           <button
             type="button"
             onClick={() => go("tournament_create")}
@@ -556,25 +548,25 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
           </button>
         </div>
 
-        {/* ✅ ticker UTILE + cliquable */}
         <TickerRow go={go} setFilter={setFilter} />
       </Card>
 
-      {/* FILTER BAR (style pills) */}
+      {/* FILTER BAR */}
       <div style={{ marginTop: 14 }}>
         <div style={{ fontWeight: 900, fontSize: 12, opacity: 0.9, marginBottom: 8 }}>Filtrer</div>
 
         <div
           style={{
             display: "flex",
-            gap: 8,
+            gap: 10,
             alignItems: "center",
             flexWrap: "wrap",
             borderRadius: 16,
-            padding: 10,
-            background: "linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02))",
+            padding: 12,
+            background:
+              "radial-gradient(120% 140% at 0% 0%, rgba(255,195,26,.10), transparent 55%), linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02))",
             border: "1px solid rgba(255,255,255,.10)",
-            boxShadow: "0 10px 26px rgba(0,0,0,.45)",
+            boxShadow: "0 12px 30px rgba(0,0,0,.52)",
           }}
         >
           <button onClick={() => setFilter("all")} style={pillStyle(filter === "all", "#ffd56a")}>
@@ -629,7 +621,6 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
                   <div
                     key={id || name + String(updatedAt)}
                     onClick={() => {
-                      // ✅ FIX NAV: toujours passer l'id sous la clé "id"
                       if (id) go("tournament_view", { id });
                     }}
                     style={{
@@ -684,7 +675,6 @@ export default function TournamentsHome({ store, go, source = "local" }: Props) 
         )}
       </div>
 
-      {/* note : source online (plus tard) */}
       {source === "online" ? (
         <div style={{ marginTop: 12, opacity: 0.7, fontSize: 11.5 }}>
           (Online) Rejoindre via code arrivera ici plus tard.

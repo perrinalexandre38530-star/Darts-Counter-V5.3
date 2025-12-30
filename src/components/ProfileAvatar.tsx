@@ -9,6 +9,7 @@
 // ✅ CLEAN : suppression logs/DEBUG + pas de cercle rouge
 // ✅ NEW GLOBAL FIX : si profile "lite" (id/name) => auto-resolve via loadStore() (sans modifier tous les setups)
 // ✅ FIX ASSETS : accepte /assets/... + chemins relatifs + import png {default: "..."} (bots PRO)
+// ✅ NEW UI: prop `noFrame` => supprime TOUT cadre/bordure/fond (aucun disque)
 // ============================================
 
 import React from "react";
@@ -23,10 +24,10 @@ import { loadStore } from "../lib/storage";
 type ProfileLike = {
   id?: string;
   name?: string;
-  avatarDataUrl?: any | null; // ⚠️ peut être string OU import png (object {default})
-  avatarUrl?: any | null;     // idem
+  avatarDataUrl?: any | null; // ⚠️ string OU import png (object {default})
+  avatarUrl?: any | null; // idem
   avatarPath?: any | null;
-  avatarUpdatedAt?: number | null; // (optionnel) si tu l’utilises ailleurs
+  avatarUpdatedAt?: number | null;
   stats?: { avg3D?: number | null; avg3?: number | null } | null;
 };
 
@@ -35,11 +36,12 @@ type VisualOpts = {
   textColor?: string;
   dartSetId?: string | null;
   showDartOverlay?: boolean;
+  noFrame?: boolean; // ✅ NEW : pas de bordure/fond (aucun disque)
 };
 
 type Props =
   | (VisualOpts & {
-      dataUrl?: any;   // string OU import
+      dataUrl?: any;
       label?: string;
       size?: number;
       avg3D?: number | null;
@@ -75,49 +77,42 @@ function normalizeImport(v: any): string | null {
 // ✅ cache bust pour http(s) MAIS AUSSI /assets + relatifs
 function withCacheBust(src: string, salt: string) {
   if (!src) return src;
-
-  // pas besoin pour data/blob
   if (/^data:|^blob:/i.test(src)) return src;
-
   const hasQ = src.includes("?");
   return `${src}${hasQ ? "&" : "?"}v=${encodeURIComponent(salt)}`;
 }
 
-// ✅ accepte data/blob/http(s) + /assets + chemins relatifs + fichiers .png/.jpg...
+// ✅ accepte data/blob/http(s) + /assets + relatifs + fichiers images
 function normalizeSrc(raw: any): string | null {
   const s = normalizeImport(raw);
   if (!s) return null;
 
-  // OK: data:, blob:
   if (s.startsWith("data:") || s.startsWith("blob:")) return s;
 
-  // OK: http(s)
-  if (s.startsWith("http://") || s.startsWith("https://")) {
+  if (s.startsWith("http://") || s.startsWith("https://"))
     return s.replace(/ /g, "%20");
-  }
 
-  // ✅ OK: assets Vite (/assets/xxxx.png)
   if (s.startsWith("/assets/")) return s.replace(/ /g, "%20");
 
-  // ✅ OK: chemins relatifs (./ ../) ou fichier direct (xxx.png)
   if (s.startsWith("./") || s.startsWith("../")) return s.replace(/ /g, "%20");
-  if (/\.(png|jpg|jpeg|webp|gif|svg)(\?.*)?$/i.test(s)) return s.replace(/ /g, "%20");
+  if (/\.(png|jpg|jpeg|webp|gif|svg)(\?.*)?$/i.test(s))
+    return s.replace(/ /g, "%20");
 
-  // sinon: inconnu (ex: "avatars/bot1" sans extension)
   return null;
 }
 
 /* ============================================================
-   ✅ GLOBAL PROFILE RESOLVER (1 seul endroit)
-   - Cache Map id -> ProfileLike (pour éviter 100 appels)
-   - loadStore() une seule fois (promise partagée)
+   ✅ GLOBAL PROFILE RESOLVER
 ============================================================ */
 let _storePromise: Promise<any | null> | null = null;
 let _profilesCache: Map<string, ProfileLike> | null = null;
 
-async function getProfileByIdFromStore(profileId: string): Promise<ProfileLike | null> {
+async function getProfileByIdFromStore(
+  profileId: string
+): Promise<ProfileLike | null> {
   try {
-    if (_profilesCache?.has(profileId)) return _profilesCache.get(profileId) || null;
+    if (_profilesCache?.has(profileId))
+      return _profilesCache.get(profileId) || null;
 
     if (!_storePromise) _storePromise = loadStore<any>();
     const store = await _storePromise;
@@ -160,12 +155,13 @@ export default function ProfileAvatar(props: Props) {
   const size = props.size ?? 56;
   const showStars = props.showStars ?? true;
   const showDartOverlay = props.showDartOverlay === true;
+  const noFrame = props.noFrame === true;
 
   const inputProfile: ProfileLike | null =
     ("profile" in props ? props.profile : null) ?? null;
 
-  // ✅ profil résolu (si on reçoit un profil "lite")
-  const [resolvedProfile, setResolvedProfile] = React.useState<ProfileLike | null>(null);
+  const [resolvedProfile, setResolvedProfile] =
+    React.useState<ProfileLike | null>(null);
 
   React.useEffect(() => {
     let mounted = true;
@@ -192,7 +188,9 @@ export default function ProfileAvatar(props: Props) {
           ...p,
           avatarUrl: normalizeImport(p?.avatarUrl) ? p?.avatarUrl : full.avatarUrl,
           avatarPath: normalizeImport(p?.avatarPath) ? p?.avatarPath : full.avatarPath,
-          avatarDataUrl: normalizeImport(p?.avatarDataUrl) ? p?.avatarDataUrl : full.avatarDataUrl,
+          avatarDataUrl: normalizeImport(p?.avatarDataUrl)
+            ? p?.avatarDataUrl
+            : full.avatarDataUrl,
           stats: p?.stats ?? full.stats ?? null,
           name: p?.name ?? full.name,
         });
@@ -205,9 +203,13 @@ export default function ProfileAvatar(props: Props) {
     return () => {
       mounted = false;
     };
-  }, [inputProfile?.id, inputProfile?.avatarUrl, inputProfile?.avatarPath, inputProfile?.avatarDataUrl]);
+  }, [
+    inputProfile?.id,
+    inputProfile?.avatarUrl,
+    inputProfile?.avatarPath,
+    inputProfile?.avatarDataUrl,
+  ]);
 
-  // le profil effectif (résolu si dispo)
   const p: ProfileLike | null = resolvedProfile ?? inputProfile;
 
   const name = ("label" in props ? props.label : undefined) ?? p?.name ?? "P";
@@ -218,17 +220,15 @@ export default function ProfileAvatar(props: Props) {
     p?.stats?.avg3 ??
     null;
 
-  const ringColor = props.ringColor ?? "rgba(255,255,255,0.28)";
+  // ✅ IMPORTANT: si noFrame => ringColor forcé transparent
+  const ringColor = noFrame
+    ? "transparent"
+    : props.ringColor ?? "rgba(255,255,255,0.28)";
   const textColor = props.textColor ?? "#f5f5ff";
 
-  // ============================================================
-  // ✅ SOURCE ORDER FIX
-  // - dataUrl (props) = preview explicite -> PRIORITÉ
-  // - avatarUrl (Supabase publicUrl) -> PRIORITÉ
-  // - avatarPath (si déjà un vrai src résolvable) -> ok
-  // - avatarDataUrl (legacy base64) -> EN DERNIER, et ignoré si énorme
-  // ============================================================
-  const propDataUrl = "dataUrl" in props ? normalizeImport(props.dataUrl) ?? "" : "";
+  // SOURCE ORDER
+  const propDataUrl =
+    "dataUrl" in props ? normalizeImport(props.dataUrl) ?? "" : "";
 
   const avatarUrl = normalizeImport(p?.avatarUrl) ?? "";
   const avatarPath = normalizeImport(p?.avatarPath) ?? "";
@@ -238,26 +238,24 @@ export default function ProfileAvatar(props: Props) {
     avatarDataUrl.startsWith("data:image/") && avatarDataUrl.length > 200_000;
 
   const rawImg = React.useMemo(() => {
-    if (propDataUrl) return propDataUrl; // preview explicite (souvent blob:)
-    if (avatarUrl) return avatarUrl;     // ✅ Supabase doit gagner
-    if (avatarPath) return avatarPath;   // peut être /assets/... ou relatif maintenant
+    if (propDataUrl) return propDataUrl;
+    if (avatarUrl) return avatarUrl; // ✅ Supabase gagne
+    if (avatarPath) return avatarPath;
     if (avatarDataUrl && !dataUrlLooksHuge) return avatarDataUrl;
     return null;
   }, [propDataUrl, avatarUrl, avatarPath, avatarDataUrl, dataUrlLooksHuge]);
 
   const [imgBroken, setImgBroken] = React.useState(false);
-
-  React.useEffect(() => {
-    setImgBroken(false);
-  }, [rawImg]);
+  React.useEffect(() => setImgBroken(false), [rawImg]);
 
   const img = React.useMemo(() => {
     const normalized = normalizeSrc(rawImg);
     if (!normalized) return null;
 
-    // ✅ salt stable si avatarUpdatedAt existe
     const salt =
-      (p && typeof (p as any).avatarUpdatedAt === "number" && String((p as any).avatarUpdatedAt)) ||
+      (p &&
+        typeof (p as any).avatarUpdatedAt === "number" &&
+        String((p as any).avatarUpdatedAt)) ||
       (typeof rawImg === "string" ? String(rawImg).slice(-24) : "") ||
       String(Date.now());
 
@@ -303,15 +301,29 @@ export default function ProfileAvatar(props: Props) {
   const dartOverlaySize = size * 0.34;
   const dartOverlayOutsideOffset = dartOverlaySize * 0.35;
 
+  // ✅ styles communs : AUCUN disque si noFrame
+  const frameBorder = noFrame ? "none" : `2px solid ${ringColor}`;
+  const fallbackBg = noFrame
+    ? "transparent"
+    : "radial-gradient(circle at 30% 30%, rgba(255,255,255,.10), rgba(0,0,0,.35))";
+
   return (
     <div
-      className="relative avatar inline-block"
+      // ✅ CRITICAL: si noFrame => on vire la class "avatar" (CSS global qui crée le disque)
+      className={noFrame ? "relative inline-block" : "relative avatar inline-block"}
       style={{
         width: size,
         height: size,
         borderRadius: "50%",
         position: "relative",
         overflow: "visible",
+
+        // ✅ écrase TOUT fond/ombre/border éventuels injectés globalement
+        background: "transparent",
+        boxShadow: "none",
+        border: "none",
+        outline: "none",
+        filter: "none",
       }}
     >
       {shouldShowImg ? (
@@ -326,7 +338,10 @@ export default function ProfileAvatar(props: Props) {
             objectFit: "cover",
             borderRadius: "50%",
             display: "block",
-            border: `2px solid ${ringColor}`,
+            border: frameBorder, // ✅ noFrame => none
+            background: "transparent",
+            boxShadow: "none",
+            outline: "none",
           }}
         />
       ) : (
@@ -335,15 +350,16 @@ export default function ProfileAvatar(props: Props) {
             width: "100%",
             height: "100%",
             borderRadius: "50%",
-            border: `2px solid ${ringColor}`,
+            border: frameBorder, // ✅ noFrame => none
             color: textColor,
             display: "grid",
             placeItems: "center",
             textAlign: "center",
             lineHeight: 1,
             userSelect: "none",
-            background:
-              "radial-gradient(circle at 30% 30%, rgba(255,255,255,.10), rgba(0,0,0,.35))",
+            background: fallbackBg, // ✅ noFrame => transparent
+            boxShadow: "none",
+            outline: "none",
           }}
         >
           <div
@@ -352,6 +368,7 @@ export default function ProfileAvatar(props: Props) {
               fontWeight: 900,
               letterSpacing: 0.5,
               transform: "translateY(1px)",
+              textShadow: noFrame ? "0 0 10px rgba(0,0,0,0.65)" : "none",
             }}
           >
             {(name ?? "P").trim().slice(0, 1).toUpperCase()}

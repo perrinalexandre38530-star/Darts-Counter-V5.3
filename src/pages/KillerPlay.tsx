@@ -3,25 +3,26 @@
 // src/pages/KillerPlay.tsx
 // KILLER — PLAY (V1.3 + BOTS) — UI refacto X01-like
 //
-// ✅ FIX UI (NEW):
-// - Header + “joueur actif” FIXES en haut (non scrollables)
-// - Seule la LISTE DES JOUEURS est scrollable
-// - AssignOverlay centré (hauteur + largeur)
-// - Bottom tabbar masquée en fullscreen (inject CSS robuste)
-// - Liste joueurs: cartes + compactes, suppression ligne “phase: …”
-// - Carousel header: avatar “zoomé” + dégradé + numéro (type OW2)
-// - KPI “VIES” en forme de cœur (texte + chiffre inside)
+// ✅ UI PATCH FINAL (demandes user):
+// - Carousel header: ENLEVER le "#" devant le numéro
+// - Carousel header: ajouter un mini COEUR + vies restantes (dans le chip, à côté du numéro)
+// - Halo joueur actif (carousel + liste) : neon thème autour du bloc (pas un gros cadre)
+// - Header joueur actif: numéro GROS sans "#"
+// - KPI Vies: supprimer l’intitulé (ne garder que le chiffre dans le cœur)
+// - KPI Survivants: silhouette buste (sans "SURV"), valeur même taille que KPI vies
+// - Liste joueurs: numéro en couleur thème + nom légèrement plus petit
+// - Page NON scrollable: seul le bloc "liste joueurs" scrolle (entre header et keypad)
+// - Bouton "L" -> "Log" (affiche un panneau flottant)
+// - Keypad: remplacer le total volée (ex: 45) par logo Killer actif quand actif
 //
-// ✅ SFX (NEW):
-// - hit: /public/sfx/dart-hit.mp3
+// ✅ SFX (mp3 via /public/sfx + fallback beeps):
+// - hit: /public/sfx/dart-hit.mp3 (à chaque fléchette)
 // - kill S/D/T: /public/sfx/killer-kill-1.mp3 / killer-kill-2.mp3 / killer-kill-3.mp3
 // - dead: /public/sfx/killer-dead.mp3
-// ✅ NEW (Ajouts demandés):
-// - intro: /public/sfx/Killer-song.mp3
-// - lastDead (quand le dernier adversaire tombe / fin de partie): /public/sfx/killer-last-dead.mp3
-// (fallback -> beeps si fichiers absents)
+// - intro: /public/sfx/Killer-song.mp3 (joué au 1er geste utilisateur pour éviter blocage autoplay)
+// - lastDead: /public/sfx/killer-last-dead.mp3
 //
-// IMPORTANT (évite ton erreur Vite import):
+// IMPORTANT (évite erreur Vite import):
 // ➜ mets les fichiers mp3 dans: /public/sfx/ (pas import ESModule)
 //   ex: public/sfx/dart-hit.mp3
 // ============================================
@@ -306,6 +307,8 @@ function decideBotThrow(
   return { target: n, mult: pickMultForBot(skill, config.becomeRule, false) };
 }
 
+
+
 // -----------------------------
 // UI helpers
 // -----------------------------
@@ -467,7 +470,19 @@ function rulesText(config: KillerConfig) {
 
   const selectMode =
     numberAssignMode === "throw" || numberAssignMode === "random";
-  const autoKill = !!(config as any)?.autoKill;
+  const autoKill = truthy(
+      (config as any)?.autoKill ??
+      (config as any)?.autokill ??
+      (config as any)?.auto_kill ??
+      (config as any)?.autoKillOn ??
+      (config as any)?.autoKillEnabled ??
+      (config as any)?.variants?.autoKill ??
+      (config as any)?.variants?.autokill ??
+      (config as any)?.options?.autoKill ??
+      (config as any)?.rules?.autoKill ??
+      (config as any)?.settings?.autoKill ??
+      (config as any)?.config?.autoKill
+    );
 
   const becomeRuleText =
     config.becomeRule === "double"
@@ -490,7 +505,7 @@ function rulesText(config: KillerConfig) {
   return [
     {
       title: "But",
-      body: "Tu as un numéro (#1…#20). D’abord tu dois devenir KILLER, puis éliminer les autres en touchant leur numéro.",
+      body: "Tu as un numéro (1…20). D’abord tu dois devenir KILLER, puis éliminer les autres en touchant leur numéro.",
     },
     {
       title: "Départ",
@@ -641,41 +656,60 @@ function StatRow({ label, value }: { label: string; value: any }) {
   );
 }
 
-function StatBox({
-  label,
-  value,
-  small,
-}: {
-  label: string;
-  value: any;
-  small?: boolean;
-}) {
+// -----------------------------
+// ✅ Heart KPI (VIES) — label supprimé
+// ✅ coeur rose clair + chiffre BLANC (lisible)
+// -----------------------------
+function HeartKpi({ value }: { value: any }) {
+  const pink = "#ff79d6"; // coeur rose clair
+
   return (
     <div
       style={{
-        borderRadius: 14,
-        border: "1px solid rgba(255,255,255,.10)",
-        background: "rgba(0,0,0,.30)",
-        padding: "8px 6px",
-        textAlign: "center",
+        width: 56,
+        height: 48,
+        position: "relative",
+        display: "grid",
+        placeItems: "center",
+        filter: "drop-shadow(0 10px 18px rgba(255,121,214,.22))",
       }}
     >
-      <div
-        style={{
-          fontSize: 9,
-          opacity: 0.85,
-          fontWeight: 900,
-          letterSpacing: 0.8,
-        }}
+      <svg
+        width="56"
+        height="48"
+        viewBox="0 0 48 42"
+        style={{ position: "absolute", inset: 0 }}
       >
-        {label}
-      </div>
+        <defs>
+          <linearGradient id="heartPinkG" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="rgba(255,121,214,.36)" />
+            <stop offset="1" stopColor="rgba(0,0,0,.42)" />
+          </linearGradient>
+        </defs>
+        <path
+          d="M24 40s-18-10.8-18-24C6 9.6 10.2 5 16 5c3.1 0 6 1.5 8 4.2C26 6.5 28.9 5 32 5c5.8 0 10 4.6 10 11 0 13.2-18 24-18 24z"
+          fill="url(#heartPinkG)"
+          stroke="rgba(255,121,214,.82)"
+          strokeWidth="1.35"
+        />
+        {/* glow */}
+        <path
+          d="M24 39s-17-10.2-17-23C7 10.1 11 6 16 6c3 0 5.6 1.6 7.4 4.2C25.4 7.6 28 6 32 6c5 0 9 4.1 9 10 0 12.8-17 23-17 23z"
+          fill="rgba(255,121,214,.10)"
+        />
+      </svg>
+
       <div
         style={{
-          fontSize: small ? 12 : 22,
+          position: "relative",
+          textAlign: "center",
+          lineHeight: 1,
+          fontSize: 18,
           fontWeight: 1000,
-          color: "#ffe7b0",
-          lineHeight: 1.0,
+          color: "#fff", // ✅ BLANC
+          transform: "translateY(2px)",
+          textShadow:
+            "0 2px 10px rgba(0,0,0,.55), 0 1px 0 rgba(0,0,0,.35)",
         }}
       >
         {value}
@@ -685,85 +719,199 @@ function StatBox({
 }
 
 // -----------------------------
-// ✅ Heart KPI (VIES) — GROSSI + mieux centré
+// ✅ Mini coeur (carousel) — chiffre dedans
+// ✅ halo blanc léger (toujours)
+// ✅ halo rose léger si actif
 // -----------------------------
-function HeartKpi({ label, value }: { label: string; value: any }) {
+function MiniHeart({ value, active }: { value: any; active?: boolean }) {
+  const filter = active
+    ? `drop-shadow(0 0 5px rgba(255,255,255,.30)) drop-shadow(0 0 10px rgba(255,121,214,.38))`
+    : `drop-shadow(0 0 5px rgba(255,255,255,.22))`;
+
   return (
     <div
       style={{
-        width: 60,
-        height: 54,
-        position: "relative",
-        display: "grid",
+        display: "inline-grid",
         placeItems: "center",
-        filter: "drop-shadow(0 10px 18px rgba(255,198,58,.14))",
+        width: 32,
+        height: 28,
+        position: "relative",
+        filter,
       }}
+      aria-label={`Vies: ${value}`}
+      title={`Vies: ${value}`}
     >
-      <svg
-        width="60"
-        height="54"
-        viewBox="0 0 48 42"
-        style={{ position: "absolute", inset: 0 }}
-      >
-        <defs>
-          <linearGradient id="heartG" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="rgba(255,198,58,.22)" />
-            <stop offset="1" stopColor="rgba(0,0,0,.35)" />
-          </linearGradient>
-        </defs>
+      <svg width="32" height="28" viewBox="0 0 48 42">
         <path
           d="M24 40s-18-10.8-18-24C6 9.6 10.2 5 16 5c3.1 0 6 1.5 8 4.2C26 6.5 28.9 5 32 5c5.8 0 10 4.6 10 11 0 13.2-18 24-18 24z"
-          fill="url(#heartG)"
-          stroke="rgba(255,198,58,.30)"
+          fill="rgba(255,121,214,.36)"
+          stroke="rgba(255,255,255,.55)"   // ✅ halo blanc léger via stroke + drop-shadow
           strokeWidth="1.2"
+        />
+        <path
+          d="M24 39s-17-10.2-17-23C7 10.1 11 6 16 6c3 0 5.6 1.6 7.4 4.2C25.4 7.6 28 6 32 6c5 0 9 4.1 9 10 0 12.8-17 23-17 23z"
+          fill="rgba(255,121,214,.12)"
         />
       </svg>
 
-      <div style={{ position: "relative", textAlign: "center", lineHeight: 1 }}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 1000,
-            letterSpacing: 0.8,
-            opacity: 0.92,
-          }}
-        >
-          {label}
-        </div>
-        <div
-          style={{
-            marginTop: 2,
-            fontSize: 22,
-            fontWeight: 1000,
-            color: gold,
-            textShadow: "0 0 12px rgba(255,198,58,.22)",
-          }}
-        >
-          {value}
-        </div>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "grid",
+          placeItems: "center",
+          fontSize: 12,
+          fontWeight: 1000,
+          color: "#fff",
+          transform: "translateY(1px)",
+          textShadow: "0 0 6px rgba(255,255,255,.22), 0 2px 8px rgba(0,0,0,.55)",
+        }}
+      >
+        {value}
       </div>
     </div>
   );
 }
 
 // -----------------------------
+// ✅ Survivants KPI (buste)
+// - Silhouette BLANCHE
+// - Chiffre ROSE FONCÉ + contour blanc
+// - Halo rose TRÈS léger autour de la silhouette
+// -----------------------------
+function SurvivorKpi({ value }: { value: any }) {
+  const textPinkDark = "#7a0f44";
+
+  return (
+    <div
+      style={{
+        width: 56,
+        height: 48,
+        position: "relative",
+        display: "grid",
+        placeItems: "center",
+        filter: "drop-shadow(0 0 4px rgba(255, 55, 170, .16))", // ✅ halo rose très léger
+      }}
+    >
+      <svg
+        width="56"
+        height="48"
+        viewBox="0 0 56 48"
+        style={{ position: "absolute", inset: 0 }}
+      >
+        {/* tête */}
+        <path
+          d="M28 25c6 0 11-5 11-11S34 3 28 3 17 8 17 14s5 11 11 11z"
+          fill="#ffffff"
+          stroke="rgba(255,255,255,.9)"
+          strokeWidth="1.1"
+        />
+
+        {/* buste */}
+        <path
+          d="M10 45c1-10 10-16 18-16s17 6 18 16"
+          fill="#ffffff"
+          stroke="rgba(255,255,255,.85)"
+          strokeWidth="1.25"
+          strokeLinejoin="round"
+        />
+      </svg>
+
+      {/* chiffre avec CONTOUR BLANC */}
+      <div
+        style={{
+          position: "relative",
+          textAlign: "center",
+          lineHeight: 1,
+          fontSize: 18,
+          fontWeight: 1000,
+          color: textPinkDark,
+          transform: "translateY(2px)",
+          textShadow: `
+            -1px -1px 0 #fff,
+             1px -1px 0 #fff,
+            -1px  1px 0 #fff,
+             1px  1px 0 #fff,
+             0  0  6px rgba(255,255,255,.22)
+          `,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function HeaderChip({
+  num,
+  lives,
+  active,
+  eliminated,
+  name,
+  avatar,
+}: {
+  num: string;
+  lives: number;
+  active: boolean;
+  eliminated: boolean;
+  name?: string;
+  avatar?: string | null;
+}) {
+  const halo = active
+    ? "0 0 0 1px rgba(255,198,58,.35), 0 0 14px rgba(255,198,58,.25)"
+    : "none";
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "4px 10px",
+        borderRadius: 999,
+        background: "rgba(0,0,0,.35)",
+        border: "1px solid rgba(255,255,255,.12)",
+        boxShadow: halo,
+        opacity: eliminated ? 0.4 : 1,
+      }}
+      title={name}
+    >
+      <div
+        style={{
+          fontWeight: 1000,
+          fontSize: 13,
+          color: "#ffc63a",
+        }}
+      >
+        {num}
+      </div>
+
+      <MiniHeart value={lives} active={active} />
+    </div>
+  );
+}
+
+// -----------------------------
 // ✅ SFX (mp3 via /public) + fallback beeps
+// + UNLOCK (autoplay) : on déclenche au 1er geste utilisateur
 // -----------------------------
 function useKillerSfx(enabled: boolean) {
   const ctxRef = React.useRef<AudioContext | null>(null);
   const audRef = React.useRef<Record<string, HTMLAudioElement | null>>({});
+  const unlockedRef = React.useRef(false);
 
   const paths = React.useMemo(() => {
+    // ⚠️ tes fichiers sont dans /public/sounds/ (d’après ta capture)
+    // donc l’URL runtime = /sounds/xxx.mp3
     return {
-      hit: "/sfx/dart-hit.mp3",
-      kill1: "/sfx/killer-kill-1.mp3",
-      kill2: "/sfx/killer-kill-2.mp3",
-      kill3: "/sfx/killer-kill-3.mp3",
-      dead: "/sfx/killer-dead.mp3",
-      intro: "/sfx/Killer-song.mp3",
-      lastDead: "/sfx/killer-last-dead.mp3",
-      armed: "/sfx/killer-armed.mp3",
-      click: "/sfx/ui-click.mp3",
+      hit: "/sounds/dart-hit.mp3",
+      kill1: "/sounds/killer-kill-1.mp3",
+      kill2: "/sounds/killer-kill-2.mp3",
+      kill3: "/sounds/killer-kill-3.mp3",
+      dead: "/sounds/killer-dead.mp3",
+      intro: "/sounds/killer-song.mp3", // ✅ ton fichier (capture)
+      lastDead: "/sounds/killer-last-dead.mp3",
+      become: "/sounds/killer-become.mp3",
     };
   }, []);
 
@@ -786,15 +934,24 @@ function useKillerSfx(enabled: boolean) {
       if (!enabled) return false;
       const a = ensureAudio(key, src);
       if (!a) return false;
+
       try {
         if (restart) {
           a.pause();
           a.currentTime = 0;
         }
         a.volume = vol;
-        a.play().catch(() => {});
+
+        const p = a.play();
+        if (p && typeof (p as any).catch === "function") {
+          (p as any).catch((err: any) => {
+            // ✅ si autoplay bloqué ou fichier non trouvé, on le saura
+            console.warn("[KillerSFX] play blocked/failed:", key, src, err);
+          });
+        }
         return true;
-      } catch {
+      } catch (err) {
+        console.warn("[KillerSFX] play threw:", key, src, err);
         return false;
       }
     },
@@ -832,26 +989,54 @@ function useKillerSfx(enabled: boolean) {
     [enabled]
   );
 
+  const unlock = React.useCallback(() => {
+    if (!enabled) return;
+    if (unlockedRef.current) return;
+    unlockedRef.current = true;
+
+    try {
+      const AC: any =
+        (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (AC) {
+        const ctx = ctxRef.current || new AC();
+        ctxRef.current = ctx;
+        if (ctx.state === "suspended") ctx.resume().catch(() => {});
+      }
+    } catch {}
+
+    // précharge (best effort)
+    try {
+      Object.entries(paths).forEach(([k, src]) => {
+        ensureAudio(k, src);
+      });
+    } catch {}
+  }, [enabled, ensureAudio, paths]);
+
   return React.useMemo(() => {
     return {
+      unlock,
+
       intro: () => {
         if (!playAudio("intro", paths.intro, 0.55, true)) {
           beep(520, 60, 0.03);
           setTimeout(() => beep(740, 60, 0.03), 80);
         }
       },
-      click: () => {
-        if (!playAudio("click", paths.click, 0.6)) beep(520, 45, 0.05);
-      },
+
       hit: () => {
         if (!playAudio("hit", paths.hit, 0.85)) beep(780, 40, 0.05);
       },
-      armed: () => {
-        if (!playAudio("armed", paths.armed, 0.75)) {
-          beep(650, 55, 0.05);
-          setTimeout(() => beep(980, 70, 0.05), 55);
+
+      // ✅ son quand un joueur devient KILLER
+      become: () => {
+        if (!playAudio("become", paths.become, 0.8, true)) {
+          beep(520, 60, 0.05);
+          setTimeout(() => beep(740, 70, 0.05), 70);
+          setTimeout(() => beep(980, 90, 0.05), 150);
         }
       },
+
+      // (optionnel) basé sur le mult (S/D/T)
       kill: (mult: Mult) => {
         const ok =
           mult === 3
@@ -864,12 +1049,31 @@ function useKillerSfx(enabled: boolean) {
           setTimeout(() => beep(160, 120, 0.07), 90);
         }
       },
+
+      // ✅ NOUVEAU: basé sur les vies réellement perdues (actualLoss)
+      killLoss: (loss: number) => {
+        const n = Math.max(1, Math.min(3, Math.floor(Number(loss) || 1))) as Mult;
+
+        const ok =
+          n === 3
+            ? playAudio("kill3", paths.kill3, 0.9)
+            : n === 2
+            ? playAudio("kill2", paths.kill2, 0.9)
+            : playAudio("kill1", paths.kill1, 0.9);
+
+        if (!ok) {
+          beep(220, 90, 0.07);
+          setTimeout(() => beep(160, 120, 0.07), 90);
+        }
+      },
+
       death: () => {
         if (!playAudio("dead", paths.dead, 0.9)) {
           beep(180, 140, 0.07);
           setTimeout(() => beep(120, 160, 0.07), 120);
         }
       },
+
       lastDead: () => {
         if (!playAudio("lastDead", paths.lastDead, 0.9, true)) {
           beep(180, 160, 0.08);
@@ -878,63 +1082,111 @@ function useKillerSfx(enabled: boolean) {
         }
       },
     };
-  }, [beep, playAudio, paths]);
+  }, [beep, playAudio, paths, unlock]);
 }
 
 // -----------------------------
-// ✅ Header carousel (avatar zoom + numéro ONLY + halo actif)
+// ✅ Header carousel (avatar zoom + dégradé + numéro + mini cœur vies)
+// ✅ CHANGE: plus de "K" sur la photo -> logo killer AVANT le numéro
+// ✅ NEW: auto-center scroll sur joueur actif
+// ✅ UX: marges réduites + petit padding-top pour voir le halo
 // -----------------------------
+
+function KillerBadgeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <div
+      style={{
+        width: size + 10,
+        height: size + 10,
+        borderRadius: 999,
+        display: "grid",
+        placeItems: "center",
+        background: "rgba(255,198,58,.18)",
+        border: "1px solid rgba(255,198,58,.35)",
+        boxShadow: "0 0 10px rgba(255,198,58,.12)",
+      }}
+      aria-label="Killer"
+      title="Killer"
+    >
+      <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: "block" }}>
+        <path
+          d="M12 2c3.9 0 7 3.1 7 7 0 2.9-1.7 5.4-4.2 6.5V19c0 1.1-.9 2-2 2h-1.6c-1.1 0-2-.9-2-2v-3.5C5.7 14.4 4 11.9 4 9c0-3.9 3.1-7 8-7z"
+          fill="#fff"
+          opacity={0.95}
+        />
+        <path d="M9 10.2c.6 0 1 .4 1 1s-.4 1-1 1-1-.4-1-1 .4-1 1-1zm6 0c.6 0 1 .4 1 1s-.4 1-1 1-1-.4-1-1 .4-1 1-1z" fill="#111" />
+      </svg>
+    </div>
+  );
+}
+
+function DeadBadgeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <div
+      style={{
+        width: size + 10,
+        height: size + 10,
+        borderRadius: 999,
+        display: "grid",
+        placeItems: "center",
+        background: "rgba(255,80,80,.18)",
+        border: "1px solid rgba(255,80,80,.35)",
+        boxShadow: "0 0 10px rgba(255,80,80,.12)",
+      }}
+      aria-label="Dead"
+      title="Dead"
+    >
+      <span style={{ fontSize: size, lineHeight: 1, transform: "translateY(-0.5px)" }}>☠</span>
+    </div>
+  );
+}
+
 function ZoomAvatarChip({
   src,
   name,
   num,
+  lives,
   isActive,
   eliminated,
   badge,
+  theme,
 }: {
   src?: string | null;
   name?: string;
   num: string;
+  lives: number;
   isActive: boolean;
   eliminated: boolean;
   badge?: "K" | "D" | null;
+  theme: string;
 }) {
   const initials = String(name || "J")
     .trim()
     .slice(0, 1)
     .toUpperCase();
 
-  const halo = isActive
-    ? "0 0 14px rgba(255,198,58,.85), 0 0 28px rgba(255,198,58,.45)"
+  const neon = isActive
+    ? `0 0 0 1px rgba(255,198,58,.25), 0 0 18px rgba(255,198,58,.18), 0 0 42px rgba(255,198,58,.10)`
     : "none";
 
   return (
     <div
       style={{
         flex: "0 0 auto",
-        height: 34,
+        height: 42,
         borderRadius: 999,
         overflow: "hidden",
         display: "grid",
-        gridTemplateColumns: "44px 1fr",
+        gridTemplateColumns: "52px 1fr",
         alignItems: "stretch",
-        border: isActive
-          ? "1px solid rgba(255,198,58,0.65)"
-          : "1px solid rgba(255,255,255,0.18)",
+        border: "1px solid rgba(255,255,255,0.18)",
         background: "rgba(0,0,0,0.22)",
         opacity: eliminated ? 0.45 : 1,
-        boxShadow: halo,
+        boxShadow: neon,
       }}
       title={name}
     >
-      <div
-        style={{
-          position: "relative",
-          width: 44,
-          height: 34,
-          overflow: "hidden",
-        }}
-      >
+      <div style={{ position: "relative", width: 52, height: 42, overflow: "hidden" }}>
         {src ? (
           <img
             src={src}
@@ -964,73 +1216,35 @@ function ZoomAvatarChip({
             {initials}
           </div>
         )}
-
-        {badge ? (
-          <div
-            style={{
-              position: "absolute",
-              left: 4,
-              top: 4,
-              width: 16,
-              height: 16,
-              borderRadius: 999,
-              display: "grid",
-              placeItems: "center",
-              fontSize: 10,
-              fontWeight: 1000,
-              background:
-                badge === "K"
-                  ? "rgba(255,198,58,.22)"
-                  : "rgba(255,80,80,.22)",
-              border:
-                badge === "K"
-                  ? "1px solid rgba(255,198,58,.35)"
-                  : "1px solid rgba(255,80,80,.35)",
-              color: "#fff",
-            }}
-          >
-            {badge}
-          </div>
-        ) : null}
+        {/* ❌ plus de badge "K" sur la photo */}
       </div>
 
+      {/* ✅ NUM + ICON KILLER/DEAD + COEUR */}
       <div
         style={{
           position: "relative",
-          display: "grid",
-          alignItems: "stretch",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
           padding: "0 10px",
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(90deg, rgba(0,0,0,.10) 0%, rgba(0,0,0,.55) 55%, rgba(0,0,0,.75) 100%)",
-            pointerEvents: "none",
-          }}
-        />
+        {badge === "K" ? <KillerBadgeIcon size={14} /> : badge === "D" ? <DeadBadgeIcon size={14} /> : null}
 
-        {/* ✅ NUMÉRO ONLY (cartoon + gros + couleur thème) */}
         <div
           style={{
-            position: "relative",
-            display: "grid",
-            placeItems: "center",
+            fontSize: 20,
             fontWeight: 1000,
-            fontSize: 18,
-            color: gold,
-            letterSpacing: 0.4,
-            fontFamily:
-              'system-ui, -apple-system, Segoe UI, Roboto, "Comic Sans MS", Arial, sans-serif',
-            textShadow: isActive
-              ? "0 0 10px rgba(255,198,58,.75)"
-              : "0 0 6px rgba(0,0,0,.8)",
+            color: theme,
+            letterSpacing: 0.6,
+            textShadow: isActive ? `0 0 12px rgba(255,198,58,.16)` : "none",
           }}
         >
-          #{num}
+          {num}
         </div>
+
+        <MiniHeart value={lives} active={isActive} />
       </div>
     </div>
   );
@@ -1039,25 +1253,47 @@ function ZoomAvatarChip({
 function TargetsCarousel({
   players,
   activeId,
+  theme,
 }: {
   players: KillerPlayerState[];
   activeId?: string | null;
+  theme: string;
 }) {
+  const wrapRef = React.useRef<HTMLDivElement | null>(null);
+  const itemRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+
+  React.useEffect(() => {
+    if (!activeId) return;
+    const wrap = wrapRef.current;
+    const el = itemRefs.current[activeId];
+    if (!wrap || !el) return;
+
+    const wrapRect = wrap.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+
+    const wrapCenter = wrapRect.left + wrapRect.width / 2;
+    const elCenter = elRect.left + elRect.width / 2;
+
+    const delta = elCenter - wrapCenter;
+    wrap.scrollBy({ left: delta, behavior: "smooth" });
+  }, [activeId, players.length]);
+
   return (
-    <div style={{ padding: "6px 2px 2px" }}>
+    <div style={{ padding: "2px 2px 0px", marginTop: 2 }}>
       <div
+        ref={wrapRef}
         style={{
           display: "flex",
           gap: 10,
           overflowX: "auto",
-          paddingBottom: 6,
+          paddingBottom: 4,
+          paddingTop: 2, // ✅ laisse respirer pour voir halo
           WebkitOverflowScrolling: "touch",
         }}
       >
         {players.map((p) => {
           const isActive = p.id === activeId;
-          const num =
-            p.killerPhase === "SELECT" ? "?" : String(p.number || "?");
+          const num = p.killerPhase === "SELECT" ? "?" : String(p.number || "?");
           const badge = p.eliminated
             ? ("D" as any)
             : p.killerPhase === "ACTIVE"
@@ -1065,21 +1301,25 @@ function TargetsCarousel({
             : null;
 
           return (
-            <ZoomAvatarChip
-              key={p.id}
-              src={p.avatarDataUrl}
-              name={p.name}
-              num={num}
-              isActive={isActive}
-              eliminated={!!p.eliminated}
-              badge={badge}
-            />
+            <div key={p.id} ref={(node) => (itemRefs.current[p.id] = node)}>
+              <ZoomAvatarChip
+                src={p.avatarDataUrl}
+                name={p.name}
+                num={num}
+                lives={p.lives ?? 0}
+                isActive={isActive}
+                eliminated={!!p.eliminated}
+                badge={badge}
+                theme={theme}
+              />
+            </div>
           );
         })}
       </div>
     </div>
   );
 }
+
 
 // -----------------------------
 // ✅ Assign overlay + keypad 1..20 (CENTRÉ)
@@ -1214,7 +1454,7 @@ function AssignOverlay({
                       color: isTaken ? "rgba(255,255,255,.45)" : "#fff",
                       boxShadow: isTaken ? "none" : (btn.boxShadow as any),
                     }}
-                    title={isTaken ? "Déjà pris" : `Choisir #${n}`}
+                    title={isTaken ? "Déjà pris" : `Choisir ${n}`}
                   >
                     {n}
                   </button>
@@ -1232,14 +1472,19 @@ function AssignOverlay({
   );
 }
 
+// ✅ Ajoute ce helper (au-dessus de KillerPlay, avec les autres helpers)
+function truthy(v: any) {
+  if (v === true || v === 1) return true;
+  const s = String(v ?? "").toLowerCase().trim();
+  return s === "true" || s === "1" || s === "on" || s === "yes" || s === "enabled";
+}
+
 export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const startedAt = React.useMemo(() => Date.now(), []);
   const finishedRef = React.useRef(false);
   const elimOrderRef = React.useRef<string[]>([]);
   const introPlayedRef = React.useRef(false);
   const lastDeadPlayedRef = React.useRef(false);
-
-  const [showLog, setShowLog] = React.useState(false);
 
   const numberAssignMode: "none" | "throw" | "random" =
     ((config as any)?.numberAssignMode as any) ||
@@ -1248,21 +1493,74 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const inNumberAssignRound =
     numberAssignMode === "throw" || numberAssignMode === "random";
 
-  const autoKillOn = !!(config as any)?.autoKill;
+  // ✅ AutoKill ON/OFF (ROBUSTE : supporte plusieurs structures de config)
+const autoKillOn = truthy(
+  (config as any)?.autoKill ??
+    (config as any)?.autokill ??
+    (config as any)?.auto_kill ??
+    (config as any)?.autoKillOn ??
+    (config as any)?.autoKillEnabled ??
+    (config as any)?.variants?.autoKill ??
+    (config as any)?.variants?.autokill ??
+    (config as any)?.options?.autoKill ??
+    (config as any)?.rules?.autoKill ??
+    (config as any)?.settings?.autoKill ??
+    (config as any)?.config?.autoKill
+);
+
+React.useEffect(() => {
+  console.log("[KILLER] autoKillOn =", autoKillOn, "config =", config);
+}, [autoKillOn, config]);
+
+  // ✅ SFX enabled by default (sauf config.sfx === false)
   const sfxEnabled = (config as any)?.sfx === false ? false : true;
   const sfx = useKillerSfx(sfxEnabled);
 
-  React.useEffect(() => {
-    if (!sfxEnabled) return;
-    if (introPlayedRef.current) return;
-    introPlayedRef.current = true;
-    setTimeout(() => {
+// ✅ UNLOCK audio + intro :
+// - si l'utilisateur a déjà interagi avant d'arriver ici => on tente DIRECT
+// - sinon => on écoute le 1er geste en CAPTURE (les overlays peuvent stopPropagation)
+React.useEffect(() => {
+  if (!sfxEnabled) return;
+
+  const tryStartIntroNow = () => {
+    try {
+      sfx.unlock?.();
+    } catch {}
+    if (!introPlayedRef.current) {
+      introPlayedRef.current = true;
       try {
         sfx.intro?.();
       } catch {}
-    }, 180);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sfxEnabled]);
+    }
+  };
+
+  // ✅ cas #1 : le user a déjà cliqué (ex: "Lancer la partie" juste avant)
+  try {
+    const ua: any = (navigator as any).userActivation;
+    if (ua?.hasBeenActive) {
+      tryStartIntroNow();
+      return;
+    }
+  } catch {}
+
+  // ✅ cas #2 : sinon on attend le 1er geste utilisateur (CAPTURE)
+  const onFirstGesture = () => {
+    tryStartIntroNow();
+  };
+
+  window.addEventListener("pointerdown", onFirstGesture, { once: true, capture: true } as any);
+  window.addEventListener("touchstart", onFirstGesture, { once: true, capture: true } as any);
+  window.addEventListener("mousedown", onFirstGesture, { once: true, capture: true } as any);
+  window.addEventListener("keydown", onFirstGesture, { once: true, capture: true } as any);
+
+  return () => {
+    window.removeEventListener("pointerdown", onFirstGesture as any, true as any);
+    window.removeEventListener("touchstart", onFirstGesture as any, true as any);
+    window.removeEventListener("mousedown", onFirstGesture as any, true as any);
+    window.removeEventListener("keydown", onFirstGesture as any, true as any);
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [sfxEnabled]);
 
   const [events, setEvents] = React.useState<any[]>([]);
   function pushEvent(e: any) {
@@ -1274,8 +1572,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
 
   const [log, setLog] = React.useState<string[]>([]);
   function pushLog(line: string) {
-    setLog((prev) => [line, ...prev].slice(0, 140));
+    setLog((prev) => [line, ...prev].slice(0, 200));
   }
+
+  const [showLog, setShowLog] = React.useState(false);
 
   const initialPlayers: KillerPlayerState[] = React.useMemo(() => {
     const lives = clampInt(config?.lives, 1, 9, 3);
@@ -1312,14 +1612,27 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     });
 
     if (numberAssignMode === "random") {
+      // 🔀 shuffle des joueurs (ORDRE DE JEU RÉELLEMENT ALÉATOIRE)
+      for (let i = base.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [base[i], base[j]] = [base[j], base[i]];
+      }
+    
+      // 🎯 pool des numéros 1..20
       const pool = Array.from({ length: 20 }, (_, i) => i + 1);
+    
+      // 🔀 shuffle des numéros
       for (let i = pool.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [pool[i], pool[j]] = [pool[j], pool[i]];
       }
+    
+      // ✅ assignation numéros + phase ARMING (et reset flags)
       base.forEach((p, idx) => {
-        p.number = pool[idx % pool.length];
+        p.number = pool[idx % pool.length]; // si >20 joueurs, ça recycle (ok)
         p.killerPhase = "ARMING";
+        p.isKiller = false;
+        p.eliminated = false; // ✅ safety
       });
     }
 
@@ -1353,7 +1666,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const current = players[turnIndex] ?? players[0];
   const w = winner(players);
   const aliveCount = players.filter((p) => !p.eliminated).length;
-  const totalCount = players.length;
   const isBotTurn = !!current?.isBot;
 
   const inputDisabledBase =
@@ -1362,7 +1674,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const waitingValidate =
     !inputDisabledBase && !isBotTurn && dartsLeft === 0;
 
-  const assignActive = inNumberAssignRound && !assignDone && numberAssignMode === "throw";
+  const assignActive =
+    inNumberAssignRound && !assignDone && numberAssignMode === "throw";
   const assignPlayer = assignActive ? (players[assignIndex] || players[0]) : null;
 
   const takenNumbers = React.useMemo(() => {
@@ -1421,11 +1734,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     setEvents(s.events || []);
     setAssignIndex(s.assignIndex || 0);
     setAssignDone(!!s.assignDone);
-
-    finishedRef.current = !!s.finished;
-    elimOrderRef.current = (s.elimOrder || []).slice();
-
-    sfx.click();
   }
 
   function endTurn(nextPlayers?: KillerPlayerState[]) {
@@ -1553,9 +1861,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         uselessHits: p.uselessHits,
         livesTaken: p.livesTaken,
         livesLost: p.livesLost,
-        throwsToBecomeKiller: p.becameAtThrow
-          ? p.becameAtThrow
-          : p.throwsToBecomeKiller,
+        throwsToBecomeKiller: p.becameAtThrow ? p.becameAtThrow : p.throwsToBecomeKiller,
         hitsBySegment: p.hitsBySegment || {},
         hitsByNumber: p.hitsByNumber || {},
       };
@@ -1613,77 +1919,79 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     if (inputDisabledBase) return;
     if (dartsLeft <= 0) return;
     if (isBotTurn) return;
-
+  
+    // unlock audio if not yet
+    try {
+      sfx.unlock?.();
+    } catch {}
+  
     if (assignActive && turnIndex !== assignIndex) {
       setTurnIndex(assignIndex);
       setDartsLeft(1);
       setVisit([]);
     }
-
+  
     snapshot();
     setMultiplier(1);
-
+  
     const thr: ThrowInput = {
       target: clampInt(t.target, 0, 25, 0),
       mult: clampInt(t.mult, 1, 3, 1) as Mult,
     };
-
+  
     setVisit((v) => [...v, thr].slice(0, 3));
     setDartsLeft((d) => Math.max(0, d - 1));
-
-    sfx.hit();
-
+  
+    // ✅ SFX DECISION (IMPORTANT):
+    // - par défaut: dart-hit
+    // - si on enlève des vies: on joue killer-kill-1/2/3 et on NE joue PAS dart-hit
+    let playKillMult: Mult | 0 = 0;
+  
     setPlayers((prev) => {
       const next = prev.map((p) => ({
         ...p,
         hitsBySegment: { ...(p.hitsBySegment || {}) },
         hitsByNumber: { ...(p.hitsByNumber || {}) },
       }));
-
+  
       const me = next[turnIndex];
       if (!me || me.eliminated) return prev;
-
+  
       me.totalThrows += 1;
-
+  
       const seg = segmentKey(thr);
       me.hitsBySegment = incMap(me.hitsBySegment, seg, 1);
-      if (thr.target !== 0)
-        me.hitsByNumber = incMap(me.hitsByNumber, thr.target, 1);
-
-      if (me.killerPhase !== "ACTIVE" && !me.becameAtThrow)
-        me.throwsToBecomeKiller += 1;
+      if (thr.target !== 0) me.hitsByNumber = incMap(me.hitsByNumber, thr.target, 1);
+  
+      if (me.killerPhase !== "ACTIVE" && !me.becameAtThrow) me.throwsToBecomeKiller += 1;
       if (me.killerPhase === "ACTIVE") me.killerThrows += 1;
-
+  
       if (thr.target === 0) {
         me.uselessHits += 1;
         pushLog(`🎯 ${me.name} : MISS`);
         pushEvent({ t: Date.now(), type: "THROW", actorId: me.id, throw: thr });
         return next;
       }
-
+  
+      // BULL / DBULL (25)
       if (thr.target === 25) {
         me.uselessHits += 1;
         pushLog(`🎯 ${me.name} : ${fmtThrow(thr)}`);
         pushEvent({ t: Date.now(), type: "THROW", actorId: me.id, throw: thr });
         return next;
       }
-
-      if (
-        assignActive &&
-        numberAssignMode === "throw" &&
-        me.killerPhase === "SELECT"
-      ) {
+  
+      // SELECT NUMBER (assignation au lancer)
+      if (assignActive && numberAssignMode === "throw" && me.killerPhase === "SELECT") {
         const n = normalizeNumberFromHit(thr.target);
-
+  
         const alreadyTaken = next.some(
           (p, idx) => idx !== turnIndex && !p.eliminated && p.number === n
         );
-
+  
         if (alreadyTaken) {
           me.uselessHits += 1;
-          pushLog(
-            `⚠️ ${me.name} vise #${n} mais il est déjà pris → numéro NON attribué`
-          );
+          pushLog(`⚠️ ${me.name} vise ${n} mais il est déjà pris → numéro NON attribué`);
           pushEvent({
             t: Date.now(),
             type: "SELECT_NUMBER_CONFLICT",
@@ -1691,7 +1999,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             number: n,
             throw: thr,
           });
-
+  
           setTimeout(() => {
             const nextIdx = (assignIndex + 1) % players.length;
             setAssignIndex(nextIdx);
@@ -1700,15 +2008,15 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             setVisit([]);
             setTimeout(() => finishAssignIfReady(), 0);
           }, 0);
-
+  
           return next;
         }
-
+  
         me.number = n;
         me.killerPhase = "ARMING";
         me.isKiller = false;
-
-        pushLog(`🧩 ${me.name} choisit le numéro #${n}`);
+  
+        pushLog(`🧩 ${me.name} choisit le numéro ${n}`);
         pushEvent({
           t: Date.now(),
           type: "SELECT_NUMBER",
@@ -1716,8 +2024,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           number: n,
           throw: thr,
         });
-        sfx.click();
-
+  
         setTimeout(() => {
           const nextIdx = (assignIndex + 1) % players.length;
           setAssignIndex(nextIdx);
@@ -1726,10 +2033,11 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           setVisit([]);
           setTimeout(() => finishAssignIfReady(), 0);
         }, 0);
-
+  
         return next;
       }
-
+  
+      // AUTOKILL
       if (autoKillOn && me.number && thr.target === me.number) {
         me.hitsOnSelf += 1;
         me.livesLost += Math.max(0, me.lives);
@@ -1738,14 +2046,12 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         me.eliminatedAt = Date.now();
         me.killerPhase = "ARMING";
         me.isKiller = false;
-
+  
         if (!elimOrderRef.current.includes(me.id)) {
           elimOrderRef.current = [...(elimOrderRef.current || []), me.id];
         }
-
-        pushLog(
-          `☠️ ${me.name} s'AUTO-KILL sur #${me.number} (${fmtThrow(thr)})`
-        );
+  
+        pushLog(`☠️ ${me.name} s'AUTO-KILL sur ${me.number} (${fmtThrow(thr)})`);
         pushEvent({
           t: Date.now(),
           type: "AUTOKILL",
@@ -1753,18 +2059,22 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           number: me.number,
           throw: thr,
         });
-        sfx.death();
-
+  
+        try {
+          sfx.death?.();
+        } catch {}
+  
         return next;
       }
-
+  
       if (!me.number) {
         me.uselessHits += 1;
         pushLog(`🎯 ${me.name} : ${fmtThrow(thr)}`);
         pushEvent({ t: Date.now(), type: "THROW", actorId: me.id, throw: thr });
         return next;
       }
-
+  
+      // ARMING => devient killer
       if (
         me.killerPhase !== "ACTIVE" &&
         thr.target === me.number &&
@@ -1774,10 +2084,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         me.isKiller = true;
         me.hitsOnSelf += 1;
         if (!me.becameAtThrow) me.becameAtThrow = me.throwsToBecomeKiller;
-
-        pushLog(
-          `🟡 ${me.name} devient KILLER (${fmtThrow(thr)} sur #${thr.target})`
-        );
+  
+        pushLog(`🟡 ${me.name} devient KILLER (${fmtThrow(thr)} sur ${thr.target})`);
         pushEvent({
           t: Date.now(),
           type: "BECOME_KILLER",
@@ -1785,30 +2093,39 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           number: me.number,
           throw: thr,
         });
-        sfx.armed();
+  
+        try {
+          sfx.become?.();
+        } catch {}
+  
         return next;
       }
-
+  
+      // ACTIVE => attaque
       if (me.killerPhase === "ACTIVE") {
         const victimIdx = next.findIndex(
           (p, idx) => idx !== turnIndex && !p.eliminated && p.number === thr.target
         );
+  
         if (victimIdx >= 0) {
           const victim = next[victimIdx];
-
+  
           me.offensiveThrows += 1;
-
+  
           const dmg = dmgFrom(thr.mult, config.damageRule);
           const before = victim.lives;
           victim.lives = Math.max(0, victim.lives - dmg);
-
+  
           const actualLoss = Math.max(0, before - victim.lives);
           if (actualLoss > 0) {
             me.killerHits += 1;
             me.livesTaken += actualLoss;
             victim.livesLost += actualLoss;
+  
+            // ✅ IMPORTANT: si on enlève des vies => on jouera KILL S/D/T et PAS dart-hit
+            playKillMult = thr.mult;
           }
-
+  
           pushEvent({
             t: Date.now(),
             type: "HIT_VICTIM",
@@ -1818,22 +2135,18 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             dmg,
             throw: thr,
           });
-
-          if (actualLoss > 0) sfx.kill(thr.mult);
-
+  
           if (victim.lives <= 0) {
             victim.eliminated = true;
             victim.eliminatedAt = Date.now();
             me.kills += 1;
-
+  
             if (!elimOrderRef.current.includes(victim.id)) {
               elimOrderRef.current = [...(elimOrderRef.current || []), victim.id];
             }
-
+  
             pushLog(
-              `💀 ${me.name} élimine ${victim.name} (${fmtThrow(
-                thr
-              )} sur #${thr.target}, -${dmg})`
+              `💀 ${me.name} élimine ${victim.name} (${fmtThrow(thr)} sur ${thr.target}, -${dmg})`
             );
             pushEvent({
               t: Date.now(),
@@ -1843,27 +2156,35 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
               targetNumber: victim.number,
               throw: thr,
             });
-
-            sfx.death();
+  
+            try {
+              sfx.death?.();
+            } catch {}
           } else {
             pushLog(
-              `🔻 ${me.name} touche ${victim.name} (${fmtThrow(
-                thr
-              )} sur #${thr.target}, -${dmg}) → ${victim.lives} vie(s)`
+              `🔻 ${me.name} touche ${victim.name} (${fmtThrow(thr)} sur ${thr.target}, -${dmg}) → ${victim.lives} vie(s)`
             );
           }
-
+  
           return next;
         }
       }
-
+  
       me.uselessHits += 1;
       pushLog(`🎯 ${me.name} : ${fmtThrow(thr)}`);
       pushEvent({ t: Date.now(), type: "THROW", actorId: me.id, throw: thr });
       return next;
     });
+  
+    // ✅ JOUER LE BON SON (APRÈS la logique)
+    try {
+      if (playKillMult) sfx.kill?.(playKillMult);
+      else sfx.hit?.();
+    } catch {}
   }
+  
 
+  // ✅ fin de partie (son lastDead + record)
   React.useEffect(() => {
     const ww = winner(players);
     if (ww && !finishedRef.current) {
@@ -1910,168 +2231,148 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   }, [players]);
 
   // BOT AUTOPLAY
-  React.useEffect(() => {
-    if (!players.length) return;
-    if (finishedRef.current || finished) return;
-    if (winner(players)) return;
+React.useEffect(() => {
+  if (!players.length) return;
+  if (finishedRef.current || finished) return;
+  if (winner(players)) return;
 
-    const activeTurnIndex = assignActive ? assignIndex : turnIndex;
-    const me = players[activeTurnIndex];
-    if (!me || me.eliminated) return;
-    if (!me.isBot) return;
+  const activeTurnIndex = assignActive ? assignIndex : turnIndex;
+  const me = players[activeTurnIndex];
+  if (!me || me.eliminated) return;
+  if (!me.isBot) return;
 
-    if (dartsLeft <= 0) {
-      if (botBusyRef.current) return;
-      botBusyRef.current = true;
-      botTimerRef.current = setTimeout(() => {
-        botTimerRef.current = null;
-        if (finishedRef.current || finished) {
-          botBusyRef.current = false;
-          return;
-        }
-        if (assignActive) {
-          const nextIdx = (assignIndex + 1) % players.length;
-          setAssignIndex(nextIdx);
-          setTurnIndex(nextIdx);
-          setDartsLeft(1);
-          setVisit([]);
-          setTimeout(() => finishAssignIfReady(), 0);
-        } else {
-          endTurn(players);
-        }
-        botBusyRef.current = false;
-      }, 340);
-
-      return () => {
-        if (botTimerRef.current) clearTimeout(botTimerRef.current);
-        botTimerRef.current = null;
-        botBusyRef.current = false;
-      };
-    }
-
+  if (dartsLeft <= 0) {
     if (botBusyRef.current) return;
     botBusyRef.current = true;
-
-    const delay = 320 + Math.floor(Math.random() * 420);
     botTimerRef.current = setTimeout(() => {
       botTimerRef.current = null;
       if (finishedRef.current || finished) {
         botBusyRef.current = false;
         return;
       }
+      if (assignActive) {
+        const nextIdx = (assignIndex + 1) % players.length;
+        setAssignIndex(nextIdx);
+        setTurnIndex(nextIdx);
+        setDartsLeft(1);
+        setVisit([]);
+        setTimeout(() => finishAssignIfReady(), 0);
+      } else {
+        endTurn(players);
+      }
+      botBusyRef.current = false;
+    }, 340);
 
-      const nowMe = players[activeTurnIndex];
-      if (!nowMe || nowMe.eliminated || !nowMe.isBot) {
-        botBusyRef.current = false;
-        return;
+    return () => {
+      if (botTimerRef.current) clearTimeout(botTimerRef.current);
+      botTimerRef.current = null;
+      botBusyRef.current = false;
+    };
+  }
+
+  if (botBusyRef.current) return;
+  botBusyRef.current = true;
+
+  const delay = 320 + Math.floor(Math.random() * 420);
+  botTimerRef.current = setTimeout(() => {
+    botTimerRef.current = null;
+    if (finishedRef.current || finished) {
+      botBusyRef.current = false;
+      return;
+    }
+
+    const nowMe = players[activeTurnIndex];
+    if (!nowMe || nowMe.eliminated || !nowMe.isBot) {
+      botBusyRef.current = false;
+      return;
+    }
+
+    snapshot();
+    setMultiplier(1);
+
+    const thr = decideBotThrow(nowMe, players, config, assignActive);
+    const thrSafe: ThrowInput = {
+      target: clampInt(thr.target, 0, 25, 0),
+      mult: clampInt(thr.mult, 1, 3, 1) as Mult,
+    };
+
+    setVisit((v) => [...v, thrSafe].slice(0, 3));
+    setDartsLeft((d) => Math.max(0, d - 1));
+
+    try {
+      sfx.unlock?.();
+    } catch {}
+
+    // ✅ SFX DECISION BOT
+    // - par défaut: dart-hit
+    // - si on enlève des vies: killer-kill-1/2/3 et PAS dart-hit
+    let botPlayKillMult: Mult | 0 = 0;
+
+    setPlayers((prev) => {
+      const next = prev.map((p) => ({
+        ...p,
+        hitsBySegment: { ...(p.hitsBySegment || {}) },
+        hitsByNumber: { ...(p.hitsByNumber || {}) },
+      }));
+
+      const me2 = next[activeTurnIndex];
+      if (!me2 || me2.eliminated) return prev;
+
+      me2.totalThrows += 1;
+
+      const seg = segmentKey(thrSafe);
+      me2.hitsBySegment = incMap(me2.hitsBySegment, seg, 1);
+      if (thrSafe.target !== 0)
+        me2.hitsByNumber = incMap(me2.hitsByNumber, thrSafe.target, 1);
+
+      if (thrSafe.target === 0) {
+        me2.uselessHits += 1;
+        pushLog(`🎯 ${me2.name} : MISS`);
+        pushEvent({
+          t: Date.now(),
+          type: "THROW",
+          actorId: me2.id,
+          throw: thrSafe,
+          bot: true,
+        });
+        return next;
       }
 
-      snapshot();
-      setMultiplier(1);
+      if (thrSafe.target === 25) {
+        me2.uselessHits += 1;
+        pushLog(`🎯 ${me2.name} : ${fmtThrow(thrSafe)}`);
+        pushEvent({
+          t: Date.now(),
+          type: "THROW",
+          actorId: me2.id,
+          throw: thrSafe,
+          bot: true,
+        });
+        return next;
+      }
 
-      const thr = decideBotThrow(nowMe, players, config, assignActive);
-      const thrSafe: ThrowInput = {
-        target: clampInt(thr.target, 0, 25, 0),
-        mult: clampInt(thr.mult, 1, 3, 1) as Mult,
-      };
+      if (
+        assignActive &&
+        numberAssignMode === "throw" &&
+        me2.killerPhase === "SELECT"
+      ) {
+        const n = normalizeNumberFromHit(thrSafe.target);
 
-      setVisit((v) => [...v, thrSafe].slice(0, 3));
-      setDartsLeft((d) => Math.max(0, d - 1));
-      sfx.hit();
+        const alreadyTaken = next.some(
+          (p, idx) => idx !== activeTurnIndex && !p.eliminated && p.number === n
+        );
 
-      // On réutilise la même logique que applyThrow (copie existante) :
-      setPlayers((prev) => {
-        const next = prev.map((p) => ({
-          ...p,
-          hitsBySegment: { ...(p.hitsBySegment || {}) },
-          hitsByNumber: { ...(p.hitsByNumber || {}) },
-        }));
-
-        const me2 = next[activeTurnIndex];
-        if (!me2 || me2.eliminated) return prev;
-
-        me2.totalThrows += 1;
-
-        const seg = segmentKey(thrSafe);
-        me2.hitsBySegment = incMap(me2.hitsBySegment, seg, 1);
-        if (thrSafe.target !== 0)
-          me2.hitsByNumber = incMap(me2.hitsByNumber, thrSafe.target, 1);
-
-        if (thrSafe.target === 0) {
+        if (alreadyTaken) {
           me2.uselessHits += 1;
-          pushLog(`🎯 ${me2.name} : MISS`);
+          pushLog(`⚠️ ${me2.name} vise ${n} déjà pris → numéro NON attribué`);
           pushEvent({
             t: Date.now(),
-            type: "THROW",
-            actorId: me2.id,
-            throw: thrSafe,
-            bot: true,
-          });
-          return next;
-        }
-
-        if (thrSafe.target === 25) {
-          me2.uselessHits += 1;
-          pushLog(`🎯 ${me2.name} : ${fmtThrow(thrSafe)}`);
-          pushEvent({
-            t: Date.now(),
-            type: "THROW",
-            actorId: me2.id,
-            throw: thrSafe,
-            bot: true,
-          });
-          return next;
-        }
-
-        if (
-          assignActive &&
-          numberAssignMode === "throw" &&
-          me2.killerPhase === "SELECT"
-        ) {
-          const n = normalizeNumberFromHit(thrSafe.target);
-
-          const alreadyTaken = next.some(
-            (p, idx) => idx !== activeTurnIndex && !p.eliminated && p.number === n
-          );
-
-          if (alreadyTaken) {
-            me2.uselessHits += 1;
-            pushLog(`⚠️ ${me2.name} vise #${n} déjà pris → numéro NON attribué`);
-            pushEvent({
-              t: Date.now(),
-              type: "SELECT_NUMBER_CONFLICT",
-              actorId: me2.id,
-              number: n,
-              throw: thrSafe,
-              bot: true,
-            });
-
-            setTimeout(() => {
-              const nextIdx = (assignIndex + 1) % players.length;
-              setAssignIndex(nextIdx);
-              setTurnIndex(nextIdx);
-              setDartsLeft(1);
-              setVisit([]);
-              setTimeout(() => finishAssignIfReady(), 0);
-            }, 0);
-
-            return next;
-          }
-
-          me2.number = n;
-          me2.killerPhase = "ARMING";
-          me2.isKiller = false;
-
-          pushLog(`🧩 ${me2.name} choisit le numéro #${n}`);
-          pushEvent({
-            t: Date.now(),
-            type: "SELECT_NUMBER",
+            type: "SELECT_NUMBER_CONFLICT",
             actorId: me2.id,
             number: n,
             throw: thrSafe,
             bot: true,
           });
-          sfx.click();
 
           setTimeout(() => {
             const nextIdx = (assignIndex + 1) % players.length;
@@ -2085,157 +2386,189 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           return next;
         }
 
-        if (autoKillOn && me2.number && thrSafe.target === me2.number) {
-          me2.hitsOnSelf += 1;
-          me2.livesLost += Math.max(0, me2.lives);
-          me2.lives = 0;
-          me2.eliminated = true;
-          me2.eliminatedAt = Date.now();
-          me2.killerPhase = "ARMING";
-          me2.isKiller = false;
+        me2.number = n;
+        me2.killerPhase = "ARMING";
+        me2.isKiller = false;
 
-          if (!elimOrderRef.current.includes(me2.id)) {
-            elimOrderRef.current = [...(elimOrderRef.current || []), me2.id];
-          }
-
-          pushLog(
-            `☠️ ${me2.name} s'AUTO-KILL sur #${me2.number} (${fmtThrow(thrSafe)})`
-          );
-          pushEvent({
-            t: Date.now(),
-            type: "AUTOKILL",
-            actorId: me2.id,
-            number: me2.number,
-            throw: thrSafe,
-            bot: true,
-          });
-          sfx.death();
-          return next;
-        }
-
-        if (
-          me2.killerPhase !== "ACTIVE" &&
-          me2.number &&
-          thrSafe.target === me2.number &&
-          canBecomeKiller(config.becomeRule, thrSafe)
-        ) {
-          me2.killerPhase = "ACTIVE";
-          me2.isKiller = true;
-          me2.hitsOnSelf += 1;
-          if (!me2.becameAtThrow) me2.becameAtThrow = me2.throwsToBecomeKiller;
-
-          pushLog(
-            `🟡 ${me2.name} devient KILLER (${fmtThrow(thrSafe)} sur #${
-              thrSafe.target
-            })`
-          );
-          pushEvent({
-            t: Date.now(),
-            type: "BECOME_KILLER",
-            actorId: me2.id,
-            number: me2.number,
-            throw: thrSafe,
-            bot: true,
-          });
-          sfx.armed();
-          return next;
-        }
-
-        if (me2.killerPhase === "ACTIVE") {
-          const victimIdx = next.findIndex(
-            (p, idx) =>
-              idx !== activeTurnIndex &&
-              !p.eliminated &&
-              p.number === thrSafe.target
-          );
-          if (victimIdx >= 0) {
-            const victim = next[victimIdx];
-
-            me2.offensiveThrows += 1;
-
-            const dmg = dmgFrom(thrSafe.mult, config.damageRule);
-            const before = victim.lives;
-            victim.lives = Math.max(0, victim.lives - dmg);
-
-            const actualLoss = Math.max(0, before - victim.lives);
-            if (actualLoss > 0) {
-              me2.killerHits += 1;
-              me2.livesTaken += actualLoss;
-              victim.livesLost += actualLoss;
-            }
-
-            pushEvent({
-              t: Date.now(),
-              type: "HIT_VICTIM",
-              actorId: me2.id,
-              targetId: victim.id,
-              targetNumber: victim.number,
-              dmg,
-              throw: thrSafe,
-              bot: true,
-            });
-
-            if (actualLoss > 0) sfx.kill(thrSafe.mult);
-
-            if (victim.lives <= 0) {
-              victim.eliminated = true;
-              victim.eliminatedAt = Date.now();
-              me2.kills += 1;
-
-              if (!elimOrderRef.current.includes(victim.id)) {
-                elimOrderRef.current = [...(elimOrderRef.current || []), victim.id];
-              }
-
-              pushLog(
-                `💀 ${me2.name} élimine ${victim.name} (${fmtThrow(
-                  thrSafe
-                )} sur #${thrSafe.target}, -${dmg})`
-              );
-              pushEvent({
-                t: Date.now(),
-                type: "KILL",
-                actorId: me2.id,
-                targetId: victim.id,
-                targetNumber: victim.number,
-                throw: thrSafe,
-                bot: true,
-              });
-              sfx.death();
-            } else {
-              pushLog(
-                `🔻 ${me2.name} touche ${victim.name} (${fmtThrow(
-                  thrSafe
-                )} sur #${thrSafe.target}, -${dmg}) → ${victim.lives} vie(s)`
-              );
-            }
-
-            return next;
-          }
-        }
-
-        me2.uselessHits += 1;
-        pushLog(`🎯 ${me2.name} : ${fmtThrow(thrSafe)}`);
+        pushLog(`🧩 ${me2.name} choisit le numéro ${n}`);
         pushEvent({
           t: Date.now(),
-          type: "THROW",
+          type: "SELECT_NUMBER",
           actorId: me2.id,
+          number: n,
+          throw: thrSafe,
+          bot: true,
+        });
+
+        setTimeout(() => {
+          const nextIdx = (assignIndex + 1) % players.length;
+          setAssignIndex(nextIdx);
+          setTurnIndex(nextIdx);
+          setDartsLeft(1);
+          setVisit([]);
+          setTimeout(() => finishAssignIfReady(), 0);
+        }, 0);
+
+        return next;
+      }
+
+      if (autoKillOn && me2.number && thrSafe.target === me2.number) {
+        me2.hitsOnSelf += 1;
+        me2.livesLost += Math.max(0, me2.lives);
+        me2.lives = 0;
+        me2.eliminated = true;
+        me2.eliminatedAt = Date.now();
+        me2.killerPhase = "ARMING";
+        me2.isKiller = false;
+
+        if (!elimOrderRef.current.includes(me2.id)) {
+          elimOrderRef.current = [...(elimOrderRef.current || []), me2.id];
+        }
+
+        pushLog(
+          `☠️ ${me2.name} s'AUTO-KILL sur ${me2.number} (${fmtThrow(thrSafe)})`
+        );
+        pushEvent({
+          t: Date.now(),
+          type: "AUTOKILL",
+          actorId: me2.id,
+          number: me2.number,
+          throw: thrSafe,
+          bot: true,
+        });
+
+        try {
+          sfx.death?.();
+        } catch {}
+
+        return next;
+      }
+
+      if (
+        me2.killerPhase !== "ACTIVE" &&
+        me2.number &&
+        thrSafe.target === me2.number &&
+        canBecomeKiller(config.becomeRule, thrSafe)
+      ) {
+        me2.killerPhase = "ACTIVE";
+        me2.isKiller = true;
+        me2.hitsOnSelf += 1;
+        if (!me2.becameAtThrow) me2.becameAtThrow = me2.throwsToBecomeKiller;
+
+        pushLog(
+          `🟡 ${me2.name} devient KILLER (${fmtThrow(thrSafe)} sur ${thrSafe.target})`
+        );
+        pushEvent({
+          t: Date.now(),
+          type: "BECOME_KILLER",
+          actorId: me2.id,
+          number: me2.number,
           throw: thrSafe,
           bot: true,
         });
         return next;
+      }
+
+      if (me2.killerPhase === "ACTIVE") {
+        const victimIdx = next.findIndex(
+          (p, idx) =>
+            idx !== activeTurnIndex && !p.eliminated && p.number === thrSafe.target
+        );
+        if (victimIdx >= 0) {
+          const victim = next[victimIdx];
+
+          me2.offensiveThrows += 1;
+
+          const dmg = dmgFrom(thrSafe.mult, config.damageRule);
+          const before = victim.lives;
+          victim.lives = Math.max(0, victim.lives - dmg);
+
+          const actualLoss = Math.max(0, before - victim.lives);
+          if (actualLoss > 0) {
+            me2.killerHits += 1;
+            me2.livesTaken += actualLoss;
+            victim.livesLost += actualLoss;
+
+            // ✅ IMPORTANT: si on enlève des vies => kill S/D/T, pas dart-hit
+            botPlayKillMult = thrSafe.mult;
+          }
+
+          pushEvent({
+            t: Date.now(),
+            type: "HIT_VICTIM",
+            actorId: me2.id,
+            targetId: victim.id,
+            targetNumber: victim.number,
+            dmg,
+            throw: thrSafe,
+            bot: true,
+          });
+
+          if (victim.lives <= 0) {
+            victim.eliminated = true;
+            victim.eliminatedAt = Date.now();
+            me2.kills += 1;
+
+            if (!elimOrderRef.current.includes(victim.id)) {
+              elimOrderRef.current = [...(elimOrderRef.current || []), victim.id];
+            }
+
+            pushLog(
+              `💀 ${me2.name} élimine ${victim.name} (${fmtThrow(thrSafe)} sur ${thrSafe.target}, -${dmg})`
+            );
+            pushEvent({
+              t: Date.now(),
+              type: "KILL",
+              actorId: me2.id,
+              targetId: victim.id,
+              targetNumber: victim.number,
+              throw: thrSafe,
+              bot: true,
+            });
+
+            try {
+              sfx.death?.();
+            } catch {}
+          } else {
+            pushLog(
+              `🔻 ${me2.name} touche ${victim.name} (${fmtThrow(thrSafe)} sur ${thrSafe.target}, -${dmg}) → ${victim.lives} vie(s)`
+            );
+          }
+
+          return next;
+        }
+      }
+
+      me2.uselessHits += 1;
+      pushLog(`🎯 ${me2.name} : ${fmtThrow(thrSafe)}`);
+      pushEvent({
+        t: Date.now(),
+        type: "THROW",
+        actorId: me2.id,
+        throw: thrSafe,
+        bot: true,
       });
+      return next;
+    });
 
-      botBusyRef.current = false;
-    }, delay);
+    // ✅ JOUER LE BON SON BOT (APRÈS la logique)
+    try {
+      if (botPlayKillMult) sfx.kill?.(botPlayKillMult);
+      else sfx.hit?.();
+    } catch {}
 
-    return () => {
-      if (botTimerRef.current) clearTimeout(botTimerRef.current);
-      botTimerRef.current = null;
-      botBusyRef.current = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [turnIndex, dartsLeft, finished, players, assignActive, assignIndex]);
+    botBusyRef.current = false;
+  }, delay);
 
+  return () => {
+    if (botTimerRef.current) clearTimeout(botTimerRef.current);
+    botTimerRef.current = null;
+    botBusyRef.current = false;
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [turnIndex, dartsLeft, finished, players, assignActive, assignIndex]);
+
+  // keep turnIndex safe
   React.useEffect(() => {
     if (!players.length) return;
     const me = players[turnIndex];
@@ -2244,6 +2577,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [players]);
 
+  // boot assign
   React.useEffect(() => {
     if (!assignActive) return;
     setTurnIndex(assignIndex);
@@ -2252,878 +2586,914 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignActive, assignIndex]);
 
-  React.useEffect(() => {
-    if (typeof document === "undefined") return;
-    document.body.classList.add("dc-fullscreen-play");
+  // ✅ FULLSCREEN PLAY: cache tabbar + bloque scroll global (html/body)
+React.useEffect(() => {
+  if (typeof document === "undefined") return;
 
-    const st = document.createElement("style");
-    st.setAttribute("data-dc-killer-fullscreen", "1");
-    st.textContent = `
-      body.dc-fullscreen-play .dc-tabbar,
-      body.dc-fullscreen-play .tabbar,
-      body.dc-fullscreen-play .bottom-tabbar,
-      body.dc-fullscreen-play .bottom-nav,
-      body.dc-fullscreen-play nav[role="navigation"],
-      body.dc-fullscreen-play [data-app-tabbar],
-      body.dc-fullscreen-play [data-tabbar]{
-        display:none !important;
-        visibility:hidden !important;
-        height:0 !important;
-      }
-      body.dc-fullscreen-play{
-        padding-bottom: 0 !important;
-      }
-    `;
-    document.head.appendChild(st);
+  const prevBodyOverflow = document.body.style.overflow;
+  const prevHtmlOverflow = document.documentElement.style.overflow;
 
-    return () => {
-      document.body.classList.remove("dc-fullscreen-play");
-      try {
-        st.remove();
-      } catch {}
-    };
-  }, []);
+  document.body.classList.add("dc-fullscreen-play");
+  document.body.style.overflow = "hidden";
+  document.documentElement.style.overflow = "hidden";
 
-  if (!config || !config.players || config.players.length < 2) {
-    return (
-      <div style={{ padding: 16, color: "#fff" }}>
-        <button onClick={() => go("killer_config")}>← Retour</button>
-        <p>Configuration KILLER invalide.</p>
-      </div>
-    );
-  }
+  const st = document.createElement("style");
+  st.setAttribute("data-dc-killer-fullscreen", "1");
+  st.textContent = `
+    body.dc-fullscreen-play .dc-tabbar,
+    body.dc-fullscreen-play .tabbar,
+    body.dc-fullscreen-play .bottom-tabbar,
+    body.dc-fullscreen-play .bottom-nav,
+    body.dc-fullscreen-play nav[role="navigation"],
+    body.dc-fullscreen-play [data-app-tabbar],
+    body.dc-fullscreen-play [data-tabbar]{
+      display:none !important;
+      visibility:hidden !important;
+      height:0 !important;
+    }
+    body.dc-fullscreen-play{
+      padding-bottom: 0 !important;
+      overscroll-behavior: none !important;
+    }
 
-  const currentThrow = toKeypadThrow(visit);
-  const canValidateTurn =
-    !inputDisabledBase && !isBotTurn && (visit.length > 0 || dartsLeft === 0);
+    /* ✅ KILLER: on force la disparition du total volée (toutes variantes possibles) */
+    .dc-killer-keypad .keypad-total,
+    .dc-killer-keypad .Keypad-total,
+    .dc-killer-keypad [data-keypad-total],
+    .dc-killer-keypad [data-total],
+    .dc-killer-keypad .total,
+    .dc-killer-keypad .visit-total,
+    .dc-killer-keypad .score,
+    .dc-killer-keypad .sum,
+    .dc-killer-keypad .result,
+    .dc-killer-keypad .center,
+    .dc-killer-keypad .middle{
+      display:none !important;
+      visibility:hidden !important;
+      opacity:0 !important;
+    }
+  `;
+  document.head.appendChild(st);
 
-  function handleValidate() {
-    if (inputDisabledBase) return;
-    if (isBotTurn) return;
-    if (!canValidateTurn) return;
-    sfx.click();
-    endTurn(players);
-  }
-
-  const RULES = rulesText(config);
-
-  function saveAndGoSummary(rec: any) {
+  return () => {
+    document.body.classList.remove("dc-fullscreen-play");
+    document.body.style.overflow = prevBodyOverflow || "";
+    document.documentElement.style.overflow = prevHtmlOverflow || "";
     try {
-      if (rec) onFinish(rec);
+      st.remove();
     } catch {}
+  };
+}, []);
 
-    const matchId = rec?.id || rec?.matchId || rec?.payload?.matchId || null;
-
-    if (matchId) go("killer_summary", { matchId });
-    else go("statsHub", { tab: "history", mode: "killer" });
-  }
-
-  const endPlayersOrdered = React.useMemo(() => {
-    if (!showEnd) return players;
-    return getOrderedFinalPlayers(players, elimOrderRef.current || []);
-  }, [showEnd, players]);
-
-  const activeHalo =
-    "0 0 16px rgba(255,198,58,.55), 0 0 34px rgba(255,198,58,.25)";
-
+if (!config || !config.players || config.players.length < 2) {
   return (
-    <div
-      style={{
-        height: "100dvh",
-        overflow: "hidden",
-        background: pageBg,
-        color: "#fff",
-        display: "flex",
-        flexDirection: "column",
-        padding: 10,
-        gap: 8,
-      }}
-    >
-      {assignActive && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 8500,
-            background: "rgba(0,0,0,.72)",
-            backdropFilter: "blur(3px) grayscale(1)",
-            WebkitBackdropFilter: "blur(3px) grayscale(1)",
-            pointerEvents: "auto",
-          }}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-          onTouchStart={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-        />
-      )}
+    <div style={{ padding: 16, color: "#fff" }}>
+      <button onClick={() => go("killer_config")}>← Retour</button>
+      <p>Configuration KILLER invalide.</p>
+    </div>
+  );
+}
 
-      <AssignOverlay
-        open={assignActive}
-        player={assignPlayer}
-        index={assignIndex}
-        total={players.length}
-        takenNumbers={takenNumbers}
-        onPickNumber={(n) => {
-          applyThrow({ target: n, mult: 1 });
+const currentThrow = toKeypadThrow(visit);
+const canValidateTurn =
+  !inputDisabledBase && !isBotTurn && (visit.length > 0 || dartsLeft === 0);
+
+function handleValidate() {
+  if (inputDisabledBase) return;
+  if (isBotTurn) return;
+  if (!canValidateTurn) return;
+  endTurn(players);
+}
+
+const RULES = rulesText(config);
+
+function saveAndGoSummary(rec: any) {
+  try {
+    if (rec) onFinish(rec);
+  } catch {}
+
+  const matchId = rec?.id || rec?.matchId || rec?.payload?.matchId || null;
+  if (matchId) go("killer_summary", { matchId });
+  else go("statsHub", { tab: "history", mode: "killer" });
+}
+
+const endPlayersOrdered = React.useMemo(() => {
+  if (!showEnd) return players;
+  return getOrderedFinalPlayers(players, elimOrderRef.current || []);
+}, [showEnd, players]);
+
+const theme = gold;
+
+const isCurrentKillerActive =
+  !!current && current.killerPhase === "ACTIVE" && !current.eliminated;
+
+return (
+  <div
+    style={{
+      height: "100dvh",
+      overflow: "hidden",
+      background: pageBg,
+      color: "#fff",
+      display: "flex",
+      flexDirection: "column",
+      padding: 10,
+      gap: 10,
+      overscrollBehavior: "none",
+    }}
+  >
+    {/* ✅ SCRIM BLOQUANT (fond/menu/list/keypad inactifs) */}
+    {assignActive && (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 8500,
+          background: "rgba(0,0,0,.72)",
+          backdropFilter: "blur(3px) grayscale(1)",
+          WebkitBackdropFilter: "blur(3px) grayscale(1)",
+          pointerEvents: "auto",
+        }}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onTouchStart={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
         }}
       />
+    )}
 
-      {/* ✅ LOG MODAL via bouton "L" */}
-      {showLog && (
+    <AssignOverlay
+      open={assignActive}
+      player={assignPlayer}
+      index={assignIndex}
+      total={players.length}
+      takenNumbers={takenNumbers}
+      onPickNumber={(n) => {
+        applyThrow({ target: n, mult: 1 });
+      }}
+    />
+
+    {/* ✅ LOG POPIN */}
+    {showLog && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        onClick={() => setShowLog(false)}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,.55)",
+          zIndex: 9999,
+          padding: 14,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "center",
+        }}
+      >
         <div
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setShowLog(false)}
+          onClick={(e) => e.stopPropagation()}
           style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,.65)",
-            zIndex: 10001,
+            width: "100%",
+            maxWidth: 520,
+            ...card,
             padding: 14,
-            display: "grid",
-            placeItems: "center",
+            marginTop: 70,
+            border: "1px solid rgba(255,198,58,.25)",
+            boxShadow: "0 18px 55px rgba(0,0,0,.6)",
           }}
         >
           <div
-            onClick={(e) => e.stopPropagation()}
             style={{
-              ...card,
-              width: "100%",
-              maxWidth: 520,
-              maxHeight: "72vh",
-              overflowY: "auto",
-              padding: 14,
-              border: "1px solid rgba(255,198,58,.22)",
-              boxShadow: "0 18px 55px rgba(0,0,0,.65)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 10,
-              }}
-            >
-              <div
-                style={{
-                  fontWeight: 1000,
-                  letterSpacing: 1.2,
-                  color: gold,
-                  textTransform: "uppercase",
-                }}
-              >
-                LOG
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowLog(false)}
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,.10)",
-                  background: "rgba(255,255,255,.06)",
-                  color: "#fff",
-                  fontWeight: 900,
-                  cursor: "pointer",
-                }}
-                aria-label="Fermer"
-                title="Fermer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
-              {(log || []).length ? (
-                log.map((l, i) => (
-                  <div key={i} style={{ fontSize: 12, opacity: 0.9 }}>
-                    {l}
-                  </div>
-                ))
-              ) : (
-                <div style={{ fontSize: 12, opacity: 0.75 }}>
-                  Aucun log pour le moment.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* RULES POPIN */}
-      {showRules && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setShowRules(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,.55)",
-            zIndex: 9999,
-            padding: 14,
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "center",
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: 520,
-              ...card,
-              padding: 14,
-              marginTop: 70,
-              border: "1px solid rgba(255,198,58,.25)",
-              boxShadow: "0 18px 55px rgba(0,0,0,.6)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 10,
-              }}
-            >
-              <div
-                style={{
-                  fontWeight: 1000,
-                  letterSpacing: 1.2,
-                  color: gold,
-                  textTransform: "uppercase",
-                }}
-              >
-                Règles KILLER
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowRules(false)}
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,.10)",
-                  background: "rgba(255,255,255,.06)",
-                  color: "#fff",
-                  fontWeight: 900,
-                  cursor: "pointer",
-                }}
-                aria-label="Fermer"
-                title="Fermer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-              {RULES.map((r, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    borderRadius: 14,
-                    border: "1px solid rgba(255,255,255,.08)",
-                    background: "rgba(0,0,0,.25)",
-                    padding: 10,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontWeight: 950,
-                      fontSize: 12,
-                      color: "#ffe7b0",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    {r.title}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 4,
-                      fontSize: 12,
-                      opacity: 0.9,
-                      lineHeight: 1.35,
-                      whiteSpace: "pre-line",
-                    }}
-                  >
-                    {r.body}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ✅ END OVERLAY */}
-      {showEnd && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setShowEnd(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,.72)",
-            zIndex: 10000,
-            padding: 14,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: 520,
-              ...card,
-              padding: 16,
-              border: "1px solid rgba(255,198,58,.22)",
-              boxShadow: "0 18px 65px rgba(0,0,0,.65)",
-            }}
-          >
-            <div style={{ textAlign: "center" }}>
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: 1000,
-                  letterSpacing: 1.6,
-                  textTransform: "uppercase",
-                  color: gold,
-                }}
-              >
-                FIN DE PARTIE
-              </div>
-              <div style={{ marginTop: 6, fontSize: 20, fontWeight: 1000 }}>
-                🏆 {winner(players)?.name || "—"} gagne !
-              </div>
-            </div>
-
-            <div style={{ marginTop: 16, display: "grid", gap: 8 }}>
-              {endPlayersOrdered.map((p, i) => (
-                <div
-                  key={p.id}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "32px 1fr auto",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "8px 10px",
-                    borderRadius: 14,
-                    background:
-                      i === 0
-                        ? "rgba(255,198,58,.12)"
-                        : "rgba(0,0,0,.25)",
-                    border: "1px solid rgba(255,255,255,.08)",
-                    opacity: p.eliminated ? 0.85 : 1,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontWeight: 1000,
-                      color: i === 0 ? gold : "#fff",
-                    }}
-                  >
-                    {i + 1}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <AvatarMedallion
-                      size={28}
-                      src={p.avatarDataUrl}
-                      name={p.name}
-                    />
-                    <span style={{ fontWeight: 1000 }}>{p.name}</span>
-                    <span style={{ fontSize: 12, opacity: 0.8 }}>
-                      #{p.number || "?"}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      fontWeight: 1000,
-                      color: i === 0 ? gold : "rgba(255,255,255,.75)",
-                    }}
-                  >
-                    {i === 0 ? "WIN" : p.eliminated ? "DEAD" : ""}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div
-              style={{
-                marginTop: 16,
-                display: "flex",
-                gap: 12,
-                justifyContent: "center",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  setShowEnd(false);
-                  setTimeout(() => {
-                    if (endRec) onFinish(endRec);
-                    go("killer_config");
-                  }, 0);
-                }}
-                style={{
-                  height: 44,
-                  padding: "0 16px",
-                  borderRadius: 14,
-                  border: "1px solid rgba(255,180,0,.30)",
-                  background: `linear-gradient(180deg, ${gold}, ${gold2})`,
-                  color: "#1a1a1a",
-                  fontWeight: 1000,
-                  cursor: "pointer",
-                }}
-              >
-                Quitter
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowEnd(false);
-                  setTimeout(() => saveAndGoSummary(endRec), 0);
-                }}
-                style={{
-                  height: 44,
-                  padding: "0 16px",
-                  borderRadius: 14,
-                  border: "1px solid rgba(255,255,255,.14)",
-                  background: "rgba(255,255,255,.06)",
-                  color: "#fff",
-                  fontWeight: 1000,
-                  cursor: "pointer",
-                }}
-              >
-                Voir résumé
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* =========================
-          ✅ TOP FIXED AREA (non scrollable)
-         ========================= */}
-      <div style={{ flex: "0 0 auto" }}>
-        {/* ✅ HEADER (marges réduites) */}
-        <div style={{ ...card, padding: "6px 8px 4px" }}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "auto 1fr auto",
+              display: "flex",
               alignItems: "center",
+              justifyContent: "space-between",
               gap: 10,
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 1000,
+                letterSpacing: 1.2,
+                color: gold,
+                textTransform: "uppercase",
+              }}
+            >
+              Log
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowLog(false)}
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,.10)",
+                background: "rgba(255,255,255,.06)",
+                color: "#fff",
+                fontWeight: 900,
+                cursor: "pointer",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+            {(log || []).slice(0, 60).map((l, i) => (
+              <div key={i} style={{ fontSize: 12, opacity: 0.9 }}>
+                {l}
+              </div>
+            ))}
+            {!log?.length && (
+              <div style={{ fontSize: 12, opacity: 0.7 }}>
+                (vide pour l’instant)
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* RULES POPIN */}
+    {showRules && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        onClick={() => setShowRules(false)}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,.55)",
+          zIndex: 9999,
+          padding: 14,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            width: "100%",
+            maxWidth: 520,
+            ...card,
+            padding: 14,
+            marginTop: 70,
+            border: "1px solid rgba(255,198,58,.25)",
+            boxShadow: "0 18px 55px rgba(0,0,0,.6)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 1000,
+                letterSpacing: 1.2,
+                color: gold,
+                textTransform: "uppercase",
+              }}
+            >
+              Règles KILLER
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowRules(false)}
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,.10)",
+                background: "rgba(255,255,255,.06)",
+                color: "#fff",
+                fontWeight: 900,
+                cursor: "pointer",
+              }}
+              aria-label="Fermer"
+              title="Fermer"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+            {RULES.map((r, idx) => (
+              <div
+                key={idx}
+                style={{
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,255,255,.08)",
+                  background: "rgba(0,0,0,.25)",
+                  padding: 10,
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 950,
+                    fontSize: 12,
+                    color: "#ffe7b0",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {r.title}
+                </div>
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: 12,
+                    opacity: 0.9,
+                    lineHeight: 1.35,
+                    whiteSpace: "pre-line",
+                  }}
+                >
+                  {r.body}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ✅ END OVERLAY */}
+    {showEnd && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        onClick={() => setShowEnd(false)}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,.72)",
+          zIndex: 10000,
+          padding: 14,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            width: "100%",
+            maxWidth: 520,
+            ...card,
+            padding: 16,
+            border: "1px solid rgba(255,198,58,.22)",
+            boxShadow: "0 18px 65px rgba(0,0,0,.65)",
+          }}
+        >
+          <div style={{ textAlign: "center" }}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 1000,
+                letterSpacing: 1.6,
+                textTransform: "uppercase",
+                color: gold,
+              }}
+            >
+              FIN DE PARTIE
+            </div>
+            <div style={{ marginTop: 6, fontSize: 20, fontWeight: 1000 }}>
+              🏆 {winner(players)?.name || "—"} gagne !
+            </div>
+          </div>
+
+          <div style={{ marginTop: 16, display: "grid", gap: 8 }}>
+            {endPlayersOrdered.map((p, i) => (
+              <div
+                key={p.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "32px 1fr auto",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "8px 10px",
+                  borderRadius: 14,
+                  background:
+                    i === 0 ? "rgba(255,198,58,.12)" : "rgba(0,0,0,.25)",
+                  border: "1px solid rgba(255,255,255,.08)",
+                  opacity: p.eliminated ? 0.85 : 1,
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 1000,
+                    color: i === 0 ? gold : "#fff",
+                  }}
+                >
+                  {i + 1}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <AvatarMedallion
+                    size={28}
+                    src={p.avatarDataUrl}
+                    name={p.name}
+                  />
+                  <span style={{ fontWeight: 1000 }}>{p.name}</span>
+                  <span style={{ fontSize: 12, opacity: 0.8, color: gold }}>
+                    {p.number || "?"}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    fontWeight: 1000,
+                    color: i === 0 ? gold : "rgba(255,255,255,.75)",
+                  }}
+                >
+                  {i === 0 ? "WIN" : p.eliminated ? "DEAD" : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
+              marginTop: 16,
+              display: "flex",
+              gap: 12,
+              justifyContent: "center",
             }}
           >
             <button
               type="button"
-              onClick={() => go("killer_config")}
+              onClick={() => {
+                setShowEnd(false);
+                setTimeout(() => {
+                  if (endRec) onFinish(endRec);
+                  go("killer_config");
+                }, 0);
+              }}
               style={{
-                height: 34,
-                padding: "0 12px",
-                borderRadius: 12,
+                height: 44,
+                padding: "0 16px",
+                borderRadius: 14,
                 border: "1px solid rgba(255,180,0,.30)",
                 background: `linear-gradient(180deg, ${gold}, ${gold2})`,
                 color: "#1a1a1a",
                 fontWeight: 1000,
                 cursor: "pointer",
-                boxShadow: "0 10px 22px rgba(255,170,0,.18)",
-                whiteSpace: "nowrap",
               }}
             >
-              ← Quitter
+              Quitter
             </button>
 
-            <div style={{ textAlign: "center", lineHeight: 1 }}>
-              <span
-                style={{
-                  display: "inline-block",
-                  color: gold,
-                  fontWeight: 1000,
-                  textTransform: "uppercase",
-                  letterSpacing: 1.6,
-                  textShadow: "0 0 14px rgba(255,198,58,.25)",
-                }}
-              >
-                KILLER
-              </span>
-            </div>
-
-            {/* ✅ bouton i + bouton L */}
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <InfoDot
-                onClick={() => setShowRules(true)}
-                size={30}
-                color="#FFFFFF"
-              />
-              <button
-                type="button"
-                onClick={() => setShowLog(true)}
-                style={{
-                  width: 30,
-                  height: 30,
-                  borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,.22)",
-                  background: "rgba(0,0,0,.35)",
-                  color: gold,
-                  fontWeight: 1000,
-                  marginLeft: 6,
-                  cursor: "pointer",
-                  boxShadow: "0 0 16px rgba(255,198,58,.12)",
-                }}
-                title="Log"
-                aria-label="Log"
-              >
-                L
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowEnd(false);
+                setTimeout(() => saveAndGoSummary(endRec), 0);
+              }}
+              style={{
+                height: 44,
+                padding: "0 16px",
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,.14)",
+                background: "rgba(255,255,255,.06)",
+                color: "#fff",
+                fontWeight: 1000,
+                cursor: "pointer",
+              }}
+            >
+              Voir résumé
+            </button>
           </div>
-
-          <TargetsCarousel players={players} activeId={current?.id || null} />
         </div>
+      </div>
+    )}
 
-        {/* ✅ ACTIVE PLAYER (collé au header + halo thème) */}
+    {/* =========================
+        ✅ TOP FIXED AREA (non scrollable)
+       ========================= */}
+    <div style={{ flex: "0 0 auto" }}>
+      {/* ✅ HEADER */}
+      <div style={{ ...card, padding: 8 }}>
         <div
           style={{
-            ...card,
-            padding: 12,
-            border: "1px solid rgba(255,198,58,.22)",
-            boxShadow: activeHalo,
+            display: "grid",
+            gridTemplateColumns: "auto 1fr auto",
+            alignItems: "center",
+            gap: 10,
           }}
         >
-          <div
+          <button
+            type="button"
+            onClick={() => go("killer_config")}
             style={{
-              display: "grid",
-              gridTemplateColumns: "92px 1fr 120px",
-              gap: 10,
-              alignItems: "center",
+              height: 34,
+              padding: "0 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,180,0,.30)",
+              background: `linear-gradient(180deg, ${gold}, ${gold2})`,
+              color: "#1a1a1a",
+              fontWeight: 1000,
+              cursor: "pointer",
+              boxShadow: "0 10px 22px rgba(255,170,0,.18)",
+              whiteSpace: "nowrap",
             }}
           >
-            <div style={{ display: "grid", justifyItems: "center", gap: 8 }}>
-              <AvatarMedallion
-                size={84}
-                src={current?.avatarDataUrl}
-                name={current?.name}
-              />
-              <div
-                style={{
-                  fontSize: 14,
-                  fontWeight: 1000,
-                  color: gold,
-                  textTransform: "uppercase",
-                  textAlign: "center",
-                  width: 92,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-                title={current?.name}
-              >
-                {current?.name ?? "—"}
-              </div>
-            </div>
+            ← Quitter
+          </button>
 
-            <div
+          <div style={{ textAlign: "center", lineHeight: 1 }}>
+            <span
               style={{
-                borderRadius: 16,
-                border: "1px solid rgba(255,255,255,.08)",
-                background: "rgba(0,0,0,.28)",
-                padding: 10,
-                display: "grid",
-                gap: 8,
+                display: "inline-block",
+                color: gold,
+                fontWeight: 1000,
+                textTransform: "uppercase",
+                letterSpacing: 1.6,
+                textShadow: "0 0 14px rgba(255,198,58,.25)",
               }}
             >
-              <StatRow label="Darts" value={dartsLeft} />
-              <StatRow label="Lancers" value={current?.totalThrows ?? 0} />
-              <StatRow label="Dégâts" value={current?.livesTaken ?? 0} />
-              <StatRow label="Kills" value={current?.kills ?? 0} />
-            </div>
-
-            <div style={{ display: "grid", justifyItems: "end", gap: 8 }}>
-              <div
-                style={{
-                  width: 116,
-                  textAlign: "center",
-                  fontWeight: 1000,
-                  fontSize: 22,
-                  color: gold,
-                  letterSpacing: 0.8,
-                }}
-              >
-                #{current?.killerPhase === "SELECT" ? "?" : current?.number ?? "?"}
-                {current?.killerPhase === "ACTIVE" && (
-                  <KillerIcon size={46} variant="active" />
-                )}
-                {current?.eliminated && <DeadIcon size={46} variant="active" />}
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "60px 54px",
-                  gap: 8,
-                  width: 116,
-                  justifyContent: "end",
-                }}
-              >
-                <HeartKpi label="VIES" value={current?.lives ?? 0} />
-                {/* ✅ SURV : seulement le nombre restant */}
-                <StatBox label="SURV." value={aliveCount} small />
-              </div>
-            </div>
-          </div>
-
-          {(waitingValidate || isBotTurn) && !finished && !w && (
-            <div
-              style={{
-                marginTop: 10,
-                display: "flex",
-                justifyContent: "center",
-              }}
-            >
-              <div
-                style={{
-                  borderRadius: 999,
-                  padding: "8px 12px",
-                  background: "rgba(0,0,0,.35)",
-                  border: "1px solid rgba(255,198,58,.18)",
-                  boxShadow: "0 12px 35px rgba(0,0,0,.35)",
-                  fontSize: 12,
-                  fontWeight: 900,
-                  color: "#ffe7b0",
-                  textAlign: "center",
-                }}
-              >
-                {isBotTurn
-                  ? "🤖 Le bot joue…"
-                  : "Appuie sur VALIDER pour passer au joueur suivant"}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* =========================
-          ✅ ONLY SCROLLABLE AREA: LISTE JOUEURS
-         ========================= */}
-      <div
-        style={{
-          flex: "1 1 auto",
-          minHeight: 0,
-          overflowY: "auto",
-          overflowX: "hidden",
-          WebkitOverflowScrolling: "touch",
-          paddingBottom: assignActive ? 0 : 6,
-          marginTop: 8,
-        }}
-      >
-        <div style={{ display: "grid", gap: 8 }}>
-          {players.map((p, idx) => {
-            const isMe = idx === turnIndex;
-            const last = (p.lastVisit || []).slice(0, 3);
-            const lastDarts = toKeypadThrow(last as any);
-
-            return (
-              <div
-                key={p.id}
-                style={{
-                  ...card,
-                  padding: "8px 10px",
-                  opacity: p.eliminated ? 0.92 : 1,
-                  border: p.eliminated
-                    ? "1px solid rgba(255,80,80,.55)"
-                    : isMe
-                    ? "1px solid rgba(255,198,58,.40)"
-                    : "1px solid rgba(255,255,255,.08)",
-                  boxShadow: isMe
-                    ? "0 0 14px rgba(255,198,58,.35), 0 0 26px rgba(255,198,58,.18)"
-                    : card.boxShadow,
-                  background: p.eliminated
-                    ? "linear-gradient(180deg, rgba(70,10,10,.90), rgba(16,8,10,.98))"
-                    : isMe
-                    ? "radial-gradient(circle at 0% 0%, rgba(255,198,58,.18), rgba(12,12,14,.95) 65%)"
-                    : "linear-gradient(180deg, rgba(22,22,23,.78), rgba(12,12,14,.95))",
-                  display: "grid",
-                  gridTemplateColumns: "auto 1fr auto",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <AvatarMedallion size={40} src={p.avatarDataUrl} name={p.name} />
-
-                <div style={{ minWidth: 0 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      minWidth: 0,
-                    }}
-                  >
-                    <div style={{ fontWeight: 1000, minWidth: 0 }}>
-                      <span
-                        style={{
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                      >
-                        <span
-                          style={{
-                            color: p.eliminated
-                              ? "rgba(255,140,140,.95)"
-                              : "#fff",
-                          }}
-                        >
-                          {p.name}
-                        </span>{" "}
-                        <span
-                          style={{
-                            fontSize: 12,
-                            opacity: 0.8,
-                            color: p.eliminated
-                              ? "rgba(255,140,140,.85)"
-                              : "rgba(255,255,255,.8)",
-                          }}
-                        >
-                          #{p.killerPhase === "SELECT" ? "?" : p.number || "?"}
-                        </span>
-                      </span>
-
-                      {p.killerPhase === "ACTIVE" && !p.eliminated && (
-                        <KillerIcon size={18} variant="list" />
-                      )}
-                      {p.eliminated && <DeadIcon size={18} variant="list" />}
-
-                      {p.isBot && (
-                        <span
-                          style={{
-                            marginLeft: 6,
-                            fontSize: 11,
-                            opacity: 0.85,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          🤖{p.botLevel ? ` ${p.botLevel}` : ""}
-                        </span>
-                      )}
-                    </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 4,
-                        flex: "0 0 auto",
-                        transform: "scale(.92)",
-                        transformOrigin: "right center",
-                      }}
-                    >
-                      <span style={chipStyleMini(lastDarts[0])}>
-                        {fmtChip(lastDarts[0])}
-                      </span>
-                      <span style={chipStyleMini(lastDarts[1])}>
-                        {fmtChip(lastDarts[1])}
-                      </span>
-                      <span style={chipStyleMini(lastDarts[2])}>
-                        {fmtChip(lastDarts[2])}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    minWidth: 52,
-                    textAlign: "center",
-                    fontWeight: 1000,
-                    borderRadius: 14,
-                    padding: "8px 10px",
-                    background: p.eliminated
-                      ? "rgba(255,80,80,.12)"
-                      : "rgba(0,0,0,.45)",
-                    border: p.eliminated
-                      ? "1px solid rgba(255,80,80,.35)"
-                      : "1px solid rgba(255,255,255,.08)",
-                    color: p.eliminated ? "rgba(255,140,140,.95)" : gold,
-                  }}
-                >
-                  {p.eliminated ? "DEAD" : `${p.lives} ♥`}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ✅ BOTTOM sticky KEYPAD */}
-      {!assignActive && !w && !finished && !isBotTurn && !showEnd && (
-        <div
-          style={{
-            flex: "0 0 auto",
-            position: "sticky",
-            bottom: 0,
-            zIndex: 60,
-            paddingBottom: "max(8px, env(safe-area-inset-bottom))",
-            background:
-              "linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.25) 30%, rgba(0,0,0,.45))",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
-            <span style={chipStyleBig(currentThrow[0])}>
-              {fmtChip(currentThrow[0])}
-            </span>
-            <span style={chipStyleBig(currentThrow[1])}>
-              {fmtChip(currentThrow[1])}
-            </span>
-            <span style={chipStyleBig(currentThrow[2])}>
-              {fmtChip(currentThrow[2])}
+              KILLER
             </span>
           </div>
 
-          <div style={{ marginTop: 10 }}>
-            <Keypad
-              currentThrow={currentThrow}
-              multiplier={multiplier}
-              onSimple={() => {
-                setMultiplier(1);
-                sfx.click();
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setShowLog(true)}
+              style={{
+                height: 30,
+                padding: "0 10px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,.14)",
+                background: "rgba(255,255,255,.06)",
+                color: "#fff",
+                fontWeight: 950,
+                cursor: "pointer",
               }}
-              onDouble={() => {
-                setMultiplier(2);
-                sfx.click();
-              }}
-              onTriple={() => {
-                setMultiplier(3);
-                sfx.click();
-              }}
-              onBackspace={() => {}}
-              onCancel={undo}
-              onNumber={(n: number) => applyThrow({ target: n, mult: multiplier })}
-              onBull={() => {
-                const m: Mult = multiplier === 2 ? 2 : 1;
-                applyThrow({ target: 25, mult: m });
-              }}
-              onValidate={handleValidate}
-              hidePreview={true}
+              title="Log"
+            >
+              Log
+            </button>
+
+            <InfoDot
+              onClick={() => setShowRules(true)}
+              size={30}
+              color="#FFFFFF"
             />
           </div>
         </div>
-      )}
+
+        {/* ✅ Carousel */}
+        <TargetsCarousel
+          players={players}
+          activeId={current?.id || null}
+          theme={theme}
+        />
+      </div>
+
+      {/* ✅ ACTIVE PLAYER (FIXED) */}
+      <div style={{ marginTop: 8, ...card, padding: 12 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "92px 1fr 112px",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          <div style={{ display: "grid", justifyItems: "center", gap: 8 }}>
+            <AvatarMedallion
+              size={84}
+              src={current?.avatarDataUrl}
+              name={current?.name}
+            />
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 1000,
+                color: gold,
+                textTransform: "uppercase",
+                textAlign: "center",
+                width: 92,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+              title={current?.name}
+            >
+              {current?.name ?? "—"}
+            </div>
+          </div>
+
+          <div
+            style={{
+              borderRadius: 16,
+              border: "1px solid rgba(255,255,255,.08)",
+              background: "rgba(0,0,0,.28)",
+              padding: 10,
+              display: "grid",
+              gap: 8,
+            }}
+          >
+            <StatRow label="Darts" value={dartsLeft} />
+            <StatRow label="Lancers" value={current?.totalThrows ?? 0} />
+            <StatRow label="Dégâts" value={current?.livesTaken ?? 0} />
+            <StatRow label="Kills" value={current?.kills ?? 0} />
+          </div>
+
+          <div style={{ display: "grid", justifyItems: "end", gap: 8 }}>
+            {/* ✅ numéro GROS sans # */}
+            <div
+              style={{
+                width: 108,
+                textAlign: "center",
+                fontWeight: 1000,
+                fontSize: 26,
+                color: gold,
+                letterSpacing: 0.8,
+                lineHeight: 1,
+                textShadow: "0 0 14px rgba(255,198,58,.22)",
+              }}
+            >
+              {current?.killerPhase === "SELECT"
+                ? "?"
+                : current?.number ?? "?"}
+              {current?.killerPhase === "ACTIVE" && (
+                <KillerIcon size={46} variant="active" />
+              )}
+              {current?.eliminated && <DeadIcon size={46} variant="active" />}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "56px 56px",
+                gap: 8,
+                width: 112,
+                justifyContent: "end",
+              }}
+            >
+              <HeartKpi value={current?.lives ?? 0} />
+              <SurvivorKpi value={aliveCount} />
+            </div>
+          </div>
+        </div>
+
+        {(waitingValidate || isBotTurn) && !finished && !w && (
+          <div
+            style={{
+              marginTop: 10,
+              display: "flex",
+              justifyContent: "center",
+            }}
+          >
+            <div
+              style={{
+                borderRadius: 999,
+                padding: "8px 12px",
+                background: "rgba(0,0,0,.35)",
+                border: "1px solid rgba(255,198,58,.18)",
+                boxShadow: "0 12px 35px rgba(0,0,0,.35)",
+                fontSize: 12,
+                fontWeight: 900,
+                color: "#ffe7b0",
+                textAlign: "center",
+              }}
+            >
+              {isBotTurn
+                ? "🤖 Le bot joue…"
+                : "Appuie sur VALIDER pour passer au joueur suivant"}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
-  );
+
+   {/* =========================
+    ✅ ONLY SCROLLABLE AREA: LISTE JOUEURS
+   ========================= */}
+<div
+  style={{
+    flex: "1 1 auto",
+    minHeight: 0,
+    overflowY: "auto",
+    overflowX: "hidden",
+    WebkitOverflowScrolling: "touch",
+    paddingBottom: 6,
+    marginTop: 8,
+  }}
+>
+  <div style={{ display: "grid", gap: 8 }}>
+    {players.map((p, idx) => {
+      const isMe = idx === turnIndex;
+      const last = (p.lastVisit || []).slice(0, 3);
+      const lastDarts = toKeypadThrow(last as any);
+
+      const neonHalo = isMe
+        ? "0 0 0 1px rgba(255,198,58,.25), 0 0 16px rgba(255,198,58,.18), 0 0 40px rgba(255,198,58,.10)"
+        : "none";
+
+      return (
+        <div
+          key={p.id}
+          style={{
+            ...card,
+            padding: "8px 10px",
+            opacity: p.eliminated ? 0.92 : 1,
+            border: "1px solid rgba(255,255,255,.08)",
+            boxShadow: neonHalo,
+            background: p.eliminated
+              ? "linear-gradient(180deg, rgba(70,10,10,.90), rgba(16,8,10,.98))"
+              : "linear-gradient(180deg, rgba(22,22,23,.78), rgba(12,12,14,.95))",
+            display: "grid",
+            gridTemplateColumns: "auto 1fr auto",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <AvatarMedallion size={40} src={p.avatarDataUrl} name={p.name} />
+
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                minWidth: 0,
+              }}
+            >
+              <div style={{ fontWeight: 1000, minWidth: 0 }}>
+                <span
+                  style={{
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  <span
+                    style={{
+                      color: p.eliminated ? "rgba(255,140,140,.95)" : "#fff",
+                      fontSize: 13,
+                      fontWeight: 1000,
+                    }}
+                  >
+                    {p.name}
+                  </span>{" "}
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 1000,
+                      color: p.eliminated ? "rgba(255,140,140,.85)" : gold,
+                      opacity: 0.95,
+                    }}
+                  >
+                    {p.killerPhase === "SELECT" ? "?" : p.number || "?"}
+                  </span>
+                </span>
+
+                {p.killerPhase === "ACTIVE" && !p.eliminated && (
+                  <KillerIcon size={18} variant="list" />
+                )}
+                {p.eliminated && <DeadIcon size={18} variant="list" />}
+
+                {p.isBot && (
+                  <span
+                    style={{
+                      marginLeft: 6,
+                      fontSize: 11,
+                      opacity: 0.85,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    🤖{p.botLevel ? ` ${p.botLevel}` : ""}
+                  </span>
+                )}
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 4,
+                  flex: "0 0 auto",
+                  transform: "scale(.92)",
+                  transformOrigin: "right center",
+                }}
+              >
+                <span style={chipStyleMini(lastDarts[0])}>{fmtChip(lastDarts[0])}</span>
+                <span style={chipStyleMini(lastDarts[1])}>{fmtChip(lastDarts[1])}</span>
+                <span style={chipStyleMini(lastDarts[2])}>{fmtChip(lastDarts[2])}</span>
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              minWidth: 52,
+              textAlign: "center",
+              fontWeight: 1000,
+              borderRadius: 14,
+              padding: "8px 10px",
+              background: p.eliminated ? "rgba(255,80,80,.12)" : "rgba(0,0,0,.45)",
+              border: p.eliminated
+                ? "1px solid rgba(255,80,80,.35)"
+                : "1px solid rgba(255,255,255,.08)",
+              color: p.eliminated ? "rgba(255,140,140,.95)" : gold,
+              display: "grid",
+              placeItems: "center",
+            }}
+          >
+            {p.eliminated ? (
+              "DEAD"
+            ) : (
+              <div style={{ transform: "scale(1.18)" }}>
+                <MiniHeart value={p.lives ?? 0} active={false} />
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+</div>
+
+{/* ✅ BOTTOM sticky KEYPAD */}
+{!assignActive && !w && !finished && !isBotTurn && !showEnd && (
+  <div
+    style={{
+      flex: "0 0 auto",
+      position: "sticky",
+      bottom: 0,
+      zIndex: 60,
+      paddingBottom: "max(8px, env(safe-area-inset-bottom))",
+      background:
+        "linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.25) 30%, rgba(0,0,0,.45))",
+    }}
+  >
+    <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+      <span style={chipStyleBig(currentThrow[0])}>
+        {fmtChip(currentThrow[0])}
+      </span>
+      <span style={chipStyleBig(currentThrow[1])}>
+        {fmtChip(currentThrow[1])}
+      </span>
+      <span style={chipStyleBig(currentThrow[2])}>
+        {fmtChip(currentThrow[2])}
+      </span>
+    </div>
+
+    <div style={{ marginTop: 10 }} className="dc-killer-keypad">
+      <Keypad
+        currentThrow={currentThrow}
+        multiplier={multiplier}
+        onSimple={() => setMultiplier(1)}
+        onDouble={() => setMultiplier(2)}
+        onTriple={() => setMultiplier(3)}
+        onBackspace={() => {}}
+        onCancel={undo}
+        onNumber={(n: number) => applyThrow({ target: n, mult: multiplier })}
+        onBull={() => {
+          const m: Mult = multiplier === 2 ? 2 : 1;
+          applyThrow({ target: 25, mult: m });
+        }}
+        onValidate={handleValidate}
+        hidePreview={true}
+        hideTotal={true}
+        centerSlot={
+          isCurrentKillerActive ? (
+            <div
+              style={{
+                width: 110,
+                height: 44,
+                borderRadius: 22,
+                background: "rgba(10,10,12,.98)",
+                border: "1px solid rgba(255,255,255,.14)",
+                boxShadow: "0 14px 30px rgba(0,0,0,.65)",
+                display: "grid",
+                placeItems: "center",
+                pointerEvents: "none",
+              }}
+            >
+              <div
+                style={{
+                  opacity: 0.98,
+                  filter: "drop-shadow(0 14px 18px rgba(255,198,58,.26))",
+                }}
+              >
+                <KillerIcon size={40} variant="active" />
+              </div>
+            </div>
+          ) : null
+        }
+      />
+    </div>
+  </div>
+)}
+  </div>
+);
 }

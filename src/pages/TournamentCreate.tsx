@@ -2,14 +2,20 @@
 // ============================================
 // src/pages/TournamentCreate.tsx
 // Tournois (LOCAL) — Create (UI refacto v1)
+//
 // ✅ Objectif: CLARTÉ façon X01Config (même logique / même rendu neon)
 // ✅ Étape 1: Choix du MODE via menu flottant (sheet)
 // ✅ Étape 2: Paramètres MATCH (dépend du mode) + Format tournoi
 // ✅ Étape 3: Sélection des JOUEURS (min 2) + avatars/initiales (CAROUSEL)
-// ✅ Local uniquement: créer (pas de "rejoindre")
-// ✅ FIX: plus de dynamic import vers des modules inexistants (Vite 500 écran noir)
-// ✅ FIX: erreur babel "Identifier directly after number" (rgba(255,195,26,.08) -> 0.08)
-// ✅ FIX CRITIQUE: génère + persiste les matchs/poules via lib/tournaments/engine (sinon 0 match)
+//
+// ✅ NEW (PATCH GLOBAL):
+// - PAGE 100% "THEME" (doré) partout
+// - Joueurs : HALO léger quand sélectionné (pas de cercle jaune/noir),
+//   + STARRING visible AU-DESSUS basé sur la moyenne globale avg3D
+// - BOTS IA : avatars PRO importés (comme X01Config) + medaillons OK
+// - Format tournoi : 1 OPTION PAR LIGNE (plus de 2 options sur la même ligne)
+// - Boutons "i" : À L’EXTÉRIEUR, alignés, et ouvrent un MODAL centré (plus de popover)
+// - Auto-fill BOTS IA : garde la logique, supprime toute notion UI de "cap bots" (inutile)
 // ============================================
 
 import React from "react";
@@ -17,8 +23,35 @@ import type { Store } from "../lib/types";
 
 // ✅ ENGINE + STORE (comme Tournaments.tsx)
 import type { Tournament } from "../lib/tournaments/types";
-import { createTournamentDraft, buildInitialMatches } from "../lib/tournaments/engine";
-import { upsertTournamentLocal, upsertMatchesForTournamentLocal } from "../lib/tournaments/storeLocal";
+import {
+  createTournamentDraft,
+  buildInitialMatches,
+} from "../lib/tournaments/engine";
+import {
+  upsertTournamentLocal,
+  upsertMatchesForTournamentLocal,
+} from "../lib/tournaments/storeLocal";
+
+// ✅ Avatar + StarRing (comme X01Config)
+import ProfileAvatar from "../components/ProfileAvatar";
+import ProfileStarRing from "../components/ProfileStarRing";
+
+// ✅ AVATARS BOTS PRO (assets existants)
+import avatarBullyBoy from "../assets/avatars/bots-pro/bully-boy-pro.png";
+import avatarCoolHand from "../assets/avatars/bots-pro/cool-hand.png";
+import avatarFlyingScotsman from "../assets/avatars/bots-pro/flying-scotsman.png";
+import avatarGreenMachine from "../assets/avatars/bots-pro/green-machine.png";
+import avatarHollywood from "../assets/avatars/bots-pro/hollywood.png";
+import avatarIceMan from "../assets/avatars/bots-pro/ice-man.png";
+import avatarIronMan from "../assets/avatars/bots-pro/iron-man.png";
+import avatarSnakeKing from "../assets/avatars/bots-pro/snake-king.png";
+import avatarTheAsp from "../assets/avatars/bots-pro/the-asp.png";
+import avatarTheFerret from "../assets/avatars/bots-pro/the-ferret.png";
+import avatarThePower from "../assets/avatars/bots-pro/the-power.png";
+import avatarWonderKid from "../assets/avatars/bots-pro/wonder-kid.png";
+
+// ⚠️ Si tu as aussi "the-nuke.png" dans le dossier, décommente :
+// import avatarTheNuke from "../assets/avatars/bots-pro/the-nuke.png";
 
 type Props = {
   store: Store;
@@ -36,19 +69,138 @@ const MODE_LABEL: Record<Mode, string> = {
   shanghai: "Shanghai",
 };
 
+// ✅ Thème unique (doré)
+const THEME = "#f7c85c";
+
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
 /* -----------------------------
-   UI atoms (neon-ish)
+   Optional stats bridge (safe)
+------------------------------ */
+
+let getBasicProfileStatsAsync: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  getBasicProfileStatsAsync =
+    require("../lib/statsBridge")?.getBasicProfileStatsAsync;
+} catch {}
+
+/* -----------------------------
+   Rating -> stars + bots
+------------------------------ */
+
+function starsFromAvg3D(avg: number) {
+  const a = Number.isFinite(avg) ? avg : 0;
+  if (a >= 75) return 5;
+  if (a >= 65) return 4;
+  if (a >= 55) return 3;
+  if (a >= 45) return 2;
+  if (a >= 30) return 1;
+  return 0;
+}
+
+// ✅ robust avg resolver (store + raw + statsBridge)
+function resolveAvg3D(obj: any): number {
+  const candidates = [
+    obj?.avg3D,
+    obj?.avg3,
+    obj?.stats?.avg3D,
+    obj?.stats?.avg3,
+    obj?.statsLite?.avg3D,
+    obj?.statsLite?.avg3,
+    obj?.quickStats?.avg3D,
+    obj?.quickStats?.avg3,
+    obj?.globalStats?.avg3D,
+    obj?.globalStats?.avg3,
+  ];
+
+  for (const v of candidates) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+}
+
+async function safeAvg3DForProfile(profileRaw: any, store?: any): Promise<number> {
+  // 1) store caches éventuels
+  try {
+    const pid = String(profileRaw?.id || "");
+    const fromStore = [
+      store?.statsByProfile?.[pid]?.avg3D,
+      store?.quickStatsByProfile?.[pid]?.avg3D,
+      store?.profilesStats?.[pid]?.avg3D,
+      store?.statsByProfile?.[pid]?.avg3,
+      store?.quickStatsByProfile?.[pid]?.avg3,
+      store?.profilesStats?.[pid]?.avg3,
+    ];
+    for (const v of fromStore) {
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  } catch {}
+
+  // 2) raw profile
+  const direct = resolveAvg3D(profileRaw);
+  if (direct > 0) return direct;
+
+  // 3) statsBridge fallback
+  if (typeof getBasicProfileStatsAsync === "function") {
+    try {
+      const st = await getBasicProfileStatsAsync(profileRaw?.id);
+      const v = resolveAvg3D(st);
+      if (v > 0) return v;
+    } catch {}
+  }
+
+  return 0;
+}
+
+// ✅ BOTS PRO + fallback bots (pour auto-fill)
+const BOT_POOL = [
+  {
+    id: "bot_pro_mvg",
+    name: "Green Machine",
+    rating: 78,
+    avatarDataUrl: avatarGreenMachine,
+  },
+  {
+    id: "bot_pro_wright",
+    name: "Snake King",
+    rating: 72,
+    avatarDataUrl: avatarSnakeKing,
+  },
+  {
+    id: "bot_pro_littler",
+    name: "Wonder Kid",
+    rating: 68,
+    avatarDataUrl: avatarWonderKid,
+  },
+
+  { id: "bot_solid", name: "Solid Pro", rating: 60, avatarDataUrl: null },
+  { id: "bot_mid", name: "Mid Shooter", rating: 50, avatarDataUrl: null },
+  { id: "bot_rook", name: "Rookie", rating: 35, avatarDataUrl: null },
+];
+
+function pickBotsToFill(need: number, avgTarget: number) {
+  const sorted = [...BOT_POOL].sort(
+    (a, b) => Math.abs(a.rating - avgTarget) - Math.abs(b.rating - avgTarget)
+  );
+  const out: any[] = [];
+  for (let i = 0; i < need; i++) out.push(sorted[i % sorted.length]);
+  return out;
+}
+
+/* -----------------------------
+   UI atoms (THEME neon-ish)
 ------------------------------ */
 
 function Section({
   title,
   subtitle,
   children,
-  accent = "#ffc63a",
+  accent = THEME,
 }: {
   title: string;
   subtitle?: string;
@@ -61,8 +213,7 @@ function Section({
         borderRadius: 18,
         padding: 14,
         marginTop: 12,
-        background:
-          "radial-gradient(120% 160% at 0% 0%, rgba(255,195,26,0.08), transparent 55%), linear-gradient(180deg, rgba(20,20,26,0.96), rgba(10,10,14,0.98))",
+        background: `radial-gradient(120% 160% at 0% 0%, ${accent}22, transparent 55%), linear-gradient(180deg, rgba(20,20,26,0.96), rgba(10,10,14,0.98))`,
         border: "1px solid rgba(255,255,255,0.10)",
         boxShadow: "0 14px 30px rgba(0,0,0,0.55)",
       }}
@@ -94,32 +245,41 @@ function NeonPill({
   active,
   label,
   onClick,
-  accent = "#ffcf57",
   small,
+  disabled,
+  primary = THEME,
 }: {
   active: boolean;
   label: string;
   onClick: () => void;
-  accent?: string;
   small?: boolean;
+  disabled?: boolean;
+  primary?: string;
 }) {
+  const isDisabled = !!disabled;
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={isDisabled}
       style={{
         borderRadius: 999,
         padding: small ? "6px 10px" : "7px 12px",
-        border: active ? `1px solid ${accent}AA` : "1px solid rgba(255,255,255,0.12)",
+        border: active
+          ? `1px solid ${primary}CC`
+          : "1px solid rgba(255,255,255,0.12)",
         background: active
-          ? `linear-gradient(180deg, ${accent}, ${accent}CC)`
+          ? `linear-gradient(180deg, ${primary}22, rgba(0,0,0,0.20))`
           : "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
-        color: active ? "#1b1508" : "rgba(255,255,255,0.92)",
+        color: "rgba(255,255,255,0.95)",
         fontWeight: active ? 950 : 850,
         fontSize: small ? 11.5 : 12.2,
-        cursor: "pointer",
-        boxShadow: active ? `0 10px 22px ${accent}25` : "none",
+        cursor: isDisabled ? "not-allowed" : "pointer",
+        boxShadow: active
+          ? `0 0 18px ${primary}44, 0 10px 22px rgba(0,0,0,0.35)`
+          : "none",
         whiteSpace: "nowrap",
+        opacity: isDisabled ? 0.55 : 1,
       }}
     >
       {label}
@@ -131,10 +291,12 @@ function NeonPrimary({
   label,
   onClick,
   disabled,
+  primary = THEME,
 }: {
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  primary?: string;
 }) {
   return (
     <button
@@ -154,7 +316,7 @@ function NeonPrimary({
         color: "#1b1508",
         background: disabled
           ? "linear-gradient(180deg,#555,#333)"
-          : "linear-gradient(90deg,#ff4fd8,#ffc63a)",
+          : `linear-gradient(90deg, ${primary}, #ffe9a3)`,
         boxShadow: disabled ? "none" : "0 14px 34px rgba(0,0,0,0.55)",
         opacity: disabled ? 0.55 : 1,
       }}
@@ -164,41 +326,7 @@ function NeonPrimary({
   );
 }
 
-function Row({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div style={{ display: "grid", gap: 6, marginTop: 10 }}>
-      <div style={{ fontSize: 11.5, opacity: 0.82 }}>{label}</div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{children}</div>
-    </div>
-  );
-}
-
-/* -----------------------------
-   Players helpers
------------------------------- */
-
-function getInitials(name?: string) {
-  const s = String(name || "").trim();
-  if (!s) return "?";
-  const parts = s.split(/\s+/).filter(Boolean);
-  const a = (parts[0]?.[0] || "").toUpperCase();
-  const b = (parts[1]?.[0] || parts[0]?.[1] || "").toUpperCase();
-  return (a + b) || "?";
-}
-
-function NeonGhost({
-  label,
-  onClick,
-}: {
-  label: string;
-  onClick: () => void;
-}) {
+function NeonGhost({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -220,30 +348,276 @@ function NeonGhost({
   );
 }
 
+/* -----------------------------
+   Info (i) modal centered
+------------------------------ */
+
+function InfoIconButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onClick();
+      }}
+      style={{
+        width: 26,
+        height: 26,
+        borderRadius: 999,
+        border: "1px solid rgba(255,255,255,0.16)",
+        background: "rgba(255,255,255,0.06)",
+        color: "#fff",
+        fontWeight: 950,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        flex: "0 0 auto",
+        boxShadow: "0 0 12px rgba(0,0,0,0.55)",
+      }}
+      aria-label="Info"
+      title="Info"
+    >
+      i
+    </button>
+  );
+}
+
+function CenterInfoModal({
+  open,
+  title,
+  children,
+  onClose,
+  primary,
+}: {
+  open: boolean;
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+  primary: string;
+}) {
+  if (!open) return null;
+
+  return (
+    <div
+      onMouseDown={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 99999,
+        background: "rgba(0,0,0,0.62)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 12,
+      }}
+    >
+      <div
+        onMouseDown={(e) => e.stopPropagation()}
+        style={{
+          width: "min(520px, 100%)",
+          borderRadius: 18,
+          border: "1px solid rgba(255,255,255,0.12)",
+          background:
+            "linear-gradient(180deg, rgba(12,14,28,0.96), rgba(6,7,14,0.98))",
+          boxShadow: "0 18px 60px rgba(0,0,0,0.70)",
+          padding: 14,
+          color: "#f2f2ff",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            marginBottom: 10,
+          }}
+        >
+          <div style={{ fontWeight: 950, color: primary, fontSize: 14 }}>
+            {title}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              borderRadius: 10,
+              padding: "6px 10px",
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.06)",
+              color: "#fff",
+              fontWeight: 950,
+              cursor: "pointer",
+            }}
+          >
+            Fermer
+          </button>
+        </div>
+        <div style={{ fontSize: 12, color: "#d7d9f0", lineHeight: 1.45 }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* -----------------------------
+   Players helpers + MEDALLION (no circles)
+------------------------------ */
+
+function getInitials(name?: string) {
+  const s = String(name || "").trim();
+  if (!s) return "?";
+  const parts = s.split(/\s+/).filter(Boolean);
+  const a = (parts[0]?.[0] || "").toUpperCase();
+  const b = (parts[1]?.[0] || parts[0]?.[1] || "").toUpperCase();
+  return (a + b) || "?";
+}
+
+function PlayerMedallion({
+  name,
+  dataUrl,
+  avg3D,
+  active,
+  isBot,
+  primary = THEME,
+}: {
+  name: string;
+  dataUrl?: string | null;
+  avg3D: number;
+  active: boolean;
+  isBot?: boolean;
+  primary?: string;
+}) {
+  const SCALE = 0.82;
+  const AVATAR = Math.round(78 * SCALE);
+  const STAR = Math.round(18 * SCALE);
+  const WRAP = AVATAR + STAR;
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: WRAP,
+        height: WRAP,
+        display: "grid",
+        placeItems: "center",
+        overflow: "visible",
+        background: "transparent",
+      }}
+    >
+      {/* ⭐ STARRING */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          zIndex: 2,
+          opacity: 0.95,
+        }}
+      >
+        <ProfileStarRing
+          anchorSize={AVATAR}
+          starSize={STAR}
+          gapPx={-2}
+          stepDeg={10}
+          avg3d={Number(avg3D) || 0}
+          color={primary}
+        />
+      </div>
+
+      {/* ✅ HALO : un peu plus visible, mais pas large */}
+      {active ? (
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            width: AVATAR + 7,
+            height: AVATAR + 7,
+            borderRadius: "50%",
+            boxShadow: `0 0 14px ${primary}66, 0 0 26px ${primary}18`,
+            zIndex: 0,
+            background: "transparent",
+            pointerEvents: "none",
+          }}
+        />
+      ) : null}
+
+      {/* AVATAR — pas de dark ring */}
+      <div
+        style={{
+          width: AVATAR,
+          height: AVATAR,
+          borderRadius: "50%",
+          overflow: "hidden",
+          zIndex: 1,
+          background: "transparent",
+          boxShadow: "none",
+          filter: active ? "none" : "brightness(0.88) saturate(0.92)",
+          opacity: active ? 1 : 0.85,
+          transition: "filter .15s ease, opacity .15s ease",
+        }}
+      >
+        <ProfileAvatar
+          size={AVATAR}
+          dataUrl={dataUrl ?? undefined}
+          label={getInitials(name)}
+          showStars={false}
+          noFrame
+        />
+      </div>
+
+      {/* BOT badge */}
+      {isBot ? (
+        <div
+          style={{
+            position: "absolute",
+            bottom: -4,
+            left: "50%",
+            transform: "translateX(-50%)",
+            padding: "2px 8px",
+            borderRadius: 999,
+            fontSize: 9,
+            fontWeight: 950,
+            background: `linear-gradient(90deg, ${primary}, #ffe9a3)`,
+            color: "#160f06",
+            boxShadow: `0 0 10px ${primary}33`,
+            zIndex: 3,
+            whiteSpace: "nowrap",
+          }}
+        >
+          BOT
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function PlayerCarouselTile({
   active,
   name,
   avatarUrl,
+  avg3D,
   onClick,
+  isBot,
+  primary = THEME,
 }: {
   active: boolean;
   name: string;
   avatarUrl?: string | null;
+  avg3D: number;
   onClick: () => void;
+  isBot?: boolean;
+  primary?: string;
 }) {
-  const ring = active ? "#ffcf57" : "rgba(255,255,255,0.16)";
-  const glow = active ? "0 0 18px rgba(255,207,87,0.28)" : "none";
-
-  // ✅ Grey-out non selected
-  const greyImgFilter = active ? "none" : "grayscale(1) saturate(0.25) contrast(0.95)";
-  const greyOpacity = active ? 1 : 0.55;
-
   return (
     <button
       type="button"
       onClick={onClick}
       style={{
-        width: 86,
+        width: 104,
         flex: "0 0 auto",
         border: "none",
         background: "transparent",
@@ -252,68 +626,26 @@ function PlayerCarouselTile({
         padding: 0,
         display: "grid",
         justifyItems: "center",
-        gap: 6,
+        gap: 8,
         scrollSnapAlign: "start",
-        opacity: active ? 1 : 0.85,
+        opacity: active ? 1 : 0.86,
       }}
       title={name}
     >
-      <div
-        style={{
-          width: 62,
-          height: 62,
-          borderRadius: 999,
-          padding: 3,
-          background: `linear-gradient(180deg, ${ring}, rgba(255,255,255,0.10))`,
-          boxShadow: glow,
-        }}
-      >
-        <div
-          style={{
-            width: "100%",
-            height: "100%",
-            borderRadius: 999,
-            overflow: "hidden",
-            background: "rgba(0,0,0,0.35)",
-            border: "1px solid rgba(0,0,0,0.35)",
-            display: "grid",
-            placeItems: "center",
-          }}
-        >
-          {avatarUrl ? (
-            <img
-              src={avatarUrl}
-              alt=""
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                filter: greyImgFilter,
-                opacity: greyOpacity,
-                transition: "filter .15s ease, opacity .15s ease",
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                fontSize: 13,
-                fontWeight: 950,
-                opacity: greyOpacity,
-                filter: active ? "none" : "grayscale(1)",
-                transition: "filter .15s ease, opacity .15s ease",
-              }}
-            >
-              {getInitials(name)}
-            </div>
-          )}
-        </div>
-      </div>
+      <PlayerMedallion
+        name={name}
+        dataUrl={avatarUrl}
+        avg3D={avg3D}
+        active={active}
+        isBot={!!isBot}
+        primary={primary}
+      />
 
       <div
         style={{
-          width: 86,
+          width: 104,
           fontSize: 11.5,
-          fontWeight: 900,
+          fontWeight: 950,
           opacity: active ? 1 : 0.55,
           textAlign: "center",
           overflow: "hidden",
@@ -328,16 +660,22 @@ function PlayerCarouselTile({
   );
 }
 
+/* -----------------------------
+   Sheet (mode picker)
+------------------------------ */
+
 function Sheet({
   open,
   title,
   onClose,
   children,
+  primary = THEME,
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  primary?: string;
 }) {
   if (!open) return null;
 
@@ -359,7 +697,8 @@ function Sheet({
           width: "min(520px, 96vw)",
           borderRadius: 22,
           border: "1px solid rgba(255,255,255,0.12)",
-          background: "linear-gradient(180deg, rgba(24,24,30,0.98), rgba(10,10,14,0.995))",
+          background:
+            "linear-gradient(180deg, rgba(24,24,30,0.98), rgba(10,10,14,0.995))",
           boxShadow: "0 22px 80px rgba(0,0,0,0.7)",
           overflow: "hidden",
         }}
@@ -374,7 +713,9 @@ function Sheet({
             borderBottom: "1px solid rgba(255,255,255,0.08)",
           }}
         >
-          <div style={{ fontWeight: 950, fontSize: 14, color: "#ffcf57" }}>{title}</div>
+          <div style={{ fontWeight: 950, fontSize: 14, color: primary }}>
+            {title}
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -400,63 +741,209 @@ function Sheet({
 }
 
 /* -----------------------------
+   UI rows (1 line option + i outside)
+------------------------------ */
+
+function LineOption({
+  label,
+  active,
+  onClick,
+  onInfo,
+  primary = THEME,
+  disabled,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  onInfo: () => void;
+  primary?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        gap: 10,
+        alignItems: "center",
+      }}
+    >
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={!!disabled}
+        style={{
+          height: 40,
+          borderRadius: 14,
+          border: active
+            ? `1px solid ${primary}CC`
+            : "1px solid rgba(255,255,255,0.10)",
+          background: active
+            ? `linear-gradient(180deg, ${primary}22, rgba(0,0,0,0.20))`
+            : "rgba(9,11,20,0.92)",
+          color: "rgba(255,255,255,0.95)",
+          fontWeight: 950,
+          textAlign: "left",
+          padding: "0 12px",
+          cursor: disabled ? "not-allowed" : "pointer",
+          boxShadow: active ? `0 0 18px ${primary}33` : "none",
+          opacity: disabled ? 0.55 : 1,
+        }}
+      >
+        {label}
+      </button>
+
+      <InfoIconButton onClick={onInfo} />
+    </div>
+  );
+}
+
+function RowTitle({ label }: { label: string }) {
+  return (
+    <div style={{ fontSize: 11.5, opacity: 0.82, marginBottom: 8 }}>
+      {label}
+    </div>
+  );
+}
+
+/* -----------------------------
    Page
 ------------------------------ */
 
 export default function TournamentCreate({ store, go }: Props) {
+  const primary = THEME;
+
   const [name, setName] = React.useState("Mon tournoi");
   const [mode, setMode] = React.useState<Mode | null>(null);
   const [sheetMode, setSheetMode] = React.useState(false);
+
+  // ✅ MODAL INFO global (centré)
+  const [infoOpen, setInfoOpen] = React.useState(false);
+  const [infoKey, setInfoKey] = React.useState<string | null>(null);
+  const openInfo = (key: string) => {
+    setInfoKey(key);
+    setInfoOpen(true);
+  };
 
   // ---- Players (LOCAL)
   const profiles = React.useMemo(() => {
     const arr = (store as any)?.profiles || [];
     return arr
-      .filter((p: any) => p?.id)
+      .filter((p: any) => p?.id && !(p as any)?.isBot)
       .map((p: any) => ({
         id: String(p.id),
         name: p?.name || p?.displayName || p?.pseudo || "Joueur",
         avatar:
-          p?.avatarDataUrl ||
           p?.avatarUrl ||
+          p?.avatarDataUrl ||
           p?.avatar ||
           p?.photo ||
           null,
+        raw: p,
       }))
       .filter((p: any) => !!p.id);
   }, [store]);
+
+  // ✅ BOTS (catalog) avec avatars PRO
+  const botsCatalog = React.useMemo(() => {
+    return BOT_POOL.map((b) => ({
+      id: String(b.id),
+      name: b.name,
+      avatar: b.avatarDataUrl ?? null,
+      avg3D: b.rating,
+      isBot: true,
+    }));
+  }, []);
+
+  // avg3D cache
+  const [avgMap, setAvgMap] = React.useState<Record<string, number>>({});
+  const [loadingAvg, setLoadingAvg] = React.useState(false);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    const run = async () => {
+      setLoadingAvg(true);
+      try {
+        const out: Record<string, number> = {};
+        for (const p of profiles) {
+          const avg = await safeAvg3DForProfile(p.raw, store as any);
+          out[p.id] = Number.isFinite(avg) ? avg : 0;
+        }
+        if (!mounted) return;
+        setAvgMap(out);
+      } finally {
+        if (mounted) setLoadingAvg(false);
+      }
+    };
+
+    if (profiles?.length) run();
+    else setAvgMap({});
+
+    return () => {
+      mounted = false;
+    };
+  }, [profiles, store]);
 
   const [playerIds, setPlayerIds] = React.useState<string[]>(() => {
     const active = (store as any)?.activeProfiles || [];
     const fromActive = Array.isArray(active)
       ? active.map((x: any) => String(x)).filter(Boolean)
       : [];
-    const base = fromActive.length ? fromActive : profiles.slice(0, 2).map((p: any) => String(p.id));
+    const base = fromActive.length
+      ? fromActive
+      : profiles.slice(0, 2).map((p: any) => String(p.id));
     return Array.from(new Set(base)).filter(Boolean);
   });
 
-  // si profiles arrivent après (store hydrate async) -> assure min 0/2 par défaut
   React.useEffect(() => {
     setPlayerIds((prev) => {
-      const stillValid = prev.filter((id) => profiles.some((p: any) => p.id === id));
+      const stillValid = prev.filter((id) =>
+        profiles.some((p: any) => p.id === id)
+      );
       if (stillValid.length >= 2) return stillValid;
-      if (profiles.length >= 2) return Array.from(new Set([...stillValid, profiles[0].id, profiles[1].id]));
-      if (profiles.length === 1) return Array.from(new Set([...stillValid, profiles[0].id]));
+      if (profiles.length >= 2)
+        return Array.from(
+          new Set([...stillValid, profiles[0].id, profiles[1].id])
+        );
+      if (profiles.length === 1)
+        return Array.from(new Set([...stillValid, profiles[0].id]));
       return stillValid;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profiles.length]);
 
   const togglePlayer = (id: string) => {
-    setPlayerIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setPlayerIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   };
 
-  const minPlayersOk = playerIds.length >= 2;
+  // ---- bots sélectionnés (séparés)
+  const [botIds, setBotIds] = React.useState<string[]>([]);
+  const toggleBot = (id: string) => {
+    setBotIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const totalSelectedIds = React.useMemo(
+    () => Array.from(new Set([...playerIds, ...botIds])).filter(Boolean),
+    [playerIds, botIds]
+  );
+  const minPlayersOk = totalSelectedIds.length >= 2;
 
   // ---- Format tournoi
   const [format, setFormat] = React.useState<TourFormat>("single_ko");
   const [bestOf, setBestOf] = React.useState<BestOf>(3);
-  const [seedingRandom, setSeedingRandom] = React.useState(true);
+
+  // ✅ taille cible + auto-fill bots
+  const [targetSize, setTargetSize] = React.useState<4 | 8 | 16>(8);
+  const [autoFillBots, setAutoFillBots] = React.useState(true);
+
+  // ✅ seedMode + repechage
+  const [seedMode, setSeedMode] = React.useState<"random" | "byLevel">("random");
+  const [repechageEnabled, setRepechageEnabled] = React.useState(false);
 
   // ---- Params match X01
   const defaultStart =
@@ -467,17 +954,50 @@ export default function TournamentCreate({ store, go }: Props) {
       ? (store.settings.defaultX01 as 301 | 501 | 701 | 901)
       : 501;
 
-  const [x01Start, setX01Start] = React.useState<301 | 501 | 701 | 901>(defaultStart);
-  const [x01In, setX01In] = React.useState<"simple" | "double" | "master">("simple");
+  const [x01Start, setX01Start] = React.useState<301 | 501 | 701 | 901>(
+    defaultStart
+  );
+  const [x01In, setX01In] = React.useState<"simple" | "double" | "master">(
+    "simple"
+  );
   const [x01Out, setX01Out] = React.useState<"simple" | "double" | "master">(
     store?.settings?.doubleOut ? "double" : "simple"
   );
 
   const canCreate = !!name.trim() && !!mode && minPlayersOk;
 
+  const TYPE_INFO: Record<TourFormat, string> = {
+    single_ko: "Tableau KO : une défaite = élimination. Rapide et clair.",
+    double_ko:
+      "Double élimination : il faut 2 défaites pour sortir. (Loser bracket à compléter selon engine.)",
+    round_robin:
+      "Championnat : tout le monde se rencontre, classement par victoires/points.",
+    groups_ko:
+      "Poules + KO : phase groupes (poules), puis tableau final KO (qualifiés).",
+  };
+
+  const OTHER_INFO = {
+    players:
+      "Sélectionne des profils humains et/ou des BOTS IA. Minimum 2 joueurs pour créer.",
+    botsSelect:
+      "Sélection BOTS : ajoute des bots en plus des profils humains, style X01Config.",
+    bestOf:
+      "Best-of = nombre de manches à gagner. BO3 = 2 manches gagnantes, BO5 = 3, etc.",
+    seedMode:
+      "Têtes de série : Aléatoire mélange au départ. Par niveau trie par avg3D (du meilleur au moins bon).",
+    repechage:
+      "Repêchage : ajoute une phase de consolation si possible (selon format / engine).",
+    targetSize:
+      "Taille cible : taille du tableau visée (4/8/16). Utile pour KO et Poules+KO.",
+    autofill:
+      "Auto-fill BOTS : complète automatiquement si tu n’as pas assez de joueurs (désactivé en Championnat).",
+  };
+
   // ✅ helper: construit les stages ENGINE depuis ton UI
   function buildStagesForEngine(fmt: TourFormat, nPlayers: number) {
-    // RR seul
+    const seeding = seedMode === "random" ? "random" : "ordered";
+    const meta = { repechageEnabled: !!repechageEnabled, seedMode };
+
     if (fmt === "round_robin") {
       return [
         {
@@ -485,90 +1005,188 @@ export default function TournamentCreate({ store, go }: Props) {
           type: "round_robin",
           name: "Championnat",
           groups: 1,
-          qualifiersPerGroup: Math.max(1, nPlayers), // pas utilisé en RR “pur”
-          seeding: seedingRandom ? "random" : "ordered",
+          qualifiersPerGroup: Math.max(1, nPlayers),
+          seeding,
+          meta,
         },
       ];
     }
 
-    // Poules + KO
     if (fmt === "groups_ko") {
       const GROUP_SIZE = 4;
       const groups = Math.max(1, Math.ceil(nPlayers / GROUP_SIZE));
-      const qualifiers = Math.min(2, GROUP_SIZE); // simple et efficace
-      return [
+      const qualifiers = Math.min(2, GROUP_SIZE);
+      const stages: any[] = [
         {
           id: "rr",
           type: "round_robin",
           name: "Poules",
           groups,
           qualifiersPerGroup: qualifiers,
-          seeding: seedingRandom ? "random" : "ordered",
+          seeding,
+          meta,
         },
         {
           id: "se",
           type: "single_elim",
           name: "Phase finale",
-          seeding: seedingRandom ? "random" : "ordered",
+          seeding,
+          meta,
         },
       ];
+
+      if (repechageEnabled) {
+        stages.splice(1, 0, {
+          id: "rep",
+          type: "single_elim",
+          name: "Repêchage",
+          seeding,
+          meta,
+        });
+      }
+      return stages;
     }
 
-    // KO simple (et pour l’instant KO double => on démarre en SE pour avoir des matchs)
-    return [
+    const stages: any[] = [
       {
         id: "se",
         type: "single_elim",
         name: fmt === "double_ko" ? "Élimination (phase 1)" : "Phase finale",
-        seeding: seedingRandom ? "random" : "ordered",
+        seeding,
+        meta,
       },
     ];
+
+    if (repechageEnabled) {
+      stages.unshift({
+        id: "rep",
+        type: "single_elim",
+        name: "Repêchage",
+        seeding,
+        meta,
+      });
+    }
+
+    return stages;
+  }
+
+  function computeAvgTarget(selected: any[]) {
+    if (!selected?.length) return 50;
+    const s = selected.reduce(
+      (acc, p) => acc + (Number(p?.avg3D || 0) || 0),
+      0
+    );
+    return s / selected.length;
   }
 
   async function createTournament() {
     if (!canCreate) return;
 
-    const selectedProfiles = profiles.filter((p: any) => playerIds.includes(String(p.id)));
+    const selectedProfiles = profiles.filter((p: any) =>
+      playerIds.includes(String(p.id))
+    );
 
-    // ✅ format attendu par l’engine
-    const players = selectedProfiles.map((p: any) => ({
-      id: String(p.id),
-      name: p.name || "Joueur",
-      avatarDataUrl: p.avatar || null,
-      source: "local",
-    }));
+    const basePlayers = selectedProfiles.map((p: any) => {
+      const avg = Number(avgMap?.[p.id] ?? 0) || 0;
+      return {
+        id: String(p.id),
+        name: p.name || "Joueur",
+        avatarDataUrl: p.avatar || null,
+        source: "local",
+        avg3D: avg,
+        stars: starsFromAvg3D(avg),
+      };
+    });
 
-    // ✅ rules engine (minimum viable)
+    const selectedBots = botsCatalog
+      .filter((b) => botIds.includes(b.id))
+      .map((b) => ({
+        id: `${b.id}_${Date.now()}`,
+        name: b.name,
+        avatarDataUrl: b.avatar ?? null,
+        source: "bot",
+        isBot: true,
+        avg3D: b.avg3D,
+        stars: starsFromAvg3D(b.avg3D),
+      }));
+
+    const merged = basePlayers.concat(selectedBots);
+
+    const seededPlayers =
+      seedMode === "byLevel"
+        ? merged
+            .slice()
+            .sort(
+              (a: any, b: any) =>
+                Number(b.avg3D || 0) - Number(a.avg3D || 0)
+            )
+        : merged;
+
+    let finalPlayers = seededPlayers.slice();
+
+    // ✅ auto-fill (si activé et format compatible)
+    const shouldFill = autoFillBots && format !== "round_robin";
+    if (shouldFill && finalPlayers.length < targetSize) {
+      const avgTarget = computeAvgTarget(finalPlayers);
+      const need = Math.max(0, targetSize - finalPlayers.length); // ✅ PAS DE CAP
+      const bots = pickBotsToFill(need, avgTarget).map((b: any, idx: number) => ({
+        id: `${b.id}_${idx}_${Date.now()}`,
+        name: b.name,
+        avatarDataUrl: b.avatarDataUrl ?? null,
+        source: "bot",
+        isBot: true,
+        avg3D: b.rating,
+        stars: starsFromAvg3D(b.rating),
+      }));
+      finalPlayers = finalPlayers.concat(bots);
+    }
+
     const rules =
       mode === "x01"
         ? {
             start: x01Start,
-            doubleOut: x01Out === "double", // (master out géré plus tard si tu veux)
+            doubleOut: x01Out === "double",
             inMode: x01In,
             outMode: x01Out,
             bestOf,
+            repechageEnabled: !!repechageEnabled,
+            seedMode,
+            targetSize,
+            autoFillBots: !!autoFillBots,
           }
-        : { bestOf };
+        : {
+            bestOf,
+            repechageEnabled: !!repechageEnabled,
+            seedMode,
+            targetSize,
+            autoFillBots: !!autoFillBots,
+          };
 
-    const stages = buildStagesForEngine(format, players.length);
+    const stages = buildStagesForEngine(format, finalPlayers.length);
 
-    // ✅ TOURNOI ENGINE
     const tour: Tournament = createTournamentDraft({
       name: name.trim(),
       source: "local",
       ownerProfileId: (store as any)?.activeProfileId ?? null,
-      players,
-      game: {
-        mode,
-        rules,
-      },
+      players: finalPlayers.map((p: any) => ({
+        id: String(p.id),
+        name: p.name || "Joueur",
+        avatarDataUrl: p.avatarDataUrl || null,
+        source: p.source || "local",
+        isBot: !!p.isBot,
+      })),
+      game: { mode, rules },
       stages,
+      meta: {
+        repechageEnabled: !!repechageEnabled,
+        seedMode,
+        targetSize,
+        autoFillBots: !!autoFillBots,
+      },
     }) as any;
 
-    // ✅ Génère les matchs initiaux
     const matches = buildInitialMatches(tour);
 
-    // ✅ Persiste tournoi + matchs (sinon TournamentView voit 0 match)
     try {
       upsertTournamentLocal(tour as any);
       upsertMatchesForTournamentLocal(tour.id, matches as any);
@@ -579,10 +1197,52 @@ export default function TournamentCreate({ store, go }: Props) {
     go("tournament_view", { id: tour.id });
   }
 
+  // ✅ Modal content centralisé
+  const infoContent = (() => {
+    const k = String(infoKey || "");
+    if (k === "players")
+      return { title: "Joueurs", body: <>{OTHER_INFO.players}</> };
+    if (k === "botsSelect")
+      return { title: "Bots IA", body: <>{OTHER_INFO.botsSelect}</> };
+
+    if (k === "type_single")
+      return { title: "Élimination simple", body: <>{TYPE_INFO.single_ko}</> };
+    if (k === "type_double")
+      return { title: "Élimination double", body: <>{TYPE_INFO.double_ko}</> };
+    if (k === "type_rr")
+      return { title: "Championnat (RR)", body: <>{TYPE_INFO.round_robin}</> };
+    if (k === "type_groups")
+      return { title: "Poules + KO", body: <>{TYPE_INFO.groups_ko}</> };
+
+    if (k === "bestof") return { title: "Best-of", body: <>{OTHER_INFO.bestOf}</> };
+    if (k === "seed") return { title: "Têtes de série", body: <>{OTHER_INFO.seedMode}</> };
+    if (k === "repechage") return { title: "Repêchage", body: <>{OTHER_INFO.repechage}</> };
+    if (k === "target") return { title: "Taille cible", body: <>{OTHER_INFO.targetSize}</> };
+    if (k === "autofill") return { title: "Auto-fill BOTS IA", body: <>{OTHER_INFO.autofill}</> };
+
+    return { title: "Info", body: <>—</> };
+  })();
+
   return (
-    <div className="container" style={{ padding: 16, paddingBottom: 96, color: "#f5f5f7" }}>
+    <div
+      className="container"
+      style={{
+        padding: 16,
+        paddingBottom: 96,
+        color: "#f5f5f7",
+        background: `radial-gradient(circle at top, rgba(247,200,92,0.12) 0, rgba(10,10,14,0) 40%), radial-gradient(circle at 40% 0%, rgba(40,40,56,0.65), rgba(5,5,8,1) 55%, rgba(0,0,0,1) 100%)`,
+        minHeight: "100vh",
+      }}
+    >
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+        }}
+      >
         <button
           type="button"
           onClick={() => go("tournaments")}
@@ -592,7 +1252,7 @@ export default function TournamentCreate({ store, go }: Props) {
             border: "1px solid rgba(255,255,255,0.14)",
             background: "rgba(255,255,255,0.05)",
             color: "rgba(255,255,255,0.92)",
-            fontWeight: 850,
+            fontWeight: 900,
             cursor: "pointer",
           }}
         >
@@ -600,20 +1260,22 @@ export default function TournamentCreate({ store, go }: Props) {
         </button>
 
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 16, fontWeight: 950, letterSpacing: 0.2 }}>Créer un tournoi</div>
-          <div style={{ fontSize: 11.5, opacity: 0.75 }}>Choisis un mode puis configure le format.</div>
+          <div style={{ fontSize: 16, fontWeight: 950, letterSpacing: 0.2 }}>
+            Créer un tournoi
+          </div>
+          <div style={{ fontSize: 11.5, opacity: 0.75 }}>
+            {loadingAvg ? "Calcul niveaux…" : "Choisis un mode puis configure le format."}
+          </div>
         </div>
       </div>
 
       {/* Infos */}
-      <Section
-        title="Infos du tournoi"
-        subtitle="Nom + choix du mode. Le mode détermine les paramètres de match disponibles."
-        accent="#ffcf57"
-      >
+      <Section title="Infos du tournoi" subtitle="Nom + choix du mode." accent={primary}>
         <div style={{ display: "grid", gap: 10 }}>
           <div>
-            <div style={{ fontSize: 11.5, opacity: 0.82, marginBottom: 6 }}>Nom</div>
+            <div style={{ fontSize: 11.5, opacity: 0.82, marginBottom: 6 }}>
+              Nom
+            </div>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -631,10 +1293,23 @@ export default function TournamentCreate({ store, go }: Props) {
             />
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+            }}
+          >
             <div style={{ display: "grid", gap: 3 }}>
               <div style={{ fontSize: 11.5, opacity: 0.82 }}>Mode</div>
-              <div style={{ fontSize: 13, fontWeight: 900, color: mode ? "#ffcf57" : "rgba(255,255,255,0.65)" }}>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 950,
+                  color: mode ? primary : "rgba(255,255,255,0.65)",
+                }}
+              >
                 {mode ? MODE_LABEL[mode] : "Aucun mode choisi"}
               </div>
             </div>
@@ -648,7 +1323,7 @@ export default function TournamentCreate({ store, go }: Props) {
                 border: "none",
                 fontWeight: 950,
                 cursor: "pointer",
-                background: "linear-gradient(180deg,#ffc63a,#ffaf00)",
+                background: `linear-gradient(90deg, ${primary}, #ffe9a3)`,
                 color: "#1b1508",
                 boxShadow: "0 10px 22px rgba(0,0,0,0.55)",
                 whiteSpace: "nowrap",
@@ -665,28 +1340,107 @@ export default function TournamentCreate({ store, go }: Props) {
                 active={mode === m}
                 label={MODE_LABEL[m]}
                 onClick={() => setMode(m)}
-                accent={m === "x01" ? "#ffcf57" : m === "cricket" ? "#4fb4ff" : m === "killer" ? "#ff4fd8" : "#7fe2a9"}
+                primary={primary}
               />
             ))}
-          </div>
-
-          <div style={{ fontSize: 11.2, opacity: 0.72, lineHeight: 1.35 }}>
-            💡 Conseil : commence par choisir le mode. Ensuite seulement, tu règles les paramètres match et le format.
           </div>
         </div>
       </Section>
 
-      {/* ✅ JOUEURS (CAROUSEL swipe) */}
-      <Section title="Joueurs" subtitle="Sélectionne au moins 2 joueurs pour le tournoi." accent="#ffcf57">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+      {/* ✅ JOUEURS */}
+      <Section title="Joueurs" subtitle="Sélectionne tes profils." accent={primary}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+          }}
+        >
           <div style={{ fontSize: 12, opacity: 0.82 }}>
-            <b style={{ color: "#ffcf57" }}>{playerIds.length}</b>{" "}
-            {playerIds.length > 1 ? "joueurs" : "joueur"} sélectionné(s)
+            <b style={{ color: primary }}>{totalSelectedIds.length}</b>{" "}
+            sélectionné(s)
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <NeonGhost label="Tout sélectionner" onClick={() => setPlayerIds(profiles.map((p: any) => String(p.id)))} />
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              justifyContent: "flex-end",
+              alignItems: "center",
+            }}
+          >
+            <NeonGhost
+              label="Tout sélectionner"
+              onClick={() => setPlayerIds(profiles.map((p: any) => String(p.id)))}
+            />
             <NeonGhost label="Vider" onClick={() => setPlayerIds([])} />
+            <InfoIconButton onClick={() => openInfo("players")} />
+          </div>
+        </div>
+
+        {/* HUMAINS */}
+        <div
+          style={{
+            marginTop: 10,
+            display: "flex",
+            gap: 14,
+            overflowX: "auto",
+            overflowY: "visible",
+            paddingBottom: 10,
+            paddingTop: 10,
+            WebkitOverflowScrolling: "touch",
+            scrollSnapType: "x mandatory",
+          }}
+          className="dc-scroll-thin"
+        >
+          {profiles.map((p: any) => {
+            const avg = Number(avgMap?.[p.id] ?? 0) || 0;
+            const active = playerIds.includes(p.id);
+            return (
+              <PlayerCarouselTile
+                key={p.id}
+                active={active}
+                name={p.name}
+                avatarUrl={p.avatar}
+                avg3D={avg}
+                onClick={() => togglePlayer(p.id)}
+                primary={primary}
+              />
+            );
+          })}
+        </div>
+
+        {/* BOTS */}
+        <div
+          style={{
+            marginTop: 8,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+          }}
+        >
+          <div style={{ fontSize: 12, opacity: 0.82 }}>
+            <b style={{ color: primary }}>{botIds.length}</b> bot(s)
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              justifyContent: "flex-end",
+              alignItems: "center",
+            }}
+          >
+            <NeonGhost
+              label="Tous les bots"
+              onClick={() => setBotIds(botsCatalog.map((b) => b.id))}
+            />
+            <NeonGhost label="Aucun bot" onClick={() => setBotIds([])} />
+            <InfoIconButton onClick={() => openInfo("botsSelect")} />
           </div>
         </div>
 
@@ -694,123 +1448,296 @@ export default function TournamentCreate({ store, go }: Props) {
           style={{
             marginTop: 10,
             display: "flex",
-            gap: 10,
+            gap: 14,
             overflowX: "auto",
-            paddingBottom: 6,
+            overflowY: "visible",
+            paddingBottom: 10,
+            paddingTop: 10,
             WebkitOverflowScrolling: "touch",
             scrollSnapType: "x mandatory",
           }}
+          className="dc-scroll-thin"
         >
-          {profiles.map((p: any) => (
+          {botsCatalog.map((b: any) => (
             <PlayerCarouselTile
-              key={p.id}
-              active={playerIds.includes(p.id)}
-              name={p.name}
-              avatarUrl={p.avatar}
-              onClick={() => togglePlayer(p.id)}
+              key={b.id}
+              active={botIds.includes(b.id)}
+              name={b.name}
+              avatarUrl={b.avatar}
+              avg3D={Number(b.avg3D) || 0}
+              isBot
+              onClick={() => toggleBot(b.id)}
+              primary={primary}
             />
           ))}
         </div>
 
-        {!minPlayersOk ? <div style={{ marginTop: 8, fontSize: 11.5, opacity: 0.75 }}>⚠️ Minimum 2 joueurs.</div> : null}
+        {!minPlayersOk ? (
+          <div style={{ marginTop: 8, fontSize: 11.5, opacity: 0.75 }}>
+            ⚠️ Minimum 2 joueurs.
+          </div>
+        ) : null}
       </Section>
 
       {/* Params match */}
       {mode === "x01" ? (
         <Section
           title="Match — Paramètres X01"
-          subtitle="Même logique que X01 Config : score de départ + modes d’entrée/sortie."
-          accent="#4fb4ff"
+          subtitle="Score de départ + IN/OUT."
+          accent={primary}
         >
-          <Row label="Score de départ">
+          <RowTitle label="Score de départ" />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {[301, 501, 701, 901].map((v) => (
-              <NeonPill key={v} active={x01Start === v} label={String(v)} onClick={() => setX01Start(v as any)} accent="#ffcf57" />
+              <NeonPill
+                key={v}
+                active={x01Start === v}
+                label={String(v)}
+                onClick={() => setX01Start(v as any)}
+                primary={primary}
+              />
             ))}
-          </Row>
-
-          <Row label="Mode d’entrée">
-            <NeonPill active={x01In === "simple"} label="Simple IN" onClick={() => setX01In("simple")} accent="#4fb4ff" />
-            <NeonPill active={x01In === "double"} label="Double IN" onClick={() => setX01In("double")} accent="#4fb4ff" />
-            <NeonPill active={x01In === "master"} label="Master IN" onClick={() => setX01In("master")} accent="#4fb4ff" />
-          </Row>
-
-          <Row label="Mode de sortie">
-            <NeonPill active={x01Out === "simple"} label="Simple OUT" onClick={() => setX01Out("simple")} accent="#ff4fd8" />
-            <NeonPill active={x01Out === "double"} label="Double OUT" onClick={() => setX01Out("double")} accent="#ff4fd8" />
-            <NeonPill active={x01Out === "master"} label="Master OUT" onClick={() => setX01Out("master")} accent="#ff4fd8" />
-          </Row>
-
-          <div style={{ marginTop: 10, fontSize: 11.2, opacity: 0.72, lineHeight: 1.35 }}>
-            ✅ Les autres paramètres viendront ensuite, mais on garde cette page ULTRA lisible.
           </div>
-        </Section>
-      ) : mode ? (
-        <Section
-          title={`Match — Paramètres ${MODE_LABEL[mode]}`}
-          subtitle="UI clean : les réglages spécifiques à ce mode seront ajoutés ici ensuite."
-          accent="#7fe2a9"
-        >
-          <div style={{ fontSize: 12, opacity: 0.82, lineHeight: 1.45 }}>
-            Pour l’instant, on verrouille la structure + le rendu. Ensuite on ajoute la config dédiée à{" "}
-            <b>{MODE_LABEL[mode]}</b>.
+
+          <div style={{ height: 10 }} />
+
+          <RowTitle label="Mode d’entrée" />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <NeonPill
+              active={x01In === "simple"}
+              label="Simple IN"
+              onClick={() => setX01In("simple")}
+              primary={primary}
+            />
+            <NeonPill
+              active={x01In === "double"}
+              label="Double IN"
+              onClick={() => setX01In("double")}
+              primary={primary}
+            />
+            <NeonPill
+              active={x01In === "master"}
+              label="Master IN"
+              onClick={() => setX01In("master")}
+              primary={primary}
+            />
+          </div>
+
+          <div style={{ height: 10 }} />
+
+          <RowTitle label="Mode de sortie" />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <NeonPill
+              active={x01Out === "simple"}
+              label="Simple OUT"
+              onClick={() => setX01Out("simple")}
+              primary={primary}
+            />
+            <NeonPill
+              active={x01Out === "double"}
+              label="Double OUT"
+              onClick={() => setX01Out("double")}
+              primary={primary}
+            />
+            <NeonPill
+              active={x01Out === "master"}
+              label="Master OUT"
+              onClick={() => setX01Out("master")}
+              primary={primary}
+            />
           </div>
         </Section>
       ) : null}
 
-      {/* Format tournoi */}
-      <Section title="Format du tournoi" subtitle="Structure + nombre de manches par match (best-of)." accent="#ffcf57">
-        <Row label="Type">
-          <NeonPill active={format === "single_ko"} label="Élimination simple" onClick={() => setFormat("single_ko")} accent="#ffcf57" />
-          <NeonPill active={format === "double_ko"} label="Élimination double" onClick={() => setFormat("double_ko")} accent="#ffcf57" />
-          <NeonPill active={format === "round_robin"} label="Championnat (Round Robin)" onClick={() => setFormat("round_robin")} accent="#ffcf57" />
-          <NeonPill active={format === "groups_ko"} label="Poules + KO" onClick={() => setFormat("groups_ko")} accent="#ffcf57" />
-        </Row>
-
-        <Row label="Match — Best-of">
-          {([1, 3, 5, 7] as BestOf[]).map((v) => (
-            <NeonPill key={v} active={bestOf === v} label={`BO${v}`} onClick={() => setBestOf(v)} accent="#4fb4ff" />
-          ))}
-        </Row>
-
-        <div style={{ marginTop: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-          <div style={{ display: "grid", gap: 2 }}>
-            <div style={{ fontSize: 12.2, fontWeight: 900 }}>Seeding aléatoire</div>
-            <div style={{ fontSize: 11.2, opacity: 0.75 }}>ON = mélange les joueurs au départ</div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setSeedingRandom((v) => !v)}
-            style={{
-              borderRadius: 999,
-              padding: "9px 12px",
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: seedingRandom
-                ? "linear-gradient(180deg,#4fb4ff,#1c78d5)"
-                : "linear-gradient(180deg,#444,#262626)",
-              color: seedingRandom ? "#04101f" : "rgba(255,255,255,0.9)",
-              fontWeight: 950,
-              cursor: "pointer",
-              minWidth: 64,
-              textAlign: "center",
-              boxShadow: seedingRandom ? "0 10px 22px rgba(0,0,0,0.55)" : "none",
-            }}
-          >
-            {seedingRandom ? "ON" : "OFF"}
-          </button>
+      {/* ✅ Format tournoi — 1 option par ligne + i à l’extérieur + modal centré */}
+      <Section
+        title="Format du tournoi"
+        subtitle="Chaque option a son (i) comme TYPE."
+        accent={primary}
+      >
+        <RowTitle label="Type" />
+        <div style={{ display: "grid", gap: 10 }}>
+          <LineOption
+            label="Élimination simple"
+            active={format === "single_ko"}
+            onClick={() => setFormat("single_ko")}
+            onInfo={() => openInfo("type_single")}
+            primary={primary}
+          />
+          <LineOption
+            label="Élimination double"
+            active={format === "double_ko"}
+            onClick={() => setFormat("double_ko")}
+            onInfo={() => openInfo("type_double")}
+            primary={primary}
+          />
+          <LineOption
+            label="Championnat (RR)"
+            active={format === "round_robin"}
+            onClick={() => setFormat("round_robin")}
+            onInfo={() => openInfo("type_rr")}
+            primary={primary}
+          />
+          <LineOption
+            label="Poules + KO"
+            active={format === "groups_ko"}
+            onClick={() => setFormat("groups_ko")}
+            onInfo={() => openInfo("type_groups")}
+            primary={primary}
+          />
         </div>
 
-        <div style={{ marginTop: 10, fontSize: 11.2, opacity: 0.72 }}>Exemple : BO3 = 2 manches gagnantes.</div>
-        {format === "double_ko" ? (
-          <div style={{ marginTop: 8, fontSize: 11.2, opacity: 0.72 }}>
-            ⚠️ Double KO : pour l’instant on génère une phase initiale (SE) pour éviter “0 match”. On complètera le loser bracket ensuite.
+        <div style={{ height: 14 }} />
+
+        <RowTitle label="Match — Best-of" />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {([1, 3, 5, 7] as BestOf[]).map((v) => (
+              <NeonPill
+                key={v}
+                active={bestOf === v}
+                label={`BO${v}`}
+                onClick={() => setBestOf(v)}
+                primary={primary}
+              />
+            ))}
+          </div>
+          <InfoIconButton onClick={() => openInfo("bestof")} />
+        </div>
+
+        <div style={{ height: 14 }} />
+
+        <RowTitle label="Têtes de série" />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <NeonPill
+              active={seedMode === "random"}
+              label="Aléatoire"
+              onClick={() => setSeedMode("random")}
+              primary={primary}
+            />
+            <NeonPill
+              active={seedMode === "byLevel"}
+              label="Par niveau (avg3D)"
+              onClick={() => setSeedMode("byLevel")}
+              primary={primary}
+            />
+          </div>
+          <InfoIconButton onClick={() => openInfo("seed")} />
+        </div>
+
+        <div style={{ height: 14 }} />
+
+        <RowTitle label="Repêchage" />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <NeonPill
+              active={repechageEnabled}
+              label="ON"
+              onClick={() => setRepechageEnabled(true)}
+              primary={primary}
+            />
+            <NeonPill
+              active={!repechageEnabled}
+              label="OFF"
+              onClick={() => setRepechageEnabled(false)}
+              primary={primary}
+            />
+          </div>
+          <InfoIconButton onClick={() => openInfo("repechage")} />
+        </div>
+
+        <div style={{ height: 14 }} />
+
+        <RowTitle label="Taille cible" />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {([4, 8, 16] as const).map((n) => (
+              <NeonPill
+                key={n}
+                active={targetSize === n}
+                label={`${n} joueurs`}
+                onClick={() => setTargetSize(n)}
+                primary={primary}
+              />
+            ))}
+          </div>
+          <InfoIconButton onClick={() => openInfo("target")} />
+        </div>
+
+        <div style={{ height: 14 }} />
+
+        <RowTitle label="Auto-fill BOTS IA" />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <NeonPill
+              active={autoFillBots}
+              label="ON"
+              onClick={() => setAutoFillBots(true)}
+              disabled={format === "round_robin"}
+              primary={primary}
+            />
+            <NeonPill
+              active={!autoFillBots}
+              label="OFF"
+              onClick={() => setAutoFillBots(false)}
+              disabled={format === "round_robin"}
+              primary={primary}
+            />
+          </div>
+          <InfoIconButton onClick={() => openInfo("autofill")} />
+        </div>
+
+        {format === "round_robin" ? (
+          <div style={{ marginTop: 8, fontSize: 11.5, opacity: 0.75 }}>
+            ℹ️ Auto-fill désactivé en Championnat.
           </div>
         ) : null}
       </Section>
 
       {/* CTA */}
       <div style={{ marginTop: 14 }}>
-        <NeonPrimary label="Créer le tournoi" onClick={createTournament} disabled={!canCreate} />
+        <NeonPrimary
+          label="Créer le tournoi"
+          onClick={createTournament}
+          disabled={!canCreate}
+          primary={primary}
+        />
         {!canCreate ? (
           <div style={{ marginTop: 8, fontSize: 11.5, opacity: 0.72 }}>
             ⚠️ Renseigne un nom, choisis un mode et sélectionne au moins 2 joueurs.
@@ -819,68 +1746,78 @@ export default function TournamentCreate({ store, go }: Props) {
       </div>
 
       {/* Sheet mode */}
-      <Sheet open={sheetMode} title="Choisir un mode" onClose={() => setSheetMode(false)}>
+      <Sheet
+        open={sheetMode}
+        title="Choisir un mode"
+        onClose={() => setSheetMode(false)}
+        primary={primary}
+      >
         <div style={{ display: "grid", gap: 10 }}>
-          <div style={{ fontSize: 12, opacity: 0.8, lineHeight: 1.35 }}>
-            Choisis le mode du tournoi. Ensuite tu règles les paramètres du match et le format.
-          </div>
-
           <div style={{ display: "grid", gap: 8 }}>
-            {(["x01", "cricket", "killer", "shanghai"] as Mode[]).map((m) => {
-              const accent = m === "x01" ? "#ffcf57" : m === "cricket" ? "#4fb4ff" : m === "killer" ? "#ff4fd8" : "#7fe2a9";
+            {(["x01", "cricket", "killer", "shanghai"] as Mode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => {
+                  setMode(m);
+                  setSheetMode(false);
+                }}
+                style={{
+                  width: "100%",
+                  borderRadius: 16,
+                  padding: "12px 12px",
+                  border:
+                    mode === m
+                      ? `1px solid ${primary}CC`
+                      : "1px solid rgba(255,255,255,0.10)",
+                  background:
+                    "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
+                  color: "rgba(255,255,255,0.92)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  cursor: "pointer",
+                  boxShadow: mode === m ? `0 14px 34px ${primary}22` : "none",
+                }}
+              >
+                <div style={{ display: "grid", gap: 2, textAlign: "left" }}>
+                  <div style={{ fontWeight: 950, fontSize: 14, color: primary }}>
+                    {MODE_LABEL[m]}
+                  </div>
+                </div>
 
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => {
-                    setMode(m);
-                    setSheetMode(false);
-                  }}
+                <div
                   style={{
-                    width: "100%",
-                    borderRadius: 16,
-                    padding: "12px 12px",
-                    border: mode === m ? `1px solid ${accent}AA` : "1px solid rgba(255,255,255,0.10)",
-                    background: "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
-                    color: "rgba(255,255,255,0.92)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    cursor: "pointer",
-                    boxShadow: mode === m ? `0 14px 34px ${accent}22` : "none",
+                    width: 34,
+                    height: 34,
+                    borderRadius: 999,
+                    background: `radial-gradient(circle at 30% 0%, ${primary}, ${primary}55)`,
+                    boxShadow: `0 0 14px ${primary}33`,
+                    display: "grid",
+                    placeItems: "center",
+                    color: "#120c06",
+                    fontWeight: 950,
                   }}
+                  aria-hidden
                 >
-                  <div style={{ display: "grid", gap: 2, textAlign: "left" }}>
-                    <div style={{ fontWeight: 950, fontSize: 14, color: accent }}>{MODE_LABEL[m]}</div>
-                    <div style={{ fontSize: 11.5, opacity: 0.75 }}>
-                      {m === "x01" ? "Score départ, IN/OUT, etc." : "Config dédiée à venir (même UX)."}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: 999,
-                      background: `radial-gradient(circle at 30% 0%, ${accent}, ${accent}88)`,
-                      boxShadow: `0 0 14px ${accent}33`,
-                      display: "grid",
-                      placeItems: "center",
-                      color: "#120c06",
-                      fontWeight: 950,
-                    }}
-                    aria-hidden
-                  >
-                    ✓
-                  </div>
-                </button>
-              );
-            })}
+                  ✓
+                </div>
+              </button>
+            ))}
           </div>
         </div>
       </Sheet>
+
+      {/* ✅ Modal info centré */}
+      <CenterInfoModal
+        open={infoOpen}
+        title={infoContent.title}
+        primary={primary}
+        onClose={() => setInfoOpen(false)}
+      >
+        {infoContent.body}
+      </CenterInfoModal>
     </div>
   );
 }

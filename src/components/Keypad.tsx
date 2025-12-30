@@ -3,6 +3,7 @@
 // Keypad stylé — boutons ANNULER & VALIDER en or
 // (rangée "Flèche 1 / 2 / 3" supprimée pour gagner de la place)
 // ✅ FIX: le "+0pts" (aperçu total) est masqué quand hidePreview=true (Shanghai)
+// ✅ NEW: hideTotal + centerSlot (pour KILLER: masquer total volée / afficher logo au centre)
 // ============================================
 import React from "react";
 import type { Dart as UIDart } from "../lib/types";
@@ -25,6 +26,12 @@ type Props = {
 
   /** Masquer les 3 badges d’aperçu (si affichés ailleurs) */
   hidePreview?: boolean;
+
+  /** ✅ NEW: masquer le total (centre entre BULL & VALIDER) */
+  hideTotal?: boolean;
+
+  /** ✅ NEW: remplace le centre (ex: logo Killer). Prioritaire sur hideTotal */
+  centerSlot?: React.ReactNode;
 };
 
 /* ---------- Helpers ---------- */
@@ -142,6 +149,8 @@ export default function Keypad({
   onBull,
   onValidate,
   hidePreview = false,
+  hideTotal = false,
+  centerSlot = null,
 }: Props) {
   const rows = [
     [0, 1, 2, 3, 4, 5, 6],
@@ -233,7 +242,7 @@ export default function Keypad({
         ))}
       </div>
 
-      {/* BULL + TOTAL CENTRÉ + VALIDER */}
+      {/* BULL + (TOTAL ou SLOT) CENTRÉ + VALIDER */}
       <div
         style={{
           display: "grid",
@@ -254,9 +263,27 @@ export default function Keypad({
           </button>
         </div>
 
-        {/* Colonne centrale : TOTAL parfaitement centré */}
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <span style={totalPill}>{total}</span>
+        {/* ✅ Colonne centrale : slot (prioritaire) / sinon total / sinon vide */}
+        <div
+          className="keypad-center"
+          data-keypad-center
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            minHeight: 44,
+            alignItems: "center",
+            pointerEvents: "none",
+          }}
+        >
+          {centerSlot ? (
+            <div style={{ display: "grid", placeItems: "center" }}>
+              {centerSlot}
+            </div>
+          ) : hideTotal ? null : (
+            <span className="keypad-total" data-keypad-total style={totalPill}>
+              {total}
+            </span>
+          )}
         </div>
 
         {/* Colonne droite : VALIDER aligné à droite */}
@@ -271,25 +298,18 @@ export default function Keypad({
         </div>
       </div>
 
-      {/* ✅ FIX: le "+0pts" ne doit PAS s’afficher quand hidePreview=true */}
-      {!hidePreview && (
-        <div style={ptsHint}>
-          +{total} pts
-        </div>
+      {/* ✅ FIX: le "+0pts" ne doit PAS s’afficher quand hidePreview=true
+          ✅ NEW: et on le masque aussi si hideTotal=true (Killer) ou centerSlot est utilisé */}
+      {!hidePreview && !hideTotal && !centerSlot && (
+        <div style={ptsHint}>+{total} pts</div>
       )}
 
       {/* Badges d’aperçu en bas (optionnels) */}
       {!hidePreview && (
         <div style={{ marginTop: 12 }}>
-          <span style={{ ...chip, color: "#eec7ff" }}>
-            {fmt(currentThrow[0])}
-          </span>
-          <span style={{ ...chip, color: "#cfe6ff" }}>
-            {fmt(currentThrow[1])}
-          </span>
-          <span style={{ ...chip, color: "#ffe7c0" }}>
-            {fmt(currentThrow[2])}
-          </span>
+          <span style={{ ...chip, color: "#eec7ff" }}>{fmt(currentThrow[0])}</span>
+          <span style={{ ...chip, color: "#cfe6ff" }}>{fmt(currentThrow[1])}</span>
+          <span style={{ ...chip, color: "#ffe7c0" }}>{fmt(currentThrow[2])}</span>
         </div>
       )}
     </div>

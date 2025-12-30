@@ -789,28 +789,28 @@ function App() {
   // ============================================================
   const online = useAuthOnline();
   const [cloudHydrated, setCloudHydrated] = React.useState(false);
-  // ✅ Cloud hydrate est "par user" : quand on se reconnecte (après clear site data),
-  // on doit forcer un nouveau pull du snapshot.
-  const cloudHydratedUserRef = React.useRef<string>("");
+// ✅ Cloud hydrate est "par user" : quand on se reconnecte (après clear site data),
+// on doit forcer un nouveau pull du snapshot.
+const cloudHydratedUserRef = React.useRef<string>("");
 
-  React.useEffect(() => {
-    if (!online?.ready) return;
-    const uid = String((online as any)?.session?.user?.id || (online as any)?.user?.id || "");
+React.useEffect(() => {
+  if (!online?.ready) return;
+  const uid = String((online as any)?.session?.user?.id || (online as any)?.user?.id || "");
 
-    // Pas connecté : on ne "bloque" pas l’app, mais on ne marque pas la donnée cloud comme hydratée pour un user.
-    if (online.status !== "signed_in") {
-      cloudHydratedUserRef.current = "";
-      return;
-    }
+  // Pas connecté : on ne marque pas l’hydratation pour un user.
+  if (online.status !== "signed_in") {
+    cloudHydratedUserRef.current = "";
+    return;
+  }
 
-    // Connecté : si c’est un nouvel user (ou après clear data) => on réactive l’hydratation.
-    if (uid && cloudHydratedUserRef.current !== uid) {
-      cloudHydratedUserRef.current = uid;
-      setCloudHydrated(false);
-    }
-  }, [online?.ready, online?.status, (online as any)?.session?.user?.id]);
+  // Connecté : nouvel user => on réactive l’hydratation
+  if (uid && cloudHydratedUserRef.current !== uid) {
+    cloudHydratedUserRef.current = uid;
+    setCloudHydrated(false);
+  }
+}, [online?.ready, online?.status, (online as any)?.session?.user?.id]);
 
-  const cloudPushTimerRef = React.useRef<number | null>(null);
+const cloudPushTimerRef = React.useRef<number | null>(null);
 
   const [store, setStore] = React.useState<Store>(initialStore);
   const [tab, setTab] = React.useState<Tab>("home");
@@ -983,85 +983,87 @@ function App() {
   }, []);
 
   // ============================================================
-    // ============================================================
-  // ✅ CLOUD HYDRATE (source unique)
-  // - Quand on se CONNECTE (même après "Clear site data") => on PULL le snapshot cloud
-  // - On ne SEED le cloud que si on est sûr que le snapshot n’existe pas (not_found)
-  // ============================================================
-  React.useEffect(() => {
-    let cancelled = false;
+// ✅ CLOUD HYDRATE (source unique)
+// - Quand on se CONNECTE (même après "Clear site data") => on PULL le snapshot cloud
+// - On ne SEED le cloud que si on est sûr que le snapshot n’existe pas (not_found)
+// ============================================================
+React.useEffect(() => {
+  let cancelled = false;
 
-    const run = async () => {
-      if (loading) return;
-      if (!online?.ready) return;
+  const run = async () => {
+    if (loading) return;
+    if (!online?.ready) return;
 
-      // Tant qu'on n'est pas connecté, on ne fait rien ici.
-      if (online.status !== "signed_in") return;
+    // Tant qu'on n'est pas connecté, on ne fait rien ici.
+    if (online.status !== "signed_in") return;
 
-      // On hydrate une seule fois par user (ref gère les reconnect)
-      if (cloudHydrated) return;
+    // On hydrate une seule fois par user (reset géré par cloudHydratedUserRef)
+    if (cloudHydrated) return;
 
-      try {
-        const res = await onlineApi.pullStoreSnapshot();
+    try {
+      const res: any = await onlineApi.pullStoreSnapshot();
 
-        if (res?.status === "ok") {
-          const cloudStore = (res as any)?.payload?.store;
+      if (res?.status === "ok") {
+        const cloudStore = res?.payload?.store;
 
-          if (cloudStore && typeof cloudStore === "object") {
-            const next: Store = {
-              ...initialStore,
-              ...(cloudStore as any),
-              profiles: (cloudStore as any).profiles ?? [],
-              friends: (cloudStore as any).friends ?? [],
-              history: (cloudStore as any).history ?? [],
-            };
+        if (cloudStore && typeof cloudStore === "object") {
+          const next: Store = {
+            ...initialStore,
+            ...(cloudStore as any),
+            profiles: (cloudStore as any).profiles ?? [],
+            friends: (cloudStore as any).friends ?? [],
+            history: (cloudStore as any).history ?? [],
+          };
 
-            if (!cancelled) {
-              // ✅ merge défensif des profils (cloud peut être partiel)
-              setStore((prev) => ({
-                ...next,
-                profiles: mergeProfilesSafe(prev.profiles ?? [], next.profiles ?? []),
-              }));
-              try {
-                await saveStore(next);
-              } catch {}
-            }
+          if (!cancelled) {
+            // ✅ merge défensif des profils (cloud peut être partiel)
+            setStore((prev) => ({
+              ...next,
+              profiles: mergeProfilesSafe(prev.profiles ?? [], next.profiles ?? []),
+            }));
+            try {
+              await saveStore(next);
+            } catch {}
           }
-        } else if (res?.status === "not_found") {
-          // ✅ Pas de snapshot : on seed UNIQUEMENT si on a déjà des données locales utiles.
-          const hasLocalData =
-            (store?.profiles?.length || 0) > 0 ||
-            (store as any)?.activeProfileId ||
-            (store?.friends?.length || 0) > 0 ||
-            (store?.history?.length || 0) > 0;
-
-          if (hasLocalData) {
-            const payload = {
-              kind: "dc_store_snapshot_v1",
-              createdAt: new Date().toISOString(),
-              app: "darts-counter-v5",
-              store: sanitizeStoreForCloud(store), // ✅ ne pousse pas les data: (avatars locaux)
-            };
-            await onlineApi.pushStoreSnapshot(payload);
-          } else {
-            console.warn("[cloud] no snapshot yet + local empty -> skip seed (avoid wiping cloud by mistake)");
-          }
-        } else {
-          console.warn("[cloud] hydrate error (skip seed)", (res as any)?.error);
         }
-      } catch (e) {
-        console.warn("[cloud] hydrate error", e);
-      } finally {
-        if (!cancelled) setCloudHydrated(true);
-      }
-    };
+      } else if (res?.status === "not_found") {
+        // ✅ Pas de snapshot : on seed UNIQUEMENT si on a déjà des données locales utiles.
+        const hasLocalData =
+          (store?.profiles?.length || 0) > 0 ||
+          !!(store as any)?.activeProfileId ||
+          (store?.friends?.length || 0) > 0 ||
+          (store?.history?.length || 0) > 0;
 
-    run();
-    return () => {
-      cancelled = true;
-    };
-    // ⚠️ store dans deps : si tu seed, on veut la version la plus récente.
-  }, [loading, online?.ready, online?.status, cloudHydrated, store]);
+        if (hasLocalData) {
+          const payload = {
+            kind: "dc_store_snapshot_v1",
+            createdAt: new Date().toISOString(),
+            app: "darts-counter-v5",
+            store: sanitizeStoreForCloud(store), // ✅ ne pousse pas les data: (avatars locaux)
+          };
+          await onlineApi.pushStoreSnapshot(payload);
+        } else {
+          console.warn(
+            "[cloud] no snapshot yet + local empty -> skip seed (avoid wiping cloud by mistake)"
+          );
+        }
+      } else {
+        console.warn("[cloud] hydrate error (skip seed)", res?.error || res);
+      }
+    } catch (e) {
+      console.warn("[cloud] hydrate error", e);
+    } finally {
+      if (!cancelled) setCloudHydrated(true);
+    }
+  };
+
+  run();
+  return () => {
+    cancelled = true;
+  };
+  // ⚠️ store dans deps : si tu seed, on veut la version la plus récente.
+}, [loading, online?.ready, online?.status, cloudHydrated, store]);
+
 
   // ============================================================
   // ✅ CLOUD PUSH (debounce)
