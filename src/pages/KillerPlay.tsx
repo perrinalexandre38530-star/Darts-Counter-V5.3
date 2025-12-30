@@ -685,29 +685,23 @@ function StatBox({
 }
 
 // -----------------------------
-// ✅ Heart KPI (VIES)
+// ✅ Heart KPI (VIES) — GROSSI + mieux centré
 // -----------------------------
-function HeartKpi({
-  label,
-  value,
-}: {
-  label: string;
-  value: any;
-}) {
+function HeartKpi({ label, value }: { label: string; value: any }) {
   return (
     <div
       style={{
-        width: 48,
-        height: 42,
+        width: 60,
+        height: 54,
         position: "relative",
         display: "grid",
         placeItems: "center",
-        filter: "drop-shadow(0 10px 18px rgba(255,198,58,.12))",
+        filter: "drop-shadow(0 10px 18px rgba(255,198,58,.14))",
       }}
     >
       <svg
-        width="48"
-        height="42"
+        width="60"
+        height="54"
         viewBox="0 0 48 42"
         style={{ position: "absolute", inset: 0 }}
       >
@@ -728,16 +722,22 @@ function HeartKpi({
       <div style={{ position: "relative", textAlign: "center", lineHeight: 1 }}>
         <div
           style={{
-            fontSize: 9,
+            fontSize: 11,
             fontWeight: 1000,
-            letterSpacing: 0.7,
-            opacity: 0.9,
+            letterSpacing: 0.8,
+            opacity: 0.92,
           }}
         >
           {label}
         </div>
         <div
-          style={{ marginTop: 2, fontSize: 18, fontWeight: 1000, color: gold }}
+          style={{
+            marginTop: 2,
+            fontSize: 22,
+            fontWeight: 1000,
+            color: gold,
+            textShadow: "0 0 12px rgba(255,198,58,.22)",
+          }}
         >
           {value}
         </div>
@@ -753,7 +753,6 @@ function useKillerSfx(enabled: boolean) {
   const ctxRef = React.useRef<AudioContext | null>(null);
   const audRef = React.useRef<Record<string, HTMLAudioElement | null>>({});
 
-  // mp3 in /public/sfx (no import => no Vite resolve error)
   const paths = React.useMemo(() => {
     return {
       hit: "/sfx/dart-hit.mp3",
@@ -761,7 +760,6 @@ function useKillerSfx(enabled: boolean) {
       kill2: "/sfx/killer-kill-2.mp3",
       kill3: "/sfx/killer-kill-3.mp3",
       dead: "/sfx/killer-dead.mp3",
-      // 🔥 NEW: intro + lastDead
       intro: "/sfx/Killer-song.mp3",
       lastDead: "/sfx/killer-last-dead.mp3",
       armed: "/sfx/killer-armed.mp3",
@@ -836,16 +834,12 @@ function useKillerSfx(enabled: boolean) {
 
   return React.useMemo(() => {
     return {
-      // ✅ NEW: intro
       intro: () => {
-        // long son → volume un peu plus bas
         if (!playAudio("intro", paths.intro, 0.55, true)) {
-          // fallback discret
           beep(520, 60, 0.03);
           setTimeout(() => beep(740, 60, 0.03), 80);
         }
       },
-
       click: () => {
         if (!playAudio("click", paths.click, 0.6)) beep(520, 45, 0.05);
       },
@@ -876,8 +870,6 @@ function useKillerSfx(enabled: boolean) {
           setTimeout(() => beep(120, 160, 0.07), 120);
         }
       },
-
-      // ✅ NEW: lastDead (fin de partie)
       lastDead: () => {
         if (!playAudio("lastDead", paths.lastDead, 0.9, true)) {
           beep(180, 160, 0.08);
@@ -890,7 +882,7 @@ function useKillerSfx(enabled: boolean) {
 }
 
 // -----------------------------
-// ✅ Header carousel (avatar zoom + dégradé + numéro)
+// ✅ Header carousel (avatar zoom + numéro ONLY + halo actif)
 // -----------------------------
 function ZoomAvatarChip({
   src,
@@ -912,6 +904,10 @@ function ZoomAvatarChip({
     .slice(0, 1)
     .toUpperCase();
 
+  const halo = isActive
+    ? "0 0 14px rgba(255,198,58,.85), 0 0 28px rgba(255,198,58,.45)"
+    : "none";
+
   return (
     <div
       style={{
@@ -923,10 +919,11 @@ function ZoomAvatarChip({
         gridTemplateColumns: "44px 1fr",
         alignItems: "stretch",
         border: isActive
-          ? "1px solid rgba(255,255,255,0.55)"
+          ? "1px solid rgba(255,198,58,0.65)"
           : "1px solid rgba(255,255,255,0.18)",
         background: "rgba(0,0,0,0.22)",
         opacity: eliminated ? 0.45 : 1,
+        boxShadow: halo,
       }}
       title={name}
     >
@@ -968,7 +965,6 @@ function ZoomAvatarChip({
           </div>
         )}
 
-        {/* mini badge */}
         {badge ? (
           <div
             style={{
@@ -1002,45 +998,38 @@ function ZoomAvatarChip({
         style={{
           position: "relative",
           display: "grid",
-          alignItems: "center",
-          padding: "0 10px 0 10px",
+          alignItems: "stretch",
+          padding: "0 10px",
         }}
       >
-        {/* dégradé pour lisibilité */}
         <div
           style={{
             position: "absolute",
             inset: 0,
             background:
-              "linear-gradient(90deg, rgba(0,0,0,.02) 0%, rgba(0,0,0,.55) 55%, rgba(0,0,0,.75) 100%)",
+              "linear-gradient(90deg, rgba(0,0,0,.10) 0%, rgba(0,0,0,.55) 55%, rgba(0,0,0,.75) 100%)",
             pointerEvents: "none",
           }}
         />
 
+        {/* ✅ NUMÉRO ONLY (cartoon + gros + couleur thème) */}
         <div
           style={{
             position: "relative",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
+            display: "grid",
+            placeItems: "center",
+            fontWeight: 1000,
+            fontSize: 18,
+            color: gold,
+            letterSpacing: 0.4,
+            fontFamily:
+              'system-ui, -apple-system, Segoe UI, Roboto, "Comic Sans MS", Arial, sans-serif',
+            textShadow: isActive
+              ? "0 0 10px rgba(255,198,58,.75)"
+              : "0 0 6px rgba(0,0,0,.8)",
           }}
         >
-          <div style={{ fontSize: 13, fontWeight: 1000, color: "#fff" }}>
-            #{num}
-          </div>
-          <div
-            style={{
-              fontSize: 11,
-              opacity: 0.85,
-              fontWeight: 900,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              maxWidth: 120,
-            }}
-          >
-            {name || "—"}
-          </div>
+          #{num}
         </div>
       </div>
     </div>
@@ -1055,7 +1044,7 @@ function TargetsCarousel({
   activeId?: string | null;
 }) {
   return (
-    <div style={{ padding: "8px 2px 2px" }}>
+    <div style={{ padding: "6px 2px 2px" }}>
       <div
         style={{
           display: "flex",
@@ -1250,7 +1239,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const introPlayedRef = React.useRef(false);
   const lastDeadPlayedRef = React.useRef(false);
 
-  // ✅ mode d'assignation numéro (compat legacy)
+  const [showLog, setShowLog] = React.useState(false);
+
   const numberAssignMode: "none" | "throw" | "random" =
     ((config as any)?.numberAssignMode as any) ||
     (((config as any)?.selectNumberByThrow ? "throw" : "none") as any);
@@ -1262,12 +1252,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const sfxEnabled = (config as any)?.sfx === false ? false : true;
   const sfx = useKillerSfx(sfxEnabled);
 
-  // ✅ NEW: son d’intro au lancement (1 seule fois)
   React.useEffect(() => {
     if (!sfxEnabled) return;
     if (introPlayedRef.current) return;
     introPlayedRef.current = true;
-    // petit délai pour laisser le montage (et limiter les pop/latences)
     setTimeout(() => {
       try {
         sfx.intro?.();
@@ -1281,7 +1269,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     setEvents((prev) => [e, ...prev].slice(0, 800));
   }
 
-  // ✅ assign machine
   const [assignDone, setAssignDone] = React.useState<boolean>(() => !inNumberAssignRound);
   const [assignIndex, setAssignIndex] = React.useState<number>(0);
 
@@ -1324,7 +1311,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       };
     });
 
-    // ✅ mode "random" : attribue des numéros uniques dès le départ
     if (numberAssignMode === "random") {
       const pool = Array.from({ length: 20 }, (_, i) => i + 1);
       for (let i = pool.length - 1; i > 0; i--) {
@@ -1376,11 +1362,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const waitingValidate =
     !inputDisabledBase && !isBotTurn && dartsLeft === 0;
 
-  // ✅ overlay assignation visible seulement en throw + tant que pas done
   const assignActive = inNumberAssignRound && !assignDone && numberAssignMode === "throw";
   const assignPlayer = assignActive ? (players[assignIndex] || players[0]) : null;
 
-  // ✅ taken numbers (pour griser dans l’overlay)
   const takenNumbers = React.useMemo(() => {
     const s = new Set<number>();
     for (const p of players) {
@@ -1469,7 +1453,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     });
   }
 
-  // ✅ ASSIGN: fin quand tout le monde a un numéro
   function finishAssignIfReady() {
     setPlayers((prev) => {
       const allHave = prev.every(
@@ -1502,11 +1485,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     });
   }
 
-  // ✅ classement basé sur ordre d’élimination (DEDUP anti doublons)
   function getOrderedFinalPlayers(finalPlayers: KillerPlayerState[], elimOrder: string[]) {
     const alive = finalPlayers.filter((p) => !p.eliminated);
 
-    // ✅ dedup elim order
     const seen = new Set<string>();
     const deadIds = (elimOrder || [])
       .filter(Boolean)
@@ -1522,7 +1503,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     );
 
     const orderedDead: KillerPlayerState[] = [];
-    // dernier éliminé = plus “haut” dans classement (juste après le winner)
     for (let i = deadIds.length - 1; i >= 0; i--) {
       const p = deadById.get(deadIds[i]);
       if (p) orderedDead.push(p);
@@ -1573,7 +1553,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         uselessHits: p.uselessHits,
         livesTaken: p.livesTaken,
         livesLost: p.livesLost,
-        throwsToBecomeKiller: p.becameAtThrow ? p.becameAtThrow : p.throwsToBecomeKiller,
+        throwsToBecomeKiller: p.becameAtThrow
+          ? p.becameAtThrow
+          : p.throwsToBecomeKiller,
         hitsBySegment: p.hitsBySegment || {},
         hitsByNumber: p.hitsByNumber || {},
       };
@@ -1627,15 +1609,11 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     return rec as MatchRecord;
   }
 
-  // -----------------------------
-  // ✅ core : appliquer un lancer (humain)
-  // -----------------------------
   function applyThrow(t: ThrowInput) {
     if (inputDisabledBase) return;
     if (dartsLeft <= 0) return;
     if (isBotTurn) return;
 
-    // en assignActive, seul assignPlayer joue (1 dart)
     if (assignActive && turnIndex !== assignIndex) {
       setTurnIndex(assignIndex);
       setDartsLeft(1);
@@ -1653,7 +1631,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     setVisit((v) => [...v, thr].slice(0, 3));
     setDartsLeft((d) => Math.max(0, d - 1));
 
-    // ✅ hit mp3
     sfx.hit();
 
     setPlayers((prev) => {
@@ -1670,12 +1647,13 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
 
       const seg = segmentKey(thr);
       me.hitsBySegment = incMap(me.hitsBySegment, seg, 1);
-      if (thr.target !== 0) me.hitsByNumber = incMap(me.hitsByNumber, thr.target, 1);
+      if (thr.target !== 0)
+        me.hitsByNumber = incMap(me.hitsByNumber, thr.target, 1);
 
-      if (me.killerPhase !== "ACTIVE" && !me.becameAtThrow) me.throwsToBecomeKiller += 1;
+      if (me.killerPhase !== "ACTIVE" && !me.becameAtThrow)
+        me.throwsToBecomeKiller += 1;
       if (me.killerPhase === "ACTIVE") me.killerThrows += 1;
 
-      // MISS
       if (thr.target === 0) {
         me.uselessHits += 1;
         pushLog(`🎯 ${me.name} : MISS`);
@@ -1683,7 +1661,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         return next;
       }
 
-      // BULL / DBULL => rien
       if (thr.target === 25) {
         me.uselessHits += 1;
         pushLog(`🎯 ${me.name} : ${fmtThrow(thr)}`);
@@ -1691,10 +1668,11 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         return next;
       }
 
-      // =========================
-      // ✅ ASSIGN ROUND (throw) : 1 SEULE FLÉCHETTE, conflits + auto-next
-      // =========================
-      if (assignActive && numberAssignMode === "throw" && me.killerPhase === "SELECT") {
+      if (
+        assignActive &&
+        numberAssignMode === "throw" &&
+        me.killerPhase === "SELECT"
+      ) {
         const n = normalizeNumberFromHit(thr.target);
 
         const alreadyTaken = next.some(
@@ -1703,7 +1681,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
 
         if (alreadyTaken) {
           me.uselessHits += 1;
-          pushLog(`⚠️ ${me.name} vise #${n} mais il est déjà pris → numéro NON attribué`);
+          pushLog(
+            `⚠️ ${me.name} vise #${n} mais il est déjà pris → numéro NON attribué`
+          );
           pushEvent({
             t: Date.now(),
             type: "SELECT_NUMBER_CONFLICT",
@@ -1724,7 +1704,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           return next;
         }
 
-        // ✅ assign OK
         me.number = n;
         me.killerPhase = "ARMING";
         me.isKiller = false;
@@ -1751,9 +1730,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         return next;
       }
 
-      // =========================
-      // ✅ AUTOKILL (PRIORITÉ MAX)
-      // =========================
       if (autoKillOn && me.number && thr.target === me.number) {
         me.hitsOnSelf += 1;
         me.livesLost += Math.max(0, me.lives);
@@ -1763,19 +1739,25 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         me.killerPhase = "ARMING";
         me.isKiller = false;
 
-        // ✅ dedup elim order
         if (!elimOrderRef.current.includes(me.id)) {
           elimOrderRef.current = [...(elimOrderRef.current || []), me.id];
         }
 
-        pushLog(`☠️ ${me.name} s'AUTO-KILL sur #${me.number} (${fmtThrow(thr)})`);
-        pushEvent({ t: Date.now(), type: "AUTOKILL", actorId: me.id, number: me.number, throw: thr });
+        pushLog(
+          `☠️ ${me.name} s'AUTO-KILL sur #${me.number} (${fmtThrow(thr)})`
+        );
+        pushEvent({
+          t: Date.now(),
+          type: "AUTOKILL",
+          actorId: me.id,
+          number: me.number,
+          throw: thr,
+        });
         sfx.death();
 
         return next;
       }
 
-      // si numéro pas encore défini (edge)
       if (!me.number) {
         me.uselessHits += 1;
         pushLog(`🎯 ${me.name} : ${fmtThrow(thr)}`);
@@ -1783,9 +1765,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         return next;
       }
 
-      // =========================
-      // ✅ ARMING : toucher son numéro => devient killer
-      // =========================
       if (
         me.killerPhase !== "ACTIVE" &&
         thr.target === me.number &&
@@ -1796,15 +1775,20 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         me.hitsOnSelf += 1;
         if (!me.becameAtThrow) me.becameAtThrow = me.throwsToBecomeKiller;
 
-        pushLog(`🟡 ${me.name} devient KILLER (${fmtThrow(thr)} sur #${thr.target})`);
-        pushEvent({ t: Date.now(), type: "BECOME_KILLER", actorId: me.id, number: me.number, throw: thr });
+        pushLog(
+          `🟡 ${me.name} devient KILLER (${fmtThrow(thr)} sur #${thr.target})`
+        );
+        pushEvent({
+          t: Date.now(),
+          type: "BECOME_KILLER",
+          actorId: me.id,
+          number: me.number,
+          throw: thr,
+        });
         sfx.armed();
         return next;
       }
 
-      // =========================
-      // ✅ ACTIVE : attaque une victime
-      // =========================
       if (me.killerPhase === "ACTIVE") {
         const victimIdx = next.findIndex(
           (p, idx) => idx !== turnIndex && !p.eliminated && p.number === thr.target
@@ -1835,7 +1819,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             throw: thr,
           });
 
-          // ✅ son kill selon mult (S/D/T)
           if (actualLoss > 0) sfx.kill(thr.mult);
 
           if (victim.lives <= 0) {
@@ -1847,12 +1830,27 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
               elimOrderRef.current = [...(elimOrderRef.current || []), victim.id];
             }
 
-            pushLog(`💀 ${me.name} élimine ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg})`);
-            pushEvent({ t: Date.now(), type: "KILL", actorId: me.id, targetId: victim.id, targetNumber: victim.number, throw: thr });
-            // ✅ son DEAD dédié
+            pushLog(
+              `💀 ${me.name} élimine ${victim.name} (${fmtThrow(
+                thr
+              )} sur #${thr.target}, -${dmg})`
+            );
+            pushEvent({
+              t: Date.now(),
+              type: "KILL",
+              actorId: me.id,
+              targetId: victim.id,
+              targetNumber: victim.number,
+              throw: thr,
+            });
+
             sfx.death();
           } else {
-            pushLog(`🔻 ${me.name} touche ${victim.name} (${fmtThrow(thr)} sur #${thr.target}, -${dmg}) → ${victim.lives} vie(s)`);
+            pushLog(
+              `🔻 ${me.name} touche ${victim.name} (${fmtThrow(
+                thr
+              )} sur #${thr.target}, -${dmg}) → ${victim.lives} vie(s)`
+            );
           }
 
           return next;
@@ -1866,11 +1864,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     });
   }
 
-  // ✅ Fin de partie : overlay (ensure endRec)
   React.useEffect(() => {
     const ww = winner(players);
     if (ww && !finishedRef.current) {
-      // ✅ NEW: son “dernier DEAD” (une seule fois)
       if (!lastDeadPlayedRef.current) {
         lastDeadPlayedRef.current = true;
         try {
@@ -1890,7 +1886,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       }
 
       if (!rec) {
-        // fallback minimal mais compatible “killer_summary”
         rec = {
           id: `killer-${Date.now()}`,
           kind: "killer",
@@ -1984,6 +1979,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
       setDartsLeft((d) => Math.max(0, d - 1));
       sfx.hit();
 
+      // On réutilise la même logique que applyThrow (copie existante) :
       setPlayers((prev) => {
         const next = prev.map((p) => ({
           ...p,
@@ -2027,7 +2023,11 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           return next;
         }
 
-        if (assignActive && numberAssignMode === "throw" && me2.killerPhase === "SELECT") {
+        if (
+          assignActive &&
+          numberAssignMode === "throw" &&
+          me2.killerPhase === "SELECT"
+        ) {
           const n = normalizeNumberFromHit(thrSafe.target);
 
           const alreadyTaken = next.some(
@@ -2098,7 +2098,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             elimOrderRef.current = [...(elimOrderRef.current || []), me2.id];
           }
 
-          pushLog(`☠️ ${me2.name} s'AUTO-KILL sur #${me2.number} (${fmtThrow(thrSafe)})`);
+          pushLog(
+            `☠️ ${me2.name} s'AUTO-KILL sur #${me2.number} (${fmtThrow(thrSafe)})`
+          );
           pushEvent({
             t: Date.now(),
             type: "AUTOKILL",
@@ -2122,7 +2124,11 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           me2.hitsOnSelf += 1;
           if (!me2.becameAtThrow) me2.becameAtThrow = me2.throwsToBecomeKiller;
 
-          pushLog(`🟡 ${me2.name} devient KILLER (${fmtThrow(thrSafe)} sur #${thrSafe.target})`);
+          pushLog(
+            `🟡 ${me2.name} devient KILLER (${fmtThrow(thrSafe)} sur #${
+              thrSafe.target
+            })`
+          );
           pushEvent({
             t: Date.now(),
             type: "BECOME_KILLER",
@@ -2180,7 +2186,11 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
                 elimOrderRef.current = [...(elimOrderRef.current || []), victim.id];
               }
 
-              pushLog(`💀 ${me2.name} élimine ${victim.name} (${fmtThrow(thrSafe)} sur #${thrSafe.target}, -${dmg})`);
+              pushLog(
+                `💀 ${me2.name} élimine ${victim.name} (${fmtThrow(
+                  thrSafe
+                )} sur #${thrSafe.target}, -${dmg})`
+              );
               pushEvent({
                 t: Date.now(),
                 type: "KILL",
@@ -2192,7 +2202,11 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
               });
               sfx.death();
             } else {
-              pushLog(`🔻 ${me2.name} touche ${victim.name} (${fmtThrow(thrSafe)} sur #${thrSafe.target}, -${dmg}) → ${victim.lives} vie(s)`);
+              pushLog(
+                `🔻 ${me2.name} touche ${victim.name} (${fmtThrow(
+                  thrSafe
+                )} sur #${thrSafe.target}, -${dmg}) → ${victim.lives} vie(s)`
+              );
             }
 
             return next;
@@ -2222,7 +2236,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turnIndex, dartsLeft, finished, players, assignActive, assignIndex]);
 
-  // keep turnIndex safe
   React.useEffect(() => {
     if (!players.length) return;
     const me = players[turnIndex];
@@ -2231,7 +2244,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [players]);
 
-  // ✅ au boot : si assignActive, force la phase SELECT (1 dart) sur assignIndex
   React.useEffect(() => {
     if (!assignActive) return;
     setTurnIndex(assignIndex);
@@ -2240,12 +2252,10 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignActive, assignIndex]);
 
-  // ✅ FULLSCREEN PLAY: cache la bottom nav (tabbar) pendant ce mode
   React.useEffect(() => {
     if (typeof document === "undefined") return;
     document.body.classList.add("dc-fullscreen-play");
 
-    // ✅ inject CSS robuste pour masquer la tabbar (plusieurs implémentations possibles)
     const st = document.createElement("style");
     st.setAttribute("data-dc-killer-fullscreen", "1");
     st.textContent = `
@@ -2298,14 +2308,12 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
   const RULES = rulesText(config);
 
   function saveAndGoSummary(rec: any) {
-    // ✅ onFinish DOIT être appelé ici (sinon killer_summary ne trouve rien)
     try {
       if (rec) onFinish(rec);
     } catch {}
 
     const matchId = rec?.id || rec?.matchId || rec?.payload?.matchId || null;
 
-    // ✅ cable correct : page résumé killer
     if (matchId) go("killer_summary", { matchId });
     else go("statsHub", { tab: "history", mode: "killer" });
   }
@@ -2314,6 +2322,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
     if (!showEnd) return players;
     return getOrderedFinalPlayers(players, elimOrderRef.current || []);
   }, [showEnd, players]);
+
+  const activeHalo =
+    "0 0 16px rgba(255,198,58,.55), 0 0 34px rgba(255,198,58,.25)";
 
   return (
     <div
@@ -2325,10 +2336,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         display: "flex",
         flexDirection: "column",
         padding: 10,
-        gap: 10,
+        gap: 8,
       }}
     >
-      {/* ✅ SCRIM BLOQUANT (fond/menu/list/keypad inactifs) */}
       {assignActive && (
         <div
           style={{
@@ -2355,7 +2365,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
         />
       )}
 
-      {/* ✅ Assign overlay (centré) */}
       <AssignOverlay
         open={assignActive}
         player={assignPlayer}
@@ -2366,6 +2375,90 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           applyThrow({ target: n, mult: 1 });
         }}
       />
+
+      {/* ✅ LOG MODAL via bouton "L" */}
+      {showLog && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setShowLog(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.65)",
+            zIndex: 10001,
+            padding: 14,
+            display: "grid",
+            placeItems: "center",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              ...card,
+              width: "100%",
+              maxWidth: 520,
+              maxHeight: "72vh",
+              overflowY: "auto",
+              padding: 14,
+              border: "1px solid rgba(255,198,58,.22)",
+              boxShadow: "0 18px 55px rgba(0,0,0,.65)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 1000,
+                  letterSpacing: 1.2,
+                  color: gold,
+                  textTransform: "uppercase",
+                }}
+              >
+                LOG
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLog(false)}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,.10)",
+                  background: "rgba(255,255,255,.06)",
+                  color: "#fff",
+                  fontWeight: 900,
+                  cursor: "pointer",
+                }}
+                aria-label="Fermer"
+                title="Fermer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+              {(log || []).length ? (
+                log.map((l, i) => (
+                  <div key={i} style={{ fontSize: 12, opacity: 0.9 }}>
+                    {l}
+                  </div>
+                ))
+              ) : (
+                <div style={{ fontSize: 12, opacity: 0.75 }}>
+                  Aucun log pour le moment.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* RULES POPIN */}
       {showRules && (
@@ -2627,8 +2720,8 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           ✅ TOP FIXED AREA (non scrollable)
          ========================= */}
       <div style={{ flex: "0 0 auto" }}>
-        {/* ✅ HEADER */}
-        <div style={{ ...card, padding: 10 }}>
+        {/* ✅ HEADER (marges réduites) */}
+        <div style={{ ...card, padding: "6px 8px 4px" }}>
           <div
             style={{
               display: "grid",
@@ -2671,25 +2764,52 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
               </span>
             </div>
 
+            {/* ✅ bouton i + bouton L */}
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <InfoDot
                 onClick={() => setShowRules(true)}
                 size={30}
                 color="#FFFFFF"
               />
+              <button
+                type="button"
+                onClick={() => setShowLog(true)}
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,.22)",
+                  background: "rgba(0,0,0,.35)",
+                  color: gold,
+                  fontWeight: 1000,
+                  marginLeft: 6,
+                  cursor: "pointer",
+                  boxShadow: "0 0 16px rgba(255,198,58,.12)",
+                }}
+                title="Log"
+                aria-label="Log"
+              >
+                L
+              </button>
             </div>
           </div>
 
-          {/* ✅ Carousel style OW2 */}
           <TargetsCarousel players={players} activeId={current?.id || null} />
         </div>
 
-        {/* ✅ ACTIVE PLAYER (FIXED) */}
-        <div style={{ marginTop: 10, ...card, padding: 12 }}>
+        {/* ✅ ACTIVE PLAYER (collé au header + halo thème) */}
+        <div
+          style={{
+            ...card,
+            padding: 12,
+            border: "1px solid rgba(255,198,58,.22)",
+            boxShadow: activeHalo,
+          }}
+        >
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "92px 1fr 112px",
+              gridTemplateColumns: "92px 1fr 120px",
               gap: 10,
               alignItems: "center",
             }}
@@ -2737,7 +2857,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             <div style={{ display: "grid", justifyItems: "end", gap: 8 }}>
               <div
                 style={{
-                  width: 108,
+                  width: 116,
                   textAlign: "center",
                   fontWeight: 1000,
                   fontSize: 22,
@@ -2755,14 +2875,15 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "54px 54px",
+                  gridTemplateColumns: "60px 54px",
                   gap: 8,
-                  width: 108,
+                  width: 116,
                   justifyContent: "end",
                 }}
               >
                 <HeartKpi label="VIES" value={current?.lives ?? 0} />
-                <StatBox label="SURV." value={`${aliveCount}/${totalCount}`} small />
+                {/* ✅ SURV : seulement le nombre restant */}
+                <StatBox label="SURV." value={aliveCount} small />
               </div>
             </div>
           </div>
@@ -2808,7 +2929,7 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
           overflowX: "hidden",
           WebkitOverflowScrolling: "touch",
           paddingBottom: assignActive ? 0 : 6,
-          marginTop: 10,
+          marginTop: 8,
         }}
       >
         <div style={{ display: "grid", gap: 8 }}>
@@ -2822,13 +2943,16 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
                 key={p.id}
                 style={{
                   ...card,
-                  padding: "8px 10px", // ✅ plus compact
+                  padding: "8px 10px",
                   opacity: p.eliminated ? 0.92 : 1,
                   border: p.eliminated
                     ? "1px solid rgba(255,80,80,.55)"
                     : isMe
-                    ? "1px solid rgba(255,198,58,.35)"
+                    ? "1px solid rgba(255,198,58,.40)"
                     : "1px solid rgba(255,255,255,.08)",
+                  boxShadow: isMe
+                    ? "0 0 14px rgba(255,198,58,.35), 0 0 26px rgba(255,198,58,.18)"
+                    : card.boxShadow,
                   background: p.eliminated
                     ? "linear-gradient(180deg, rgba(70,10,10,.90), rgba(16,8,10,.98))"
                     : isMe
@@ -2920,8 +3044,6 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
                       </span>
                     </div>
                   </div>
-
-                  {/* ✅ SUPPRIME la ligne phase: ... (les icônes suffisent) */}
                 </div>
 
                 <div
@@ -2946,33 +3068,9 @@ export default function KillerPlay({ store, go, config, onFinish }: Props) {
             );
           })}
         </div>
-
-        {/* mini log (optionnel) */}
-        {log?.length ? (
-          <div style={{ marginTop: 10, ...card, padding: 10, opacity: 0.9 }}>
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 1000,
-                color: gold,
-                letterSpacing: 1.2,
-              }}
-            >
-              LOG
-            </div>
-            <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
-              {log.slice(0, 10).map((l, i) => (
-                <div key={i} style={{ fontSize: 12, opacity: 0.85 }}>
-                  {l}
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </div>
 
       {/* ✅ BOTTOM sticky KEYPAD */}
-      {/* ✅ UX: pendant assignActive => ON CACHE LE KEYPAD DU BAS */}
       {!assignActive && !w && !finished && !isBotTurn && !showEnd && (
         <div
           style={{
