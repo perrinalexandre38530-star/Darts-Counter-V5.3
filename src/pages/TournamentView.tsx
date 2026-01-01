@@ -16,6 +16,10 @@
 // - Aucun bouton / aucun texte / aucune carte de match dans "Vue"
 // - Traits propres (SVG) + layout stable
 //
+// ✅ DÉTAILS (FIX demandé):
+// - Centrage vertical "en escalier" des colonnes (comme Vue) => SEULEMENT dans "Détails"
+// - Afficher les scores sur les matchs terminés (badge overlay + ton scoreText existant)
+//
 // ✅ Fix IMPORTANT:
 // - Evite les doublons de matchs KO (dédup par id)
 // - Evite l’erreur "16 matchs en huitièmes" due à mauvais filtrage KO (phase/stage)
@@ -182,7 +186,12 @@ function Icon({ name, color = THEME }: any) {
     return (
       <svg {...common}>
         <path d="M7 7h10M7 12h10M7 17h10" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
-        <path d="M5 5v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5" stroke={stroke} strokeWidth={sw} strokeLinejoin="round" />
+        <path
+          d="M5 5v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5"
+          stroke={stroke}
+          strokeWidth={sw}
+          strokeLinejoin="round"
+        />
       </svg>
     );
 
@@ -420,11 +429,27 @@ function PlayerPill({ name, avatarUrl, dim, extra }: any) {
     <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 0, opacity: dim ? 0.6 : 1 }}>
       <AvatarCircle name={name} avatarUrl={avatarUrl} size={30} dim={dim} />
       <div style={{ minWidth: 0, display: "grid", gap: 2 }}>
-        <div style={{ fontWeight: 900, fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div
+          style={{
+            fontWeight: 900,
+            fontSize: 12.5,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
           {name || "Joueur"}
         </div>
         {extra ? (
-          <div style={{ fontSize: 11, opacity: 0.75, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div
+            style={{
+              fontSize: 11,
+              opacity: 0.75,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
             {extra}
           </div>
         ) : null}
@@ -522,8 +547,26 @@ function WinnerPlaceholder({ label, leftAvatarUrl, leftName, rightAvatarUrl, rig
       </div>
 
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 950, fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
-        <div style={{ fontSize: 11, opacity: 0.72, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div
+          style={{
+            fontWeight: 950,
+            fontSize: 12.5,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {label}
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            opacity: 0.72,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
           {leftName} vs {rightName}
         </div>
       </div>
@@ -566,8 +609,20 @@ function renderPlayerOrTbd(allMatches: any[], current: any, side: "a" | "b", pla
 }
 
 function computeStandings(groupPlayerIds: string[], groupMatches: any[]) {
-  const rows: Record<string, { id: string; played: number; wins: number; losses: number; points: number; scored: number; conceded: number }> = {};
-  for (const pid of groupPlayerIds) rows[pid] = { id: pid, played: 0, wins: 0, losses: 0, points: 0, scored: 0, conceded: 0 };
+  const rows: Record<
+    string,
+    {
+      id: string;
+      played: number;
+      wins: number;
+      losses: number;
+      points: number;
+      scored: number;
+      conceded: number;
+    }
+  > = {};
+  for (const pid of groupPlayerIds)
+    rows[pid] = { id: pid, played: 0, wins: 0, losses: 0, points: 0, scored: 0, conceded: 0 };
 
   for (const m of groupMatches) {
     if (m?.status !== "done") continue;
@@ -633,15 +688,37 @@ function computeTournamentStats(playersById: Record<string, any>, matches: any[]
     };
   }
 
-  const done = (matches || []).filter((m) => String(m?.status) === "done" && !isByeMatch(m) && !isVoidByeMatch(m));
+  const done = (matches || []).filter(
+    (m) => String(m?.status) === "done" && !isByeMatch(m) && !isVoidByeMatch(m)
+  );
 
   for (const m of done) {
     const a = String(m?.aPlayerId || "");
     const b = String(m?.bPlayerId || "");
     if (!a || !b) continue;
 
-    if (!rows[a]) rows[a] = { id: a, name: playersById[a]?.name || "Joueur", played: 0, wins: 0, losses: 0, scored: 0, conceded: 0, points: 0 };
-    if (!rows[b]) rows[b] = { id: b, name: playersById[b]?.name || "Joueur", played: 0, wins: 0, losses: 0, scored: 0, conceded: 0, points: 0 };
+    if (!rows[a])
+      rows[a] = {
+        id: a,
+        name: playersById[a]?.name || "Joueur",
+        played: 0,
+        wins: 0,
+        losses: 0,
+        scored: 0,
+        conceded: 0,
+        points: 0,
+      };
+    if (!rows[b])
+      rows[b] = {
+        id: b,
+        name: playersById[b]?.name || "Joueur",
+        played: 0,
+        wins: 0,
+        losses: 0,
+        scored: 0,
+        conceded: 0,
+        points: 0,
+      };
 
     const sa = typeof m?.scoreA === "number" ? m.scoreA : 0;
     const sb = typeof m?.scoreB === "number" ? m.scoreB : 0;
@@ -692,226 +769,341 @@ function computeTournamentStats(playersById: Record<string, any>, matches: any[]
 }
 
 /* ============================================================
+   KO DETAILS (onglet "Détails") — colonnes centrées + badge score
+   ✅ NE TOUCHE PAS à la "Vue" bracket
+   ============================================================ */
+function getMatchScore(m: any) {
+  const a =
+    (typeof m?.scoreA === "number" ? m.scoreA : null) ??
+    (typeof m?.aScore === "number" ? m.aScore : null) ??
+    (typeof m?.legsA === "number" ? m.legsA : null) ??
+    (typeof m?.result?.a === "number" ? m.result.a : null) ??
+    (typeof m?.score?.a === "number" ? m.score.a : null) ??
+    null;
+
+  const b =
+    (typeof m?.scoreB === "number" ? m.scoreB : null) ??
+    (typeof m?.bScore === "number" ? m.bScore : null) ??
+    (typeof m?.legsB === "number" ? m.legsB : null) ??
+    (typeof m?.result?.b === "number" ? m.result.b : null) ??
+    (typeof m?.score?.b === "number" ? m.score.b : null) ??
+    null;
+
+  if (a == null || b == null) return null;
+  return { a, b };
+}
+
+function ScoreBadge({ score }: { score: { a: number; b: number } | null }) {
+  if (!score) return null;
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: "50%",
+        top: "50%",
+        transform: "translate(-50%,-50%)",
+        padding: "6px 10px",
+        borderRadius: 999,
+        background: "rgba(10,12,16,0.72)",
+        border: "1px solid rgba(255,255,255,0.14)",
+        boxShadow: "0 12px 26px rgba(0,0,0,0.35)",
+        fontSize: 12,
+        fontWeight: 950,
+        letterSpacing: 0.2,
+        color: "rgba(255,255,255,0.92)",
+        pointerEvents: "none",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {score.a}–{score.b}
+    </div>
+  );
+}
+
+function WorldCupKoDetailsColumns({
+  koMatches,
+  renderMatchCard,
+}: {
+  koMatches: any[];
+  renderMatchCard: (m: any) => React.ReactNode;
+}) {
+  if (!koMatches?.length) return <div style={{ fontSize: 12, opacity: 0.78 }}>Aucun match KO à afficher.</div>;
+
+  // ⚙️ Ajuste ces valeurs si tu changes la hauteur de tes cards
+  const CARD_H = 138;
+  const GAP = 12;
+  const PAD_T = 8;
+
+  const rounds = Array.from(new Set(koMatches.map((m) => Number(m.roundIndex ?? 0)))).sort((a, b) => a - b);
+  const byRound: Record<number, any[]> = {};
+  for (const r of rounds) byRound[r] = [];
+  for (const m of koMatches) byRound[Number(m.roundIndex ?? 0)].push(m);
+  for (const r of rounds) byRound[r].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+
+  const maxLen = Math.max(...rounds.map((r) => (byRound[r] || []).length), 1);
+
+  return (
+    <div
+      className="dc-scroll-thin"
+      style={{
+        overflowX: "auto",
+        overflowY: "hidden",
+        WebkitOverflowScrolling: "touch",
+        paddingBottom: 10,
+        width: "100%",
+        maxWidth: "100%",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "stretch", gap: 12 }}>
+        {rounds.map((r) => {
+          const items = byRound[r] || [];
+
+          // ✅ centrage vertical : on décale le haut de la colonne par rapport au round le plus long
+          const missing = maxLen - items.length;
+          const offset = PAD_T + (missing * (CARD_H + GAP)) / 2;
+
+          return (
+            <div
+              key={r}
+              style={{
+                flex: "0 0 auto",
+                width: 292,
+                paddingTop: Math.max(0, offset),
+                paddingBottom: PAD_T,
+                display: "grid",
+                gridAutoRows: `${CARD_H}px`,
+                gap: GAP,
+              }}
+            >
+              {items.map((m) => {
+                const sc = String(m?.status || "") === "done" ? getMatchScore(m) : null;
+                return (
+                  <div key={m.id} style={{ position: "relative", minHeight: CARD_H }}>
+                    {/* card */}
+                    <div style={{ height: "100%" }}>{renderMatchCard(m)}</div>
+                    {/* score overlay */}
+                    <ScoreBadge score={sc} />
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    WORLD CUP BRACKET (VUE) — avatars + drapeaux + traits (SVG)
    ✅ CENTRAGE vertical auto (si bracket "court")
    ============================================================ */
 
-   function flagEmojiFromISO(code?: string) {
-    const cc = String(code || "").trim().toUpperCase();
-    if (!/^[A-Z]{2}$/.test(cc)) return "";
-    const A = 0x1f1e6;
-    const base = "A".charCodeAt(0);
-    const first = A + (cc.charCodeAt(0) - base);
-    const second = A + (cc.charCodeAt(1) - base);
-    return String.fromCodePoint(first, second);
-  }
-  
-  function BracketAvatar({ player, dim }: any) {
-    const name = player?.name || "Joueur";
-    const avatar = player?.avatar || null;
-    const flag = flagEmojiFromISO(player?.countryCode);
-  
-    return (
-      <div style={{ position: "relative", width: 34, height: 34, opacity: dim ? 0.55 : 1 }}>
-        <div style={{ filter: "drop-shadow(0 0 10px rgba(0,0,0,0.35))" }}>
-          <AvatarCircle name={name} avatarUrl={avatar} size={34} dim={dim} />
-        </div>
-        {flag ? (
-          <div
-            title={player?.countryCode || ""}
-            style={{
-              position: "absolute",
-              right: -6,
-              bottom: -6,
-              width: 18,
-              height: 18,
-              borderRadius: 999,
-              background: "rgba(10,10,14,0.92)",
-              border: "1px solid rgba(255,255,255,0.14)",
-              display: "grid",
-              placeItems: "center",
-              fontSize: 12,
-              boxShadow: "0 10px 22px rgba(0,0,0,0.35)",
-            }}
-          >
-            {flag}
-          </div>
-        ) : null}
+function flagEmojiFromISO(code?: string) {
+  const cc = String(code || "").trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(cc)) return "";
+  const A = 0x1f1e6;
+  const base = "A".charCodeAt(0);
+  const first = A + (cc.charCodeAt(0) - base);
+  const second = A + (cc.charCodeAt(1) - base);
+  return String.fromCodePoint(first, second);
+}
+
+function BracketAvatar({ player, dim }: any) {
+  const name = player?.name || "Joueur";
+  const avatar = player?.avatar || null;
+  const flag = flagEmojiFromISO(player?.countryCode);
+
+  return (
+    <div style={{ position: "relative", width: 34, height: 34, opacity: dim ? 0.55 : 1 }}>
+      <div style={{ filter: "drop-shadow(0 0 10px rgba(0,0,0,0.35))" }}>
+        <AvatarCircle name={name} avatarUrl={avatar} size={34} dim={dim} />
       </div>
-    );
-  }
-  
-  function resolvePlayerForSide(allMatches: any[], m: any, side: "a" | "b", playersById: Record<string, any>) {
-    const pid = String(side === "a" ? m?.aPlayerId : m?.bPlayerId || "");
-    if (!pid) return { kind: "tbd" as const, player: null };
-    if (isByeId(pid)) return { kind: "bye" as const, player: null };
-    if (!isTbdId(pid)) return { kind: "player" as const, player: playersById[pid] || null };
-  
-    // TBD => essayer de montrer les 2 avatars des feeders (comme placeholders)
-    const feeder = resolveSourceMatchForTbdSide(allMatches, m, side);
-    if (!feeder) return { kind: "tbd" as const, player: null };
-  
-    const fa = String(feeder?.aPlayerId || "");
-    const fb = String(feeder?.bPlayerId || "");
-    const pa = fa && playersById[fa] ? playersById[fa] : null;
-    const pb = fb && playersById[fb] ? playersById[fb] : null;
-  
-    return { kind: "feeder" as const, feederA: pa, feederB: pb };
-  }
-  
-  function WorldCupBracketViewPure({ koMatches, playersById, allMatches }: any) {
-    if (!koMatches?.length) return <div style={{ fontSize: 12, opacity: 0.78 }}>Aucun match KO à afficher.</div>;
-  
-    // Layout constants (look "FIFA bracket")
-    const COL_W = 86;
-    const COL_GAP = 60;
-    const MATCH_H = 78; // bloc duel (2 avatars)
-    const ROW_GAP = 22;
-    const PAD_T = 12;
-    const PAD_L = 12;
-  
-    const STEP = MATCH_H + ROW_GAP;
-  
-    // rounds
-    const rounds = Array.from(new Set(koMatches.map((m: any) => Number(m.roundIndex ?? 0)))).sort((a, b) => a - b);
-    const byRound: Record<number, any[]> = {};
-    for (const r of rounds) byRound[r] = [];
-    for (const m of koMatches) {
-      const r = Number(m.roundIndex ?? 0);
-      (byRound[r] ||= []).push(m);
-    }
-    for (const r of rounds) byRound[r].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
-  
-    // ✅ hauteur basée sur le 1er round (le plus rempli)
-    const firstRound = rounds[0];
-    const firstCount = (byRound[firstRound] || []).length;
-    const canvasH = PAD_T * 2 + firstCount * MATCH_H + Math.max(0, firstCount - 1) * ROW_GAP;
-    const canvasW = PAD_L * 2 + rounds.length * COL_W + Math.max(0, rounds.length - 1) * COL_GAP;
-  
-    const colX = (roundPos: number) => PAD_L + roundPos * (COL_W + COL_GAP);
-  
-    // ✅ Position top d’un match (roundPos = 0.., matchIndex = 0..)
-    // Formule : top = PAD_T + ((2^r - 1)/2)*STEP + matchIndex*(2^r)*STEP
-    function matchTop(roundPos: number, matchIndex: number) {
-      const pow = 2 ** roundPos;
-      return PAD_T + ((pow - 1) / 2) * STEP + matchIndex * pow * STEP;
-    }
-  
-    function matchCenterY(roundPos: number, matchIndex: number) {
-      return matchTop(roundPos, matchIndex) + MATCH_H / 2;
-    }
-  
-    // build SVG lines (elbows) — connect i -> floor(i/2)
-    const lines: Array<{ x1: number; y1: number; x2: number; y2: number; xm: number }> = [];
-    for (let ri = 0; ri < rounds.length - 1; ri++) {
-      const r = rounds[ri];
-      const nextR = rounds[ri + 1];
-      const left = byRound[r] || [];
-      const right = byRound[nextR] || [];
-  
-      for (let i = 0; i < left.length; i++) {
-        const j = Math.floor(i / 2);
-        if (!right[j]) continue;
-  
-        const x1 = colX(ri) + COL_W;
-        const y1 = matchCenterY(ri, i);
-        const x2 = colX(ri + 1);
-        const y2 = matchCenterY(ri + 1, j);
-        const xm = x1 + COL_GAP * 0.52;
-        lines.push({ x1, y1, x2, y2, xm });
-      }
-    }
-  
-    return (
-      <div
-        className="dc-scroll-thin"
-        style={{
-          width: "100%",
-          maxWidth: "100%",
-          overflowX: "auto",
-          overflowY: "hidden",
-          WebkitOverflowScrolling: "touch",
-          paddingBottom: 8,
-        }}
-      >
-        <div style={{ position: "relative", width: canvasW, height: canvasH, margin: "0 auto" }}>
-          {/* SVG TRAITS */}
-          <svg
-            width={canvasW}
-            height={canvasH}
-            viewBox={`0 0 ${canvasW} ${canvasH}`}
-            style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
-          >
-            {lines.map((L, idx) => (
-              <g key={idx}>
-                <path d={`M ${L.x1} ${L.y1} L ${L.xm} ${L.y1}`} stroke="rgba(255,255,255,0.22)" strokeWidth={2} fill="none" />
-                <path d={`M ${L.xm} ${L.y1} L ${L.xm} ${L.y2}`} stroke="rgba(255,255,255,0.22)" strokeWidth={2} fill="none" />
-                <path d={`M ${L.xm} ${L.y2} L ${L.x2} ${L.y2}`} stroke="rgba(255,255,255,0.22)" strokeWidth={2} fill="none" />
-                <circle cx={L.xm} cy={L.y2} r={4.2} fill="rgba(79,180,255,0.65)" />
-              </g>
-            ))}
-          </svg>
-  
-          {/* Colonnes d'avatars (positionnement ABSOLU par match pour l'alignement "milieu") */}
-          {rounds.map((r, ri) => {
-            const items = byRound[r] || [];
-            return (
-              <div
-                key={r}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: colX(ri),
-                  width: COL_W,
-                  height: canvasH,
-                }}
-              >
-                {items.map((m: any, i: number) => {
-                  const a = resolvePlayerForSide(allMatches, m, "a", playersById);
-                  const b = resolvePlayerForSide(allMatches, m, "b", playersById);
-  
-                  const renderSide = (s: any) => {
-                    if (s.kind === "player") return <BracketAvatar player={s.player} />;
-                    if (s.kind === "bye") return <BracketAvatar player={{ name: "BYE" }} dim />;
-                    if (s.kind === "feeder")
-                      return (
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <BracketAvatar player={s.feederA || { name: "TBD" }} dim={!s.feederA} />
-                          <BracketAvatar player={s.feederB || { name: "TBD" }} dim={!s.feederB} />
-                        </div>
-                      );
-                    return <BracketAvatar player={{ name: "TBD" }} dim />;
-                  };
-  
-                  return (
-                    <div
-                      key={m.id}
-                      style={{
-                        position: "absolute",
-                        left: 0,
-                        right: 0,
-                        top: matchTop(ri, i), // ✅ le “centrage” de la colonne se fait ici
-                        height: MATCH_H,
-                        display: "grid",
-                        placeItems: "center",
-                        gap: 10,
-                      }}
-                    >
-                      {renderSide(a)}
-                      {renderSide(b)}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
-  
-          {/* padding right visuel */}
-          <div style={{ position: "absolute", top: 0, left: canvasW - PAD_L, width: PAD_L, height: canvasH }} />
+      {flag ? (
+        <div
+          title={player?.countryCode || ""}
+          style={{
+            position: "absolute",
+            right: -6,
+            bottom: -6,
+            width: 18,
+            height: 18,
+            borderRadius: 999,
+            background: "rgba(10,10,14,0.92)",
+            border: "1px solid rgba(255,255,255,0.14)",
+            display: "grid",
+            placeItems: "center",
+            fontSize: 12,
+            boxShadow: "0 10px 22px rgba(0,0,0,0.35)",
+          }}
+        >
+          {flag}
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+function resolvePlayerForSide(allMatches: any[], m: any, side: "a" | "b", playersById: Record<string, any>) {
+  const pid = String(side === "a" ? m?.aPlayerId : m?.bPlayerId || "");
+  if (!pid) return { kind: "tbd" as const, player: null };
+  if (isByeId(pid)) return { kind: "bye" as const, player: null };
+  if (!isTbdId(pid)) return { kind: "player" as const, player: playersById[pid] || null };
+
+  const feeder = resolveSourceMatchForTbdSide(allMatches, m, side);
+  if (!feeder) return { kind: "tbd" as const, player: null };
+
+  const fa = String(feeder?.aPlayerId || "");
+  const fb = String(feeder?.bPlayerId || "");
+  const pa = fa && playersById[fa] ? playersById[fa] : null;
+  const pb = fb && playersById[fb] ? playersById[fb] : null;
+
+  return { kind: "feeder" as const, feederA: pa, feederB: pb };
+}
+
+function WorldCupBracketViewPure({ koMatches, playersById, allMatches }: any) {
+  if (!koMatches?.length) return <div style={{ fontSize: 12, opacity: 0.78 }}>Aucun match KO à afficher.</div>;
+
+  const COL_W = 86;
+  const COL_GAP = 60;
+  const MATCH_H = 78;
+  const ROW_GAP = 22;
+  const PAD_T = 12;
+  const PAD_L = 12;
+
+  const STEP = MATCH_H + ROW_GAP;
+
+  const rounds = Array.from(new Set(koMatches.map((m: any) => Number(m.roundIndex ?? 0)))).sort((a, b) => a - b);
+  const byRound: Record<number, any[]> = {};
+  for (const r of rounds) byRound[r] = [];
+  for (const m of koMatches) {
+    const r = Number(m.roundIndex ?? 0);
+    (byRound[r] ||= []).push(m);
+  }
+  for (const r of rounds) byRound[r].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+
+  const firstRound = rounds[0];
+  const firstCount = (byRound[firstRound] || []).length;
+  const canvasH = PAD_T * 2 + firstCount * MATCH_H + Math.max(0, firstCount - 1) * ROW_GAP;
+  const canvasW = PAD_L * 2 + rounds.length * COL_W + Math.max(0, rounds.length - 1) * COL_GAP;
+
+  const colX = (roundPos: number) => PAD_L + roundPos * (COL_W + COL_GAP);
+
+  function matchTop(roundPos: number, matchIndex: number) {
+    const pow = 2 ** roundPos;
+    return PAD_T + ((pow - 1) / 2) * STEP + matchIndex * pow * STEP;
+  }
+  function matchCenterY(roundPos: number, matchIndex: number) {
+    return matchTop(roundPos, matchIndex) + MATCH_H / 2;
+  }
+
+  const lines: Array<{ x1: number; y1: number; x2: number; y2: number; xm: number }> = [];
+  for (let ri = 0; ri < rounds.length - 1; ri++) {
+    const r = rounds[ri];
+    const nextR = rounds[ri + 1];
+    const left = byRound[r] || [];
+    const right = byRound[nextR] || [];
+
+    for (let i = 0; i < left.length; i++) {
+      const j = Math.floor(i / 2);
+      if (!right[j]) continue;
+
+      const x1 = colX(ri) + COL_W;
+      const y1 = matchCenterY(ri, i);
+      const x2 = colX(ri + 1);
+      const y2 = matchCenterY(ri + 1, j);
+      const xm = x1 + COL_GAP * 0.52;
+      lines.push({ x1, y1, x2, y2, xm });
+    }
+  }
+
+  return (
+    <div
+      className="dc-scroll-thin"
+      style={{
+        width: "100%",
+        maxWidth: "100%",
+        overflowX: "auto",
+        overflowY: "hidden",
+        WebkitOverflowScrolling: "touch",
+        paddingBottom: 8,
+      }}
+    >
+      <div style={{ position: "relative", width: canvasW, height: canvasH, margin: "0 auto" }}>
+        <svg
+          width={canvasW}
+          height={canvasH}
+          viewBox={`0 0 ${canvasW} ${canvasH}`}
+          style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+        >
+          {lines.map((L, idx) => (
+            <g key={idx}>
+              <path d={`M ${L.x1} ${L.y1} L ${L.xm} ${L.y1}`} stroke="rgba(255,255,255,0.22)" strokeWidth={2} fill="none" />
+              <path d={`M ${L.xm} ${L.y1} L ${L.xm} ${L.y2}`} stroke="rgba(255,255,255,0.22)" strokeWidth={2} fill="none" />
+              <path d={`M ${L.xm} ${L.y2} L ${L.x2} ${L.y2}`} stroke="rgba(255,255,255,0.22)" strokeWidth={2} fill="none" />
+              <circle cx={L.xm} cy={L.y2} r={4.2} fill="rgba(79,180,255,0.65)" />
+            </g>
+          ))}
+        </svg>
+
+        {rounds.map((r, ri) => {
+          const items = byRound[r] || [];
+          return (
+            <div
+              key={r}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: colX(ri),
+                width: COL_W,
+                height: canvasH,
+              }}
+            >
+              {items.map((m: any, i: number) => {
+                const a = resolvePlayerForSide(allMatches, m, "a", playersById);
+                const b = resolvePlayerForSide(allMatches, m, "b", playersById);
+
+                const renderSide = (s: any) => {
+                  if (s.kind === "player") return <BracketAvatar player={s.player} />;
+                  if (s.kind === "bye") return <BracketAvatar player={{ name: "BYE" }} dim />;
+                  if (s.kind === "feeder")
+                    return (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <BracketAvatar player={s.feederA || { name: "TBD" }} dim={!s.feederA} />
+                        <BracketAvatar player={s.feederB || { name: "TBD" }} dim={!s.feederB} />
+                      </div>
+                    );
+                  return <BracketAvatar player={{ name: "TBD" }} dim />;
+                };
+
+                return (
+                  <div
+                    key={m.id}
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      top: matchTop(ri, i),
+                      height: MATCH_H,
+                      display: "grid",
+                      placeItems: "center",
+                      gap: 10,
+                    }}
+                  >
+                    {renderSide(a)}
+                    {renderSide(b)}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+
+        <div style={{ position: "absolute", top: 0, left: canvasW - PAD_L, width: PAD_L, height: canvasH }} />
       </div>
-    );
-  }  
+    </div>
+  );
+}
 
 /* -------------------------
    MAIN
@@ -925,7 +1117,6 @@ export default function TournamentView({ store, go, id }: Props) {
   const safeMatches: TournamentMatch[] = React.useMemo(() => (Array.isArray(matches) ? matches : []), [matches]);
 
   const visibleMatches: TournamentMatch[] = React.useMemo(() => {
-    // on garde les bye (pour autoQualified), mais on supprime les "void bye"
     return safeMatches.filter((m: any) => !isVoidByeMatch(m));
   }, [safeMatches]);
 
@@ -1012,7 +1203,6 @@ export default function TournamentView({ store, go, id }: Props) {
     return uniq.map((pid) => playersById[pid]).filter(Boolean);
   }, [visibleMatches, playersById]);
 
-  // ✅ affichage "cards" => on enlève les bye
   const displayMatches = React.useMemo(() => visibleMatches.filter((m: any) => !isByeMatch(m)), [visibleMatches]);
 
   const viewKind = String((tour as any)?.viewKind || "groups_ko");
@@ -1020,7 +1210,6 @@ export default function TournamentView({ store, go, id }: Props) {
 
   const byPhase = React.useMemo(() => {
     const isGroup = (m: any) => String(m.phase || "") === "groups" || m.stageIndex === 0 || typeof m.groupIndex === "number";
-    // ✅ Fix KO: on ne prend en KO que "phase=ko" OU stageIndex==1 (et PAS juste "stageIndex!=0")
     const isKo = (m: any) => String(m.phase || "") === "ko" || m.stageIndex === 1;
     const isRep = (m: any) =>
       String(m.phase || "") === "repechage" ||
@@ -1069,13 +1258,18 @@ export default function TournamentView({ store, go, id }: Props) {
   const [activeGroupIdx, setActiveGroupIdx] = React.useState(0);
 
   const rrMatchesByGroup = React.useMemo(() => {
+    // ✅ IMPORTANT: Array.from(() => []) (pas fill([]))
     const out: any[] = Array.from({ length: groupsMeta }, () => []);
     for (const m of byPhase.groups as any[]) {
       const gi = typeof m.groupIndex === "number" ? m.groupIndex : 0;
       if (!out[gi]) out[gi] = [];
       out[gi].push(m);
     }
-    for (const arr of out) arr.sort((a, b) => (a.roundIndex ?? 0) - (b.roundIndex ?? 0) || (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+    for (const arr of out)
+      arr.sort(
+        (a, b) =>
+          (a.roundIndex ?? 0) - (b.roundIndex ?? 0) || (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
+      );
     return out;
   }, [byPhase.groups, groupsMeta]);
 
@@ -1096,7 +1290,8 @@ export default function TournamentView({ store, go, id }: Props) {
 
   const rrStandingsByGroup = React.useMemo(() => {
     const out: any[] = [];
-    for (let g = 0; g < groupsMeta; g++) out[g] = computeStandings(rrPlayersByGroup[g] || [], rrMatchesByGroup[g] || []);
+    for (let g = 0; g < groupsMeta; g++)
+      out[g] = computeStandings(rrPlayersByGroup[g] || [], rrMatchesByGroup[g] || []);
     return out;
   }, [rrPlayersByGroup, rrMatchesByGroup, groupsMeta]);
 
@@ -1199,12 +1394,38 @@ export default function TournamentView({ store, go, id }: Props) {
       >
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", minWidth: 0 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 0 }}>
-            <div style={{ width: 10, height: 10, borderRadius: 99, background: topColor, boxShadow: `0 0 14px ${topColor}55`, flex: "0 0 auto" }} />
+            <div
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: 99,
+                background: topColor,
+                boxShadow: `0 0 14px ${topColor}55`,
+                flex: "0 0 auto",
+              }}
+            />
             <div style={{ display: "grid", gap: 3, minWidth: 0 }}>
-              <div style={{ fontWeight: 950, fontSize: 12.5, color: topColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <div
+                style={{
+                  fontWeight: 950,
+                  fontSize: 12.5,
+                  color: topColor,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
                 {topTag}
               </div>
-              <div style={{ fontSize: 11.5, opacity: 0.75, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  opacity: 0.75,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
                 {m?.updatedAt ? `• ${formatDate(m.updatedAt)}` : ""}
               </div>
             </div>
@@ -1265,8 +1486,12 @@ export default function TournamentView({ store, go, id }: Props) {
 
         <div style={{ marginTop: 10, display: "grid", gap: 10, width: "100%", maxWidth: "100%" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", minWidth: 0 }}>
-            <div style={{ minWidth: 0, flex: "1 1 0", overflow: "hidden" }}>{renderPlayerOrTbd(safeMatches as any, m, "a", playersById)}</div>
-            <div style={{ fontWeight: 950, fontSize: 13, opacity: 0.9, flex: "0 0 auto" }}>{done ? scoreText(m) : "VS"}</div>
+            <div style={{ minWidth: 0, flex: "1 1 0", overflow: "hidden" }}>
+              {renderPlayerOrTbd(safeMatches as any, m, "a", playersById)}
+            </div>
+            <div style={{ fontWeight: 950, fontSize: 13, opacity: 0.9, flex: "0 0 auto" }}>
+              {done ? scoreText(m) : "VS"}
+            </div>
             <div style={{ minWidth: 0, flex: "1 1 0", display: "flex", justifyContent: "flex-end", overflow: "hidden" }}>
               {renderPlayerOrTbd(safeMatches as any, m, "b", playersById)}
             </div>
@@ -1294,14 +1519,12 @@ export default function TournamentView({ store, go, id }: Props) {
 
   const stats = React.useMemo(() => computeTournamentStats(playersById, displayMatches), [playersById, displayMatches]);
 
-  // ✅ KO matches pour bracket (dédup + filtrage strict)
   const koMatches = React.useMemo(() => {
     const raw = (byPhase.ko || [])
       .filter((m: any) => !m?.groupId)
       .filter((m: any) => !isVoidByeMatch(m))
       .slice();
 
-    // dédup par id (corrige les “doublons” visuels)
     const map = new Map<string, any>();
     for (const m of raw) {
       const k = String(m?.id || "");
@@ -1309,14 +1532,11 @@ export default function TournamentView({ store, go, id }: Props) {
       if (!map.has(k)) map.set(k, m);
     }
 
-    // IMPORTANT: pour la vue "FIFA", on garde aussi les matchs avec BYE/TBD
-    // (sinon les colonnes peuvent paraître “doublées”/désalignées)
     const arr = Array.from(map.values());
     arr.sort((a, b) => (a.roundIndex ?? 0) - (b.roundIndex ?? 0) || (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
     return arr;
   }, [byPhase.ko]);
 
-  // sous-onglets TABLEAU: Vue / Détails
   const [bracketSub, setBracketSub] = React.useState<"view" | "details">("view");
 
   return (
@@ -1531,16 +1751,7 @@ export default function TournamentView({ store, go, id }: Props) {
                   }
                   const rounds = Object.keys(byRound).map(Number).sort((a, b) => a - b);
                   return rounds.map((r) => (
-                    <div
-                      key={r}
-                      style={{
-                        borderRadius: 16,
-                        border: "1px solid rgba(255,255,255,0.10)",
-                        background: "rgba(255,255,255,0.03)",
-                        padding: 12,
-                        overflow: "hidden",
-                      }}
-                    >
+                    <div key={r} style={{ borderRadius: 16, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.03)", padding: 12, overflow: "hidden" }}>
                       <div style={{ fontWeight: 950, color: TAB_COLORS.pools, marginBottom: 10 }}>ROUND {r + 1}</div>
                       <div style={{ display: "grid", gap: 10 }}>
                         {byRound[r].filter((m) => !isByeMatch(m)).map((m: any) => renderMatchCard(m, TAB_COLORS.pools))}
@@ -1554,34 +1765,14 @@ export default function TournamentView({ store, go, id }: Props) {
 
           {/* STANDINGS */}
           {tab === "standings" ? (
-            <Card
-              title="Classement"
-              subtitle={viewKind === "round_robin" ? "Classement du championnat." : "Classement par poule."}
-              accent={TAB_COLORS.standings}
-              icon="🏁"
-            >
+            <Card title="Classement" subtitle={viewKind === "round_robin" ? "Classement du championnat." : "Classement par poule."} accent={TAB_COLORS.standings} icon="🏁">
               {viewKind === "round_robin" ? (
                 <div style={{ display: "grid", gap: 8 }}>
                   {computeStandings(Object.keys(playersById), byPhase.groups).map((r: any, idx: number) => {
                     const pl = playersById[String(r.id)];
                     const diff = r.scored - r.conceded;
                     return (
-                      <div
-                        key={r.id}
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "28px 1fr auto",
-                          gap: 10,
-                          alignItems: "center",
-                          padding: "10px 12px",
-                          borderRadius: 14,
-                          border: "1px solid rgba(255,255,255,0.10)",
-                          background: "rgba(0,0,0,0.25)",
-                          width: "100%",
-                          maxWidth: "100%",
-                          overflow: "hidden",
-                        }}
-                      >
+                      <div key={r.id} style={{ display: "grid", gridTemplateColumns: "28px 1fr auto", gap: 10, alignItems: "center", padding: "10px 12px", borderRadius: 14, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.25)", width: "100%", maxWidth: "100%", overflow: "hidden" }}>
                         <div style={{ fontWeight: 950, color: idx === 0 ? "#ffcf57" : "rgba(255,255,255,0.75)" }}>{idx + 1}</div>
                         <PlayerPill name={pl?.name || "Joueur"} avatarUrl={pl?.avatar} />
                         <div style={{ textAlign: "right", fontSize: 11.5, opacity: 0.9, whiteSpace: "nowrap" }}>
@@ -1604,22 +1795,7 @@ export default function TournamentView({ store, go, id }: Props) {
                       const pl = playersById[String(r.id)];
                       const diff = r.scored - r.conceded;
                       return (
-                        <div
-                          key={r.id}
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "28px 1fr auto",
-                            gap: 10,
-                            alignItems: "center",
-                            padding: "10px 12px",
-                            borderRadius: 14,
-                            border: "1px solid rgba(255,255,255,0.10)",
-                            background: "rgba(0,0,0,0.25)",
-                            width: "100%",
-                            maxWidth: "100%",
-                            overflow: "hidden",
-                          }}
-                        >
+                        <div key={r.id} style={{ display: "grid", gridTemplateColumns: "28px 1fr auto", gap: 10, alignItems: "center", padding: "10px 12px", borderRadius: 14, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.25)", width: "100%", maxWidth: "100%", overflow: "hidden" }}>
                           <div style={{ fontWeight: 950, color: idx === 0 ? "#ffcf57" : "rgba(255,255,255,0.75)" }}>{idx + 1}</div>
                           <PlayerPill name={pl?.name || "Joueur"} avatarUrl={pl?.avatar} />
                           <div style={{ textAlign: "right", fontSize: 11.5, opacity: 0.9, whiteSpace: "nowrap" }}>
@@ -1636,12 +1812,7 @@ export default function TournamentView({ store, go, id }: Props) {
 
           {/* BRACKET */}
           {tab === "bracket" ? (
-            <Card
-              title="Tableau"
-              subtitle={viewKind === "round_robin" ? "Le classement est dans l’onglet Classement." : "Éliminatoires (Vue coupe du monde / Détails)."}
-              accent={TAB_COLORS.bracket}
-              icon="⟂"
-            >
+            <Card title="Tableau" subtitle={viewKind === "round_robin" ? "Le classement est dans l’onglet Classement." : "Éliminatoires (Vue coupe du monde / Détails)."} accent={TAB_COLORS.bracket} icon="⟂">
               {viewKind === "round_robin" ? (
                 <div style={{ fontSize: 12, opacity: 0.78 }}>Pas de bracket en championnat.</div>
               ) : (
@@ -1651,55 +1822,24 @@ export default function TournamentView({ store, go, id }: Props) {
                     <Pill active={bracketSub === "details"} label="Détails" onClick={() => setBracketSub("details")} accent={TAB_COLORS.bracket} />
                   </div>
 
-                  {/* ✅ VUE: uniquement avatars + drapeaux + traits */}
+                  {/* ✅ VUE: inchangée (avatars+drapeaux+traits) */}
                   {bracketSub === "view" ? (
                     <div style={{ marginTop: 12 }}>
                       <WorldCupBracketViewPure koMatches={koMatches} playersById={playersById} allMatches={safeMatches as any} />
                     </div>
                   ) : null}
 
-                  {/* DETAILS: vue actuelle (cartes) */}
+                  {/* ✅ DETAILS: colonnes centrées + scores (sans toucher Vue) */}
                   {bracketSub === "details" ? (
-                    <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
+                    <div style={{ marginTop: 12 }}>
                       {(() => {
-                        // pour détails, on enlève les BYE/TBD
+                        // pour détails, on enlève les BYE (mais on garde TBD si tu veux voir les feeders)
                         const detailsKo = koMatches.filter((m: any) => !isByeMatch(m));
-                        if (!detailsKo.length) return <div style={{ fontSize: 12, opacity: 0.78 }}>Aucun match KO à afficher.</div>;
-
-                        const rounds = Array.from(new Set(detailsKo.map((m: any) => Number(m.roundIndex ?? 0)))).sort((a, b) => a - b);
-                        const byRound: Record<number, any[]> = {};
-                        for (const r of rounds) byRound[r] = [];
-                        for (const m of detailsKo) {
-                          const r = Number(m.roundIndex ?? 0);
-                          if (!byRound[r]) byRound[r] = [];
-                          byRound[r].push(m);
-                        }
-                        for (const r of Object.keys(byRound)) byRound[Number(r)].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
-
                         return (
-                          <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 6, WebkitOverflowScrolling: "touch" }}>
-                            {rounds.map((r) => (
-                              <div
-                                key={r}
-                                style={{
-                                  width: 280,
-                                  flex: "0 0 auto",
-                                  borderRadius: 16,
-                                  border: "1px solid rgba(255,255,255,0.10)",
-                                  background: "rgba(255,255,255,0.03)",
-                                  padding: 10,
-                                  overflow: "hidden",
-                                }}
-                              >
-                                <div style={{ fontWeight: 950, fontSize: 12, color: TAB_COLORS.bracket, textShadow: "0 0 10px rgba(79,180,255,0.35)", marginBottom: 8 }}>
-                                  {koTourLabel(r, rounds.length)}
-                                </div>
-                                <div style={{ display: "grid", gap: 10 }}>
-                                  {byRound[r]?.map((m: any) => renderMatchCard(m, TAB_COLORS.bracket))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                          <WorldCupKoDetailsColumns
+                            koMatches={detailsKo}
+                            renderMatchCard={(m: any) => renderMatchCard(m, TAB_COLORS.bracket)}
+                          />
                         );
                       })()}
                     </div>
@@ -1799,22 +1939,7 @@ export default function TournamentView({ store, go, id }: Props) {
 
               <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
                 {stats.list.map((r: any, idx: number) => (
-                  <div
-                    key={r.id}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "28px 1fr auto",
-                      gap: 10,
-                      alignItems: "center",
-                      padding: "10px 12px",
-                      borderRadius: 14,
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      background: "rgba(0,0,0,0.25)",
-                      width: "100%",
-                      maxWidth: "100%",
-                      overflow: "hidden",
-                    }}
-                  >
+                  <div key={r.id} style={{ display: "grid", gridTemplateColumns: "28px 1fr auto", gap: 10, alignItems: "center", padding: "10px 12px", borderRadius: 14, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.25)", width: "100%", maxWidth: "100%", overflow: "hidden" }}>
                     <div style={{ fontWeight: 950, color: idx === 0 ? "#ffcf57" : "rgba(255,255,255,0.75)" }}>{idx + 1}</div>
                     <PlayerPill name={r.name} avatarUrl={playersById[String(r.id)]?.avatar} />
                     <div style={{ textAlign: "right", fontSize: 11.5, opacity: 0.9, whiteSpace: "nowrap" }}>
