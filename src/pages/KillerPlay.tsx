@@ -1318,10 +1318,12 @@ function TargetsCarousel({
   players,
   activeId,
   theme,
+  blindMask,
 }: {
   players: KillerPlayerState[];
   activeId?: string | null;
   theme: string;
+  blindMask?: boolean;
 }) {
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
   const itemRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
@@ -1357,7 +1359,11 @@ function TargetsCarousel({
       >
         {players.map((p) => {
           const isActive = p.id === activeId;
-          const num = p.killerPhase === "SELECT" ? "?" : String(p.number || "?");
+          const num = blindMask
+            ? "?"
+            : p.killerPhase === "SELECT"
+            ? "?"
+            : String(p.number || "?");
           const badge = p.eliminated
             ? ("D" as any)
             : p.killerPhase === "ACTIVE"
@@ -2026,6 +2032,21 @@ const bullHealOn = truthy(
     (config as any)?.variants?.bull_heal ??
     (config as any)?.options?.bullHeal ??
     (config as any)?.rules?.bullHeal
+);
+
+// ✅ BLIND KILLER (VRAI): masque les numéros pour TOUS les joueurs pendant la partie.
+// Le joueur actif ne voit pas non plus son propre numéro.
+// Les numéros réapparaissent uniquement à la fin (overlay de fin) / après victoire.
+const blindKillerOn = truthy(
+  (config as any)?.blindKiller ??
+    (config as any)?.blind_killer ??
+    (config as any)?.blind ??
+    (config as any)?.variants?.blindKiller ??
+    (config as any)?.variants?.blind_killer ??
+    (config as any)?.options?.blindKiller ??
+    (config as any)?.options?.blind_killer ??
+    (config as any)?.rules?.blindKiller ??
+    (config as any)?.rules?.blind_killer
 );
 
 
@@ -3062,6 +3083,10 @@ const endPlayersOrdered = React.useMemo(() => {
 
 const theme = gold;
 
+// ✅ BLIND KILLER: on masque les numéros pour tous les joueurs pendant la partie.
+// (On révèle à la fin uniquement.)
+const blindMask = !!blindKillerOn && !showEnd && !finished && !w;
+
 const isCurrentKillerActive =
   !!current && current.killerPhase === "ACTIVE" && !current.eliminated;
 
@@ -3532,6 +3557,7 @@ return (
           players={players}
           activeId={current?.id || null}
           theme={theme}
+          blindMask={blindKillerOn}
         />
       </div>
 
@@ -3599,7 +3625,9 @@ return (
                 textShadow: "0 0 14px rgba(255,198,58,.22)",
               }}
             >
-              {current?.killerPhase === "SELECT"
+              {blindMask
+                ? "?"
+                : current?.killerPhase === "SELECT"
                 ? "?"
                 : current?.number ?? "?"}
               {current?.killerPhase === "ACTIVE" && (
@@ -3731,7 +3759,7 @@ return (
                       opacity: 0.95,
                     }}
                   >
-                    {p.killerPhase === "SELECT" ? "?" : p.number || "?"}
+                    {blindMask ? "?" : p.killerPhase === "SELECT" ? "?" : p.number || "?"}
                   </span>
                 </span>
 

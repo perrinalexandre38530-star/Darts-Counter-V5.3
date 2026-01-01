@@ -1,7 +1,7 @@
 // @ts-nocheck
 // ============================================
 // src/pages/TournamentCreate.tsx
-// Tournois (LOCAL) — Create (UI refacto v1)
+// Tournois (LOCAL) — Create (UI refacto v1) — BIG TOURNAMENTS (NO LIMITS)
 //
 // ✅ Objectif: CLARTÉ façon X01Config (même logique / même rendu neon)
 // ✅ Étape 1: Choix du MODE via menu flottant (sheet)
@@ -17,6 +17,19 @@
 // - Format tournoi : 1 OPTION PAR LIGNE (plus de 2 options sur la même ligne)
 // - Boutons "i" : À L’EXTÉRIEUR, alignés, et ouvrent un MODAL centré (plus de popover)
 // - Auto-fill BOTS IA : garde la logique, supprime toute notion UI de "cap bots" (inutile)
+//
+// ✅ FIX (ENGINE V2):
+// - engine V2 attend `viewKind` (et repechage optionnel) -> PASSÉS à createTournamentDraft
+//
+// ✅ FIX IMPORTANT (DOUBLON BRACKET):
+// - stages conformes à Tournaments.tsx V2 (ids: ko/rr/w/l/gf/rep + role)
+// - évite KO “se” qui provoque souvent un affichage double dans TournamentView
+//
+// ✅ NEW (BIG TOURNAMENTS):
+// - ✅ Max joueurs (optionnel) : vide = illimité (sinon échantillon aléatoire si trop de profils)
+// - ✅ Poules : "joueurs par poule" (nb poules auto = ceil(N / joueursParPoule))
+// - ✅ Championnat / Poules : nb de tours RR (1..5)
+// - ✅ KO : plus de 4/8/16 : Bracket Auto (pow2) ou Manuel (champ numérique libre)
 // ============================================
 
 import React from "react";
@@ -24,14 +37,8 @@ import type { Store } from "../lib/types";
 
 // ✅ ENGINE + STORE (comme Tournaments.tsx)
 import type { Tournament } from "../lib/tournaments/types";
-import {
-  createTournamentDraft,
-  buildInitialMatches,
-} from "../lib/tournaments/engine";
-import {
-  upsertTournamentLocal,
-  upsertMatchesForTournamentLocal,
-} from "../lib/tournaments/storeLocal";
+import { createTournamentDraft, buildInitialMatches } from "../lib/tournaments/engine";
+import { upsertTournamentLocal, upsertMatchesForTournamentLocal } from "../lib/tournaments/storeLocal";
 
 // ✅ Avatar + StarRing (comme X01Config)
 import ProfileAvatar from "../components/ProfileAvatar";
@@ -76,6 +83,36 @@ function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
+function clamp(n: number, a: number, b: number) {
+  const x = Number.isFinite(n) ? n : a;
+  return Math.max(a, Math.min(b, x));
+}
+
+function shuffle<T>(arr: T[]) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    const tmp = a[i];
+    a[i] = a[j];
+    a[j] = tmp;
+  }
+  return a;
+}
+
+function nextPow2(n: number) {
+  const x = Math.max(1, (n | 0));
+  let p = 1;
+  while (p < x) p <<= 1;
+  return p;
+}
+
+function numFromText(txt: any) {
+  const s = String(txt ?? "").trim();
+  if (!s) return NaN;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+}
+
 /* -----------------------------
    Optional stats bridge (safe)
 ------------------------------ */
@@ -83,8 +120,7 @@ function cx(...parts: Array<string | false | null | undefined>) {
 let getBasicProfileStatsAsync: any = null;
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  getBasicProfileStatsAsync =
-    require("../lib/statsBridge")?.getBasicProfileStatsAsync;
+  getBasicProfileStatsAsync = require("../lib/statsBridge")?.getBasicProfileStatsAsync;
 } catch {}
 
 /* -----------------------------
@@ -119,7 +155,6 @@ function resolveAvg3D(obj: any): number {
     obj?.botLevel,
     obj?.difficulty,
   ];
-
   for (const v of candidates) {
     const n = Number(v);
     if (Number.isFinite(n) && n > 0) return n;
@@ -187,10 +222,7 @@ const BOTS_PRO_ASSETS = [
 ];
 
 const BOT_PRO_AVATAR_BY_NAME: Record<string, any> = Object.fromEntries(
-  BOTS_PRO_ASSETS.map((b) => [
-    String(b.name || "").trim().toLowerCase(),
-    b.avatarDataUrl,
-  ])
+  BOTS_PRO_ASSETS.map((b) => [String(b.name || "").trim().toLowerCase(), b.avatarDataUrl])
 );
 
 function botAvatarFor(obj: any) {
@@ -210,24 +242,16 @@ function botAvatarFor(obj: any) {
 // ✅ detect bot “créé user” (Profiles → création bot) — ROBUSTE
 function isBotProfile(p: any) {
   if (!p) return false;
-
-  // flags fréquents
   if (p.isBot === true) return true;
   if (p.ai === true || p.isAI === true) return true;
-
-  // flags string
   if (String(p.isBot).toLowerCase() === "true") return true;
   if (String(p.ai).toLowerCase() === "true") return true;
   if (String(p.isAI).toLowerCase() === "true") return true;
 
-  // types/kinds
-  const t = String(p.type || p.kind || p.profileType || p.source || p.role || "")
-    .toLowerCase()
-    .trim();
+  const t = String(p.type || p.kind || p.profileType || p.source || p.role || "").toLowerCase().trim();
   if (t === "bot" || t === "ai" || t === "cpu") return true;
   if (t.includes("bot")) return true;
 
-  // signature bot user
   if (p.botLevel != null) return true;
   if (p.difficulty != null) return true;
   if (p.skill != null) return true;
@@ -237,13 +261,7 @@ function isBotProfile(p: any) {
 
 // ✅ localStorage bots : clés connues + scan "bot" (fallback)
 function readBotsFromLocalStorage(): any[] {
-  const keys = [
-    "dc_bots_v1",
-    "dc-bots-v1",
-    "dcBotsV1",
-    "darts-counter-bots",
-    "bots",
-  ];
+  const keys = ["dc_bots_v1", "dc-bots-v1", "dcBotsV1", "darts-counter-bots", "bots"];
 
   // 1) clés connues
   for (const k of keys) {
@@ -251,7 +269,6 @@ function readBotsFromLocalStorage(): any[] {
       const raw = localStorage.getItem(k);
       if (!raw) continue;
       const parsed = JSON.parse(raw);
-
       const arr = Array.isArray(parsed)
         ? parsed
         : Array.isArray(parsed?.bots)
@@ -261,7 +278,6 @@ function readBotsFromLocalStorage(): any[] {
             : Array.isArray(parsed?.list)
               ? parsed.list
               : [];
-
       if (Array.isArray(arr) && arr.length) return arr;
     } catch {}
   }
@@ -286,7 +302,6 @@ function readBotsFromLocalStorage(): any[] {
               : Array.isArray(parsed?.list)
                 ? parsed.list
                 : [];
-
         if (Array.isArray(arr) && arr.length) return arr;
       } catch {}
     }
@@ -295,22 +310,16 @@ function readBotsFromLocalStorage(): any[] {
   return [];
 }
 
-// ✅ petit “fingerprint” stable pour détecter un changement de bots en localStorage
+// ✅ fingerprint stable: détecte changement localStorage DANS LE MÊME ONGLET (poll)
 function botsFingerprintLS(): string {
   try {
-    const keys = [
-      "dc_bots_v1",
-      "dc-bots-v1",
-      "dcBotsV1",
-      "darts-counter-bots",
-      "bots",
-    ];
+    const keys = ["dc_bots_v1", "dc-bots-v1", "dcBotsV1", "darts-counter-bots", "bots"];
     const chunks: string[] = [];
     for (const k of keys) {
       const v = localStorage.getItem(k);
       if (v) chunks.push(k + ":" + String(v.length));
     }
-    // + scan clé "bot"
+
     try {
       let countBotKeys = 0;
       let sumLen = 0;
@@ -342,7 +351,6 @@ function getBotsFromStore(store: any) {
     const id = String(p?.id || p?.uuid || p?.botId || "");
     const name = String(p?.name || p?.displayName || p?.pseudo || "Bot").trim();
     const key = id || `bot_${name.toLowerCase()}`;
-
     if (!key || seen.has(key)) return;
     seen.add(key);
 
@@ -358,7 +366,6 @@ function getBotsFromStore(store: any) {
     });
   };
 
-  // 1) store buckets (bots déjà dedans)
   try {
     if (Array.isArray(store?.bots)) store.bots.forEach((b: any) => pushBot(b, true));
     if (Array.isArray(store?.botProfiles)) store.botProfiles.forEach((b: any) => pushBot(b, true));
@@ -366,12 +373,10 @@ function getBotsFromStore(store: any) {
     if (Array.isArray(store?.settings?.bots)) store.settings.bots.forEach((b: any) => pushBot(b, true));
   } catch {}
 
-  // 2) profiles : parfois les bots sont stockés ici
   try {
     if (Array.isArray(store?.profiles)) store.profiles.forEach((p: any) => pushBot(p, false));
   } catch {}
 
-  // 3) localStorage : ALWAYS bots (forced)
   try {
     const lsBots = readBotsFromLocalStorage();
     if (Array.isArray(lsBots)) lsBots.forEach((b: any) => pushBot(b, true));
@@ -383,13 +388,9 @@ function getBotsFromStore(store: any) {
 function pickBotsToFill(fromCatalog: any[], need: number, avgTarget: number) {
   const pool = Array.isArray(fromCatalog) ? fromCatalog.filter(Boolean) : [];
   if (!pool.length || need <= 0) return [];
-
   const sorted = [...pool].sort(
-    (a, b) =>
-      Math.abs((Number(a.avg3D) || 0) - avgTarget) -
-      Math.abs((Number(b.avg3D) || 0) - avgTarget)
+    (a, b) => Math.abs((Number(a.avg3D) || 0) - avgTarget) - Math.abs((Number(b.avg3D) || 0) - avgTarget)
   );
-
   const out: any[] = [];
   for (let i = 0; i < need; i++) out.push(sorted[i % sorted.length]);
   return out;
@@ -399,17 +400,7 @@ function pickBotsToFill(fromCatalog: any[], need: number, avgTarget: number) {
    UI atoms (THEME neon-ish)
 ------------------------------ */
 
-function Section({
-  title,
-  subtitle,
-  children,
-  accent = THEME,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-  accent?: string;
-}) {
+function Section({ title, subtitle, children, accent = THEME }: any) {
   return (
     <div
       style={{
@@ -422,43 +413,17 @@ function Section({
       }}
     >
       <div style={{ display: "grid", gap: 4, marginBottom: 10 }}>
-        <div
-          style={{
-            fontSize: 12.5,
-            fontWeight: 950,
-            letterSpacing: 0.3,
-            color: accent,
-            textShadow: `0 0 10px ${accent}40`,
-          }}
-        >
+        <div style={{ fontSize: 12.5, fontWeight: 950, letterSpacing: 0.3, color: accent, textShadow: `0 0 10px ${accent}40` }}>
           {title}
         </div>
-        {subtitle ? (
-          <div style={{ fontSize: 11.5, opacity: 0.78, lineHeight: 1.35 }}>
-            {subtitle}
-          </div>
-        ) : null}
+        {subtitle ? <div style={{ fontSize: 11.5, opacity: 0.78, lineHeight: 1.35 }}>{subtitle}</div> : null}
       </div>
       {children}
     </div>
   );
 }
 
-function NeonPill({
-  active,
-  label,
-  onClick,
-  small,
-  disabled,
-  primary = THEME,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-  small?: boolean;
-  disabled?: boolean;
-  primary?: string;
-}) {
+function NeonPill({ active, label, onClick, small, disabled, primary = THEME }: any) {
   const isDisabled = !!disabled;
   return (
     <button
@@ -468,19 +433,13 @@ function NeonPill({
       style={{
         borderRadius: 999,
         padding: small ? "6px 10px" : "7px 12px",
-        border: active
-          ? `1px solid ${primary}CC`
-          : "1px solid rgba(255,255,255,0.12)",
-        background: active
-          ? `linear-gradient(180deg, ${primary}22, rgba(0,0,0,0.20))`
-          : "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
+        border: active ? `1px solid ${primary}CC` : "1px solid rgba(255,255,255,0.12)",
+        background: active ? `linear-gradient(180deg, ${primary}22, rgba(0,0,0,0.20))` : "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
         color: "rgba(255,255,255,0.95)",
         fontWeight: active ? 950 : 850,
         fontSize: small ? 11.5 : 12.2,
         cursor: isDisabled ? "not-allowed" : "pointer",
-        boxShadow: active
-          ? `0 0 18px ${primary}44, 0 10px 22px rgba(0,0,0,0.35)`
-          : "none",
+        boxShadow: active ? `0 0 18px ${primary}44, 0 10px 22px rgba(0,0,0,0.35)` : "none",
         whiteSpace: "nowrap",
         opacity: isDisabled ? 0.55 : 1,
       }}
@@ -490,17 +449,7 @@ function NeonPill({
   );
 }
 
-function NeonPrimary({
-  label,
-  onClick,
-  disabled,
-  primary = THEME,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  primary?: string;
-}) {
+function NeonPrimary({ label, onClick, disabled, primary = THEME }: any) {
   return (
     <button
       type="button"
@@ -517,9 +466,7 @@ function NeonPrimary({
         textTransform: "uppercase",
         cursor: disabled ? "default" : "pointer",
         color: "#1b1508",
-        background: disabled
-          ? "linear-gradient(180deg,#555,#333)"
-          : `linear-gradient(90deg, ${primary}, #ffe9a3)`,
+        background: disabled ? "linear-gradient(180deg,#555,#333)" : `linear-gradient(90deg, ${primary}, #ffe9a3)`,
         boxShadow: disabled ? "none" : "0 14px 34px rgba(0,0,0,0.55)",
         opacity: disabled ? 0.55 : 1,
       }}
@@ -529,7 +476,7 @@ function NeonPrimary({
   );
 }
 
-function NeonGhost({ label, onClick }: { label: string; onClick: () => void }) {
+function NeonGhost({ label, onClick }: any) {
   return (
     <button
       type="button"
@@ -555,7 +502,7 @@ function NeonGhost({ label, onClick }: { label: string; onClick: () => void }) {
    Info (i) modal centered
 ------------------------------ */
 
-function InfoIconButton({ onClick }: { onClick: () => void }) {
+function InfoIconButton({ onClick }: any) {
   return (
     <button
       type="button"
@@ -587,21 +534,8 @@ function InfoIconButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-function CenterInfoModal({
-  open,
-  title,
-  children,
-  onClose,
-  primary,
-}: {
-  open: boolean;
-  title: string;
-  children: React.ReactNode;
-  onClose: () => void;
-  primary: string;
-}) {
+function CenterInfoModal({ open, title, children, onClose, primary }: any) {
   if (!open) return null;
-
   return (
     <div
       onMouseDown={onClose}
@@ -622,25 +556,14 @@ function CenterInfoModal({
           width: "min(520px, 100%)",
           borderRadius: 18,
           border: "1px solid rgba(255,255,255,0.12)",
-          background:
-            "linear-gradient(180deg, rgba(12,14,28,0.96), rgba(6,7,14,0.98))",
+          background: "linear-gradient(180deg, rgba(12,14,28,0.96), rgba(6,7,14,0.98))",
           boxShadow: "0 18px 60px rgba(0,0,0,0.70)",
           padding: 14,
           color: "#f2f2ff",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 10,
-            marginBottom: 10,
-          }}
-        >
-          <div style={{ fontWeight: 950, color: primary, fontSize: 14 }}>
-            {title}
-          </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+          <div style={{ fontWeight: 950, color: primary, fontSize: 14 }}>{title}</div>
           <button
             type="button"
             onClick={onClose}
@@ -657,9 +580,7 @@ function CenterInfoModal({
             Fermer
           </button>
         </div>
-        <div style={{ fontSize: 12, color: "#d7d9f0", lineHeight: 1.45 }}>
-          {children}
-        </div>
+        <div style={{ fontSize: 12, color: "#d7d9f0", lineHeight: 1.45 }}>{children}</div>
       </div>
     </div>
   );
@@ -678,60 +599,18 @@ function getInitials(name?: string) {
   return (a + b) || "?";
 }
 
-function PlayerMedallion({
-  name,
-  dataUrl,
-  avg3D,
-  active,
-  isBot,
-  primary = THEME,
-}: {
-  name: string;
-  dataUrl?: string | null;
-  avg3D: number;
-  active: boolean;
-  isBot?: boolean;
-  primary?: string;
-}) {
+function PlayerMedallion({ name, dataUrl, avg3D, active, isBot, primary = THEME }: any) {
   const SCALE = 0.82;
   const AVATAR = Math.round(78 * SCALE);
   const STAR = Math.round(18 * SCALE);
   const WRAP = AVATAR + STAR;
 
   return (
-    <div
-      style={{
-        position: "relative",
-        width: WRAP,
-        height: WRAP,
-        display: "grid",
-        placeItems: "center",
-        overflow: "visible",
-        background: "transparent",
-      }}
-    >
-      {/* ⭐ STARRING */}
-      <div
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
-          zIndex: 2,
-          opacity: 0.95,
-        }}
-      >
-        <ProfileStarRing
-          anchorSize={AVATAR}
-          starSize={STAR}
-          gapPx={-2}
-          stepDeg={10}
-          avg3d={Number(avg3D) || 0}
-          color={primary}
-        />
+    <div style={{ position: "relative", width: WRAP, height: WRAP, display: "grid", placeItems: "center", overflow: "visible", background: "transparent" }}>
+      <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 2, opacity: 0.95 }}>
+        <ProfileStarRing anchorSize={AVATAR} starSize={STAR} gapPx={-2} stepDeg={10} avg3d={Number(avg3D) || 0} color={primary} />
       </div>
 
-      {/* ✅ HALO */}
       {active ? (
         <div
           aria-hidden
@@ -748,7 +627,6 @@ function PlayerMedallion({
         />
       ) : null}
 
-      {/* AVATAR */}
       <div
         style={{
           width: AVATAR,
@@ -763,16 +641,9 @@ function PlayerMedallion({
           transition: "filter .15s ease, opacity .15s ease",
         }}
       >
-        <ProfileAvatar
-          size={AVATAR}
-          dataUrl={dataUrl ?? undefined}
-          label={getInitials(name)}
-          showStars={false}
-          noFrame
-        />
+        <ProfileAvatar size={AVATAR} dataUrl={dataUrl ?? undefined} label={getInitials(name)} showStars={false} noFrame />
       </div>
 
-      {/* BOT badge */}
       {isBot ? (
         <div
           style={{
@@ -798,23 +669,7 @@ function PlayerMedallion({
   );
 }
 
-function PlayerCarouselTile({
-  active,
-  name,
-  avatarUrl,
-  avg3D,
-  onClick,
-  isBot,
-  primary = THEME,
-}: {
-  active: boolean;
-  name: string;
-  avatarUrl?: string | null;
-  avg3D: number;
-  onClick: () => void;
-  isBot?: boolean;
-  primary?: string;
-}) {
+function PlayerCarouselTile({ active, name, avatarUrl, avg3D, onClick, isBot, primary = THEME }: any) {
   return (
     <button
       type="button"
@@ -835,28 +690,8 @@ function PlayerCarouselTile({
       }}
       title={name}
     >
-      <PlayerMedallion
-        name={name}
-        dataUrl={avatarUrl}
-        avg3D={avg3D}
-        active={active}
-        isBot={!!isBot}
-        primary={primary}
-      />
-
-      <div
-        style={{
-          width: 104,
-          fontSize: 11.5,
-          fontWeight: 950,
-          opacity: active ? 1 : 0.55,
-          textAlign: "center",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          transition: "opacity .15s ease",
-        }}
-      >
+      <PlayerMedallion name={name} dataUrl={avatarUrl} avg3D={avg3D} active={active} isBot={!!isBot} primary={primary} />
+      <div style={{ width: 104, fontSize: 11.5, fontWeight: 950, opacity: active ? 1 : 0.55, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", transition: "opacity .15s ease" }}>
         {name || "Joueur"}
       </div>
     </button>
@@ -867,76 +702,27 @@ function PlayerCarouselTile({
    Sheet (mode picker)
 ------------------------------ */
 
-function Sheet({
-  open,
-  title,
-  onClose,
-  children,
-  primary = THEME,
-}: {
-  open: boolean;
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-  primary?: string;
-}) {
+function Sheet({ open, title, onClose, children, primary = THEME }: any) {
   if (!open) return null;
-
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 9999,
-        background: "rgba(0,0,0,0.62)",
-        display: "grid",
-        placeItems: "end center",
-        padding: 12,
-      }}
-      onMouseDown={onClose}
-    >
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.62)", display: "grid", placeItems: "end center", padding: 12 }} onMouseDown={onClose}>
       <div
         style={{
           width: "min(520px, 96vw)",
           borderRadius: 22,
           border: "1px solid rgba(255,255,255,0.12)",
-          background:
-            "linear-gradient(180deg, rgba(24,24,30,0.98), rgba(10,10,14,0.995))",
+          background: "linear-gradient(180deg, rgba(24,24,30,0.98), rgba(10,10,14,0.995))",
           boxShadow: "0 22px 80px rgba(0,0,0,0.7)",
           overflow: "hidden",
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div
-          style={{
-            padding: "12px 14px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            borderBottom: "1px solid rgba(255,255,255,0.08)",
-          }}
-        >
-          <div style={{ fontWeight: 950, fontSize: 14, color: primary }}>
-            {title}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              border: "none",
-              background: "transparent",
-              color: "rgba(255,255,255,0.75)",
-              fontSize: 20,
-              cursor: "pointer",
-              lineHeight: 1,
-            }}
-            aria-label="Fermer"
-            title="Fermer"
-          >
+        <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          <div style={{ fontWeight: 950, fontSize: 14, color: primary }}>{title}</div>
+          <button type="button" onClick={onClose} style={{ border: "none", background: "transparent", color: "rgba(255,255,255,0.75)", fontSize: 20, cursor: "pointer", lineHeight: 1 }} aria-label="Fermer" title="Fermer">
             ✕
           </button>
         </div>
-
         <div style={{ padding: 14 }}>{children}</div>
       </div>
     </div>
@@ -947,30 +733,9 @@ function Sheet({
    UI rows (1 line option + i outside)
 ------------------------------ */
 
-function LineOption({
-  label,
-  active,
-  onClick,
-  onInfo,
-  primary = THEME,
-  disabled,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  onInfo: () => void;
-  primary?: string;
-  disabled?: boolean;
-}) {
+function LineOption({ label, active, onClick, onInfo, primary = THEME, disabled }: any) {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr auto",
-        gap: 10,
-        alignItems: "center",
-      }}
-    >
+    <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
       <button
         type="button"
         onClick={onClick}
@@ -978,12 +743,8 @@ function LineOption({
         style={{
           height: 40,
           borderRadius: 14,
-          border: active
-            ? `1px solid ${primary}CC`
-            : "1px solid rgba(255,255,255,0.10)",
-          background: active
-            ? `linear-gradient(180deg, ${primary}22, rgba(0,0,0,0.20))`
-            : "rgba(9,11,20,0.92)",
+          border: active ? `1px solid ${primary}CC` : "1px solid rgba(255,255,255,0.10)",
+          background: active ? `linear-gradient(180deg, ${primary}22, rgba(0,0,0,0.20))` : "rgba(9,11,20,0.92)",
           color: "rgba(255,255,255,0.95)",
           fontWeight: 950,
           textAlign: "left",
@@ -995,17 +756,32 @@ function LineOption({
       >
         {label}
       </button>
-
       <InfoIconButton onClick={onInfo} />
     </div>
   );
 }
 
-function RowTitle({ label }: { label: string }) {
+function RowTitle({ label }: any) {
+  return <div style={{ fontSize: 11.5, opacity: 0.82, marginBottom: 8 }}>{label}</div>;
+}
+
+function TextInput({ value, onChange, placeholder, width = "100%" }: any) {
   return (
-    <div style={{ fontSize: 11.5, opacity: 0.82, marginBottom: 8 }}>
-      {label}
-    </div>
+    <input
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      style={{
+        width,
+        borderRadius: 14,
+        border: "1px solid rgba(255,255,255,0.14)",
+        background: "rgba(8,8,12,0.75)",
+        color: "#fff",
+        padding: "10px 12px",
+        fontSize: 13.5,
+        outline: "none",
+      }}
+    />
   );
 }
 
@@ -1020,6 +796,9 @@ export default function TournamentCreate({ store, go }: Props) {
   const [mode, setMode] = React.useState<Mode | null>(null);
   const [sheetMode, setSheetMode] = React.useState(false);
 
+  // ✅ NEW : max joueurs (optionnel) — vide = illimité
+  const [maxPlayers, setMaxPlayers] = React.useState<string>("");
+
   // ✅ MODAL INFO global (centré)
   const [infoOpen, setInfoOpen] = React.useState(false);
   const [infoKey, setInfoKey] = React.useState<string | null>(null);
@@ -1031,14 +810,11 @@ export default function TournamentCreate({ store, go }: Props) {
   // ✅ IMPORTANT: refresh bots même si store ne change pas
   const [botsRefresh, setBotsRefresh] = React.useState(0);
 
-  // 1) bump sur focus / visibility + storage (autres onglets)
   React.useEffect(() => {
     const bump = () => setBotsRefresh((x) => x + 1);
-
     window.addEventListener("focus", bump);
     document.addEventListener("visibilitychange", bump);
     window.addEventListener("storage", bump);
-
     return () => {
       window.removeEventListener("focus", bump);
       document.removeEventListener("visibilitychange", bump);
@@ -1046,11 +822,9 @@ export default function TournamentCreate({ store, go }: Props) {
     };
   }, []);
 
-  // 2) ✅ poll léger: détecte changement localStorage DANS LE MÊME ONGLET
   React.useEffect(() => {
     let mounted = true;
     let last = botsFingerprintLS();
-
     const tick = () => {
       if (!mounted) return;
       const now = botsFingerprintLS();
@@ -1059,7 +833,6 @@ export default function TournamentCreate({ store, go }: Props) {
         setBotsRefresh((x) => x + 1);
       }
     };
-
     const t = window.setInterval(tick, 700);
     return () => {
       mounted = false;
@@ -1096,7 +869,6 @@ export default function TournamentCreate({ store, go }: Props) {
 
     const out: any[] = [];
     const seen = new Set<string>();
-
     for (const b of [...pro, ...userBots]) {
       const key = String(b?.id || b?.name || "");
       if (!key || seen.has(key)) continue;
@@ -1109,7 +881,6 @@ export default function TournamentCreate({ store, go }: Props) {
         isBot: true,
       });
     }
-
     return out;
   }, [store, botsRefresh]);
 
@@ -1119,7 +890,6 @@ export default function TournamentCreate({ store, go }: Props) {
 
   React.useEffect(() => {
     let mounted = true;
-
     const run = async () => {
       setLoadingAvg(true);
       try {
@@ -1145,58 +915,47 @@ export default function TournamentCreate({ store, go }: Props) {
 
   const [playerIds, setPlayerIds] = React.useState<string[]>(() => {
     const active = (store as any)?.activeProfiles || [];
-    const fromActive = Array.isArray(active)
-      ? active.map((x: any) => String(x)).filter(Boolean)
-      : [];
-    const base = fromActive.length
-      ? fromActive
-      : profiles.slice(0, 2).map((p: any) => String(p.id));
+    const fromActive = Array.isArray(active) ? active.map((x: any) => String(x)).filter(Boolean) : [];
+    const base = fromActive.length ? fromActive : profiles.slice(0, 2).map((p: any) => String(p.id));
     return Array.from(new Set(base)).filter(Boolean);
   });
 
   React.useEffect(() => {
     setPlayerIds((prev) => {
-      const stillValid = prev.filter((id) =>
-        profiles.some((p: any) => p.id === id)
-      );
+      const stillValid = prev.filter((id) => profiles.some((p: any) => p.id === id));
       if (stillValid.length >= 2) return stillValid;
-      if (profiles.length >= 2)
-        return Array.from(
-          new Set([...stillValid, profiles[0].id, profiles[1].id])
-        );
-      if (profiles.length === 1)
-        return Array.from(new Set([...stillValid, profiles[0].id]));
+      if (profiles.length >= 2) return Array.from(new Set([...stillValid, profiles[0].id, profiles[1].id]));
+      if (profiles.length === 1) return Array.from(new Set([...stillValid, profiles[0].id]));
       return stillValid;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profiles.length]);
 
   const togglePlayer = (id: string) => {
-    setPlayerIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
+    setPlayerIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
   // ---- bots sélectionnés (séparés)
   const [botIds, setBotIds] = React.useState<string[]>([]);
-  const toggleBot = (id: string) => {
-    setBotIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-  };
+  const toggleBot = (id: string) => setBotIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
-  const totalSelectedIds = React.useMemo(
-    () => Array.from(new Set([...playerIds, ...botIds])).filter(Boolean),
-    [playerIds, botIds]
-  );
+  const totalSelectedIds = React.useMemo(() => Array.from(new Set([...playerIds, ...botIds])).filter(Boolean), [playerIds, botIds]);
   const minPlayersOk = totalSelectedIds.length >= 2;
 
   // ---- Format tournoi
   const [format, setFormat] = React.useState<TourFormat>("single_ko");
   const [bestOf, setBestOf] = React.useState<BestOf>(3);
 
-  // ✅ taille cible + auto-fill bots
-  const [targetSize, setTargetSize] = React.useState<4 | 8 | 16>(8);
+  // ✅ NEW : RR / Poules
+  const [rrRounds, setRrRounds] = React.useState(1); // 1..5
+  const [playersPerGroup, setPlayersPerGroup] = React.useState<string>("4"); // libre
+  const [qualifiersPerGroup, setQualifiersPerGroup] = React.useState(2);
+
+  // ✅ NEW : Bracket Auto / Manuel (remplace "taille cible 4/8/16")
+  const [bracketAuto, setBracketAuto] = React.useState(true);
+  const [bracketTarget, setBracketTarget] = React.useState<string>("");
+
+  // ✅ auto-fill bots
   const [autoFillBots, setAutoFillBots] = React.useState(true);
 
   // ✅ seedMode + repechage
@@ -1212,148 +971,139 @@ export default function TournamentCreate({ store, go }: Props) {
       ? (store.settings.defaultX01 as 301 | 501 | 701 | 901)
       : 501;
 
-  const [x01Start, setX01Start] = React.useState<301 | 501 | 701 | 901>(
-    defaultStart
-  );
-  const [x01In, setX01In] = React.useState<"simple" | "double" | "master">(
-    "simple"
-  );
-  const [x01Out, setX01Out] = React.useState<"simple" | "double" | "master">(
-    store?.settings?.doubleOut ? "double" : "simple"
-  );
+  const [x01Start, setX01Start] = React.useState<301 | 501 | 701 | 901>(defaultStart);
+  const [x01In, setX01In] = React.useState<"simple" | "double" | "master">("simple");
+  const [x01Out, setX01Out] = React.useState<"simple" | "double" | "master">(store?.settings?.doubleOut ? "double" : "simple");
 
   const canCreate = !!name.trim() && !!mode && minPlayersOk;
 
   const TYPE_INFO: Record<TourFormat, string> = {
     single_ko: "Tableau KO : une défaite = élimination. Rapide et clair.",
-    double_ko:
-      "Double élimination : il faut 2 défaites pour sortir. (Loser bracket à compléter selon engine.)",
-    round_robin:
-      "Championnat : tout le monde se rencontre, classement par victoires/points.",
-    groups_ko:
-      "Poules + KO : phase groupes (poules), puis tableau final KO (qualifiés).",
+    double_ko: "Double élimination : il faut 2 défaites pour sortir.",
+    round_robin: "Championnat : tout le monde se rencontre, classement par victoires/points.",
+    groups_ko: "Poules + KO : phase groupes (poules), puis tableau final KO (qualifiés).",
   };
 
   const OTHER_INFO = {
-    players:
-      "Sélectionne des profils humains et/ou des BOTS IA. Minimum 2 joueurs pour créer.",
-    botsSelect:
-      "Sélection BOTS : bots PRO (assets) + bots créés via Profiles → bots.",
-    bestOf:
-      "Best-of = nombre de manches à gagner. BO3 = 2 manches gagnantes, BO5 = 3, etc.",
-    seedMode:
-      "Têtes de série : Aléatoire mélange au départ. Par niveau trie par avg3D (du meilleur au moins bon).",
-    repechage:
-      "Repêchage : ajoute une phase de consolation si possible (selon format / engine).",
-    targetSize:
-      "Taille cible : taille du tableau visée (4/8/16). Utile pour KO et Poules+KO.",
-    autofill:
-      "Auto-fill BOTS : complète automatiquement si tu n’as pas assez de joueurs (désactivé en Championnat).",
+    players: "Sélectionne des profils humains et/ou des BOTS IA. Minimum 2 joueurs pour créer.",
+    botsSelect: "Sélection BOTS : bots PRO (assets) + bots créés via Profiles → bots.",
+    bestOf: "Best-of = nombre de manches à gagner. BO3 = 2 manches gagnantes, BO5 = 3, etc.",
+    seedMode: "Têtes de série : Aléatoire mélange au départ. Par niveau trie par avg3D (du meilleur au moins bon).",
+    repechage: "Repêchage : ajoute une phase de consolation si possible (selon format / engine).",
+    maxPlayers: "Optionnel : si tu as énormément de profils, tu peux fixer un max. Vide = illimité.",
+    rrRounds: "Nombre de tours en Championnat / Poules : 1 = chacun rencontre chacun une fois (dans sa poule).",
+    groups: "Joueurs par poule : l’app calcule automatiquement le nombre de poules (ceil(N / joueursParPoule)).",
+    bracket: "Bracket KO : Auto = prochaine puissance de 2 (byes). Manuel = taille libre (ex: 24, 32, 48…).",
+    autofill: "Auto-fill BOTS : complète automatiquement si tu n’as pas assez de joueurs (désactivé en Championnat).",
   };
 
-  // ✅ helper: construit les stages ENGINE depuis ton UI
-  function buildStagesForEngine(fmt: TourFormat, nPlayers: number) {
-    const seeding = seedMode === "random" ? "random" : "ordered";
-    const meta = { repechageEnabled: !!repechageEnabled, seedMode };
+  // ✅ engine V2: viewKind attendu
+  function viewKindFromFormat(fmt: TourFormat) {
+    if (fmt === "single_ko") return "single_ko";
+    if (fmt === "double_ko") return "double_ko";
+    if (fmt === "round_robin") return "round_robin";
+    return "groups_ko";
+  }
 
+  // ✅ FIX DOUBLON BRACKET : stages CONFORMES ids/roles attendus (ko/rr/w/l/gf/rep)
+  // -> évite les doublons d'affichage (KO en double) dans TournamentView
+  function buildStagesForEngine(fmt: TourFormat, nPlayers: number) {
+    // seeding: ton engine accepte généralement "random" ; "ordered" seulement si supporté côté engine/view
+    const seeding = seedMode === "byLevel" ? "ordered" : "random";
+    const rounds = Math.max(1, Number(rrRounds) || 1);
+
+    // Championnat (RR)
     if (fmt === "round_robin") {
       return [
         {
           id: "rr",
           type: "round_robin",
+          role: "groups",
           name: "Championnat",
           groups: 1,
-          qualifiersPerGroup: Math.max(1, nPlayers),
+          rounds,
+          qualifiersPerGroup: 0,
           seeding,
-          meta,
         },
       ];
     }
 
+    // Poules + KO
     if (fmt === "groups_ko") {
-      const GROUP_SIZE = 4;
-      const groups = Math.max(1, Math.ceil(nPlayers / GROUP_SIZE));
-      const qualifiers = Math.min(2, GROUP_SIZE);
+      const ppg = clamp(Number(playersPerGroup) || 4, 2, 9999);
+      const groups = Math.max(1, Math.ceil(Math.max(2, nPlayers) / ppg));
+      const q = clamp(Number(qualifiersPerGroup) || 2, 1, Math.max(1, ppg));
+
       const stages: any[] = [
         {
           id: "rr",
           type: "round_robin",
+          role: "groups",
           name: "Poules",
           groups,
-          qualifiersPerGroup: qualifiers,
+          rounds,
+          qualifiersPerGroup: q,
           seeding,
-          meta,
         },
-        {
-          id: "se",
-          type: "single_elim",
-          name: "Phase finale",
-          seeding,
-          meta,
-        },
+        // ✅ IMPORTANT: id "ko" (pas "se") + role "ko"
+        { id: "ko", type: "single_elim", role: "ko", name: "Phase finale", seeding },
       ];
 
+      // ✅ repêchage = stage séparé "rep" (role repechage)
       if (repechageEnabled) {
-        stages.splice(1, 0, {
-          id: "rep",
-          type: "single_elim",
-          name: "Repêchage",
-          seeding,
-          meta,
-        });
+        stages.push({ id: "rep", type: "single_elim", role: "repechage", name: "Repêchage", seeding });
       }
       return stages;
     }
 
-    const stages: any[] = [
-      {
-        id: "se",
-        type: "single_elim",
-        name: fmt === "double_ko" ? "Élimination (phase 1)" : "Phase finale",
-        seeding,
-        meta,
-      },
-    ];
-
-    if (repechageEnabled) {
-      stages.unshift({
-        id: "rep",
-        type: "single_elim",
-        name: "Repêchage",
-        seeding,
-        meta,
-      });
+    // Double KO
+    if (fmt === "double_ko") {
+      return [
+        { id: "w", type: "single_elim", role: "ko", name: "Winners Bracket", seeding },
+        { id: "l", type: "single_elim", role: "repechage", name: "Losers Bracket", seeding },
+        { id: "gf", type: "single_elim", role: "ko", name: "Grande Finale", seeding },
+      ];
     }
 
+    // Single KO
+    const stages: any[] = [{ id: "ko", type: "single_elim", role: "ko", name: "Phase finale", seeding }];
+    if (repechageEnabled) {
+      stages.push({ id: "rep", type: "single_elim", role: "repechage", name: "Repêchage", seeding });
+    }
     return stages;
   }
 
   function computeAvgTarget(selected: any[]) {
     if (!selected?.length) return 50;
-    const s = selected.reduce(
-      (acc, p) => acc + (Number(p?.avg3D || 0) || 0),
-      0
-    );
+    const s = selected.reduce((acc, p) => acc + (Number(p?.avg3D || 0) || 0), 0);
     return s / selected.length;
+  }
+
+  function computeDesiredSize(currentCount: number) {
+    // Championnat : pas de “taille cible”
+    if (format === "round_robin") return null;
+
+    if (bracketAuto) return nextPow2(currentCount);
+
+    const manual = Math.floor(numFromText(bracketTarget));
+    if (Number.isFinite(manual) && manual >= 2) return manual;
+
+    // fallback si champ vide
+    return nextPow2(currentCount);
   }
 
   async function createTournament() {
     if (!canCreate) return;
 
-    const selectedProfiles = profiles.filter((p: any) =>
-      playerIds.includes(String(p.id))
-    );
+    // ✅ cap max joueurs (optionnel) : si on dépasse, on “sample” aléatoire
+    const cap = Math.floor(numFromText(maxPlayers));
+    const capEnabled = Number.isFinite(cap) && cap > 1;
+
+    const selectedProfiles = profiles.filter((p: any) => playerIds.includes(String(p.id)));
 
     const basePlayers = selectedProfiles.map((p: any) => {
       const avg = Number(avgMap?.[p.id] ?? 0) || 0;
-      return {
-        id: String(p.id),
-        name: p.name || "Joueur",
-        avatarDataUrl: p.avatar || null,
-        source: "local",
-        avg3D: avg,
-        stars: starsFromAvg3D(avg),
-      };
+      return { id: String(p.id), name: p.name || "Joueur", avatarDataUrl: p.avatar || null, source: "local", avg3D: avg, stars: starsFromAvg3D(avg) };
     });
 
     const selectedBots = botsCatalog
@@ -1368,33 +1118,36 @@ export default function TournamentCreate({ store, go }: Props) {
         stars: starsFromAvg3D(Number(b.avg3D) || 0),
       }));
 
-    const merged = basePlayers.concat(selectedBots);
+    let merged = basePlayers.concat(selectedBots);
+
+    // ✅ max joueurs (optionnel) sur la sélection finale “humaine+bot”
+    if (capEnabled && merged.length > cap) {
+      merged = shuffle(merged).slice(0, cap);
+    }
 
     const seededPlayers =
       seedMode === "byLevel"
-        ? merged
-            .slice()
-            .sort((a: any, b: any) => Number(b.avg3D || 0) - Number(a.avg3D || 0))
+        ? merged.slice().sort((a: any, b: any) => Number(b.avg3D || 0) - Number(a.avg3D || 0))
         : merged;
 
     let finalPlayers = seededPlayers.slice();
 
     // ✅ auto-fill (si activé et format compatible)
     const shouldFill = autoFillBots && format !== "round_robin";
-    if (shouldFill && finalPlayers.length < targetSize) {
+    const desiredSize = computeDesiredSize(finalPlayers.length);
+
+    if (shouldFill && desiredSize && finalPlayers.length < desiredSize) {
       const avgTarget = computeAvgTarget(finalPlayers);
-      const need = Math.max(0, targetSize - finalPlayers.length);
-      const bots = pickBotsToFill(botsCatalog, need, avgTarget).map(
-        (b: any, idx: number) => ({
-          id: `autobot_${String(b.id)}_${idx}_${Date.now()}`,
-          name: b.name,
-          avatarDataUrl: b.avatar ?? null,
-          source: "bot",
-          isBot: true,
-          avg3D: Number(b.avg3D) || 0,
-          stars: starsFromAvg3D(Number(b.avg3D) || 0),
-        })
-      );
+      const need = Math.max(0, desiredSize - finalPlayers.length);
+      const bots = pickBotsToFill(botsCatalog, need, avgTarget).map((b: any, idx: number) => ({
+        id: `autobot_${String(b.id)}_${idx}_${Date.now()}`,
+        name: b.name,
+        avatarDataUrl: b.avatar ?? null,
+        source: "bot",
+        isBot: true,
+        avg3D: Number(b.avg3D) || 0,
+        stars: starsFromAvg3D(Number(b.avg3D) || 0),
+      }));
       finalPlayers = finalPlayers.concat(bots);
     }
 
@@ -1408,23 +1161,39 @@ export default function TournamentCreate({ store, go }: Props) {
             bestOf,
             repechageEnabled: !!repechageEnabled,
             seedMode,
-            targetSize,
+            rrRounds: Math.max(1, Number(rrRounds) || 1),
+            playersPerGroup: Math.floor(numFromText(playersPerGroup)) || 0,
+            qualifiersPerGroup: Math.floor(Number(qualifiersPerGroup) || 0),
+            bracketAuto: !!bracketAuto,
+            bracketTarget: Math.floor(numFromText(bracketTarget)) || 0,
+            desiredSize: desiredSize || 0,
             autoFillBots: !!autoFillBots,
+            maxPlayers: capEnabled ? cap : 0,
           }
         : {
             bestOf,
             repechageEnabled: !!repechageEnabled,
             seedMode,
-            targetSize,
+            rrRounds: Math.max(1, Number(rrRounds) || 1),
+            playersPerGroup: Math.floor(numFromText(playersPerGroup)) || 0,
+            qualifiersPerGroup: Math.floor(Number(qualifiersPerGroup) || 0),
+            bracketAuto: !!bracketAuto,
+            bracketTarget: Math.floor(numFromText(bracketTarget)) || 0,
+            desiredSize: desiredSize || 0,
             autoFillBots: !!autoFillBots,
+            maxPlayers: capEnabled ? cap : 0,
           };
 
+    // ✅ IMPORTANT: stages V2 (ids/roles) -> évite le KO en double
     const stages = buildStagesForEngine(format, finalPlayers.length);
+    const viewKind = viewKindFromFormat(format);
 
+    // ✅ CRITIQUE (ENGINE V2): passer viewKind + repechage DANS le draft
     const tour: Tournament = createTournamentDraft({
       name: name.trim(),
       source: "local",
       ownerProfileId: (store as any)?.activeProfileId ?? null,
+
       players: finalPlayers.map((p: any) => ({
         id: String(p.id),
         name: p.name || "Joueur",
@@ -1432,15 +1201,27 @@ export default function TournamentCreate({ store, go }: Props) {
         source: p.source || "local",
         isBot: !!p.isBot,
       })),
+
       game: { mode, rules },
+
       stages,
+
+      viewKind, // ✅ engine V2
+      repechage: { enabled: !!repechageEnabled }, // ✅ engine V2
       meta: {
-        repechageEnabled: !!repechageEnabled,
+        format,
         seedMode,
-        targetSize,
+        repechageEnabled: !!repechageEnabled,
+        rrRounds: Math.max(1, Number(rrRounds) || 1),
+        playersPerGroup: Math.floor(numFromText(playersPerGroup)) || 0,
+        qualifiersPerGroup: Math.floor(Number(qualifiersPerGroup) || 0),
+        bracketAuto: !!bracketAuto,
+        bracketTarget: Math.floor(numFromText(bracketTarget)) || 0,
+        desiredSize: desiredSize || 0,
         autoFillBots: !!autoFillBots,
+        maxPlayers: capEnabled ? cap : 0,
       },
-    }) as any;
+    } as any);
 
     const matches = buildInitialMatches(tour);
 
@@ -1453,6 +1234,19 @@ export default function TournamentCreate({ store, go }: Props) {
 
     go("tournament_view", { id: tour.id });
   }
+
+  const computedGroups = React.useMemo(() => {
+    if (format !== "groups_ko") return 1;
+    const ppg = clamp(Math.floor(numFromText(playersPerGroup)) || 4, 2, 9999);
+    const n = Math.max(2, totalSelectedIds.length);
+    return Math.max(1, Math.ceil(n / ppg));
+  }, [format, playersPerGroup, totalSelectedIds.length]);
+
+  const desiredSizePreview = React.useMemo(() => {
+    const n = Math.max(2, totalSelectedIds.length);
+    const d = computeDesiredSize(n);
+    return d || 0;
+  }, [totalSelectedIds.length, bracketAuto, bracketTarget, format]);
 
   const infoContent = (() => {
     const k = String(infoKey || "");
@@ -1467,7 +1261,10 @@ export default function TournamentCreate({ store, go }: Props) {
     if (k === "bestof") return { title: "Best-of", body: <>{OTHER_INFO.bestOf}</> };
     if (k === "seed") return { title: "Têtes de série", body: <>{OTHER_INFO.seedMode}</> };
     if (k === "repechage") return { title: "Repêchage", body: <>{OTHER_INFO.repechage}</> };
-    if (k === "target") return { title: "Taille cible", body: <>{OTHER_INFO.targetSize}</> };
+    if (k === "maxPlayers") return { title: "Max joueurs", body: <>{OTHER_INFO.maxPlayers}</> };
+    if (k === "rrRounds") return { title: "Tours RR", body: <>{OTHER_INFO.rrRounds}</> };
+    if (k === "groups") return { title: "Poules", body: <>{OTHER_INFO.groups}</> };
+    if (k === "bracket") return { title: "Bracket KO", body: <>{OTHER_INFO.bracket}</> };
     if (k === "autofill") return { title: "Auto-fill BOTS IA", body: <>{OTHER_INFO.autofill}</> };
 
     return { title: "Info", body: <>—</> };
@@ -1485,14 +1282,7 @@ export default function TournamentCreate({ store, go }: Props) {
       }}
     >
       {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-        }}
-      >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <button
           type="button"
           onClick={() => go("tournaments")}
@@ -1510,12 +1300,8 @@ export default function TournamentCreate({ store, go }: Props) {
         </button>
 
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 16, fontWeight: 950, letterSpacing: 0.2 }}>
-            Créer un tournoi
-          </div>
-          <div style={{ fontSize: 11.5, opacity: 0.75 }}>
-            {loadingAvg ? "Calcul niveaux…" : "Choisis un mode puis configure le format."}
-          </div>
+          <div style={{ fontSize: 16, fontWeight: 950, letterSpacing: 0.2 }}>Créer un tournoi</div>
+          <div style={{ fontSize: 11.5, opacity: 0.75 }}>{loadingAvg ? "Calcul niveaux…" : "Choisis un mode puis configure le format."}</div>
         </div>
       </div>
 
@@ -1524,40 +1310,23 @@ export default function TournamentCreate({ store, go }: Props) {
         <div style={{ display: "grid", gap: 10 }}>
           <div>
             <div style={{ fontSize: 11.5, opacity: 0.82, marginBottom: 6 }}>Nom</div>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Nom du tournoi"
-              style={{
-                width: "100%",
-                borderRadius: 14,
-                border: "1px solid rgba(255,255,255,0.14)",
-                background: "rgba(8,8,12,0.75)",
-                color: "#fff",
-                padding: "10px 12px",
-                fontSize: 13.5,
-                outline: "none",
-              }}
-            />
+            <TextInput value={name} onChange={(e: any) => setName(e.target.value)} placeholder="Nom du tournoi" />
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 10,
-            }}
-          >
+          {/* ✅ NEW : Max joueurs */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 11.5, opacity: 0.82 }}>Max joueurs (optionnel)</div>
+              <TextInput value={maxPlayers} onChange={(e: any) => setMaxPlayers(e.target.value)} placeholder="Vide = illimité (ex: 128)" />
+              <div style={{ fontSize: 11, opacity: 0.65, lineHeight: 1.3 }}>Si trop de profils, l’app prendra un échantillon aléatoire.</div>
+            </div>
+            <InfoIconButton onClick={() => openInfo("maxPlayers")} />
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <div style={{ display: "grid", gap: 3 }}>
               <div style={{ fontSize: 11.5, opacity: 0.82 }}>Mode</div>
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 950,
-                  color: mode ? primary : "rgba(255,255,255,0.65)",
-                }}
-              >
+              <div style={{ fontSize: 13, fontWeight: 950, color: mode ? primary : "rgba(255,255,255,0.65)" }}>
                 {mode ? MODE_LABEL[mode] : "Aucun mode choisi"}
               </div>
             </div>
@@ -1583,13 +1352,7 @@ export default function TournamentCreate({ store, go }: Props) {
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {(["x01", "cricket", "killer", "shanghai"] as Mode[]).map((m) => (
-              <NeonPill
-                key={m}
-                active={mode === m}
-                label={MODE_LABEL[m]}
-                onClick={() => setMode(m)}
-                primary={primary}
-              />
+              <NeonPill key={m} active={mode === m} label={MODE_LABEL[m]} onClick={() => setMode(m)} primary={primary} />
             ))}
           </div>
         </div>
@@ -1597,31 +1360,13 @@ export default function TournamentCreate({ store, go }: Props) {
 
       {/* ✅ JOUEURS */}
       <Section title="Joueurs" subtitle="Sélectionne tes profils." accent={primary}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 10,
-          }}
-        >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           <div style={{ fontSize: 12, opacity: 0.82 }}>
             <b style={{ color: primary }}>{totalSelectedIds.length}</b> sélectionné(s)
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
-              justifyContent: "flex-end",
-              alignItems: "center",
-            }}
-          >
-            <NeonGhost
-              label="Tout sélectionner"
-              onClick={() => setPlayerIds(profiles.map((p: any) => String(p.id)))}
-            />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
+            <NeonGhost label="Tout sélectionner" onClick={() => setPlayerIds(profiles.map((p: any) => String(p.id)))} />
             <NeonGhost label="Vider" onClick={() => setPlayerIds([])} />
             <InfoIconButton onClick={() => openInfo("players")} />
           </div>
@@ -1645,47 +1390,18 @@ export default function TournamentCreate({ store, go }: Props) {
           {profiles.map((p: any) => {
             const avg = Number(avgMap?.[p.id] ?? 0) || 0;
             const active = playerIds.includes(p.id);
-            return (
-              <PlayerCarouselTile
-                key={p.id}
-                active={active}
-                name={p.name}
-                avatarUrl={p.avatar}
-                avg3D={avg}
-                onClick={() => togglePlayer(p.id)}
-                primary={primary}
-              />
-            );
+            return <PlayerCarouselTile key={p.id} active={active} name={p.name} avatarUrl={p.avatar} avg3D={avg} onClick={() => togglePlayer(p.id)} primary={primary} />;
           })}
         </div>
 
         {/* BOTS */}
-        <div
-          style={{
-            marginTop: 8,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 10,
-          }}
-        >
+        <div style={{ marginTop: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           <div style={{ fontSize: 12, opacity: 0.82 }}>
             <b style={{ color: primary }}>{botIds.length}</b> bot(s)
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
-              justifyContent: "flex-end",
-              alignItems: "center",
-            }}
-          >
-            <NeonGhost
-              label="Tous les bots"
-              onClick={() => setBotIds(botsCatalog.map((b: any) => String(b.id)))}
-            />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
+            <NeonGhost label="Tous les bots" onClick={() => setBotIds(botsCatalog.map((b: any) => String(b.id)))} />
             <NeonGhost label="Aucun bot" onClick={() => setBotIds([])} />
             <InfoIconButton onClick={() => openInfo("botsSelect")} />
           </div>
@@ -1719,11 +1435,7 @@ export default function TournamentCreate({ store, go }: Props) {
           ))}
         </div>
 
-        {!minPlayersOk ? (
-          <div style={{ marginTop: 8, fontSize: 11.5, opacity: 0.75 }}>
-            ⚠️ Minimum 2 joueurs.
-          </div>
-        ) : null}
+        {!minPlayersOk ? <div style={{ marginTop: 8, fontSize: 11.5, opacity: 0.75 }}>⚠️ Minimum 2 joueurs.</div> : null}
       </Section>
 
       {/* Params match */}
@@ -1732,13 +1444,7 @@ export default function TournamentCreate({ store, go }: Props) {
           <RowTitle label="Score de départ" />
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {[301, 501, 701, 901].map((v) => (
-              <NeonPill
-                key={v}
-                active={x01Start === v}
-                label={String(v)}
-                onClick={() => setX01Start(v as any)}
-                primary={primary}
-              />
+              <NeonPill key={v} active={x01Start === v} label={String(v)} onClick={() => setX01Start(v as any)} primary={primary} />
             ))}
           </div>
 
@@ -1797,6 +1503,69 @@ export default function TournamentCreate({ store, go }: Props) {
 
         <div style={{ height: 14 }} />
 
+        {/* ✅ RR rounds (RR + groups_ko) */}
+        {(format === "round_robin" || format === "groups_ko") ? (
+          <>
+            <RowTitle label="Tours (Round Robin)" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <NeonPill key={n} active={rrRounds === n} label={`${n} tour${n > 1 ? "s" : ""}`} onClick={() => setRrRounds(n)} primary={primary} />
+                ))}
+              </div>
+              <InfoIconButton onClick={() => openInfo("rrRounds")} />
+            </div>
+            <div style={{ height: 14 }} />
+          </>
+        ) : null}
+
+        {/* ✅ groups config (groups_ko) */}
+        {format === "groups_ko" ? (
+          <>
+            <RowTitle label="Poules" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
+              <div style={{ display: "grid", gap: 8 }}>
+                <TextInput value={playersPerGroup} onChange={(e: any) => setPlayersPerGroup(e.target.value)} placeholder="Joueurs par poule (ex: 5)" />
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {[1, 2, 3, 4, 5, 6, 8].map((n) => (
+                    <NeonPill key={n} active={qualifiersPerGroup === n} label={`${n} qualif/poule`} onClick={() => setQualifiersPerGroup(n)} primary={primary} />
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, opacity: 0.7, lineHeight: 1.35 }}>
+                  Poules auto ≈ <b style={{ color: primary }}>{computedGroups}</b> (sur {Math.max(2, totalSelectedIds.length)} joueurs)
+                </div>
+              </div>
+              <InfoIconButton onClick={() => openInfo("groups")} />
+            </div>
+            <div style={{ height: 14 }} />
+          </>
+        ) : null}
+
+        {/* ✅ Bracket KO (pas en championnat pur) */}
+        {format !== "round_robin" ? (
+          <>
+            <RowTitle label="Bracket KO" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <NeonPill active={bracketAuto} label="Auto (pow2)" onClick={() => setBracketAuto(true)} primary={primary} />
+                  <NeonPill active={!bracketAuto} label="Manuel" onClick={() => setBracketAuto(false)} primary={primary} />
+                </div>
+
+                {!bracketAuto ? (
+                  <TextInput value={bracketTarget} onChange={(e: any) => setBracketTarget(e.target.value)} placeholder="Taille bracket (ex: 24, 32, 48...)" />
+                ) : null}
+
+                <div style={{ fontSize: 11, opacity: 0.7, lineHeight: 1.35 }}>
+                  Taille visée (aperçu) : <b style={{ color: primary }}>{desiredSizePreview || "—"}</b>
+                </div>
+              </div>
+              <InfoIconButton onClick={() => openInfo("bracket")} />
+            </div>
+            <div style={{ height: 14 }} />
+          </>
+        ) : null}
+
         <RowTitle label="Repêchage" />
         <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1804,18 +1573,6 @@ export default function TournamentCreate({ store, go }: Props) {
             <NeonPill active={!repechageEnabled} label="OFF" onClick={() => setRepechageEnabled(false)} primary={primary} />
           </div>
           <InfoIconButton onClick={() => openInfo("repechage")} />
-        </div>
-
-        <div style={{ height: 14 }} />
-
-        <RowTitle label="Taille cible" />
-        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {([4, 8, 16] as const).map((n) => (
-              <NeonPill key={n} active={targetSize === n} label={`${n} joueurs`} onClick={() => setTargetSize(n)} primary={primary} />
-            ))}
-          </div>
-          <InfoIconButton onClick={() => openInfo("target")} />
         </div>
 
         <div style={{ height: 14 }} />
@@ -1829,21 +1586,13 @@ export default function TournamentCreate({ store, go }: Props) {
           <InfoIconButton onClick={() => openInfo("autofill")} />
         </div>
 
-        {format === "round_robin" ? (
-          <div style={{ marginTop: 8, fontSize: 11.5, opacity: 0.75 }}>
-            ℹ️ Auto-fill désactivé en Championnat.
-          </div>
-        ) : null}
+        {format === "round_robin" ? <div style={{ marginTop: 8, fontSize: 11.5, opacity: 0.75 }}>ℹ️ Auto-fill désactivé en Championnat.</div> : null}
       </Section>
 
       {/* CTA */}
       <div style={{ marginTop: 14 }}>
         <NeonPrimary label="Créer le tournoi" onClick={createTournament} disabled={!canCreate} primary={primary} />
-        {!canCreate ? (
-          <div style={{ marginTop: 8, fontSize: 11.5, opacity: 0.72 }}>
-            ⚠️ Renseigne un nom, choisis un mode et sélectionne au moins 2 joueurs.
-          </div>
-        ) : null}
+        {!canCreate ? <div style={{ marginTop: 8, fontSize: 11.5, opacity: 0.72 }}>⚠️ Renseigne un nom, choisis un mode et sélectionne au moins 2 joueurs.</div> : null}
       </div>
 
       {/* Sheet mode */}
@@ -1862,12 +1611,8 @@ export default function TournamentCreate({ store, go }: Props) {
                   width: "100%",
                   borderRadius: 16,
                   padding: "12px 12px",
-                  border:
-                    mode === m
-                      ? `1px solid ${primary}CC`
-                      : "1px solid rgba(255,255,255,0.10)",
-                  background:
-                    "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
+                  border: mode === m ? `1px solid ${primary}CC` : "1px solid rgba(255,255,255,0.10)",
+                  background: "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
                   color: "rgba(255,255,255,0.92)",
                   display: "flex",
                   alignItems: "center",
@@ -1878,9 +1623,7 @@ export default function TournamentCreate({ store, go }: Props) {
                 }}
               >
                 <div style={{ display: "grid", gap: 2, textAlign: "left" }}>
-                  <div style={{ fontWeight: 950, fontSize: 14, color: primary }}>
-                    {MODE_LABEL[m]}
-                  </div>
+                  <div style={{ fontWeight: 950, fontSize: 14, color: primary }}>{MODE_LABEL[m]}</div>
                 </div>
 
                 <div
@@ -1906,12 +1649,7 @@ export default function TournamentCreate({ store, go }: Props) {
       </Sheet>
 
       {/* ✅ Modal info centré */}
-      <CenterInfoModal
-        open={infoOpen}
-        title={infoContent.title}
-        primary={primary}
-        onClose={() => setInfoOpen(false)}
-      >
+      <CenterInfoModal open={infoOpen} title={infoContent.title} primary={primary} onClose={() => setInfoOpen(false)}>
         {infoContent.body}
       </CenterInfoModal>
     </div>

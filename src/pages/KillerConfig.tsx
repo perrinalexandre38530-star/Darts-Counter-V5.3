@@ -15,11 +15,11 @@
 // - Attribution des numéros juste dessous
 // - Variantes renommées (compréhensibles) + suppression variante inutile
 // - ✅ Variantes avancées : self-penalty, multiplier self-penalty, life steal, blind killer
-// - ✅ NEW variantes BULL : bullSplash (BULL/DBULL dmg AOE) + bullHeal (BULL/DBULL heal)
-// - ❌ SUPPRIMÉ : Killer vs Killer (friendlyFire) (inutile = jeu de base / confusion)
-//
 // - AVATARS BOTS OK avec ton ProfileAvatar actuel (qui refuse /assets/)
 // - ✅ FIX: randomStartOrder appliqué DIRECTEMENT dans le cfg.players (shuffle garanti)
+// - ✅ NEW: incompatibilités variantes (griser + raison + auto-off incompatibles)
+// - ✅ REMOVED: Killer vs Killer (Friendly Fire)
+// - ✅ FIX BLIND: Blind Killer incompatible avec "1er lancer" (force random + UI grisée)
 // =============================================================
 
 import React from "react";
@@ -70,16 +70,15 @@ export type KillerConfig = {
   numberAssignMode: KillerNumberAssignMode;
   randomStartOrder?: boolean;
 
-  // ✅ Variantes prévues pour KillerPlay patché
-  // ❌ friendlyFire supprimé
+  // ✅ Variantes claires (et prévues pour KillerPlay patché)
   selfHitWhileKiller: boolean; // toucher son numéro quand KILLER => perd vie(s) (PAS dead instant)
   selfHitUsesMultiplier: boolean; // si ON : perte = 1/2/3 selon S/D/T sinon -1
   lifeSteal: boolean; // vols de vies : ce que perd la cible est gagné par le killer
   blindKiller: boolean; // masque les numéros à l'écran pendant la partie (mode aveugle)
 
-  // ✅ NEW BULL variants
-  bullSplash: boolean; // BULL enlève 1 vie à chaque adversaire / DBULL enlève 2 (quand lanceur est KILLER)
-  bullHeal: boolean; // BULL rend 1 vie / DBULL rend 2 (quand lanceur est KILLER)
+  // ✅ Variantes BULL
+  bullSplash: boolean; // SBULL => -1 à tous les adversaires ; DBULL => -2 à tous
+  bullHeal: boolean; // toucher BULL permet de regagner des vies (selon implémentation KillerPlay)
 
   players: KillerConfigPlayer[];
 };
@@ -176,9 +175,10 @@ type PillProps = {
   primarySoft: string;
   compact?: boolean;
   disabled?: boolean;
+  title?: string;
 };
 
-function PillButton({ label, active, onClick, primary, primarySoft, compact, disabled }: PillProps) {
+function PillButton({ label, active, onClick, primary, primarySoft, compact, disabled, title }: PillProps) {
   const isDisabled = !!disabled;
 
   const bg = isDisabled ? "rgba(40,42,60,0.7)" : active ? primarySoft : "rgba(9,11,20,0.9)";
@@ -194,6 +194,7 @@ function PillButton({ label, active, onClick, primary, primarySoft, compact, dis
       type="button"
       onClick={onClick}
       disabled={isDisabled}
+      title={title}
       style={{
         borderRadius: 999,
         padding: compact ? "4px 9px" : "6px 12px",
@@ -253,14 +254,7 @@ function BotMedallion({ bot, level, active }: { bot: BotLite; level: number; act
           filter: `drop-shadow(0 0 6px ${COLOR_GLOW})`,
         }}
       >
-        <ProfileStarRing
-          anchorSize={MEDALLION}
-          gapPx={-2 * SCALE}
-          starSize={STAR}
-          stepDeg={10}
-          avg3d={fakeAvg3d}
-          color={COLOR}
-        />
+        <ProfileStarRing anchorSize={MEDALLION} gapPx={-2 * SCALE} starSize={STAR} stepDeg={10} avg3d={fakeAvg3d} color={COLOR} />
       </div>
 
       <div
@@ -309,6 +303,47 @@ function uniqueKillerNumbers(selected: Record<string, number>) {
     out[pid] = n;
   }
   return out;
+}
+
+// ------------------ Variants incompat matrix ------------------
+
+type VariantKey = "selfHitWhileKiller" | "selfHitUsesMultiplier" | "lifeSteal" | "blindKiller" | "bullSplash" | "bullHeal";
+
+// ✅ règles validées
+const INCOMPATIBLE: Record<VariantKey, VariantKey[]> = {
+  selfHitWhileKiller: [],
+  selfHitUsesMultiplier: [], // dépendance gérée à part (grisé si selfHitWhileKiller=OFF)
+  blindKiller: [], // incompat "1er lancer" géré via numberAssignMode (UI + sécurité)
+  bullSplash: ["bullHeal"],
+  bullHeal: ["bullSplash", "lifeSteal"],
+  lifeSteal: ["bullHeal"],
+};
+
+function getConflictReason(k: VariantKey, state: Record<VariantKey, boolean>) {
+  // dépendance
+  if (k === "selfHitUsesMultiplier" && !state.selfHitWhileKiller) {
+    return "Disponible uniquement si “Auto-pénalité” est activée.";
+  }
+
+  // incompatibles ON
+  const bad = (INCOMPATIBLE[k] || []).filter((other) => !!state[other]);
+  if (bad.length > 0) {
+    const names: Record<VariantKey, string> = {
+      selfHitWhileKiller: "Auto-pénalité",
+      selfHitUsesMultiplier: "Auto-pénalité = multiplicateur",
+      lifeSteal: "Vol de vies",
+      blindKiller: "Blind Killer",
+      bullSplash: "BULL = dégâts à tous",
+      bullHeal: "BULL = soins",
+    };
+    return `Incompatible avec : ${bad.map((x) => names[x] || x).join(", ")}.`;
+  }
+
+  return "";
+}
+
+function isVariantDisabled(k: VariantKey, state: Record<VariantKey, boolean>) {
+  return !!getConflictReason(k, state);
 }
 
 export default function KillerConfigPage(props: Props) {
@@ -377,15 +412,83 @@ export default function KillerConfigPage(props: Props) {
   const [numberAssignMode, setNumberAssignMode] = React.useState<KillerNumberAssignMode>("random");
   const [randomStartOrder, setRandomStartOrder] = React.useState<boolean>(false);
 
-  // ✅ variantes (claires) — friendlyFire supprimé
+  // ✅ variantes
   const [selfHitWhileKiller, setSelfHitWhileKiller] = React.useState<boolean>(false);
   const [selfHitUsesMultiplier, setSelfHitUsesMultiplier] = React.useState<boolean>(false);
   const [lifeSteal, setLifeSteal] = React.useState<boolean>(false);
   const [blindKiller, setBlindKiller] = React.useState<boolean>(false);
 
-  // ✅ NEW bull variants
+  // ✅ Bull variants
   const [bullSplash, setBullSplash] = React.useState<boolean>(false);
   const [bullHeal, setBullHeal] = React.useState<boolean>(false);
+
+  const variantState: Record<VariantKey, boolean> = {
+    selfHitWhileKiller,
+    selfHitUsesMultiplier,
+    lifeSteal,
+    blindKiller,
+    bullSplash,
+    bullHeal,
+  };
+
+  function setVariant(k: VariantKey, v: boolean) {
+    // OFF
+    if (!v) {
+      if (k === "selfHitWhileKiller") {
+        setSelfHitWhileKiller(false);
+        setSelfHitUsesMultiplier(false); // dépendance
+        return;
+      }
+      if (k === "selfHitUsesMultiplier") return setSelfHitUsesMultiplier(false);
+      if (k === "lifeSteal") return setLifeSteal(false);
+      if (k === "blindKiller") return setBlindKiller(false);
+      if (k === "bullSplash") return setBullSplash(false);
+      if (k === "bullHeal") return setBullHeal(false);
+      return;
+    }
+
+    // ON : bloque si disabled
+    const reason = getConflictReason(k, variantState);
+    if (reason) return;
+
+    // ON : auto-OFF incompatibles
+    const toOff = INCOMPATIBLE[k] || [];
+    if (toOff.includes("bullHeal")) setBullHeal(false);
+    if (toOff.includes("bullSplash")) setBullSplash(false);
+    if (toOff.includes("lifeSteal")) setLifeSteal(false);
+
+    // dépendance : activer multiplier => force auto-pénalité
+    if (k === "selfHitUsesMultiplier") {
+      setSelfHitWhileKiller(true);
+      setSelfHitUsesMultiplier(true);
+      return;
+    }
+
+    // set ON normal
+    if (k === "selfHitWhileKiller") return setSelfHitWhileKiller(true);
+    if (k === "lifeSteal") return setLifeSteal(true);
+
+    // ✅ FIX BLIND: blind => force numéros aléatoires
+    if (k === "blindKiller") {
+      setBlindKiller(true);
+      setNumberAssignMode("random");
+      return;
+    }
+
+    if (k === "bullSplash") return setBullSplash(true);
+    if (k === "bullHeal") return setBullHeal(true);
+  }
+
+  React.useEffect(() => {
+    if (!selfHitWhileKiller && selfHitUsesMultiplier) setSelfHitUsesMultiplier(false);
+  }, [selfHitWhileKiller]);
+
+  // ✅ FIX BLIND: sécurité anti état impossible
+  React.useEffect(() => {
+    if (blindKiller && numberAssignMode === "throw") {
+      setNumberAssignMode("random");
+    }
+  }, [blindKiller, numberAssignMode]);
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>(() => {
     if (humanProfiles.length >= 2) return [humanProfiles[0].id, humanProfiles[1].id];
@@ -491,7 +594,6 @@ export default function KillerConfigPage(props: Props) {
       }
     }
 
-    // ✅ FIX: ordre de départ aléatoire appliqué AU CONFIG (garanti)
     const finalPlayers = randomStartOrder ? shuffleArray(players) : players;
 
     const cfg: KillerConfig = {
@@ -514,7 +616,7 @@ export default function KillerConfigPage(props: Props) {
       bullSplash,
       bullHeal,
 
-      players: finalPlayers, // ✅ ici
+      players: finalPlayers,
     };
 
     if (startCb) {
@@ -531,6 +633,8 @@ export default function KillerConfigPage(props: Props) {
   }
 
   // ------------------ render ------------------
+  const blindLocksThrow = !!blindKiller;
+
   return (
     <div
       className="screen killer-config-v3"
@@ -737,9 +841,7 @@ export default function KillerConfigPage(props: Props) {
                         <button
                           type="button"
                           onClick={() =>
-                            setKillerNumberById((prev) =>
-                              uniqueKillerNumbers({ ...prev, [p.id]: num - 1 < 1 ? 20 : num - 1 })
-                            )
+                            setKillerNumberById((prev) => uniqueKillerNumbers({ ...prev, [p.id]: num - 1 < 1 ? 20 : num - 1 }))
                           }
                           style={{
                             width: 28,
@@ -777,9 +879,7 @@ export default function KillerConfigPage(props: Props) {
                         <button
                           type="button"
                           onClick={() =>
-                            setKillerNumberById((prev) =>
-                              uniqueKillerNumbers({ ...prev, [p.id]: num + 1 > 20 ? 1 : num + 1 })
-                            )
+                            setKillerNumberById((prev) => uniqueKillerNumbers({ ...prev, [p.id]: num + 1 > 20 ? 1 : num + 1 }))
                           }
                           style={{
                             width: 28,
@@ -823,20 +923,11 @@ export default function KillerConfigPage(props: Props) {
             border: "1px solid rgba(255,255,255,0.04)",
           }}
         >
-          <div
-            style={{
-              fontSize: 12,
-              textTransform: "uppercase",
-              letterSpacing: 1,
-              fontWeight: 800,
-              color: primary,
-              marginBottom: 10,
-            }}
-          >
+          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 1, fontWeight: 800, color: primary, marginBottom: 10 }}>
             Options
           </div>
 
-          {/* ✅ ORDRE DE DÉPART (EN HAUT) */}
+          {/* ✅ ORDRE DE DÉPART */}
           <div style={{ marginTop: 2, marginBottom: 14 }}>
             <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Ordre de départ</div>
 
@@ -881,7 +972,7 @@ export default function KillerConfigPage(props: Props) {
             </div>
           </div>
 
-          {/* ✅ ATTRIBUTION DES NUMÉROS (JUSTE DESSOUS) */}
+          {/* attribution numéros */}
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 12, color: "#c8cbe4", marginBottom: 6 }}>Attribution des numéros</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -895,15 +986,27 @@ export default function KillerConfigPage(props: Props) {
               <PillButton
                 label="🎯 1er lancer = choisir son numéro"
                 active={numberAssignMode === "throw"}
-                onClick={() => setNumberAssignMode("throw")}
+                onClick={() => {
+                  // si l’utilisateur force "1er lancer" => BLIND OFF
+                  if (blindKiller) setBlindKiller(false);
+                  setNumberAssignMode("throw");
+                }}
                 primary={primary}
                 primarySoft={primarySoft}
+                disabled={blindLocksThrow}
+                title={blindLocksThrow ? "Incompatible avec Blind Killer." : undefined}
               />
             </div>
 
             <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
               En mode “1er lancer”, les numéros du menu sont ignorés (le premier tir de chaque joueur fixe son numéro).
             </div>
+
+            {blindLocksThrow && (
+              <div style={{ marginTop: 6, fontSize: 10.5, color: "#ffb3b3", fontWeight: 800, lineHeight: 1.2 }}>
+                Blind Killer force “Numéros aléatoires” (incompatible avec “1er lancer”).
+              </div>
+            )}
           </div>
 
           {/* vies */}
@@ -965,22 +1068,12 @@ export default function KillerConfigPage(props: Props) {
                 primarySoft={primarySoft}
               />
             </div>
-            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>
-              Quand tu touches le numéro d’un adversaire vivant.
-            </div>
+            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 6 }}>Quand tu touches le numéro d’un adversaire vivant.</div>
           </div>
 
           {/* variantes */}
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 10 }}>
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 900,
-                color: "#9fa4c0",
-                textTransform: "uppercase",
-                letterSpacing: 0.9,
-              }}
-            >
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#9fa4c0", textTransform: "uppercase", letterSpacing: 0.9 }}>
               Variantes
             </div>
 
@@ -989,64 +1082,71 @@ export default function KillerConfigPage(props: Props) {
                 title="Auto-pénalité (toucher son numéro quand KILLER)"
                 desc="Si ON, quand tu es KILLER et que tu touches ton numéro, tu perds des vies (pas mort instant)."
                 value={selfHitWhileKiller}
-                onChange={(v) => {
-                  setSelfHitWhileKiller(v);
-                  if (!v) setSelfHitUsesMultiplier(false);
-                }}
+                onChange={(v) => setVariant("selfHitWhileKiller", v)}
                 primary={primary}
                 primarySoft={primarySoft}
+                disabled={isVariantDisabled("selfHitWhileKiller", variantState) && !selfHitWhileKiller}
+                disabledReason={getConflictReason("selfHitWhileKiller", variantState)}
               />
 
-              <div style={{ opacity: selfHitWhileKiller ? 1 : 0.45, pointerEvents: selfHitWhileKiller ? "auto" : "none" }}>
-                <VariantRow
-                  title="Auto-pénalité = multiplicateur (S/D/T)"
-                  desc="Si ON, la pénalité vaut 1/2/3 selon S/D/T (sinon c'est toujours -1)."
-                  value={selfHitUsesMultiplier}
-                  onChange={setSelfHitUsesMultiplier}
-                  primary={primary}
-                  primarySoft={primarySoft}
-                />
-              </div>
+              <VariantRow
+                title="Auto-pénalité = multiplicateur (S/D/T)"
+                desc="Si ON, la pénalité vaut 1/2/3 selon S/D/T (sinon c'est toujours -1)."
+                value={selfHitUsesMultiplier}
+                onChange={(v) => setVariant("selfHitUsesMultiplier", v)}
+                primary={primary}
+                primarySoft={primarySoft}
+                disabled={isVariantDisabled("selfHitUsesMultiplier", variantState) && !selfHitUsesMultiplier}
+                disabledReason={getConflictReason("selfHitUsesMultiplier", variantState)}
+              />
 
               <VariantRow
                 title="Vol de vies (Life Steal)"
                 desc="Si ON, les vies perdues par la cible sont transférées au KILLER (plus de chaos)."
                 value={lifeSteal}
-                onChange={setLifeSteal}
+                onChange={(v) => setVariant("lifeSteal", v)}
                 primary={primary}
                 primarySoft={primarySoft}
+                disabled={isVariantDisabled("lifeSteal", variantState) && !lifeSteal}
+                disabledReason={getConflictReason("lifeSteal", variantState)}
               />
 
               <VariantRow
                 title="Blind Killer (mode aveugle)"
                 desc="Si ON, les numéros sont masqués à l'écran pendant la partie (plus dur, plus fun)."
                 value={blindKiller}
-                onChange={setBlindKiller}
+                onChange={(v) => setVariant("blindKiller", v)}
                 primary={primary}
                 primarySoft={primarySoft}
+                disabled={isVariantDisabled("blindKiller", variantState) && !blindKiller}
+                disabledReason={getConflictReason("blindKiller", variantState)}
               />
 
               <VariantRow
-                title="BULL/DBULL Splash"
-                desc="Si ON, quand tu es KILLER : BULL enlève 1 vie à chaque adversaire, DBULL enlève 2 vies à chaque adversaire."
+                title="BULL = dégâts à tous (SBULL/DBULL)"
+                desc="Si ON : SBULL enlève 1 vie à chaque adversaire, DBULL enlève 2 vies à chaque adversaire."
                 value={bullSplash}
-                onChange={setBullSplash}
+                onChange={(v) => setVariant("bullSplash", v)}
                 primary={primary}
                 primarySoft={primarySoft}
+                disabled={isVariantDisabled("bullSplash", variantState) && !bullSplash}
+                disabledReason={getConflictReason("bullSplash", variantState)}
               />
 
               <VariantRow
-                title="BULL/DBULL Heal"
-                desc="Si ON, quand tu es KILLER : BULL te rend 1 vie, DBULL te rend 2 vies."
+                title="BULL = soins (récupérer des vies)"
+                desc="Si ON : toucher BULL permet de regagner des vies (selon la règle implémentée en jeu)."
                 value={bullHeal}
-                onChange={setBullHeal}
+                onChange={(v) => setVariant("bullHeal", v)}
                 primary={primary}
                 primarySoft={primarySoft}
+                disabled={isVariantDisabled("bullHeal", variantState) && !bullHeal}
+                disabledReason={getConflictReason("bullHeal", variantState)}
               />
             </div>
 
-            <div style={{ fontSize: 11, color: "#7c80a0", marginTop: 8 }}>
-              Note : les variantes BULL ne s’appliquent que si le lanceur est <b>KILLER</b>.
+            <div style={{ marginTop: 10, fontSize: 10.5, color: "#7c80a0", lineHeight: 1.35 }}>
+              Astuce : certaines variantes sont <b>exclusives</b> pour garder un gameplay lisible (ex : BULL dégâts vs BULL soins).
             </div>
           </div>
         </section>
@@ -1219,6 +1319,8 @@ function VariantRow({
   onChange,
   primary,
   primarySoft,
+  disabled,
+  disabledReason,
 }: {
   title: string;
   desc: string;
@@ -1226,9 +1328,14 @@ function VariantRow({
   onChange: (v: boolean) => void;
   primary: string;
   primarySoft: string;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
+  const isDisabled = !!disabled;
+
   return (
     <div
+      title={isDisabled ? disabledReason || "Option indisponible." : undefined}
       style={{
         borderRadius: 14,
         border: "1px solid rgba(255,255,255,0.06)",
@@ -1238,6 +1345,8 @@ function VariantRow({
         alignItems: "center",
         justifyContent: "space-between",
         gap: 10,
+        opacity: isDisabled ? 0.45 : 1,
+        filter: isDisabled ? "grayscale(35%)" : "none",
       }}
     >
       <div style={{ minWidth: 0 }}>
@@ -1245,9 +1354,15 @@ function VariantRow({
           {title}
         </div>
         <div style={{ marginTop: 4, fontSize: 10.5, color: "#7c80a0", lineHeight: 1.25 }}>{desc}</div>
+
+        {isDisabled && !!disabledReason && (
+          <div style={{ marginTop: 6, fontSize: 10.5, color: "#ffb3b3", fontWeight: 800, lineHeight: 1.2 }}>
+            {disabledReason}
+          </div>
+        )}
       </div>
 
-      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+      <div style={{ display: "flex", gap: 6, flexShrink: 0, pointerEvents: isDisabled ? "none" : "auto" }}>
         <PillButton label="ON" active={value === true} onClick={() => onChange(true)} primary={primary} primarySoft={primarySoft} compact />
         <PillButton label="OFF" active={value === false} onClick={() => onChange(false)} primary={primary} primarySoft={primarySoft} compact />
       </div>

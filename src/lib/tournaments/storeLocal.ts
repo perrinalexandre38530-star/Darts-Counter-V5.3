@@ -2,6 +2,8 @@
 // src/lib/tournaments/storeLocal.ts
 // Stockage TOURNOIS LOCAL -> IndexedDB (anti QuotaExceededError)
 // - API sync côté UI via cache mémoire (chargement async au boot)
+// - ✅ NEW: API ASYNC (getTournamentLocalAsync / listMatchesForTournamentLocalAsync)
+//   pour éviter les écrans vides au 1er render (lazy cache).
 // - Migration automatique depuis localStorage:
 //   - dc_tournaments_v1
 //   - dc_tournament_matches_v1:<id> / dc_tournament_matches_<id> / dc_tournament_<id>_matches
@@ -242,8 +244,7 @@ export function listTournamentsLocal(): AnyObj[] {
 }
 
 /**
- * ✅ IMPORTANT: utilisé par TournamentView.tsx
- * Sync-friendly : renvoie depuis le cache si dispo.
+ * ✅ IMPORTANT: sync-friendly
  * Si pas encore chargé : renvoie null et déclenche le load en fond.
  */
 export function getTournamentLocal(tournamentId: string): AnyObj | null {
@@ -251,6 +252,33 @@ export function getTournamentLocal(tournamentId: string): AnyObj | null {
   const tid = String(tournamentId || "");
   if (!tid) return null;
   return cacheTournaments.find((t) => String(t?.id) === tid) ?? null;
+}
+
+/**
+ * ✅ NEW: ASYNC — toujours fiable (attend le load + fallback IDB)
+ */
+export async function getTournamentLocalAsync(tournamentId: string): Promise<AnyObj | null> {
+  const tid = String(tournamentId || "");
+  if (!tid) return null;
+
+  await ensureLoaded();
+
+  const cached = cacheTournaments.find((t) => String(t?.id) === tid) ?? null;
+  if (cached) return cached;
+
+  // fallback (au cas où cache pas à jour)
+  try {
+    const rec = await idbGet(STORE_T, tid);
+    if (rec) {
+      // hydrate cache (best effort)
+      const idx = cacheTournaments.findIndex((x) => String(x?.id) === tid);
+      if (idx >= 0) cacheTournaments[idx] = rec;
+      else cacheTournaments.unshift(rec);
+    }
+    return rec ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function upsertTournamentLocal(tour: AnyObj) {
@@ -292,7 +320,6 @@ export function deleteMatchesForTournamentLocal(tournamentId: string) {
     console.error("[tournaments] idbDelete matches failed:", e)
   );
 
-  // ✅ refresh UI
   notifyTournamentsUpdated();
 }
 
@@ -315,13 +342,12 @@ export function deleteTournamentLocal(tournamentId: string) {
     console.error("[tournaments] idbDelete matches failed:", e)
   );
 
-  // ✅ refresh UI
   notifyTournamentsUpdated();
 }
 
 /**
  * LIST (sync) : renvoie le cache si chargé.
- * Si pas chargé : renvoie [] et lance un lazy load en tâche de fond.
+ * Si pas chargé / pas en cache : renvoie [] et lance un lazy load en tâche de fond.
  */
 export function listMatchesForTournamentLocal(tournamentId: string): AnyObj[] {
   void ensureLoaded();
@@ -338,8 +364,6 @@ export function listMatchesForTournamentLocal(tournamentId: string): AnyObj[] {
       const rec = await idbGet(STORE_M, tid);
       const matches = Array.isArray(rec?.matches) ? rec.matches : [];
       cacheMatchesByTid[tid] = matches;
-
-      // ✅ si on vient de loader des matches, on peut refresh les vues dépendantes
       notifyTournamentsUpdated();
     } catch (e) {
       console.error("[tournaments] load matches failed:", e);
@@ -348,6 +372,30 @@ export function listMatchesForTournamentLocal(tournamentId: string): AnyObj[] {
   })();
 
   return [];
+}
+
+/**
+ * ✅ NEW: ASYNC — toujours fiable (attend le load + lit IDB direct)
+ */
+export async function listMatchesForTournamentLocalAsync(tournamentId: string): Promise<AnyObj[]> {
+  const tid = String(tournamentId || "");
+  if (!tid) return [];
+
+  await ensureLoaded();
+
+  const cached = cacheMatchesByTid[tid];
+  if (Array.isArray(cached)) return cached.slice();
+
+  try {
+    const rec = await idbGet(STORE_M, tid);
+    const matches = Array.isArray(rec?.matches) ? rec.matches : [];
+    cacheMatchesByTid[tid] = matches;
+    return matches.slice();
+  } catch (e) {
+    console.error("[tournaments] async load matches failed:", e);
+    cacheMatchesByTid[tid] = [];
+    return [];
+  }
 }
 
 /**
@@ -366,7 +414,6 @@ export function saveMatchesForTournamentLocal(tournamentId: string, matches: Any
     .then(() => notifyTournamentsUpdated())
     .catch((e) => console.error("[tournaments] idbPut matches failed:", e));
 
-  // ✅ refresh immédiat
   notifyTournamentsUpdated();
 }
 
