@@ -7,6 +7,11 @@
 // ✅ RR: schedule "circle method" + standings basiques
 // ✅ Auto-advance BYE (winner direct)
 // ✅ submitResult: propage vainqueur au match suivant
+//
+// ✅ FIX IMPORTANT (2026-01):
+// - groupIndex est UNIQUEMENT pour les matchs de POULES.
+// - Les matchs KO / losers / grand final / repechage doivent avoir groupIndex = -1
+//   Sinon l'UI croit que tous les KO appartiennent à la "Poule A".
 // ============================================
 
 import type {
@@ -216,7 +221,11 @@ function buildSingleElimBracket(opts: {
         id,
         tournamentId,
         stageIndex,
-        groupIndex: 0,
+
+        // IMPORTANT: groupIndex est UNIQUEMENT pour les matchs de poules.
+        // Si on laisse 0 ici, l’UI croit que tout est "Poule A" (même les KO).
+        groupIndex: -1,
+
         roundIndex: r,
         orderIndex: orderGlobal++,
         aPlayerId: TBD,
@@ -334,8 +343,6 @@ function buildDoubleElimBracket(opts: {
   let order = 0;
 
   // build L rounds structure: roundIndex 0..roundsL-1
-  // number of matches each round varies:
-  // standard: L0 has size/4 matches (losers of W R0), L1 has size/4, L2 has size/8, L3 size/8 ... alternating
   const countForL = (lr: number) => {
     const k = (lr / 2) | 0;
     const base = size / (2 ** (k + 2)); // size/4, size/8, size/16...
@@ -351,7 +358,10 @@ function buildDoubleElimBracket(opts: {
         id,
         tournamentId: tId,
         stageIndex: opts.stageIndexL,
-        groupIndex: 0,
+
+        // Losers bracket = KO (jamais une poule)
+        groupIndex: -1,
+
         roundIndex: lr,
         orderIndex: order++,
         aPlayerId: TBD,
@@ -374,7 +384,6 @@ function buildDoubleElimBracket(opts: {
     const mCount = countForL(lr);
     for (let o = 0; o < mCount; o++) {
       const cur = losers.find((m) => m.id === idAt[`L${lr}_M${o}`])!;
-      // next round count might be same or half
       const nextCount = countForL(lr + 1);
       const nextO = (nextCount === mCount) ? o : ((o / 2) | 0);
       const next = losers.find((m) => m.id === idAt[`L${lr + 1}_M${nextO}`])!;
@@ -392,9 +401,6 @@ function buildDoubleElimBracket(opts: {
     const mL = losers.find((m) => m.id === idAt[`L0_M${i}`])!;
     const w1 = wR0[i * 2];
     const w2 = wR0[i * 2 + 1];
-    // aFromMatchId/bFromMatchId point to "source match" but we want LOSER.
-    // We keep feeder refs, and submitResult will set loserId into L0 when W match is done.
-    // We'll mark them as TBD for now.
     mL.aFromMatchId = w1.id;
     mL.bFromMatchId = w2.id;
   }
@@ -406,7 +412,10 @@ function buildDoubleElimBracket(opts: {
       id: gfId,
       tournamentId: tId,
       stageIndex: opts.stageIndexGF,
-      groupIndex: 0,
+
+      // Grand Final = KO (jamais une poule)
+      groupIndex: -1,
+
       roundIndex: 0,
       orderIndex: 0,
       aPlayerId: TBD,
@@ -530,13 +539,10 @@ export function buildInitialMatches(tour: Tournament): TournamentMatch[] {
         createdAt: t,
       })
     );
-    // after BYE auto-advance, propagate winners into next matches
     return applyAutoProgress(tour, out);
   }
 
   if (tour.viewKind === "double_ko") {
-    // stages expected: winners(0) losers(1) gf(2)
-    // if not, fallback
     const matches = buildDoubleElimBracket({
       tournamentId,
       stageIndexW: 0,
@@ -608,18 +614,11 @@ export function buildInitialMatches(tour: Tournament): TournamentMatch[] {
         playerIds: koSlots,
         seeding: (stKO?.seeding as any) || "random",
         createdAt: t,
-      }).map((m) => {
-        // force TBD in R0 according to slots
-        if (m.roundIndex === 0) {
-          // already set by builder from koSlots (TBD)
-        }
-        return m;
-      })
+      }).map((m) => m)
     );
 
     // repêchage option : stageIndex 2
     if (tour.repechage?.enabled) {
-      // bracket from non-qualifiés (filled later)
       const repSlots: string[] = Array.from({ length: pow2Ceil(Math.max(2, players.length - groups * qualifiers)) }, () => TBD);
       out.push(
         ...buildSingleElimBracket({
@@ -652,7 +651,6 @@ export function buildInitialMatches(tour: Tournament): TournamentMatch[] {
       }
     }
 
-    // initial fill (if RR already auto-done all? unlikely)
     return applyAutoProgress(tour, out);
   }
 
@@ -687,7 +685,6 @@ function applyWinnerToNext(matches: TournamentMatch[], m: TournamentMatch) {
   const next = matches.find((x) => String(x.id) === nextId);
   if (!next) return;
 
-  // if next slot still TBD or empty, set it
   const cur = slot === "a" ? String(next.aPlayerId || "") : String(next.bPlayerId || "");
   if (!cur || isTbdId(cur) || isByeId(cur)) {
     setSlot(next, slot, w);
@@ -696,7 +693,6 @@ function applyWinnerToNext(matches: TournamentMatch[], m: TournamentMatch) {
 }
 
 function applyLoserToRepechageIfFeeder(matches: TournamentMatch[], m: TournamentMatch) {
-  // if a match is a feeder for repechage via aFromMatchId/bFromMatchId, we feed LOSER of m
   const mid = String(m.id || "");
   if (!mid) return;
   const l = loserId(m);
@@ -746,25 +742,21 @@ function applyByeAutoDone(matches: TournamentMatch[]) {
 }
 
 function applyAutoProgress(tour: Tournament, matches: TournamentMatch[]) {
-  // loop until stable
   let changed = true;
   let guard = 0;
 
   while (changed && guard++ < 50) {
     changed = false;
 
-    // auto done BYE
     const before = JSON.stringify(matches.map((m) => [m.id, m.status, m.winnerId, m.aPlayerId, m.bPlayerId]));
     applyByeAutoDone(matches);
 
-    // apply winners to next
     for (const m of matches) {
       if (String(m.status) !== "done") continue;
       applyWinnerToNext(matches, m);
       applyLoserToRepechageIfFeeder(matches, m);
     }
 
-    // groups_ko: if RR finished, fill KO participants
     if (tour.viewKind === "groups_ko") {
       const rrDone = matches.filter((m) => m.stageIndex === 0).every((m) => String(m.status) === "done");
       if (rrDone) {
@@ -775,8 +767,6 @@ function applyAutoProgress(tour: Tournament, matches: TournamentMatch[]) {
 
         const groupPlayers: string[][] = Array.from({ length: groups }, () => []);
         for (const pid of (tour.players || []).map((p) => String(p.id))) {
-          // belong to group based on RR match appearances
-          // we detect by first match of pid
           const mm = rrMatches.find((m) => m.aPlayerId === pid || m.bPlayerId === pid);
           if (mm) groupPlayers[mm.groupIndex] = Array.from(new Set([...groupPlayers[mm.groupIndex], pid]));
         }
@@ -789,7 +779,6 @@ function applyAutoProgress(tour: Tournament, matches: TournamentMatch[]) {
           qualifiersIds.push(...standings.slice(0, qualifiers).map((r) => r.id));
         }
 
-        // fill KO stageIndex 1 round0 slots sequentially
         const koR0 = matches.filter((m) => m.stageIndex === 1 && m.roundIndex === 0);
         const slots: string[] = qualifiersIds.slice();
         const size = pow2Ceil(slots.length);
@@ -811,7 +800,6 @@ function applyAutoProgress(tour: Tournament, matches: TournamentMatch[]) {
           }
         }
 
-        // repêchage stageIndex 2 : fill with non qualifiés if enabled
         if (tour.repechage?.enabled) {
           const allIds = (tour.players || []).map((p) => String(p.id)).filter(Boolean);
           const nonQual = allIds.filter((x) => !qualifiersIds.includes(x));
@@ -825,8 +813,6 @@ function applyAutoProgress(tour: Tournament, matches: TournamentMatch[]) {
             if (isTbdId(m.aPlayerId)) m.aPlayerId = repSlots[i * 2] ?? BYE;
             if (isTbdId(m.bPlayerId)) m.bPlayerId = repSlots[i * 2 + 1] ?? BYE;
           }
-
-          // (optionnel) : gagnant repêchage -> dernier slot KO (pas encore)
         }
       }
     }
@@ -863,7 +849,6 @@ export function startMatch(opts: { tournament: Tournament; matches: TournamentMa
   const m = ms.find((x) => String(x.id) === String(opts.matchId));
   if (!m) return { tournament: t, matches: ms };
 
-  // mark tournament running
   if (t.status === "draft") t.status = "running";
   t.updatedAt = now();
 
@@ -893,10 +878,8 @@ export function submitResult(opts: {
   (m as any).historyMatchId = opts.historyMatchId ?? null;
   m.updatedAt = now();
 
-  // propagate
   applyAutoProgress(t, ms);
 
-  // finished?
   const allDone = ms.every((x) => String(x.status) === "done" || isByeId(x.aPlayerId) || isByeId(x.bPlayerId));
   if (allDone) {
     t.status = "finished";

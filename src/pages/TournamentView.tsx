@@ -23,6 +23,17 @@
 // ✅ Fix IMPORTANT:
 // - Evite les doublons de matchs KO (dédup par id)
 // - Evite l’erreur "16 matchs en huitièmes" due à mauvais filtrage KO (phase/stage)
+//
+// ✅ FIX BUG CRITIQUE (doublons poules après simulation):
+// - Certains matchs reviennent avec groupIndex/groupId/phase/stageIndex undefined
+//   => rrMatchesByGroup met alors gi=0 par défaut => tout part en Poule A.
+//
+// ✅ Solution robuste (FINAL):
+//  1) mergeStableMatchMeta: merge anti-undefined + verrouillage depuis l’état précédent
+//  2) stableMetaRef: snapshot par match.id des meta structurelles
+//     - IMPORTANT: snapshot "UPGRADABLE" : si stable manque une clé et qu’on la voit plus tard, on la complète
+//     - MAIS on ne remplace jamais une valeur stable déjà connue
+//  3) persist: merged -> applyStableMeta -> updateStableMetaFromMatches (pour capturer les nouvelles meta propres)
 // ============================================
 
 import React from "react";
@@ -204,7 +215,6 @@ function Icon({ name, color = THEME }: any) {
       </svg>
     );
 
-  // stats
   return (
     <svg {...common}>
       <path d="M5 19V5" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
@@ -271,12 +281,7 @@ function NeonTopTabsIconsOnly({ tabs, activeKey, onChange }: any) {
             title={k}
             aria-label={k}
           >
-            <span
-              aria-hidden
-              style={{
-                filter: active ? `drop-shadow(0 0 10px ${accent}66)` : "none",
-              }}
-            >
+            <span aria-hidden style={{ filter: active ? `drop-shadow(0 0 10px ${accent}66)` : "none" }}>
               <Icon name={iconMap[k] || "stats"} color={accent} />
             </span>
           </button>
@@ -429,27 +434,11 @@ function PlayerPill({ name, avatarUrl, dim, extra }: any) {
     <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 0, opacity: dim ? 0.6 : 1 }}>
       <AvatarCircle name={name} avatarUrl={avatarUrl} size={30} dim={dim} />
       <div style={{ minWidth: 0, display: "grid", gap: 2 }}>
-        <div
-          style={{
-            fontWeight: 900,
-            fontSize: 12.5,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
+        <div style={{ fontWeight: 900, fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {name || "Joueur"}
         </div>
         {extra ? (
-          <div
-            style={{
-              fontSize: 11,
-              opacity: 0.75,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
+          <div style={{ fontSize: 11, opacity: 0.75, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {extra}
           </div>
         ) : null}
@@ -458,11 +447,71 @@ function PlayerPill({ name, avatarUrl, dim, extra }: any) {
   );
 }
 
+/* ============================================================
+   ✅ FIX BUG POOLS/KO (merge meta stable)
+   ============================================================ */
+function mergeStableMatchMeta(prevMatches: any[], nextMatches: any[]) {
+  const prevById = new Map<string, any>();
+  for (const pm of Array.isArray(prevMatches) ? prevMatches : []) {
+    const id = String(pm?.id || "");
+    if (!id) continue;
+    const cur = prevById.get(id);
+    if (!cur || (pm?.updatedAt ?? 0) >= (cur?.updatedAt ?? 0)) prevById.set(id, pm);
+  }
+
+  const STABLE_KEYS = [
+    "phase",
+    "stageIndex",
+    "stage",
+    "groupIndex",
+    "groupId",
+    "group",
+    "roundIndex",
+    "orderIndex",
+    "bracketIndex",
+    "bracketSide",
+  ];
+
+  const out: any[] = [];
+  const seen = new Set<string>();
+
+  for (const nm of Array.isArray(nextMatches) ? nextMatches : []) {
+    const id = String(nm?.id || "");
+    if (!id) continue;
+
+    if (seen.has(id)) continue;
+    seen.add(id);
+
+    const pm = prevById.get(id);
+
+    const merged: any = pm ? { ...pm } : {};
+    for (const [k, v] of Object.entries(nm || {})) {
+      if (v !== undefined) merged[k] = v;
+    }
+
+    if (pm) {
+      for (const k of STABLE_KEYS) {
+        const pv = pm?.[k];
+        if (pv !== undefined && pv !== null) merged[k] = pv;
+      }
+
+      if (typeof pm?.groupIndex === "number") merged.groupIndex = pm.groupIndex;
+      if (pm?.groupId != null) merged.groupId = pm.groupId;
+
+      if (String(pm?.phase || "") === "ko") merged.phase = "ko";
+      if (pm?.stageIndex === 1) merged.stageIndex = 1;
+    }
+
+    out.push(merged);
+  }
+
+  return out;
+}
+
 function scoreText(m: any) {
-  const a = typeof m?.scoreA === "number" ? m.scoreA : null;
-  const b = typeof m?.scoreB === "number" ? m.scoreB : null;
-  if (a == null && b == null) return "";
-  return `${a ?? 0} - ${b ?? 0}`;
+  const sc = getMatchScore(m);
+  if (!sc) return "";
+  return `${sc.a} - ${sc.b}`;
 }
 
 function koTourLabel(roundIndex: number, totalRounds: number) {
@@ -474,12 +523,10 @@ function koTourLabel(roundIndex: number, totalRounds: number) {
   return `Tour ${roundIndex + 1}`;
 }
 
-/* ---------- Label “phase” humain pour afficher dans les cartes ---------- */
 function matchPhaseLabel(m: any, viewKind: string, koRoundsCount: number) {
   const isGroupLike =
     String(m?.phase || "") === "groups" ||
-    typeof m?.groupIndex === "number" ||
-    m?.stageIndex === 0;
+    (typeof m?.groupIndex === "number" && m.groupIndex >= 0);
 
   if (isGroupLike) {
     const g = typeof m?.groupIndex === "number" ? m.groupIndex : null;
@@ -547,26 +594,10 @@ function WinnerPlaceholder({ label, leftAvatarUrl, leftName, rightAvatarUrl, rig
       </div>
 
       <div style={{ minWidth: 0 }}>
-        <div
-          style={{
-            fontWeight: 950,
-            fontSize: 12.5,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
+        <div style={{ fontWeight: 950, fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {label}
         </div>
-        <div
-          style={{
-            fontSize: 11,
-            opacity: 0.72,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
+        <div style={{ fontSize: 11, opacity: 0.72, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {leftName} vs {rightName}
         </div>
       </div>
@@ -611,18 +642,9 @@ function renderPlayerOrTbd(allMatches: any[], current: any, side: "a" | "b", pla
 function computeStandings(groupPlayerIds: string[], groupMatches: any[]) {
   const rows: Record<
     string,
-    {
-      id: string;
-      played: number;
-      wins: number;
-      losses: number;
-      points: number;
-      scored: number;
-      conceded: number;
-    }
+    { id: string; played: number; wins: number; losses: number; points: number; scored: number; conceded: number }
   > = {};
-  for (const pid of groupPlayerIds)
-    rows[pid] = { id: pid, played: 0, wins: 0, losses: 0, points: 0, scored: 0, conceded: 0 };
+  for (const pid of groupPlayerIds) rows[pid] = { id: pid, played: 0, wins: 0, losses: 0, points: 0, scored: 0, conceded: 0 };
 
   for (const m of groupMatches) {
     if (m?.status !== "done") continue;
@@ -670,55 +692,24 @@ function computeStandings(groupPlayerIds: string[], groupMatches: any[]) {
 }
 
 /* -------------------------
-   STATS (global + per player)
+   STATS
 -------------------------- */
 function computeTournamentStats(playersById: Record<string, any>, matches: any[]) {
   const rows: Record<string, any> = {};
   const ids = Object.keys(playersById || {});
   for (const pid of ids) {
-    rows[pid] = {
-      id: pid,
-      name: playersById[pid]?.name || "Joueur",
-      played: 0,
-      wins: 0,
-      losses: 0,
-      scored: 0,
-      conceded: 0,
-      points: 0,
-    };
+    rows[pid] = { id: pid, name: playersById[pid]?.name || "Joueur", played: 0, wins: 0, losses: 0, scored: 0, conceded: 0, points: 0 };
   }
 
-  const done = (matches || []).filter(
-    (m) => String(m?.status) === "done" && !isByeMatch(m) && !isVoidByeMatch(m)
-  );
+  const done = (matches || []).filter((m) => String(m?.status) === "done" && !isByeMatch(m) && !isVoidByeMatch(m));
 
   for (const m of done) {
     const a = String(m?.aPlayerId || "");
     const b = String(m?.bPlayerId || "");
     if (!a || !b) continue;
 
-    if (!rows[a])
-      rows[a] = {
-        id: a,
-        name: playersById[a]?.name || "Joueur",
-        played: 0,
-        wins: 0,
-        losses: 0,
-        scored: 0,
-        conceded: 0,
-        points: 0,
-      };
-    if (!rows[b])
-      rows[b] = {
-        id: b,
-        name: playersById[b]?.name || "Joueur",
-        played: 0,
-        wins: 0,
-        losses: 0,
-        scored: 0,
-        conceded: 0,
-        points: 0,
-      };
+    if (!rows[a]) rows[a] = { id: a, name: playersById[a]?.name || "Joueur", played: 0, wins: 0, losses: 0, scored: 0, conceded: 0, points: 0 };
+    if (!rows[b]) rows[b] = { id: b, name: playersById[b]?.name || "Joueur", played: 0, wins: 0, losses: 0, scored: 0, conceded: 0, points: 0 };
 
     const sa = typeof m?.scoreA === "number" ? m.scoreA : 0;
     const sb = typeof m?.scoreB === "number" ? m.scoreB : 0;
@@ -768,11 +759,12 @@ function computeTournamentStats(playersById: Record<string, any>, matches: any[]
   return { global, list, leaders };
 }
 
-/* ============================================================
-   KO DETAILS (onglet "Détails") — colonnes centrées + badge score
-   ✅ NE TOUCHE PAS à la "Vue" bracket
-   ============================================================ */
+/* -------------------------
+   KO DETAILS (Détails)
+-------------------------- */
 function getMatchScore(m: any) {
+  if (!m) return null;
+
   const a =
     (typeof m?.scoreA === "number" ? m.scoreA : null) ??
     (typeof m?.aScore === "number" ? m.aScore : null) ??
@@ -789,8 +781,21 @@ function getMatchScore(m: any) {
     (typeof m?.score?.b === "number" ? m.score.b : null) ??
     null;
 
-  if (a == null || b == null) return null;
-  return { a, b };
+  if (a != null && b != null) return { a, b };
+
+  const status = String(m?.status || "");
+  const done = status === "done";
+  if (done) {
+    const w = String(m?.winnerId || "");
+    const A = String(m?.aPlayerId || "");
+    const B = String(m?.bPlayerId || "");
+    if (w && A && B) {
+      if (w === A) return { a: 1, b: 0 };
+      if (w === B) return { a: 0, b: 1 };
+    }
+  }
+
+  return null;
 }
 
 function ScoreBadge({ score }: { score: { a: number; b: number } | null }) {
@@ -829,7 +834,6 @@ function WorldCupKoDetailsColumns({
 }) {
   if (!koMatches?.length) return <div style={{ fontSize: 12, opacity: 0.78 }}>Aucun match KO à afficher.</div>;
 
-  // ⚙️ Ajuste ces valeurs si tu changes la hauteur de tes cards
   const CARD_H = 138;
   const GAP = 12;
   const PAD_T = 8;
@@ -843,22 +847,10 @@ function WorldCupKoDetailsColumns({
   const maxLen = Math.max(...rounds.map((r) => (byRound[r] || []).length), 1);
 
   return (
-    <div
-      className="dc-scroll-thin"
-      style={{
-        overflowX: "auto",
-        overflowY: "hidden",
-        WebkitOverflowScrolling: "touch",
-        paddingBottom: 10,
-        width: "100%",
-        maxWidth: "100%",
-      }}
-    >
+    <div className="dc-scroll-thin" style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch", paddingBottom: 10, width: "100%", maxWidth: "100%" }}>
       <div style={{ display: "flex", alignItems: "stretch", gap: 12 }}>
         {rounds.map((r) => {
           const items = byRound[r] || [];
-
-          // ✅ centrage vertical : on décale le haut de la colonne par rapport au round le plus long
           const missing = maxLen - items.length;
           const offset = PAD_T + (missing * (CARD_H + GAP)) / 2;
 
@@ -876,12 +868,10 @@ function WorldCupKoDetailsColumns({
               }}
             >
               {items.map((m) => {
-                const sc = String(m?.status || "") === "done" ? getMatchScore(m) : null;
+                const sc = getMatchScore(m);
                 return (
                   <div key={m.id} style={{ position: "relative", minHeight: CARD_H }}>
-                    {/* card */}
                     <div style={{ height: "100%" }}>{renderMatchCard(m)}</div>
-                    {/* score overlay */}
                     <ScoreBadge score={sc} />
                   </div>
                 );
@@ -894,11 +884,9 @@ function WorldCupKoDetailsColumns({
   );
 }
 
-/* ============================================================
-   WORLD CUP BRACKET (VUE) — avatars + drapeaux + traits (SVG)
-   ✅ CENTRAGE vertical auto (si bracket "court")
-   ============================================================ */
-
+/* -------------------------
+   BRACKET (Vue)
+-------------------------- */
 function flagEmojiFromISO(code?: string) {
   const cc = String(code || "").trim().toUpperCase();
   if (!/^[A-Z]{2}$/.test(cc)) return "";
@@ -1018,24 +1006,9 @@ function WorldCupBracketViewPure({ koMatches, playersById, allMatches }: any) {
   }
 
   return (
-    <div
-      className="dc-scroll-thin"
-      style={{
-        width: "100%",
-        maxWidth: "100%",
-        overflowX: "auto",
-        overflowY: "hidden",
-        WebkitOverflowScrolling: "touch",
-        paddingBottom: 8,
-      }}
-    >
+    <div className="dc-scroll-thin" style={{ width: "100%", maxWidth: "100%", overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch", paddingBottom: 8 }}>
       <div style={{ position: "relative", width: canvasW, height: canvasH, margin: "0 auto" }}>
-        <svg
-          width={canvasW}
-          height={canvasH}
-          viewBox={`0 0 ${canvasW} ${canvasH}`}
-          style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
-        >
+        <svg width={canvasW} height={canvasH} viewBox={`0 0 ${canvasW} ${canvasH}`} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
           {lines.map((L, idx) => (
             <g key={idx}>
               <path d={`M ${L.x1} ${L.y1} L ${L.xm} ${L.y1}`} stroke="rgba(255,255,255,0.22)" strokeWidth={2} fill="none" />
@@ -1049,16 +1022,7 @@ function WorldCupBracketViewPure({ koMatches, playersById, allMatches }: any) {
         {rounds.map((r, ri) => {
           const items = byRound[r] || [];
           return (
-            <div
-              key={r}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: colX(ri),
-                width: COL_W,
-                height: canvasH,
-              }}
-            >
+            <div key={r} style={{ position: "absolute", top: 0, left: colX(ri), width: COL_W, height: canvasH }}>
               {items.map((m: any, i: number) => {
                 const a = resolvePlayerForSide(allMatches, m, "a", playersById);
                 const b = resolvePlayerForSide(allMatches, m, "b", playersById);
@@ -1105,6 +1069,81 @@ function WorldCupBracketViewPure({ koMatches, playersById, allMatches }: any) {
   );
 }
 
+function StandingsTable({ rows, playersById, accent = "#7fe2a9" }: { rows: any[]; playersById: Record<string, any>; accent?: string }) {
+  return (
+    <div
+      className="dc-scroll-thin"
+      style={{
+        width: "100%",
+        overflowX: "auto",
+        borderRadius: 16,
+        border: "1px solid rgba(255,255,255,0.10)",
+        background: "rgba(0,0,0,0.22)",
+      }}
+    >
+      <div style={{ minWidth: 420 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "34px 1fr 52px 44px 44px 44px 56px",
+            gap: 10,
+            padding: "10px 12px",
+            position: "sticky",
+            top: 0,
+            background: "rgba(8,10,14,0.85)",
+            backdropFilter: "blur(8px)",
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
+            fontSize: 11,
+            fontWeight: 950,
+            color: "rgba(255,255,255,0.72)",
+            zIndex: 2,
+          }}
+        >
+          <div>#</div>
+          <div>Joueur</div>
+          <div style={{ textAlign: "right", color: accent }}>Pts</div>
+          <div style={{ textAlign: "right" }}>J</div>
+          <div style={{ textAlign: "right" }}>V</div>
+          <div style={{ textAlign: "right" }}>D</div>
+          <div style={{ textAlign: "right" }}>Δ</div>
+        </div>
+
+        <div style={{ display: "grid" }}>
+          {(rows || []).map((r: any, idx: number) => {
+            const pl = playersById[String(r.id)];
+            const diff = (r.scored ?? 0) - (r.conceded ?? 0);
+            const played = r.played ?? (r.wins ?? 0) + (r.losses ?? 0);
+
+            return (
+              <div
+                key={String(r.id)}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "34px 1fr 52px 44px 44px 44px 56px",
+                  gap: 10,
+                  alignItems: "center",
+                  padding: "10px 12px",
+                  borderBottom: "1px solid rgba(255,255,255,0.06)",
+                }}
+              >
+                <div style={{ fontWeight: 950, color: idx === 0 ? "#ffcf57" : "rgba(255,255,255,0.70)" }}>{idx + 1}</div>
+                <div style={{ minWidth: 0 }}>
+                  <PlayerPill name={pl?.name || "Joueur"} avatarUrl={pl?.avatar} />
+                </div>
+                <div style={{ textAlign: "right", fontWeight: 950, color: accent }}>{r.points ?? 0}</div>
+                <div style={{ textAlign: "right", opacity: 0.9 }}>{played}</div>
+                <div style={{ textAlign: "right", opacity: 0.9 }}>{r.wins ?? 0}</div>
+                <div style={{ textAlign: "right", opacity: 0.9 }}>{r.losses ?? 0}</div>
+                <div style={{ textAlign: "right", opacity: 0.9 }}>{diff}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* -------------------------
    MAIN
 -------------------------- */
@@ -1116,6 +1155,81 @@ export default function TournamentView({ store, go, id }: Props) {
 
   const safeMatches: TournamentMatch[] = React.useMemo(() => (Array.isArray(matches) ? matches : []), [matches]);
 
+  // ✅ ref pour merge meta (fix bug poules après simulation)
+  const matchesRef = React.useRef<TournamentMatch[]>([]);
+  React.useEffect(() => {
+    matchesRef.current = safeMatches;
+  }, [safeMatches]);
+
+  // ------------------------------------------------------------
+  // ✅ FREEZE META STRUCTURELLE PAR match.id (FIX FINAL)
+  // ------------------------------------------------------------
+  const stableMetaRef = React.useRef<Map<string, any>>(new Map());
+
+  function extractStableMeta(m: any) {
+    const meta: any = {};
+    // ⚠️ on stocke UNIQUEMENT les valeurs réellement définies (pas undefined / pas null)
+    if (m?.phase != null) meta.phase = m.phase;
+    if (m?.stageIndex != null) meta.stageIndex = m.stageIndex;
+    if (m?.groupIndex != null) meta.groupIndex = m.groupIndex;
+    if (m?.groupId != null) meta.groupId = m.groupId;
+    if (m?.roundIndex != null) meta.roundIndex = m.roundIndex;
+    if (m?.orderIndex != null) meta.orderIndex = m.orderIndex;
+    return meta;
+  }
+
+  function upgradeStable(existing: any, incoming: any) {
+    // ✅ On complète uniquement les clés manquantes (on ne remplace jamais une stable déjà connue)
+    const out = { ...(existing || {}) };
+    for (const [k, v] of Object.entries(incoming || {})) {
+      if (v == null) continue;
+      if (out[k] === undefined || out[k] === null) out[k] = v;
+    }
+    return out;
+  }
+
+  function updateStableMetaFromMatches(list: any[]) {
+    const map = stableMetaRef.current;
+    for (const m of Array.isArray(list) ? list : []) {
+      const id = String(m?.id || "");
+      if (!id) continue;
+      const inc = extractStableMeta(m);
+      if (!map.has(id)) map.set(id, inc);
+      else map.set(id, upgradeStable(map.get(id), inc));
+    }
+  }
+
+  // seed + complétion snapshot (UPGRADABLE)
+  React.useEffect(() => {
+    if (!safeMatches.length) return;
+    updateStableMetaFromMatches(safeMatches as any[]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safeMatches]);
+
+  function applyStableMeta(nextMatches: any[]) {
+    const map = stableMetaRef.current;
+    if (!map.size) return nextMatches;
+
+    return (Array.isArray(nextMatches) ? nextMatches : []).map((m: any) => {
+      const id = String(m?.id || "");
+      if (!id) return m;
+      const stable = map.get(id);
+      if (!stable) return m;
+
+      const out = { ...m };
+      if (stable.phase !== undefined) out.phase = stable.phase;
+      if (stable.stageIndex !== undefined) out.stageIndex = stable.stageIndex;
+      if (stable.groupIndex !== undefined) out.groupIndex = stable.groupIndex;
+      if (stable.groupId !== undefined) out.groupId = stable.groupId;
+      if (stable.roundIndex !== undefined) out.roundIndex = stable.roundIndex;
+      if (stable.orderIndex !== undefined) out.orderIndex = stable.orderIndex;
+      return out;
+    });
+  }
+
+  // ------------------------------------------------------------
+  // MATCHES VISIBLES
+  // ------------------------------------------------------------
   const visibleMatches: TournamentMatch[] = React.useMemo(() => {
     return safeMatches.filter((m: any) => !isVoidByeMatch(m));
   }, [safeMatches]);
@@ -1135,6 +1249,9 @@ export default function TournamentView({ store, go, id }: Props) {
     return out;
   }, [tour]);
 
+  // ------------------------------------------------------------
+  // LOAD
+  // ------------------------------------------------------------
   React.useEffect(() => {
     let alive = true;
     async function load() {
@@ -1143,8 +1260,22 @@ export default function TournamentView({ store, go, id }: Props) {
         const t = await getTournamentLocal(id);
         const ms = await listMatchesForTournamentLocal(id);
         if (!alive) return;
+
         setTour((t as any) ?? null);
-        setMatches(Array.isArray(ms) ? (ms as any) : []);
+
+        // ✅ DEDUP au chargement
+        const uniqById = (() => {
+          const map = new Map<string, any>();
+          for (const m of Array.isArray(ms) ? ms : []) {
+            const mid = String(m?.id || "");
+            if (!mid) continue;
+            const cur = map.get(mid);
+            if (!cur || (m?.updatedAt ?? 0) >= (cur?.updatedAt ?? 0)) map.set(mid, m);
+          }
+          return Array.from(map.values());
+        })();
+
+        setMatches(uniqById as any);
       } catch (e) {
         console.error("[TournamentView] load error:", e);
         if (alive) {
@@ -1161,16 +1292,27 @@ export default function TournamentView({ store, go, id }: Props) {
     };
   }, [id]);
 
+  // ------------------------------------------------------------
+  // PERSIST (MERGE + FREEZE META)
+  // ------------------------------------------------------------
   const persist = React.useCallback(async (nextTour: Tournament, nextMatches: TournamentMatch[]) => {
-    const fixedMatches = Array.isArray(nextMatches) ? nextMatches : [];
+    // 1) merge anti-undefined + verrouillage depuis prev
+    const merged = mergeStableMatchMeta(matchesRef.current as any, Array.isArray(nextMatches) ? nextMatches : []);
+    // 2) 🔒 override structurel depuis snapshot
+    const stabilized = applyStableMeta(Array.isArray(merged) ? merged : []);
+    // 3) ✅ on met à jour le snapshot avec les meta désormais “propres”
+    updateStableMetaFromMatches(stabilized as any[]);
+
     setTour(nextTour);
-    setMatches(fixedMatches);
+    setMatches(stabilized as any);
+
     try {
       await upsertTournamentLocal(nextTour as any);
-      await upsertMatchesForTournamentLocal((nextTour as any).id, fixedMatches as any);
+      await upsertMatchesForTournamentLocal((nextTour as any).id, stabilized as any);
     } catch (e) {
       console.error("[TournamentView] persist error:", e);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onStartMatch = React.useCallback(
@@ -1209,17 +1351,34 @@ export default function TournamentView({ store, go, id }: Props) {
   const repechageEnabled = !!(tour as any)?.repechage?.enabled || (tour as any)?.viewKind === "double_ko";
 
   const byPhase = React.useMemo(() => {
-    const isGroup = (m: any) => String(m.phase || "") === "groups" || m.stageIndex === 0 || typeof m.groupIndex === "number";
-    const isKo = (m: any) => String(m.phase || "") === "ko" || m.stageIndex === 1;
+    // Robust split between Groups / KO / Repechage.
+    // IMPORTANT: older engine versions incorrectly set groupIndex=0 for KO matches.
+    // So we MUST prefer phase/stageIndex over groupIndex to avoid "everything in Poule A".
+    const phaseOf = (m: any) => String(m?.phase || "");
+    const stageOf = (m: any) => (typeof m?.stageIndex === "number" ? m.stageIndex : -1);
+  
+    const isKo = (m: any) => phaseOf(m) === "ko" || stageOf(m) === 1;
+  
     const isRep = (m: any) =>
-      String(m.phase || "") === "repechage" ||
-      m.stageIndex === 2 ||
-      (m.stageIndex === 1 && (tour as any)?.viewKind === "double_ko");
-
+      phaseOf(m) === "repechage" ||
+      stageOf(m) === 2 ||
+      // compat: certains double_ko ont stageIndex=1 pour losers
+      (stageOf(m) === 1 && (tour as any)?.viewKind === "double_ko" && phaseOf(m) === "repechage");
+  
+    const isGroup = (m: any) => {
+      if (isKo(m) || isRep(m)) return false;
+      const ph = phaseOf(m);
+      const st = stageOf(m);
+      // groupe si explicitement groups OU stageIndex=0
+      if (ph === "groups" || st === 0) return true;
+      // fallback legacy si groupIndex>=0 mais pas KO/Rep
+      return typeof m?.groupIndex === "number" && m.groupIndex >= 0;
+    };
+  
     const groups = displayMatches.filter(isGroup);
-    const ko = displayMatches.filter(isKo);
-    const rep = displayMatches.filter(isRep);
-
+    const ko = displayMatches.filter((m: any) => !isGroup(m) && isKo(m));
+    const rep = displayMatches.filter((m: any) => !isGroup(m) && isRep(m));
+  
     return { groups, ko, rep };
   }, [displayMatches, tour]);
 
@@ -1258,18 +1417,14 @@ export default function TournamentView({ store, go, id }: Props) {
   const [activeGroupIdx, setActiveGroupIdx] = React.useState(0);
 
   const rrMatchesByGroup = React.useMemo(() => {
-    // ✅ IMPORTANT: Array.from(() => []) (pas fill([]))
     const out: any[] = Array.from({ length: groupsMeta }, () => []);
     for (const m of byPhase.groups as any[]) {
-      const gi = typeof m.groupIndex === "number" ? m.groupIndex : 0;
-      if (!out[gi]) out[gi] = [];
-      out[gi].push(m);
+      const gi = typeof m?.groupIndex === "number" ? m.groupIndex : -1;
+      if (gi < 0 || gi >= groupsMeta) continue;
+      (out[gi] ||= []).push(m);
     }
     for (const arr of out)
-      arr.sort(
-        (a, b) =>
-          (a.roundIndex ?? 0) - (b.roundIndex ?? 0) || (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
-      );
+      arr.sort((a, b) => (a.roundIndex ?? 0) - (b.roundIndex ?? 0) || (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
     return out;
   }, [byPhase.groups, groupsMeta]);
 
@@ -1290,8 +1445,7 @@ export default function TournamentView({ store, go, id }: Props) {
 
   const rrStandingsByGroup = React.useMemo(() => {
     const out: any[] = [];
-    for (let g = 0; g < groupsMeta; g++)
-      out[g] = computeStandings(rrPlayersByGroup[g] || [], rrMatchesByGroup[g] || []);
+    for (let g = 0; g < groupsMeta; g++) out[g] = computeStandings(rrPlayersByGroup[g] || [], rrMatchesByGroup[g] || []);
     return out;
   }, [rrPlayersByGroup, rrMatchesByGroup, groupsMeta]);
 
@@ -1316,13 +1470,7 @@ export default function TournamentView({ store, go, id }: Props) {
       const winnerId = Math.random() < 0.5 ? a : b;
 
       try {
-        const r = submitResult({
-          tournament: tour as any,
-          matches: safeMatches as any,
-          matchId: String(m.id),
-          winnerId,
-          historyMatchId: null,
-        });
+        const r = submitResult({ tournament: tour as any, matches: safeMatches as any, matchId: String(m.id), winnerId, historyMatchId: null });
         await persist(r.tournament as any, r.matches as any);
       } catch (e) {
         console.error("[TournamentView] simulateMatch error:", e);
@@ -1350,14 +1498,7 @@ export default function TournamentView({ store, go, id }: Props) {
 
         const winnerId = Math.random() < 0.5 ? a : b;
 
-        const r = submitResult({
-          tournament: curTour,
-          matches: curMatches,
-          matchId: String(m.id),
-          winnerId,
-          historyMatchId: null,
-        });
-
+        const r = submitResult({ tournament: curTour, matches: curMatches, matchId: String(m.id), winnerId, historyMatchId: null });
         curTour = r.tournament;
         curMatches = r.matches;
       }
@@ -1394,38 +1535,12 @@ export default function TournamentView({ store, go, id }: Props) {
       >
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", minWidth: 0 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 0 }}>
-            <div
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: 99,
-                background: topColor,
-                boxShadow: `0 0 14px ${topColor}55`,
-                flex: "0 0 auto",
-              }}
-            />
+            <div style={{ width: 10, height: 10, borderRadius: 99, background: topColor, boxShadow: `0 0 14px ${topColor}55`, flex: "0 0 auto" }} />
             <div style={{ display: "grid", gap: 3, minWidth: 0 }}>
-              <div
-                style={{
-                  fontWeight: 950,
-                  fontSize: 12.5,
-                  color: topColor,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
+              <div style={{ fontWeight: 950, fontSize: 12.5, color: topColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {topTag}
               </div>
-              <div
-                style={{
-                  fontSize: 11.5,
-                  opacity: 0.75,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
+              <div style={{ fontSize: 11.5, opacity: 0.75, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {m?.updatedAt ? `• ${formatDate(m.updatedAt)}` : ""}
               </div>
             </div>
@@ -1489,9 +1604,7 @@ export default function TournamentView({ store, go, id }: Props) {
             <div style={{ minWidth: 0, flex: "1 1 0", overflow: "hidden" }}>
               {renderPlayerOrTbd(safeMatches as any, m, "a", playersById)}
             </div>
-            <div style={{ fontWeight: 950, fontSize: 13, opacity: 0.9, flex: "0 0 auto" }}>
-              {done ? scoreText(m) : "VS"}
-            </div>
+            <div style={{ fontWeight: 950, fontSize: 13, opacity: 0.9, flex: "0 0 auto" }}>{done ? scoreText(m) : "VS"}</div>
             <div style={{ minWidth: 0, flex: "1 1 0", display: "flex", justifyContent: "flex-end", overflow: "hidden" }}>
               {renderPlayerOrTbd(safeMatches as any, m, "b", playersById)}
             </div>
@@ -1541,15 +1654,8 @@ export default function TournamentView({ store, go, id }: Props) {
 
   return (
     <div className="container" style={{ padding: 16, paddingBottom: 96, color: "#f5f5f7" }}>
-      {/* HEADER type "capture 2" */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "40px 1fr 88px",
-          alignItems: "center",
-          gap: 10,
-        }}
-      >
+      {/* HEADER */}
+      <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 88px", alignItems: "center", gap: 10 }}>
         <button
           type="button"
           onClick={() => go("tournaments")}
@@ -1569,16 +1675,7 @@ export default function TournamentView({ store, go, id }: Props) {
         </button>
 
         <div style={{ textAlign: "center", minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 16,
-              fontWeight: 950,
-              letterSpacing: 0.2,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
+          <div style={{ fontSize: 16, fontWeight: 950, letterSpacing: 0.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {(tour as any)?.name || "Mon tournoi"}
           </div>
           <div style={{ fontSize: 11.5, opacity: 0.75, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -1637,10 +1734,8 @@ export default function TournamentView({ store, go, id }: Props) {
         </div>
       </div>
 
-      {/* TOP TABS icons only */}
       <NeonTopTabsIconsOnly tabs={TABS} activeKey={tab} onChange={setTab} />
 
-      {/* ✅ titre de page centré sous tabs */}
       <div
         style={{
           marginTop: 2,
@@ -1704,11 +1799,7 @@ export default function TournamentView({ store, go, id }: Props) {
                 icon="⚡"
                 badge={<MiniBadge label="À jouer" value={playableMatches.length} accent={TAB_COLORS.home} />}
               >
-                {playableMatches.length ? (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {playableMatches.slice(0, 8).map((m: any) => renderMatchCard(m, TAB_COLORS.home))}
-                  </div>
-                ) : null}
+                {playableMatches.length ? <div style={{ display: "grid", gap: 10 }}>{playableMatches.slice(0, 8).map((m: any) => renderMatchCard(m, TAB_COLORS.home))}</div> : null}
               </Card>
 
               <Card
@@ -1754,7 +1845,10 @@ export default function TournamentView({ store, go, id }: Props) {
                     <div key={r} style={{ borderRadius: 16, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.03)", padding: 12, overflow: "hidden" }}>
                       <div style={{ fontWeight: 950, color: TAB_COLORS.pools, marginBottom: 10 }}>ROUND {r + 1}</div>
                       <div style={{ display: "grid", gap: 10 }}>
-                        {byRound[r].filter((m) => !isByeMatch(m)).map((m: any) => renderMatchCard(m, TAB_COLORS.pools))}
+                        {byRound[r]
+                          .filter((m) => !isByeMatch(m))
+                          .filter((m) => !isTbdId(m?.aPlayerId) && !isTbdId(m?.bPlayerId))
+                          .map((m: any) => renderMatchCard(m, TAB_COLORS.pools))}
                       </div>
                     </div>
                   ));
@@ -1767,21 +1861,7 @@ export default function TournamentView({ store, go, id }: Props) {
           {tab === "standings" ? (
             <Card title="Classement" subtitle={viewKind === "round_robin" ? "Classement du championnat." : "Classement par poule."} accent={TAB_COLORS.standings} icon="🏁">
               {viewKind === "round_robin" ? (
-                <div style={{ display: "grid", gap: 8 }}>
-                  {computeStandings(Object.keys(playersById), byPhase.groups).map((r: any, idx: number) => {
-                    const pl = playersById[String(r.id)];
-                    const diff = r.scored - r.conceded;
-                    return (
-                      <div key={r.id} style={{ display: "grid", gridTemplateColumns: "28px 1fr auto", gap: 10, alignItems: "center", padding: "10px 12px", borderRadius: 14, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.25)", width: "100%", maxWidth: "100%", overflow: "hidden" }}>
-                        <div style={{ fontWeight: 950, color: idx === 0 ? "#ffcf57" : "rgba(255,255,255,0.75)" }}>{idx + 1}</div>
-                        <PlayerPill name={pl?.name || "Joueur"} avatarUrl={pl?.avatar} />
-                        <div style={{ textAlign: "right", fontSize: 11.5, opacity: 0.9, whiteSpace: "nowrap" }}>
-                          <b style={{ color: TAB_COLORS.standings }}>{r.points}</b> pts • {r.wins}-{r.losses} • Δ {diff}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <StandingsTable rows={computeStandings(Object.keys(playersById), byPhase.groups)} playersById={playersById} accent={TAB_COLORS.standings} />
               ) : (
                 <div style={{ display: "grid", gap: 12 }}>
                   <div className="dc-scroll-thin" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
@@ -1790,21 +1870,7 @@ export default function TournamentView({ store, go, id }: Props) {
                     ))}
                   </div>
 
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {(rrStandingsByGroup[activeGroupIdx] || []).map((r: any, idx: number) => {
-                      const pl = playersById[String(r.id)];
-                      const diff = r.scored - r.conceded;
-                      return (
-                        <div key={r.id} style={{ display: "grid", gridTemplateColumns: "28px 1fr auto", gap: 10, alignItems: "center", padding: "10px 12px", borderRadius: 14, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.25)", width: "100%", maxWidth: "100%", overflow: "hidden" }}>
-                          <div style={{ fontWeight: 950, color: idx === 0 ? "#ffcf57" : "rgba(255,255,255,0.75)" }}>{idx + 1}</div>
-                          <PlayerPill name={pl?.name || "Joueur"} avatarUrl={pl?.avatar} />
-                          <div style={{ textAlign: "right", fontSize: 11.5, opacity: 0.9, whiteSpace: "nowrap" }}>
-                            <b style={{ color: TAB_COLORS.standings }}>{r.points}</b> pts • {r.wins}-{r.losses} • Δ {diff}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <StandingsTable rows={rrStandingsByGroup[activeGroupIdx] || []} playersById={playersById} accent={TAB_COLORS.standings} />
                 </div>
               )}
             </Card>
@@ -1822,25 +1888,17 @@ export default function TournamentView({ store, go, id }: Props) {
                     <Pill active={bracketSub === "details"} label="Détails" onClick={() => setBracketSub("details")} accent={TAB_COLORS.bracket} />
                   </div>
 
-                  {/* ✅ VUE: inchangée (avatars+drapeaux+traits) */}
                   {bracketSub === "view" ? (
                     <div style={{ marginTop: 12 }}>
                       <WorldCupBracketViewPure koMatches={koMatches} playersById={playersById} allMatches={safeMatches as any} />
                     </div>
                   ) : null}
 
-                  {/* ✅ DETAILS: colonnes centrées + scores (sans toucher Vue) */}
                   {bracketSub === "details" ? (
                     <div style={{ marginTop: 12 }}>
                       {(() => {
-                        // pour détails, on enlève les BYE (mais on garde TBD si tu veux voir les feeders)
                         const detailsKo = koMatches.filter((m: any) => !isByeMatch(m));
-                        return (
-                          <WorldCupKoDetailsColumns
-                            koMatches={detailsKo}
-                            renderMatchCard={(m: any) => renderMatchCard(m, TAB_COLORS.bracket)}
-                          />
-                        );
+                        return <WorldCupKoDetailsColumns koMatches={detailsKo} renderMatchCard={(m: any) => renderMatchCard(m, TAB_COLORS.bracket)} />;
                       })()}
                     </div>
                   ) : null}
@@ -1868,39 +1926,60 @@ export default function TournamentView({ store, go, id }: Props) {
                     typeof m?.groupIndex === "number" ||
                     m?.stageIndex === 0;
 
-                  const key = isGroupLike
-                    ? `G${m.groupIndex ?? 0}_R${m.roundIndex ?? 0}`
-                    : `KO_R${m.roundIndex ?? 0}`;
-
-                  if (!byBlock[key]) byBlock[key] = [];
-                  byBlock[key].push(m);
+                  if (isGroupLike) {
+                    if (typeof m?.groupIndex !== "number") {
+                      const r = typeof m?.roundIndex === "number" ? m.roundIndex : 0;
+                      const key = `UNASSIGNED_R${r}`;
+                      (byBlock[key] ||= []).push(m);
+                    } else {
+                      const g = m.groupIndex;
+                      const r = typeof m?.roundIndex === "number" ? m.roundIndex : 0;
+                      const key = `G${g}_R${r}`;
+                      (byBlock[key] ||= []).push(m);
+                    }
+                  } else {
+                    const r = typeof m?.roundIndex === "number" ? m.roundIndex : 0;
+                    const key = `KO_R${r}`;
+                    (byBlock[key] ||= []).push(m);
+                  }
                 }
 
-                const keys = Object.keys(byBlock).sort((a, b) => a.localeCompare(b));
+                const keys = Object.keys(byBlock).sort((a, b) => {
+                  const aUn = a.startsWith("UNASSIGNED");
+                  const bUn = b.startsWith("UNASSIGNED");
+                  if (aUn !== bUn) return aUn ? 1 : -1;
+                  return a.localeCompare(b);
+                });
 
                 return (
                   <div style={{ display: "grid", gap: 12 }}>
                     {keys.map((k) => {
-                      const items = (byBlock[k] || []).slice().sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+                      const items = (byBlock[k] || [])
+                        .slice()
+                        .sort((a, b) => (a.roundIndex ?? 0) - (b.roundIndex ?? 0) || (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+
                       const first = items[0];
+                      const isUnassigned = k.startsWith("UNASSIGNED_");
                       const isGroupLike =
-                        String(first?.phase || "") === "groups" ||
-                        typeof first?.groupIndex === "number" ||
-                        first?.stageIndex === 0;
+                        !isUnassigned &&
+                        (String(first?.phase || "") === "groups" || typeof first?.groupIndex === "number" || first?.stageIndex === 0);
 
                       let title = "Matchs";
-                      if (isGroupLike) {
-                        const g = typeof first.groupIndex === "number" ? first.groupIndex : 0;
+                      if (isUnassigned) {
+                        const r = typeof first?.roundIndex === "number" ? first.roundIndex : 0;
+                        title = `À classer • Round ${r + 1}`;
+                      } else if (isGroupLike) {
+                        const g = first.groupIndex;
                         const r = typeof first.roundIndex === "number" ? first.roundIndex : 0;
                         title = `Poule ${String.fromCharCode(65 + g)} • Round ${r + 1}`;
                       } else {
-                        const r = typeof first.roundIndex === "number" ? first.roundIndex : 0;
+                        const r = typeof first?.roundIndex === "number" ? first.roundIndex : 0;
                         title = koTourLabel(r, koRoundsCount);
                       }
 
                       return (
                         <div key={k} style={{ borderRadius: 16, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.03)", padding: 12, overflow: "hidden" }}>
-                          <div style={{ fontWeight: 950, color: TAB_COLORS.matches, marginBottom: 10 }}>{title}</div>
+                          <div style={{ fontWeight: 950, color: isUnassigned ? "#ff8f2b" : TAB_COLORS.matches, marginBottom: 10 }}>{title}</div>
                           <div style={{ display: "grid", gap: 10 }}>{items.map((m: any) => renderMatchCard(m, TAB_COLORS.matches))}</div>
                         </div>
                       );
@@ -1939,7 +2018,22 @@ export default function TournamentView({ store, go, id }: Props) {
 
               <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
                 {stats.list.map((r: any, idx: number) => (
-                  <div key={r.id} style={{ display: "grid", gridTemplateColumns: "28px 1fr auto", gap: 10, alignItems: "center", padding: "10px 12px", borderRadius: 14, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.25)", width: "100%", maxWidth: "100%", overflow: "hidden" }}>
+                  <div
+                    key={r.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "28px 1fr auto",
+                      gap: 10,
+                      alignItems: "center",
+                      padding: "10px 12px",
+                      borderRadius: 14,
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      background: "rgba(0,0,0,0.25)",
+                      width: "100%",
+                      maxWidth: "100%",
+                      overflow: "hidden",
+                    }}
+                  >
                     <div style={{ fontWeight: 950, color: idx === 0 ? "#ffcf57" : "rgba(255,255,255,0.75)" }}>{idx + 1}</div>
                     <PlayerPill name={r.name} avatarUrl={playersById[String(r.id)]?.avatar} />
                     <div style={{ textAlign: "right", fontSize: 11.5, opacity: 0.9, whiteSpace: "nowrap" }}>
@@ -1956,15 +2050,7 @@ export default function TournamentView({ store, go, id }: Props) {
       {/* Modal résultat */}
       {resultMatch ? (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 9999,
-            background: "rgba(0,0,0,0.62)",
-            display: "grid",
-            placeItems: "end center",
-            padding: 12,
-          }}
+          style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.62)", display: "grid", placeItems: "end center", padding: 12 }}
           onMouseDown={() => setResultMatch(null)}
         >
           <div
@@ -1978,30 +2064,9 @@ export default function TournamentView({ store, go, id }: Props) {
             }}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <div
-              style={{
-                padding: "12px 14px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                borderBottom: "1px solid rgba(255,255,255,0.08)",
-              }}
-            >
+            <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
               <div style={{ fontWeight: 950, fontSize: 14, color: "#ffcf57" }}>Résultat</div>
-              <button
-                type="button"
-                onClick={() => setResultMatch(null)}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "rgba(255,255,255,0.75)",
-                  fontSize: 20,
-                  cursor: "pointer",
-                  lineHeight: 1,
-                }}
-                aria-label="Fermer"
-                title="Fermer"
-              >
+              <button type="button" onClick={() => setResultMatch(null)} style={{ border: "none", background: "transparent", color: "rgba(255,255,255,0.75)", fontSize: 20, cursor: "pointer", lineHeight: 1 }} aria-label="Fermer" title="Fermer">
                 ✕
               </button>
             </div>

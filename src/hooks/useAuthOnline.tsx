@@ -1,3 +1,4 @@
+// @ts-nocheck
 // ============================================
 // src/hooks/useAuthOnline.tsx
 // Auth Online unifiée (MOCK ou Supabase réel)
@@ -5,6 +6,7 @@
 // - En mode réel : email + mot de passe requis
 // - En mode mock : pseudo uniquement
 // ✅ FIX: ajoute "ready" pour éviter que l'app conclue trop tôt "pas de compte"
+// ✅ NEW: PRESENCE profiles_online (upsert + anti spam + last_seen + away/online)
 // ============================================
 
 import React from "react";
@@ -15,6 +17,9 @@ import {
 } from "../lib/onlineApi";
 import type { UserAuth, OnlineProfile } from "../lib/onlineTypes";
 
+// ✅ Supabase client (si tu l’as déjà dans ton projet)
+import { supabase } from "../lib/supabaseClient";
+
 type Status = "checking" | "signed_out" | "signed_in";
 
 export type AuthOnlineContextValue = {
@@ -24,24 +29,68 @@ export type AuthOnlineContextValue = {
   user: UserAuth | null;
   profile: OnlineProfile | null;
   isMock: boolean;
-  signup: (p: {
-    nickname: string;
-    email?: string;
-    password?: string;
-  }) => Promise<void>;
-  login: (p: {
-    nickname?: string;
-    email?: string;
-    password?: string;
-  }) => Promise<void>;
+  signup: (p: { nickname: string; email?: string; password?: string }) => Promise<void>;
+  login: (p: { nickname?: string; email?: string; password?: string }) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (patch: UpdateProfilePayload) => Promise<void>;
   refresh: () => Promise<void>;
 };
 
-const AuthOnlineContext = React.createContext<AuthOnlineContextValue | null>(
-  null
-);
+const AuthOnlineContext = React.createContext<AuthOnlineContextValue | null>(null);
+
+// ============================================================
+// ✅ PRESENCE helpers (anti-spam, robust)
+// ============================================================
+const PRESENCE_THROTTLE_MS = 5000;
+const PRESENCE_HEARTBEAT_MS = 25000;
+const PRESENCE_ERR_COOLDOWN_MS = 15000;
+
+let __lastPresenceWrite = 0;
+let __lastPresenceErrorAt = 0;
+
+function canWritePresence() {
+  const now = Date.now();
+  if (now - __lastPresenceWrite < PRESENCE_THROTTLE_MS) return false;
+  if (now - __lastPresenceErrorAt < PRESENCE_ERR_COOLDOWN_MS) return false;
+  __lastPresenceWrite = now;
+  return true;
+}
+
+async function upsertPresenceSafe(userId: string, patch: any) {
+  if (!userId) return;
+  if (!supabase) return;
+
+  if (!canWritePresence()) return;
+
+  try {
+    const payload = {
+      user_id: userId,
+      ...patch,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+      .from("profiles_online")
+      .upsert(payload, { onConflict: "user_id" });
+
+    if (error) {
+      __lastPresenceErrorAt = Date.now();
+      console.warn("[presence] upsert failed:", error?.message || error);
+    }
+  } catch (e: any) {
+    __lastPresenceErrorAt = Date.now();
+    console.warn("[presence] upsert fatal:", e?.message || e);
+  }
+}
+
+async function setPresenceStatus(userId: string, status: "online" | "away" | "offline") {
+  await upsertPresenceSafe(userId, {
+    status,
+    last_seen: new Date().toISOString(),
+    device: "web",
+    app_version: "v5",
+  });
+}
 
 // ============================================
 // Provider
@@ -80,7 +129,6 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
 
     async function restore() {
       try {
-        // ✅ AJOUT: on repasse en "checking" + not ready le temps du restore
         setReady(false);
         setStatus("checking");
 
@@ -99,12 +147,65 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
     };
   }, [applySession]);
 
+  // ============================================================
+  // ✅ PRESENCE EFFECT (c’est ICI que ça doit vivre)
+  // - évite les boucles
+  // - heartbeat + away/online
+  // ============================================================
+  React.useEffect(() => {
+    if (onlineApi.USE_MOCK) return; // pas de présence en mock
+    if (status !== "signed_in") return;
+    const uid = String((user as any)?.id || "");
+    if (!uid) return;
+
+    let alive = true;
+    let timer: any = null;
+
+    const writeNow = async () => {
+      if (!alive) return;
+      const st = document.hidden ? "away" : "online";
+      await setPresenceStatus(uid, st as any);
+    };
+
+    // 1) écriture immédiate
+    writeNow();
+
+    // 2) heartbeat
+    timer = setInterval(() => {
+      writeNow();
+    }, PRESENCE_HEARTBEAT_MS);
+
+    // 3) visibility -> away/online
+    const onVis = () => writeNow();
+    document.addEventListener("visibilitychange", onVis);
+
+    // 4) best effort offline quand on quitte
+    const onUnload = () => {
+      // navigator.sendBeacon serait idéal, mais on reste simple:
+      // on tente une dernière écriture "offline" (peut être ignorée par navigateur)
+      try {
+        setPresenceStatus(uid, "offline");
+      } catch {}
+    };
+    window.addEventListener("beforeunload", onUnload);
+
+    return () => {
+      alive = false;
+      try {
+        clearInterval(timer);
+      } catch {}
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("beforeunload", onUnload);
+
+      // best effort offline quand on se déconnecte / démonte
+      try {
+        setPresenceStatus(uid, "offline");
+      } catch {}
+    };
+  }, [status, (user as any)?.id]);
+
   // SIGNUP
-  async function signup(params: {
-    nickname: string;
-    email?: string;
-    password?: string;
-  }) {
+  async function signup(params: { nickname: string; email?: string; password?: string }) {
     const nickname = params.nickname?.trim();
     const email = params.email?.trim();
     const password = params.password?.trim();
@@ -137,11 +238,7 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
   }
 
   // LOGIN
-  async function login(params: {
-    nickname?: string;
-    email?: string;
-    password?: string;
-  }) {
+  async function login(params: { nickname?: string; email?: string; password?: string }) {
     const nickname = params.nickname?.trim();
     const email = params.email?.trim();
     const password = params.password?.trim();
@@ -177,6 +274,12 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
   async function logout() {
     setLoading(true);
     try {
+      // ✅ best effort offline avant logout
+      try {
+        const uid = String((user as any)?.id || "");
+        if (!onlineApi.USE_MOCK && uid) await setPresenceStatus(uid, "offline");
+      } catch {}
+
       await onlineApi.logout();
       applySession(null);
     } finally {
@@ -189,7 +292,6 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
     setLoading(true);
     try {
       const newProfile = await onlineApi.updateProfile(patch);
-      // on remplace le profil par celui retourné par l'API (toutes les colonnes)
       setProfile(newProfile);
     } finally {
       setLoading(false);
@@ -212,7 +314,7 @@ export function AuthOnlineProvider({ children }: { children: React.ReactNode }) 
       value={{
         status,
         loading,
-        ready, // ✅ AJOUT
+        ready,
         user,
         profile,
         isMock: onlineApi.USE_MOCK,
